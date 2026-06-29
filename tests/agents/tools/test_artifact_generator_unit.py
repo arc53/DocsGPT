@@ -153,6 +153,35 @@ def test_renderer_keeps_injection_text_as_literal_content():
     assert prs.slides[0].shapes.title.text == payload
 
 
+def test_spreadsheet_renderer_neutralizes_formula_injection():
+    # Spec content is model / prompt-injection controlled. A string cell starting
+    # with a formula trigger must be stored as TEXT (data_type 's'), never as a
+    # live formula; genuine numbers stay numeric.
+    from openpyxl import load_workbook
+
+    spec = {
+        "sheets": [
+            {
+                "name": "S",
+                "rows": [
+                    ['=HYPERLINK("http://evil","x")', "+1+1", "@cmd", "-danger"],
+                    ["safe text", -5, 3.14],
+                ],
+            }
+        ]
+    }
+    wb = load_workbook(_render_in_process("spreadsheet", spec))
+    ws = wb["S"]
+    # None of the trigger cells are formulas; each is a quote-prefixed string.
+    for coord in ("A1", "B1", "C1", "D1"):
+        assert ws[coord].data_type == "s", coord
+        assert str(ws[coord].value).startswith("'")
+    # Benign text is unchanged; numbers stay numeric (no spurious quoting).
+    assert ws["A2"].value == "safe text" and ws["A2"].data_type == "s"
+    assert ws["B2"].value == -5 and ws["B2"].data_type == "n"
+    assert ws["C2"].value == 3.14 and ws["C2"].data_type == "n"
+
+
 def test_pdf_renderer_escapes_markup_and_does_not_execute():
     payload = "<b>not bold</b> & \"</para>\" '''os.system('x')'''"
     spec = {"title": payload, "blocks": [{"type": "paragraph", "text": payload}]}

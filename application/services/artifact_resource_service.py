@@ -93,8 +93,12 @@ def _is_texty(mime_type: str) -> bool:
     return any(mime.endswith(s) for s in _TEXT_MIME_SUFFIXES)
 
 
-def _resolve_principal(api_key: Optional[str]) -> Optional[str]:
-    """Resolve a Bearer api_key to its owning ``user_id``; None when unresolvable."""
+def _resolve_agent(api_key: Optional[str]) -> Optional[dict]:
+    """Resolve a Bearer api_key to its owning agent row (carries ``id`` + ``user_id``).
+
+    Returns the whole agent so callers can scope artifact visibility to that agent's
+    conversations, not the owner's entire corpus. None when unresolvable.
+    """
     if not api_key:
         return None
     try:
@@ -103,7 +107,9 @@ def _resolve_principal(api_key: Optional[str]) -> Optional[str]:
     except Exception:
         logger.exception("artifact resource: principal resolution failed")
         return None
-    return agent.get("user_id") if agent else None
+    if not agent or not agent.get("user_id") or not agent.get("id"):
+        return None
+    return agent
 
 
 def _resource_uri(artifact_id: str, version: int) -> str:
@@ -122,12 +128,14 @@ def list_artifact_resources(api_key: Optional[str]) -> List[Resource]:
     middleware's ``on_read_resource`` intercepts every ``artifact://`` read and
     streams the real bytes via :func:`read_artifact_resource`.
     """
-    user_id = _resolve_principal(api_key)
-    if not user_id:
+    agent = _resolve_agent(api_key)
+    if not agent:
         return []
     try:
         with db_readonly() as conn:
-            rows = ArtifactsRepository(conn).list_artifacts(user_id=user_id)
+            rows = ArtifactsRepository(conn).list_artifacts_for_agent(
+                str(agent["id"]), str(agent["user_id"])
+            )
     except Exception:
         logger.exception("artifact resource: list failed")
         return []
@@ -178,9 +186,11 @@ def read_artifact_resource(api_key: Optional[str], uri: str) -> ArtifactReadResu
     if not looks_like_uuid(artifact_id):
         raise ResourceNotFound(f"artifact {artifact_id} not found")
 
-    user_id = _resolve_principal(api_key)
-    if not user_id:
+    agent = _resolve_agent(api_key)
+    if not agent:
         raise ResourceDenied("unauthenticated")
+    user_id = str(agent["user_id"])
+    agent_id = str(agent["id"])
 
     try:
         with db_readonly() as conn:
@@ -188,9 +198,13 @@ def read_artifact_resource(api_key: Optional[str], uri: str) -> ArtifactReadResu
             artifact = repo.get_artifact(artifact_id)
             if artifact is None:
                 raise ResourceNotFound(f"artifact {artifact_id} not found")
-            # Ownership is the authz point: never serve another principal's artifact
-            # over MCP, regardless of conversation/workflow parent sharing.
-            if str(artifact.get("user_id")) != str(user_id):
+            # Ownership is the first authz point: never serve another principal's
+            # artifact over MCP, regardless of conversation/workflow parent sharing.
+            if str(artifact.get("user_id")) != user_id:
+                raise ResourceDenied("forbidden")
+            # Agent scope is the second: a per-agent key only reads artifacts from
+            # its own conversations, not the owner's other agents / workflow runs.
+            if not repo.artifact_in_agent_scope(artifact_id, agent_id):
                 raise ResourceDenied("forbidden")
             version_row = repo.get_version(artifact_id, version)
     except (DataError, DBAPIError) as exc:

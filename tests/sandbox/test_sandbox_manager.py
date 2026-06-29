@@ -1,6 +1,7 @@
 """Unit tests for SandboxManager and SandboxCreator using an in-memory backend."""
 
 import threading
+import time
 from typing import Dict, List
 
 import pytest
@@ -254,6 +255,57 @@ def test_reuse_existing_session_never_evicts_at_cap(backend):
     mgr.open("a")  # reuse, not a new session -> no eviction
     assert backend.torn_down == []
     assert mgr.session_count() == 1
+
+
+def test_concurrent_open_same_id_does_not_evict_innocent():
+    """A 2nd open() of an id mid cold-open reuses its placeholder, never evicts another session.
+
+    The session_id is derived from conversation/run id, so two concurrent requests on
+    one conversation both call open(same_id). The second must NOT see the first's
+    not-yet-ready placeholder as a reason to make room (evict an innocent LRU-idle
+    session or raise SandboxCapacityError) -- overwriting the same key adds no slot.
+    """
+    state = {"entries": 0}
+    both_in_backend = threading.Event()
+    release = threading.Event()
+    guard = threading.Lock()
+
+    class _BlockingSameId(FakeBackend):
+        def open(self, session_id: str) -> str:
+            if session_id == "slow":
+                with guard:
+                    state["entries"] += 1
+                    if state["entries"] >= 2:
+                        both_in_backend.set()
+                assert release.wait(timeout=5)
+            return super().open(session_id)
+
+    backend = _BlockingSameId()
+    mgr = SandboxManager(backend, max_ttl=600, max_sessions=2)
+    mgr.open("keep")  # a ready, idle session occupying one of the two slots
+
+    t1 = threading.Thread(target=lambda: mgr.open("slow"))
+    t1.start()
+    # Wait until t1 has registered the "slow" placeholder and is blocked in backend.open
+    # (registry is now {keep, slow} = at cap).
+    deadline = time.monotonic() + 5
+    while mgr.session_count() < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert mgr.session_count() == 2
+
+    t2 = threading.Thread(target=lambda: mgr.open("slow"))
+    t2.start()
+    try:
+        # Both opens have passed the lock section into backend.open. With the bug, t2
+        # would have evicted "keep" in its lock section before reaching here.
+        assert both_in_backend.wait(timeout=5)
+        assert mgr.has_session("keep"), "concurrent same-id open evicted an innocent session"
+        assert "keep" not in backend.torn_down
+    finally:
+        release.set()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+    assert mgr.has_session("slow") and mgr.has_session("keep")
 
 
 # ---------------------------------------------------------------------------

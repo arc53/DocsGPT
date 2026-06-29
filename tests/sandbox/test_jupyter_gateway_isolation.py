@@ -145,3 +145,102 @@ def test_prime_creates_workspace_mode_0700(tmp_path, monkeypatch):
     assert kernel.initialized
     assert stat.S_IMODE(os.stat(root).st_mode) == 0o700
     assert stat.S_IMODE(os.stat(workspace).st_mode) == 0o700
+
+
+# -- Output cap: rich outputs count against the byte budget --------------------
+
+
+def test_rich_payload_bytes_sums_all_data():
+    content = {"data": {"text/html": "x" * 100, "text/plain": "y" * 50, "application/json": {"a": 1}}}
+    n = JupyterKernelGatewaySandbox._rich_payload_bytes(content)
+    assert n >= 150  # html + plain + serialized json all counted
+
+
+def _frame(msg_id, msg_type, content):
+    return json.dumps({"parent_header": {"msg_id": msg_id}, "msg_type": msg_type, "content": content})
+
+
+class _FakeWS:
+    def __init__(self, frames):
+        self._frames = list(frames)
+
+    def settimeout(self, _t):
+        pass
+
+    def recv(self):
+        if self._frames:
+            return self._frames.pop(0)
+        import websocket
+
+        raise websocket.WebSocketConnectionClosedException()
+
+
+def test_collect_caps_oversize_rich_output(monkeypatch):
+    # A huge execute_result must NOT be buffered: once it would exceed the byte
+    # budget the bundle is dropped and the result is marked truncated.
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused", max_output_bytes=1000)
+    monkeypatch.setattr(sb, "_interrupt_and_drain", lambda *a, **k: None)
+    msg_id = "m1"
+    frames = [_frame(msg_id, "execute_result", {"data": {"text/html": "H" * 5000}})]
+    result = sb._collect(_FakeWS(frames), msg_id, timeout=5, kernel_id="k1")
+    assert result.results == []  # over-budget bundle dropped, not materialized
+    assert "[output truncated" in result.stderr
+
+
+def test_collect_keeps_small_rich_output(monkeypatch):
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused", max_output_bytes=10000)
+    monkeypatch.setattr(sb, "_interrupt_and_drain", lambda *a, **k: None)
+    msg_id = "m2"
+    frames = [
+        _frame(msg_id, "execute_result", {"data": {"text/plain": "small"}}),
+        _frame(msg_id, "execute_reply", {"status": "ok", "execution_count": 1}),
+        _frame(msg_id, "status", {"execution_state": "idle"}),
+    ]
+    result = sb._collect(_FakeWS(frames), msg_id, timeout=5, kernel_id="k2")
+    assert len(result.results) == 1
+    assert "[output truncated" not in (result.stderr or "")
+
+
+# -- open() is idempotent under concurrency -----------------------------------
+
+
+def test_concurrent_open_creates_one_kernel(monkeypatch):
+    # Two threads opening the same session must POST exactly one kernel; a second
+    # would orphan on the gateway. The CV guard serializes per-session creation.
+    import threading
+
+    sb = JupyterKernelGatewaySandbox(gateway_url="http://unused")
+    posts = {"n": 0}
+    post_lock = threading.Lock()
+    start = threading.Event()
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"id": f"kernel-{posts['n']}"}
+
+    def _fake_post(url, **kwargs):
+        with post_lock:
+            posts["n"] += 1
+        start.wait(timeout=2)  # hold both threads at the POST to force the race
+        return _Resp()
+
+    monkeypatch.setattr(jupyter_gateway.requests, "post", _fake_post)
+    monkeypatch.setattr(sb, "_prime", lambda kernel: None)
+
+    results = {}
+
+    def _open(i):
+        results[i] = sb.open("session-x")
+
+    threads = [threading.Thread(target=_open, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    start.set()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert posts["n"] == 1, "concurrent open() created more than one kernel"
+    assert results[0] == results[1]  # both callers got the same kernel id

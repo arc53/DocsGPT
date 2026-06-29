@@ -82,6 +82,11 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         self._max_file_bytes = max_file_bytes
         self._kernels: Dict[str, _Kernel] = {}
         self._lock = threading.Lock()
+        # Session ids with a create in flight; a second open() for the same id
+        # waits on this CV and reuses the result instead of double-creating a
+        # kernel (the idempotency contract SandboxManager.open relies on).
+        self._creating: set = set()
+        self._create_cv = threading.Condition(self._lock)
 
     # -- HTTP helpers ----------------------------------------------------
 
@@ -114,27 +119,39 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
     # -- Lifecycle -------------------------------------------------------
 
     def open(self, session_id: str) -> str:
-        """Start a fresh kernel for ``session_id`` and prime its workspace cwd."""
-        self._validate_session_id(session_id)
-        with self._lock:
-            existing = self._kernels.get(session_id)
-        if existing is not None:
-            return existing.kernel_id
+        """Start a fresh kernel for ``session_id`` and prime its workspace cwd.
 
-        resp = requests.post(
-            f"{self._base_url}/api/kernels",
-            headers=self._headers(),
-            data=json.dumps({"name": self._kernel_name}),
-            timeout=self._http_timeout,
-        )
-        resp.raise_for_status()
-        kernel_id = resp.json()["id"]
-        workspace = f"{_WORKSPACE_ROOT}/{session_id}"
-        kernel = _Kernel(kernel_id, workspace)
-        with self._lock:
-            self._kernels[session_id] = kernel
-        self._prime(kernel)
-        return kernel_id
+        Idempotent under concurrency: if another thread is already creating a kernel
+        for this session, wait for it and reuse the result rather than POSTing a
+        second kernel that would orphan on the gateway.
+        """
+        self._validate_session_id(session_id)
+        with self._create_cv:
+            while session_id in self._creating:
+                self._create_cv.wait()
+            existing = self._kernels.get(session_id)
+            if existing is not None:
+                return existing.kernel_id
+            self._creating.add(session_id)
+        try:
+            resp = requests.post(
+                f"{self._base_url}/api/kernels",
+                headers=self._headers(),
+                data=json.dumps({"name": self._kernel_name}),
+                timeout=self._http_timeout,
+            )
+            resp.raise_for_status()
+            kernel_id = resp.json()["id"]
+            workspace = f"{_WORKSPACE_ROOT}/{session_id}"
+            kernel = _Kernel(kernel_id, workspace)
+            with self._lock:
+                self._kernels[session_id] = kernel
+            self._prime(kernel)
+            return kernel_id
+        finally:
+            with self._create_cv:
+                self._creating.discard(session_id)
+                self._create_cv.notify_all()
 
     def attach(self, session_id: str) -> str:
         """Reattach to a still-running kernel for ``session_id``; open a cold one if gone."""
@@ -344,7 +361,7 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             if msg_type == "stream":
                 if not truncated:
                     text = content.get("text", "")
-                    buffered += len(text)
+                    buffered += len(text.encode("utf-8", "ignore"))
                     if buffered > self._max_output_bytes:
                         truncated = True
                         self._interrupt_and_drain(ws, msg_id, kernel_id)  # runaway output: stop and drain
@@ -354,7 +371,17 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                     else:
                         stdout_parts.append(text)
             elif msg_type in ("execute_result", "display_data"):
-                self._capture_rich(result, msg_type, content)
+                # Rich outputs (results/display_data/plots) count against the SAME
+                # byte budget as streams: untrusted code can emit a huge DataFrame /
+                # IPython.display.HTML / many large images that the backend would
+                # otherwise buffer unbounded. Drop and truncate once over budget.
+                if not truncated:
+                    buffered += self._rich_payload_bytes(content)
+                    if buffered > self._max_output_bytes:
+                        truncated = True
+                        self._interrupt_and_drain(ws, msg_id, kernel_id)
+                        break
+                    self._capture_rich(result, msg_type, content)
             elif msg_type == "error":
                 result.status = "error"
                 result.exit_code = 1
@@ -388,6 +415,20 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
         result.error_name = name
         result.error_value = value
         result.exit_code = -1
+
+    @staticmethod
+    def _rich_payload_bytes(content: dict) -> int:
+        """Approximate the serialized byte size of a rich-output bundle's data payloads."""
+        total = 0
+        for value in (content.get("data") or {}).values():
+            if isinstance(value, str):
+                total += len(value.encode("utf-8", "ignore"))
+            else:
+                try:
+                    total += len(json.dumps(value, default=str).encode("utf-8", "ignore"))
+                except Exception:
+                    total += len(str(value).encode("utf-8", "ignore"))
+        return total
 
     @staticmethod
     def _capture_rich(result: ExecResult, msg_type: str, content: dict) -> None:

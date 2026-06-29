@@ -34,8 +34,12 @@ class _FakeFile:
     def __init__(self, data: bytes) -> None:
         self._data = data
 
-    def read(self) -> bytes:
-        return self._data
+    def read(self, size: int = -1) -> bytes:
+        # Mirror BinaryIO.read(n): the bridge does a bounded read to cap memory.
+        return self._data if size is None or size < 0 else self._data[:size]
+
+    def close(self) -> None:
+        pass
 
 
 class _FakeStorage:
@@ -222,6 +226,22 @@ def test_bridge_missing_upload_path_errors(monkeypatch):
     att["path"] = None
     with pytest.raises(AttachmentBridgeError, match="no stored content"):
         bridge_attachment(att, user_id=USER, conversation_id=CONV)
+
+
+@pytest.mark.unit
+def test_bridge_rejects_oversize_attachment_before_reading(monkeypatch):
+    # An oversize attachment is rejected via its authoritative ``size`` column,
+    # BEFORE the bytes are buffered into worker memory (a memory-DoS guard).
+    from application.core.settings import settings
+
+    _FakeArtifactsRepo.bridged = {}
+    storage, calls = _patch_bridge(monkeypatch)
+    att = _attachment()
+    att["size"] = int(settings.ARTIFACT_MAX_BYTES) + 1
+    with pytest.raises(AttachmentBridgeError, match="size limit"):
+        bridge_attachment(att, user_id=USER, conversation_id=CONV)
+    assert calls == []  # never persisted
+    assert storage.requested == []  # never even read the bytes
 
 
 # ---------------------------------------------------------------------------

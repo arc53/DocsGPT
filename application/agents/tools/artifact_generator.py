@@ -268,13 +268,22 @@ _RENDERERS: Dict[str, str] = {
         "import json\n"
         "from openpyxl import Workbook\n"
         "spec = json.load(open({spec_path!r}))\n"
+        # Formula-injection guard: spec content is model / prompt-injection
+        # controlled, so neutralize string cells openpyxl would treat as a live
+        # formula (leading =,+,-,@ or a control char) by quote-prefixing them.
+        "def _safe_cell(c):\n"
+        "    if c is None:\n"
+        "        return ''\n"
+        "    if isinstance(c, str) and c[:1] in ('=', '+', '-', '@', chr(9), chr(13), chr(10)):\n"
+        "        return \"'\" + c\n"
+        "    return c\n"
         "wb = Workbook()\n"
         "wb.remove(wb.active)\n"
         "for idx, sheet in enumerate(spec.get('sheets', [])):\n"
         "    name = str(sheet.get('name') or ('Sheet%d' % (idx + 1)))[:31]\n"
         "    ws = wb.create_sheet(title=name)\n"
         "    for row in (sheet.get('rows') or []):\n"
-        "        ws.append([('' if c is None else c) for c in row])\n"
+        "        ws.append([_safe_cell(c) for c in row])\n"
         "if not wb.sheetnames:\n"
         "    wb.create_sheet(title='Sheet1')\n"
         "wb.save({out_path!r})\n"

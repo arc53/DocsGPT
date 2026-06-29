@@ -30,6 +30,8 @@ STRANGER = "stranger-2"
 ART_TEXT = "11111111-1111-4111-8111-111111111111"
 ART_BIN = "22222222-2222-4222-8222-222222222222"
 ART_FOREIGN = "33333333-3333-4333-8333-333333333333"
+# Owned by OWNER but produced by a DIFFERENT agent — must be invisible to owner-key.
+ART_OTHER_AGENT = "44444444-4444-4444-8444-444444444444"
 
 
 @contextmanager
@@ -38,9 +40,12 @@ def _fake_conn():
 
 
 class _FakeAgents:
-    """Stub AgentsRepository: maps api_key -> agent row (or None)."""
+    """Stub AgentsRepository: maps api_key -> agent row (id + user_id) or None."""
 
-    _MAP = {"owner-key": {"user_id": OWNER}, "stranger-key": {"user_id": STRANGER}}
+    _MAP = {
+        "owner-key": {"id": "agent-owner", "user_id": OWNER},
+        "stranger-key": {"id": "agent-stranger", "user_id": STRANGER},
+    }
 
     def __init__(self, conn):
         pass
@@ -58,8 +63,16 @@ class _FakeArtifacts:
     def __init__(self, conn):
         pass
 
-    def list_artifacts(self, user_id=None, conversation_id=None, workflow_run_id=None):
-        return [a for a in self.artifacts.values() if a["user_id"] == user_id]
+    def list_artifacts_for_agent(self, agent_id, user_id):
+        return [
+            a
+            for a in self.artifacts.values()
+            if a.get("agent_id") == agent_id and a["user_id"] == user_id
+        ]
+
+    def artifact_in_agent_scope(self, artifact_id, agent_id):
+        art = self.artifacts.get(artifact_id)
+        return art is not None and art.get("agent_id") == agent_id
 
     def get_artifact(self, artifact_id):
         return self.artifacts.get(artifact_id)
@@ -81,13 +94,22 @@ class _FakeStorage:
 def _wire(monkeypatch):
     """Point the service's DB/storage seams at the in-memory fakes."""
     _FakeArtifacts.artifacts = {
-        ART_TEXT: {"id": ART_TEXT, "user_id": OWNER, "kind": "data", "title": "notes", "current_version": 2},
-        ART_BIN: {"id": ART_BIN, "user_id": OWNER, "kind": "image", "title": "chart", "current_version": 1},
+        ART_TEXT: {"id": ART_TEXT, "user_id": OWNER, "agent_id": "agent-owner", "kind": "data", "title": "notes", "current_version": 2},
+        ART_BIN: {"id": ART_BIN, "user_id": OWNER, "agent_id": "agent-owner", "kind": "image", "title": "chart", "current_version": 1},
         ART_FOREIGN: {
             "id": ART_FOREIGN,
             "user_id": STRANGER,
+            "agent_id": "agent-stranger",
             "kind": "data",
             "title": "secret",
+            "current_version": 1,
+        },
+        ART_OTHER_AGENT: {
+            "id": ART_OTHER_AGENT,
+            "user_id": OWNER,
+            "agent_id": "agent-other",
+            "kind": "data",
+            "title": "other-agent",
             "current_version": 1,
         },
     }
@@ -95,6 +117,7 @@ def _wire(monkeypatch):
         (ART_TEXT, 2): {"mime_type": "text/csv", "storage_path": "k/text.csv", "preview_text": None},
         (ART_BIN, 1): {"mime_type": "image/png", "storage_path": "k/chart.png", "preview_text": None},
         (ART_FOREIGN, 1): {"mime_type": "text/plain", "storage_path": "k/secret.txt", "preview_text": None},
+        (ART_OTHER_AGENT, 1): {"mime_type": "text/plain", "storage_path": "k/other.txt", "preview_text": None},
     }
     monkeypatch.setattr(svc, "db_readonly", _fake_conn)
     monkeypatch.setattr(svc, "AgentsRepository", _FakeAgents)
@@ -155,6 +178,12 @@ class TestReadArtifactResource:
         _FakeArtifacts.versions[(ART_TEXT, 2)]["preview_text"] = "cached preview"
         res = svc.read_artifact_resource("owner-key", f"artifact://{ART_TEXT}/v2")
         assert res.text == "cached preview"
+
+    def test_read_denies_owner_artifact_from_another_agent(self):
+        # Owned by the same user but produced by a different agent: a per-agent key
+        # is scoped like its search and must NOT read the owner's other-agent corpus.
+        with pytest.raises(svc.ResourceDenied):
+            svc.read_artifact_resource("owner-key", f"artifact://{ART_OTHER_AGENT}/v1")
 
     def test_foreign_owner_is_denied(self):
         with pytest.raises(svc.ResourceDenied):

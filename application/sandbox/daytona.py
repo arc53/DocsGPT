@@ -89,6 +89,11 @@ class DaytonaSandbox(CodeSandbox):
         self._max_sandboxes = max_sandboxes
         self._handles: Dict[str, _Handle] = {}
         self._lock = threading.Lock()
+        # Session ids with a create/reattach in flight; a concurrent open() for the
+        # same id waits here and reuses the result, so two threads never create (and
+        # pay for) two cloud sandboxes for one session.
+        self._creating: set = set()
+        self._create_cv = threading.Condition(self._lock)
 
     # -- Helpers ---------------------------------------------------------
 
@@ -128,41 +133,50 @@ class DaytonaSandbox(CodeSandbox):
         ``max_sandboxes`` so a flood of sessions cannot run up unbounded paid resources.
         """
         self._validate_session_id(session_id)
-        with self._lock:
+        # Wait out any in-flight create/reattach for this session, then reuse its
+        # handle; otherwise claim the in-flight slot so we are the sole creator.
+        with self._create_cv:
+            while session_id in self._creating:
+                self._create_cv.wait()
             existing = self._handles.get(session_id)
-        if existing is not None:
-            return existing.sandbox_id
-
-        # Cross-restart reattach: an earlier process may have created (and labelled)
-        # a sandbox for this session that is still live in the cloud. Reuse it
-        # instead of leaking it behind a brand-new create.
-        reattached = self._reattach_existing(session_id)
-        if reattached is not None:
-            self._prime(reattached)
-            return reattached.sandbox_id
-
-        with self._lock:
-            if len(self._handles) >= self._max_sandboxes:
-                raise RuntimeError(
-                    f"Daytona sandbox cap reached ({self._max_sandboxes} live); refusing to create another"
-                )
-
-        sandbox = self._create_sandbox(session_id)
-        # Crash-safe register: if anything between create and registration raises,
-        # delete the just-created sandbox so it cannot orphan as a paid resource.
+            if existing is not None:
+                return existing.sandbox_id
+            self._creating.add(session_id)
         try:
-            sandbox_id = sandbox.id
-            handle = _Handle(sandbox, sandbox_id, _WORKSPACE_ROOT)
+            # Cross-restart reattach: an earlier process may have created (and labelled)
+            # a sandbox for this session that is still live in the cloud. Reuse it
+            # instead of leaking it behind a brand-new create.
+            reattached = self._reattach_existing(session_id)
+            if reattached is not None:
+                self._prime(reattached)
+                return reattached.sandbox_id
+
             with self._lock:
-                self._handles[session_id] = handle
-        except Exception:
+                if len(self._handles) >= self._max_sandboxes:
+                    raise RuntimeError(
+                        f"Daytona sandbox cap reached ({self._max_sandboxes} live); refusing to create another"
+                    )
+
+            sandbox = self._create_sandbox(session_id)
+            # Crash-safe register: if anything between create and registration raises,
+            # delete the just-created sandbox so it cannot orphan as a paid resource.
             try:
-                self._client.delete(sandbox)
-            except Exception as del_exc:  # noqa: BLE001 - cleanup is best-effort
-                logger.warning("Failed to delete orphaned Daytona sandbox during open: %s", del_exc)
-            raise
-        self._prime(handle)
-        return sandbox_id
+                sandbox_id = sandbox.id
+                handle = _Handle(sandbox, sandbox_id, _WORKSPACE_ROOT)
+                with self._lock:
+                    self._handles[session_id] = handle
+            except Exception:
+                try:
+                    self._client.delete(sandbox)
+                except Exception as del_exc:  # noqa: BLE001 - cleanup is best-effort
+                    logger.warning("Failed to delete orphaned Daytona sandbox during open: %s", del_exc)
+                raise
+            self._prime(handle)
+            return sandbox_id
+        finally:
+            with self._create_cv:
+                self._creating.discard(session_id)
+                self._create_cv.notify_all()
 
     def _reattach_existing(self, session_id: str) -> Optional["_Handle"]:
         """Find a live cloud sandbox labelled for ``session_id`` and rebuild a handle from it.

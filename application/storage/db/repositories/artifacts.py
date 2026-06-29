@@ -184,6 +184,36 @@ class ArtifactsRepository:
         )
         return [_artifact_to_dict(r) for r in result.fetchall()]
 
+    def list_artifacts_for_agent(self, agent_id: str, user_id: str) -> list[dict]:
+        """List artifacts whose parent conversation belongs to ``agent_id`` (owner-scoped).
+
+        Scopes a per-agent api-key's artifact visibility to the conversations that
+        agent produced, so the key cannot enumerate the owner's whole corpus.
+        """
+        result = self._conn.execute(
+            text(
+                "SELECT a.* FROM artifacts a "
+                "JOIN conversations c ON a.conversation_id = c.id "
+                "WHERE c.agent_id = CAST(:agent_id AS uuid) AND a.user_id = :user_id "
+                "ORDER BY a.created_at DESC, a.id DESC"
+            ),
+            {"agent_id": str(agent_id), "user_id": user_id},
+        )
+        return [_artifact_to_dict(r) for r in result.fetchall()]
+
+    def artifact_in_agent_scope(self, artifact_id: str, agent_id: str) -> bool:
+        """True if ``artifact_id``'s parent conversation belongs to ``agent_id``."""
+        result = self._conn.execute(
+            text(
+                "SELECT 1 FROM artifacts a "
+                "JOIN conversations c ON a.conversation_id = c.id "
+                "WHERE a.id = CAST(:id AS uuid) AND c.agent_id = CAST(:agent_id AS uuid) "
+                "LIMIT 1"
+            ),
+            {"id": artifact_id, "agent_id": str(agent_id)},
+        )
+        return result.fetchone() is not None
+
     def position_in_parent(
         self,
         artifact_id: str,

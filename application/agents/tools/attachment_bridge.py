@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from application.core.settings import settings
 from application.sandbox.artifacts_capture import QuotaExceeded, persist_new_artifact
 from application.storage.db.repositories.artifacts import ArtifactsRepository
 from application.storage.db.repositories.attachments import AttachmentsRepository
@@ -109,11 +110,30 @@ def bridge_attachment(
         raise AttachmentBridgeError(f"attachment {attachment_id} has no stored content.")
     filename = attachment.get("filename") or "attachment"
     mime_type = attachment.get("mime_type") or "application/octet-stream"
+    # Reject oversize attachments BEFORE buffering them: the authoritative ``size``
+    # column lets us avoid pulling a multi-hundred-MB file fully into worker memory,
+    # and the bounded read below backstops a missing/lying ``size``.
+    max_bytes = int(getattr(settings, "ARTIFACT_MAX_BYTES", 0) or 0)
+    declared_size = attachment.get("size")
+    if max_bytes and isinstance(declared_size, (int, float)) and declared_size > max_bytes:
+        raise AttachmentBridgeError(
+            f"attachment {attachment_id} exceeds the {max_bytes}-byte artifact size limit."
+        )
     try:
-        data = StorageCreator.get_storage().get_file(upload_path).read()
+        file_obj = StorageCreator.get_storage().get_file(upload_path)
+        try:
+            data = file_obj.read(max_bytes + 1) if max_bytes else file_obj.read()
+        finally:
+            close = getattr(file_obj, "close", None)
+            if callable(close):
+                close()
     except Exception as exc:
         logger.exception("attachment_bridge: failed to read attachment bytes")
         raise AttachmentBridgeError(f"failed to read attachment {attachment_id}.") from exc
+    if max_bytes and len(data) > max_bytes:
+        raise AttachmentBridgeError(
+            f"attachment {attachment_id} exceeds the {max_bytes}-byte artifact size limit."
+        )
     try:
         ref = persist_new_artifact(
             user_id=user_id,

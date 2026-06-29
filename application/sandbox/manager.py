@@ -92,17 +92,28 @@ class SandboxManager:
             if session is not None and session.ready:
                 session.last_access = now
                 return session.handle
-            # A placeholder for this id means another thread is mid cold-open; refresh
-            # it and re-reserve below. Both threads call the (idempotent) backend.open,
-            # which dedupes by session id, so no cap overshoot and no orphaned runtime.
             reaped = self._reap_locked(now)
-            evicted = self._make_room_locked()
-            self._sessions[session_id] = _Session(
-                session_id=session_id,
-                ttl=self._clamp_ttl(ttl),
-                created_at=now,
-                last_access=now,
-            )
+            if session is None:
+                # Genuinely new key: evict an LRU-idle victim if at capacity (may
+                # raise SandboxCapacityError), then RESERVE a placeholder slot so
+                # concurrent opens can't overshoot the cap.
+                evicted = self._make_room_locked()
+                self._sessions[session_id] = _Session(
+                    session_id=session_id,
+                    ttl=self._clamp_ttl(ttl),
+                    created_at=now,
+                    last_access=now,
+                )
+            else:
+                # A not-yet-ready placeholder for THIS id already occupies a cap slot
+                # (another thread is mid cold-open). Overwriting the same key adds no
+                # slot, so do NOT call _make_room_locked here -- it would wrongly evict
+                # an innocent LRU-idle session or raise SandboxCapacityError. Refresh
+                # in place; both threads call the (idempotent) backend.open and the
+                # finalize step re-checks before binding the handle.
+                evicted = None
+                session.last_access = now
+                session.ttl = self._clamp_ttl(ttl)
 
         # Cold backend open and victim teardown run OUTSIDE the lock.
         for sid, handle in reaped:
