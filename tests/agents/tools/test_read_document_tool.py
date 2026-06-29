@@ -60,8 +60,15 @@ class _FakeAsyncResult:
     def __init__(self, payload=None, exc=None):
         self._payload = payload
         self._exc = exc
+        self.get_kwargs = None
 
-    def get(self, timeout=None):
+    def get(self, timeout=None, disable_sync_subtasks=True):
+        # ``read_document`` must pass ``disable_sync_subtasks=False`` so the await
+        # works from inside a Celery worker (headless/scheduled agents).
+        self.get_kwargs = {
+            "timeout": timeout,
+            "disable_sync_subtasks": disable_sync_subtasks,
+        }
         if self._exc is not None:
             raise self._exc
         return self._payload
@@ -76,7 +83,9 @@ def _patch_task(monkeypatch, *, payload=None, exc=None):
     def _apply_async(args=None, queue=None, **kw):
         captured["args"] = args
         captured["queue"] = queue
-        return _FakeAsyncResult(payload=payload, exc=exc)
+        result = _FakeAsyncResult(payload=payload, exc=exc)
+        captured["result"] = result
+        return result
 
     monkeypatch.setattr(tasks.parse_document, "apply_async", _apply_async)
     return captured
@@ -170,6 +179,9 @@ def test_resolves_input_then_enqueues_and_returns_payload(monkeypatch):
     assert captured["queue"] == rd.settings.DOCUMENT_PARSE_QUEUE
     options = captured["args"][3]
     assert options["output"] == "markdown" and options["persist"] is False
+    # The await must opt out of Celery's worker-self-deadlock guard, else it
+    # raises RuntimeError from inside a prefork worker (headless/scheduled agents).
+    assert captured["result"].get_kwargs["disable_sync_subtasks"] is False
 
 
 @pytest.mark.unit

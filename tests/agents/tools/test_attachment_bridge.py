@@ -417,7 +417,7 @@ def test_read_document_bridges_attachment_then_enqueues(monkeypatch):
     captured: Dict[str, Any] = {}
 
     class _AR:
-        def get(self, timeout=None):
+        def get(self, timeout=None, disable_sync_subtasks=True):
             return {"status": "ok", "content": "parsed", "truncated": False}
 
     import application.api.user.tasks as tasks

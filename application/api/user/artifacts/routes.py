@@ -11,6 +11,7 @@ from flask_restx import Namespace, Resource
 from application.api import api
 from application.api.user.artifacts.authz import (
     authorize_artifact,
+    authorize_artifact_write,
     resolve_authenticated_user,
     user_can_access_conversation,
 )
@@ -341,7 +342,10 @@ class RestoreArtifact(Resource):
                     return make_response(
                         jsonify({"success": False, "message": "Artifact not found"}), 404
                     )
-                if not authorize_artifact(conn, artifact, user_id):
+                # Restore is a WRITE (it appends a new current version); share
+                # links / shared_with collaborators inherit read access only, so
+                # gate on the stricter owner-required write check.
+                if not authorize_artifact_write(conn, artifact, user_id):
                     return make_response(
                         jsonify({"success": False, "message": "Forbidden"}), 403
                     )

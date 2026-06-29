@@ -467,6 +467,44 @@ class TestRestoreArtifact:
         )
         assert resp.status_code == 403
 
+    def test_restore_anonymous_share_token_holder_denied(
+        self, _patch_db, flask_app
+    ):
+        # A share link inherits read/download access only; restore is a WRITE and
+        # an anonymous link holder must NOT be able to mutate the artifact.
+        from application.api.user.artifacts.routes import RestoreArtifact
+
+        conv = _make_conversation(_patch_db)
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]), spec={"body": "v1"}
+        )
+        ArtifactsRepository(_patch_db).append_version(art["id"], spec={"body": "v2"})
+        share = SharedConversationsRepository(_patch_db).create(str(conv["id"]), OWNER)
+
+        resp = _call(
+            flask_app, RestoreArtifact, art["id"], token=None,
+            query={"share_token": str(share["uuid"])},
+            json_body={"version": 1}, method="post",
+        )
+        assert resp.status_code == 403
+        # The artifact is unchanged (still at version 2, not reverted/appended).
+        assert ArtifactsRepository(_patch_db).get_artifact(art["id"])["current_version"] == 2
+
+    def test_restore_shared_with_collaborator_denied(self, _patch_db, flask_app):
+        # A read-only ``shared_with`` collaborator can GET but not restore.
+        from application.api.user.artifacts.routes import RestoreArtifact
+
+        conv = _make_conversation(_patch_db)
+        ConversationsRepository(_patch_db).add_shared_user(str(conv["id"]), SHARED_USER)
+        art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
+        ArtifactsRepository(_patch_db).append_version(art["id"], spec={"body": "v2"})
+
+        resp = _call(
+            flask_app, RestoreArtifact, art["id"], token={"sub": SHARED_USER},
+            json_body={"version": 1}, method="post",
+        )
+        assert resp.status_code == 403
+
 
 # ---------------------------------------------------------------------------
 # Malformed artifact_id path segment -> 404 (no CAST(:id AS uuid) txn poison)

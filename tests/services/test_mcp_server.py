@@ -144,11 +144,14 @@ async def _call_next_empty(context):
 class TestArtifactResourcesMiddleware:
     @pytest.mark.asyncio
     async def test_list_appends_principal_artifacts(self):
-        import mcp.types as mt
+        from fastmcp.resources.types import TextResource
+
         from application.mcp_server import ArtifactResourcesMiddleware
 
         mw = ArtifactResourcesMiddleware()
-        res = mt.Resource(uri="artifact://a/v1", name="x", mimeType="text/plain")
+        res = TextResource(
+            uri="artifact://a/v1", name="x", mime_type="text/plain", text=""
+        )
         with (
             patch("application.mcp_server._extract_bearer_token", return_value="k"),
             patch(
@@ -157,6 +160,35 @@ class TestArtifactResourcesMiddleware:
         ):
             out = await mw.on_list_resources(SimpleNamespace(), _call_next_empty)
         assert [str(r.uri) for r in out] == ["artifact://a/v1"]
+
+    @pytest.mark.asyncio
+    async def test_list_resources_wire_pipeline_accepts_artifact(self):
+        # Regression for the resources/list crash: drive the real server pipeline
+        # (is_enabled / auth filter / dedupe / to_mcp_resource), which raises
+        # AttributeError on a raw mcp.types.Resource. A FastMCP resource passes.
+        from fastmcp.resources.types import TextResource
+
+        from application.mcp_server import mcp
+
+        res = TextResource(
+            uri="artifact://a/v1",
+            name="x",
+            title="x",
+            description="d",
+            mime_type="text/plain",
+            text="",
+        )
+        with (
+            patch("application.mcp_server._extract_bearer_token", return_value="k"),
+            patch(
+                "application.mcp_server.list_artifact_resources", return_value=[res]
+            ),
+        ):
+            resources = await mcp.list_resources()
+        assert "artifact://a/v1" in [str(r.uri) for r in resources]
+        # Every listed resource must encode to the MCP wire shape.
+        for r in resources:
+            assert str(r.to_mcp_resource().uri)
 
     @pytest.mark.asyncio
     async def test_read_text_wraps_as_text_contents(self):

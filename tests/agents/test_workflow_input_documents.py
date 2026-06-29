@@ -25,6 +25,8 @@ from application.storage.storage_creator import StorageCreator
 pytestmark = pytest.mark.integration
 
 OWNER = "user-bridge"
+# A distinct caller for the shared-agent case (caller != workflow owner).
+RUNNER = "user-runner"
 
 
 def _wire(pg_engine, tmp_path, monkeypatch) -> LocalStorage:
@@ -179,6 +181,75 @@ def test_attachments_bridge_to_run_scoped_artifacts(pg_engine, tmp_path, monkeyp
         v = ArtifactsRepository(conn).get_version(refs[0]["artifact_id"], 1)
     with storage.get_file(v["storage_path"]) as fh:
         assert fh.read() == a1
+
+
+def test_shared_agent_run_and_artifacts_owned_by_caller(pg_engine, tmp_path, monkeypatch):
+    """Shared agent (caller != owner): the run + bridged artifacts are owned by the caller.
+
+    The workflow row is still resolved against its owner, but the run.user_id and
+    the artifact owner are the caller, so quota is charged to the uploader and the
+    caller (not the agent owner) can read the run's artifacts.
+    """
+    storage = _wire(pg_engine, tmp_path, monkeypatch)
+    wf_id = _make_workflow(pg_engine, owner=OWNER)
+
+    attachments = [_stage_attachment(storage, b"caller-doc", "c.txt", "text/plain")]
+    agent = _agent(wf_id, attachments, owner=OWNER)
+    # Simulate a shared-agent invocation: caller identity differs from the owner.
+    agent.initial_user_id = RUNNER
+    agent.user = RUNNER
+
+    _patch_engine(monkeypatch)
+    list(agent._gen_inner("summarize", log_context=None))
+    engine = _RecordingEngine.instances[-1]
+    run_id = engine.workflow_run_id
+
+    with pg_engine.connect() as conn:
+        run = WorkflowRunsRepository(conn).get(run_id)
+        assert run is not None
+        # The run is owned by the caller, not the workflow owner.
+        assert run["user_id"] == RUNNER
+
+        refs = engine.captured_inputs["input_documents"]
+        assert len(refs) == 1
+        owner_row = conn.execute(
+            text("SELECT user_id FROM artifacts WHERE workflow_run_id = CAST(:r AS uuid)"),
+            {"r": run_id},
+        ).fetchone()
+        assert owner_row[0] == RUNNER
+
+    # authz: the caller can reach the run's artifacts; the agent owner cannot.
+    # ``authorize_artifact`` uses the passed conn but reads ``request.args`` for a
+    # share token, so it needs a request context.
+    from flask import Flask
+
+    from application.api.user.artifacts.authz import authorize_artifact
+
+    app = Flask(__name__)
+    with app.test_request_context():
+        with pg_engine.connect() as conn:
+            artifact = ArtifactsRepository(conn).get_artifact(refs[0]["artifact_id"])
+            assert authorize_artifact(conn, artifact, RUNNER) is True
+            assert authorize_artifact(conn, artifact, OWNER) is False
+
+
+def test_code_state_excludes_chat_history(pg_engine, tmp_path, monkeypatch):
+    """A code node's state.json projection omits the caller's chat_history."""
+    _wire(pg_engine, tmp_path, monkeypatch)
+    wf_id = _make_workflow(pg_engine)
+    agent = _agent(wf_id, [], owner=OWNER)
+    agent.chat_history = [{"prompt": "secret question", "response": "secret answer"}]
+
+    _patch_engine(monkeypatch)
+    list(agent._gen_inner("do it", log_context=None))
+    engine = _RecordingEngine.instances[-1]
+
+    projected = engine._json_safe_state()
+    # chat_history is set in state but must never be staged for sandboxed code.
+    assert "chat_history" in engine.state
+    assert "chat_history" not in projected
+    # Legitimate state (the query, node inputs) is still exposed.
+    assert projected.get("query") == "do it"
 
 
 def test_attachments_capped_per_run(pg_engine, tmp_path, monkeypatch):

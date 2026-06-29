@@ -43,6 +43,11 @@ TEMPLATE_RESERVED_NAMESPACES = {"agent", "artifacts", "system", "source", "tools
 # only accepts [A-Za-z0-9_-]+, so any disallowed character is stripped before binding.
 _SESSION_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
 
+# State keys never staged into a code node's ``state.json``. ``chat_history`` is
+# the caller's conversation and must not be reachable by owner-authored,
+# egress-open sandbox code (see ``_json_safe_state``).
+_CODE_STATE_EXCLUDED_KEYS = frozenset({"chat_history"})
+
 
 class WorkflowEngine:
     MAX_EXECUTION_STEPS = 50
@@ -701,13 +706,20 @@ class WorkflowEngine:
         return _SESSION_ID_RE.sub("-", str(self.workflow_run_id)) or str(uuid.uuid4())
 
     def _json_safe_state(self) -> Dict[str, Any]:
-        """Project ``self.state`` to a JSON-safe dict (the code node reads it from state.json)."""
+        """Project ``self.state`` to a JSON-safe dict (the code node reads it from state.json).
+
+        ``chat_history`` is excluded: it is the *caller's* full conversation, and a
+        code node (authored by the workflow owner, who may differ from the runner
+        in a shared agent) has no legitimate need for it. Since sandbox egress is
+        open by design, staging it would let owner-authored code exfiltrate the
+        runner's conversation. Node outputs and ``query`` are still exposed.
+        """
         projection: Dict[str, Any] = {}
         for key, value in self.state.items():
             if not isinstance(key, str):
                 continue
             normalized_key = key.strip()
-            if not normalized_key:
+            if not normalized_key or normalized_key in _CODE_STATE_EXCLUDED_KEYS:
                 continue
             projection[normalized_key] = value
         return projection

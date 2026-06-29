@@ -120,8 +120,21 @@ class TestListArtifactResources:
         out = {str(r.uri): r for r in svc.list_artifact_resources("owner-key")}
         assert out[f"artifact://{ART_TEXT}/v2"].name == "notes"
         # The list row never advertises a wildcard/wrong type; the image kind
-        # falls back to the generic octet-stream hint.
-        assert out[f"artifact://{ART_BIN}/v1"].mimeType == "application/octet-stream"
+        # falls back to the generic octet-stream hint. FastMCP Resource uses
+        # ``mime_type`` (and must survive ``to_mcp_resource()`` for the wire).
+        assert out[f"artifact://{ART_BIN}/v1"].mime_type == "application/octet-stream"
+
+    def test_resources_are_fastmcp_and_render_to_wire(self):
+        # Regression: ``resources/list`` must yield FastMCP Resource objects so
+        # the server's list pipeline (reads ``.version``/``.auth``, calls
+        # ``to_mcp_resource``) does not raise AttributeError on a raw mcp.types.
+        from fastmcp.resources.base import Resource as FastMCPResource
+
+        out = svc.list_artifact_resources("owner-key")
+        assert out and all(isinstance(r, FastMCPResource) for r in out)
+        for r in out:
+            wire = r.to_mcp_resource()
+            assert str(wire.uri).startswith("artifact://")
 
 
 @pytest.mark.unit

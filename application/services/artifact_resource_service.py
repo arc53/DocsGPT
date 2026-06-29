@@ -9,8 +9,9 @@ as the HTTP artifact routes). Resources are scoped strictly to that principal:
 unresolvable principal yields an empty list / a denied read -- never another
 principal's artifact.
 
-Returns plain ``mcp.types`` objects so both the FastMCP middleware adapter and
-the unit tests can consume them without depending on FastMCP internals.
+``resources/list`` returns FastMCP ``Resource`` objects so they pass straight
+through the server's list/dedupe/wire pipeline; ``resources/read`` is served by
+the MCP middleware, which streams the real bytes for each ``artifact://`` uri.
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional
 
-import mcp.types as mt
+from fastmcp.resources.base import Resource
+from fastmcp.resources.types import TextResource
 from sqlalchemy.exc import DataError, DBAPIError
 
 from application.core.settings import settings
@@ -109,8 +111,17 @@ def _resource_uri(artifact_id: str, version: int) -> str:
     return f"artifact://{artifact_id}/v{version}"
 
 
-def list_artifact_resources(api_key: Optional[str]) -> List[mt.Resource]:
-    """List the calling principal's artifacts as MCP resources (empty if unresolved)."""
+def list_artifact_resources(api_key: Optional[str]) -> List[Resource]:
+    """List the calling principal's artifacts as FastMCP resources (empty if unresolved).
+
+    Returns FastMCP ``Resource`` objects (not raw ``mcp.types.Resource``): the
+    server's ``resources/list`` pipeline reads FastMCP-only attributes
+    (``.version``, ``.auth``, ``is_enabled``) and calls ``to_mcp_resource()`` for
+    the wire encoding, so a raw ``mcp.types.Resource`` mixed into the list would
+    raise ``AttributeError``. The placeholder ``text`` is never served -- the
+    middleware's ``on_read_resource`` intercepts every ``artifact://`` read and
+    streams the real bytes via :func:`read_artifact_resource`.
+    """
     user_id = _resolve_principal(api_key)
     if not user_id:
         return []
@@ -121,18 +132,19 @@ def list_artifact_resources(api_key: Optional[str]) -> List[mt.Resource]:
         logger.exception("artifact resource: list failed")
         return []
 
-    resources: List[mt.Resource] = []
+    resources: List[Resource] = []
     for row in rows[:_RESOURCE_LIST_LIMIT]:
         artifact_id = str(row.get("id"))
         version = row.get("current_version") or 1
         title = row.get("title") or f"artifact-{artifact_id}"
         resources.append(
-            mt.Resource(
+            TextResource(
                 uri=_resource_uri(artifact_id, version),
                 name=title,
                 title=title,
                 description=f"DocsGPT {row.get('kind') or 'file'} artifact",
-                mimeType=_kind_mime_hint(row.get("kind")),
+                mime_type=_kind_mime_hint(row.get("kind")),
+                text="",
             )
         )
     return resources

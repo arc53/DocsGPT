@@ -66,3 +66,29 @@ def authorize_artifact(conn, artifact: dict, user_id: Optional[str]) -> bool:
         return run is not None and run.get("user_id") == user_id
     # No parent row reachable -> deny (e.g. deleted conversation/run).
     return False
+
+
+def authorize_artifact_write(conn, artifact: dict, user_id: Optional[str]) -> bool:
+    """Authorize a *mutating* artifact operation (e.g. restore).
+
+    Stricter than :func:`authorize_artifact`: a write requires an authenticated
+    owner of the parent. Share links and ``shared_with`` collaborators inherit
+    read/download access only, so an anonymous (``user_id`` is ``None``) or
+    share-token-only caller is denied -- they can read an artifact but never
+    mutate it.
+    """
+    if not user_id:
+        return False
+    conversation_id = artifact.get("conversation_id")
+    workflow_run_id = artifact.get("workflow_run_id")
+
+    if conversation_id is not None:
+        return (
+            ConversationsRepository(conn).get_owned(str(conversation_id), user_id)
+            is not None
+        )
+    if workflow_run_id is not None:
+        run = WorkflowRunsRepository(conn).get(str(workflow_run_id))
+        return run is not None and run.get("user_id") == user_id
+    # No parent row reachable -> deny (e.g. deleted conversation/run).
+    return False

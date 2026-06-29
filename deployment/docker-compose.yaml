@@ -32,6 +32,11 @@ services:
       - SANDBOX_KERNEL_NAME=docsgpt-python
     ports:
       - "7091:7091"
+    networks:
+      # `default` reaches the internet + the sandbox gateway; `data-net` reaches
+      # redis/postgres (which are NOT on the sandbox's networks).
+      - default
+      - data-net
     volumes:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
@@ -50,6 +55,9 @@ services:
     # For heavy/OCR parsing run a separate worker with `-Q parsing` (see
     # deployment/sandbox/README.md).
     command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing
+    networks:
+      - default
+      - data-net
     env_file:
       - ../.env
     environment:
@@ -106,11 +114,18 @@ services:
 
   redis:
     image: redis:6-alpine
+    # Data plane only: NOT reachable from the code-exec sandbox (which has no
+    # auth on this broker, so a reachable Redis = Celery task injection -> RCE).
+    networks:
+      - data-net
     ports:
       - 6379:6379
 
   postgres:
     image: postgres:16-alpine
+    # Data plane only (see redis): kept off the sandbox's networks.
+    networks:
+      - data-net
     environment:
       - POSTGRES_USER=docsgpt
       - POSTGRES_PASSWORD=docsgpt
@@ -129,6 +144,13 @@ networks:
   # Internal-only network for the sandbox runner (no external egress route via
   # this network; the runner still reaches the internet via the default bridge).
   sandbox-net:
+    internal: true
+  # Internal-only data plane. redis (broker/cache) and postgres live here with
+  # backend/worker, but the code-exec sandbox is NOT attached, so arbitrary
+  # sandboxed code cannot reach the unauthenticated broker (Celery task
+  # injection -> worker RCE) or the database. For full internet-egress
+  # containment additionally apply deployment/optional/docker-compose.optional.sandbox-egress.yaml.
+  data-net:
     internal: true
 
 volumes:

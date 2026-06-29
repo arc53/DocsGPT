@@ -60,14 +60,27 @@ class WorkflowAgent(BaseAgent):
             return
         self._engine = WorkflowEngine(graph, self)
 
-        owner_id = self._resolve_owner_id()
-        pg_workflow_id = self._precreate_workflow_run(owner_id, query)
+        # Two distinct identities: the workflow *owner* (A) owns the workflow
+        # definition and is used to resolve the workflow row; the *runner* (B,
+        # the caller) owns the run and its artifacts. They are the same user
+        # except for a shared agent, where B != A. Owning run artifacts by the
+        # runner means quota is charged to the uploader and the caller can read
+        # the outputs of the run they triggered (authz is run.user_id == caller).
+        workflow_owner_id = self._resolve_owner_id()
+        run_user_id = self._resolve_run_user_id(workflow_owner_id)
+        pg_workflow_id = self._precreate_workflow_run(
+            workflow_owner_id, run_user_id, query
+        )
         self._run_persisted = pg_workflow_id is not None
 
-        input_documents = self._bridge_attachments(owner_id, persisted=self._run_persisted)
+        input_documents = self._bridge_attachments(
+            run_user_id, persisted=self._run_persisted
+        )
 
         yield from self._engine.execute({"input_documents": input_documents}, query)
-        self._finalize_workflow_run(owner_id, pg_workflow_id, query)
+        self._finalize_workflow_run(
+            workflow_owner_id, run_user_id, pg_workflow_id, query
+        )
 
     def _load_workflow_graph(self) -> Optional[WorkflowGraph]:
         if self._workflow_data:
@@ -193,11 +206,21 @@ class WorkflowAgent(BaseAgent):
             return None
 
     def _resolve_owner_id(self) -> Optional[str]:
-        """Resolve the run owner from the explicit workflow owner or the token ``sub``."""
+        """Resolve the workflow *owner* (used to resolve the owned workflow row)."""
         owner_id = self.workflow_owner
         if not owner_id and isinstance(self.decoded_token, dict):
             owner_id = self.decoded_token.get("sub")
         return owner_id
+
+    def _resolve_run_user_id(self, workflow_owner_id: Optional[str]) -> Optional[str]:
+        """Resolve the *runner* (caller) who owns the run and its artifacts.
+
+        Equals the owner for a user running their own workflow (and for external
+        API-key calls, where the key owner is the caller); for a shared agent it
+        is the calling user, so their uploads/outputs are owned by and readable
+        to them rather than silently accruing under the agent owner's account.
+        """
+        return getattr(self, "initial_user_id", None) or getattr(self, "user", None) or workflow_owner_id
 
     def _resolve_owned_workflow_pg_id(
         self, conn: Any, owner_id: Optional[str]
@@ -212,18 +235,29 @@ class WorkflowAgent(BaseAgent):
             workflow_row = wf_repo.get_by_legacy_id(self.workflow_id, owner_id)
         return str(workflow_row["id"]) if workflow_row is not None else None
 
-    def _precreate_workflow_run(self, owner_id: Optional[str], query: str) -> Optional[str]:
-        """Insert the run row up front so run-scoped artifacts are authz-reachable mid-run."""
-        if not self._engine or not self.workflow_id or not owner_id:
+    def _precreate_workflow_run(
+        self,
+        workflow_owner_id: Optional[str],
+        run_user_id: Optional[str],
+        query: str,
+    ) -> Optional[str]:
+        """Insert the run row up front so run-scoped artifacts are authz-reachable mid-run.
+
+        The workflow row is resolved against its *owner*; the run is owned by the
+        *runner* so artifact access (``run.user_id == caller``) tracks the caller.
+        """
+        if not self._engine or not self.workflow_id or not workflow_owner_id or not run_user_id:
             return None
         try:
             with db_session() as conn:
-                pg_workflow_id = self._resolve_owned_workflow_pg_id(conn, owner_id)
+                pg_workflow_id = self._resolve_owned_workflow_pg_id(
+                    conn, workflow_owner_id
+                )
                 if pg_workflow_id is None:
                     return None
                 WorkflowRunsRepository(conn).create(
                     pg_workflow_id,
-                    owner_id,
+                    run_user_id,
                     ExecutionStatus.RUNNING.value,
                     run_id=self._engine.workflow_run_id,
                     inputs={"query": query},
@@ -235,15 +269,16 @@ class WorkflowAgent(BaseAgent):
             return None
 
     def _bridge_attachments(
-        self, owner_id: Optional[str], *, persisted: bool
+        self, run_user_id: Optional[str], *, persisted: bool
     ) -> List[Dict[str, Any]]:
         """Stage uploaded attachments as run-scoped artifacts the nodes can read.
 
         Bytes are read server-side from each attachment's ``upload_path`` and
         re-persisted through ``persist_new_artifact`` (size/sha256/storage key all
         derived server-side); only the resulting references enter the run state.
+        Artifacts are owned by the *runner* (the uploader), not the workflow owner.
         """
-        if not self._engine or not self.attachments or not owner_id:
+        if not self._engine or not self.attachments or not run_user_id:
             return []
         # Without a persisted run row the artifacts would be orphaned (no authz
         # parent), so skip the bridge for unowned/draft ids.
@@ -279,7 +314,7 @@ class WorkflowAgent(BaseAgent):
                 continue
             try:
                 ref = persist_new_artifact(
-                    user_id=owner_id,
+                    user_id=run_user_id,
                     kind="file",
                     data=data,
                     filename=filename,
@@ -307,15 +342,23 @@ class WorkflowAgent(BaseAgent):
         return refs
 
     def _finalize_workflow_run(
-        self, owner_id: Optional[str], pg_workflow_id: Optional[str], query: str
+        self,
+        workflow_owner_id: Optional[str],
+        run_user_id: Optional[str],
+        pg_workflow_id: Optional[str],
+        query: str,
     ) -> None:
-        """Write the run's terminal status/result; upsert the row if pre-creation was skipped."""
+        """Write the run's terminal status/result; upsert the row if pre-creation was skipped.
+
+        The run is owned by the *runner* (so it stays readable to the caller and
+        matches the pre-created row); the workflow row is resolved by its *owner*.
+        """
         if not self._engine:
             return
         try:
             run = WorkflowRun(
                 workflow_id=self.workflow_id or "unknown",
-                user=owner_id,
+                user=run_user_id,
                 status=self._determine_run_status(),
                 inputs={"query": query},
                 outputs=self._serialize_state(self._engine.state),
@@ -325,11 +368,13 @@ class WorkflowAgent(BaseAgent):
             )
             steps_json = [step.model_dump(mode="json") for step in run.steps]
 
-            if not self.workflow_id or not owner_id:
+            if not self.workflow_id or not workflow_owner_id or not run_user_id:
                 return
             with db_session() as conn:
                 if pg_workflow_id is None:
-                    pg_workflow_id = self._resolve_owned_workflow_pg_id(conn, owner_id)
+                    pg_workflow_id = self._resolve_owned_workflow_pg_id(
+                        conn, workflow_owner_id
+                    )
                     if pg_workflow_id is None:
                         return
                 runs_repo = WorkflowRunsRepository(conn)
@@ -337,7 +382,7 @@ class WorkflowAgent(BaseAgent):
                 if self._run_persisted:
                     updated = runs_repo.finalize(
                         self._engine.workflow_run_id,
-                        owner_id,
+                        run_user_id,
                         run.status.value,
                         result=run.outputs,
                         steps=steps_json,
@@ -352,7 +397,7 @@ class WorkflowAgent(BaseAgent):
                 if not self._run_persisted or not updated:
                     runs_repo.create(
                         pg_workflow_id,
-                        owner_id,
+                        run_user_id,
                         run.status.value,
                         run_id=self._engine.workflow_run_id,
                         inputs=run.inputs,

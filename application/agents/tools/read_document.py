@@ -206,7 +206,14 @@ class ReadDocumentTool(Tool):
             async_result = parse_document.apply_async(
                 args=[artifact_id, parent, self.user_id, options], queue=queue
             )
-            result = async_result.get(timeout=timeout)
+            # ``read_document`` runs both from the web request path AND from inside a
+            # Celery task (headless/scheduled agents). In a prefork worker
+            # ``task_join_will_block()`` is process-wide, so the default
+            # ``disable_sync_subtasks=True`` makes ``get()`` raise RuntimeError
+            # ("Never call result.get() within a task!"). The dedicated ``parsing``
+            # queue + separate workers already avoid the real self-deadlock, so opt
+            # out of the blanket guard explicitly.
+            result = async_result.get(timeout=timeout, disable_sync_subtasks=False)
         except (CeleryTimeoutError, TimeoutError):
             return {"status": "error", "error": f"document parsing timed out after {int(timeout)}s."}
         except Exception as exc:
