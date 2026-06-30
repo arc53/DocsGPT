@@ -22,6 +22,12 @@ export default defineConfig(({ mode }) => {
             .map((h) => h.trim())
             .filter(Boolean)
         : [],
+      // Use polling for file watching when running inside Docker.
+      // Native fs events do not propagate from Windows hosts into Linux
+      // containers, so Chokidar falls back to polling which works reliably.
+      watch: env.DOCKER
+        ? { usePolling: true, interval: 300 }
+        : undefined,
     },
     test: {
       environment: 'happy-dom',
