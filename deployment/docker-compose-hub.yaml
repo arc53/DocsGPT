@@ -23,8 +23,17 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+      # Code-execution runner reached over HTTP + WebSocket (no docker socket).
+      - SANDBOX_GATEWAY_URL=http://docsgpt-sandbox:8888
+      # Env-scrubbing kernelspec the docsgpt-sandbox image installs.
+      - SANDBOX_KERNEL_NAME=docsgpt-python
     ports:
       - "7091:7091"
+    networks:
+      # `default` reaches the sandbox gateway; `data-net` reaches redis/postgres
+      # (which are NOT on the sandbox's networks).
+      - default
+      - data-net
     volumes:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
@@ -49,6 +58,11 @@ services:
       - API_URL=http://backend:7091
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+      - SANDBOX_GATEWAY_URL=http://docsgpt-sandbox:8888
+      - SANDBOX_KERNEL_NAME=docsgpt-python
+    networks:
+      - default
+      - data-net
     volumes:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
@@ -59,13 +73,46 @@ services:
       postgres:
         condition: service_healthy
 
+  # Always-on code-execution runner (Jupyter Kernel Gateway). In-process kernels,
+  # no Docker socket, no published host port. On the internal-only sandbox-net
+  # plus `default` (for internet egress); deliberately NOT on data-net, so
+  # sandboxed code cannot reach the unauthenticated redis broker (Celery task
+  # injection -> RCE) or postgres. Do NOT add `env_file: ../.env` here -- the
+  # runner needs no app secrets. For untrusted multi-tenant workloads use a
+  # per-session VM via SANDBOX_BACKEND=daytona instead.
+  docsgpt-sandbox:
+    # Built from the repo (no published arc53/docsgpt-sandbox image exists yet); the
+    # hub compose ships alongside ./sandbox, so this stays self-contained and the
+    # stack always starts. Switch to a published image once CI builds/pushes one.
+    build: ./sandbox
+    mem_limit: ${SANDBOX_MEMORY:-1g}
+    cpus: ${SANDBOX_CPUS:-1.0}
+    pids_limit: 256
+    read_only: true
+    environment:
+      # Keep Jupyter's runtime/connection files on the writable tmpfs.
+      - JUPYTER_RUNTIME_DIR=/tmp/jupyter-runtime
+      - JUPYTER_DATA_DIR=/tmp/jupyter-data
+    tmpfs:
+      - /tmp
+    networks:
+      - sandbox-net
+      - default
+
   redis:
     image: redis:6-alpine
+    # Data plane only: kept off the sandbox's networks (a reachable, unauthed
+    # broker = Celery task injection -> worker RCE).
+    networks:
+      - data-net
     ports:
       - 6379:6379
 
   postgres:
     image: postgres:16-alpine
+    # Data plane only (see redis): kept off the sandbox's networks.
+    networks:
+      - data-net
     environment:
       - POSTGRES_USER=docsgpt
       - POSTGRES_PASSWORD=docsgpt
@@ -79,6 +126,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+networks:
+  # Internal-only runner network (no external egress via this net; the sandbox
+  # still reaches the internet via the default bridge).
+  sandbox-net:
+    internal: true
+  # Internal data plane: redis/postgres + backend/worker. The sandbox is NOT
+  # attached, so sandboxed code cannot reach the broker or database.
+  data-net:
+    internal: true
 
 volumes:
   postgres_data:

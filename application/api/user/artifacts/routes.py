@@ -5,7 +5,15 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from flask import current_app, jsonify, make_response, redirect, request
+from flask import (
+    Response,
+    current_app,
+    jsonify,
+    make_response,
+    redirect,
+    request,
+    stream_with_context,
+)
 from flask_restx import Namespace, Resource
 
 from application.api import api
@@ -183,6 +191,53 @@ class GetArtifact(Resource):
             current_app.logger.error(f"Error retrieving artifact: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
 
+    @api.doc(description="Delete an artifact and all its versions (owner only)")
+    def delete(self, artifact_id: str):
+        if not looks_like_uuid(artifact_id):
+            return make_response(
+                jsonify({"success": False, "message": "Artifact not found"}), 404
+            )
+        user_id = resolve_authenticated_user()
+        try:
+            with db_session() as conn:
+                repo = ArtifactsRepository(conn)
+                artifact = repo.get_artifact(artifact_id)
+                if artifact is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Artifact not found"}), 404
+                    )
+                # Delete is a WRITE: only the parent owner may delete; share
+                # links / read-only collaborators are denied (read access only).
+                if not authorize_artifact_write(conn, artifact, user_id):
+                    return make_response(
+                        jsonify({"success": False, "message": "Forbidden"}), 403
+                    )
+                storage_paths = repo.delete_artifact(artifact_id)
+            # Reap the bytes best-effort AFTER the row delete commits.
+            _reap_storage(storage_paths)
+            return make_response(jsonify({"success": True}), 200)
+        except Exception as err:
+            current_app.logger.error(f"Error deleting artifact: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 500)
+
+
+def _reap_storage(paths: list) -> None:
+    """Best-effort delete artifact bytes after the DB rows are gone; never raises."""
+    if not paths:
+        return
+    try:
+        storage = StorageCreator.get_storage()
+    except Exception:
+        current_app.logger.warning("artifact delete: storage unavailable", exc_info=True)
+        return
+    for path in paths:
+        try:
+            storage.delete_file(path)
+        except Exception:
+            current_app.logger.warning(
+                "artifact delete: failed to delete bytes %s", path, exc_info=True
+            )
+
 
 @artifacts_ns.route("/artifacts/<artifact_id>/versions/<int:version>")
 class GetArtifactVersion(Resource):
@@ -294,13 +349,26 @@ class DownloadArtifact(Resource):
                     )
                 return redirect(url, code=302)
 
+            # Stream the bytes in chunks instead of buffering the whole object in
+            # worker memory (artifacts can be many MB); close the handle when done.
             file_obj = storage.get_file(storage_path)
-            response = make_response(file_obj.read())
-            response.headers.set("Content-Type", mime_type)
-            response.headers.set(
-                "Content-Disposition", f'attachment; filename="{filename}"'
+
+            def _stream():
+                try:
+                    for chunk in iter(lambda: file_obj.read(65536), b""):
+                        yield chunk
+                finally:
+                    close = getattr(file_obj, "close", None)
+                    if callable(close):
+                        close()
+
+            return Response(
+                stream_with_context(_stream()),
+                mimetype=mime_type,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                },
             )
-            return response
         except FileNotFoundError:
             return make_response(
                 jsonify({"success": False, "message": "File not found"}), 404

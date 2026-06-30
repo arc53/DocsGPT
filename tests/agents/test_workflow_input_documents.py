@@ -16,7 +16,11 @@ import pytest
 from sqlalchemy import text
 
 from application.agents.workflow_agent import WorkflowAgent, _MAX_INPUT_DOCUMENTS
-from application.agents.workflows.workflow_engine import WorkflowEngine
+from application.agents.workflows.schemas import AgentNodeConfig
+from application.agents.workflows.workflow_engine import (
+    _EXTRACT_TRUNCATION_ID,
+    WorkflowEngine,
+)
 from application.storage.db.repositories.artifacts import ArtifactsRepository
 from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 from application.storage.local import LocalStorage
@@ -350,3 +354,142 @@ def test_no_attachments_run_still_works(pg_engine, tmp_path, monkeypatch):
         ).scalar()
     assert run is not None
     assert n == 0
+
+
+def test_extract_parse_opts_out_of_sync_subtask_guard(monkeypatch):
+    """_parse_document_text awaits with disable_sync_subtasks=False so it works inside a Celery worker."""
+    agent = _agent(str(uuid.uuid4()), [])
+    engine = WorkflowEngine.__new__(WorkflowEngine)
+    engine.agent = agent
+    engine.workflow_run_id = "run-extract"
+
+    import application.api.user.tasks as tasks
+
+    captured: dict = {}
+
+    class _FakeAsyncResult:
+        def __init__(self):
+            self.get_kwargs = None
+
+        def get(self, timeout=None, disable_sync_subtasks=True):
+            self.get_kwargs = {"timeout": timeout, "disable_sync_subtasks": disable_sync_subtasks}
+            return {"status": "ok", "content": "parsed markdown"}
+
+    def _apply_async(args=None, queue=None, **kw):
+        result = _FakeAsyncResult()
+        captured["result"] = result
+        captured["args"] = args
+        return result
+
+    monkeypatch.setattr(tasks.parse_document, "apply_async", _apply_async)
+
+    out = engine._parse_document_text("artifact-xyz")
+
+    assert out == "parsed markdown"
+    # A prefork worker's task_join_will_block() is process-wide, so the await must
+    # opt out of the guard or get() raises RuntimeError("Never call result.get()...").
+    assert captured["result"].get_kwargs["disable_sync_subtasks"] is False
+    # The run-scoped parent + resolved id reached the parsing task.
+    assert captured["args"][0] == "artifact-xyz"
+    assert captured["args"][1] == {"workflow_run_id": "run-extract"}
+
+
+def test_node_extract_path_capped_with_truncation_note(pg_engine, tmp_path, monkeypatch):
+    """A node referencing more docs than the extract cap parses only up to the cap and notes the rest."""
+    storage = _wire(pg_engine, tmp_path, monkeypatch)
+    wf_id = _make_workflow(pg_engine)
+
+    # docx is non-native (no vision) and not inline-text, so each routes through
+    # the blocking parsing worker -- the path the per-node cap must bound.
+    docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    attachments = [
+        _stage_attachment(storage, f"doc-{i}".encode(), f"f{i}.docx", docx)
+        for i in range(4)
+    ]
+    agent = _agent(wf_id, attachments)
+    _patch_engine(monkeypatch)
+    list(agent._gen_inner("summarize", log_context=None))
+    engine = _RecordingEngine.instances[-1]
+
+    # Cap the blocking-extract path below the doc count so the overflow truncates.
+    from application.core.settings import settings
+
+    monkeypatch.setattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 2, raising=False)
+
+    # Stub the parsing worker so each non-text doc "parses" without a broker, and
+    # count the blocking calls to prove the overflow docs are never enqueued.
+    import application.api.user.tasks as tasks
+
+    parse_calls = {"n": 0}
+
+    class _R:
+        def get(self, timeout=None, disable_sync_subtasks=True):
+            return {"status": "ok", "content": "PARSED"}
+
+    def _apply_async(args=None, queue=None, **kw):
+        parse_calls["n"] += 1
+        return _R()
+
+    monkeypatch.setattr(tasks.parse_document, "apply_async", _apply_async)
+
+    node_config = AgentNodeConfig(input_documents=["*"])
+    out = engine._materialize_node_attachments(node_config, "Reviewer", supported_types=[])
+
+    notes = [a for a in out if a.get("id") == _EXTRACT_TRUNCATION_ID]
+    extracted = [a for a in out if a.get("id") != _EXTRACT_TRUNCATION_ID]
+    # Only the cap was extracted; the remaining docs were never sent to the worker.
+    assert len(extracted) == 2
+    assert parse_calls["n"] == 2
+    # A single non-fatal truncation note is appended to the node's inlined text.
+    assert len(notes) == 1
+    assert notes[0]["mime_type"] == "text/plain"
+    assert "omitted" in notes[0]["content"].lower()
+
+
+def test_node_extract_cap_bounds_parse_attempts_even_when_every_parse_times_out(
+    pg_engine, tmp_path, monkeypatch
+):
+    """The cap must bound parse ATTEMPTS, not successes: a degraded backend where every
+    parse times out (~120s each) must still issue at most the cap's worth of blocking calls."""
+    from celery.exceptions import TimeoutError as CeleryTimeoutError
+
+    storage = _wire(pg_engine, tmp_path, monkeypatch)
+    wf_id = _make_workflow(pg_engine)
+
+    docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    attachments = [
+        _stage_attachment(storage, f"doc-{i}".encode(), f"f{i}.docx", docx)
+        for i in range(4)
+    ]
+    agent = _agent(wf_id, attachments)
+    _patch_engine(monkeypatch)
+    list(agent._gen_inner("summarize", log_context=None))
+    engine = _RecordingEngine.instances[-1]
+
+    from application.core.settings import settings
+
+    monkeypatch.setattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 2, raising=False)
+
+    import application.api.user.tasks as tasks
+
+    parse_calls = {"n": 0}
+
+    class _R:
+        def get(self, timeout=None, disable_sync_subtasks=True):
+            raise CeleryTimeoutError()  # the ~120s worst case the cap must bound
+
+    def _apply_async(args=None, queue=None, **kw):
+        parse_calls["n"] += 1
+        return _R()
+
+    monkeypatch.setattr(tasks.parse_document, "apply_async", _apply_async)
+
+    node_config = AgentNodeConfig(input_documents=["*"])
+    out = engine._materialize_node_attachments(node_config, "Reviewer", supported_types=[])
+
+    # Every parse timed out (nothing extracted), but blocking attempts were bounded.
+    extracted = [a for a in out if a.get("id") != _EXTRACT_TRUNCATION_ID]
+    assert extracted == []
+    assert parse_calls["n"] == 2  # not 4 -- failed parses still consume cap budget
+    notes = [a for a in out if a.get("id") == _EXTRACT_TRUNCATION_ID]
+    assert len(notes) == 1

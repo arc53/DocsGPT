@@ -254,7 +254,29 @@ def process_agent_webhook(self, agent_id, payload, idempotency_key=None):
 # separate parsing worker and never self-deadlocks the awaiting worker.
 @celery.task(bind=True, acks_late=False, autoretry_for=())
 def parse_document(self, artifact_id, parent, user_id, options=None):
-    return parse_document_worker(self, artifact_id, parent, user_id, options or {})
+    """Parse an input artifact on the parsing queue; self-terminate at the soft time limit."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    try:
+        return parse_document_worker(self, artifact_id, parent, user_id, options or {})
+    except SoftTimeLimitExceeded:
+        # A pathological/malicious document must not pin a parsing-worker slot past the
+        # window the caller already abandoned. Return the worker's clean error shape so
+        # the slot frees and the Redis result backend still gets a terminal result.
+        limit = getattr(self, "soft_time_limit", None)
+        suffix = f" after {int(limit)}s" if limit else ""
+        return {"status": "error", "error": f"document parsing timed out{suffix}."}
+
+
+# Bind the soft limit to DOCUMENT_PARSE_TIMEOUT (the same window read_document awaits) so
+# the prefork worker self-terminates a runaway parse instead of pinning the slot; the hard
+# limit is the SIGKILL backstop if the soft handler can't unwind in time.
+try:
+    from application.core.settings import settings as _parse_settings
+    parse_document.soft_time_limit = int(_parse_settings.DOCUMENT_PARSE_TIMEOUT)
+    parse_document.time_limit = parse_document.soft_time_limit + 30
+except Exception:
+    pass
 
 
 @celery.task(**DURABLE_TASK)

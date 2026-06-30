@@ -301,6 +301,72 @@ class ArtifactsRepository:
         ).fetchone()
         return int(row[0]) if row is not None else 0
 
+    def delete_artifact(self, artifact_id: str) -> list[str]:
+        """Delete an artifact (+ its versions, via FK cascade); return its stored paths.
+
+        The caller deletes the returned storage objects best-effort AFTER commit;
+        the DB delete also frees the owner's count/byte quota.
+        """
+        paths = [
+            v["storage_path"]
+            for v in self.list_versions(artifact_id)
+            if v.get("storage_path")
+        ]
+        self._conn.execute(
+            text("DELETE FROM artifacts WHERE id = CAST(:id AS uuid)"),
+            {"id": artifact_id},
+        )
+        return paths
+
+    def storage_paths_for_conversation(self, conversation_id: str) -> list[str]:
+        """Return every stored version path for a conversation's artifacts (for byte cleanup)."""
+        result = self._conn.execute(
+            text(
+                "SELECT v.storage_path FROM artifact_versions v "
+                "JOIN artifacts a ON a.id = v.artifact_id "
+                "WHERE a.conversation_id = CAST(:cid AS uuid) "
+                "AND v.storage_path IS NOT NULL"
+            ),
+            {"cid": conversation_id},
+        )
+        return [r[0] for r in result.fetchall()]
+
+    def storage_paths_for_user_conversations(self, user_id: str) -> list[str]:
+        """Return every stored version path for artifacts under a user's conversations."""
+        result = self._conn.execute(
+            text(
+                "SELECT v.storage_path FROM artifact_versions v "
+                "JOIN artifacts a ON a.id = v.artifact_id "
+                "JOIN conversations c ON c.id = a.conversation_id "
+                "WHERE c.user_id = :user_id AND v.storage_path IS NOT NULL"
+            ),
+            {"user_id": user_id},
+        )
+        return [r[0] for r in result.fetchall()]
+
+    def delete_for_conversation(self, conversation_id: str) -> int:
+        """Delete all artifacts (+ versions, via cascade) parented to a conversation.
+
+        ``conversation_id`` is a bare uuid column (no FK), so the parent delete
+        does not cascade — callers invoke this to reclaim the rows + their quota.
+        """
+        result = self._conn.execute(
+            text("DELETE FROM artifacts WHERE conversation_id = CAST(:cid AS uuid)"),
+            {"cid": conversation_id},
+        )
+        return result.rowcount
+
+    def delete_for_user_conversations(self, user_id: str) -> int:
+        """Delete every artifact parented to one of a user's conversations (+ versions)."""
+        result = self._conn.execute(
+            text(
+                "DELETE FROM artifacts WHERE conversation_id IN "
+                "(SELECT id FROM conversations WHERE user_id = :user_id)"
+            ),
+            {"user_id": user_id},
+        )
+        return result.rowcount
+
     def get_version(self, artifact_id: str, version: int) -> Optional[dict]:
         """Fetch a single version row by artifact id and version number."""
         result = self._conn.execute(

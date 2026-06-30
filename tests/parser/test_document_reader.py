@@ -122,6 +122,94 @@ def test_fast_engine_uses_legacy_parser(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# single Docling conversion: the default markdown+tables path must not re-convert
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_default_markdown_with_tables_converts_docling_once(monkeypatch):
+    """Default read (markdown, engine=auto, include_tables) converts the doc with Docling once.
+
+    A Docling-backed parser already converts the whole document to produce its text;
+    collecting tables must reuse that single conversion instead of re-running
+    DocumentConverter. Counts conversions across both sites to prove no double pass.
+    """
+    import sys
+    import types
+
+    from application.parser.file.docling_parser import DoclingParser
+
+    counter = {"instances": 0, "converts": 0}
+
+    class _FakeTable:
+        def export_to_dataframe(self):
+            raise RuntimeError("no dataframe")  # force the markdown fallback path
+
+        def export_to_markdown(self):
+            return "| h |\n| - |\n| v |"
+
+    class _FakeDoc:
+        tables = [_FakeTable()]
+        pages = {"1": {}}
+
+        def export_to_markdown(self):
+            return "# single-pass content"
+
+        def export_to_dict(self):
+            return {"texts": [{}], "tables": [{}], "pages": {"1": {}}}
+
+    class _FakeResult:
+        document = _FakeDoc()
+
+    class _CountingConverter:
+        def __init__(self, *args, **kwargs):
+            counter["instances"] += 1
+
+        def convert(self, *args, **kwargs):
+            counter["converts"] += 1
+            return _FakeResult()
+
+    fake_docling = types.ModuleType("docling")
+    fake_dc_module = types.ModuleType("docling.document_converter")
+    fake_dc_module.DocumentConverter = _CountingConverter
+    fake_docling.document_converter = fake_dc_module
+    monkeypatch.setitem(sys.modules, "docling", fake_docling)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", fake_dc_module)
+
+    class _FakeDoclingParser(DoclingParser):
+        """Docling-backed parser exposing its configured converter + export for reuse.
+
+        The collapse path converts ONCE via ``self._converter`` and exports content via
+        ``_export_content`` (the configured pipeline/OCR), so both content and tables
+        come from a single conversion.
+        """
+
+        def __init__(self):
+            super().__init__()
+            self._parser_config = {"ready": True}  # makes parser_config_set True
+            self._converter = _CountingConverter()  # single configured conversion
+
+        def _export_content(self, document):
+            return "# single-pass content"
+
+        def parse_file(self, file, errors="ignore"):
+            # Only reached if the collapse path fails; the test asserts it doesn't.
+            return "# parse-file content"
+
+    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None: {".pdf": _FakeDoclingParser()})
+
+    # Defaults: output=markdown, engine=auto, include_tables=True -> the double-parse path.
+    out = parse_document_bytes(b"%PDF-1.4", "doc.pdf")
+
+    assert out["output"] == "markdown"
+    # Content comes from the CONFIGURED parser's export (matches the legacy single
+    # parse), not a vanilla converter; the collapse path was taken, not the fallback.
+    assert "single-pass content" in out["content"]
+    assert "parse-file content" not in out["content"]
+    assert out["tables"] == [{"markdown": "| h |\n| - |\n| v |"}]
+    assert counter["converts"] == 1  # was 2 before the fix (content pass + tables pass)
+    assert counter["instances"] == 1
+
+
+# ---------------------------------------------------------------------------
 # pages: page-range slice on a form-feed delimited blob
 # ---------------------------------------------------------------------------
 @pytest.mark.unit

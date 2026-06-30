@@ -139,6 +139,17 @@ def _parse_to_text(parser: Any, path: Path) -> str:
     return str(parsed)
 
 
+def _is_docling_parser(parser: Any) -> bool:
+    """True when ``parser`` is Docling-backed (collecting tables would otherwise re-convert)."""
+    if parser is None:
+        return False
+    try:
+        from application.parser.file.docling_parser import DoclingParser
+    except Exception:
+        return False
+    return isinstance(parser, DoclingParser)
+
+
 def _compact_table(table: Dict[str, Any]) -> Dict[str, Any]:
     """Bound a single table's rows and cell sizes so one giant table can't bloat context."""
 
@@ -159,13 +170,27 @@ def _compact_table(table: Dict[str, Any]) -> Dict[str, Any]:
     return compact
 
 
-def _docling_structured(path: Path, *, ocr_enabled: bool, include_tables: bool) -> Dict[str, Any]:
-    """Convert a document with Docling and return markdown + structured dict + bounded tables."""
-    from docling.document_converter import DocumentConverter
+def _docling_structured(
+    path: Path, *, ocr_enabled: bool, include_tables: bool, parser: Any = None
+) -> Dict[str, Any]:
+    """Convert a document with Docling and return markdown + structured dict + bounded tables.
 
-    converter = DocumentConverter()
-    doc = converter.convert(str(path)).document
-    markdown = doc.export_to_markdown()
+    When ``parser`` is the configured ``DoclingParser`` (the collapse-the-double-convert
+    path), reuse ITS converter + export so OCR/pipeline options and the export fallback
+    are honored and the content matches the legacy single-parse output exactly; otherwise
+    fall back to a vanilla converter.
+    """
+    if _is_docling_parser(parser):
+        if getattr(parser, "_converter", None) is None:
+            parser._init_parser()
+        doc = parser._converter.convert(str(path)).document
+        markdown = parser._export_content(doc)
+    else:
+        from docling.document_converter import DocumentConverter
+
+        converter = DocumentConverter()
+        doc = converter.convert(str(path)).document
+        markdown = doc.export_to_markdown()
     structured = doc.export_to_dict()
     tables: List[Dict[str, Any]] = []
     if include_tables:
@@ -323,6 +348,28 @@ def _shape(
         }
 
     parser = _pick_parser(suffix, ocr_enabled=ocr_enabled, engine=engine)
+    wants_tables = include_tables and engine != "fast" and output != "chunks"
+
+    # A Docling-backed parser already converts the whole document to produce its text.
+    # When tables are also requested, reuse that single conversion for both the markdown
+    # content and the tables instead of converting a second time just to collect tables
+    # (Docling/torch conversion dominates the cost, so a re-convert ~doubles latency).
+    if wants_tables and _is_docling_parser(parser):
+        try:
+            extracted = _docling_structured(
+                path, ocr_enabled=ocr_enabled, include_tables=True, parser=parser
+            )
+            text = extracted["markdown"]
+            tables: List[Dict[str, Any]] = [_compact_table(t) for t in extracted["tables"]]
+        except Exception:
+            text, tables = _parse_to_text(parser, path), []
+        text = _apply_pages(text, pages)
+        bounded, truncated = _bounded(text, max_chars)
+        payload: Dict[str, Any] = {"output": output, "content": bounded, "truncated": truncated}
+        if tables:
+            payload["tables"] = tables
+        return payload
+
     if parser is None:
         # A whitelisted extension with no dedicated parser (e.g. .txt) reads as plain
         # text, matching SimpleDirectoryReader's standard-read fallback.
@@ -335,7 +382,7 @@ def _shape(
         return {"output": "chunks", "chunks": _to_chunks(text, max_chars), "truncated": False}
 
     tables: List[Dict[str, Any]] = []
-    if include_tables and engine != "fast":
+    if wants_tables:
         try:
             tables = [_compact_table(t) for t in _docling_structured(
                 path, ocr_enabled=ocr_enabled, include_tables=True)["tables"]]

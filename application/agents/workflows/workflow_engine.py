@@ -48,6 +48,10 @@ _SESSION_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
 # egress-open sandbox code (see ``_json_safe_state``).
 _CODE_STATE_EXCLUDED_KEYS = frozenset({"chat_history"})
 
+# Sentinel id stamped on the synthetic text attachment that flags documents a
+# node skipped past the per-node blocking-extract cap (callers/tests match on it).
+_EXTRACT_TRUNCATION_ID = "workflow-extract-truncated"
+
 
 class WorkflowEngine:
     MAX_EXECUTION_STEPS = 50
@@ -511,6 +515,7 @@ class WorkflowEngine:
         supported = set(supported_types)
         supports_images = any(t.startswith("image/") for t in supported)
         max_files = int(getattr(settings, "WORKFLOW_NODE_NATIVE_MAX_FILES", 5))
+        extract_max = int(getattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 5))
         max_bytes = int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 25 * 1024 * 1024))
 
         # One read-only connection for the whole batch; the resolved-version
@@ -539,6 +544,8 @@ class WorkflowEngine:
 
         attachments: List[Dict[str, Any]] = []
         native_count = 0
+        extract_count = 0
+        dropped_for_cap = 0
         for artifact_id, artifact, version in resolved:
             storage_path = version["storage_path"]
             mime_type = version.get("mime_type") or "application/octet-stream"
@@ -571,6 +578,22 @@ class WorkflowEngine:
                 attachments.append({"id": artifact_id, "mime_type": mime_type, "path": storage_path})
                 native_count += 1
             else:
+                # Inline-text mimes are read directly (cheap); other mimes route
+                # through the parsing worker -- a blocking, ~120s per-document call.
+                # Cap how many documents a single node sends down that path so a
+                # node referencing many non-native documents (e.g. the ``*`` token)
+                # can't serialize dozens of parses. Inline text is not capped.
+                needs_parse = not self._is_inline_text_mime(mime_type)
+                if needs_parse:
+                    # Count (and gate on) the parse ATTEMPT, not the success: a
+                    # timed-out/failed parse is the ~120s worst case we must bound,
+                    # so it has to consume cap budget too. Otherwise a degraded
+                    # parsing backend (every parse fails) never advances the count
+                    # and the node keeps issuing blocking parses without limit.
+                    if extract_count >= extract_max:
+                        dropped_for_cap += 1
+                        continue
+                    extract_count += 1
                 content = self._extract_attachment_text(
                     artifact_id, storage_path, mime_type, filename, max_bytes
                 )
@@ -585,7 +608,25 @@ class WorkflowEngine:
                 attachments.append(
                     {"id": artifact_id, "mime_type": "text/plain", "content": content}
                 )
+        if dropped_for_cap:
+            logger.warning(
+                "Workflow node %s: blocking-extract cap (%d) reached; %d document(s) omitted",
+                node_title, extract_max, dropped_for_cap,
+            )
+            attachments.append(
+                self._extract_truncation_note(node_title, extract_max, dropped_for_cap)
+            )
         return attachments
+
+    @staticmethod
+    def _extract_truncation_note(node_title: str, cap: int, dropped: int) -> Dict[str, Any]:
+        """Build a non-fatal text attachment flagging documents skipped past the per-node extract cap."""
+        content = (
+            f'[Notice] Only the first {cap} document(s) for node "{node_title}" were extracted '
+            f"to text; {dropped} additional document(s) were omitted to bound execution time. "
+            "Reference fewer documents, or use a model that reads them natively."
+        )
+        return {"id": _EXTRACT_TRUNCATION_ID, "mime_type": "text/plain", "content": content}
 
     @staticmethod
     def _agent_supported_attachment_types(node_agent: "BaseAgent") -> List[str]:
@@ -654,7 +695,13 @@ class WorkflowEngine:
                 args=[artifact_id, {"workflow_run_id": self.workflow_run_id}, user_id, options],
                 queue=queue,
             )
-            result = async_result.get(timeout=timeout)
+            # A workflow can run inside a Celery worker (scheduled runs / webhooks).
+            # In a prefork worker ``task_join_will_block()`` is process-wide, so the
+            # default ``disable_sync_subtasks=True`` makes ``get()`` raise RuntimeError
+            # ("Never call result.get() within a task!"). The dedicated parsing queue +
+            # separate workers already avoid the real self-deadlock, so opt out
+            # explicitly (mirrors application/agents/tools/read_document.py).
+            result = async_result.get(timeout=timeout, disable_sync_subtasks=False)
         except (CeleryTimeoutError, TimeoutError):
             logger.warning("Workflow node: document parse timed out for %s", artifact_id)
             return None

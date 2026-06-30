@@ -297,14 +297,19 @@ class TestSharedAccess:
 # Download
 # ---------------------------------------------------------------------------
 class _FakeStorage:
-    def __init__(self, data: bytes):
+    def __init__(self, data: bytes = b""):
         self._data = data
+        self.deleted: list = []
 
     def get_file(self, path):
         return io.BytesIO(self._data)
 
     def generate_presigned_url(self, path, expires_in=300):
         return f"https://signed.example/{path}?exp={expires_in}"
+
+    def delete_file(self, path):
+        self.deleted.append(path)
+        return True
 
 
 @pytest.mark.unit
@@ -342,6 +347,27 @@ class TestDownloadArtifact:
         assert resp.data == b"BINARY"
         assert resp.headers["Content-Disposition"] == 'attachment; filename="deck.pptx"'
         assert resp.headers["Content-Type"] == "application/vnd.ms-powerpoint"
+
+    def test_local_download_is_streamed_not_buffered(
+        self, _patch_db, flask_app, token_owner, monkeypatch
+    ):
+        # The response body must be a stream (generator), not the whole object
+        # buffered into memory via make_response(file_obj.read()).
+        from application.api.user.artifacts.routes import DownloadArtifact
+
+        art = self._seed(_patch_db)
+        storage = _FakeStorage(b"Z" * 200_000)
+        monkeypatch.setattr(
+            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            lambda: storage,
+        )
+        monkeypatch.setattr(
+            "application.api.user.artifacts.routes.settings.URL_STRATEGY",
+            "backend", raising=False,
+        )
+        resp = _call(flask_app, DownloadArtifact, art["id"], token=token_owner)
+        assert resp.is_streamed
+        assert resp.get_data() == b"Z" * 200_000
 
     def test_s3_strategy_redirects_to_presigned(
         self, _patch_db, flask_app, token_owner, monkeypatch
@@ -504,6 +530,91 @@ class TestRestoreArtifact:
             json_body={"version": 1}, method="post",
         )
         assert resp.status_code == 403
+
+
+@pytest.mark.unit
+class TestDeleteArtifact:
+    def _seed(self, conn, **over):
+        conv = _make_conversation(conn)
+        defaults = dict(
+            conversation_id=str(conv["id"]),
+            filename="f.bin",
+            storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+        defaults.update(over)
+        return _make_artifact(conn, **defaults)
+
+    def test_owner_deletes_and_reaps_bytes(
+        self, _patch_db, flask_app, token_owner, monkeypatch
+    ):
+        from application.api.user.artifacts.routes import GetArtifact
+
+        art = self._seed(_patch_db)
+        storage = _FakeStorage()
+        monkeypatch.setattr(
+            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            lambda: storage,
+        )
+        resp = _call(flask_app, GetArtifact, art["id"], token=token_owner, method="delete")
+        assert resp.status_code == 200
+        assert ArtifactsRepository(_patch_db).get_artifact(art["id"]) is None
+        assert "inputs/owner/artifacts/x/v1/f.bin" in storage.deleted
+
+    def test_stranger_denied(self, _patch_db, flask_app):
+        from application.api.user.artifacts.routes import GetArtifact
+
+        art = self._seed(_patch_db)
+        resp = _call(
+            flask_app, GetArtifact, art["id"], token={"sub": STRANGER}, method="delete"
+        )
+        assert resp.status_code == 403
+        assert ArtifactsRepository(_patch_db).get_artifact(art["id"]) is not None
+
+    def test_share_token_holder_denied(self, _patch_db, flask_app):
+        from application.api.user.artifacts.routes import GetArtifact
+
+        conv = _make_conversation(_patch_db)
+        art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
+        share = SharedConversationsRepository(_patch_db).create(str(conv["id"]), OWNER)
+        resp = _call(
+            flask_app, GetArtifact, art["id"], token=None,
+            query={"share_token": str(share["uuid"])}, method="delete",
+        )
+        assert resp.status_code == 403
+        assert ArtifactsRepository(_patch_db).get_artifact(art["id"]) is not None
+
+    def test_unknown_artifact_404(self, _patch_db, flask_app, token_owner):
+        from application.api.user.artifacts.routes import GetArtifact
+
+        resp = _call(
+            flask_app, GetArtifact, str(uuid.uuid4()), token=token_owner, method="delete"
+        )
+        assert resp.status_code == 404
+
+
+@pytest.mark.unit
+class TestConversationDeleteReapsArtifacts:
+    def test_delete_conversation_removes_artifacts_frees_quota_and_reaps_bytes(
+        self, _patch_db, flask_app, monkeypatch
+    ):
+        conv = _make_conversation(_patch_db)
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]),
+            storage_path="k/reap.bin", filename="r.bin", size=42,
+        )
+        storage = _FakeStorage()
+        monkeypatch.setattr(
+            "application.storage.storage_creator.StorageCreator.get_storage",
+            lambda: storage,
+        )
+
+        deleted = ConversationsRepository(_patch_db).delete(str(conv["id"]), OWNER)
+        assert deleted is True
+
+        repo = ArtifactsRepository(_patch_db)
+        assert repo.get_artifact(art["id"]) is None  # cascade-removed with the parent
+        assert repo.count_for_user(OWNER) == 0  # quota freed
+        assert "k/reap.bin" in storage.deleted  # bytes reaped
 
 
 # ---------------------------------------------------------------------------

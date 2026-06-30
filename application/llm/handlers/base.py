@@ -1000,6 +1000,10 @@ class LLMHandler(ABC):
                 # They will be added on resume to keep call/result pairs together.
                 continue
 
+            # One assistant(tool_calls) message per call: track whether the
+            # success path already appended it so the except below doesn't
+            # add a second one when create_tool_message fails post-append.
+            assistant_appended = False
             try:
                 self.tool_calls.append(call)
                 tool_executor_gen = agent._execute_tool_action(tools_dict, call)
@@ -1041,41 +1045,53 @@ class LLMHandler(ABC):
                 if reasoning_content:
                     assistant_msg["reasoning_content"] = reasoning_content
                 updated_messages.append(assistant_msg)
+                assistant_appended = True
 
                 updated_messages.append(self.create_tool_message(call, tool_response))
             except Exception as e:
                 logger.error(f"Error executing tool: {str(e)}", exc_info=True)
+                # The error tool message's tool_call_id must match the assistant
+                # tool_call id that precedes it. When the success path already
+                # appended one (create_tool_message failed afterwards) that id is
+                # the executor-returned ``call_id``; otherwise the except builds
+                # its own assistant message below from ``call.id``.
+                error_id = call_id if assistant_appended else call.id
                 error_call = ToolCall(
-                    id=call.id, name=call.name, arguments=call.arguments
+                    id=error_id, name=call.name, arguments=call.arguments
                 )
                 error_response = f"Error executing tool: {str(e)}"
                 # Mirror the success path: a role:"tool" message must follow
                 # an assistant message carrying its tool_calls, or the next
                 # provider completion 400s ("'tool' must be a response to a
-                # preceding message with 'tool_calls'").
-                args_str = (
-                    json.dumps(call.arguments)
-                    if isinstance(call.arguments, dict)
-                    else call.arguments
-                )
-                tool_call_obj = {
-                    "id": call.id,
-                    "type": "function",
-                    "function": {
-                        "name": call.name,
-                        "arguments": args_str,
-                    },
-                }
-                if call.thought_signature:
-                    tool_call_obj["thought_signature"] = call.thought_signature
-                assistant_msg: Dict[str, Any] = {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [tool_call_obj],
-                }
-                if reasoning_content:
-                    assistant_msg["reasoning_content"] = reasoning_content
-                updated_messages.append(assistant_msg)
+                # preceding message with 'tool_calls'"). Skip it when the
+                # success path already appended one for this call — a
+                # create_tool_message failure after that append would
+                # otherwise duplicate the assistant message and 400 the
+                # same way an orphan tool message does.
+                if not assistant_appended:
+                    args_str = (
+                        json.dumps(call.arguments)
+                        if isinstance(call.arguments, dict)
+                        else call.arguments
+                    )
+                    tool_call_obj = {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": args_str,
+                        },
+                    }
+                    if call.thought_signature:
+                        tool_call_obj["thought_signature"] = call.thought_signature
+                    assistant_msg: Dict[str, Any] = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call_obj],
+                    }
+                    if reasoning_content:
+                        assistant_msg["reasoning_content"] = reasoning_content
+                    updated_messages.append(assistant_msg)
 
                 error_message = self.create_tool_message(error_call, error_response)
                 updated_messages.append(error_message)

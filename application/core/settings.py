@@ -362,6 +362,12 @@ class Settings(BaseSettings):
     # inputs). Files past the cap are extracted to text or dropped, not attached
     # natively, to bound context/cost. Re-uses SANDBOX_MAX_INPUT_BYTES per file.
     WORKFLOW_NODE_NATIVE_MAX_FILES: int = 5
+    # Per-agent-node cap on documents extracted to text via the parsing worker.
+    # Each non-native, non-text document issues a separate blocking parse, so a
+    # node referencing many documents (e.g. the ``*`` token) is bounded here to
+    # avoid serializing dozens of parses; documents past the cap are skipped with
+    # a truncation note instead of extracted.
+    WORKFLOW_NODE_EXTRACT_MAX_FILES: int = 5
     # Runner container resource caps — consumed by the docsgpt-sandbox compose
     # service (deployment/sandbox), not by the app client. cgroup CPU/mem caps
     # are part of the untrusted-code security boundary.

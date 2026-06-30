@@ -422,3 +422,37 @@ class TestCascadeDelete:
         )
         assert repo.get_artifact(created["id"]) is None
         assert repo.list_versions(created["id"]) == []
+
+
+class TestDeleteArtifact:
+    def test_delete_removes_versions_and_frees_quota(self, pg_conn):
+        repo = _repo(pg_conn)
+        art = repo.create_artifact(
+            "u-del", "document", conversation_id=_conversation_id(),
+            storage_path="k/v1.bin", size=100, filename="a.bin",
+            mime_type="application/octet-stream",
+        )
+        repo.append_version(art["id"], storage_path="k/v2.bin", size=200, filename="a.bin")
+        assert repo.count_for_user("u-del") == 1
+        assert repo.total_bytes_for_user("u-del") == 300
+
+        paths = repo.delete_artifact(art["id"])
+
+        assert set(paths) == {"k/v1.bin", "k/v2.bin"}  # caller reaps these bytes
+        assert repo.get_artifact(art["id"]) is None
+        assert repo.list_versions(art["id"]) == []  # versions cascade
+        assert repo.count_for_user("u-del") == 0  # quota freed
+        assert repo.total_bytes_for_user("u-del") == 0
+
+    def test_delete_for_conversation_scopes_to_that_conversation(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = _conversation_id()
+        repo.create_artifact("u2", "document", conversation_id=conv, storage_path="k/a", size=10, filename="a")
+        repo.create_artifact("u2", "document", conversation_id=conv, storage_path="k/b", size=20, filename="b")
+        other = repo.create_artifact("u2", "document", conversation_id=_conversation_id(), storage_path="k/c", size=30, filename="c")
+
+        n = repo.delete_for_conversation(conv)
+
+        assert n == 2
+        assert repo.get_artifact(other["id"]) is not None  # other conversation untouched
+        assert repo.count_for_user("u2") == 1

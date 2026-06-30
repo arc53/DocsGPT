@@ -15,6 +15,7 @@ Covers every operation the legacy Mongo code performs on
 from __future__ import annotations
 
 import json
+import logging
 from enum import Enum
 from typing import Optional
 
@@ -24,6 +25,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import conversations_table, conversation_messages_table
 from application.storage.db.serialization import PGNativeJSONEncoder
+
+logger = logging.getLogger(__name__)
 
 
 class MessageUpdateOutcome(str, Enum):
@@ -535,6 +538,14 @@ class ConversationsRepository:
         # a non-UUID id reaches this code path.
         if not looks_like_uuid(conversation_id):
             return False
+        # Artifacts are parent-derived: deleting a conversation must take its
+        # artifacts with it (rows + bytes + the quota they consume). conversation_id
+        # is a bare uuid (no FK cascade), so delete the rows explicitly and reap the
+        # stored bytes best-effort.
+        from application.storage.db.repositories.artifacts import ArtifactsRepository
+
+        artifacts = ArtifactsRepository(self._conn)
+        paths = artifacts.storage_paths_for_conversation(conversation_id)
         result = self._conn.execute(
             text(
                 "DELETE FROM conversations "
@@ -542,14 +553,44 @@ class ConversationsRepository:
             ),
             {"id": conversation_id, "user_id": user_id},
         )
-        return result.rowcount > 0
+        deleted = result.rowcount > 0
+        if deleted:
+            artifacts.delete_for_conversation(conversation_id)
+            self._reap_artifact_storage(paths)
+        return deleted
 
     def delete_all_for_user(self, user_id: str) -> int:
+        from application.storage.db.repositories.artifacts import ArtifactsRepository
+
+        # Reap artifacts BEFORE the conversations: delete_for_user_conversations
+        # resolves them via a subquery over the still-present conversation rows.
+        artifacts = ArtifactsRepository(self._conn)
+        paths = artifacts.storage_paths_for_user_conversations(user_id)
+        artifacts.delete_for_user_conversations(user_id)
         result = self._conn.execute(
             text("DELETE FROM conversations WHERE user_id = :user_id"),
             {"user_id": user_id},
         )
+        self._reap_artifact_storage(paths)
         return result.rowcount
+
+    @staticmethod
+    def _reap_artifact_storage(paths: list) -> None:
+        """Best-effort delete artifact bytes whose rows were cascade-removed; never raises."""
+        if not paths:
+            return
+        try:
+            from application.storage.storage_creator import StorageCreator
+
+            storage = StorageCreator.get_storage()
+        except Exception:
+            logger.warning("conversation delete: storage unavailable for artifact cleanup", exc_info=True)
+            return
+        for path in paths:
+            try:
+                storage.delete_file(path)
+            except Exception:
+                logger.warning("conversation delete: failed to delete artifact bytes %s", path, exc_info=True)
 
     # ------------------------------------------------------------------
     # Messages
