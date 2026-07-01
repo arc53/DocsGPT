@@ -908,14 +908,13 @@ export default function MessageInput({
   });
 
   const handleInput = useCallback(() => {
-    if (inputRef.current) {
-      if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
-      else inputRef.current.style.height = '64px';
-      inputRef.current.style.height = `${Math.min(
-        inputRef.current.scrollHeight,
-        96,
-      )}px`;
-    }
+    if (!inputRef.current) return;
+    if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
+    else inputRef.current.style.height = '64px';
+    inputRef.current.style.height = `${Math.min(
+      inputRef.current.scrollHeight,
+      Math.round(window.innerHeight * 0.4),
+    )}px`;
   }, []);
 
   const buildVoiceDraftValue = (baseText: string, transcript: string) => {
@@ -1570,7 +1569,7 @@ export default function MessageInput({
             }
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style no-scrollbar dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
+            className="inputbox-style dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full scrollbar-thin overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
