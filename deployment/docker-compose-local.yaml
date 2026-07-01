@@ -7,6 +7,7 @@ services:
       - VITE_API_HOST=http://localhost:7091
       - VITE_API_STREAMING=$VITE_API_STREAMING
       - VITE_EMBEDDINGS_NAME=$EMBEDDINGS_NAME
+      - DOCKER=true
     ports:
       - "5173:5173"
 
