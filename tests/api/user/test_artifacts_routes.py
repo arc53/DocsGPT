@@ -10,6 +10,8 @@ import pytest
 from flask import request
 from sqlalchemy import text
 
+from application.api.user.artifacts import authz
+from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.artifacts import ArtifactsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.shared_conversations import (
@@ -51,6 +53,31 @@ def _make_workflow(conn, user_id=OWNER):
         {"u": user_id},
     )
     return str(res.fetchone()[0])
+
+
+def _make_agent(conn, user_id=OWNER, key="secret-key"):
+    return AgentsRepository(conn).create(user_id, "widget-agent", "active", key=key)
+
+
+def _make_agent_conversation(conn, agent_id, user_id=OWNER):
+    return ConversationsRepository(conn).create(
+        user_id, name="conv", agent_id=str(agent_id)
+    )
+
+
+def _wire_api_key(monkeypatch, conn):
+    """Point ``resolve_principal``'s own readonly conn at the test conn.
+
+    ``resolve_principal`` opens ``db_readonly`` inside authz to resolve the
+    api_key via the real ``find_by_key``, so it must see the seeded agent row.
+    """
+    from contextlib import contextmanager as _cm
+
+    @_cm
+    def _use_conn():
+        yield conn
+
+    monkeypatch.setattr(authz, "db_readonly", _use_conn)
 
 
 def _make_artifact(conn, **kwargs):
@@ -646,33 +673,20 @@ class TestMalformedArtifactId:
 
 
 # ---------------------------------------------------------------------------
-# api_key -> agent-owner principal resolution
+# api_key -> agent-scoped principal (low-trust, widget-embedded credential)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestApiKeyPrincipal:
-    def test_api_key_owner_can_get_owned_artifact(
+    def test_api_key_reads_artifact_in_its_agent_scope(
         self, _patch_db, flask_app, monkeypatch
     ):
-        from application.api.user.artifacts import authz
         from application.api.user.artifacts.routes import GetArtifact
-        from application.storage.db.repositories.agents import AgentsRepository
 
-        conv = _make_conversation(_patch_db, user_id=OWNER)
+        agent = _make_agent(_patch_db)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
         art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
+        _wire_api_key(monkeypatch, _patch_db)
 
-        # The api_key path opens its own readonly conn inside authz; point it at
-        # the test conn and resolve the key to the artifact's owning agent.
-        @contextmanager
-        def _use_conn():
-            yield _patch_db
-
-        monkeypatch.setattr(authz, "db_readonly", _use_conn)
-        monkeypatch.setattr(
-            AgentsRepository, "find_by_key",
-            lambda self, key: {"user_id": OWNER} if key == "secret-key" else None,
-        )
-
-        # No JWT -> principal must be resolved from the api_key query param.
         resp = _call(
             flask_app, GetArtifact, art["id"], token=None,
             query={"api_key": "secret-key"},
@@ -680,25 +694,77 @@ class TestApiKeyPrincipal:
         assert resp.status_code == 200
         assert resp.json["artifact"]["id"] == str(art["id"])
 
+    def test_api_key_cannot_read_owner_artifact_outside_agent_scope(
+        self, _patch_db, flask_app, monkeypatch
+    ):
+        # Regression (critical IDOR): a public widget key resolves to the owner
+        # but must NOT reach an artifact from the owner's OTHER (non-agent)
+        # conversation -- it is confined to its own agent's conversations.
+        from application.api.user.artifacts.routes import GetArtifact
+
+        _make_agent(_patch_db)  # the widget agent (key=secret-key)
+        other_conv = _make_conversation(_patch_db, user_id=OWNER)  # no agent_id
+        art = _make_artifact(_patch_db, conversation_id=str(other_conv["id"]))
+        _wire_api_key(monkeypatch, _patch_db)
+
+        resp = _call(
+            flask_app, GetArtifact, art["id"], token=None,
+            query={"api_key": "secret-key"},
+        )
+        assert resp.status_code == 403
+
+    def test_api_key_list_is_scoped_to_agent_not_whole_corpus(
+        self, _patch_db, flask_app, monkeypatch
+    ):
+        # Regression (critical IDOR): the no-filter list must return only the
+        # agent's own conversations' artifacts, never the owner's whole corpus.
+        from application.api.user.artifacts.routes import ListArtifacts
+
+        agent = _make_agent(_patch_db)
+        agent_conv = _make_agent_conversation(_patch_db, agent["id"])
+        in_scope = _make_artifact(_patch_db, conversation_id=str(agent_conv["id"]))
+        other_conv = _make_conversation(_patch_db, user_id=OWNER)
+        out_of_scope = _make_artifact(_patch_db, conversation_id=str(other_conv["id"]))
+        _wire_api_key(monkeypatch, _patch_db)
+
+        resp = _call(
+            flask_app, ListArtifacts, token=None, query={"api_key": "secret-key"},
+        )
+        assert resp.status_code == 200
+        ids = {a["id"] for a in resp.json["artifacts"]}
+        assert str(in_scope["id"]) in ids
+        assert str(out_of_scope["id"]) not in ids
+
+    def test_api_key_cannot_delete_even_in_scope(
+        self, _patch_db, flask_app, monkeypatch
+    ):
+        # Mutations require a JWT owner; a low-trust agent key may never delete,
+        # even an artifact inside its own agent scope.
+        from application.api.user.artifacts.routes import GetArtifact
+
+        agent = _make_agent(_patch_db)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
+        _wire_api_key(monkeypatch, _patch_db)
+
+        resp = _call(
+            flask_app, GetArtifact, art["id"], token=None,
+            query={"api_key": "secret-key"}, method="delete",
+        )
+        assert resp.status_code == 403
+        assert ArtifactsRepository(_patch_db).get_artifact(art["id"]) is not None
+
     def test_api_key_resolving_to_stranger_denied(
         self, _patch_db, flask_app, monkeypatch
     ):
-        from application.api.user.artifacts import authz
+        # A key owned by a different user cannot reach this owner's artifact.
         from application.api.user.artifacts.routes import GetArtifact
-        from application.storage.db.repositories.agents import AgentsRepository
 
-        conv = _make_conversation(_patch_db, user_id=OWNER)
-        art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
-
-        @contextmanager
-        def _use_conn():
-            yield _patch_db
-
-        monkeypatch.setattr(authz, "db_readonly", _use_conn)
-        monkeypatch.setattr(
-            AgentsRepository, "find_by_key",
-            lambda self, key: {"user_id": STRANGER},
-        )
+        owner_conv = _make_conversation(_patch_db, user_id=OWNER)
+        art = _make_artifact(_patch_db, conversation_id=str(owner_conv["id"]))
+        stranger_agent = _make_agent(_patch_db, user_id=STRANGER, key="stranger-key")
+        _make_agent_conversation(_patch_db, stranger_agent["id"], user_id=STRANGER)
+        _wire_api_key(monkeypatch, _patch_db)
 
         resp = _call(
             flask_app, GetArtifact, art["id"], token=None,

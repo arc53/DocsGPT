@@ -20,7 +20,7 @@ from application.api import api
 from application.api.user.artifacts.authz import (
     authorize_artifact,
     authorize_artifact_write,
-    resolve_authenticated_user,
+    resolve_principal,
     user_can_access_conversation,
 )
 from application.core.settings import settings
@@ -98,7 +98,8 @@ def _iso(value):
 class ListArtifacts(Resource):
     @api.doc(description="List artifacts for a conversation, workflow run, or the caller")
     def get(self):
-        user_id = resolve_authenticated_user()
+        principal = resolve_principal()
+        user_id = principal.user_id
         conversation_id = request.args.get("conversation_id")
         workflow_run_id = request.args.get("workflow_run_id")
         share_token = request.args.get("share_token")
@@ -121,32 +122,45 @@ class ListArtifacts(Resource):
 
         try:
             with db_readonly() as conn:
-                if conversation_id:
+                repo = ArtifactsRepository(conn)
+                if principal.is_agent_scoped:
+                    # A low-trust agent api_key only ever sees its OWN agent's
+                    # artifacts (never the owner's whole corpus): scope to the
+                    # agent, then optionally narrow to the requested conversation.
+                    # Workflow runs are not agent-scoped, so reject that filter.
+                    if workflow_run_id:
+                        return make_response(
+                            jsonify({"success": False, "message": "Forbidden"}), 403
+                        )
+                    rows = repo.list_artifacts_for_agent(principal.agent_id, user_id)
+                    if conversation_id:
+                        rows = [
+                            r
+                            for r in rows
+                            if str(r.get("conversation_id")) == str(conversation_id)
+                        ]
+                elif conversation_id:
                     if not user_can_access_conversation(
                         conn, conversation_id, user_id, share_token
                     ):
                         return make_response(
                             jsonify({"success": False, "message": "Forbidden"}), 403
                         )
-                    rows = ArtifactsRepository(conn).list_artifacts(
-                        conversation_id=conversation_id
-                    )
+                    rows = repo.list_artifacts(conversation_id=conversation_id)
                 elif workflow_run_id:
                     run = WorkflowRunsRepository(conn).get(workflow_run_id)
                     if run is None or run.get("user_id") != user_id:
                         return make_response(
                             jsonify({"success": False, "message": "Forbidden"}), 403
                         )
-                    rows = ArtifactsRepository(conn).list_artifacts(
-                        workflow_run_id=workflow_run_id
-                    )
+                    rows = repo.list_artifacts(workflow_run_id=workflow_run_id)
                 else:
                     if not user_id:
                         return make_response(
                             jsonify({"success": False, "message": "Authentication required"}),
                             401,
                         )
-                    rows = ArtifactsRepository(conn).list_artifacts(user_id=user_id)
+                    rows = repo.list_artifacts(user_id=user_id)
 
             return make_response(
                 jsonify(
@@ -167,7 +181,7 @@ class GetArtifact(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Artifact not found"}), 404
             )
-        user_id = resolve_authenticated_user()
+        principal = resolve_principal()
         try:
             with db_readonly() as conn:
                 repo = ArtifactsRepository(conn)
@@ -176,7 +190,7 @@ class GetArtifact(Resource):
                     return make_response(
                         jsonify({"success": False, "message": "Artifact not found"}), 404
                     )
-                if not authorize_artifact(conn, artifact, user_id):
+                if not authorize_artifact(conn, artifact, principal):
                     return make_response(
                         jsonify({"success": False, "message": "Forbidden"}), 403
                     )
@@ -197,7 +211,7 @@ class GetArtifact(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Artifact not found"}), 404
             )
-        user_id = resolve_authenticated_user()
+        principal = resolve_principal()
         try:
             with db_session() as conn:
                 repo = ArtifactsRepository(conn)
@@ -208,7 +222,7 @@ class GetArtifact(Resource):
                     )
                 # Delete is a WRITE: only the parent owner may delete; share
                 # links / read-only collaborators are denied (read access only).
-                if not authorize_artifact_write(conn, artifact, user_id):
+                if not authorize_artifact_write(conn, artifact, principal):
                     return make_response(
                         jsonify({"success": False, "message": "Forbidden"}), 403
                     )
@@ -247,7 +261,7 @@ class GetArtifactVersion(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Artifact not found"}), 404
             )
-        user_id = resolve_authenticated_user()
+        principal = resolve_principal()
         try:
             with db_readonly() as conn:
                 repo = ArtifactsRepository(conn)
@@ -256,7 +270,7 @@ class GetArtifactVersion(Resource):
                     return make_response(
                         jsonify({"success": False, "message": "Artifact not found"}), 404
                     )
-                if not authorize_artifact(conn, artifact, user_id):
+                if not authorize_artifact(conn, artifact, principal):
                     return make_response(
                         jsonify({"success": False, "message": "Forbidden"}), 403
                     )
@@ -286,7 +300,7 @@ class DownloadArtifact(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Artifact not found"}), 404
             )
-        user_id = resolve_authenticated_user()
+        principal = resolve_principal()
         version_arg = request.args.get("version")
         try:
             with db_readonly() as conn:
@@ -296,7 +310,7 @@ class DownloadArtifact(Resource):
                     return make_response(
                         jsonify({"success": False, "message": "Artifact not found"}), 404
                     )
-                if not authorize_artifact(conn, artifact, user_id):
+                if not authorize_artifact(conn, artifact, principal):
                     return make_response(
                         jsonify({"success": False, "message": "Forbidden"}), 403
                     )
@@ -388,7 +402,7 @@ class RestoreArtifact(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Artifact not found"}), 404
             )
-        user_id = resolve_authenticated_user()
+        principal = resolve_principal()
         data = request.get_json(silent=True) or {}
         target_version = data.get("version")
         if target_version is None:
@@ -413,7 +427,7 @@ class RestoreArtifact(Resource):
                 # Restore is a WRITE (it appends a new current version); share
                 # links / shared_with collaborators inherit read access only, so
                 # gate on the stricter owner-required write check.
-                if not authorize_artifact_write(conn, artifact, user_id):
+                if not authorize_artifact_write(conn, artifact, principal):
                     return make_response(
                         jsonify({"success": False, "message": "Forbidden"}), 403
                     )

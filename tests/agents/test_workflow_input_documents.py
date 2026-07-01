@@ -227,14 +227,14 @@ def test_shared_agent_run_and_artifacts_owned_by_caller(pg_engine, tmp_path, mon
     # share token, so it needs a request context.
     from flask import Flask
 
-    from application.api.user.artifacts.authz import authorize_artifact
+    from application.api.user.artifacts.authz import Principal, authorize_artifact
 
     app = Flask(__name__)
     with app.test_request_context():
         with pg_engine.connect() as conn:
             artifact = ArtifactsRepository(conn).get_artifact(refs[0]["artifact_id"])
-            assert authorize_artifact(conn, artifact, RUNNER) is True
-            assert authorize_artifact(conn, artifact, OWNER) is False
+            assert authorize_artifact(conn, artifact, Principal(user_id=RUNNER)) is True
+            assert authorize_artifact(conn, artifact, Principal(user_id=OWNER)) is False
 
 
 def test_code_state_excludes_chat_history(pg_engine, tmp_path, monkeypatch):

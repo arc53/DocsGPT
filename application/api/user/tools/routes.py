@@ -16,7 +16,7 @@ from application.agents.default_tools import (
 from application.agents.tools.spec_parser import parse_spec
 from application.agents.tools.tool_manager import ToolManager
 from application.api import api
-from application.api.user.artifacts.authz import authorize_artifact
+from application.api.user.artifacts.authz import Principal, authorize_artifact
 from application.api.user.team_sharing import effective_write_owner, visible_with_access
 from application.core.url_validation import SSRFError, validate_url
 from application.security.encryption import decrypt_credentials, encrypt_credentials
@@ -954,7 +954,9 @@ class GetArtifact(Resource):
                 if looks_like_uuid(artifact_id):
                     artifacts_repo = ArtifactsRepository(conn)
                     artifact_doc = artifacts_repo.get_artifact(artifact_id)
-                if artifact_doc and authorize_artifact(conn, artifact_doc, user_id):
+                if artifact_doc and authorize_artifact(
+                    conn, artifact_doc, Principal(user_id=user_id)
+                ):
                     current = artifacts_repo.get_version(
                         artifact_id, artifact_doc.get("current_version")
                     )
