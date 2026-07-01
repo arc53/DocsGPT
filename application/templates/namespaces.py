@@ -1,4 +1,5 @@
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -125,30 +126,178 @@ class ToolsNamespace(NamespaceBuilder):
         return "tools"
 
     def build(
-        self, tools_data: Optional[Dict[str, Any]] = None, **kwargs
+        self,
+        tools_data: Optional[Dict[str, Any]] = None,
+        enabled_tools: Optional[Any] = None,
+        **kwargs,
     ) -> Dict[str, Any]:
         """
-        Build tools context with pre-executed tool results.
+        Build tools context: pre-executed tool results plus the enabled-tool set.
 
         Args:
             tools_data: Dictionary of pre-fetched tool results organized by tool name
                        e.g., {"memory": {"notes": "content", "tasks": "list"}}
+            enabled_tools: Names of the tools enabled for this turn. When provided,
+                       exposed as the reserved ``tools.enabled`` list for gating
+                       tool-specific prompt sections. Left absent (not just empty)
+                       when the caller did not compute it, so a gate can fail open.
 
         Returns:
-            Dictionary with tool results organized by tool name
+            Dictionary with tool results by tool name, plus ``enabled`` when known
         """
-        if not tools_data:
-            return {}
-
-        safe_data = {}
-        for tool_name, tool_result in tools_data.items():
+        safe_data: Dict[str, Any] = {}
+        for tool_name, tool_result in (tools_data or {}).items():
             if isinstance(tool_result, (str, dict, list, int, float, bool, type(None))):
                 safe_data[tool_name] = tool_result
             else:
                 logger.warning(
                     f"Skipping non-serializable tool result for '{tool_name}': {type(tool_result)}"
                 )
+        if enabled_tools is not None:
+            safe_data["enabled"] = sorted({str(t) for t in enabled_tools if t})
         return safe_data
+
+
+# Artifact-reference metadata is the only thing that may enter template context;
+# bytes (and anything non-primitive) are never exposed through this namespace.
+_ARTIFACT_METADATA_KEYS = (
+    "artifact_id",
+    "version",
+    "mime_type",
+    "filename",
+    "size",
+    "kind",
+    "title",
+)
+
+
+def _artifact_view(ref: Any) -> Optional[Dict[str, Any]]:
+    """Project an artifact reference to a serializable metadata view, or None if it isn't one."""
+    if not isinstance(ref, dict) or not ref.get("artifact_id"):
+        return None
+    view: Dict[str, Any] = {}
+    for key in _ARTIFACT_METADATA_KEYS:
+        value = ref.get(key)
+        if isinstance(value, (str, int, float, bool, type(None))):
+            view[key] = value
+    # ``{{ artifacts.<name>.id }}`` is the documented accessor; mirror artifact_id to id.
+    view["id"] = view.get("artifact_id")
+    return view
+
+
+class ArtifactsNamespace(NamespaceBuilder):
+    """Artifact references namespace: {{ artifacts.<name>.id }} / .mime_type / .filename + artifact(id)."""
+
+    @property
+    def namespace_name(self) -> str:
+        return "artifacts"
+
+    def build(
+        self,
+        artifacts_data: Optional[Dict[str, Any]] = None,
+        artifact_parent: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Build the artifacts namespace from named references plus a parent-scoped ``artifact(id)`` lookup.
+
+        Args:
+            artifacts_data: Map of output-variable name -> artifact reference dict.
+            artifact_parent: Parent scope ({"conversation_id"|"workflow_run_id"}) for ``artifact(id)``.
+
+        Returns:
+            A dict of named metadata views plus an ``artifact`` callable; never any bytes.
+        """
+        context: Dict[str, Any] = {}
+        for name, ref in (artifacts_data or {}).items():
+            view = _artifact_view(ref)
+            if view is not None:
+                context[str(name)] = view
+        context["artifact"] = self._make_lookup(artifact_parent or {})
+        return context
+
+    def _make_lookup(self, parent: Dict[str, Any]):
+        """Return an ``artifact(id)`` helper that resolves metadata scoped to the run/conversation parent."""
+        conversation_id = parent.get("conversation_id")
+        workflow_run_id = parent.get("workflow_run_id")
+
+        def artifact(artifact_id: Any) -> Dict[str, Any]:
+            """Resolve one artifact's metadata by id, scoped to this parent (never cross-tenant)."""
+            if not artifact_id or (conversation_id is None and workflow_run_id is None):
+                return {}
+            try:
+                from application.storage.db.repositories.artifacts import (
+                    ArtifactsRepository,
+                )
+                from application.storage.db.session import db_readonly
+
+                with db_readonly() as conn:
+                    repo = ArtifactsRepository(conn)
+                    row = repo.get_artifact_in_parent(
+                        str(artifact_id),
+                        conversation_id=conversation_id,
+                        workflow_run_id=workflow_run_id,
+                    )
+                    if row is None:
+                        return {}
+                    version = repo.get_version(str(artifact_id), row.get("current_version", 1))
+            except Exception:
+                logger.exception("Failed to resolve artifact %s in namespace", artifact_id)
+                return {}
+            view = {
+                "artifact_id": str(row["id"]),
+                "id": str(row["id"]),
+                "version": row.get("current_version"),
+                "kind": row.get("kind"),
+                "title": row.get("title"),
+            }
+            if version is not None:
+                for key in ("mime_type", "filename", "size"):
+                    value = version.get(key)
+                    if isinstance(value, (str, int, float, bool, type(None))):
+                        view[key] = value
+            return view
+
+        return artifact
+
+
+class AttachmentsNamespace(NamespaceBuilder):
+    """Attached-file metadata namespace: {{ attachments.files }} (name / mime_type / size)."""
+
+    @property
+    def namespace_name(self) -> str:
+        return "attachments"
+
+    def build(self, attachments: Optional[list] = None, **kwargs) -> Dict[str, Any]:
+        """Expose metadata for files attached to this message.
+
+        Only the filename, MIME type, and size enter the prompt; file bytes and
+        any extracted ``content`` are never surfaced through this namespace. Field
+        names mirror the ``artifacts`` namespace (``filename`` / ``mime_type`` / ``size``).
+        """
+        if not attachments:
+            return {}
+        files = []
+        for att in attachments:
+            if not isinstance(att, dict):
+                continue
+            filename = att.get("filename") or att.get("name")
+            if not filename:
+                continue
+            # Filenames are user-controlled and rendered unescaped into the prompt;
+            # strip control chars/newlines and cap length so a crafted name cannot
+            # inject fake markdown sections regardless of the upstream upload path.
+            clean = re.sub(r"[\x00-\x1f\x7f]", " ", str(filename))[:255].strip()
+            if not clean:
+                continue
+            entry: Dict[str, Any] = {
+                "filename": clean,
+                "mime_type": att.get("mime_type") or "application/octet-stream",
+            }
+            size = att.get("size")
+            if isinstance(size, int) and size > 0:
+                entry["size"] = size
+            files.append(entry)
+        return {"files": files} if files else {}
 
 
 class NamespaceManager:
@@ -160,6 +309,8 @@ class NamespaceManager:
             "passthrough": PassthroughNamespace(),
             "source": SourceNamespace(),
             "tools": ToolsNamespace(),
+            "artifacts": ArtifactsNamespace(),
+            "attachments": AttachmentsNamespace(),
         }
 
     def build_context(self, **kwargs) -> Dict[str, Any]:

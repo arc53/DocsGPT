@@ -15,8 +15,10 @@ def _reset_tool_cache():
     def _clear():
         default_tools._tool_cache.clear()
         default_tools._ids_cache.clear()
+        default_tools._id_set_cache.clear()
         default_tools._loaded_cache.clear()
         default_tools._builtin_ids_cache.clear()
+        default_tools._builtin_id_set_cache.clear()
         default_tools._builtin_loaded_cache.clear()
 
     _clear()
@@ -158,6 +160,25 @@ class TestValidation:
             default_tools.settings, "DEFAULT_CHAT_TOOLS", ["scheduler"]
         )
         assert default_tools.validate_default_chat_tools() == ["scheduler"]
+
+    def test_sandbox_tools_are_defaultable(self, monkeypatch):
+        # code_executor / artifact_generator persist artifacts (no user_tools
+        # FK) and have no REQUIRED config field, so they validate as defaults.
+        monkeypatch.setattr(
+            default_tools.settings,
+            "DEFAULT_CHAT_TOOLS",
+            ["code_executor", "artifact_generator"],
+        )
+        assert default_tools.validate_default_chat_tools() == [
+            "code_executor",
+            "artifact_generator",
+        ]
+
+    def test_shipped_defaults_validate(self):
+        # The real shipped DEFAULT_CHAT_TOOLS must pass startup validation.
+        usable = default_tools.validate_default_chat_tools()
+        assert "code_executor" in usable
+        assert "artifact_generator" in usable
 
     def test_tool_with_required_config_is_rejected(self, monkeypatch):
         # ``brave`` needs an API key.
@@ -307,6 +328,27 @@ class TestResolveToolById:
         assert row["builtin"] is True
         assert row["default"] is True
 
+    @pytest.mark.parametrize("name", ["code_executor", "artifact_generator"])
+    def test_sandbox_default_id_resolves_in_memory(self, name):
+        # Synthetic default id -> name -> in-memory row (loaded user-scoped at
+        # execute time via the synthetic-default path, like scheduler).
+        tool_id = default_tools.default_tool_id(name)
+        assert default_tools.default_tool_name_for_id(tool_id) == name
+        row = default_tools.resolve_tool_by_id(tool_id, "user-x")
+        assert row is not None
+        assert row["name"] == name
+        assert row["id"] == tool_id
+
+    def test_read_document_builtin_id_resolves_workflow_only(self):
+        # read_document is a workflow-only builtin: its synthetic id resolves
+        # to a row flagged workflow_only for the frontend to gate visibility.
+        tool_id = default_tools.default_tool_id("read_document")
+        row = default_tools.resolve_tool_by_id(tool_id, "user-x")
+        assert row is not None
+        assert row["name"] == "read_document"
+        assert row["builtin"] is True
+        assert row["workflow_only"] is True
+
 
 # ---------------------------------------------------------------------------
 # Agent-selectable builtins (scheduler) — synthesized like defaults but
@@ -356,6 +398,34 @@ class TestBuiltinAgentTools:
         # ``synthesized_default_tools`` so agentless chats can use it.
         rows = default_tools.synthesized_default_tools(None)
         assert "scheduler" in {r["name"] for r in rows}
+
+    def test_read_document_is_a_builtin(self):
+        assert "read_document" in default_tools.BUILTIN_AGENT_TOOLS
+        assert "read_document" in default_tools.WORKFLOW_ONLY_BUILTINS
+
+    def test_read_document_not_a_default_chat_tool(self):
+        # read_document is a builtin only — never a default agentless chat tool.
+        assert "read_document" not in default_tools.settings.DEFAULT_CHAT_TOOLS
+        rows = default_tools.synthesized_default_tools(None)
+        assert "read_document" not in {r["name"] for r in rows}
+
+    def test_synthesize_read_document_flags_workflow_only(self):
+        row = default_tools.synthesize_builtin_agent_tool("read_document")
+        assert row is not None
+        assert row["builtin"] is True
+        assert row["default"] is False
+        assert row["workflow_only"] is True
+        assert isinstance(row["actions"], list) and row["actions"]
+
+    def test_scheduler_builtin_is_not_workflow_only(self):
+        row = default_tools.synthesize_builtin_agent_tool("scheduler")
+        assert row["workflow_only"] is False
+
+    def test_builtin_management_marks_workflow_only(self):
+        rows = default_tools.builtin_agent_tools_for_management()
+        by_name = {r["name"]: r for r in rows}
+        assert by_name["read_document"]["workflow_only"] is True
+        assert by_name["scheduler"]["workflow_only"] is False
 
 
 # ---------------------------------------------------------------------------

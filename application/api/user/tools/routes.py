@@ -11,13 +11,17 @@ from application.agents.default_tools import (
     is_builtin_agent_tool_id,
     is_default_tool_id,
     is_synthesized_tool_id,
+    WORKFLOW_ONLY_BUILTINS,
 )
 from application.agents.tools.spec_parser import parse_spec
 from application.agents.tools.tool_manager import ToolManager
 from application.api import api
+from application.api.user.artifacts.authz import Principal, authorize_artifact
 from application.api.user.team_sharing import effective_write_owner, visible_with_access
 from application.core.url_validation import SSRFError, validate_url
 from application.security.encryption import decrypt_credentials, encrypt_credentials
+from application.storage.db.base_repository import looks_like_uuid
+from application.storage.db.repositories.artifacts import ArtifactsRepository
 from application.storage.db.repositories.notes import NotesRepository
 from application.storage.db.repositories.todos import TodosRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository
@@ -271,12 +275,18 @@ class GetTools(Resource):
             # Builtins (e.g. scheduler) hidden from Add-Tool catalog, visible
             # to the agent picker. Skip ones already added via the default
             # path — both registries share ``_DEFAULT_TOOL_NAMESPACE``.
+            # ``workflow_only`` builtins (e.g. ``read_document``) carry that
+            # flag so the classic picker can hide them and the workflow node
+            # picker can keep them.
             for builtin_row in builtin_agent_tools_for_management():
                 builtin_copy = _row_to_api(builtin_row)
                 if str(builtin_copy["id"]) in seen_ids:
                     continue
                 builtin_copy["builtin"] = True
                 builtin_copy["default"] = False
+                builtin_copy["workflow_only"] = (
+                    builtin_copy.get("name") in WORKFLOW_ONLY_BUILTINS
+                )
                 user_tools.append(builtin_copy)
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
@@ -929,6 +939,46 @@ class GetArtifact(Resource):
                             "total_count": len(items),
                             "open_count": open_count,
                             "completed_count": completed_count,
+                        },
+                    }
+                    return make_response(
+                        jsonify({"success": True, "artifact": artifact}), 200
+                    )
+
+                # Generalized document/file artifacts live in the
+                # ``artifacts`` store, authorized by their parent (not user_id).
+                # Shape-gate the UUID lookup so a non-UUID id (legacy note/todo
+                # ObjectId already handled above) never reaches the CAST that
+                # would poison this read-only transaction.
+                artifact_doc = None
+                if looks_like_uuid(artifact_id):
+                    artifacts_repo = ArtifactsRepository(conn)
+                    artifact_doc = artifacts_repo.get_artifact(artifact_id)
+                if artifact_doc and authorize_artifact(
+                    conn, artifact_doc, Principal(user_id=user_id)
+                ):
+                    current = artifacts_repo.get_version(
+                        artifact_id, artifact_doc.get("current_version")
+                    )
+                    artifact = {
+                        "artifact_type": (
+                            "document"
+                            if artifact_doc.get("kind") != "file"
+                            else "file"
+                        ),
+                        "data": {
+                            "id": str(artifact_doc.get("id")),
+                            "kind": artifact_doc.get("kind"),
+                            "title": artifact_doc.get("title"),
+                            "current_version": artifact_doc.get("current_version"),
+                            "mime_type": current.get("mime_type") if current else None,
+                            "filename": current.get("filename") if current else None,
+                            "size": current.get("size") if current else None,
+                            "download_url": (
+                                f"/api/artifacts/{artifact_id}/download"
+                                if current and current.get("storage_path")
+                                else None
+                            ),
                         },
                     }
                     return make_response(

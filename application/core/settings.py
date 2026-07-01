@@ -251,8 +251,19 @@ class Settings(BaseSettings):
 
     # Config-free tools on by default in agentless chats. ``scheduler`` is
     # dual-registered (also in ``BUILTIN_AGENT_TOOLS``) so the same synthetic id
-    # resolves whether reached via defaults or the agent picker.
-    DEFAULT_CHAT_TOOLS: list = ["memory", "read_webpage", "scheduler"]
+    # resolves whether reached via defaults or the agent picker. ``code_executor``
+    # and ``artifact_generator`` persist artifacts (not a ``user_tools``-FK table);
+    # their synthetic-id load is user- and conversation-scoped like ``scheduler``.
+    # NOTE: default-on ``code_executor`` runs LLM-authored sandboxed code WITHOUT an
+    # approval prompt — the sandbox is the trust boundary, so multi-tenant deployments
+    # should add per-tenant isolation (Daytona / gVisor / egress policy).
+    DEFAULT_CHAT_TOOLS: list = [
+        "memory",
+        "read_webpage",
+        "scheduler",
+        "code_executor",
+        "artifact_generator",
+    ]
 
     # Conversation Compression Settings
     ENABLE_CONVERSATION_COMPRESSION: bool = True
@@ -323,6 +334,63 @@ class Settings(BaseSettings):
     SCHEDULE_AUTOPAUSE_FAILURES: int = 3
     SCHEDULE_ONCE_MAX_HORIZON: int = 31_536_000
     SCHEDULE_RUN_OUTPUT_RETENTION_DAYS: int = 90
+
+    # Code-execution sandbox (see artifacts-code-execution-spec.md §4 C2).
+    # The app is a CLIENT of an always-on runner; defaults are safe so app
+    # import never fails when the sandbox is unconfigured.
+    SANDBOX_BACKEND: str = "jupyter"  # "jupyter" (self-host) | "daytona" (Daytona Cloud)
+    # URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service).
+    SANDBOX_GATEWAY_URL: str = "http://localhost:8888"
+    SANDBOX_GATEWAY_AUTH_TOKEN: Optional[str] = None  # gateway auth token, if set
+    SANDBOX_KERNEL_NAME: str = "python3"  # kernelspec name to launch per session
+    SANDBOX_MAX_TTL: int = 1200  # hard cap (s) on agent-selectable keep-alive TTL
+    # Per-process/worker cap on concurrent live sandbox sessions. Backend-agnostic
+    # (complements DAYTONA_MAX_SANDBOXES); when reached, an LRU-idle session is
+    # evicted to make room. This bound is local to each app/worker process.
+    # 0 (or any non-positive value) disables the cap (unlimited sessions).
+    SANDBOX_MAX_SESSIONS: int = 32
+    SANDBOX_EXEC_TIMEOUT: int = 60  # default wall-clock cap (s) per exec call
+    SANDBOX_HTTP_TIMEOUT: int = 10  # fixed cap (s) for REST control calls (create/delete/alive/interrupt)
+    SANDBOX_MAX_OUTPUT_BYTES: int = 8 * 1024 * 1024  # cap on buffered stdout+stderr per exec
+    SANDBOX_MAX_FILE_BYTES: int = 10 * 1024 * 1024  # cap on get_file size routed through stdout
+    SANDBOX_MAX_INPUT_BYTES: int = 25 * 1024 * 1024  # cap on an input document staged into a sandbox session
+    # ``read_document`` parsing on a dedicated Celery ``parsing`` queue (backend parser).
+    DOCUMENT_PARSE_QUEUE: str = "parsing"  # queue the parse_document task is routed to
+    DOCUMENT_PARSE_TIMEOUT: int = 120  # seconds the tool awaits the enqueued parse before degrading
+    DOCUMENT_PARSE_MAX_BYTES: int = 0  # cap on a parsed document's bytes (0 = reuse SANDBOX_MAX_INPUT_BYTES)
+    # Per-agent-node cap on files passed natively to the node's LLM (vision/doc
+    # inputs). Files past the cap are extracted to text or dropped, not attached
+    # natively, to bound context/cost. Re-uses SANDBOX_MAX_INPUT_BYTES per file.
+    WORKFLOW_NODE_NATIVE_MAX_FILES: int = 5
+    # Per-agent-node cap on documents extracted to text via the parsing worker.
+    # Each non-native, non-text document issues a separate blocking parse, so a
+    # node referencing many documents (e.g. the ``*`` token) is bounded here to
+    # avoid serializing dozens of parses; documents past the cap are skipped with
+    # a truncation note instead of extracted.
+    WORKFLOW_NODE_EXTRACT_MAX_FILES: int = 5
+    # Runner container resource caps — consumed by the docsgpt-sandbox compose
+    # service (deployment/sandbox), not by the app client. cgroup CPU/mem caps
+    # are part of the untrusted-code security boundary.
+    SANDBOX_MEMORY: str = "1g"  # docker mem_limit for the runner container
+    SANDBOX_CPUS: str = "1.0"  # docker cpu quota for the runner container
+    # Daytona Cloud managed backend (used only when SANDBOX_BACKEND="daytona").
+    # The app is a REST client of Daytona Cloud authenticated by DAYTONA_API_KEY;
+    # all knobs are optional so app import never fails when the backend is unused.
+    DAYTONA_API_KEY: Optional[str] = None  # Daytona Cloud API key (secret)
+    DAYTONA_API_URL: Optional[str] = None  # override Daytona API base URL, if self-targeting
+    DAYTONA_TARGET: Optional[str] = None  # Daytona region/target, e.g. "us"
+    DAYTONA_SNAPSHOT: Optional[str] = None  # image for new sandboxes; render libs via scripts/build_daytona_snapshot.py
+    DAYTONA_LANGUAGE: str = "python"  # default runtime language for created sandboxes
+    DAYTONA_AUTO_STOP_INTERVAL: int = 15  # minutes idle before Daytona auto-stops a sandbox (0 disables)
+    DAYTONA_AUTO_DELETE_INTERVAL: int = 60  # minutes after stop before Daytona auto-deletes (-1 disables)
+    DAYTONA_MAX_SANDBOXES: int = 50  # cap on concurrent live Daytona sandboxes (cost-DoS guard)
+    # Per-user artifact quotas (generous defaults; enforced at persistence time).
+    # For all three, 0 (or any non-positive value) disables that quota (unlimited).
+    ARTIFACT_MAX_BYTES: int = 50 * 1024 * 1024  # cap on a single stored artifact version's bytes
+    ARTIFACT_MAX_COUNT_PER_USER: int = 5000  # cap on artifacts a user may own
+    ARTIFACT_MAX_TOTAL_BYTES_PER_USER: int = 5 * 1024 * 1024 * 1024  # cap on a user's total stored bytes
+    # Cap on bytes served per MCP ``resources/read`` so a giant artifact never streams into LLM context.
+    ARTIFACT_RESOURCE_READ_MAX_BYTES: int = 1 * 1024 * 1024
 
     @field_validator("POSTGRES_URI", mode="before")
     @classmethod

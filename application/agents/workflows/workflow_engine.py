@@ -1,5 +1,7 @@
 import json
 import logging
+import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
 
@@ -8,6 +10,7 @@ from application.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from application.agents.workflows.schemas import (
     AgentNodeConfig,
     AgentType,
+    CodeNodeConfig,
     ConditionNodeConfig,
     ExecutionStatus,
     NodeExecutionLog,
@@ -34,15 +37,38 @@ logger = logging.getLogger(__name__)
 
 StateValue = Any
 WorkflowState = Dict[str, StateValue]
-TEMPLATE_RESERVED_NAMESPACES = {"agent", "system", "source", "tools", "passthrough"}
+TEMPLATE_RESERVED_NAMESPACES = {"agent", "artifacts", "system", "source", "tools", "passthrough"}
+
+# Run ids become a sandbox-session / kernel-workspace path component; the gateway
+# only accepts [A-Za-z0-9_-]+, so any disallowed character is stripped before binding.
+_SESSION_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
+
+# State keys never staged into a code node's ``state.json``. ``chat_history`` is
+# the caller's conversation and must not be reachable by owner-authored,
+# egress-open sandbox code (see ``_json_safe_state``).
+_CODE_STATE_EXCLUDED_KEYS = frozenset({"chat_history"})
+
+# Sentinel id stamped on the synthetic text attachment that flags documents a
+# node skipped past the per-node blocking-extract cap (callers/tests match on it).
+_EXTRACT_TRUNCATION_ID = "workflow-extract-truncated"
 
 
 class WorkflowEngine:
     MAX_EXECUTION_STEPS = 50
 
-    def __init__(self, graph: WorkflowGraph, agent: "BaseAgent"):
+    def __init__(
+        self,
+        graph: WorkflowGraph,
+        agent: "BaseAgent",
+        workflow_run_id: Optional[str] = None,
+    ):
+        """Bind the engine to a graph + agent; mint a run id for run-scoped sandbox/artifacts."""
         self.graph = graph
         self.agent = agent
+        # The run id scopes the code-node sandbox session and every produced
+        # artifact's parent; mint one when the caller has not supplied a
+        # pre-created ``workflow_runs`` id so the engine is self-contained.
+        self.workflow_run_id: str = workflow_run_id or str(uuid.uuid4())
         self.state: WorkflowState = {}
         self.execution_log: List[Dict[str, Any]] = []
         self._condition_result: Optional[str] = None
@@ -53,6 +79,11 @@ class WorkflowEngine:
         self, initial_inputs: WorkflowState, query: str
     ) -> Generator[Dict[str, str], None, None]:
         self._initialize_state(initial_inputs, query)
+
+        # Surface the run id up front so the client can list this run's
+        # artifacts (GET /api/artifacts?workflow_run_id=) once it has been
+        # persisted; the same id parents every artifact produced by code nodes.
+        yield {"type": "workflow_run", "workflow_run_id": self.workflow_run_id}
 
         start_node = self.graph.get_start_node()
         if not start_node:
@@ -170,6 +201,7 @@ class WorkflowEngine:
             NodeType.START: self._execute_start_node,
             NodeType.NOTE: self._execute_note_node,
             NodeType.AGENT: self._execute_agent_node,
+            NodeType.CODE: self._execute_code_node,
             NodeType.STATE: self._execute_state_node,
             NodeType.CONDITION: self._execute_condition_node,
             NodeType.END: self._execute_end_node,
@@ -227,10 +259,10 @@ class WorkflowEngine:
         )
         node_api_key = get_api_key_for_provider(node_llm_name) or self.agent.api_key
 
+        # Structured output gates on the model's registry capability flags;
+        # fetch them only when a node json_schema needs the check.
         if node_json_schema and node_model_id:
-            model_capabilities = get_model_capabilities(
-                node_model_id, user_id=node_user_id
-            )
+            model_capabilities = get_model_capabilities(node_model_id, user_id=node_user_id)
             if model_capabilities and not model_capabilities.get(
                 "supports_structured_output", False
             ):
@@ -265,6 +297,21 @@ class WorkflowEngine:
             }
 
         node_agent = WorkflowNodeAgentFactory.create(**factory_kwargs)
+        # Run-scope the node agent's tools so artifact_generator / code_executor
+        # address artifacts by this workflow run: a short ref (A1) created by one
+        # node resolves for edit_artifact in a later node within the same run.
+        if getattr(node_agent, "tool_executor", None) is not None:
+            node_agent.tool_executor.workflow_run_id = self.workflow_run_id
+
+        # Decide native-eligibility from the SAME supported-types list the provider
+        # handler filters on at send time, so a mime is never sent native-but-empty
+        # and then silently dropped. Read post-construction: BaseAgent consumes
+        # ``self.attachments`` at gen time, so assigning here takes effect.
+        node_attachments = self._materialize_node_attachments(
+            node_config, node.title, self._agent_supported_attachment_types(node_agent)
+        )
+        if node_attachments:
+            node_agent.attachments = node_attachments
 
         full_response_parts: List[str] = []
         structured_response_parts: List[str] = []
@@ -314,6 +361,439 @@ class WorkflowEngine:
         if node_config.output_variable:
             self.state[node_config.output_variable] = output_value
 
+    def _execute_code_node(
+        self, node: WorkflowNode
+    ) -> Generator[Dict[str, str], None, None]:
+        """Run code in the run-scoped sandbox, persist produced files, and write an artifact reference."""
+        from application.sandbox.artifacts_capture import capture_artifacts, snapshot_signatures
+        from application.sandbox.sandbox_creator import SandboxCreator
+
+        config = CodeNodeConfig(**node.config.get("config", node.config))
+        code = config.code or ""
+        if not code.strip():
+            raise ValueError(f'Code node "{node.title}" has no code to execute.')
+        # Code nodes are NEVER Jinja-rendered: state is untrusted (document-derived)
+        # so interpolating it into the program would be code injection. Prior state is
+        # passed as DATA via ``state.json`` (read below), never templated into code.
+
+        user_id = self._resolve_user_id()
+        if not user_id:
+            raise ValueError(f'Code node "{node.title}" requires an authenticated user.')
+
+        node_json_schema = self._normalize_node_json_schema(config.json_schema, node.title)
+        session_id = self._session_id()
+        timeout = self._resolve_code_timeout(config.timeout)
+
+        manager = SandboxCreator.get_manager()
+        manager.open(session_id)
+        try:
+            loaded = self._materialize_code_inputs(manager, session_id, config.inputs, user_id)
+            # Stage prior state as DATA the node code reads with
+            # ``json.load(open("state.json"))`` -- e.g. ``state["decision"]``. The
+            # file lands at the workspace root, which is the kernel cwd, so a
+            # relative open resolves it. State is never templated into the program.
+            state_json = json.dumps(self._json_safe_state(), default=str).encode("utf-8")
+            manager.put_file(session_id, "state.json", state_json)
+            pre_signatures = snapshot_signatures(manager, session_id)
+            result = manager.exec(session_id, code, timeout=timeout)
+            artifacts = capture_artifacts(
+                manager,
+                session_id,
+                pre_signatures,
+                user_id=user_id,
+                workflow_run_id=self.workflow_run_id,
+                produced_by={"node_id": node.id, "node_type": NodeType.CODE.value},
+            )
+        finally:
+            try:
+                manager.close(session_id)
+            except Exception:
+                logger.exception("Code node failed to close sandbox session")
+
+        if not result.ok:
+            error = (
+                f"{result.error_name}: {result.error_value}"
+                if result.error_name
+                else (result.error_value or "execution error")
+            )
+            raise ValueError(f'Code node "{node.title}" failed: {error}')
+
+        # The primary produced file becomes the node's pass-by-reference output;
+        # it is JSON primitives only ({artifact_id, version, mime_type, filename})
+        # so it survives the workflow_runs state-snapshot serialization. Bytes
+        # never enter state. A structured decision (optional json_schema) is
+        # parsed from stdout and validated through the existing jsonschema path.
+        output_value: Any = self._build_code_output(node, result, artifacts, loaded, node_json_schema)
+
+        default_output_key = f"node_{node.id}_output"
+        self.state[default_output_key] = output_value
+        if config.output_variable:
+            self.state[config.output_variable] = output_value
+        yield from ()
+
+    def _build_code_output(
+        self,
+        node: WorkflowNode,
+        result: Any,
+        artifacts: List[Dict[str, Any]],
+        inputs_loaded: List[str],
+        node_json_schema: Optional[Dict[str, Any]],
+    ) -> Any:
+        """Shape a code node's pass-by-reference output (artifact ref and/or validated decision)."""
+        if node_json_schema is not None:
+            parsed_success, decision = self._parse_structured_output(result.stdout or "")
+            if not parsed_success:
+                raise ValueError(
+                    f'Code node "{node.title}" must print JSON matching its schema, '
+                    "but stdout was not valid JSON"
+                )
+            self._validate_structured_output(node_json_schema, decision)
+            if artifacts:
+                # Carry the produced artifact reference alongside the decision so
+                # downstream nodes can branch on both.
+                if isinstance(decision, dict) and "artifacts" not in decision:
+                    decision = {**decision, "artifacts": artifacts}
+            return decision
+        if artifacts:
+            return artifacts[0]
+        return {"artifacts": [], "status": "ok"}
+
+    def _materialize_code_inputs(
+        self, manager: Any, session_id: str, inputs: List[str], user_id: str
+    ) -> List[str]:
+        """Stage referenced input artifacts (run-scoped, never cross-tenant) into the workspace."""
+        from application.agents.tools.artifact_ref import resolve_artifact_id
+        from application.storage.db.repositories.artifacts import ArtifactsRepository
+        from application.storage.db.session import db_readonly
+        from application.storage.storage_creator import StorageCreator
+        from application.utils import safe_filename
+
+        loaded: List[str] = []
+        raw_ids = self._resolve_input_artifact_ids(inputs)
+        if not raw_ids:
+            return loaded
+        storage = StorageCreator.get_storage()
+        for raw in raw_ids:
+            with db_readonly() as conn:
+                repo = ArtifactsRepository(conn)
+                # A short ref (A1/A2/...) resolves to an id within this run only;
+                # the resolved id is re-checked through the run-scoped gate so a ref
+                # can never reach another tenant.
+                artifact_id = resolve_artifact_id(repo, raw, workflow_run_id=self.workflow_run_id)
+                artifact = (
+                    repo.get_artifact_in_parent(artifact_id, workflow_run_id=self.workflow_run_id)
+                    if artifact_id is not None
+                    else None
+                )
+                if artifact is None:
+                    raise ValueError(f"input artifact {raw} not found in this run.")
+                version = repo.get_version(artifact_id, artifact["current_version"])
+            if not version or not version.get("storage_path"):
+                raise ValueError(f"input artifact {artifact_id} has no stored content.")
+            filename = safe_filename(version.get("filename") or artifact_id)
+            data = storage.get_file(version["storage_path"]).read()
+            manager.put_file(session_id, f"inputs/{filename}", data)
+            loaded.append(f"inputs/{filename}")
+        return loaded
+
+    def _materialize_node_attachments(
+        self,
+        node_config: AgentNodeConfig,
+        node_title: str,
+        supported_types: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Resolve a node's selected documents to native/extracted attachment dicts for its LLM."""
+        from application.agents.tools.artifact_ref import resolve_artifact_id
+        from application.core.settings import settings
+        from application.storage.db.repositories.artifacts import ArtifactsRepository
+        from application.storage.db.session import db_readonly
+
+        raw_ids = self._resolve_input_artifact_ids(node_config.input_documents)
+        if not raw_ids:
+            return []
+
+        supported = set(supported_types)
+        supports_images = any(t.startswith("image/") for t in supported)
+        max_files = int(getattr(settings, "WORKFLOW_NODE_NATIVE_MAX_FILES", 5))
+        extract_max = int(getattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 5))
+        max_bytes = int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 25 * 1024 * 1024))
+
+        # One read-only connection for the whole batch; the resolved-version
+        # rows are collected, then storage reads happen outside the DB context.
+        resolved: List[tuple] = []
+        with db_readonly() as conn:
+            repo = ArtifactsRepository(conn)
+            for raw in raw_ids:
+                # A short ref (A1/...) resolves to an id within this run only; the
+                # resolved id is re-checked through the run-scoped gate so a forged
+                # or cross-run ref can never reach another tenant's bytes.
+                artifact_id = resolve_artifact_id(repo, raw, workflow_run_id=self.workflow_run_id)
+                artifact = (
+                    repo.get_artifact_in_parent(artifact_id, workflow_run_id=self.workflow_run_id)
+                    if artifact_id is not None
+                    else None
+                )
+                if artifact is None:
+                    raise ValueError(
+                        f'Document "{raw}" for node "{node_title}" was not found in this run.'
+                    )
+                version = repo.get_version(artifact_id, artifact["current_version"])
+                if not version or not version.get("storage_path"):
+                    raise ValueError(f"input document {artifact_id} has no stored content.")
+                resolved.append((str(artifact_id), artifact, version))
+
+        attachments: List[Dict[str, Any]] = []
+        native_count = 0
+        extract_count = 0
+        dropped_for_cap = 0
+        for artifact_id, artifact, version in resolved:
+            storage_path = version["storage_path"]
+            mime_type = version.get("mime_type") or "application/octet-stream"
+            filename = version.get("filename") or artifact.get("title") or artifact_id
+            size = version.get("size")
+            if isinstance(size, int) and size > max_bytes:
+                logger.warning(
+                    "Workflow node %s: document %s (%d bytes) exceeds the %d-byte cap; skipping",
+                    node_title, artifact_id, size, max_bytes,
+                )
+                continue
+
+            native_ok = self._is_native_mime(mime_type, supported, supports_images)
+            policy = node_config.file_passing
+            if policy == "native" and not native_ok:
+                raise ValueError(
+                    f'Model "{node_config.model_id or self.agent.model_id}" cannot read '
+                    f'"{mime_type}" natively for node "{node_title}".'
+                )
+            go_native = policy == "native" or (policy == "auto" and native_ok)
+            if go_native and native_count >= max_files:
+                logger.warning(
+                    "Workflow node %s: native file cap (%d) reached; extracting %s instead",
+                    node_title, max_files, filename,
+                )
+                go_native = False
+
+            if go_native:
+                # No bytes copied: the provider reads them from storage via ``path``.
+                attachments.append({"id": artifact_id, "mime_type": mime_type, "path": storage_path})
+                native_count += 1
+            else:
+                # Inline-text mimes are read directly (cheap); other mimes route
+                # through the parsing worker -- a blocking, ~120s per-document call.
+                # Cap how many documents a single node sends down that path so a
+                # node referencing many non-native documents (e.g. the ``*`` token)
+                # can't serialize dozens of parses. Inline text is not capped.
+                needs_parse = not self._is_inline_text_mime(mime_type)
+                if needs_parse:
+                    # Count (and gate on) the parse ATTEMPT, not the success: a
+                    # timed-out/failed parse is the ~120s worst case we must bound,
+                    # so it has to consume cap budget too. Otherwise a degraded
+                    # parsing backend (every parse fails) never advances the count
+                    # and the node keeps issuing blocking parses without limit.
+                    if extract_count >= extract_max:
+                        dropped_for_cap += 1
+                        continue
+                    extract_count += 1
+                content = self._extract_attachment_text(
+                    artifact_id, storage_path, mime_type, filename, max_bytes
+                )
+                if content is None:
+                    logger.warning(
+                        "Workflow node %s: could not extract text from %s; skipping",
+                        node_title, filename,
+                    )
+                    continue
+                # A non-native mime routes this through ``_append_unsupported_attachments``,
+                # which inlines ``content`` as text in the system prompt.
+                attachments.append(
+                    {"id": artifact_id, "mime_type": "text/plain", "content": content}
+                )
+        if dropped_for_cap:
+            logger.warning(
+                "Workflow node %s: blocking-extract cap (%d) reached; %d document(s) omitted",
+                node_title, extract_max, dropped_for_cap,
+            )
+            attachments.append(
+                self._extract_truncation_note(node_title, extract_max, dropped_for_cap)
+            )
+        return attachments
+
+    @staticmethod
+    def _extract_truncation_note(node_title: str, cap: int, dropped: int) -> Dict[str, Any]:
+        """Build a non-fatal text attachment flagging documents skipped past the per-node extract cap."""
+        content = (
+            f'[Notice] Only the first {cap} document(s) for node "{node_title}" were extracted '
+            f"to text; {dropped} additional document(s) were omitted to bound execution time. "
+            "Reference fewer documents, or use a model that reads them natively."
+        )
+        return {"id": _EXTRACT_TRUNCATION_ID, "mime_type": "text/plain", "content": content}
+
+    @staticmethod
+    def _agent_supported_attachment_types(node_agent: "BaseAgent") -> List[str]:
+        """Return the provider's authoritative supported attachment mime types (handler's source)."""
+        llm = getattr(node_agent, "llm", None)
+        getter = getattr(llm, "get_supported_attachment_types", None)
+        if not callable(getter):
+            return []
+        types = getter()
+        return list(types) if isinstance(types, (list, tuple, set)) else []
+
+    @staticmethod
+    def _is_native_mime(mime_type: str, supported_types: set, supports_images: bool) -> bool:
+        """A mime is native if the model accepts it, or it is a PDF a vision model renders to images."""
+        if mime_type in supported_types:
+            return True
+        return mime_type == "application/pdf" and supports_images
+
+    def _extract_attachment_text(
+        self, artifact_id: str, storage_path: str, mime_type: str, filename: str, max_bytes: int
+    ) -> Optional[str]:
+        """Get an attachment's text: inline already-text formats, else parse via the parsing worker; None on failure."""
+        from application.parser.document_reader import truncate_text_head_tail
+        from application.storage.storage_creator import StorageCreator
+
+        if self._is_inline_text_mime(mime_type):
+            try:
+                data = StorageCreator.get_storage().get_file(storage_path).read()
+            except Exception:
+                logger.exception("Workflow node: failed to read document bytes for extraction")
+                return None
+            # Defensive size gate: a NULL/missing version size skips the pre-read cap,
+            # so re-check the actual bytes before inlining.
+            if len(data) > max_bytes:
+                logger.warning(
+                    "Workflow node: document at %s (%d bytes) exceeds the %d-byte cap; skipping",
+                    storage_path, len(data), max_bytes,
+                )
+                return None
+            try:
+                text = data.decode("utf-8", errors="replace")
+            except Exception:
+                return None
+            # Bound the inlined text to a head+tail window so a large-but-under-cap
+            # text file can't blow the context (the parse branch is already bounded).
+            return truncate_text_head_tail(text)
+        # Non-text mimes parse via the dedicated parsing queue (works on any backend,
+        # no sandbox): the worker re-resolves the artifact run-scoped and reads its bytes.
+        return self._parse_document_text(artifact_id)
+
+    def _parse_document_text(self, artifact_id: str) -> Optional[str]:
+        """Enqueue ``parse_document`` for this run and await the bounded markdown; None on failure."""
+        from celery.exceptions import TimeoutError as CeleryTimeoutError
+
+        from application.api.user.tasks import parse_document
+        from application.core.settings import settings
+
+        user_id = self._resolve_user_id()
+        if not user_id:
+            return None
+        options = {"output": "markdown", "include_tables": False, "persist": False}
+        queue = getattr(settings, "DOCUMENT_PARSE_QUEUE", "parsing")
+        timeout = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120))
+        try:
+            async_result = parse_document.apply_async(
+                args=[artifact_id, {"workflow_run_id": self.workflow_run_id}, user_id, options],
+                queue=queue,
+            )
+            # A workflow can run inside a Celery worker (scheduled runs / webhooks).
+            # In a prefork worker ``task_join_will_block()`` is process-wide, so the
+            # default ``disable_sync_subtasks=True`` makes ``get()`` raise RuntimeError
+            # ("Never call result.get() within a task!"). The dedicated parsing queue +
+            # separate workers already avoid the real self-deadlock, so opt out
+            # explicitly (mirrors application/agents/tools/read_document.py).
+            result = async_result.get(timeout=timeout, disable_sync_subtasks=False)
+        except (CeleryTimeoutError, TimeoutError):
+            logger.warning("Workflow node: document parse timed out for %s", artifact_id)
+            return None
+        except Exception:
+            logger.exception("Workflow node: document parse failed")
+            return None
+        if isinstance(result, dict) and result.get("status") == "ok":
+            content = result.get("content")
+            return content if isinstance(content, str) else None
+        return None
+
+    @staticmethod
+    def _is_inline_text_mime(mime_type: str) -> bool:
+        """Already-text formats are inlined directly (no Docling round-trip)."""
+        if mime_type.startswith("text/"):
+            return True
+        return mime_type in ("application/json", "application/xml")
+
+    def _resolve_input_artifact_ids(self, inputs: List[str]) -> List[str]:
+        """Resolve node ``inputs`` (refs/ids, ``*`` token, or state vars holding a ref or a list of refs)."""
+        resolved: List[str] = []
+        for raw in inputs or []:
+            # ``*`` / ``input_documents`` expands to every run input document.
+            if isinstance(raw, str) and raw.strip() in ("*", "input_documents"):
+                resolved.extend(self._input_document_ids())
+                continue
+            ref = self.state.get(raw) if isinstance(raw, str) else None
+            if isinstance(ref, dict) and ref.get("artifact_id"):
+                resolved.append(str(ref["artifact_id"]))
+            elif isinstance(ref, list):
+                # A state var holding a list of ref dicts (e.g. input_documents).
+                for item in ref:
+                    if isinstance(item, dict) and item.get("artifact_id"):
+                        resolved.append(str(item["artifact_id"]))
+            elif isinstance(raw, str) and raw.strip():
+                resolved.append(raw.strip())
+        # Dedup preserving order so ``["*", "A1"]`` / duplicate refs don't attach twice.
+        return list(dict.fromkeys(resolved))
+
+    def _input_document_ids(self) -> List[str]:
+        """Return the artifact ids of every ref in ``state['input_documents']``."""
+        docs = self.state.get("input_documents")
+        if not isinstance(docs, list):
+            return []
+        return [str(d["artifact_id"]) for d in docs if isinstance(d, dict) and d.get("artifact_id")]
+
+    def _session_id(self) -> str:
+        """Sanitize the run id into the sandbox-gateway charset for the session key."""
+        return _SESSION_ID_RE.sub("-", str(self.workflow_run_id)) or str(uuid.uuid4())
+
+    def _json_safe_state(self) -> Dict[str, Any]:
+        """Project ``self.state`` to a JSON-safe dict (the code node reads it from state.json).
+
+        ``chat_history`` is excluded: it is the *caller's* full conversation, and a
+        code node (authored by the workflow owner, who may differ from the runner
+        in a shared agent) has no legitimate need for it. Since sandbox egress is
+        open by design, staging it would let owner-authored code exfiltrate the
+        runner's conversation. Node outputs and ``query`` are still exposed.
+        """
+        projection: Dict[str, Any] = {}
+        for key, value in self.state.items():
+            if not isinstance(key, str):
+                continue
+            normalized_key = key.strip()
+            if not normalized_key or normalized_key in _CODE_STATE_EXCLUDED_KEYS:
+                continue
+            projection[normalized_key] = value
+        return projection
+
+    def _resolve_user_id(self) -> Optional[str]:
+        """Resolve the run's owner for artifact ownership/quota accounting."""
+        user_id = getattr(self.agent, "user", None)
+        if user_id:
+            return user_id
+        token = getattr(self.agent, "decoded_token", None)
+        if isinstance(token, dict):
+            return token.get("sub")
+        return None
+
+    def _resolve_code_timeout(self, requested: Optional[int]) -> float:
+        """Return the stricter of the node's requested timeout and the sandbox cap."""
+        from application.core.settings import settings
+
+        cap = float(getattr(settings, "SANDBOX_EXEC_TIMEOUT", 60))
+        if requested is None:
+            return cap
+        try:
+            parsed = int(requested)
+        except (TypeError, ValueError):
+            return cap
+        return float(min(parsed, cap)) if parsed > 0 else cap
+
     def _execute_state_node(
         self, node: WorkflowNode
     ) -> Generator[Dict[str, str], None, None]:
@@ -361,10 +841,36 @@ class WorkflowEngine:
         try:
             return True, json.loads(normalized_response)
         except json.JSONDecodeError:
-            logger.warning(
-                "Workflow agent returned structured output that was not valid JSON"
-            )
-            return False, None
+            pass
+
+        # Some models wrap structured output in a ```json ... ``` fence or add
+        # prose around it; recover the JSON object/array before giving up so a
+        # well-formed-but-fenced response still validates.
+        candidate = self._strip_json_fence(normalized_response)
+        if candidate is not None:
+            try:
+                return True, json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+        logger.warning(
+            "Workflow agent returned structured output that was not valid JSON"
+        )
+        return False, None
+
+    @staticmethod
+    def _strip_json_fence(text: str) -> Optional[str]:
+        """Extract the JSON payload from a fenced/prose-wrapped response, or None."""
+        fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+        if fence:
+            return fence.group(1).strip()
+        # Fall back to the outermost {...} or [...] span.
+        for open_ch, close_ch in (("{", "}"), ("[", "]")):
+            start = text.find(open_ch)
+            end = text.rfind(close_ch)
+            if start != -1 and end > start:
+                return text[start : end + 1]
+        return None
 
     def _normalize_node_json_schema(
         self, schema: Optional[Dict[str, Any]], node_title: str
@@ -425,6 +931,8 @@ class WorkflowEngine:
             docs=docs,
             docs_together=docs_together,
             tools_data=tools_data,
+            artifacts_data=self._collect_artifact_refs(),
+            artifact_parent={"workflow_run_id": self.workflow_run_id},
         )
 
         agent_context: Dict[str, Any] = {}
@@ -447,6 +955,16 @@ class WorkflowEngine:
                 context[key] = value
 
         return context
+
+    def _collect_artifact_refs(self) -> Dict[str, Any]:
+        """Collect state variables that hold artifact references, keyed by their state name."""
+        refs: Dict[str, Any] = {}
+        for key, value in self.state.items():
+            if not isinstance(key, str):
+                continue
+            if isinstance(value, dict) and value.get("artifact_id"):
+                refs[key] = value
+        return refs
 
     def _get_source_template_data(self) -> tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
         docs = getattr(self.agent, "retrieved_docs", None)

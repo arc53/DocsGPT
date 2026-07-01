@@ -87,6 +87,9 @@ export type UserToolType = {
   // from the Add-Tool modal; surfaced to the agent picker. May coexist
   // with ``default`` for dual-registered tools.
   builtin?: boolean;
+  // True for builtins shown only in the workflow-node tool picker
+  // (e.g. ``read_document``) — hidden from the classic agent picker.
+  workflow_only?: boolean;
   // Whether the current user owns this tool ('user') or only has access to
   // it via a team share ('team'). Owner-only actions are gated on 'user'.
   ownership?: 'user' | 'team';

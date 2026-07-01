@@ -12,7 +12,9 @@ import remarkGfm from 'remark-gfm';
 import userService from '../api/services/userService';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import { isDocumentArtifact, type DocumentArtifact } from './artifactViewUtils';
 import CopyButton from './CopyButton';
+import DocumentArtifactView from './DocumentArtifactView';
 import Spinner from './Spinner';
 import { Button } from './ui/button';
 import { Sheet, SheetContent } from './ui/sheet';
@@ -282,13 +284,16 @@ export default function ArtifactSidebar({
   const currentFetchIdRef = React.useRef<string | null>(null);
   const token = useSelector(selectToken);
   const [artifact, setArtifact] = useState<ArtifactData | null>(null);
+  const [documentArtifact, setDocumentArtifact] =
+    useState<DocumentArtifact | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [effectiveArtifactId, setEffectiveArtifactId] = useState<string | null>(
     artifactId,
   );
 
-  const title = getArtifactTitle(artifact, toolName);
+  const title = documentArtifact?.title || getArtifactTitle(artifact, toolName);
 
   // Reset last successful todo artifact ID when conversation changes
   useEffect(() => {
@@ -308,6 +313,7 @@ export default function ArtifactSidebar({
   useEffect(() => {
     if (!isOpen || !effectiveArtifactId) {
       setArtifact(null);
+      setDocumentArtifact(null);
       setError(null);
       setLoading(false);
       currentFetchIdRef.current = null;
@@ -315,76 +321,118 @@ export default function ArtifactSidebar({
     }
 
     // Generate a unique ID for this fetch
-    const fetchId = `${effectiveArtifactId}-${Date.now()}`;
+    const artifactIdToFetch = effectiveArtifactId;
+    const fetchId = `${artifactIdToFetch}-${Date.now()}`;
     currentFetchIdRef.current = fetchId;
 
     setLoading(true);
     setError(null);
 
-    // Note: For todo artifacts, the endpoint always returns all todos for the tool; will be coversation scoped later
+    // Document/file artifacts live behind the generalized /api/artifacts/<id>
+    // endpoint; notes/todos behind the legacy /api/artifact/<id>. Try the
+    // document path first and fall back to the legacy flow on a non-document
+    // shape so a single id resolves cleanly either way.
     userService
-      .getArtifact(effectiveArtifactId, token)
-      .then(async (res: any) => {
-        // Ignore if this is not the current fetch
-        if (currentFetchIdRef.current !== fetchId) return;
-
-        const isResponseLike = res && typeof res.json === 'function';
-        const status = isResponseLike ? res.status : undefined;
-        const ok = isResponseLike ? Boolean(res.ok) : true;
-
-        let data: any = res;
-        if (isResponseLike) {
-          try {
-            data = await res.json();
-          } catch {
-            data = null;
-          }
+      .getDocumentArtifact(artifactIdToFetch, token)
+      .then(async (res: Response) => {
+        if (currentFetchIdRef.current !== fetchId) return true;
+        if (!res.ok) return false;
+        let data: any = null;
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
         }
-
-        // Check again after async operation
-        if (currentFetchIdRef.current !== fetchId) return;
-
-        if (ok && data?.success && data?.artifact) {
-          setArtifact(data.artifact);
-          // Remember the last successful todo artifact id so we can fallback if a newer id 404s.
-          if (data.artifact?.artifact_type === 'todo_list') {
-            lastSuccessfulTodoArtifactIdRef.current = effectiveArtifactId;
-          }
+        if (currentFetchIdRef.current !== fetchId) return true;
+        if (data?.success && isDocumentArtifact(data.artifact)) {
+          setDocumentArtifact(data.artifact);
+          setArtifact(null);
           setLoading(false);
-          return;
+          return true;
         }
-
-        const isTodoTool = (toolName ?? '').toLowerCase().includes('todo');
-
-        // If the latest todo artifact id is missing (404), fall back to the last known good one
-        // so the backend can still resolve `tool_id` for the todo list.
-        if (
-          status === 404 &&
-          isTodoTool &&
-          lastSuccessfulTodoArtifactIdRef.current &&
-          lastSuccessfulTodoArtifactIdRef.current !== effectiveArtifactId
-        ) {
-          // Update effectiveArtifactId to trigger a new fetch with the fallback id
-          setEffectiveArtifactId(lastSuccessfulTodoArtifactIdRef.current);
-          setLoading(false);
-          return;
-        }
-
-        // Ensure we show a visible error state instead of rendering nothing.
-        const message =
-          data?.message ||
-          (status === 404 ? 'Artifact not found' : null) ||
-          'Failed to load artifact';
-        setError(message);
-        setLoading(false);
+        return false;
       })
-      .catch((err) => {
-        // Ignore if this is not the current fetch
+      .catch(() => false)
+      .then((handled) => {
+        if (handled) return;
         if (currentFetchIdRef.current !== fetchId) return;
-        setError('Failed to fetch artifact');
-        setLoading(false);
+        setDocumentArtifact(null);
+        fetchLegacyArtifact(fetchId);
       });
-  }, [isOpen, effectiveArtifactId, token, toolName, conversationId]);
+
+    // Legacy notes/todo fetch (unchanged behavior).
+    function fetchLegacyArtifact(fetchId: string) {
+      userService
+        .getArtifact(artifactIdToFetch, token)
+        .then(async (res: any) => {
+          // Ignore if this is not the current fetch
+          if (currentFetchIdRef.current !== fetchId) return;
+
+          const isResponseLike = res && typeof res.json === 'function';
+          const status = isResponseLike ? res.status : undefined;
+          const ok = isResponseLike ? Boolean(res.ok) : true;
+
+          let data: any = res;
+          if (isResponseLike) {
+            try {
+              data = await res.json();
+            } catch {
+              data = null;
+            }
+          }
+
+          // Check again after async operation
+          if (currentFetchIdRef.current !== fetchId) return;
+
+          if (ok && data?.success && data?.artifact) {
+            setArtifact(data.artifact);
+            // Remember the last successful todo artifact id so we can fallback if a newer id 404s.
+            if (data.artifact?.artifact_type === 'todo_list') {
+              lastSuccessfulTodoArtifactIdRef.current = effectiveArtifactId;
+            }
+            setLoading(false);
+            return;
+          }
+
+          const isTodoTool = (toolName ?? '').toLowerCase().includes('todo');
+
+          // If the latest todo artifact id is missing (404), fall back to the last known good one
+          // so the backend can still resolve `tool_id` for the todo list.
+          if (
+            status === 404 &&
+            isTodoTool &&
+            lastSuccessfulTodoArtifactIdRef.current &&
+            lastSuccessfulTodoArtifactIdRef.current !== effectiveArtifactId
+          ) {
+            // Update effectiveArtifactId to trigger a new fetch with the fallback id
+            setEffectiveArtifactId(lastSuccessfulTodoArtifactIdRef.current);
+            setLoading(false);
+            return;
+          }
+
+          // Ensure we show a visible error state instead of rendering nothing.
+          const message =
+            data?.message ||
+            (status === 404 ? 'Artifact not found' : null) ||
+            'Failed to load artifact';
+          setError(message);
+          setLoading(false);
+        })
+        .catch(() => {
+          // Ignore if this is not the current fetch
+          if (currentFetchIdRef.current !== fetchId) return;
+          setError('Failed to fetch artifact');
+          setLoading(false);
+        });
+    }
+  }, [
+    isOpen,
+    effectiveArtifactId,
+    token,
+    toolName,
+    conversationId,
+    refreshNonce,
+  ]);
 
   const renderContent = () => {
     if (loading) {
@@ -399,6 +447,14 @@ export default function ArtifactSidebar({
         <div className="flex h-full items-center justify-center">
           <p className="text-sm text-red-500">{error}</p>
         </div>
+      );
+    }
+    if (documentArtifact) {
+      return (
+        <DocumentArtifactView
+          artifact={documentArtifact}
+          onRefresh={() => setRefreshNonce((n) => n + 1)}
+        />
       );
     }
     // Avoid rendering an empty panel if the artifact couldn't be loaded for any reason.

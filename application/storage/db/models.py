@@ -401,6 +401,74 @@ attachments_table = Table(
     Column("legacy_mongo_id", Text),
 )
 
+# Identity row, one per logical artifact. The stable ``id`` is the handle passed
+# around (chat/workflow state/message bodies carry only this reference, never
+# bytes). Authz is parent-derived: whoever can reach ``conversation_id`` (chat)
+# or ``workflow_run_id`` (run) can reach its artifacts, so a CHECK requires at
+# least one parent. ``user_id`` is ownership/quota only; ``team_id`` is a
+# nullable forward-compat hook for Teams (no FK, matching ``teams`` itself).
+artifacts_table = Table(
+    "artifacts",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("conversation_id", UUID(as_uuid=True)),
+    Column("workflow_run_id", UUID(as_uuid=True)),
+    Column("team_id", UUID(as_uuid=True)),
+    Column("message_id", UUID(as_uuid=True)),
+    Column("kind", Text, nullable=False),
+    Column("title", Text),
+    Column("metadata", JSONB),
+    Column("current_version", Integer, nullable=False, server_default="1"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "conversation_id IS NOT NULL OR workflow_run_id IS NOT NULL",
+        name="artifacts_parent_present_check",
+    ),
+)
+
+Index(
+    "artifacts_conversation_idx",
+    artifacts_table.c.conversation_id,
+    postgresql_where=artifacts_table.c.conversation_id.isnot(None),
+)
+Index(
+    "artifacts_workflow_run_idx",
+    artifacts_table.c.workflow_run_id,
+    postgresql_where=artifacts_table.c.workflow_run_id.isnot(None),
+)
+Index("artifacts_user_idx", artifacts_table.c.user_id)
+
+# Append-only version history; never mutated. Each edit appends a row and bumps
+# ``artifacts.current_version``. ``UNIQUE(artifact_id, version)`` keeps versions
+# monotonic. ``storage_path`` is the ``BaseStorage`` key (NULL when spec-only);
+# bytes live in storage, only metadata + the key live here (pass-by-reference).
+artifact_versions_table = Table(
+    "artifact_versions",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column(
+        "artifact_id",
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("version", Integer, nullable=False),
+    Column("mime_type", Text),
+    Column("filename", Text),
+    Column("storage_path", Text),
+    Column("size", BigInteger),
+    Column("sha256", Text),
+    Column("spec", JSONB),
+    Column("preview_text", Text),
+    Column("produced_by", JSONB),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("artifact_id", "version", name="artifact_versions_artifact_version_uidx"),
+)
+
+Index("artifact_versions_artifact_idx", artifact_versions_table.c.artifact_id)
+
 memories_table = Table(
     "memories",
     metadata,

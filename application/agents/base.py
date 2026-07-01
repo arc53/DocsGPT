@@ -340,6 +340,10 @@ class BaseAgent(ABC):
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
 
     def _execute_tool_action(self, tools_dict, call):
+        # Mirror the request's attachments onto the executor so sandbox tools
+        # can lazily bridge a referenced chat attachment to a conversation
+        # artifact; only the caller's own (user-scoped) attachments are passed.
+        self.tool_executor.attachments = self.attachments
         return self.tool_executor.execute(
             tools_dict, call, self.llm.__class__.__name__
         )

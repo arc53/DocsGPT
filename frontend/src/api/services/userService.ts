@@ -322,6 +322,35 @@ const userService = {
     apiClient.post(endpoints.USER.MOVE_AGENT_TO_FOLDER, data, token),
   getArtifact: (artifactId: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_ARTIFACT(artifactId), token),
+  getDocumentArtifact: (
+    artifactId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(endpoints.USER.GET_DOCUMENT_ARTIFACT(artifactId), token),
+  listWorkflowRunArtifacts: (
+    workflowRunId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(
+      endpoints.USER.LIST_WORKFLOW_RUN_ARTIFACTS(workflowRunId),
+      token,
+    ),
+  downloadArtifact: (
+    artifactId: string,
+    token: string | null,
+    version?: number,
+  ): Promise<Response> =>
+    apiClient.get(endpoints.USER.DOWNLOAD_ARTIFACT(artifactId, version), token),
+  restoreArtifactVersion: (
+    artifactId: string,
+    version: number,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(
+      endpoints.USER.RESTORE_ARTIFACT(artifactId),
+      { version },
+      token,
+    ),
   getWorkflow: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.WORKFLOW(id), token),
   createWorkflow: (data: any, token: string | null): Promise<any> =>

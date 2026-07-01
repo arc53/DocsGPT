@@ -806,6 +806,13 @@ class StreamProcessor:
                 self.agent_config["workflow"] = self.data["workflow"]
                 if isinstance(self.decoded_token, dict):
                     self.agent_config["workflow_owner"] = self.decoded_token.get("sub")
+                # A saved workflow id alongside the embedded graph (builder
+                # Preview) lets the run persist a ``workflow_runs`` row so its
+                # artifacts are listable + authz'd; ownership is re-checked on
+                # save, so a forged id for another user's workflow never persists.
+                preview_workflow_id = self.data.get("workflow_id")
+                if preview_workflow_id:
+                    self.agent_config["workflow_id"] = str(preview_workflow_id)
 
             self.agent_config.update(
                 {
@@ -1123,6 +1130,32 @@ class StreamProcessor:
             return tools_data if tools_data else None
         except Exception as e:
             logger.warning(f"Failed to pre-fetch tools: {type(e).__name__}")
+            return None
+
+    def _enabled_tool_names(self) -> Optional[set]:
+        """Resolve the tool names enabled for this turn, for ``tools.enabled`` gating.
+
+        Mirrors the executor the agent will use (same user/agent context), so an
+        agent yields its configured tools and an agentless chat yields user tools
+        plus defaults. Returns None on failure so the prompt gate fails open
+        (keeps the section) rather than hiding guidance when resolution breaks.
+        """
+        try:
+            from application.agents.tool_executor import ToolExecutor
+
+            user = self.decoded_token.get("sub") if self.decoded_token else None
+            tool_executor = ToolExecutor(
+                user_api_key=self.agent_config.get("user_api_key"),
+                user=user,
+                decoded_token=self.decoded_token,
+                agent_id=self.agent_id,
+            )
+            client_tools = self.data.get("client_tools")
+            if client_tools:
+                tool_executor.client_tools = client_tools
+            return tool_executor.get_enabled_tool_names()
+        except Exception:
+            logger.warning("Failed to resolve enabled tool names for prompt gating")
             return None
 
     def _fetch_tool_data(
@@ -1510,6 +1543,9 @@ class StreamProcessor:
                 docs=docs,
                 docs_together=docs_together,
                 tools_data=tools_data,
+                attachments=self.attachments,
+                enabled_tools=self._enabled_tool_names(),
+                artifact_parent={"conversation_id": self.conversation_id},
             )
 
         # Use the user_id that resolved the model so owner-scoped BYOM
@@ -1658,6 +1694,12 @@ class StreamProcessor:
                 agent_kwargs["workflow_id"] = workflow_config
             elif isinstance(workflow_config, dict):
                 agent_kwargs["workflow"] = workflow_config
+                # Embedded-graph Preview run that names a saved workflow: run the
+                # canvas graph but persist the run under the saved id so artifacts
+                # parent to a real, ownership-checked ``workflow_runs`` row.
+                saved_workflow_id = self.agent_config.get("workflow_id")
+                if saved_workflow_id:
+                    agent_kwargs["workflow_id"] = saved_workflow_id
             workflow_owner = self.agent_config.get("workflow_owner")
             if workflow_owner:
                 agent_kwargs["workflow_owner"] = workflow_owner

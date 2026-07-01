@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 from application.agents.base import BaseAgent
 from application.agents.workflows.schemas import (
@@ -22,6 +22,10 @@ from application.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
 
+# Per-run cap on attachments staged as run-scoped artifacts; the remainder is
+# dropped (the per-user artifact quota is only a best-effort soft cap).
+_MAX_INPUT_DOCUMENTS = 25
+
 
 class WorkflowAgent(BaseAgent):
     """A specialized agent that executes predefined workflows."""
@@ -39,6 +43,7 @@ class WorkflowAgent(BaseAgent):
         self.workflow_owner = workflow_owner
         self._workflow_data = workflow
         self._engine: Optional[WorkflowEngine] = None
+        self._run_persisted = False
 
     @log_activity()
     def gen(
@@ -54,8 +59,28 @@ class WorkflowAgent(BaseAgent):
             yield {"type": "error", "error": "Failed to load workflow configuration."}
             return
         self._engine = WorkflowEngine(graph, self)
-        yield from self._engine.execute({}, query)
-        self._save_workflow_run(query)
+
+        # Two distinct identities: the workflow *owner* (A) owns the workflow
+        # definition and is used to resolve the workflow row; the *runner* (B,
+        # the caller) owns the run and its artifacts. They are the same user
+        # except for a shared agent, where B != A. Owning run artifacts by the
+        # runner means quota is charged to the uploader and the caller can read
+        # the outputs of the run they triggered (authz is run.user_id == caller).
+        workflow_owner_id = self._resolve_owner_id()
+        run_user_id = self._resolve_run_user_id(workflow_owner_id)
+        pg_workflow_id = self._precreate_workflow_run(
+            workflow_owner_id, run_user_id, query
+        )
+        self._run_persisted = pg_workflow_id is not None
+
+        input_documents = self._bridge_attachments(
+            run_user_id, persisted=self._run_persisted
+        )
+
+        yield from self._engine.execute({"input_documents": input_documents}, query)
+        self._finalize_workflow_run(
+            workflow_owner_id, run_user_id, pg_workflow_id, query
+        )
 
     def _load_workflow_graph(self) -> Optional[WorkflowGraph]:
         if self._workflow_data:
@@ -180,16 +205,160 @@ class WorkflowAgent(BaseAgent):
             logger.error(f"Failed to load workflow from database: {e}")
             return None
 
-    def _save_workflow_run(self, query: str) -> None:
-        if not self._engine:
-            return
+    def _resolve_owner_id(self) -> Optional[str]:
+        """Resolve the workflow *owner* (used to resolve the owned workflow row)."""
         owner_id = self.workflow_owner
         if not owner_id and isinstance(self.decoded_token, dict):
             owner_id = self.decoded_token.get("sub")
+        return owner_id
+
+    def _resolve_run_user_id(self, workflow_owner_id: Optional[str]) -> Optional[str]:
+        """Resolve the *runner* (caller) who owns the run and its artifacts.
+
+        Equals the owner for a user running their own workflow (and for external
+        API-key calls, where the key owner is the caller); for a shared agent it
+        is the calling user, so their uploads/outputs are owned by and readable
+        to them rather than silently accruing under the agent owner's account.
+        """
+        return getattr(self, "initial_user_id", None) or getattr(self, "user", None) or workflow_owner_id
+
+    def _resolve_owned_workflow_pg_id(
+        self, conn: Any, owner_id: Optional[str]
+    ) -> Optional[str]:
+        """Return the owned workflow's PG id, or None for an unowned/draft id."""
+        if not self.workflow_id or not owner_id:
+            return None
+        wf_repo = WorkflowsRepository(conn)
+        if looks_like_uuid(self.workflow_id):
+            workflow_row = wf_repo.get(self.workflow_id, owner_id)
+        else:
+            workflow_row = wf_repo.get_by_legacy_id(self.workflow_id, owner_id)
+        return str(workflow_row["id"]) if workflow_row is not None else None
+
+    def _precreate_workflow_run(
+        self,
+        workflow_owner_id: Optional[str],
+        run_user_id: Optional[str],
+        query: str,
+    ) -> Optional[str]:
+        """Insert the run row up front so run-scoped artifacts are authz-reachable mid-run.
+
+        The workflow row is resolved against its *owner*; the run is owned by the
+        *runner* so artifact access (``run.user_id == caller``) tracks the caller.
+        """
+        if not self._engine or not self.workflow_id or not workflow_owner_id or not run_user_id:
+            return None
+        try:
+            with db_session() as conn:
+                pg_workflow_id = self._resolve_owned_workflow_pg_id(
+                    conn, workflow_owner_id
+                )
+                if pg_workflow_id is None:
+                    return None
+                WorkflowRunsRepository(conn).create(
+                    pg_workflow_id,
+                    run_user_id,
+                    ExecutionStatus.RUNNING.value,
+                    run_id=self._engine.workflow_run_id,
+                    inputs={"query": query},
+                    started_at=datetime.now(timezone.utc),
+                )
+            return pg_workflow_id
+        except Exception as e:
+            logger.error(f"Failed to pre-create workflow run: {e}")
+            return None
+
+    def _bridge_attachments(
+        self, run_user_id: Optional[str], *, persisted: bool
+    ) -> List[Dict[str, Any]]:
+        """Stage uploaded attachments as run-scoped artifacts the nodes can read.
+
+        Bytes are read server-side from each attachment's ``upload_path`` and
+        re-persisted through ``persist_new_artifact`` (size/sha256/storage key all
+        derived server-side); only the resulting references enter the run state.
+        Artifacts are owned by the *runner* (the uploader), not the workflow owner.
+        """
+        if not self._engine or not self.attachments or not run_user_id:
+            return []
+        # Without a persisted run row the artifacts would be orphaned (no authz
+        # parent), so skip the bridge for unowned/draft ids.
+        if not persisted:
+            return []
+        from application.sandbox.artifacts_capture import persist_new_artifact
+        from application.storage.storage_creator import StorageCreator
+
+        storage = StorageCreator.get_storage()
+        if len(self.attachments) > _MAX_INPUT_DOCUMENTS:
+            dropped = len(self.attachments) - _MAX_INPUT_DOCUMENTS
+            logger.warning(
+                "Workflow run input documents exceed cap (%d); dropping %d attachment(s)",
+                _MAX_INPUT_DOCUMENTS,
+                dropped,
+            )
+        refs: List[Dict[str, Any]] = []
+        for index, attachment in enumerate(self.attachments[:_MAX_INPUT_DOCUMENTS]):
+            upload_path = attachment.get("upload_path") or attachment.get("path")
+            if not upload_path:
+                continue
+            filename = attachment.get("filename") or "attachment"
+            mime_type = attachment.get("mime_type") or "application/octet-stream"
+            attachment_id = attachment.get("id", index)
+            try:
+                data = storage.get_file(upload_path).read()
+            except Exception as exc:
+                logger.error(
+                    "Failed to read attachment %s for workflow run: %s",
+                    attachment_id,
+                    type(exc).__name__,
+                )
+                continue
+            try:
+                ref = persist_new_artifact(
+                    user_id=run_user_id,
+                    kind="file",
+                    data=data,
+                    filename=filename,
+                    mime_type=mime_type,
+                    title=filename,
+                    workflow_run_id=self._engine.workflow_run_id,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Failed to persist attachment %s artifact: %s",
+                    attachment_id,
+                    type(exc).__name__,
+                )
+                continue
+            if ref is None:
+                continue
+            refs.append(
+                {
+                    "artifact_id": ref["artifact_id"],
+                    "ref": ref.get("ref"),
+                    "filename": ref["filename"],
+                    "mime_type": ref["mime_type"],
+                }
+            )
+        return refs
+
+    def _finalize_workflow_run(
+        self,
+        workflow_owner_id: Optional[str],
+        run_user_id: Optional[str],
+        pg_workflow_id: Optional[str],
+        query: str,
+    ) -> None:
+        """Write the run's terminal status/result; upsert the row if pre-creation was skipped.
+
+        The run is owned by the *runner* (so it stays readable to the caller and
+        matches the pre-created row); the workflow row is resolved by its *owner*.
+        """
+        if not self._engine:
+            return
         try:
             run = WorkflowRun(
                 workflow_id=self.workflow_id or "unknown",
-                user=owner_id,
+                user=run_user_id,
                 status=self._determine_run_status(),
                 inputs={"query": query},
                 outputs=self._serialize_state(self._engine.state),
@@ -197,29 +366,46 @@ class WorkflowAgent(BaseAgent):
                 created_at=datetime.now(timezone.utc),
                 completed_at=datetime.now(timezone.utc),
             )
+            steps_json = [step.model_dump(mode="json") for step in run.steps]
 
-            if not self.workflow_id or not owner_id:
+            if not self.workflow_id or not workflow_owner_id or not run_user_id:
                 return
             with db_session() as conn:
-                wf_repo = WorkflowsRepository(conn)
-                if looks_like_uuid(self.workflow_id):
-                    workflow_row = wf_repo.get(self.workflow_id, owner_id)
-                else:
-                    workflow_row = wf_repo.get_by_legacy_id(
-                        self.workflow_id, owner_id,
+                if pg_workflow_id is None:
+                    pg_workflow_id = self._resolve_owned_workflow_pg_id(
+                        conn, workflow_owner_id
                     )
-                if workflow_row is None:
-                    return
-                WorkflowRunsRepository(conn).create(
-                    str(workflow_row["id"]),
-                    owner_id,
-                    run.status.value,
-                    inputs=run.inputs,
-                    result=run.outputs,
-                    steps=[step.model_dump(mode="json") for step in run.steps],
-                    started_at=run.created_at,
-                    ended_at=run.completed_at,
-                )
+                    if pg_workflow_id is None:
+                        return
+                runs_repo = WorkflowRunsRepository(conn)
+                updated = False
+                if self._run_persisted:
+                    updated = runs_repo.finalize(
+                        self._engine.workflow_run_id,
+                        run_user_id,
+                        run.status.value,
+                        result=run.outputs,
+                        steps=steps_json,
+                        ended_at=run.completed_at,
+                    )
+                    if not updated:
+                        logger.warning(
+                            "Workflow run %s finalize matched no row; "
+                            "recovering via insert so terminal data is not lost",
+                            self._engine.workflow_run_id,
+                        )
+                if not self._run_persisted or not updated:
+                    runs_repo.create(
+                        pg_workflow_id,
+                        run_user_id,
+                        run.status.value,
+                        run_id=self._engine.workflow_run_id,
+                        inputs=run.inputs,
+                        result=run.outputs,
+                        steps=steps_json,
+                        started_at=run.created_at,
+                        ended_at=run.completed_at,
+                    )
         except Exception as e:
             logger.error(f"Failed to save workflow run: {e}")
 

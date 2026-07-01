@@ -1332,3 +1332,19 @@ class TestToolExecutorAdditionalCoverage:
         tool_config = call_args[1].get("tool_config", call_args[0][1] if len(call_args[0]) > 1 else {})
         assert tool_config.get("body_content_type") == "application/json"
         assert tool_config.get("body_encoding_rules") == {"encode_as": "json"}
+
+
+@pytest.mark.unit
+class TestGetEnabledToolNames:
+    def test_returns_names_from_get_tools(self, monkeypatch):
+        executor = ToolExecutor()
+        monkeypatch.setattr(
+            executor,
+            "get_tools",
+            lambda: {
+                "id1": {"name": "code_executor"},
+                "id2": {"name": "search"},
+                "id3": {},  # nameless rows are skipped
+            },
+        )
+        assert executor.get_enabled_tool_names() == {"code_executor", "search"}

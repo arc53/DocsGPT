@@ -19,6 +19,14 @@ task_default_queue = "docsgpt"
 task_default_exchange = "docsgpt"
 task_default_routing_key = "docsgpt"
 
+# Route document parsing to a dedicated queue so a parse enqueued from inside a
+# Celery worker (headless/scheduled agent) is served by a separate parsing worker
+# and never self-deadlocks the awaiting worker. The tool also passes the queue at
+# apply_async time, so this routing is the default for any other enqueuer.
+task_routes = {
+    "application.api.user.tasks.parse_document": {"queue": settings.DOCUMENT_PARSE_QUEUE},
+}
+
 beat_scheduler = "redbeat.RedBeatScheduler"
 redbeat_redis_url = broker_url
 redbeat_key_prefix = "redbeat:docsgpt:"

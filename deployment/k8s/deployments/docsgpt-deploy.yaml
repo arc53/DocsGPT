@@ -57,6 +57,14 @@ spec:
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
+        # Reach the always-on code-execution runner over HTTP + WebSocket.
+        - name: SANDBOX_GATEWAY_URL
+          value: "http://docsgpt-sandbox:8888"
+        # Select the runner's env-scrubbing kernelspec by its distinct name so
+        # it is never shadowed by the stock "python3" spec. MUST be set here:
+        # the runner only ships the kernelspec; the app (this pod) chooses it.
+        - name: SANDBOX_KERNEL_NAME
+          value: "docsgpt-python"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -85,7 +93,9 @@ spec:
       containers:
       - name: docsgpt-worker
         image: arc53/docsgpt
-        command: ["celery", "-A", "application.app.celery", "worker", "-l", "INFO", "-n", "worker.%h"]
+        # `parsing` queue carries read_document/parse_document; required for its await to resolve.
+        # For heavy/OCR parsing, run a separate deployment with `-Q parsing` (and GPU env).
+        command: ["celery", "-A", "application.app.celery", "worker", "-l", "INFO", "-n", "worker.%h", "-Q", "docsgpt,parsing"]
         resources:
           limits:
             memory: "4Gi"
@@ -111,6 +121,14 @@ spec:
           value: "false"
         - name: AUTO_CREATE_DB
           value: "false"
+        # Reach the always-on code-execution runner over HTTP + WebSocket.
+        - name: SANDBOX_GATEWAY_URL
+          value: "http://docsgpt-sandbox:8888"
+        # Select the runner's env-scrubbing kernelspec by its distinct name so
+        # it is never shadowed by the stock "python3" spec. MUST be set here:
+        # the runner only ships the kernelspec; the app (this pod) chooses it.
+        - name: SANDBOX_KERNEL_NAME
+          value: "docsgpt-python"
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -47,8 +47,14 @@ def _resolve_authenticated_user():
     decoded_token = getattr(request, "decoded_token", None)
     api_key = request.form.get("api_key") or request.args.get("api_key")
 
+    # Return the RAW user identity (not safe_filename'd): the attachment row's
+    # ``user_id`` is an identity key that must match the raw ``sub`` used by
+    # /stream (initial_user_id) and the artifact authz gate. safe_filename is
+    # applied only to the storage path component at write time. (An email-style
+    # sub like ``a@b.com`` was previously sanitized to ``abcom``, so the
+    # uploaded attachment became unreadable by its own owner on /stream.)
     if decoded_token:
-        return safe_filename(decoded_token.get("sub"))
+        return decoded_token.get("sub")
 
     if api_key:
         with db_readonly() as conn:
@@ -57,7 +63,7 @@ def _resolve_authenticated_user():
             return make_response(
                 jsonify({"success": False, "message": "Invalid API key"}), 401
             )
-        return safe_filename(agent.get("user_id"))
+        return agent.get("user_id")
 
     return None
 
@@ -162,7 +168,12 @@ class StoreAttachment(Resource):
                     attachment_id = uuid.uuid4()
                     original_filename = safe_filename(os.path.basename(file.filename))
                     _enforce_uploaded_audio_size_limit(file, original_filename)
-                    relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
+                    # safe_filename only the path component; the DB user_id stays raw.
+                    path_user = safe_filename(user)
+                    relative_path = (
+                        f"{settings.UPLOAD_FOLDER}/{path_user}/attachments/"
+                        f"{str(attachment_id)}/{original_filename}"
+                    )
 
                     metadata = storage.save_file(file, relative_path)
                     file_info = {
@@ -422,7 +433,10 @@ class LiveSpeechToTextChunk(Resource):
                 404,
             )
 
-        if safe_filename(str(session_state.get("user", ""))) != auth_user:
+        # The stored ``user`` is the RAW sub (see _resolve_authenticated_user), and
+        # auth_user is also raw, so compare raw-vs-raw -- never safe_filename'd, or an
+        # email-style sub (a@b.com) would 403 the owner on their own session.
+        if str(session_state.get("user", "")) != auth_user:
             return make_response(
                 jsonify({"success": False, "message": "Forbidden"}),
                 403,
@@ -592,7 +606,9 @@ class LiveSpeechToTextFinish(Resource):
                 404,
             )
 
-        if safe_filename(str(session_state.get("user", ""))) != auth_user:
+        # Stored ``user`` and auth_user are both RAW subs; compare raw-vs-raw so an
+        # email-style sub owner is not 403'd on their own finish call.
+        if str(session_state.get("user", "")) != auth_user:
             return make_response(
                 jsonify({"success": False, "message": "Forbidden"}),
                 403,

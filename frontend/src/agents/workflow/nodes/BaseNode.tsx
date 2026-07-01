@@ -5,7 +5,7 @@ interface BaseNodeProps {
   title: string;
   children?: ReactNode;
   selected?: boolean;
-  type?: 'start' | 'end' | 'default' | 'state' | 'agent' | 'condition';
+  type?: 'start' | 'end' | 'default' | 'state' | 'agent' | 'condition' | 'code';
   icon?: ReactNode;
   handles?: {
     source?: boolean;
@@ -42,6 +42,9 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
   } else if (type === 'condition') {
     iconBg = 'bg-orange-100 dark:bg-orange-900/30';
     iconColor = 'text-orange-600 dark:text-orange-400';
+  } else if (type === 'code') {
+    iconBg = 'bg-indigo-100 dark:bg-indigo-900/30';
+    iconColor = 'text-indigo-600 dark:text-indigo-400';
   }
 
   return (

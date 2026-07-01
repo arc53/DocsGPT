@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { selectWorkflowPreviewOpen } from '../agents/workflow/workflowPreviewSlice';
 import CheckCircleFilled from '../assets/check-circle-filled.svg';
 import ChevronDown from '../assets/chevron-down.svg';
 import WarnIcon from '../assets/warn.svg';
@@ -39,6 +40,10 @@ export default function UploadToast() {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const uploadTasks = useSelector(selectUploadTasks);
+  // The workflow Preview drawer occupies the right edge; shift the toast to
+  // the bottom-left while it's open so it stays visible without covering the
+  // drawer's attach/send controls.
+  const previewOpen = useSelector(selectWorkflowPreviewOpen);
 
   const visibleTasks = uploadTasks.filter((task) => !task.dismissed);
   if (visibleTasks.length === 0) return null;
@@ -60,7 +65,9 @@ export default function UploadToast() {
 
   return (
     <div
-      className="fixed right-4 bottom-4 z-50 flex max-w-md flex-col gap-2"
+      className={`fixed bottom-4 z-50 flex max-w-md flex-col gap-2 ${
+        previewOpen ? 'left-4' : 'right-4'
+      }`}
       onMouseDown={(e) => e.stopPropagation()}
       role="status"
       aria-live="polite"

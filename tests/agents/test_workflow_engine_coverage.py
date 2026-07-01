@@ -66,6 +66,21 @@ class TestExecuteLoop:
         assert any(e.get("type") == "error" and "start node" in e.get("error", "") for e in events)
 
     @pytest.mark.unit
+    def test_emits_workflow_run_id_first(self):
+        """A ``workflow_run`` event carrying the run id precedes any step event."""
+        nodes = [
+            _make_node("n1", NodeType.START, "Start"),
+            _make_node("n2", NodeType.END, "End", config={"config": {}}),
+        ]
+        edges = [_make_edge("e1", "n1", "n2")]
+        engine = WorkflowEngine(_make_graph(nodes, edges), _make_agent())
+        events = list(engine.execute({}, "hello"))
+        run_events = [e for e in events if e.get("type") == "workflow_run"]
+        assert len(run_events) == 1
+        assert run_events[0]["workflow_run_id"] == engine.workflow_run_id
+        assert events[0]["type"] == "workflow_run"
+
+    @pytest.mark.unit
     def test_start_to_end(self):
         nodes = [
             _make_node("n1", NodeType.START, "Start"),

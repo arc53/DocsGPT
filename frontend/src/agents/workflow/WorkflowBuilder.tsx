@@ -3,6 +3,7 @@ import 'reactflow/dist/style.css';
 import {
   AlertCircle,
   Bot,
+  Code2,
   Database,
   Flag,
   GitBranch,
@@ -64,10 +65,27 @@ import { getToolDisplayName } from '../../utils/toolUtils';
 import AgentPageHeader from '../AgentPageHeader';
 import { Agent } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
+import {
+  createDefaultCodeConfig,
+  normalizeCodeConfig,
+  parseCodeJsonSchemaDraft,
+  serializeCodeConfig,
+  validateCodeJsonSchema,
+} from './codeNodeConfig';
 import MobileBlocker from './components/MobileBlocker';
-import PromptTextArea from './components/PromptTextArea';
+import NodeDocumentsControl from './components/NodeDocumentsControl';
+import PromptTextArea, {
+  extractUpstreamVariables,
+} from './components/PromptTextArea';
+import {
+  FILE_PASSING_OPTIONS,
+  FilePassing,
+  normalizeFilePassing,
+  toDocumentVariableOptions,
+} from './documentConfig';
 import {
   AgentNode,
+  CodeNode,
   ConditionNode,
   EndNode,
   NoteNode,
@@ -93,6 +111,8 @@ interface AgentNodeConfig {
   chunks?: string;
   retriever?: string;
   json_schema?: Record<string, unknown>;
+  input_documents?: string[];
+  file_passing?: FilePassing;
 }
 
 interface UserTool {
@@ -100,6 +120,9 @@ interface UserTool {
   name: string;
   displayName: string;
   customName?: string;
+  // Workflow-only builtins (e.g. read_document) are kept here; the classic
+  // agent picker filters them out.
+  workflow_only?: boolean;
 }
 
 function validateJsonSchemaConfig(schema: unknown): string | null {
@@ -283,15 +306,18 @@ function createWorkflowPayload(
         | 'agent'
         | 'note'
         | 'state'
-        | 'condition',
+        | 'condition'
+        | 'code',
       title: node.data.title || node.data.label || node.type,
       position: node.position,
       data:
-        node.type === 'agent' ||
-        node.type === 'condition' ||
-        node.type === 'state'
-          ? node.data.config
-          : node.data,
+        node.type === 'code'
+          ? serializeCodeConfig(node.data.config)
+          : node.type === 'agent' ||
+              node.type === 'condition' ||
+              node.type === 'state'
+            ? node.data.config
+            : node.data,
     })),
     edges: workflowEdges.map((edge) => ({
       id: edge.id,
@@ -310,6 +336,7 @@ const NODE_TYPES: NodeTypes = {
   note: NoteNode,
   state: SetStateNode,
   condition: ConditionNode,
+  code: CodeNode,
 };
 
 function WorkflowBuilderInner() {
@@ -515,6 +542,10 @@ function WorkflowBuilderInner() {
           mode: 'simple',
           cases: [{ name: '', expression: '', sourceHandle: 'case_0' }],
         };
+      } else if (type === 'code') {
+        baseNode.data.title = 'Code';
+        baseNode.data.label = 'Code';
+        baseNode.data.config = createDefaultCodeConfig();
       } else if (type === 'note') {
         baseNode.data.title = 'Note';
         baseNode.data.label = 'Note';
@@ -615,6 +646,27 @@ function WorkflowBuilderInner() {
     [handleUpdateNodeData, selectedNode],
   );
 
+  const handleCodeJsonSchemaChange = useCallback(
+    (text: string) => {
+      if (!selectedNode || selectedNode.type !== 'code') return;
+
+      const nodeId = selectedNode.id;
+      setAgentJsonSchemaDrafts((prev) => ({ ...prev, [nodeId]: text }));
+
+      const { schema, error } = parseCodeJsonSchemaDraft(text);
+      setAgentJsonSchemaErrors((prev) => ({ ...prev, [nodeId]: error }));
+      if (!error) {
+        handleUpdateNodeData({
+          config: {
+            ...(selectedNode.data.config || {}),
+            json_schema: schema,
+          },
+        });
+      }
+    },
+    [handleUpdateNodeData, selectedNode],
+  );
+
   const handleUpload = useCallback((files: File[]) => {
     if (files && files.length > 0) {
       setImageFile(files[0]);
@@ -676,13 +728,27 @@ function WorkflowBuilderInner() {
         handleDeleteNode();
       }
       if (e.key === 'Escape') {
+        // While the Preview Sheet is open, leave Escape to its own dismissal
+        // (popovers, the Sheet itself) so a reflexive Escape can't tear down
+        // the node-config panel and lose the run/attachments/typed prompt.
+        if (showPreview) return;
+        // Ignore Escape originating from text fields / editable popovers so it
+        // dismisses the field rather than the whole config panel.
+        const target = e.target as HTMLElement | null;
+        if (
+          target?.tagName === 'INPUT' ||
+          target?.tagName === 'TEXTAREA' ||
+          target?.isContentEditable
+        ) {
+          return;
+        }
         setShowNodeConfig(false);
         setSelectedNode(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode, handleDeleteNode]);
+  }, [selectedNode, handleDeleteNode, showPreview]);
 
   const handlePanelBackdropClick = useCallback(() => {
     setShowNodeConfig(false);
@@ -782,6 +848,29 @@ function WorkflowBuilderInner() {
   }, [selectedNode]);
 
   useEffect(() => {
+    if (!selectedNode || selectedNode.type !== 'code') return;
+    const nodeId = selectedNode.id;
+    const rawSchema = selectedNode.data.config?.json_schema;
+
+    setAgentJsonSchemaDrafts((prev) => {
+      if (prev[nodeId] !== undefined) return prev;
+      if (rawSchema === undefined || rawSchema === null) {
+        return { ...prev, [nodeId]: '' };
+      }
+      try {
+        return { ...prev, [nodeId]: JSON.stringify(rawSchema, null, 2) };
+      } catch {
+        return { ...prev, [nodeId]: String(rawSchema) };
+      }
+    });
+
+    setAgentJsonSchemaErrors((prev) => {
+      if (prev[nodeId] !== undefined) return prev;
+      return { ...prev, [nodeId]: validateCodeJsonSchema(rawSchema) };
+    });
+  }, [selectedNode]);
+
+  useEffect(() => {
     const loadAgentDetails = async () => {
       if (!agentId) return;
       try {
@@ -834,6 +923,10 @@ function WorkflowBuilderInner() {
             };
           } else if (n.type === 'state' && n.data) {
             nodeData.config = n.data;
+          } else if (n.type === 'code') {
+            nodeData.config = normalizeCodeConfig(
+              n.data as Record<string, unknown> | undefined,
+            );
           } else if (n.data) {
             Object.assign(nodeData, n.data);
           }
@@ -1087,6 +1180,27 @@ function WorkflowBuilderInner() {
           );
         }
       });
+    });
+
+    const codeNodes = nodes.filter((n) => n.type === 'code');
+    codeNodes.forEach((node) => {
+      const codeTitle = node.data?.title || node.id;
+      const config = node.data?.config;
+      if (!(config?.code || '').trim()) {
+        errors.push(`Code node "${codeTitle}" must have code to run`);
+      }
+
+      const schemaValidationError = validateCodeJsonSchema(config?.json_schema);
+      const draftSchemaError = agentJsonSchemaErrors[node.id];
+      const effectiveSchemaError =
+        draftSchemaError !== undefined
+          ? draftSchemaError
+          : schemaValidationError;
+      if (effectiveSchemaError) {
+        errors.push(
+          `Code node "${codeTitle}" JSON schema ${effectiveSchemaError}`,
+        );
+      }
     });
 
     return errors;
@@ -1366,6 +1480,45 @@ function WorkflowBuilderInner() {
 
     return selectedModel.supports_structured_output;
   }, [selectedNode, availableModels]);
+
+  const selectedAgentDocumentOptions = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'agent') return [];
+    return toDocumentVariableOptions(
+      extractUpstreamVariables(nodes, edges, selectedNode.id),
+    );
+  }, [selectedNode, nodes, edges]);
+
+  const selectedCodeDocumentOptions = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'code') return [];
+    return toDocumentVariableOptions(
+      extractUpstreamVariables(nodes, edges, selectedNode.id),
+    );
+  }, [selectedNode, nodes, edges]);
+
+  const selectedCodeJsonSchemaText = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'code') return '';
+
+    const draft = agentJsonSchemaDrafts[selectedNode.id];
+    if (draft !== undefined) return draft;
+
+    const schema = selectedNode.data.config?.json_schema;
+    if (schema === undefined || schema === null) return '';
+
+    try {
+      return JSON.stringify(schema, null, 2);
+    } catch {
+      return String(schema);
+    }
+  }, [selectedNode, agentJsonSchemaDrafts]);
+
+  const selectedCodeJsonSchemaError = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'code') return null;
+
+    const cachedError = agentJsonSchemaErrors[selectedNode.id];
+    if (cachedError !== undefined) return cachedError;
+
+    return validateCodeJsonSchema(selectedNode.data.config?.json_schema);
+  }, [selectedNode, agentJsonSchemaErrors]);
 
   return (
     <>
@@ -1724,6 +1877,23 @@ function WorkflowBuilderInner() {
                     </span>
                   </div>
                 </div>
+                <div
+                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
+                  draggable
+                  onDragStart={(e) => handleNodeDragStart(e, 'code')}
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 transition-colors group-hover:bg-indigo-600 group-hover:text-white dark:bg-indigo-900/40 dark:text-indigo-300">
+                    <Code2 size={18} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-foreground text-sm font-medium">
+                      Code
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      Run code in a sandbox
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1765,6 +1935,7 @@ function WorkflowBuilderInner() {
                       {selectedNode.type === 'note' && 'Note'}
                       {selectedNode.type === 'state' && 'Set global variables'}
                       {selectedNode.type === 'condition' && 'If / Else'}
+                      {selectedNode.type === 'code' && 'Code'}
                     </h3>
                     <Button
                       type="button"
@@ -2059,6 +2230,60 @@ function WorkflowBuilderInner() {
                                     searchPlaceholder="Search sources..."
                                     emptyText="No sources available"
                                   />
+                                </div>
+                                <NodeDocumentsControl
+                                  key={selectedNode.id}
+                                  value={
+                                    selectedNode.data.config?.input_documents ??
+                                    []
+                                  }
+                                  onChange={(nextInputDocuments) =>
+                                    handleUpdateNodeData({
+                                      config: {
+                                        ...(selectedNode.data.config || {}),
+                                        input_documents: nextInputDocuments,
+                                      },
+                                    })
+                                  }
+                                  options={selectedAgentDocumentOptions}
+                                  label="Documents"
+                                  helpText="Documents passed to this agent from uploads or upstream nodes."
+                                />
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    File passing
+                                  </label>
+                                  <Select
+                                    value={normalizeFilePassing(
+                                      selectedNode.data.config?.file_passing,
+                                    )}
+                                    onValueChange={(value) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          file_passing: value as FilePassing,
+                                        },
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {FILE_PASSING_OPTIONS.map((option) => (
+                                        <SelectItem
+                                          key={option.value}
+                                          value={option.value}
+                                        >
+                                          {option.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <p className="text-muted-foreground mt-1 text-xs">
+                                    Auto: send native when the model supports
+                                    it, otherwise extract text.
+                                  </p>
                                 </div>
                                 <div>
                                   <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -2592,6 +2817,136 @@ function WorkflowBuilderInner() {
                                 </Button>
                               </>
                             )}
+
+                            {selectedNode.type === 'code' && (
+                              <>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                  Run code in the workflow sandbox. Produced
+                                  files are saved as artifacts.
+                                </p>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Code
+                                  </label>
+                                  <textarea
+                                    value={selectedNode.data.config?.code ?? ''}
+                                    onChange={(e) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          code: e.target.value,
+                                        },
+                                      })
+                                    }
+                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                    rows={10}
+                                    spellCheck={false}
+                                    placeholder={'print("hello world")'}
+                                  />
+                                </div>
+                                <NodeDocumentsControl
+                                  key={selectedNode.id}
+                                  value={selectedNode.data.config?.inputs ?? []}
+                                  onChange={(nextInputs) =>
+                                    handleUpdateNodeData({
+                                      config: {
+                                        ...(selectedNode.data.config || {}),
+                                        inputs: nextInputs,
+                                      },
+                                    })
+                                  }
+                                  options={selectedCodeDocumentOptions}
+                                  label="Input files"
+                                  helpText="Artifacts/upstream refs staged as files in the sandbox (one becomes inputs/<name>)."
+                                />
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Output Variable
+                                  </label>
+                                  <Input
+                                    type="text"
+                                    value={
+                                      selectedNode.data.config
+                                        ?.output_variable || ''
+                                    }
+                                    onChange={(e) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          output_variable: e.target.value,
+                                        },
+                                      })
+                                    }
+                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
+                                    placeholder="Variable name for output"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Timeout (seconds)
+                                  </label>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    value={
+                                      selectedNode.data.config?.timeout ?? ''
+                                    }
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      const parsed =
+                                        raw.trim() === ''
+                                          ? undefined
+                                          : Number.parseInt(raw, 10);
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          timeout:
+                                            parsed !== undefined &&
+                                            Number.isFinite(parsed)
+                                              ? parsed
+                                              : undefined,
+                                        },
+                                      });
+                                    }}
+                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
+                                    placeholder="Optional"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Structured Output (JSON Schema)
+                                  </label>
+                                  <textarea
+                                    value={selectedCodeJsonSchemaText}
+                                    onChange={(e) =>
+                                      handleCodeJsonSchemaChange(e.target.value)
+                                    }
+                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                    rows={6}
+                                    placeholder={`{
+  "type": "object",
+  "properties": {
+    "result": { "type": "string" }
+  },
+  "required": ["result"]
+}`}
+                                  />
+                                  {selectedCodeJsonSchemaText.trim() !== '' && (
+                                    <p
+                                      className={`mt-2 text-xs ${
+                                        selectedCodeJsonSchemaError
+                                          ? 'text-red-600 dark:text-red-400'
+                                          : 'text-green-600 dark:text-green-400'
+                                      }`}
+                                    >
+                                      {selectedCodeJsonSchemaError
+                                        ? `Invalid JSON schema: ${selectedCodeJsonSchemaError}`
+                                        : 'Valid JSON schema'}
+                                    </p>
+                                  )}
+                                </div>
+                              </>
+                            )}
                           </>
                         )}
                     </div>
@@ -2618,10 +2973,10 @@ function WorkflowBuilderInner() {
         <Sheet open={showPreview} onOpenChange={setShowPreview}>
           <SheetContent
             side="right"
-            showCloseButton={false}
             className="bg-card w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
           >
             <WorkflowPreview
+              workflowId={workflowId}
               workflowData={{
                 name: workflowName,
                 description: workflowDescription,
@@ -2629,10 +2984,20 @@ function WorkflowBuilderInner() {
                   .filter((n) => n.type !== 'note')
                   .map((n) => ({
                     id: n.id,
-                    type: n.type as 'start' | 'end' | 'agent' | 'state',
+                    type: n.type as
+                      | 'start'
+                      | 'end'
+                      | 'agent'
+                      | 'state'
+                      | 'code',
                     title: n.data.title || n.data.label || n.type,
                     position: n.position,
-                    data: n.type === 'agent' ? n.data.config : n.data,
+                    data:
+                      n.type === 'code'
+                        ? serializeCodeConfig(n.data.config)
+                        : n.type === 'agent'
+                          ? n.data.config
+                          : n.data,
                   })),
                 edges: edges.map((e) => ({
                   id: e.id,

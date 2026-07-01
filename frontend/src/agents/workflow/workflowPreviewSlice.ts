@@ -2,6 +2,7 @@ import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 import conversationService from '../../api/services/conversationService';
 import { Query, Status } from '../../conversation/conversationModels';
+import { Attachment, clearAttachments } from '../../upload/uploadSlice';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
 
 export interface WorkflowExecutionStep {
@@ -26,6 +27,9 @@ interface WorkflowData {
 
 export interface WorkflowQuery extends Query {
   executionSteps?: WorkflowExecutionStep[];
+  // The run id for this query's execution; lets the artifacts panel list the
+  // run's produced artifacts (GET /api/artifacts?workflow_run_id=).
+  workflowRunId?: string;
 }
 
 export interface WorkflowPreviewState {
@@ -33,6 +37,9 @@ export interface WorkflowPreviewState {
   status: Status;
   executionSteps: WorkflowExecutionStep[];
   activeNodeId: string | null;
+  // True while the Preview drawer is mounted; lets global overlays (the
+  // upload toast) shift off the drawer's right-side input.
+  previewOpen: boolean;
 }
 
 const initialState: WorkflowPreviewState = {
@@ -40,6 +47,7 @@ const initialState: WorkflowPreviewState = {
   status: 'idle',
   executionSteps: [],
   activeNodeId: null,
+  previewOpen: false,
 };
 
 let abortController: AbortController | null = null;
@@ -56,6 +64,16 @@ interface ThunkState {
     token: string | null;
   };
   workflowPreview: WorkflowPreviewState;
+  upload: { attachments: Attachment[] };
+}
+
+/** Server-assigned ids of completed attachments, for the run's ``attachments``. */
+export function collectCompletedAttachmentIds(
+  attachments: Attachment[],
+): string[] {
+  return attachments
+    .filter((att) => att.status === 'completed' && att.id)
+    .map((att) => att.id);
 }
 
 export const fetchWorkflowPreviewAnswer = createAsyncThunk<
@@ -64,11 +82,15 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
     question: string;
     workflowData: WorkflowData;
     indx?: number;
+    workflowId?: string | null;
   },
   { state: ThunkState }
 >(
   'workflowPreview/fetchAnswer',
-  async ({ question, workflowData, indx }, { dispatch, getState }) => {
+  async (
+    { question, workflowData, indx, workflowId },
+    { dispatch, getState },
+  ) => {
     if (abortController) abortController.abort();
     abortController = new AbortController();
     const { signal } = abortController;
@@ -76,9 +98,20 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
     const state = getState();
 
     if (state.preference) {
+      // Doc-driven workflows read uploaded files as run-scoped artifacts; pass
+      // the completed attachment ids so the backend bridges them (user-scoped).
+      const attachmentIds = collectCompletedAttachmentIds(
+        state.upload.attachments,
+      );
+      if (attachmentIds.length > 0) dispatch(clearAttachments());
+
+      // A saved workflow id lets the run persist a ``workflow_runs`` row so its
+      // produced artifacts are listable + authz'd; omitted for unsaved drafts.
       const payload = {
         question,
         workflow: workflowData,
+        ...(workflowId ? { workflow_id: workflowId } : {}),
+        ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
         save_conversation: false,
         visibility: 'hidden',
       };
@@ -117,6 +150,13 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
 
                     if (data.type === 'end') {
                       dispatch(workflowPreviewSlice.actions.setStatus('idle'));
+                    } else if (data.type === 'workflow_run') {
+                      dispatch(
+                        setWorkflowRunId({
+                          index: targetIndex,
+                          workflowRunId: data.workflow_run_id,
+                        }),
+                      );
                     } else if (data.type === 'thought') {
                       dispatch(
                         updateThought({
@@ -366,6 +406,15 @@ export const workflowPreviewSlice = createSlice({
         state.executionSteps.push(updatedStep);
       }
     },
+    setWorkflowRunId(
+      state,
+      action: PayloadAction<{ index: number; workflowRunId: string }>,
+    ) {
+      const { index, workflowRunId } = action.payload;
+      if (state.queries[index]) {
+        state.queries[index].workflowRunId = workflowRunId;
+      }
+    },
     setActiveNodeId(state, action: PayloadAction<string | null>) {
       state.activeNodeId = action.payload;
     },
@@ -392,6 +441,9 @@ export const workflowPreviewSlice = createSlice({
     clearExecutionSteps: (state) => {
       state.executionSteps = [];
       state.activeNodeId = null;
+    },
+    setPreviewOpen: (state, action: PayloadAction<boolean>) => {
+      state.previewOpen = action.payload;
     },
   },
   extraReducers(builder) {
@@ -430,6 +482,9 @@ export const selectWorkflowExecutionSteps = (
 ) => state.workflowPreview.executionSteps;
 export const selectActiveNodeId = (state: RootStateWithWorkflowPreview) =>
   state.workflowPreview.activeNodeId;
+export const selectWorkflowPreviewOpen = (
+  state: RootStateWithWorkflowPreview,
+) => state.workflowPreview.previewOpen;
 
 export const {
   addQuery,
@@ -440,11 +495,13 @@ export const {
   updateStreamingSource,
   updateToolCall,
   updateExecutionStep,
+  setWorkflowRunId,
   setActiveNodeId,
   setStatus,
   raiseError,
   resetWorkflowPreview,
   clearExecutionSteps,
+  setPreviewOpen,
 } = workflowPreviewSlice.actions;
 
 export default workflowPreviewSlice.reducer;

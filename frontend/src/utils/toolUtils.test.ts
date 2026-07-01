@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isChatToolVisible } from './toolUtils';
+import { isChatToolVisible, isClassicAgentToolVisible } from './toolUtils';
 
 // Regression for the filter drift introduced when ``scheduler`` was
 // dual-registered (both ``default: true`` and ``builtin: true``). The
@@ -23,5 +23,18 @@ describe('isChatToolVisible', () => {
   it('drops pure builtins (agent-only, e.g. a future builtin without default)', () => {
     expect(isChatToolVisible({ builtin: true })).toBe(false);
     expect(isChatToolVisible({ default: false, builtin: true })).toBe(false);
+  });
+});
+
+// The classic agent picker hides ``workflow_only`` builtins (e.g.
+// read_document); the workflow-node picker keeps them (no filter there).
+describe('isClassicAgentToolVisible', () => {
+  it('drops workflow-only builtins (e.g. read_document)', () => {
+    expect(isClassicAgentToolVisible({ workflow_only: true })).toBe(false);
+  });
+
+  it('keeps non-workflow-only tools', () => {
+    expect(isClassicAgentToolVisible({ workflow_only: false })).toBe(true);
+    expect(isClassicAgentToolVisible({})).toBe(true);
   });
 });
