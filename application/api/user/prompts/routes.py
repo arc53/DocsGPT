@@ -113,6 +113,7 @@ class GetSinglePrompt(Resource):
                 with open(
                     os.path.join(current_dir, "prompts", "chat_combine_default.txt"),
                     "r",
+                    encoding="utf-8",
                 ) as f:
                     chat_combine_template = f.read()
                 return make_response(jsonify({"content": chat_combine_template}), 200)
@@ -120,12 +121,15 @@ class GetSinglePrompt(Resource):
                 with open(
                     os.path.join(current_dir, "prompts", "chat_combine_creative.txt"),
                     "r",
+                    encoding="utf-8",
                 ) as f:
                     chat_reduce_creative = f.read()
                 return make_response(jsonify({"content": chat_reduce_creative}), 200)
             elif prompt_id == "strict":
                 with open(
-                    os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r"
+                    os.path.join(current_dir, "prompts", "chat_combine_strict.txt"),
+                    "r",
+                    encoding="utf-8",
                 ) as f:
                     chat_reduce_strict = f.read()
                 return make_response(jsonify({"content": chat_reduce_strict}), 200)

@@ -158,7 +158,7 @@ class RstParser(BaseParser):
             self, filepath: Path, errors: str = "ignore",max_tokens: Optional[int] = 1000
     ) -> List[Tuple[Optional[str], str]]:
         """Parse file into tuples."""
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8", errors=errors) as f:
             content = f.read()
         if self._remove_hyperlinks:
             content = self.remove_hyperlinks(content)

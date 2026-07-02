@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.opengauss.org)",
+      "WebSearch",
+      "Bash(ls /d/projects/others/DocsGPT/application/vectorstore/*.py)",
+      "Bash(xargs basename:*)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":5173\")",
+      "Bash(netsh interface:*)",
+      "Bash(findstr \"5173\")"
+    ]
+  }
+}
