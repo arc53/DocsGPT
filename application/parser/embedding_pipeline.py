@@ -23,6 +23,11 @@ class EmbeddingPipelineError(Exception):
     """
 
 
+# Batch size for embedding. Matches MongoDB's internal batch_size=100.
+# Reduces sequential HTTP requests from N (one per chunk) to N/100.
+EMBED_BATCH_SIZE = 100
+
+
 def sanitize_content(content: str) -> str:
     """
     Remove NUL characters that can cause vector store ingestion to fail.
@@ -45,23 +50,50 @@ def sanitize_content(content: str) -> str:
 @retry(tries=3, delay=5, backoff=2)
 def add_text_to_store_with_retry(store: Any, doc: Any, source_id: str) -> None:
     """Add a document's text and metadata to the vector store with retry logic.
-    
+
     Args:
         store: The vector store object.
         doc: The document to be added.
         source_id: Unique identifier for the source.
-        
+
     Raises:
         Exception: If document addition fails after all retry attempts.
     """
     try:
         # Sanitize content to remove NUL characters that cause ingestion failures
         doc.page_content = sanitize_content(doc.page_content)
-        
+
         doc.metadata["source_id"] = str(source_id)
         store.add_texts([doc.page_content], metadatas=[doc.metadata])
     except Exception as e:
         logging.error(f"Failed to add document with retry: {e}", exc_info=True)
+        raise
+
+
+@retry(tries=3, delay=5, backoff=2)
+def add_texts_batch_with_retry(
+    store: Any, texts: List[str], metadatas: List[dict], source_id: str
+) -> None:
+    """Add a batch of documents' texts and metadata to the vector store.
+
+    Reduces sequential HTTP requests from N (one per chunk) to N/BATCH_SIZE
+    for remote embeddings (e.g. OpenAI, Anthropic).
+
+    Args:
+        store: The vector store object.
+        texts: List of document texts to be added.
+        metadatas: List of metadata dicts for each text.
+        source_id: Unique identifier for the source.
+
+    Raises:
+        Exception: If batch addition fails after all retry attempts.
+    """
+    try:
+        clean_texts = [sanitize_content(t) for t in texts]
+        clean_metadatas = [{**m, "source_id": str(source_id)} for m in metadatas]
+        store.add_texts(clean_texts, metadatas=clean_metadatas)
+    except Exception as e:
+        logging.error(f"Failed to add batch with retry: {e}", exc_info=True)
         raise
 
 
@@ -259,26 +291,28 @@ def embed_and_store_documents(
         # tripwire still validates ``embedded == total`` afterwards.
         loop_start = total_docs
 
-    # Process and embed documents
+    # Process and embed documents in batches for better performance.
+    # Remote embeddings (OpenAI, Anthropic) benefit from batched requests:
+    # N chunks → N/BATCH_SIZE HTTP requests instead of N sequential ones.
     chunk_error: Exception | None = None
     failed_idx: int | None = None
     last_published_pct = -1
     source_id_str = str(source_id)
     progress_span = progress_end - progress_start
-    for idx in tqdm(
-        range(loop_start, total_docs),
-        desc="Embedding 🦖",
-        unit="docs",
-        total=total_docs - loop_start,
-        bar_format="{l_bar}{bar}| Time Left: {remaining}",
-    ):
-        doc = docs[idx]
-        try:
+    remaining_indices = list(range(loop_start, total_docs))
+
+    for batch_start in range(0, len(remaining_indices), EMBED_BATCH_SIZE):
+        batch_indices = remaining_indices[batch_start:batch_start + EMBED_BATCH_SIZE]
+        batch_texts: List[str] = []
+        batch_metadatas: List[dict] = []
+        batch_end_idx = batch_indices[-1]
+
+        for idx in batch_indices:
+            doc = docs[idx]
             # Map the embed loop into [progress_start, progress_end].
             progress = progress_start + int(
                 ((idx + 1) / total_docs) * progress_span
             )
-            task_status.update_state(state="PROGRESS", meta={"current": progress})
 
             # SSE push for sub-second upload-toast updates. Throttled to one
             # event per percent so a 10k-chunk ingest emits ~100 events,
@@ -298,20 +332,39 @@ def embed_and_store_documents(
                 )
                 last_published_pct = progress
 
-            # Add document to vector store
-            add_text_to_store_with_retry(store, doc, source_id)
-            _record_progress(source_id, last_index=idx, embedded_chunks=idx + 1)
+            batch_texts.append(doc.page_content)
+            batch_metadatas.append(doc.metadata)
+
+        try:
+            # Update progress bar for this batch
+            progress = progress_start + int(
+                ((batch_end_idx + 1) / total_docs) * progress_span
+            )
+            task_status.update_state(state="PROGRESS", meta={"current": progress})
+
+            # Add batch to vector store
+            add_texts_batch_with_retry(store, batch_texts, batch_metadatas, source_id)
+            _record_progress(
+                source_id,
+                last_index=batch_end_idx,
+                embedded_chunks=batch_end_idx + 1,
+            )
         except Exception as e:
             chunk_error = e
-            failed_idx = idx
-            logging.error(f"Error embedding document {idx}: {e}", exc_info=True)
-            logging.info(f"Saving progress at document {idx} out of {total_docs}")
+            failed_idx = batch_end_idx
+            logging.error(
+                f"Error embedding batch at index {batch_end_idx}: {e}", exc_info=True
+            )
+            logging.info(
+                f"Saving progress at document {batch_end_idx} out of {total_docs}"
+            )
             try:
                 store.save_local(folder_name)
                 logging.info("Progress saved successfully")
             except Exception as save_error:
-                logging.error(f"CRITICAL: Failed to save progress: {save_error}", exc_info=True)
-                # Continue without breaking to attempt final save
+                logging.error(
+                    f"CRITICAL: Failed to save progress: {save_error}", exc_info=True
+                )
             break
 
     # Save the vector store

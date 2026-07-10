@@ -24,6 +24,7 @@ class TestChunkerInit:
         assert chunker.max_tokens == 2000
         assert chunker.min_tokens == 150
         assert chunker.duplicate_headers is False
+        assert chunker.chunk_overlap == 200
 
     def test_custom_init(self):
         chunker = Chunker(
@@ -281,3 +282,82 @@ class TestChunkerIntegration:
             assert doc.extra_info is not None
             assert "token_count" in doc.extra_info
             assert doc.extra_info["token_count"] > 0
+
+
+# =====================================================================
+# Chunk Overlap Tests
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestChunkOverlap:
+
+    def test_overlap_default_value(self):
+        """Default chunk_overlap should be 200 tokens."""
+        chunker = Chunker()
+        assert chunker.chunk_overlap == 200
+
+    def test_custom_overlap(self):
+        """Custom chunk_overlap should be stored."""
+        chunker = Chunker(chunk_overlap=100)
+        assert chunker.chunk_overlap == 100
+
+    def test_zero_overlap_preserves_old_behavior(self):
+        """With overlap=0, behavior matches the old sequential cut."""
+        chunker_old = Chunker(max_tokens=50, min_tokens=5, chunk_overlap=0)
+        chunker_old.encoding.encode = lambda x: list(range(len(x.split())))
+
+        text = "word " * 100
+        doc = Document(text=text, doc_id="doc1")
+        result = chunker_old.split_document(doc)
+
+        # With 0 overlap, each chunk advances by exactly max_tokens
+        assert len(result) > 1
+
+    def test_overlap_creates_shared_boundary_text(self):
+        """With overlap>0, consecutive chunks should share boundary text."""
+        chunker = Chunker(max_tokens=30, min_tokens=5, chunk_overlap=10)
+
+        # Create a predictable text: "word0 word1 word2 ... word99"
+        words = [f"word{i}" for i in range(100)]
+        text = " ".join(words)
+        doc = Document(text=text, doc_id="doc1")
+
+        result = chunker.split_document(doc)
+        assert len(result) > 1
+
+        # Check that some words appear in consecutive chunks
+        for i in range(len(result) - 1):
+            chunk1_words = set(result[i].text.split())
+            chunk2_words = set(result[i + 1].text.split())
+            # With overlap, there should be some shared words
+            overlap = chunk1_words & chunk2_words
+            assert len(overlap) > 0, (
+                f"No overlap between chunk {i} and {i+1}. "
+                f"Chunk {i} ends with: {result[i].text[-50:]}"
+            )
+
+    def test_overlap_does_not_cause_infinite_loop(self):
+        """Ensure overlap doesn't create a loop where position doesn't advance."""
+        chunker = Chunker(max_tokens=50, min_tokens=5, chunk_overlap=40)
+
+        text = "word " * 200
+        doc = Document(text=text, doc_id="doc1")
+        result = chunker.split_document(doc)
+
+        # Should produce multiple chunks without hanging
+        assert len(result) > 1
+        # All chunk IDs should be unique
+        ids = [d.doc_id for d in result]
+        assert len(ids) == len(set(ids))
+
+    def test_overlap_with_header(self):
+        """Overlap should work correctly with header separation."""
+        chunker = Chunker(max_tokens=30, min_tokens=5, chunk_overlap=10)
+        text = "h1\nh2\nh3\n" + " ".join([f"word{i}" for i in range(100)])
+        doc = Document(text=text, doc_id="doc1")
+
+        result = chunker.split_document(doc)
+        assert len(result) > 1
+        # First chunk should still have header
+        assert "h1" in result[0].text

@@ -5,6 +5,7 @@ from unittest.mock import patch, MagicMock
 from application.parser.embedding_pipeline import (
     EmbeddingPipelineError,
     add_text_to_store_with_retry,
+    add_texts_batch_with_retry,
     assert_index_complete,
     embed_and_store_documents,
     sanitize_content,
@@ -35,6 +36,41 @@ def test_add_text_to_store_with_retry_success():
 
     store.add_texts.assert_called_once_with(
         ["Test content"], metadatas=[{"source_id": "123"}]
+    )
+
+
+def test_add_texts_batch_with_retry_success():
+    """Test that batch function sends multiple texts in one call."""
+    store = MagicMock()
+    texts = ["Text 1", "Text 2", "Text 3"]
+    metadatas = [{"key": "val1"}, {"key": "val2"}, {"key": "val3"}]
+
+    add_texts_batch_with_retry(store, texts, metadatas, "456")
+
+    store.add_texts.assert_called_once_with(
+        ["Text 1", "Text 2", "Text 3"],
+        metadatas=[
+            {"key": "val1", "source_id": "456"},
+            {"key": "val2", "source_id": "456"},
+            {"key": "val3", "source_id": "456"},
+        ],
+    )
+
+
+def test_add_texts_batch_with_retry_sanitizes_nul():
+    """Batch function should sanitize NUL characters from all texts."""
+    store = MagicMock()
+    texts = ["Has\x00null", "Clean text"]
+    metadatas = [{}, {}]
+
+    add_texts_batch_with_retry(store, texts, metadatas, "789")
+
+    store.add_texts.assert_called_once_with(
+        ["Hasnull", "Clean text"],
+        metadatas=[
+            {"source_id": "789"},
+            {"source_id": "789"},
+        ],
     )
 
 
@@ -123,11 +159,11 @@ def test_embed_and_store_documents_progress_band(
     assert currents == sorted(currents)
 
 
-@patch("application.parser.embedding_pipeline.add_text_to_store_with_retry")
+@patch("application.parser.embedding_pipeline.add_texts_batch_with_retry")
 def test_embed_and_store_documents_partial_failure_raises(
-    mock_add_retry, tmp_path, mock_settings, mock_vector_creator, caplog
+    mock_add_batch, tmp_path, mock_settings, mock_vector_creator, caplog
 ):
-    """Regression: a per-chunk failure must escape the function so
+    """Regression: a per-batch failure must escape the function so
     Celery's autoretry_for can fire and ``with_idempotency`` doesn't
     cache a partial index as ``completed``. Pre-fix, this branch
     swallowed and returned success.
@@ -146,11 +182,12 @@ def test_embed_and_store_documents_partial_failure_raises(
     mock_vector_creator.create_vectorstore.return_value = mock_store
 
     # First document succeeds (FAISS init seeds with docs[0]; the loop
-    # picks up at idx=1 and raises on the bad chunk).
+    # picks up at idx=1 and raises on the batch containing the bad chunk).
     def side_effect(*args, **kwargs):
-        if "bad" in args[1].page_content:
+        texts = args[1]
+        if any("bad" in t for t in texts):
             raise RuntimeError("Embedding failed")
-    mock_add_retry.side_effect = side_effect
+    mock_add_batch.side_effect = side_effect
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(EmbeddingPipelineError) as exc_info:
@@ -160,14 +197,14 @@ def test_embed_and_store_documents_partial_failure_raises(
 
     # Original cause is chained via ``raise ... from`` for diagnostics.
     assert isinstance(exc_info.value.__cause__, RuntimeError)
-    assert "Error embedding document" in caplog.text
+    assert "Error embedding batch" in caplog.text
     # Partial save still ran (chunks that did embed are flushed to disk).
     mock_store.save_local.assert_called()
 
 
-@patch("application.parser.embedding_pipeline.add_text_to_store_with_retry")
+@patch("application.parser.embedding_pipeline.add_texts_batch_with_retry")
 def test_embed_and_store_documents_all_chunks_succeed_no_raise(
-    mock_add_retry, tmp_path, mock_settings, mock_vector_creator,
+    mock_add_batch, tmp_path, mock_settings, mock_vector_creator,
 ):
     """Happy path: no exception escapes when every chunk succeeds."""
     mock_settings.VECTOR_STORE = "faiss"
@@ -290,4 +327,59 @@ def test_embed_and_store_documents_save_fails_raises_oserror(
 
     with pytest.raises(OSError, match="Unable to save vector store"):
         embed_and_store_documents(docs, str(folder_name), source_id, task_status)
+
+
+# ── Batch embedding tests ────────────────────────────────────────────────
+
+
+@patch("application.parser.embedding_pipeline.add_texts_batch_with_retry")
+def test_embed_and_store_documents_uses_batching(
+    mock_add_batch, tmp_path, mock_settings, mock_vector_creator,
+):
+    """Verify that the main loop calls the batch function instead of single-doc."""
+    mock_settings.VECTOR_STORE = "chromadb"
+
+    docs = [MagicMock(page_content=f"doc{i}", metadata={}) for i in range(5)]
+    mock_store = MagicMock()
+    mock_vector_creator.create_vectorstore.return_value = mock_store
+
+    embed_and_store_documents(
+        docs, str(tmp_path / "batch_store"), "batch-id", MagicMock(),
+    )
+
+    # Should be called once (all 5 docs fit in one batch of 100)
+    assert mock_add_batch.call_count == 1
+    call_args = mock_add_batch.call_args
+    texts = call_args[0][1]
+    metadatas = call_args[0][2]
+    assert len(texts) == 5
+    assert len(metadatas) == 5
+
+
+@patch("application.parser.embedding_pipeline.add_texts_batch_with_retry")
+def test_embed_and_store_documents_multiple_batches(
+    mock_add_batch, tmp_path, mock_settings, mock_vector_creator,
+):
+    """When docs exceed EMBED_BATCH_SIZE, multiple batch calls should be made."""
+    mock_settings.VECTOR_STORE = "chromadb"
+
+    # Create more docs than batch size to force multiple batches
+    from application.parser.embedding_pipeline import EMBED_BATCH_SIZE
+    num_docs = EMBED_BATCH_SIZE + 10
+    docs = [MagicMock(page_content=f"doc{i}", metadata={}) for i in range(num_docs)]
+    mock_store = MagicMock()
+    mock_vector_creator.create_vectorstore.return_value = mock_store
+
+    embed_and_store_documents(
+        docs, str(tmp_path / "multi_batch"), "mb-id", MagicMock(),
+    )
+
+    # Should be called twice: one full batch + one partial batch
+    assert mock_add_batch.call_count == 2
+    # First call has EMBED_BATCH_SIZE texts
+    first_call_texts = mock_add_batch.call_args_list[0][0][1]
+    assert len(first_call_texts) == EMBED_BATCH_SIZE
+    # Second call has remaining 10 texts
+    second_call_texts = mock_add_batch.call_args_list[1][0][1]
+    assert len(second_call_texts) == 10
 
