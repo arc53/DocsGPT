@@ -388,6 +388,54 @@ gated by CI/CD).
   migration path.
 </Callout>
 
+## Retrieval & RAG Settings
+
+These control how sources are retrieved and whether the advanced RAG features are available. See [Per-Source Configuration](/Sources/Per-source-configuration) and [GraphRAG](/Sources/GraphRAG) for details.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `RETRIEVERS_ENABLED` | `["classic", "default"]` | Allow-list of retrievers usable instance-wide. Valid keys: `classic`, `default`, `hybrid`, `graphrag`. A per-source `retriever` must be within this list. |
+| `PER_SOURCE_RETRIEVAL_ENABLED` | `true` | Master switch for per-source retrieval config. When `false`, all sources fall back to the classic retriever regardless of their stored config. |
+| `GRAPHRAG_ENABLED` | `false` | Enable [GraphRAG](/Sources/GraphRAG). Requires `VECTOR_STORE=pgvector`. |
+| `GRAPHRAG_EXTRACTION_MODEL` | unset | Model used for ingest-time graph extraction. Unset reuses the instance default model. |
+| `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on chunks extracted per source (cost control). |
+
+## Embeddings Settings
+
+See [Embeddings](/Models/embeddings) for full guidance.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `EMBEDDINGS_NAME` | `huggingface_sentence-transformers/all-mpnet-base-v2` | The embedding model. |
+| `EMBEDDINGS_BASE_URL` | unset | Base URL of a remote OpenAI-compatible embeddings server. Setting it routes all embedding calls there. |
+| `EMBEDDINGS_KEY` | unset | Optional bearer token for the remote embeddings server. |
+| `EMBEDDINGS_MAX_INPUT_TOKENS` | unset | Truncate each remote embedding input to N tokens (guards servers that reject oversized inputs). |
+
+## Tools Settings
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `DEFAULT_CHAT_TOOLS` | `["memory", "read_webpage", "scheduler"]` | Tools enabled automatically in regular (agentless) chats. See [Tools Basics](/Tools/basics#default-chat-tools). |
+
+## Admin & Access Settings
+
+See [Access Control, Roles & Teams](/Deploying/Access-Control) for the full model.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `OIDC_ADMIN_GROUPS` | unset | Comma-separated IdP groups granted the global `admin` role (OIDC only). |
+| `LOCAL_MODE_ADMIN` | `false` | Grants admin in no-auth mode (`AUTH_TYPE=None`) only. **Never enable on a networked deployment.** |
+
+## LLM Provider Settings
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `OPENAI_RESPONSES_STORE` | `false` | When `true`, allows OpenAI to persist [Responses API](/Models/cloud-providers#openai-responses-api-and-reasoning) state server-side. |
+
+## Realtime Events Settings
+
+The realtime notifications channel has its own settings — see [Realtime Events & Notifications](/Agents/notifications) (`ENABLE_SSE_PUSH`, `EVENTS_STREAM_MAXLEN`, `SSE_MAX_CONCURRENT_PER_USER`, and related).
+
 ## Exploring More Settings
 
 These are just the basic settings to get you started. The `settings.py` file contains many more advanced options that you can explore to further customize DocsGPT, such as:

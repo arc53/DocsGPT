@@ -2,6 +2,7 @@ import { Bot, Flag, Play, StickyNote } from 'lucide-react';
 import { memo } from 'react';
 
 import { BaseNode } from './BaseNode';
+import CodeNode from './CodeNode';
 import ConditionNode from './ConditionNode';
 import SetStateNode from './SetStateNode';
 
@@ -145,3 +146,4 @@ export const NoteNode = memo(function NoteNode({
 
 export { SetStateNode };
 export { ConditionNode };
+export { CodeNode };

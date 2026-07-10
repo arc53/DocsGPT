@@ -25,13 +25,17 @@ DocsGPT offers direct, streamlined support for the following cloud LLM providers
 | :--------------------------- | :------------- | :-------------------------- |
 | DocsGPT Public API           | `docsgpt`      | `None`                      |
 | OpenAI                       | `openai`       | `gpt-5.1`                   |
+| OpenAI-compatible (BYOM)     | `openai_compatible` | (any; with per-model `base_url`/`api_key`) |
 | Google (Vertex AI, Gemini)   | `google`       | `gemini-3.5-flash`          |
 | Anthropic (Claude)           | `anthropic`    | `claude-3-5-sonnet-20241022`|
 | Groq                         | `groq`         | `llama-3.3-70b-versatile`   |
+| OpenRouter                   | `openrouter`   | (See OpenRouter docs)       |
+| Novita AI                    | `novita`       | (See Novita docs)           |
 | HuggingFace Inference API    | `huggingface`  | `meta-llama/Llama-3.1-8B-Instruct` |
 | Prem AI                      | `premai`       | (See Prem AI docs)          |
 | AWS SageMaker                | `sagemaker`    | (See SageMaker docs)        |
-| Novita AI                    | `novita`       | (See Novita docs)           |
+
+DocsGPT also ships a **model catalog** (`application/core/models/*.yaml`) that the in-app model picker reads, so common models from these providers — including DeepSeek — appear ready to select once the matching API key is set.
 
 ## Connecting to OpenAI-Compatible Cloud APIs
 
@@ -51,6 +55,21 @@ OPENAI_BASE_URL=https://api.deepseek.com/v1 # DeepSeek's OpenAI API URL
 ```
 
 Remember to consult the documentation of your chosen OpenAI-compatible cloud provider for their specific API endpoint, required model names, and authentication methods.
+
+### Dedicated `openai_compatible` provider (bring-your-own-model)
+
+Beyond the global `OPENAI_BASE_URL`, DocsGPT has a first-class `openai_compatible` provider. It lets a model carry its **own** `base_url` and `api_key`, which is how per-user "bring your own model" (BYOM) endpoints work — each model can point at a different OpenAI-compatible server without changing instance-wide settings. Outbound requests use an SSRF-pinned HTTP client for safety.
+
+This is the mechanism behind catalog entries like DeepSeek, which declare their own `base_url` and API key environment variable rather than relying on `OPENAI_BASE_URL`.
+
+## OpenAI Responses API and reasoning
+
+For OpenAI models that support it, DocsGPT can call the newer **Responses API** (`/v1/responses`) instead of Chat Completions. This is selected per model in the catalog via an `api_flavor: responses` capability and enables features like server-side reasoning. Related settings:
+
+- `reasoning_effort` — per-model reasoning effort hint (for example `medium`) declared in the model catalog.
+- `OPENAI_RESPONSES_STORE` (default `false`) — when `true`, lets OpenAI persist Responses API state server-side.
+
+See [App Configuration](/Deploying/DocsGPT-Settings) for the full settings reference.
 
 ## Adding Support for Other Cloud Providers
 

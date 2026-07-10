@@ -147,10 +147,59 @@ class TestExecuteJournaling:
 
         _drain(executor.execute(_TOOLS_DICT, _make_call(call_id="cm1"), "MockLLM"))
 
-        row = _select_attempt(pg_conn, "cm1")
+        # The durability key is namespaced by message_id so providers that reuse
+        # deterministic call ids across turns don't collide on the table-wide PK;
+        # the raw id alone therefore matches nothing.
+        assert _select_attempt(pg_conn, "cm1") is None
+        row = _select_attempt(pg_conn, f"{message_uuid}:cm1")
         assert row is not None
         assert row["status"] == "executed"
         assert str(row["message_id"]) == message_uuid
+
+    def test_reused_call_id_across_turns_does_not_collide(
+        self, pg_conn, mock_tool_manager, monkeypatch
+    ):
+        """Regression for the tool_call_attempts PK collision (#9): a provider
+        that reuses a deterministic call id (``functions.create_artifact:0``)
+        across turns must journal a distinct row per turn, not silently drop the
+        later one on the table-wide ``call_id`` primary key."""
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create("u-collide", "collision-test")
+        msg1 = repo.reserve_message(
+            str(conv["id"]), prompt="q1", placeholder_response="...",
+            request_id="req-c1", status="pending",
+        )
+        msg2 = repo.reserve_message(
+            str(conv["id"]), prompt="q2", placeholder_response="...",
+            request_id="req-c2", status="pending",
+        )
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(
+                parse_args=Mock(return_value=("t1", "test_action", {}))
+            ),
+        )
+        _patch_db(monkeypatch, pg_conn)
+
+        reused = "functions.create_artifact:0"
+        for msg in (msg1, msg2):
+            executor = ToolExecutor(user="u-collide")
+            executor.message_id = str(msg["id"])
+            _drain(
+                executor.execute(_TOOLS_DICT, _make_call(call_id=reused), "MockLLM")
+            )
+
+        # Both turns journaled their own row; before the fix the second call hit
+        # ON CONFLICT DO NOTHING on the shared PK and was dropped.
+        assert _select_attempt(pg_conn, reused) is None
+        r1 = _select_attempt(pg_conn, f"{msg1['id']}:{reused}")
+        r2 = _select_attempt(pg_conn, f"{msg2['id']}:{reused}")
+        assert r1 is not None and str(r1["message_id"]) == str(msg1["id"])
+        assert r2 is not None and str(r2["message_id"]) == str(msg2["id"])
 
     def test_tool_raises_marks_failed_and_reraises(
         self, pg_conn, mock_tool_manager, monkeypatch

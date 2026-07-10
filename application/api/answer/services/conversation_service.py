@@ -154,7 +154,12 @@ class ConversationService:
             completion = llm.gen(
                 model=getattr(llm, "model_id", None) or model_id,
                 messages=messages_summary,
-                max_tokens=500,
+                # Reasoning-capable default models spend the whole budget inside
+                # reasoning_content before emitting any title, so 500 came back
+                # empty (finish_reason=length). Give enough room to finish
+                # thinking and still produce the 3-word title; non-reasoning
+                # models stop far short of this cap.
+                max_tokens=2000,
             )
 
             if not completion or not completion.strip():
@@ -418,7 +423,11 @@ class ConversationService:
         completion = llm.gen(
             model=getattr(llm, "model_id", None) or title_inputs.get("model_id"),
             messages=messages_summary,
-            max_tokens=500,
+            # Reasoning-capable default models spend the whole budget inside
+            # reasoning_content before emitting any title, so 500 came back empty
+            # (finish_reason=length). Give room to finish and still produce the
+            # 3-word title; non-reasoning models stop far short of this cap.
+            max_tokens=2000,
         )
         if not completion or not completion.strip():
             completion = fallback_name or "New Conversation"

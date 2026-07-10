@@ -33,7 +33,7 @@ class TestIngestTask:
 
         mock_worker.assert_called_once_with(
             ANY, "dir", ["pdf"], "job1", "/path", "file.pdf", "user1",
-            file_name_map=None, idempotency_key=None, source_id=None,
+            file_name_map=None, config=None, idempotency_key=None, source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -50,7 +50,8 @@ class TestIngestTask:
 
         mock_worker.assert_called_once_with(
             ANY, "dir", ["pdf"], "job1", "/path", "file.pdf", "user1",
-            file_name_map=name_map, idempotency_key=None, source_id=None,
+            file_name_map=name_map, config=None, idempotency_key=None,
+            source_id=None,
         )
 
 
@@ -66,7 +67,7 @@ class TestIngestRemoteTask:
 
         mock_worker.assert_called_once_with(
             ANY, {"url": "http://x"}, "job1", "user1", "web",
-            idempotency_key=None, source_id=None,
+            config=None, idempotency_key=None, source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -83,6 +84,57 @@ class TestReingestSourceTask:
 
         mock_worker.assert_called_once_with(ANY, "source123", "user1")
         assert result == {"status": "ok"}
+
+
+class TestConvertSourceToWikiTask:
+    @pytest.mark.unit
+    @patch("application.worker.convert_source_to_wiki_worker")
+    def test_calls_convert_worker(self, mock_worker):
+        from application.api.user.tasks import convert_source_to_wiki
+
+        mock_worker.return_value = {"status": "converted"}
+
+        result = convert_source_to_wiki("source123", "user1")
+
+        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        assert result == {"status": "converted"}
+
+
+class TestExtractGraphTask:
+    @pytest.mark.unit
+    @patch("application.worker.extract_graph_worker")
+    def test_calls_extract_graph_worker(self, mock_worker):
+        from application.api.user.tasks import extract_graph
+
+        mock_worker.return_value = {"nodes": 2, "edges": 1}
+
+        result = extract_graph("source123", "user1")
+
+        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        assert result == {"nodes": 2, "edges": 1}
+
+    @pytest.mark.unit
+    def test_repeat_with_same_key_short_circuits(self, pg_conn):
+        from application.api.user import tasks
+
+        calls: list[str] = []
+
+        def _fake_worker(self, source_id, user):
+            calls.append(source_id)
+            return {"nodes": 1, "edges": 0}
+
+        with _patch_decorator_db(pg_conn), patch(
+            "application.worker.extract_graph_worker", _fake_worker
+        ):
+            first = tasks.extract_graph(
+                "src-g", "user1", idempotency_key="extract-graph:src-g",
+            )
+            second = tasks.extract_graph(
+                "src-g", "user1", idempotency_key="extract-graph:src-g",
+            )
+
+        assert first == second
+        assert len(calls) == 1
 
 
 class TestScheduleSyncsTask:
@@ -168,6 +220,7 @@ class TestIngestConnectorTask:
             operation_mode="upload",
             doc_id=None,
             sync_frequency="never",
+            config=None,
             idempotency_key=None,
             source_id=None,
         )
@@ -207,6 +260,7 @@ class TestIngestConnectorTask:
             operation_mode="sync",
             doc_id="doc1",
             sync_frequency="daily",
+            config=None,
             idempotency_key=None,
             source_id=None,
         )
@@ -222,7 +276,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 11
+        assert sender.add_periodic_task.call_count == 13
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -254,6 +308,12 @@ class TestSetupPeriodicTasks:
         # schedule runs cleanup (24h)
         assert calls[10][0][0] == timedelta(hours=24)
         assert calls[10][1].get("name") == "cleanup-schedule-runs"
+        # sandbox session reaper (60s)
+        assert calls[11][0][0] == timedelta(seconds=60)
+        assert calls[11][1].get("name") == "reap-sandbox-sessions"
+        # stale workflow-run reaper (5m)
+        assert calls[12][0][0] == timedelta(seconds=300)
+        assert calls[12][1].get("name") == "reap-stale-workflow-runs"
 
 
 class TestMcpOauthTask:
@@ -270,6 +330,53 @@ class TestMcpOauthTask:
         assert result == {"url": "http://auth"}
 
 
+class TestParseDocumentTask:
+    """parse_document runs on the parsing queue under a bounded time limit."""
+
+    @pytest.mark.unit
+    @patch("application.api.user.tasks.parse_document_worker")
+    def test_calls_parse_document_worker(self, mock_worker):
+        from application.api.user.tasks import parse_document
+
+        mock_worker.return_value = {"status": "ok", "content": "hi"}
+
+        result = parse_document(
+            "art-1", {"conversation_id": "c1"}, "user1", {"output": "markdown"},
+        )
+
+        mock_worker.assert_called_once_with(
+            ANY, "art-1", {"conversation_id": "c1"}, "user1",
+            {"output": "markdown"},
+        )
+        assert result == {"status": "ok", "content": "hi"}
+
+    @pytest.mark.unit
+    @patch("application.api.user.tasks.parse_document_worker")
+    def test_soft_time_limit_returns_clean_error(self, mock_worker):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        from application.api.user.tasks import parse_document
+
+        mock_worker.side_effect = SoftTimeLimitExceeded("parse")
+
+        # The task must swallow the soft-limit signal and return the worker's
+        # clean error shape so the parsing-worker slot frees instead of crashing.
+        result = parse_document("art-1", {"conversation_id": "c1"}, "user1")
+
+        assert result["status"] == "error"
+        assert "timed out" in result["error"]
+
+    @pytest.mark.unit
+    def test_time_limits_derived_from_document_parse_timeout(self):
+        from application.api.user.tasks import parse_document
+        from application.core.settings import settings
+
+        assert parse_document.soft_time_limit == settings.DOCUMENT_PARSE_TIMEOUT
+        assert parse_document.time_limit == settings.DOCUMENT_PARSE_TIMEOUT + 30
+        # Hard limit must exceed the soft limit so the handler can unwind first.
+        assert parse_document.time_limit > parse_document.soft_time_limit
+
+
 class TestDurableTaskRetryPolicy:
     """The long-running tasks share a uniform retry policy."""
 
@@ -283,6 +390,9 @@ class TestDurableTaskRetryPolicy:
             "store_attachment",
             "process_agent_webhook",
             "ingest_connector_task",
+            "reembed_wiki_page",
+            "convert_source_to_wiki",
+            "extract_graph",
         ],
     )
     def test_task_has_retry_config(self, task_name):
@@ -600,7 +710,7 @@ class TestIngestIdempotency:
         worker_calls = []
 
         def _fake_worker(self, directory, formats, job_name, file_path,
-                         filename, user, file_name_map=None,
+                         filename, user, file_name_map=None, config=None,
                          idempotency_key=None, source_id=None):
             worker_calls.append(filename)
             return {"status": "ok", "directory": directory}
@@ -681,3 +791,16 @@ class TestIngestPoisonEvent:
             )
 
         assert published[0][0][2]["operation"] == "reingest"
+
+
+@pytest.mark.unit
+def test_bare_worker_consumes_app_and_parsing_queues():
+    """task_queues declares every queue, so a worker started without -Q serves
+    both app tasks and document parsing — a -Q-less dev worker must never
+    silently strand attachment uploads or parse_document tasks."""
+    import application.celeryconfig as celeryconfig
+    from application.core.settings import settings
+
+    names = {queue.name for queue in celeryconfig.task_queues}
+    assert "docsgpt" in names
+    assert settings.DOCUMENT_PARSE_QUEUE in names

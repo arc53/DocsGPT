@@ -12,13 +12,13 @@ import zipfile
 
 import uuid
 from collections import Counter
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import requests
 
 from application.core.settings import settings
 from application.events.publisher import publish_user_event
-from application.parser.chunking import Chunker
+from application.parser.chunking_creator import ChunkerCreator
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.embedding_pipeline import (
     assert_index_complete,
@@ -34,12 +34,19 @@ from application.parser.schema.base import Document
 
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.artifacts import ArtifactsRepository
 from application.storage.db.repositories.attachments import AttachmentsRepository
 from application.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
 from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.repositories.wiki_pages import (
+    WikiPagesRepository,
+    _content_hash,
+    rebuild_wiki_directory_structure,
+)
 from application.storage.db.session import db_readonly, db_session
+from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
 from application.utils import count_tokens_docs, num_tokens_from_string, safe_filename
 
@@ -50,6 +57,85 @@ MIN_TOKENS = 150
 MAX_TOKENS = 1250
 RECURSION_DEPTH = 2
 INGEST_HEARTBEAT_INTERVAL_SECONDS = 30
+
+
+def graph_extraction_key(source_id, updated_at) -> str:
+    """Build the extract_graph idempotency key for a source's current state.
+
+    The key embeds ``updated_at`` (the trigger-maintained column) so it
+    changes whenever re-extraction is warranted — a re-ingest or re-enable
+    bumps ``updated_at`` and yields a fresh key, bypassing the 24h completed
+    cache so the worker re-runs. Two enqueues for the same state share a key
+    and dedupe. ``updated_at`` is stringified deterministically.
+    """
+    return f"extract-graph:{source_id}:{updated_at}"
+
+
+def _source_updated_at(source) -> str:
+    """Return the source's ``updated_at`` (falling back to ``date``) as a string."""
+    if not source:
+        return ""
+    stamp = source.get("updated_at") or source.get("date")
+    return str(stamp) if stamp is not None else ""
+
+
+def _reset_graph_for_source(source_id) -> None:
+    """Drop a source's existing graph so a re-enable/re-ingest rebuilds from scratch.
+
+    Clears nodes, edges, node→chunk links and the ingest checkpoint. Run at the
+    enqueue site (not inside the worker) so a broker redelivery of an interrupted
+    build still resumes from its checkpoint rather than restarting from zero.
+    """
+    from application.graphrag.store import GraphStore
+
+    GraphStore().delete_by_source(str(source_id))
+
+
+def _publish_graph_event(user, source_id, event_type, payload) -> None:
+    """Publish a graph-extraction SSE event, scoped to the source. Never raises."""
+    if not user:
+        return
+    try:
+        publish_user_event(
+            user,
+            event_type,
+            payload,
+            scope={"kind": "source", "id": str(source_id)},
+        )
+    except Exception as e:
+        logging.debug(f"Failed to publish graph event {event_type}: {e}")
+
+
+def _maybe_enqueue_graph_extraction(cfg, source_id, user):
+    """Reset and re-enqueue graph extraction after embed for a graphrag source.
+
+    The graph lights up asynchronously once chunks are embedded, so ClassicRAG
+    works immediately. A no-op for non-graphrag sources or when GraphRAG is
+    unavailable. The prior graph is cleared first so a re-ingest rebuilds rather
+    than accumulating stale nodes. The work is isolated so a broker hiccup can
+    never fail an otherwise-successful ingest.
+    """
+    if cfg.kind != "graphrag":
+        return
+    from application.graphrag import graphrag_available
+
+    if not graphrag_available():
+        return
+
+    source_id = str(source_id)
+    try:
+        from application.api.user.tasks import extract_graph
+
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(source_id, user)
+        _reset_graph_for_source(source_id)
+        key = graph_extraction_key(source_id, _source_updated_at(source))
+        extract_graph.delay(source_id, user, idempotency_key=key)
+    except Exception as e:
+        logging.warning(
+            f"Failed to enqueue graph extraction for {source_id}: {e}",
+            exc_info=True,
+        )
 
 # Re-exported here for backward-compatible imports
 # (``from application.worker import _derive_source_id`` /
@@ -170,6 +256,25 @@ def _apply_display_names_to_structure(structure, file_name_map, prefix=""):
             next_prefix = f"{prefix}/{name}" if prefix else name
             _apply_display_names_to_structure(node, file_name_map, next_prefix)
     return structure
+
+
+def _download_source_files_to_dir(storage, source_file_path, temp_dir):
+    """Mirror a source's stored files into ``temp_dir``, preserving structure."""
+    if not storage.is_directory(source_file_path):
+        return
+    for storage_file_path in storage.list_files(source_file_path):
+        if storage.is_directory(storage_file_path):
+            continue
+        rel_path = os.path.relpath(storage_file_path, source_file_path)
+        local_file_path = os.path.join(temp_dir, rel_path)
+        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+        try:
+            file_data = storage.get_file(storage_file_path)
+            with open(local_file_path, "wb") as f:
+                f.write(file_data.read())
+        except Exception as e:
+            logging.error(f"Error downloading file {storage_file_path}: {e}")
+            continue
 
 
 # Define a function to generate a random string of a given length.
@@ -400,6 +505,7 @@ def ingest_worker(
     user,
     retriever="classic",
     file_name_map=None,
+    config=None,
     idempotency_key=None,
     source_id=None,
 ):
@@ -416,6 +522,8 @@ def ingest_worker(
         user (str): Identifier for the user initiating the ingestion (original, unsanitized).
         retriever (str): Type of retriever to use for processing the documents.
         file_name_map (dict|str|None): Optional mapping of safe relative paths to original filenames.
+        config (dict|None): Per-source ``SourceConfig`` dict. ``None``/``{}`` →
+            classic defaults (byte-identical to prior behavior).
         idempotency_key (str|None): When provided, the ``source_id`` is derived
             deterministically from the key so a retried task reuses the same
             source row instead of duplicating it.
@@ -556,11 +664,13 @@ def ingest_worker(
                     directory_structure, file_name_map
                 )
 
-            chunker = Chunker(
-                chunking_strategy="classic_chunk",
-                max_tokens=MAX_TOKENS,
-                min_tokens=MIN_TOKENS,
-                duplicate_headers=False,
+            cfg = SourceConfig.parse(config)
+            chunker = ChunkerCreator.create_chunker(
+                cfg.chunking.strategy,
+                chunking_strategy=cfg.chunking.strategy,
+                max_tokens=cfg.chunking.max_tokens,
+                min_tokens=cfg.chunking.min_tokens,
+                duplicate_headers=cfg.chunking.duplicate_headers,
             )
             raw_docs = chunker.chunk(documents=raw_docs)
 
@@ -604,6 +714,8 @@ def ingest_worker(
             }
             if file_name_map:
                 file_data["file_name_map"] = json.dumps(file_name_map)
+            if config:
+                file_data["config"] = json.dumps(config)
 
             upload_index(vector_store_path, file_data)
             publish_user_event(
@@ -622,6 +734,7 @@ def ingest_worker(
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error(f"Error in ingest_worker: {e}", exc_info=True)
         publish_user_event(
@@ -690,6 +803,9 @@ def reingest_source_worker(self, source_id, user):
             raise ValueError(f"Source {source_id} not found or access denied")
         source_id = str(source["id"])
         source_name = source.get("name") or ""
+        # Re-chunk with the source's persisted config (classic defaults
+        # when absent/empty), keeping reingest consistent with ingest.
+        cfg = SourceConfig.parse(source.get("config"))
 
         # Publish ``queued`` *after* canonicalising ``source_id`` so the
         # event references the same id as the source row. Trade-off
@@ -722,29 +838,7 @@ def reingest_source_worker(self, source_id, user):
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Download all files from storage to temp directory, preserving directory structure
-            if storage.is_directory(source_file_path):
-                files_list = storage.list_files(source_file_path)
-
-                for storage_file_path in files_list:
-                    if storage.is_directory(storage_file_path):
-                        continue
-
-                    rel_path = os.path.relpath(storage_file_path, source_file_path)
-                    local_file_path = os.path.join(temp_dir, rel_path)
-
-                    os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
-
-                    # Download file
-                    try:
-                        file_data = storage.get_file(storage_file_path)
-                        with open(local_file_path, "wb") as f:
-                            f.write(file_data.read())
-                    except Exception as e:
-                        logging.error(
-                            f"Error downloading file {storage_file_path}: {e}"
-                        )
-                        continue
+            _download_source_files_to_dir(storage, source_file_path, temp_dir)
 
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
@@ -897,11 +991,12 @@ def reingest_source_worker(self, source_id, user):
                                 file_metadata=metadata_from_filename,
                             )
                             raw_docs_new = reader_new.load_data()
-                            chunker_new = Chunker(
-                                chunking_strategy="classic_chunk",
-                                max_tokens=MAX_TOKENS,
-                                min_tokens=MIN_TOKENS,
-                                duplicate_headers=False,
+                            chunker_new = ChunkerCreator.create_chunker(
+                                cfg.chunking.strategy,
+                                chunking_strategy=cfg.chunking.strategy,
+                                max_tokens=cfg.chunking.max_tokens,
+                                min_tokens=cfg.chunking.min_tokens,
+                                duplicate_headers=cfg.chunking.duplicate_headers,
                             )
                             chunked_new = chunker_new.chunk(documents=raw_docs_new)
 
@@ -1019,6 +1114,7 @@ def reingest_source_worker(self, source_id, user):
                     completed_payload,
                     scope={"kind": "source", "id": source_id},
                 )
+                _maybe_enqueue_graph_extraction(cfg, source_id, user)
 
                 return {
                     "source_id": source_id,
@@ -1063,6 +1159,7 @@ def remote_worker(
     sync_frequency="never",
     operation_mode="upload",
     doc_id=None,
+    config=None,
     idempotency_key=None,
     source_id=None,
 ):
@@ -1113,13 +1210,15 @@ def remote_worker(
         remote_loader = RemoteCreator.create_loader(loader)
         raw_docs = remote_loader.load_data(source_data)
 
-        chunker = Chunker(
-            chunking_strategy="classic_chunk",
-            max_tokens=MAX_TOKENS,
-            min_tokens=MIN_TOKENS,
-            duplicate_headers=False,
+        cfg = SourceConfig.parse(config)
+        chunker = ChunkerCreator.create_chunker(
+            cfg.chunking.strategy,
+            chunking_strategy=cfg.chunking.strategy,
+            max_tokens=cfg.chunking.max_tokens,
+            min_tokens=cfg.chunking.min_tokens,
+            duplicate_headers=cfg.chunking.duplicate_headers,
         )
-        docs = chunker.chunk(documents=raw_docs)
+        raw_docs = chunker.chunk(documents=raw_docs)
         docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
         tokens = count_tokens_docs(docs)
         logging.info("Total tokens calculated: %d", tokens)
@@ -1228,6 +1327,8 @@ def remote_worker(
             "sync_frequency": sync_frequency,
             "directory_structure": json.dumps(directory_structure),
         }
+        if config:
+            file_data["config"] = json.dumps(config)
 
         if operation_mode == "sync":
             last_sync_now = datetime.datetime.now(datetime.timezone.utc)
@@ -1258,6 +1359,7 @@ def remote_worker(
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
+        _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
         publish_user_event(
@@ -1508,6 +1610,121 @@ def attachment_worker(self, file_info, user):
         raise
 
 
+def parse_document_worker(self, artifact_id, parent, user_id, options):
+    """Thin Celery-task wrapper; delegates to the process-agnostic ``run_parse_document``."""
+    return run_parse_document(artifact_id, parent, user_id, options)
+
+
+def run_parse_document(artifact_id, parent, user_id, options):
+    """Parse an input artifact's bytes to a shaped result; runnable inline OR on the parsing queue.
+
+    Security: the artifact is re-resolved through the run-scoped gate here (never trusting a
+    raw storage path) so authz is enforced independently, in addition to the pre-enqueue check
+    in the tool. ``read_document`` calls this directly (in-process) when it already runs inside a
+    Celery worker; the web process dispatches ``parse_document`` to the parsing queue, which lands
+    here via ``parse_document_worker``.
+    """
+    from application.agents.tools.artifact_ref import resolve_artifact_id
+    from application.parser.document_reader import bound_parse_payload, parse_document_bytes
+
+    options = options or {}
+    parent = parent or {}
+    conversation_id = parent.get("conversation_id")
+    workflow_run_id = parent.get("workflow_run_id")
+    if conversation_id is None and workflow_run_id is None:
+        return {"status": "error", "error": "parse_document requires a conversation_id or workflow_run_id."}
+
+    # Re-resolve through the parent-scoped gate so a forged/cross-run id is rejected
+    # here too; resolve a short ref to an id within this parent only.
+    try:
+        with db_readonly() as conn:
+            repo = ArtifactsRepository(conn)
+            resolved_id = resolve_artifact_id(
+                repo, artifact_id, conversation_id=conversation_id, workflow_run_id=workflow_run_id
+            )
+            artifact = (
+                repo.get_artifact_in_parent(
+                    resolved_id, conversation_id=conversation_id, workflow_run_id=workflow_run_id
+                )
+                if resolved_id is not None
+                else None
+            )
+            if artifact is None:
+                return {"status": "error", "error": f"input artifact {artifact_id} not found in this conversation/run."}
+            version = repo.get_version(resolved_id, artifact["current_version"])
+    except Exception:
+        logging.error("run_parse_document: failed to resolve input artifact", exc_info=True)
+        return {"status": "error", "error": f"failed to load input artifact {artifact_id}."}
+
+    if not version or not version.get("storage_path"):
+        return {"status": "error", "error": f"input artifact {artifact_id} has no stored content."}
+
+    display_name = version.get("filename") or artifact.get("title") or str(resolved_id)
+    filename = safe_filename(display_name)
+    try:
+        data = StorageCreator.get_storage().get_file(version["storage_path"]).read()
+    except Exception:
+        logging.error("run_parse_document: failed to read input artifact bytes", exc_info=True)
+        return {"status": "error", "error": f"failed to read input artifact {artifact_id}."}
+
+    # Parse returns the FULL content (no max_chars/window here) so the persisted artifact is the
+    # complete parse; all view-bounding is applied by ``bound_parse_payload`` below.
+    result = parse_document_bytes(
+        data,
+        filename,
+        output=options.get("output", "markdown"),
+        ocr=options.get("ocr", "auto"),
+        pages=options.get("pages"),
+        engine=options.get("engine", "auto"),
+        include_tables=bool(options.get("include_tables", True)),
+    )
+    if result.get("error"):
+        return {"status": "error", "error": result["error"]}
+
+    payload = {"status": "ok", **result}
+    if options.get("persist"):
+        # Persist the FULL shaped result by reference (bytes live in the artifact); only the
+        # bounded view computed below rides back through the Redis result backend.
+        artifact_ref = _persist_parse_result(result, display_name, user_id, parent, options)
+        if isinstance(artifact_ref, dict) and artifact_ref.get("error"):
+            payload["artifact_error"] = artifact_ref["error"]
+        elif artifact_ref is not None:
+            payload["artifact"] = artifact_ref
+    # Bound the Redis-backed VIEW across all shapes: content is capped by max_chars (else the
+    # default head+tail window), chunks are count/length-capped, and structured (needed for
+    # json_schema validation) rides back as-is. The FULL result already lives in the artifact.
+    payload = bound_parse_payload(payload, max_chars=options.get("max_chars"))
+    return payload
+
+
+def _persist_parse_result(result, title, user_id, parent, options):
+    """Persist the full shaped parse result as an owner/parent-scoped ``data`` artifact; return its ref."""
+    from application.sandbox.artifacts_capture import QuotaExceeded, persist_new_artifact
+
+    try:
+        data = json.dumps(result).encode("utf-8")
+    except (TypeError, ValueError):
+        logging.error("parse_document_worker: parse result is not JSON-serializable", exc_info=True)
+        return {"error": "parse result is not JSON-serializable."}
+    base = safe_filename(title) or "document"
+    filename = f"{base}.parsed.json"
+    try:
+        return persist_new_artifact(
+            user_id=user_id,
+            kind="data",
+            data=data,
+            filename=filename,
+            mime_type="application/json",
+            title=f"{title} (parsed)",
+            conversation_id=parent.get("conversation_id"),
+            workflow_run_id=parent.get("workflow_run_id"),
+            message_id=parent.get("message_id"),
+            produced_by={"tool": "read_document", "action": "read_document", "tool_id": options.get("tool_id")},
+        )
+    except QuotaExceeded as exc:
+        return {"error": str(exc)}
+
+
 def agent_webhook_worker(self, agent_id, payload):
     """Process the webhook payload for an agent.
 
@@ -1586,6 +1803,7 @@ def ingest_connector(
     operation_mode: str = "upload",
     doc_id=None,
     sync_frequency: str = "never",
+    config=None,
     idempotency_key=None,
     source_id=None,
 ) -> Dict[str, Any]:
@@ -1604,6 +1822,8 @@ def ingest_connector(
         operation_mode: "upload" for initial ingestion, "sync" for incremental sync
         doc_id: Document ID for sync operations (required when operation_mode="sync")
         sync_frequency: How often to sync ("never", "daily", "weekly", "monthly")
+        config: Per-source ``SourceConfig`` dict. ``None``/``{}`` → classic
+            defaults (byte-identical to prior behavior).
         idempotency_key: When provided, the ``source_id`` is derived
             deterministically so a retried upload reuses the same source row.
         source_id: When supplied, the worker uses it verbatim so SSE envelopes
@@ -1733,11 +1953,13 @@ def ingest_connector(
             directory_structure = getattr(reader, "directory_structure", {})
 
             # Step 4: Process documents (chunking, embedding, etc.)
-            chunker = Chunker(
-                chunking_strategy="classic_chunk",
-                max_tokens=MAX_TOKENS,
-                min_tokens=MIN_TOKENS,
-                duplicate_headers=False,
+            cfg = SourceConfig.parse(config)
+            chunker = ChunkerCreator.create_chunker(
+                cfg.chunking.strategy,
+                chunking_strategy=cfg.chunking.strategy,
+                max_tokens=cfg.chunking.max_tokens,
+                min_tokens=cfg.chunking.min_tokens,
+                duplicate_headers=cfg.chunking.duplicate_headers,
             )
             raw_docs = chunker.chunk(documents=raw_docs)
 
@@ -1795,6 +2017,8 @@ def ingest_connector(
                 "directory_structure": json.dumps(directory_structure),
                 "sync_frequency": sync_frequency,
             }
+            if config:
+                file_data["config"] = json.dumps(config)
 
             file_data["last_sync"] = datetime.datetime.now(datetime.timezone.utc)
 
@@ -1836,6 +2060,7 @@ def ingest_connector(
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
 
             return {
                 "user": user,
@@ -1954,3 +2179,412 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         logging.error("MCP OAuth init failed: %s", error_msg, exc_info=True)
         publish_oauth("mcp.oauth.failed", {"error": error_msg[:1024]})
         return {"success": False, "error": error_msg}
+
+
+def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
+    """Re-embed one wiki page after an edit, or purge its chunks on delete.
+
+    Targeted delete of the page's existing chunks runs first, so a deleted
+    page becomes a pure purge and an edited page is re-embedded cleanly. The
+    chunk metadata shape matches the reingest path (``source``/``title``/
+    ``filename``) so retrieval and future targeted deletes line up.
+
+    Args:
+        self: Celery task instance.
+        source_id: Source the page belongs to.
+        path: Page path; doubles as the chunk ``source`` metadata key.
+        content_hash: The edit's content hash (idempotency anchor).
+        user: Owner identifier used to load the source row.
+
+    Returns:
+        A status dict: ``{"status", "added", "deleted"}`` on re-embed, or
+        ``{"status": "deleted", "deleted": n}`` when the page is gone.
+    """
+    from application.vectorstore.vector_creator import VectorCreator
+
+    source_id = str(source_id)
+
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    source_id = str(source["id"])
+    cfg = SourceConfig.parse(source.get("config"))
+
+    store = VectorCreator.create_vectorstore(
+        settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+    )
+    deleted = store.delete_chunks_by_source_path(path)
+
+    with db_readonly() as conn:
+        page = WikiPagesRepository(conn).get_by_path(source_id, path)
+
+    if page is None:
+        return {"status": "deleted", "deleted": deleted}
+
+    try:
+        title = page.get("title") or path
+        chunker = ChunkerCreator.create_chunker(
+            cfg.chunking.strategy,
+            chunking_strategy=cfg.chunking.strategy,
+            max_tokens=cfg.chunking.max_tokens,
+            min_tokens=cfg.chunking.min_tokens,
+            duplicate_headers=cfg.chunking.duplicate_headers,
+        )
+        chunks = chunker.chunk(
+            documents=[
+                Document(
+                    text=page["content"],
+                    extra_info={
+                        "source": path,
+                        "title": title,
+                        "filename": path,
+                    },
+                )
+            ]
+        )
+
+        added = 0
+        for chunk in chunks:
+            store.add_chunk(
+                chunk.text,
+                metadata={"source": path, "title": title, "filename": path},
+            )
+            added += 1
+
+        with db_session() as conn:
+            WikiPagesRepository(conn).set_embed_status(source_id, path, "embedded")
+    except Exception:
+        with db_session() as conn:
+            WikiPagesRepository(conn).set_embed_status(source_id, path, "failed")
+        raise
+
+    return {"status": "embedded", "added": added, "deleted": deleted}
+
+
+def _wiki_page_path_from_rel(rel_path):
+    """Build a validated leading-slash wiki page path, or None if invalid.
+
+    Runs the derived path through ``validate_tool_path`` so a stored filename
+    carrying traversal (``..``) never lands as a ``wiki_pages.path``.
+    """
+    from application.agents.tools.path_utils import validate_tool_path
+
+    raw = "/" + rel_path.replace(os.sep, "/").lstrip("/")
+    return validate_tool_path(raw)
+
+
+def _chunk_text(chunk) -> str:
+    if isinstance(chunk, dict):
+        return chunk.get("text") or chunk.get("page_content") or ""
+    return getattr(chunk, "text", None) or getattr(chunk, "page_content", "") or ""
+
+
+def _chunk_metadata(chunk) -> dict:
+    if isinstance(chunk, dict):
+        meta = chunk.get("metadata")
+    else:
+        meta = getattr(chunk, "metadata", None)
+    return meta if isinstance(meta, dict) else {}
+
+
+def _chunk_doc_id(chunk):
+    if isinstance(chunk, dict):
+        return chunk.get("doc_id")
+    return getattr(chunk, "doc_id", None)
+
+
+def _url_to_virtual_path(value: str) -> str:
+    parts = urlsplit(value)
+    path = parts.path.strip("/")
+    if path:
+        return path
+    if parts.netloc:
+        return parts.netloc
+    return value.replace("://", "/")
+
+
+def _chunk_page_path(metadata) -> str:
+    for key in ("file_path", "file_name", "filename", "title", "source"):
+        value = metadata.get(key)
+        if value:
+            value = str(value)
+            if "://" in value:
+                value = _url_to_virtual_path(value)
+            return value
+    return ""
+
+
+def _chunk_order_hint(metadata):
+    for key in ("chunk", "chunk_index", "index", "start", "start_index", "offset"):
+        value = metadata.get(key)
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                continue
+    return None
+
+
+MIN_CHUNK_OVERLAP_TRIM = 32
+
+
+def _join_chunk_texts(texts: list[str]) -> str:
+    """Concatenate chunk texts, trimming an exact overlapping boundary.
+
+    Only an exact suffix/prefix overlap of at least ``MIN_CHUNK_OVERLAP_TRIM``
+    characters between consecutive chunks is removed (the common
+    ``chunk_overlap`` case); shorter, possibly legitimate repeats are kept.
+    """
+    parts: list[str] = []
+    for text in texts:
+        if parts:
+            prev = parts[-1]
+            limit = min(len(prev), len(text))
+            overlap = 0
+            for size in range(limit, MIN_CHUNK_OVERLAP_TRIM - 1, -1):
+                if prev.endswith(text[:size]):
+                    overlap = size
+                    break
+            if overlap:
+                text = text[overlap:]
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts)
+
+
+def convert_source_to_wiki_worker(self, source_id, user):
+    """Convert an ingested source into a wiki by reassembling pages from chunks.
+
+    Groups the source's existing vector-store chunks by their page path
+    (``metadata.source``), concatenating each group into one wiki page. This
+    works uniformly for every source type, including crawler/remote/connector
+    sources that hold no stored originals. Chunks with a missing or invalid
+    path are skipped and reported. Embedding is enqueued per page (async); the
+    source's ``config.kind`` flips to ``wiki`` only after at least one page is
+    materialized — a source with no usable chunks keeps its original kind and
+    directory structure.
+
+    Args:
+        self: Celery task instance.
+        source_id: ID of the source to convert.
+        user: Owner identifier used to load the source row and author pages.
+
+    Returns:
+        A summary dict ``{"status": "converted", "pages_created", "skipped"}``,
+        ``{"status": "no_pages", ...}`` when nothing was reassembled, or
+        ``{"status": "already_wiki"}`` when the source is already a wiki.
+    """
+    from application.api.user.tasks import reembed_wiki_page
+    from application.vectorstore.vector_creator import VectorCreator
+
+    source_id = str(source_id)
+
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    source_id = str(source["id"])
+
+    cfg = SourceConfig.parse(source.get("config"))
+    if cfg.kind == "wiki":
+        return {"status": "already_wiki", "pages_created": 0, "skipped": []}
+
+    file_name_map = _normalize_file_name_map(source.get("file_name_map"))
+
+    created_pages: list[tuple[str, str]] = []
+    skipped: list[dict] = []
+
+    store = VectorCreator.create_vectorstore(
+        settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+    )
+
+    grouped: dict[str, list[tuple[object, str]]] = {}
+    original_doc_ids: list[object] = []
+    for chunk in store.get_chunks() or []:
+        # Track every original chunk so a skipped one (empty/no-path/invalid)
+        # is purged on convert too, not left orphaned in the vector store after
+        # the source flips to wiki. Only deleted once pages are created below.
+        doc_id = _chunk_doc_id(chunk)
+        if doc_id is not None:
+            original_doc_ids.append(doc_id)
+        metadata = _chunk_metadata(chunk)
+        rel_path = _chunk_page_path(metadata)
+        text = _chunk_text(chunk)
+        if not text.strip():
+            continue
+        if not rel_path:
+            skipped.append({"file": "", "reason": "missing path"})
+            continue
+        if _wiki_page_path_from_rel(rel_path) is None:
+            skipped.append({"file": rel_path, "reason": "invalid path"})
+            continue
+        grouped.setdefault(rel_path, []).append((_chunk_order_hint(metadata), text))
+
+    with db_session() as conn:
+        repo = WikiPagesRepository(conn)
+        for rel_path in sorted(grouped):
+            page_path = _wiki_page_path_from_rel(rel_path)
+            entries = grouped[rel_path]
+            if any(hint is not None for hint, _ in entries):
+                entries = sorted(
+                    enumerate(entries),
+                    key=lambda item: (
+                        item[1][0] if item[1][0] is not None else float("inf"),
+                        item[0],
+                    ),
+                )
+                entries = [entry for _, entry in entries]
+            content = _join_chunk_texts([text for _, text in entries])
+            title = _get_display_name(file_name_map, rel_path) or os.path.basename(
+                rel_path
+            )
+            repo.upsert(
+                source_id,
+                page_path,
+                content,
+                title=title,
+                updated_by=user,
+                updated_via="agent",
+            )
+            created_pages.append((page_path, _content_hash(content)))
+
+    if not created_pages:
+        return {
+            "status": "no_pages",
+            "pages_created": 0,
+            "skipped": skipped,
+        }
+
+    with db_session() as conn:
+        rebuild_wiki_directory_structure(conn, source_id, user)
+
+    for doc_id in original_doc_ids:
+        try:
+            store.delete_chunk(doc_id)
+        except Exception as exc:
+            logging.error(f"Failed deleting original chunk {doc_id}: {exc}")
+
+    for page_path, content_hash in created_pages:
+        reembed_wiki_page.delay(
+            source_id,
+            page_path,
+            content_hash,
+            user=user,
+            idempotency_key=f"reembed-wiki:{source_id}:{page_path}:{content_hash}",
+        )
+
+    with db_session() as conn:
+        SourcesRepository(conn).update(
+            source_id, user, {"config": cfg.wiki_enabled()}
+        )
+
+    return {
+        "status": "converted",
+        "pages_created": len(created_pages),
+        "skipped": skipped,
+    }
+
+
+def extract_graph_worker(self, source_id, user):
+    """Build a graphrag source's knowledge graph from its embedded chunks.
+
+    Loads the source, fetches its chunks from the vector store, and runs the
+    per-chunk LLM extraction pipeline. The chunks carry ``doc_id`` + ``text``,
+    matching the retrievable ids the extraction pipeline links against. No-ops
+    cleanly when GraphRAG is unavailable or the source has no chunks yet.
+
+    Streams ``graph.extract.progress`` SSE events as chunks are processed and a
+    terminal ``graph.extract.completed``/``graph.extract.failed`` on exit.
+
+    Args:
+        self: Celery task instance.
+        source_id: Source whose graph is being built.
+        user: Owner identifier used to load the source and attribute token usage.
+
+    Returns:
+        ``{"status": "unavailable"}`` when GraphRAG is off, otherwise the
+        extraction summary ``{nodes, edges, chunks_processed, ...}``.
+    """
+    from application.graphrag import graphrag_available
+    from application.graphrag.extraction import extract_graph_for_source
+    from application.vectorstore.vector_creator import VectorCreator
+
+    source_id = str(source_id)
+
+    if not graphrag_available():
+        return {"status": "unavailable"}
+
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    source_id = str(source["id"])
+    cfg = SourceConfig.parse(source.get("config"))
+
+    store = VectorCreator.create_vectorstore(
+        settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+    )
+    chunks = store.get_chunks() or []
+
+    total = len(chunks)
+    # Throttle: at most ~20 progress events regardless of chunk count.
+    step = max(1, total // 20)
+
+    def _progress(info):
+        current = int(info.get("current", 0))
+        if current and current % step != 0 and current != info.get("total"):
+            return
+        _publish_graph_event(
+            user,
+            source_id,
+            "graph.extract.progress",
+            {
+                "source_id": source_id,
+                "current": current,
+                "total": int(info.get("total", total)),
+                "nodes": int(info.get("nodes", 0)),
+                "edges": int(info.get("edges", 0)),
+            },
+        )
+
+    _publish_graph_event(
+        user,
+        source_id,
+        "graph.extract.progress",
+        {
+            "source_id": source_id,
+            "current": 0,
+            "total": total,
+            "nodes": 0,
+            "edges": 0,
+        },
+    )
+
+    try:
+        summary = extract_graph_for_source(
+            source_id,
+            user,
+            chunks,
+            config=cfg,
+            request_id=getattr(self.request, "id", None),
+            progress_cb=_progress,
+        )
+    except Exception as e:
+        _publish_graph_event(
+            user,
+            source_id,
+            "graph.extract.failed",
+            {"source_id": source_id, "error": str(e)[:1024]},
+        )
+        raise
+
+    _publish_graph_event(
+        user,
+        source_id,
+        "graph.extract.completed",
+        {"source_id": source_id, **summary},
+    )
+    return summary

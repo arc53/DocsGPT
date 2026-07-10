@@ -1,0 +1,91 @@
+# Optional code-execution sandbox overlay.
+#
+# Sandboxed code execution (the `code_executor` / `artifact_generator` tools) is
+# an OPT-IN feature and is NOT part of the default stack. This overlay adds the
+# `docsgpt-sandbox` runner (a Jupyter Kernel Gateway; sessions are in-process
+# kernels, never child containers, and the Docker socket is NOT mounted) and
+# wires the app to it.
+#
+# Apply on top of the base stack (order matters -- base first):
+#   docker compose -f deployment/docker-compose.yaml \
+#     -f deployment/optional/docker-compose.optional.sandbox.yaml up
+#
+# REQUIRED: set a shared gateway token before starting. The runner's gateway
+# authenticates every HTTP + WebSocket request with it (so kernel code cannot
+# reach the gateway control API over loopback -- enumerate/kill sibling kernels
+# or bypass the session cap), and the app sends it as `Authorization: token`.
+# Compose fails to start if it is unset. Put it in `deployment/.env` or export it:
+#   export SANDBOX_GATEWAY_AUTH_TOKEN=$(openssl rand -hex 32)
+#
+# SECURITY POSTURE (single trust domain): all sessions share this one
+# container/uid and are isolated by working directory only -- sibling workspaces
+# are readable and kernels share one address space. The kernelspec scrubs secrets
+# from the kernel env, and the runner sits on the internal `sandbox-net` +
+# `sandbox-egress` only (NOT the `default` net), so it has no Docker-DNS route to
+# redis/postgres. Two residual gaps remain, exactly as documented in the egress
+# overlay: (a) internet/host/RFC1918/metadata egress is open until you ALSO layer
+# docker-compose.optional.sandbox-egress.yaml; (b) the runner shares sandbox-net
+# with backend/worker (its control path), so on `AUTH_TYPE=none` it can reach the
+# API unauthenticated -- run real auth and/or the egress overlay's host-firewall
+# DROP. For untrusted multi-tenant workloads use the Daytona backend
+# (SANDBOX_BACKEND=daytona, a per-session VM) or the Kubernetes manifests, whose
+# NetworkPolicy blocks the internal path too.
+
+services:
+  backend:
+    environment:
+      # Code-execution runner reached over HTTP + WebSocket (no docker socket).
+      - SANDBOX_GATEWAY_URL=http://docsgpt-sandbox:8888
+      # Select the runner's env-scrubbing kernelspec (distinct name; never
+      # shadowed by the stock "python3" spec).
+      - SANDBOX_KERNEL_NAME=docsgpt-python
+      # Shared secret the app sends as `Authorization: token <...>`. Must match
+      # the runner's token below; compose errors if it is unset.
+      - SANDBOX_GATEWAY_AUTH_TOKEN=${SANDBOX_GATEWAY_AUTH_TOKEN:?set SANDBOX_GATEWAY_AUTH_TOKEN to a shared gateway token}
+    networks:
+      - default
+      - sandbox-net
+
+  worker:
+    environment:
+      - SANDBOX_GATEWAY_URL=http://docsgpt-sandbox:8888
+      - SANDBOX_KERNEL_NAME=docsgpt-python
+      - SANDBOX_GATEWAY_AUTH_TOKEN=${SANDBOX_GATEWAY_AUTH_TOKEN:?set SANDBOX_GATEWAY_AUTH_TOKEN to a shared gateway token}
+    networks:
+      - default
+      - sandbox-net
+
+  docsgpt-sandbox:
+    build: ./sandbox
+    mem_limit: ${SANDBOX_MEMORY:-1g}
+    cpus: ${SANDBOX_CPUS:-1.0}
+    pids_limit: 256
+    read_only: true
+    environment:
+      # The gateway REQUIRES this and fails closed if unset (see gateway-launch.sh).
+      # Do NOT add `env_file: ../.env` here -- the runner needs no other app secret.
+      - SANDBOX_GATEWAY_AUTH_TOKEN=${SANDBOX_GATEWAY_AUTH_TOKEN:?set SANDBOX_GATEWAY_AUTH_TOKEN to a shared gateway token}
+      # Keep Jupyter's runtime/connection files on the writable tmpfs.
+      - JUPYTER_RUNTIME_DIR=/tmp/jupyter-runtime
+      - JUPYTER_DATA_DIR=/tmp/jupyter-data
+    tmpfs:
+      # Per-session workspaces (/tmp/docsgpt-sandbox/<session_id>) and Jupyter
+      # runtime files live on tmpfs; the root FS is read-only everywhere else.
+      - /tmp
+    networks:
+      # Reachable by backend/worker over the internal sandbox-net; internet egress
+      # (runtime pip install, etc.) via the dedicated sandbox-egress net. NOT on
+      # `default`: the egress overlay cuts internet by flipping sandbox-egress to
+      # internal, without severing the control path.
+      - sandbox-net
+      - sandbox-egress
+
+networks:
+  # Control plane between backend/worker and the runner. internal:true => no
+  # internet route on this net; the runner egresses via sandbox-egress.
+  sandbox-net:
+    internal: true
+  # The runner's outbound internet route. Internet-facing by default so runtime
+  # pip install works; docker-compose.optional.sandbox-egress.yaml flips it to
+  # internal and forces egress through a deny-private proxy for SSRF containment.
+  sandbox-egress: {}

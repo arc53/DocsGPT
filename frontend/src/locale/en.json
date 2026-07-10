@@ -103,6 +103,93 @@
       },
       "actions": "Actions",
       "view": "View",
+      "wiki": {
+        "view": "View wiki",
+        "empty": "This wiki has no pages yet.",
+        "selectPage": "Select a page to view its contents.",
+        "edit": "Edit",
+        "save": "Save",
+        "cancel": "Cancel",
+        "saving": "Saving…",
+        "saveFailed": "Could not save the page. Please try again.",
+        "forbidden": "You do not have permission to edit this page.",
+        "conflict": "This page changed since you opened it and has been reloaded. Your edits are below — reapply and save again.",
+        "editPlaceholder": "Write the page in Markdown…",
+        "livingTitle": "Living wiki.",
+        "livingExplainer": "An agent-editable source: pages are read and rewritten as agents work, and it is exposed to agents through the agentic search tool by default.",
+        "livingExplainerEditable": "Any agent using this source can edit it.",
+        "stamp": {
+          "editedBy": "Edited by {{who}}",
+          "agent": "agent",
+          "human": "human",
+          "you": "you",
+          "unknown": "unknown",
+          "version": "v{{version}}"
+        },
+        "convert": {
+          "action": "Convert to wiki",
+          "title": "Convert to a living wiki",
+          "intro": "Convert \"{{name}}\" into a living wiki of editable pages that agents can read and rewrite.",
+          "introGeneric": "Convert this source into a living wiki of editable pages that agents can read and rewrite.",
+          "costReparse": "Files are re-parsed into editable pages. Formatting is simplified, especially for PDFs.",
+          "costSkipped": "Non-text files (images, binaries) are skipped.",
+          "costIrreversible": "This is not reversible — the wiki pages become the source of truth.",
+          "confirm": "Convert to wiki",
+          "inProgress": "Converting files into wiki pages…",
+          "summaryPages_one": "{{count}} page created",
+          "summaryPages_other": "{{count}} pages created",
+          "summarySkipped_one": "{{count}} file skipped",
+          "summarySkipped_other": "{{count}} files skipped",
+          "skippedHeading": "Skipped files",
+          "done": "Done",
+          "errors": {
+            "generic": "Conversion failed. Please try again.",
+            "forbidden": "You don't have permission to convert this source.",
+            "conflict": "This source is still ingesting. Wait for it to finish before converting."
+          }
+        }
+      },
+      "graphrag": {
+        "badge": "GraphRAG",
+        "building": "Building graph…",
+        "buildingPct": "Building graph… {{pct}}%",
+        "enable": {
+          "action": "Enable GraphRAG",
+          "title": "Enable GraphRAG",
+          "intro": "Build a knowledge graph over \"{{name}}\" so agents can reason across linked entities and relationships.",
+          "introGeneric": "Build a knowledge graph over this source so agents can reason across linked entities and relationships.",
+          "costExtraction": "Entities and relationships are extracted by running an LLM over this source's chunks.",
+          "costCost": "This makes one LLM call per chunk, so it consumes tokens and may take a while on large sources.",
+          "estimate": "~1 LLM call per chunk · ~{{lo}}–{{hi}} total tokens (about half input, half output); output varies with how entity-dense the document is.",
+          "confirm": "Enable GraphRAG",
+          "inProgress": "Building graph…",
+          "inProgressPct": "Building graph… {{pct}}%",
+          "summaryNodes_one": "{{count}} entity",
+          "summaryNodes_other": "{{count}} entities",
+          "summaryEdges_one": "{{count}} relationship",
+          "summaryEdges_other": "{{count}} relationships",
+          "summaryChunks_one": "{{count}} chunk processed",
+          "summaryChunks_other": "{{count}} chunks processed",
+          "done": "Done",
+          "errors": {
+            "generic": "Enabling GraphRAG failed. Please try again.",
+            "forbidden": "You don't have permission to enable GraphRAG on this source.",
+            "conflict": "This source is still ingesting. Wait for it to finish before enabling GraphRAG."
+          }
+        },
+        "view": {
+          "action": "View graph",
+          "title": "Knowledge graph",
+          "explainer": "Nodes are entities and edges are their relationships. Click a node to see its description and the chunks it was extracted from.",
+          "stats": "{{nodes}} entities · {{edges}} relationships",
+          "empty": "No graph yet — extraction may still be running.",
+          "selectNode": "Select a node to see its details.",
+          "linkedChunks": "Linked chunks",
+          "noChunks": "No linked chunks for this entity.",
+          "close": "Close"
+        }
+      },
+      "editConfig": "Source settings",
       "shareWithTeam": "Share with team",
       "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
       "confirmDelete": "Are you sure you want to delete this file? This action cannot be undone.",
@@ -130,7 +217,84 @@
       "uploadingFilesTitle": "Uploading files...",
       "deletingTitle": "Deleting...",
       "deleteDirectoryWarning": "Are you sure you want to delete the directory \"{{name}}\" and all its contents? This action cannot be undone.",
-      "searchAlt": "Search"
+      "searchAlt": "Search",
+      "retrievalOptions": {
+        "title": "Advanced settings",
+        "retrieval": {
+          "title": "Retrieval",
+          "note": "These changes take effect immediately, no re-ingest needed.",
+          "tag": "no re-ingest",
+          "chunks": "Chunks to retrieve (top-k)",
+          "scoreThreshold": "Score threshold",
+          "scoreThresholdPlaceholder": "None",
+          "scoreThresholdHint": "Only return chunks above this relevance score (0–1); higher is stricter.",
+          "rephraseQuery": "Rephrase query before search",
+          "retriever": "Retriever",
+          "retrievers": {
+            "classic": "Classic",
+            "hybrid": "Hybrid",
+            "graphrag": "GraphRAG"
+          },
+          "retrieverHint": "Hybrid combines keyword + vector search. GraphRAG builds a knowledge graph over this source for multi-hop questions.",
+          "exposure": "Search exposure",
+          "exposures": {
+            "prefetch": "Pre-fetch into context",
+            "agentic_tool": "On-demand search tool"
+          },
+          "exposureHint": "Pre-fetch this source into the prompt, or let the agent search it on demand as a tool."
+        },
+        "prescreen": {
+          "enable": "Enable LLM prescreen",
+          "warning": "Fetches a larger candidate set and uses an LLM to filter it. This adds query-time latency and cost.",
+          "candidateK": "Candidates to fetch",
+          "maxKeep": "Max chunks to keep",
+          "batchSize": "Batch size",
+          "model": "Model (optional)",
+          "modelPlaceholder": "Defaults to the request model"
+        },
+        "graph": {
+          "title": "Graph extraction",
+          "tag": "re-ingest to apply",
+          "extractionModel": "Extraction model",
+          "extractionModelHint": "LLM used to extract entities and relationships from each chunk.",
+          "defaultModel": "Use default model",
+          "maxChunks": "Max chunks to extract",
+          "maxChunksHint": "Cap how many chunks are sent for extraction. Leave empty to use the instance default.",
+          "maxChunksPlaceholder": "Default"
+        },
+        "chunking": {
+          "title": "Chunking",
+          "note": "Ingest-time settings. Changing these requires re-ingesting the source.",
+          "tag": "re-ingest to apply",
+          "strategy": "Chunking strategy",
+          "strategies": {
+            "classic_chunk": "Classic",
+            "recursive": "Recursive",
+            "markdown": "Markdown",
+            "parent_child": "Parent / child",
+            "semantic": "Semantic"
+          },
+          "maxTokens": "Max tokens per chunk",
+          "minTokens": "Min tokens per chunk",
+          "duplicateHeaders": "Duplicate headers across chunks"
+        }
+      },
+      "configModal": {
+        "title": "Source settings",
+        "subtitle": "Configure how \"{{name}}\" is chunked and retrieved.",
+        "subtitleGeneric": "Configure how this source is chunked and retrieved.",
+        "save": "Save",
+        "saving": "Saving…",
+        "readOnly": "You have view-only access to this shared source and cannot change its config.",
+        "chunkingChangeHint": "You changed a chunking setting. Saving will require re-ingesting this source for it to take effect.",
+        "prescreenInvalidHint": "Check the prescreen values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
+        "reingestRequired": "Your changes were saved. The chunking settings you changed only take effect after a re-ingest. Re-ingest now?",
+        "reingestLater": "Later",
+        "errors": {
+          "forbidden": "You don't have permission to edit this source's config.",
+          "saveFailed": "Failed to save config. Please try again."
+        }
+      }
     },
     "apiKeys": {
       "label": "Chatbots",
@@ -571,6 +735,7 @@
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Train",
+      "create": "Create",
       "link": "Link",
       "urlLink": "URL Link",
       "repoUrl": "Repository URL",
@@ -640,6 +805,10 @@
         "confluence": {
           "label": "Confluence",
           "heading": "Upload from Confluence"
+        },
+        "wiki": {
+          "label": "New wiki",
+          "heading": "Create a living wiki"
         }
       },
       "connectors": {
@@ -763,7 +932,8 @@
         "systemTime": "Current time (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 timestamp",
         "systemRequestId": "Unique request identifier",
-        "systemUserId": "Current user ID"
+        "systemUserId": "Current user ID",
+        "artifactsLookup": "Artifact metadata by id"
       },
       "learnAboutPrompts": "Learn about Prompts →",
       "publicPromptEditDisabled": "Public prompts cannot be edited",
@@ -886,7 +1056,16 @@
       "remove": "Remove attachment"
     },
     "retry": "Retry",
-    "reasoning": "Reasoning"
+    "reasoning": "Reasoning",
+    "wikiWrite": {
+      "edited": "Edited wiki",
+      "create": "Created wiki page",
+      "str_replace": "Edited wiki page",
+      "insert": "Edited wiki page",
+      "delete": "Deleted wiki page",
+      "rename": "Renamed wiki page",
+      "failed": "failed"
+    }
   },
   "agents": {
     "title": "Agents",

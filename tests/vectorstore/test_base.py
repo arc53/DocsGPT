@@ -228,6 +228,31 @@ class TestEmbeddingsSingleton:
         mock_wrapper_cls.assert_called_once_with("custom_model_name")
         assert result is mock_instance
 
+    @patch("application.vectorstore.base.settings")
+    def test_get_instance_uses_remote_when_base_url_set(self, mock_settings):
+        """Direct callers (GraphRAG, semantic chunking) must route to the
+        remote embeddings API instead of loading a local model."""
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_KEY = "sk-remote"
+
+        result = EmbeddingsSingleton.get_instance("embeddinggemma", "sk-remote")
+
+        assert isinstance(result, RemoteEmbeddings)
+        assert result.api_url == "http://remote:8080"
+        assert result.model_name == "embeddinggemma"
+        assert result.headers["Authorization"] == "Bearer sk-remote"
+
+    @patch("application.vectorstore.base.settings")
+    def test_get_instance_remote_falls_back_to_settings_key(self, mock_settings):
+        """When no key is passed, the remote dispatch uses EMBEDDINGS_KEY."""
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_KEY = "sk-from-settings"
+
+        result = EmbeddingsSingleton.get_instance("embeddinggemma")
+
+        assert isinstance(result, RemoteEmbeddings)
+        assert result.headers["Authorization"] == "Bearer sk-from-settings"
+
 
 # --- BaseVectorStore ---
 

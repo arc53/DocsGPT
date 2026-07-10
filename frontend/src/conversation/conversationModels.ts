@@ -62,7 +62,13 @@ export interface Query {
   thought?: string;
   sources?: { title: string; text: string; link: string }[];
   tool_calls?: ToolCallsType[];
+  // Set when this answer came from a workflow agent run; lets the chat render
+  // the run's produced artifacts via WorkflowRunArtifacts.
+  workflow_run_id?: string;
   error?: string;
+  // Non-fatal notice (e.g. some workflow input documents were dropped). Shown
+  // alongside the answer; unlike ``error`` it does not fail the turn or end the stream.
+  notice?: string;
   attachments?: { id: string; fileName: string }[];
   structured?: boolean;
   schema?: object;

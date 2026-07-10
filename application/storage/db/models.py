@@ -32,6 +32,7 @@ from sqlalchemy import (
     Table,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
 
@@ -296,6 +297,9 @@ sources_table = Table(
     Column("model", Text),
     Column("type", Text),
     Column("metadata", JSONB, nullable=False, server_default="{}"),
+    # Per-source behavior contract (SourceConfig). Separate from ``metadata``
+    # (display/provenance). Empty ``{}`` parses to classic defaults.
+    Column("config", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("retriever", Text),
     Column("sync_frequency", Text),
     Column("tokens", Text),
@@ -397,6 +401,74 @@ attachments_table = Table(
     Column("legacy_mongo_id", Text),
 )
 
+# Identity row, one per logical artifact. The stable ``id`` is the handle passed
+# around (chat/workflow state/message bodies carry only this reference, never
+# bytes). Authz is parent-derived: whoever can reach ``conversation_id`` (chat)
+# or ``workflow_run_id`` (run) can reach its artifacts, so a CHECK requires at
+# least one parent. ``user_id`` is ownership/quota only; ``team_id`` is a
+# nullable forward-compat hook for Teams (no FK, matching ``teams`` itself).
+artifacts_table = Table(
+    "artifacts",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("conversation_id", UUID(as_uuid=True)),
+    Column("workflow_run_id", UUID(as_uuid=True)),
+    Column("team_id", UUID(as_uuid=True)),
+    Column("message_id", UUID(as_uuid=True)),
+    Column("kind", Text, nullable=False),
+    Column("title", Text),
+    Column("metadata", JSONB),
+    Column("current_version", Integer, nullable=False, server_default="1"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "conversation_id IS NOT NULL OR workflow_run_id IS NOT NULL",
+        name="artifacts_parent_present_check",
+    ),
+)
+
+Index(
+    "artifacts_conversation_idx",
+    artifacts_table.c.conversation_id,
+    postgresql_where=artifacts_table.c.conversation_id.isnot(None),
+)
+Index(
+    "artifacts_workflow_run_idx",
+    artifacts_table.c.workflow_run_id,
+    postgresql_where=artifacts_table.c.workflow_run_id.isnot(None),
+)
+Index("artifacts_user_idx", artifacts_table.c.user_id)
+
+# Append-only version history; never mutated. Each edit appends a row and bumps
+# ``artifacts.current_version``. ``UNIQUE(artifact_id, version)`` keeps versions
+# monotonic. ``storage_path`` is the ``BaseStorage`` key (NULL when spec-only);
+# bytes live in storage, only metadata + the key live here (pass-by-reference).
+artifact_versions_table = Table(
+    "artifact_versions",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column(
+        "artifact_id",
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("version", Integer, nullable=False),
+    Column("mime_type", Text),
+    Column("filename", Text),
+    Column("storage_path", Text),
+    Column("size", BigInteger),
+    Column("sha256", Text),
+    Column("spec", JSONB),
+    Column("preview_text", Text),
+    Column("produced_by", JSONB),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("artifact_id", "version", name="artifact_versions_artifact_version_uidx"),
+)
+
+Index("artifact_versions_artifact_idx", artifact_versions_table.c.artifact_id)
+
 memories_table = Table(
     "memories",
     metadata,
@@ -409,6 +481,35 @@ memories_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("user_id", "tool_id", "path", name="memories_user_tool_path_uidx"),
+)
+
+# Authoritative storage for an LLM-editable wiki source (config.kind="wiki").
+# Source-scoped (team-shareable) unlike per-user ``memories``; the vector store
+# is a derived index re-embedded per page (``embed_status`` tracks freshness).
+wiki_pages_table = Table(
+    "wiki_pages",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("source_id", UUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False),
+    Column("path", Text, nullable=False),
+    Column("title", Text),
+    Column("content", Text, nullable=False),
+    Column("token_count", Integer),
+    Column("version", Integer, nullable=False, server_default="1"),
+    Column("content_hash", Text),
+    Column("embed_status", Text, nullable=False, server_default="pending"),
+    Column("updated_by", Text),
+    Column("updated_via", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("source_id", "path", name="wiki_pages_source_path_uidx"),
+)
+
+Index(
+    "wiki_pages_source_path_prefix_idx",
+    wiki_pages_table.c.source_id,
+    wiki_pages_table.c.path,
+    postgresql_ops={"path": "text_pattern_ops"},
 )
 
 todos_table = Table(

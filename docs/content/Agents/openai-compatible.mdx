@@ -1,6 +1,6 @@
 ---
 title: OpenAI-Compatible API
-description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions.
+description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, multimodal, tool calling, reasoning, and idempotent retries.
 ---
 
 import { Callout, Tabs } from 'nextra/components';
@@ -58,7 +58,7 @@ Authenticate with `Authorization: Bearer <agent_api_key>`.
 
 ## Streaming
 
-Set `"stream": true`. You'll receive SSE chunks with `choices[0].delta.content`. DocsGPT-specific events (sources, tool calls) arrive as extra frames with a `docsgpt` key — standard clients ignore them.
+Set `"stream": true`. You'll receive SSE chunks with `choices[0].delta.content`. DocsGPT-specific events (sources, tool calls) arrive as extra frames that carry a top-level `docsgpt` key on an otherwise-empty chunk — standard clients ignore them.
 
 ```python
 stream = client.chat.completions.create(
@@ -70,6 +70,135 @@ for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="", flush=True)
 ```
 
+## Sampling Parameters
+
+Standard OpenAI sampling parameters are forwarded to the model. When omitted, the agent's configured defaults apply. Supported: `temperature`, `max_tokens` (or `max_completion_tokens`), `top_p`, `frequency_penalty`, `presence_penalty`, `stop`, `seed`.
+
+```json
+{
+  "model": "docsgpt-agent",
+  "messages": [{"role": "user", "content": "Write a haiku about search"}],
+  "temperature": 0.2,
+  "max_tokens": 256,
+  "seed": 42
+}
+```
+
+## Structured Output
+
+You can force the model to return JSON matching a schema, using either the OpenAI `response_format` field or the `response_schema` convenience field.
+
+<Tabs items={['response_format', 'response_schema']}>
+  <Tabs.Tab>
+    ```json
+    {
+      "model": "docsgpt-agent",
+      "messages": [{"role": "user", "content": "Extract the order id and total"}],
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "order",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "order_id": {"type": "string"},
+              "total": {"type": "number"}
+            },
+            "required": ["order_id", "total"]
+          }
+        }
+      }
+    }
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```json
+    {
+      "model": "docsgpt-agent",
+      "messages": [{"role": "user", "content": "Extract the order id and total"}],
+      "response_schema": {
+        "type": "object",
+        "properties": {
+          "order_id": {"type": "string"},
+          "total": {"type": "number"}
+        },
+        "required": ["order_id", "total"]
+      }
+    }
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+- `response_format` follows OpenAI Structured Outputs. `strict` defaults to `true`; set `strict: false` to relax enforcement.
+- `response_format: {"type": "json_object"}` requests JSON without a fixed schema (the model is steered by the prompt).
+- `response_schema` is a DocsGPT convenience: pass a raw JSON Schema object (or a `{"schema": {...}}` wrapper) directly.
+
+## Multimodal Input (text + images)
+
+User messages may use OpenAI typed-content arrays with `image_url` parts. Images are forwarded to vision-capable models.
+
+```json
+{
+  "model": "docsgpt-agent",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "What's in this screenshot?"},
+        {"type": "image_url", "image_url": {"url": "https://example.com/shot.png"}}
+      ]
+    }
+  ]
+}
+```
+
+## Tool Calling (client-side, stateless)
+
+You can register your own tools and execute them on the client. The flow is stateless — OpenAI clients that don't carry a `conversation_id` re-send the full message history each turn, and DocsGPT rebuilds the agent from it.
+
+1. Send a request with a `tools` array.
+2. If the agent decides to call a tool, the response comes back with `finish_reason: "tool_calls"` and a `tool_calls` array (and `content: null`).
+3. Execute the tool(s) on your side, then **re-POST the full message history** with the assistant's `tool_calls` message followed by `role: "tool"` result messages.
+4. DocsGPT continues the run and returns the final answer.
+
+```json
+{
+  "model": "docsgpt-agent",
+  "messages": [
+    {"role": "user", "content": "What's the weather in Paris?"},
+    {"role": "assistant", "tool_calls": [
+      {"id": "call_1", "type": "function",
+       "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}}
+    ]},
+    {"role": "tool", "tool_call_id": "call_1", "content": "18°C, clear"}
+  ],
+  "tools": [ { "type": "function", "function": { "name": "get_weather", "...": "..." } } ]
+}
+```
+
+## Reasoning
+
+For models that emit reasoning ("thinking") tokens, the response surfaces them in a non-standard `reasoning_content` field (a `reasoning_content` delta when streaming). Standard clients ignore it; clients that understand it can display the model's thinking separately from the answer.
+
+## Idempotent Retries
+
+Add an `Idempotency-Key` header so a retried request returns the *stored first response* instead of re-running the agent (which would duplicate the answer and double-bill tokens).
+
+```bash
+curl -X POST http://localhost:7091/v1/chat/completions \
+  -H "Authorization: Bearer your_agent_api_key" \
+  -H "Idempotency-Key: 8f1c...unique-per-request" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"docsgpt-agent","messages":[{"role":"user","content":"hi"}]}'
+```
+
+- **Opt-in** — no header means today's behavior (every request runs).
+- **Non-streaming only** — streaming replay is not supported.
+- A completed key **replays the cached body** (and status) for **24 hours**.
+- A request with a key whose first attempt is **still in flight** returns **HTTP 409**.
+- Keys are scoped per agent and capped at **256 characters** (oversized keys are rejected).
+
 ## System Prompt Override
 
 System messages are **dropped by default** — the agent's configured prompt is used. To allow callers to override it, enable **Allow prompt override** in the agent's Advanced settings.
@@ -80,13 +209,30 @@ When an override is active, the agent's prompt template is replaced wholesale �
 
 ## Conversation Persistence
 
-Conversations are **always persisted** server-side, and the response includes
-`docsgpt.conversation_id`. They never appear in the agent owner's sidebar —
-`/v1` traffic is stored hidden, so external clients can't clutter the owner's
-conversation list.
+Conversations are **always persisted** server-side, and the response includes `docsgpt.conversation_id`. They never appear in the agent owner's sidebar — `/v1` traffic is stored hidden, so external clients can't clutter the owner's conversation list.
 
-The legacy `{ "docsgpt": { "save_conversation": true } }` opt-in from older
-releases (when `/v1` was stateless by default) is deprecated and ignored.
+Stateless tool continuations (no `conversation_id`, e.g. opencode) skip persistence by default to avoid writing orphan rows; set `docsgpt.persist` to override. The legacy `docsgpt.save_conversation` flag from older releases is deprecated and ignored.
+
+## DocsGPT Extension Fields
+
+DocsGPT adds an optional `docsgpt` object to both requests and responses for features outside the OpenAI schema.
+
+**Request** (`docsgpt.*`):
+
+| Field | Description |
+| --- | --- |
+| `attachments` | List of attachment IDs to include as context for this turn. |
+| `persist` | Force-enable/disable conversation persistence (mainly for stateless tool continuations). |
+
+**Response** (`docsgpt.*`):
+
+| Field | Description |
+| --- | --- |
+| `conversation_id` | Server-side conversation ID for this exchange. |
+| `sources` | RAG sources used to answer. |
+| `tool_calls` | Completed tool-call results from the run. |
+
+When streaming, these arrive on otherwise-empty chunks that carry a top-level `docsgpt` key, so strict OpenAI clients still validate each frame.
 
 ## When to Use Native Endpoints Instead
 

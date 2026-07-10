@@ -251,7 +251,7 @@ export default function Users() {
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input
-          placeholder="Filter by exact user id"
+          placeholder="Filter by user id"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => {

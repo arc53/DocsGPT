@@ -233,6 +233,9 @@ class GetSingleConversation(Resource):
                         "status": msg.get("status"),
                         "request_id": msg.get("request_id"),
                         "last_heartbeat_at": metadata.get("last_heartbeat_at"),
+                        # Surfaced from metadata so the chat can render a
+                        # workflow run's produced artifacts on reload.
+                        "workflow_run_id": metadata.get("workflow_run_id"),
                     }
                     if metadata:
                         query["metadata"] = metadata

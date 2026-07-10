@@ -872,3 +872,265 @@ class TestDirectoryStructure:
         data = response.json
         assert data["provider"] == "gdrive"
         assert data["base_path"] == "/data/nested"
+
+
+class TestSourceConfigResource:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import SourceConfigResource
+
+        with app.test_request_context(
+            "/api/sources/x/config", method="PATCH", json={}
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = SourceConfigResource().patch("x")
+        assert response.status_code == 401
+
+    def test_invalid_config_rejected(self, app, pg_conn):
+        # Strict-on-write: an unknown field fails validation → 400.
+        from application.api.user.sources.routes import SourceConfigResource
+
+        user = "u-cfg-bad"
+        src = _seed_source(pg_conn, user, name="cfg-src", type="file")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{src['id']}/config",
+            method="PATCH",
+            json={"retrieval": {"bogus_field": 1}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(str(src["id"]))
+        assert response.status_code == 400
+
+    def test_owner_updates_retrieval_no_reingest(self, app, pg_conn):
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-owner"
+        src = _seed_source(pg_conn, user, name="cfg-live", type="file")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{src['id']}/config",
+            method="PATCH",
+            json={"retrieval": {"chunks": 7, "rephrase_query": False}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(str(src["id"]))
+
+        assert response.status_code == 200
+        # Retrieval-only change takes effect live, no re-ingest needed.
+        assert response.json["requires_reingest"] is False
+        got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)
+        assert got["config"]["retrieval"]["chunks"] == 7
+        assert got["config"]["retrieval"]["rephrase_query"] is False
+
+    def test_chunking_change_requires_reingest(self, app, pg_conn):
+        from application.api.user.sources.routes import SourceConfigResource
+
+        user = "u-cfg-chunk"
+        src = _seed_source(pg_conn, user, name="cfg-chunk", type="file")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{src['id']}/config",
+            method="PATCH",
+            json={"chunking": {"max_tokens": 800}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(str(src["id"]))
+
+        assert response.status_code == 200
+        assert response.json["requires_reingest"] is True
+
+    def test_viewer_rejected(self, app, pg_conn):
+        # A team VIEWER (not editor) cannot edit config → 403.
+        import uuid
+
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.repositories.team_members import (
+            TeamMembersRepository,
+        )
+        from application.storage.db.repositories.team_resource_grants import (
+            TeamResourceGrantsRepository,
+        )
+        from application.storage.db.repositories.teams import TeamsRepository
+
+        owner = "alice-cfg"
+        viewer = "bob-cfg-viewer"
+        src = _seed_source(pg_conn, owner, name="shared-cfg", type="file")
+        sid = str(src["id"])
+        team = TeamsRepository(pg_conn).create(
+            "AcmeCfg", f"acmecfg-{uuid.uuid4().hex[:8]}", owner
+        )
+        TeamMembersRepository(pg_conn).add_member(
+            team["id"], viewer, role="team_member"
+        )
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", sid, owner_id=owner, granted_by=owner,
+            access_level="viewer",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"retrieval": {"chunks": 5}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": viewer}
+            response = SourceConfigResource().patch(sid)
+        assert response.status_code == 403
+        # The write must NOT have landed.
+        got = SourcesRepository(pg_conn).get_any(sid, owner)
+        assert got["config"] == {}
+
+    def test_team_editor_writes_under_owner(self, app, pg_conn):
+        # A team EDITOR can edit; the write lands under the OWNER's id.
+        import uuid
+
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.repositories.team_members import (
+            TeamMembersRepository,
+        )
+        from application.storage.db.repositories.team_resource_grants import (
+            TeamResourceGrantsRepository,
+        )
+        from application.storage.db.repositories.teams import TeamsRepository
+
+        owner = "alice-cfg-edit"
+        editor = "bob-cfg-editor"
+        src = _seed_source(pg_conn, owner, name="shared-cfg-edit", type="file")
+        sid = str(src["id"])
+        team = TeamsRepository(pg_conn).create(
+            "AcmeEdit", f"acmeedit-{uuid.uuid4().hex[:8]}", owner
+        )
+        TeamMembersRepository(pg_conn).add_member(
+            team["id"], editor, role="team_member"
+        )
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", sid, owner_id=owner, granted_by=owner,
+            access_level="editor",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"retrieval": {"chunks": 9}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": editor}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 200
+        # The write landed under the owner id (not the editor's), so the
+        # owner-scoped read sees it.
+        got = SourcesRepository(pg_conn).get_any(sid, owner)
+        assert got["config"]["retrieval"]["chunks"] == 9
+
+    def test_kind_flip_to_wiki_rejected(self, app, pg_conn):
+        # Flipping kind to wiki must route through /wiki/convert, not config.
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-wiki-flip"
+        src = _seed_source(pg_conn, user, name="cfg-wiki", type="file")
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"kind": "wiki"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 400
+        # The kind must NOT have silently flipped.
+        from application.storage.db.source_config import SourceConfig
+
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert SourceConfig.parse(got.get("config")).kind != "wiki"
+
+    def test_other_edits_work_on_wiki_source(self, app, pg_conn):
+        # A wiki source can still edit retrieval (kind stays wiki, no reject).
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-wiki-edit"
+        src = _seed_source(
+            pg_conn, user, name="wiki-cfg", type="wiki",
+            config={"kind": "wiki"},
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"kind": "wiki", "retrieval": {"chunks": 4}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 200
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert got["config"]["retrieval"]["chunks"] == 4
+
+    def test_partial_edit_preserves_wiki_kind(self, app, pg_conn):
+        # A partial edit that OMITS kind must not demote a wiki to classic
+        # (SourceConfig.kind defaults to "classic" on a full-replace write).
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.source_config import SourceConfig
+
+        user = "u-cfg-wiki-partial"
+        src = _seed_source(
+            pg_conn, user, name="wiki-partial", type="wiki",
+            config={"kind": "wiki"},
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"retrieval": {"chunks": 6}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 200
+        assert response.json["config"]["kind"] == "wiki"
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert SourceConfig.parse(got.get("config")).kind == "wiki"
+        assert got["config"]["retrieval"]["chunks"] == 6
+
+    def test_explicit_kind_demotion_from_wiki_rejected(self, app, pg_conn):
+        # Demoting wiki -> classic via config is rejected; use /wiki/convert.
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.source_config import SourceConfig
+
+        user = "u-cfg-wiki-demote"
+        src = _seed_source(
+            pg_conn, user, name="wiki-demote", type="wiki",
+            config={"kind": "wiki"},
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"kind": "classic"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 400
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert SourceConfig.parse(got.get("config")).kind == "wiki"

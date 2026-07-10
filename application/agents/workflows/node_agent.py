@@ -1,40 +1,12 @@
 """Workflow Node Agents - defines specialized agents for workflow nodes."""
 
-from typing import Any, Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type
 
 from application.agents.agentic_agent import AgenticAgent
 from application.agents.base import BaseAgent
 from application.agents.classic_agent import ClassicAgent
 from application.agents.research_agent import ResearchAgent
 from application.agents.workflows.schemas import AgentType
-
-
-class ToolFilterMixin:
-    """Mixin that filters fetched tools to only those specified in tool_ids."""
-
-    _allowed_tool_ids: List[str]
-
-    def _get_user_tools(self, user: str = "local") -> Dict[str, Dict[str, Any]]:
-        all_tools = super()._get_user_tools(user)
-        if not self._allowed_tool_ids:
-            return {}
-        filtered_tools = {
-            tool_id: tool
-            for tool_id, tool in all_tools.items()
-            if str(tool.get("_id", "")) in self._allowed_tool_ids
-        }
-        return filtered_tools
-
-    def _get_tools(self, api_key: str = None) -> Dict[str, Dict[str, Any]]:
-        all_tools = super()._get_tools(api_key)
-        if not self._allowed_tool_ids:
-            return {}
-        filtered_tools = {
-            tool_id: tool
-            for tool_id, tool in all_tools.items()
-            if str(tool.get("_id", "")) in self._allowed_tool_ids
-        }
-        return filtered_tools
 
 
 class _WorkflowNodeMixin:
@@ -56,18 +28,23 @@ class _WorkflowNodeMixin:
             api_key=api_key,
             **kwargs,
         )
-        self._allowed_tool_ids = tool_ids or []
+        # Scope the executor to exactly the node's configured tools. Agents
+        # fetch their toolset via ``tool_executor.get_tools()``, so the scope
+        # must live on the executor — it resolves builtin synthetic ids
+        # (Artifact / Code Executor / Read Document) and ``user_tools`` rows
+        # alike, and an empty list means the node's LLM gets no tools.
+        self.tool_executor.allowed_tool_ids = [str(t) for t in (tool_ids or [])]
 
 
-class WorkflowNodeClassicAgent(ToolFilterMixin, _WorkflowNodeMixin, ClassicAgent):
+class WorkflowNodeClassicAgent(_WorkflowNodeMixin, ClassicAgent):
     pass
 
 
-class WorkflowNodeAgenticAgent(ToolFilterMixin, _WorkflowNodeMixin, AgenticAgent):
+class WorkflowNodeAgenticAgent(_WorkflowNodeMixin, AgenticAgent):
     pass
 
 
-class WorkflowNodeResearchAgent(ToolFilterMixin, _WorkflowNodeMixin, ResearchAgent):
+class WorkflowNodeResearchAgent(_WorkflowNodeMixin, ResearchAgent):
     pass
 
 

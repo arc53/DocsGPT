@@ -15,6 +15,10 @@ export default {
     "title": "🪝 Agent Webhooks",
     "href": "/Agents/webhooks"
   },
+  "notifications": {
+    "title": "📡 Realtime Events",
+    "href": "/Agents/notifications"
+  },
   "nodes": {
     "title": "🧩 Workflow Nodes",
     "href": "/Agents/nodes"

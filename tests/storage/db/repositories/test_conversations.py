@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import text
 
 from application.storage.db.repositories.conversations import (
     ConversationsRepository,
@@ -220,6 +222,52 @@ class TestGetMessages:
         repo = _repo(pg_conn)
         conv = repo.create("user-1", "c")
         assert repo.get_message_at(conv["id"], 99) is None
+
+
+class TestFirstNSnapshot:
+    """``message_in_first_n`` / ``first_n_message_ids`` scope a share snapshot
+    to the first ``first_n`` messages by position (matches ``messages[:first_n]``)."""
+
+    def test_message_in_first_n_membership_by_position(self, pg_conn):
+        repo = _repo(pg_conn)
+        cid = repo.create("user-1", "c")["id"]
+        m0 = repo.append_message(cid, {"prompt": "q0", "response": "a0"})
+        m1 = repo.append_message(cid, {"prompt": "q1", "response": "a1"})
+        m2 = repo.append_message(cid, {"prompt": "q2", "response": "a2"})
+        assert repo.message_in_first_n(cid, m0["id"], 2) is True
+        assert repo.message_in_first_n(cid, m1["id"], 2) is True
+        assert repo.message_in_first_n(cid, m2["id"], 2) is False
+
+    def test_message_in_first_n_zero_is_empty(self, pg_conn):
+        repo = _repo(pg_conn)
+        cid = repo.create("user-1", "c")["id"]
+        m0 = repo.append_message(cid, {"prompt": "q", "response": "a"})
+        assert repo.message_in_first_n(cid, m0["id"], 0) is False
+
+    def test_message_in_first_n_unknown_and_null_ids(self, pg_conn):
+        repo = _repo(pg_conn)
+        cid = repo.create("user-1", "c")["id"]
+        repo.append_message(cid, {"prompt": "q", "response": "a"})
+        assert repo.message_in_first_n(cid, str(uuid.uuid4()), 5) is False
+        assert repo.message_in_first_n(cid, None, 5) is False
+        # A non-UUID id is shape-gated, never poisoning the enclosing txn.
+        assert repo.message_in_first_n(cid, "not-a-uuid", 5) is False
+        assert pg_conn.execute(text("SELECT 1")).scalar() == 1
+
+    def test_first_n_message_ids_returns_snapshot_set(self, pg_conn):
+        repo = _repo(pg_conn)
+        cid = repo.create("user-1", "c")["id"]
+        m0 = repo.append_message(cid, {"prompt": "q0", "response": "a0"})
+        m1 = repo.append_message(cid, {"prompt": "q1", "response": "a1"})
+        m2 = repo.append_message(cid, {"prompt": "q2", "response": "a2"})
+        assert repo.first_n_message_ids(cid, 2) == {str(m0["id"]), str(m1["id"])}
+        assert str(m2["id"]) not in repo.first_n_message_ids(cid, 2)
+        assert repo.first_n_message_ids(cid, 0) == set()
+
+    def test_first_n_message_ids_rejects_non_uuid(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.first_n_message_ids("not-a-uuid", 5) == set()
+        assert pg_conn.execute(text("SELECT 1")).scalar() == 1
 
 
 class TestUpdateMessageAt:

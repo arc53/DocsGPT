@@ -66,6 +66,21 @@ class TestExecuteLoop:
         assert any(e.get("type") == "error" and "start node" in e.get("error", "") for e in events)
 
     @pytest.mark.unit
+    def test_emits_workflow_run_id_first(self):
+        """A ``workflow_run`` event carrying the run id precedes any step event."""
+        nodes = [
+            _make_node("n1", NodeType.START, "Start"),
+            _make_node("n2", NodeType.END, "End", config={"config": {}}),
+        ]
+        edges = [_make_edge("e1", "n1", "n2")]
+        engine = WorkflowEngine(_make_graph(nodes, edges), _make_agent())
+        events = list(engine.execute({}, "hello"))
+        run_events = [e for e in events if e.get("type") == "workflow_run"]
+        assert len(run_events) == 1
+        assert run_events[0]["workflow_run_id"] == engine.workflow_run_id
+        assert events[0]["type"] == "workflow_run"
+
+    @pytest.mark.unit
     def test_start_to_end(self):
         nodes = [
             _make_node("n1", NodeType.START, "Start"),
@@ -217,6 +232,29 @@ class TestExecuteStateNode:
         engine.state = {}
         list(engine._execute_state_node(node))
         assert "result" not in engine.state
+
+
+class TestEndNodeSeparator:
+
+    @pytest.mark.unit
+    def test_separates_from_prior_streamed_output(self):
+        # A prior streaming node ran, so the end template must be preceded by a
+        # paragraph break instead of mashing ("...growth.Sales analysis...").
+        node = _make_node("n1", NodeType.END, config={"config": {"output_template": "Final line."}})
+        engine = WorkflowEngine(_make_graph([node], []), _make_agent())
+        engine.state = {}
+        engine._has_streamed = True
+        answers = [e["answer"] for e in engine._execute_end_node(node)]
+        assert answers[0] == "\n\n"
+        assert answers[-1].strip() == "Final line."
+
+    @pytest.mark.unit
+    def test_no_separator_when_nothing_streamed(self):
+        node = _make_node("n1", NodeType.END, config={"config": {"output_template": "Final line."}})
+        engine = WorkflowEngine(_make_graph([node], []), _make_agent())
+        engine.state = {}
+        answers = [e["answer"] for e in engine._execute_end_node(node)]
+        assert answers == ["Final line."]
 
 
 class TestExecuteConditionNode:
@@ -558,7 +596,7 @@ class TestGetExecutionSummary:
                 "started_at": now,
                 "completed_at": now,
                 "error": None,
-                "state_snapshot": {},
+                "state_delta": {},
             }
         ]
         summary = engine.get_execution_summary()
@@ -831,3 +869,215 @@ class TestWorkflowBranchEndsNonEndNode:
         events = list(engine.execute({}, "q"))
         # Should complete without crash, branch ended warning logged
         assert len(events) > 0
+
+
+class TestStepTelemetry:
+    """Steps persist state DELTAS plus duration_ms and a per-node tool summary."""
+
+    def _run_state_workflow(self):
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node(
+                "n2",
+                NodeType.STATE,
+                "Set",
+                config={
+                    "config": {
+                        "operations": [
+                            {"expression": "1 + 1", "target_variable": "x"}
+                        ]
+                    }
+                },
+            ),
+            _make_node("n3", NodeType.END, "End", config={"config": {}}),
+        ]
+        edges = [_make_edge("e1", "n1", "n2"), _make_edge("e2", "n2", "n3")]
+        engine = WorkflowEngine(_make_graph(nodes, edges), _make_agent())
+        events = list(engine.execute({}, "q"))
+        return engine, events
+
+    @pytest.mark.unit
+    def test_step_snapshots_are_deltas_not_full_state(self):
+        engine, events = self._run_state_workflow()
+        by_node = {log["node_id"]: log for log in engine.execution_log}
+
+        # The start node's delta carries the initial state it set...
+        assert "query" in by_node["n1"]["state_delta"]
+        # ...and later nodes repeat none of it, only what they changed.
+        assert by_node["n2"]["state_delta"] == {"x": 2}
+        assert by_node["n3"]["state_delta"] == {}
+
+        # The streamed step events carry the same deltas.
+        streamed = {
+            e["node_id"]: e
+            for e in events
+            if e.get("type") == "workflow_step" and e.get("status") == "completed"
+        }
+        assert streamed["n2"]["state_delta"] == {"x": 2}
+        assert "query" not in streamed["n2"]["state_delta"]
+
+    @pytest.mark.unit
+    def test_steps_carry_duration_ms(self):
+        engine, _ = self._run_state_workflow()
+        for log in engine.execution_log:
+            assert isinstance(log["duration_ms"], int)
+            assert log["duration_ms"] >= 0
+
+        summary = engine.get_execution_summary()
+        assert all(step.duration_ms is not None for step in summary)
+
+    @pytest.mark.unit
+    def test_failed_step_snapshot_is_a_delta_too(self):
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node(
+                "n2",
+                NodeType.STATE,
+                "Bad",
+                config={
+                    "config": {
+                        "operations": [
+                            {"expression": "bad!!!", "target_variable": "x"}
+                        ]
+                    }
+                },
+            ),
+        ]
+        edges = [_make_edge("e1", "n1", "n2")]
+        engine = WorkflowEngine(_make_graph(nodes, edges), _make_agent())
+        events = list(engine.execute({}, "q"))
+
+        failed = [e for e in events if e.get("status") == "failed"]
+        assert failed and "query" not in failed[0]["state_delta"]
+        failed_log = engine.execution_log[-1]
+        assert failed_log["status"] == "failed"
+        assert failed_log["duration_ms"] >= 0
+
+    @pytest.mark.unit
+    def test_summarize_tool_calls_compacts_executor_calls(self):
+        engine = WorkflowEngine(_make_graph([], []), _make_agent())
+        node_agent = MagicMock()
+        node_agent.tool_executor.tool_calls = [
+            {
+                "tool_name": "artifact_generator",
+                "action_name": "create_artifact",
+                "arguments": {"kind": "html"},
+                "result": "x" * 5000,
+                "status": "error",
+            },
+            {
+                "tool_name": "artifact_generator",
+                "action_name": "create_artifact",
+                "arguments": {"kind": "html"},
+                "result": "ok",
+            },
+        ]
+        summary = engine._summarize_tool_calls(node_agent)
+        assert summary == [
+            {
+                "tool_name": "artifact_generator",
+                "action_name": "create_artifact",
+                "status": "error",
+            },
+            {
+                "tool_name": "artifact_generator",
+                "action_name": "create_artifact",
+                "status": "completed",
+            },
+        ]
+
+
+class TestNodeDocumentManifest:
+    """The engine appends a per-node manifest of staged input documents to the
+    node system prompt, scoped to that node's input_documents selection."""
+
+    _ART_1 = "11111111-1111-4111-8111-111111111111"
+    _ART_2 = "22222222-2222-4222-8222-222222222222"
+
+    def _engine_with_docs(self, monkeypatch):
+        from contextlib import contextmanager
+
+        engine = WorkflowEngine(_make_graph([], []), _make_agent())
+        engine.state["input_documents"] = [
+            {"artifact_id": self._ART_1, "ref": "A1", "filename": "portfolio_v1.csv"},
+            {"artifact_id": self._ART_2, "ref": "A2", "filename": "notes.txt"},
+        ]
+
+        rows = {
+            self._ART_1: (
+                {"current_version": 3, "metadata": {"ref_seq": 1}, "title": "Portfolio"},
+                {"filename": "portfolio_v1.csv", "mime_type": "text/csv"},
+            ),
+            self._ART_2: (
+                {"current_version": 1, "metadata": {}, "title": "Notes"},
+                {"filename": "notes.txt", "mime_type": "text/plain"},
+            ),
+        }
+
+        class FakeRepo:
+            def __init__(self, conn):
+                pass
+
+            def resolve_id_by_ref_seq(self, position, conversation_id=None, workflow_run_id=None):
+                for artifact_id, (artifact, _version) in rows.items():
+                    if artifact["metadata"].get("ref_seq") == position:
+                        return artifact_id
+                return None
+
+            def artifact_id_at_position(self, position, conversation_id=None, workflow_run_id=None):
+                return None
+
+            def get_artifact_in_parent(self, artifact_id, conversation_id=None, workflow_run_id=None):
+                entry = rows.get(artifact_id)
+                return entry[0] if entry else None
+
+            def get_version(self, artifact_id, version):
+                return rows[artifact_id][1]
+
+        @contextmanager
+        def fake_readonly():
+            yield object()
+
+        monkeypatch.setattr("application.storage.db.session.db_readonly", fake_readonly)
+        monkeypatch.setattr(
+            "application.storage.db.repositories.artifacts.ArtifactsRepository", FakeRepo
+        )
+        return engine
+
+    @pytest.mark.unit
+    def test_manifest_lists_refs_filenames_and_mimes(self, monkeypatch):
+        from application.agents.workflows.schemas import AgentNodeConfig
+
+        engine = self._engine_with_docs(monkeypatch)
+        config = AgentNodeConfig(agent_type="classic", input_documents=["*"])
+        manifest = engine._node_document_manifest(config)
+        assert "- A1: portfolio_v1.csv (text/csv)" in manifest
+        # Legacy artifact without ref_seq falls back to the full id, which tools accept.
+        assert f"- {self._ART_2}: notes.txt (text/plain)" in manifest
+        assert "Pass a ref" in manifest
+
+    @pytest.mark.unit
+    def test_manifest_empty_without_selection(self, monkeypatch):
+        from application.agents.workflows.schemas import AgentNodeConfig
+
+        engine = self._engine_with_docs(monkeypatch)
+        config = AgentNodeConfig(agent_type="classic", input_documents=[])
+        assert engine._node_document_manifest(config) == ""
+
+    @pytest.mark.unit
+    def test_manifest_failure_never_breaks_the_node(self, monkeypatch):
+        from contextlib import contextmanager
+
+        from application.agents.workflows.schemas import AgentNodeConfig
+
+        engine = WorkflowEngine(_make_graph([], []), _make_agent())
+        engine.state["input_documents"] = [{"artifact_id": self._ART_1}]
+
+        @contextmanager
+        def broken_readonly():
+            raise RuntimeError("db down")
+            yield
+
+        monkeypatch.setattr("application.storage.db.session.db_readonly", broken_readonly)
+        config = AgentNodeConfig(agent_type="classic", input_documents=["*"])
+        assert engine._node_document_manifest(config) == ""

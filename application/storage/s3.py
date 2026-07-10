@@ -121,6 +121,16 @@ class S3Storage(BaseStorage):
         file_obj.seek(0)
         return file_obj
 
+    def generate_presigned_url(self, path: str, expires_in: int = 300) -> str:
+        """Return a short-lived presigned GET URL for a private object (TTL <= 1h)."""
+        path = self._validate_path(path)
+        expires_in = min(expires_in, 3600)
+        return self.s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket_name, "Key": path},
+            ExpiresIn=expires_in,
+        )
+
     def delete_file(self, path: str) -> bool:
         """Delete a file from S3 storage."""
         path = self._validate_path(path)

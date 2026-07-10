@@ -1,9 +1,9 @@
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 import logging
 import uuid
 
 from .base import Tool
+from .path_utils import validate_tool_path
 from application.storage.db.repositories.memories import MemoriesRepository
 from application.storage.db.session import db_readonly, db_session
 
@@ -268,47 +268,8 @@ class MemoryTool(Tool):
     # Path validation
     # -----------------------------
     def _validate_path(self, path: str) -> Optional[str]:
-        """Validate and normalize path.
-
-        Args:
-            path: User-provided path.
-
-        Returns:
-            Normalized path or None if invalid.
-        """
-        if not path:
-            return None
-
-        # Remove any leading/trailing whitespace
-        path = path.strip()
-
-        # Preserve whether path ends with / (indicates directory)
-        is_directory = path.endswith("/")
-
-        # Ensure path starts with / for consistency
-        if not path.startswith("/"):
-            path = "/" + path
-
-        # Check for directory traversal patterns
-        if ".." in path or path.count("//") > 0:
-            return None
-
-        # Normalize the path
-        try:
-            # Convert to Path object and resolve to canonical form
-            normalized = str(Path(path).as_posix())
-
-            # Ensure it still starts with /
-            if not normalized.startswith("/"):
-                return None
-
-            # Preserve trailing slash for directories
-            if is_directory and not normalized.endswith("/") and normalized != "/":
-                normalized = normalized + "/"
-
-            return normalized
-        except Exception:
-            return None
+        """Validate and normalize path (delegates to the shared util)."""
+        return validate_tool_path(path)
 
     # -----------------------------
     # Internal helpers

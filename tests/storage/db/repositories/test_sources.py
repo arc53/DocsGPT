@@ -102,6 +102,30 @@ class TestCreateConnectorFields:
         assert doc["file_name_map"] == name_map
 
 
+class TestCreateConfig:
+    def test_default_config_is_empty_when_omitted(self, pg_conn):
+        # Empty config == today's behavior: server default + None param → {}.
+        doc = _repo(pg_conn).create("s", user_id="u")
+        assert doc["config"] == {}
+
+    def test_explicit_config_is_validated_and_persisted(self, pg_conn):
+        # Strict-on-write normalizes through SourceConfig, filling defaults.
+        doc = _repo(pg_conn).create(
+            "s", user_id="u", config={"retrieval": {"chunks": 5}},
+        )
+        assert doc["config"]["retrieval"]["chunks"] == 5
+        assert doc["config"]["chunking"]["max_tokens"] == 1250
+        assert doc["config"]["kind"] == "classic"
+
+    def test_invalid_config_rejected_on_create(self, pg_conn):
+        import pytest as _pytest
+
+        with _pytest.raises(Exception):
+            _repo(pg_conn).create(
+                "s", user_id="u", config={"retrieval": {"chunks": "lots"}},
+            )
+
+
 class TestGet:
     def test_get_existing(self, pg_conn):
         repo = _repo(pg_conn)

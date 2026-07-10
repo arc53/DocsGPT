@@ -55,6 +55,18 @@ const endpoints = {
     MANAGE_SYNC: '/api/manage_sync',
     SYNC_SOURCE: '/api/sync_source',
     REINGEST_SOURCE: '/api/sources/reingest',
+    SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
+    CREATE_WIKI: '/api/sources/wiki',
+    CONVERT_TO_WIKI: (id: string) => `/api/sources/${id}/wiki/convert`,
+    ENABLE_GRAPHRAG: (id: string) => `/api/sources/${id}/graphrag/enable`,
+    SOURCE_GRAPH: (id: string, limit?: number) =>
+      `/api/sources/${id}/graph${limit ? `?limit=${limit}` : ''}`,
+    SOURCE_GRAPH_NODE: (id: string, nodeId: string) =>
+      `/api/sources/${id}/graph/node/${encodeURIComponent(nodeId)}`,
+    TASK_STATUS: (taskId: string) => `/api/task_status?task_id=${taskId}`,
+    WIKI_PAGES: (id: string) => `/api/sources/${id}/wiki/pages`,
+    WIKI_PAGE: (id: string, path: string) =>
+      `/api/sources/${id}/wiki/page?path=${encodeURIComponent(path)}`,
     GET_AVAILABLE_TOOLS: '/api/available_tools',
     GET_USER_TOOLS: '/api/get_tools',
     CREATE_TOOL: '/api/create_tool',
@@ -98,6 +110,23 @@ const endpoints = {
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
     MOVE_AGENT_TO_FOLDER: '/api/agents/folders/move_agent',
     GET_ARTIFACT: (artifactId: string) => `/api/artifact/${artifactId}`,
+    GET_DOCUMENT_ARTIFACT: (artifactId: string) =>
+      `/api/artifacts/${artifactId}`,
+    LIST_WORKFLOW_RUN_ARTIFACTS: (workflowRunId: string) =>
+      `/api/artifacts?workflow_run_id=${encodeURIComponent(workflowRunId)}`,
+    DOWNLOAD_ARTIFACT: (
+      artifactId: string,
+      version?: number,
+      disposition?: string,
+    ) => {
+      const params = new URLSearchParams();
+      if (version != null) params.set('version', String(version));
+      if (disposition) params.set('disposition', disposition);
+      const qs = params.toString();
+      return `/api/artifacts/${artifactId}/download${qs ? `?${qs}` : ''}`;
+    },
+    RESTORE_ARTIFACT: (artifactId: string) =>
+      `/api/artifacts/${artifactId}/restore`,
     WORKFLOWS: '/api/workflows',
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
     CUSTOM_MODELS: '/api/user/models',

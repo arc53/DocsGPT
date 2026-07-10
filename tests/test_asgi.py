@@ -156,3 +156,15 @@ def test_cors_preflight_on_mcp_route():
     assert r.status_code in (200, 204)
     assert r.headers.get("access-control-allow-origin") == "*"
     assert "Mcp-Session-Id" in r.headers.get("access-control-allow-headers", "")
+
+
+@pytest.mark.unit
+def test_wsgi_threadpool_sized_from_settings():
+    """The Flask thread pool is the app's request-capacity ceiling —
+    it must be operator-tunable (prod incident 2026-07-05→07: 32 slots
+    exhausted by SSE holders starved all other requests)."""
+    from application import asgi
+    from application.core.settings import settings
+
+    assert asgi._WSGI_THREADPOOL == int(settings.WSGI_THREADPOOL_WORKERS)
+    assert asgi._WSGI_THREADPOOL >= 64

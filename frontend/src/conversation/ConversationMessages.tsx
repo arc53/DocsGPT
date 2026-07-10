@@ -280,35 +280,51 @@ export default function ConversationMessages({
     }
 
     // tool_calls.length, not tool_calls — empty arrays are JS-truthy.
+    // ``notice`` is included so a non-fatal notice still surfaces even when the
+    // run produced no textual answer (e.g. an artifact-only workflow).
     const hasContent =
       query.thought ||
       query.response ||
       (query.tool_calls && query.tool_calls.length > 0) ||
-      query.research;
+      query.research ||
+      query.notice ||
+      // An artifact-only workflow run may produce no textual answer / tool_calls;
+      // the run id alone is enough to render its produced artifacts.
+      query.workflow_run_id;
     if (hasContent) {
       const isCurrentlyStreaming =
         status === 'loading' && index === queries.length - 1;
       return (
-        <ConversationBubble
-          className={bubbleMargin}
-          key={`${index}-ANSWER`}
-          message={query.response}
-          type={'ANSWER'}
-          thought={query.thought}
-          sources={query.sources}
-          toolCalls={query.tool_calls}
-          research={query.research}
-          onOpenArtifact={onOpenArtifact}
-          onToolAction={onToolAction}
-          feedback={query.feedback}
-          isStreaming={isCurrentlyStreaming}
-          agentId={agentId}
-          handleFeedback={
-            handleFeedback
-              ? (feedback) => handleFeedback(query, feedback, index)
-              : undefined
-          }
-        />
+        <Fragment key={`${index}-ANSWER`}>
+          {query.notice ? (
+            <div
+              role="status"
+              className={`${bubbleMargin} mr-5 self-start rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200`}
+            >
+              {query.notice}
+            </div>
+          ) : null}
+          <ConversationBubble
+            className={bubbleMargin}
+            message={query.response}
+            type={'ANSWER'}
+            thought={query.thought}
+            sources={query.sources}
+            toolCalls={query.tool_calls}
+            workflowRunId={query.workflow_run_id}
+            research={query.research}
+            onOpenArtifact={onOpenArtifact}
+            onToolAction={onToolAction}
+            feedback={query.feedback}
+            isStreaming={isCurrentlyStreaming}
+            agentId={agentId}
+            handleFeedback={
+              handleFeedback
+                ? (feedback) => handleFeedback(query, feedback, index)
+                : undefined
+            }
+          />
+        </Fragment>
       );
     }
 

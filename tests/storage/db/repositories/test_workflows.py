@@ -109,3 +109,57 @@ class TestDelete:
         repo = _repo(pg_conn)
         created = repo.create("user-1", "wf")
         assert repo.delete(created["id"], "other") is False
+
+    def test_delete_reaps_run_artifacts(self, pg_conn, monkeypatch):
+        # Run artifacts have no FK cascade off the workflow, so deleting the
+        # workflow must explicitly reclaim their rows (quota) and bytes.
+        from application.storage.db.repositories.artifacts import ArtifactsRepository
+        from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+        from application.storage.storage_creator import StorageCreator
+
+        deleted_paths: list[str] = []
+
+        class _RecordingStorage:
+            def delete_file(self, path):
+                deleted_paths.append(path)
+
+        monkeypatch.setattr(
+            StorageCreator, "get_storage", staticmethod(lambda: _RecordingStorage())
+        )
+
+        repo = _repo(pg_conn)
+        artifacts = ArtifactsRepository(pg_conn)
+        runs = WorkflowRunsRepository(pg_conn)
+
+        wf = repo.create("user-1", "wf")
+        run = runs.create(wf["id"], "user-1", "running")
+        art = artifacts.create_artifact(
+            "user-1", "document", workflow_run_id=run["id"], storage_path="k/run.bin"
+        )
+        assert artifacts.get_artifact(art["id"]) is not None
+
+        assert repo.delete(wf["id"], "user-1") is True
+
+        # Rows (and their quota) reclaimed, and the bytes reaped best-effort.
+        assert artifacts.get_artifact(art["id"]) is None
+        assert artifacts.count_for_user("user-1") == 0
+        assert deleted_paths == ["k/run.bin"]
+
+    def test_delete_wrong_user_keeps_run_artifacts(self, pg_conn):
+        # The ownership guard must run before any artifact cleanup, so a
+        # non-owner delete can never reap another user's run artifacts.
+        from application.storage.db.repositories.artifacts import ArtifactsRepository
+        from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+
+        repo = _repo(pg_conn)
+        artifacts = ArtifactsRepository(pg_conn)
+        runs = WorkflowRunsRepository(pg_conn)
+
+        wf = repo.create("user-1", "wf")
+        run = runs.create(wf["id"], "user-1", "running")
+        art = artifacts.create_artifact(
+            "user-1", "document", workflow_run_id=run["id"], storage_path="k/run.bin"
+        )
+
+        assert repo.delete(wf["id"], "intruder") is False
+        assert artifacts.get_artifact(art["id"]) is not None

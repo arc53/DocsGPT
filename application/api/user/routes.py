@@ -13,6 +13,7 @@ from .agents import (
     agents_webhooks_ns,
 )
 from .analytics import analytics_ns
+from .artifacts import artifacts_ns
 from .attachments import attachments_ns
 from .conversations import conversations_ns
 from .me import me_ns
@@ -30,6 +31,9 @@ user = Blueprint("user", __name__)
 
 # Analytics
 api.add_namespace(analytics_ns)
+
+# Artifacts
+api.add_namespace(artifacts_ns)
 
 # Attachments
 api.add_namespace(attachments_ns)

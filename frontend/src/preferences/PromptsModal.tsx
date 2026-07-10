@@ -89,6 +89,10 @@ const systemVariableOptionDefinitions = [
     labelKey: 'modals.prompts.systemVariableOptions.systemUserId',
     value: 'system.user_id',
   },
+  {
+    labelKey: 'modals.prompts.systemVariableOptions.artifactsLookup',
+    value: 'artifacts.artifact(id)',
+  },
 ];
 
 const buildSystemVariableOptions = (translate: (key: string) => string) =>

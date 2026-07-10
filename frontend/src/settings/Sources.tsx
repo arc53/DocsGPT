@@ -1,10 +1,17 @@
-import { Search as SearchIcon, Users } from 'lucide-react';
+import {
+  BookOpen,
+  Network,
+  Search as SearchIcon,
+  SlidersHorizontal,
+  Users,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import modelService from '../api/services/modelService';
 
 import EyeView from '../assets/eye-view.svg';
 import NoFilesIcon from '../assets/no-files.svg';
@@ -27,6 +34,7 @@ import { Input } from '../components/ui/input';
 import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
+import type { Model } from '../models/types';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
@@ -45,6 +53,12 @@ import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
+import WikiViewer from '../components/WikiViewer';
+import GraphView from '../components/GraphView';
+import ConvertToWikiModal from './ConvertToWikiModal';
+import EnableGraphRAGModal from './EnableGraphRAGModal';
+import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
+import SourceConfigModal from './SourceConfigModal';
 
 type SourceMenuOption = {
   icon: string | LucideIcon;
@@ -104,6 +118,25 @@ export default function Sources({
   ];
   const [documentToView, setDocumentToView] = useState<Doc>();
   const [documentToShare, setDocumentToShare] = useState<Doc | null>(null);
+  const [documentToConfigure, setDocumentToConfigure] = useState<Doc | null>(
+    null,
+  );
+  const [configModalState, setConfigModalState] =
+    useState<ActiveState>('INACTIVE');
+  const [documentToConvert, setDocumentToConvert] = useState<Doc | null>(null);
+  const [convertModalState, setConvertModalState] =
+    useState<ActiveState>('INACTIVE');
+  const [documentToGraphRAG, setDocumentToGraphRAG] = useState<Doc | null>(
+    null,
+  );
+  const [graphRAGModalState, setGraphRAGModalState] =
+    useState<ActiveState>('INACTIVE');
+  const [graphRAGAvailable, setGraphRAGAvailable] = useState<boolean>(false);
+  const [hybridAvailable, setHybridAvailable] = useState<boolean>(false);
+  const [availableModels, setAvailableModels] = useState<Model[]>([]);
+  // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
+  // badge survives closing the modal and reflects the real backend state.
+  const graphBuilds = useSelector(selectGraphBuilds);
   const [syncMenuState, setSyncMenuState] = useState<{
     isOpen: boolean;
     docId: string | null;
@@ -321,10 +354,19 @@ export default function Sources({
     index: number,
     document: Doc,
   ): SourceMenuOption[] => {
+    const isWiki = document.config?.kind === 'wiki' || document.type === 'wiki';
+    const isGraphRAG = document.config?.kind === 'graphrag';
+    // 'team' viewers cannot write; convert is owner/editor only.
+    const canEdit =
+      document.ownership !== 'team' || document.team_access === 'editor';
     const actions: SourceMenuOption[] = [
       {
-        icon: EyeView,
-        label: t('settings.sources.view'),
+        icon: isGraphRAG ? Network : EyeView,
+        label: isWiki
+          ? t('settings.sources.wiki.view')
+          : isGraphRAG
+            ? t('settings.sources.graphrag.view.action')
+            : t('settings.sources.view'),
         onClick: () => {
           setDocumentToView(document);
         },
@@ -374,6 +416,40 @@ export default function Sources({
       });
     }
 
+    if (document.id && !isWiki) {
+      actions.push({
+        icon: SlidersHorizontal,
+        label: t('settings.sources.editConfig'),
+        onClick: () => {
+          setDocumentToConfigure(document);
+          setConfigModalState('ACTIVE');
+        },
+        iconWidth: 16,
+        iconHeight: 16,
+        variant: 'default',
+      });
+    }
+
+    if (
+      document.id &&
+      !isWiki &&
+      canEdit &&
+      document.ingestStatus !== 'processing' &&
+      document.ingestStatus !== 'failed'
+    ) {
+      actions.push({
+        icon: BookOpen,
+        label: t('settings.sources.wiki.convert.action'),
+        onClick: () => {
+          setDocumentToConvert(document);
+          setConvertModalState('ACTIVE');
+        },
+        iconWidth: 16,
+        iconHeight: 16,
+        variant: 'default',
+      });
+    }
+
     // Sharing is an owner-only action: hide it for sources shared into the
     // user's workspace by a team.
     if (document.ownership !== 'team' && document.id) {
@@ -406,9 +482,74 @@ export default function Sources({
     refreshDocs(undefined, 1, rowsPerPage);
   }, [debouncedSearchTerm]);
 
+  // When a graph build reaches a terminal state via SSE, refresh the list so
+  // the badge reflects the final state, then drop the entry. The modal (a
+  // child) captures its summary in its own effect first, so clearing here
+  // doesn't race its summary view.
+  useEffect(() => {
+    const terminal = Object.entries(graphBuilds).filter(
+      ([, b]) => b.status === 'completed' || b.status === 'failed',
+    );
+    if (terminal.length === 0) return;
+    terminal.forEach(([sourceId]) => dispatch(clearGraphBuild(sourceId)));
+    refreshDocs(undefined, currentPage, rowsPerPage);
+  }, [graphBuilds, dispatch, refreshDocs, currentPage, rowsPerPage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    userService
+      .getConfig()
+      .then((response) => response.json())
+      .then((config) => {
+        if (!cancelled) {
+          setGraphRAGAvailable(!!config?.graphrag_available);
+          setHybridAvailable(!!config?.hybrid_available);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Models back the graphrag extraction-model picker in the source settings
+  // modal; only fetched when the instance supports graphrag.
+  useEffect(() => {
+    if (!graphRAGAvailable) return;
+    let cancelled = false;
+    modelService
+      .getModels(token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data)
+          setAvailableModels(modelService.transformModels(data.models || []));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [graphRAGAvailable, token]);
+
   return documentToView ? (
     <div className="mt-8 flex flex-col">
-      {documentToView.isNested ? (
+      {documentToView.config?.kind === 'wiki' ||
+      documentToView.type === 'wiki' ? (
+        <WikiViewer
+          docId={documentToView.id || ''}
+          sourceName={documentToView.name}
+          canEdit={
+            documentToView.ownership !== 'team' ||
+            documentToView.team_access === 'editor'
+          }
+          onBackToDocuments={() => setDocumentToView(undefined)}
+        />
+      ) : documentToView.config?.kind === 'graphrag' ? (
+        <GraphView
+          docId={documentToView.id || ''}
+          sourceName={documentToView.name}
+          onBackToDocuments={() => setDocumentToView(undefined)}
+        />
+      ) : documentToView.isNested ? (
         documentToView.type === 'connector:file' ? (
           <ConnectorTree
             docId={documentToView.id || ''}
@@ -495,7 +636,17 @@ export default function Sources({
                 return (
                   <div key={docId} className="relative">
                     <div
-                      className={`bg-muted dark:bg-accent flex h-[130px] w-full flex-col rounded-2xl p-5 transition-all duration-200 ${
+                      role="button"
+                      tabIndex={0}
+                      aria-label={document.name}
+                      onClick={() => setDocumentToView(document)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setDocumentToView(document);
+                        }
+                      }}
+                      className={`bg-muted dark:bg-accent focus-visible:ring-ring/50 flex min-h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-[3px] ${
                         actionMenuDocId === docId ||
                         syncMenuState.docId === docId
                           ? 'scale-[1.05]'
@@ -505,12 +656,12 @@ export default function Sources({
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3
-                            className="dark:text-foreground text-foreground line-clamp-3 text-sm leading-[18px] font-semibold wrap-break-word"
+                            className="dark:text-foreground text-foreground line-clamp-2 min-w-0 flex-1 text-sm leading-[18px] font-semibold wrap-anywhere"
                             title={document.name}
                           >
                             {document.name}
                           </h3>
-                          <div className="relative flex items-center justify-end">
+                          <div className="relative flex shrink-0 items-center justify-end">
                             {document.syncFrequency && (
                               <DropdownMenu
                                 open={
@@ -535,6 +686,7 @@ export default function Sources({
                                 <DropdownMenuContent
                                   align="end"
                                   className="min-w-[120px]"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   {syncOptions.map((opt) => (
                                     <DropdownMenuItem
@@ -575,6 +727,7 @@ export default function Sources({
                               <DropdownMenuContent
                                 align="end"
                                 className="min-w-[144px]"
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 {getActionOptions(index, document).map(
                                   (option, idx) => (
@@ -633,6 +786,39 @@ export default function Sources({
                             {t('settings.sources.ingestProcessing')}
                           </span>
                         )}
+                        {document.config?.kind === 'graphrag' &&
+                          (() => {
+                            const build = document.id
+                              ? graphBuilds[document.id]
+                              : undefined;
+                            const isBuilding = build?.status === 'building';
+                            const pct =
+                              isBuilding && build.total > 0
+                                ? Math.min(
+                                    100,
+                                    Math.round(
+                                      (build.current / build.total) * 100,
+                                    ),
+                                  )
+                                : null;
+                            return (
+                              <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
+                                <Network
+                                  size={11}
+                                  strokeWidth={2}
+                                  aria-hidden="true"
+                                />
+                                {isBuilding
+                                  ? pct !== null
+                                    ? t(
+                                        'settings.sources.graphrag.buildingPct',
+                                        { pct },
+                                      )
+                                    : t('settings.sources.graphrag.building')
+                                  : t('settings.sources.graphrag.badge')}
+                              </span>
+                            );
+                          })()}
                         <div className="flex items-center gap-2">
                           <img
                             src={CalendarIcon}
@@ -718,6 +904,53 @@ export default function Sources({
           onClose={() => setDocumentToShare(null)}
         />
       )}
+
+      <SourceConfigModal
+        modalState={configModalState}
+        setModalState={(state) => {
+          setConfigModalState(state);
+          if (state === 'INACTIVE') {
+            setDocumentToConfigure(null);
+          }
+        }}
+        document={documentToConfigure}
+        onReingest={handleReingest}
+        hybridAvailable={hybridAvailable}
+        graphRAGAvailable={graphRAGAvailable}
+        availableModels={availableModels}
+        onEnableGraphRAG={(doc) => {
+          setDocumentToGraphRAG(doc);
+          setGraphRAGModalState('ACTIVE');
+        }}
+      />
+
+      <ConvertToWikiModal
+        modalState={convertModalState}
+        setModalState={(state) => {
+          setConvertModalState(state);
+          if (state === 'INACTIVE') {
+            setDocumentToConvert(null);
+          }
+        }}
+        document={documentToConvert}
+        onConverted={() => refreshDocs(undefined, currentPage, rowsPerPage)}
+      />
+
+      <EnableGraphRAGModal
+        modalState={graphRAGModalState}
+        setModalState={(state) => {
+          setGraphRAGModalState(state);
+          if (state === 'INACTIVE') {
+            setDocumentToGraphRAG(null);
+          }
+        }}
+        document={documentToGraphRAG}
+        onEnabled={() => {
+          // The "building" badge is now driven by SSE progress events; just
+          // refresh so the source flips to graphrag kind in the list.
+          refreshDocs(undefined, currentPage, rowsPerPage);
+        }}
+      />
     </div>
   );
 }

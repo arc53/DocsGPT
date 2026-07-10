@@ -1,10 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import type { RootState } from '../store';
+import userService from '../api/services/userService';
+import modelService from '../api/services/modelService';
+import type { Model } from '../models/types';
 import { getSessionToken } from '../utils/providerUtils';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -41,6 +44,12 @@ import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
 import { FILE_UPLOAD_ACCEPT } from '../constants/fileUpload';
+import RetrievalOptions, {
+  DEFAULT_RETRIEVAL_OPTIONS,
+  isPrescreenConfigValid,
+  optionsToConfig,
+  type RetrievalOptionsValue,
+} from '../settings/components/RetrievalOptions';
 
 import ChevronRight from '../assets/chevron-right.svg';
 
@@ -65,10 +74,50 @@ function Upload({
   const [files, setfiles] = useState<File[]>(receivedFile);
   const [activeTab, setActiveTab] = useState<boolean>(true);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [retrievalOptions, setRetrievalOptions] =
+    useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
+  const [graphRAGAvailable, setGraphRAGAvailable] = useState(false);
+  const [hybridAvailable, setHybridAvailable] = useState(false);
+  const [availableModels, setAvailableModels] = useState<Model[]>([]);
 
   // File picker state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    userService
+      .getConfig()
+      .then((response) => response.json())
+      .then((config) => {
+        if (!cancelled) {
+          setGraphRAGAvailable(!!config?.graphrag_available);
+          setHybridAvailable(!!config?.hybrid_available);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Models back the graphrag extraction-model picker; only fetched when the
+  // instance supports graphrag.
+  useEffect(() => {
+    if (!graphRAGAvailable) return;
+    let cancelled = false;
+    modelService
+      .getModels(token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data)
+          setAvailableModels(modelService.transformModels(data.models || []));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [graphRAGAvailable, token]);
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
@@ -199,6 +248,34 @@ function Upload({
                   checked,
                 );
               }}
+            />
+          </div>
+        );
+      case 'textarea':
+        return (
+          <div key={field.name} className="flex flex-col gap-2">
+            <Label
+              htmlFor={`field-${field.name}`}
+              className="text-foreground text-sm"
+            >
+              {field.label}
+            </Label>
+            <textarea
+              id={`field-${field.name}`}
+              name={field.name}
+              value={String(
+                ingestor.config[field.name as keyof typeof ingestor.config] ??
+                  '',
+              )}
+              onChange={(e) =>
+                handleIngestorChange(
+                  field.name as keyof IngestorConfig['config'],
+                  e.target.value,
+                )
+              }
+              required={isRequired}
+              rows={8}
+              className="border-border bg-card text-foreground focus:border-primary w-full resize-y rounded-2xl border p-3 text-sm outline-none"
             />
           </div>
         );
@@ -333,6 +410,7 @@ function Upload({
     setSelectedFiles([]);
     setSelectedFolders([]);
     setShowAdvancedOptions(false);
+    setRetrievalOptions(DEFAULT_RETRIEVAL_OPTIONS);
     setNameTouched(false);
   }, []);
 
@@ -492,6 +570,10 @@ function Upload({
 
     formData.append('name', ingestor.name);
     formData.append('user', 'local');
+    formData.append(
+      'config',
+      JSON.stringify(optionsToConfig(retrievalOptions)),
+    );
 
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
@@ -573,6 +655,10 @@ function Upload({
     formData.append('name', ingestor.name);
     formData.append('user', 'local');
     formData.append('source', ingestor.type as string);
+    formData.append(
+      'config',
+      JSON.stringify(optionsToConfig(retrievalOptions)),
+    );
 
     const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
     if (!ingestorSchema) {
@@ -695,6 +781,42 @@ function Upload({
     xhr.send(formData);
   };
 
+  const createWiki = (clientTaskId: string) => {
+    dispatch(
+      updateUploadTask({
+        id: clientTaskId,
+        updates: { status: 'training', progress: 0 },
+      }),
+    );
+    userService
+      .createWiki(
+        {
+          name: ingestor.name,
+          initial_content: String(ingestor.config.initial_content ?? ''),
+        },
+        token,
+      )
+      .then((response) => response.json())
+      .then((data) => {
+        if (!data?.success) {
+          handleTaskFailure(clientTaskId, data?.message);
+          return;
+        }
+        dispatch(
+          updateUploadTask({
+            id: clientTaskId,
+            updates: {
+              sourceId: data.source_id,
+              status: 'completed',
+              progress: 100,
+            },
+          }),
+        );
+        onSuccessfulUpload?.();
+      })
+      .catch(() => handleTaskFailure(clientTaskId));
+  };
+
   const handleClose = useCallback(() => {
     resetUploaderState();
     setModalState('INACTIVE');
@@ -728,7 +850,9 @@ function Upload({
       }),
     );
 
-    if (hasLocalFilePicker) {
+    if (ingestor.type === 'wiki') {
+      createWiki(clientTaskId);
+    } else if (hasLocalFilePicker) {
       uploadFile(clientTaskId);
     } else {
       uploadRemote(clientTaskId);
@@ -753,6 +877,9 @@ function Upload({
     if (!ingestor.name?.trim()) {
       return true;
     }
+
+    // Block submit on an incoherent prescreen config; the backend rejects it.
+    if (!isPrescreenConfigValid(retrievalOptions)) return true;
 
     if (!ingestor.type) return true;
     const ingestorSchemaForValidation = getIngestorSchema(
@@ -898,8 +1025,8 @@ function Upload({
       title={t('modals.uploadDoc.label')}
       size="lg"
       mobileVariant="sheet"
-      className="max-h-[90vh] w-11/12 sm:max-h-none sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
-      contentClassName="max-h-[80vh] sm:max-h-none"
+      className="max-h-[90vh] w-11/12 sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
+      contentClassName="max-h-[80vh]"
     >
       <div className="flex w-full flex-col gap-6">
         {!ingestor.type && (
@@ -948,6 +1075,15 @@ function Upload({
                   className="w-full"
                 />
                 {renderFormFields()}
+                {ingestor.type !== 'wiki' && (
+                  <RetrievalOptions
+                    value={retrievalOptions}
+                    onChange={setRetrievalOptions}
+                    hybridAvailable={hybridAvailable}
+                    graphRAGAvailable={graphRAGAvailable}
+                    availableModels={availableModels}
+                  />
+                )}
               </div>
             )}
 
@@ -980,7 +1116,9 @@ function Upload({
                   : ''
               }`}
             >
-              {t('modals.uploadDoc.train')}
+              {ingestor.type === 'wiki'
+                ? t('modals.uploadDoc.create')
+                : t('modals.uploadDoc.train')}
             </Button>
           )}
         </div>

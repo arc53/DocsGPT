@@ -4,7 +4,11 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Generator, List, Optional
 
-from application.agents.tool_executor import ToolExecutor
+from application.agents.tool_executor import (
+    ToolExecutor,
+    result_status,
+    truncate_tool_result,
+)
 from application.core.json_schema_utils import (
     JsonSchemaValidationError,
     normalize_json_schema_payload,
@@ -298,12 +302,8 @@ class BaseAgent(ABC):
                         "call_id": call_id,
                         "action_name": pending.get("llm_name", pending["name"]),
                         "arguments": args,
-                        "result": (
-                            result_str[:50] + "..."
-                            if len(result_str) > 50
-                            else result_str
-                        ),
-                        "status": "completed",
+                        "result": truncate_tool_result(result_str),
+                        "status": result_status(result),
                     },
                 }
 
@@ -340,6 +340,10 @@ class BaseAgent(ABC):
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
 
     def _execute_tool_action(self, tools_dict, call):
+        # Mirror the request's attachments onto the executor so sandbox tools
+        # can lazily bridge a referenced chat attachment to a conversation
+        # artifact; only the caller's own (user-scoped) attachments are passed.
+        self.tool_executor.attachments = self.attachments
         return self.tool_executor.execute(
             tools_dict, call, self.llm.__class__.__name__
         )

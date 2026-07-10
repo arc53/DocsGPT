@@ -237,6 +237,10 @@ class BaseAnswerResource:
             Server-sent event strings
         """
         response_full, thought, source_log_docs, tool_calls = "", "", [], []
+        # Set when a workflow agent run emits its ``workflow_run`` event; persisted
+        # onto the message metadata so the chat can render the run's produced
+        # artifacts on reload.
+        workflow_run_id: Optional[str] = None
         is_structured = False
         schema_info = None
         structured_chunks = []
@@ -543,14 +547,29 @@ class BaseAnswerResource:
                         paused = True
                         yield _emit(line)
                     elif line.get("type") == "error":
-                        yield _emit(
-                            {
-                                "type": "error",
-                                "error": sanitize_api_error(
-                                    line.get("error", "An error occurred")
-                                ),
-                            }
-                        )
+                        # An event flagged ``user_facing`` already carries a curated,
+                        # actionable message (e.g. an artifact-quota notice). Passing it
+                        # through sanitize_api_error would substring-match words like
+                        # "quota" and rewrite it into a misleading rate-limit message, so
+                        # emit it verbatim; sanitize only raw/technical errors.
+                        error_text = line.get("error", "An error occurred")
+                        if not line.get("user_facing"):
+                            error_text = sanitize_api_error(error_text)
+                        yield _emit({"type": "error", "error": error_text})
+                    elif line.get("type") == "notice":
+                        # Non-fatal, non-terminal notice (e.g. some workflow input
+                        # documents were dropped). Forwarded verbatim so the client can
+                        # surface it without failing the turn; never sanitized as an error.
+                        yield _emit({"type": "notice", "notice": line.get("notice", "")})
+                    elif line.get("type") == "workflow_run":
+                        # Stash the run id in the message metadata so every
+                        # persistence path (finalize / save / abort / error) records
+                        # it — the chat renders the run's produced artifacts from it
+                        # on reload. Still forwarded so the live client captures it.
+                        workflow_run_id = line.get("workflow_run_id")
+                        if workflow_run_id:
+                            query_metadata["workflow_run_id"] = workflow_run_id
+                        yield _emit(line)
                     else:
                         yield _emit(line)
             if is_structured and structured_chunks:

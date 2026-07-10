@@ -40,6 +40,10 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
   // TeamNotificationToast via selectRecentEvents.
   'team.member_added',
   'resource.shared',
+  // GraphRAG extraction progress (worker.py); consumed by graphBuildSlice.
+  'graph.extract.progress',
+  'graph.extract.completed',
+  'graph.extract.failed',
 ]);
 
 /**

@@ -143,7 +143,7 @@ export default function TeamSwitcher({
           </button>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[248px]">
+      <DropdownMenuContent align="start" className="w-62">
         <DropdownMenuLabel className="flex items-center gap-2">
           <span className="bg-muted dark:bg-accent flex size-7 shrink-0 items-center justify-center rounded-md">
             {currentTeam ? (
@@ -172,13 +172,15 @@ export default function TeamSwitcher({
         <DropdownMenuSeparator />
 
         {/* Personal account entry */}
-        <DropdownMenuItem onSelect={() => selectTeam(null)}>
-          <Building2 className="size-4" strokeWidth={1.75} />
-          <span className="min-w-0 flex-1 truncate">
-            {t('teams.switcher.personal')}
-          </span>
-          {!currentTeam && <Check className="size-4 shrink-0" />}
-        </DropdownMenuItem>
+        {currentTeam && (
+          <DropdownMenuItem onSelect={() => selectTeam(null)}>
+            <Building2 className="size-4" strokeWidth={1.75} />
+            <span className="min-w-0 flex-1 truncate">
+              {t('teams.switcher.personal')}
+            </span>
+            {!currentTeam && <Check className="size-4 shrink-0" />}
+          </DropdownMenuItem>
+        )}
 
         {/* Other teams to switch to */}
         {otherTeams.map((team) => (

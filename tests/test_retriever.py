@@ -126,6 +126,13 @@ class TestClassicRAGInit:
         assert rag.chunks == 2
         assert rag.vectorstores == []
 
+    def test_request_id_and_source_stamped_on_rephrase_llm(
+        self, _patch_llm_creator
+    ):
+        _make_rag(request_id="req-123")
+        assert _patch_llm_creator._request_id == "req-123"
+        assert _patch_llm_creator._token_usage_source == "rag_condense"
+
     def test_active_docs_as_list(self, _patch_llm_creator):
         rag = _make_rag(source={"question": "q", "active_docs": ["a", "b"]})
         assert rag.vectorstores == ["a", "b"]
@@ -389,3 +396,106 @@ class TestClassicRAGSearch:
         rag = _make_rag(source={"question": "q"})
         docs = rag.search()
         assert docs == []
+
+
+# ── ClassicRAG per-source overrides (C1) ────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestClassicRAGPerSource:
+    """Per-source chunks / score_threshold / rephrase_query in the loop."""
+
+    @patch("application.retriever.classic_rag.VectorCreator")
+    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    def test_per_source_chunks_changes_k(self, _tok, mock_vc, _patch_llm_creator):
+        from application.storage.db.source_config import RetrievalConfig
+
+        docsearch = MagicMock()
+        doc = MagicMock()
+        doc.page_content = "c"
+        doc.metadata = {"title": "t"}
+        docsearch.search.return_value = [doc]
+        mock_vc.create_vectorstore.return_value = docsearch
+
+        rag = _make_rag(source={"question": "q", "active_docs": ["vs1"]}, chunks=2)
+        rag.per_source_retrieval = {"vs1": RetrievalConfig(chunks=6)}
+        rag._get_data()
+        # src_k=6 → k = max(6*2, 20) = 20 (vs default chunks_per_source=2 → 20).
+        assert docsearch.search.call_args.kwargs["k"] == 20
+
+        docsearch.search.reset_mock()
+        rag.per_source_retrieval = {"vs1": RetrievalConfig(chunks=15)}
+        rag._get_data()
+        # src_k=15 → k = max(30, 20) = 30.
+        assert docsearch.search.call_args.kwargs["k"] == 30
+
+    @patch("application.retriever.classic_rag.VectorCreator")
+    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    def test_per_source_score_threshold_passed(self, _tok, mock_vc, _patch_llm_creator):
+        from application.storage.db.source_config import RetrievalConfig
+
+        docsearch = MagicMock()
+        docsearch.search.return_value = []
+        mock_vc.create_vectorstore.return_value = docsearch
+
+        rag = _make_rag(source={"question": "q", "active_docs": ["vs1"]})
+        rag.per_source_retrieval = {"vs1": RetrievalConfig(score_threshold=0.7)}
+        rag._get_data()
+        assert docsearch.search.call_args.kwargs["score_threshold"] == 0.7
+
+    @patch("application.retriever.classic_rag.VectorCreator")
+    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    def test_default_path_omits_score_threshold(self, _tok, mock_vc, _patch_llm_creator):
+        docsearch = MagicMock()
+        docsearch.search.return_value = []
+        mock_vc.create_vectorstore.return_value = docsearch
+
+        rag = _make_rag(source={"question": "q", "active_docs": ["vs1"]})
+        rag._get_data()
+        assert "score_threshold" not in docsearch.search.call_args.kwargs
+
+    @patch("application.retriever.classic_rag.VectorCreator")
+    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    def test_rephrase_false_skips_llm_and_uses_original(
+        self, _tok, mock_vc, _patch_llm_creator, mock_llm
+    ):
+        from application.storage.db.source_config import RetrievalConfig
+
+        docsearch = MagicMock()
+        docsearch.search.return_value = []
+        mock_vc.create_vectorstore.return_value = docsearch
+        mock_llm.gen = Mock(return_value="REPHRASED")
+
+        # defer_rephrase mirrors what the Dispatcher does for per-source configs.
+        rag = _make_rag(
+            source={"question": "original", "active_docs": ["vs1"]},
+            chat_history=[{"prompt": "hi", "response": "yo"}],
+            defer_rephrase=True,
+        )
+        rag.per_source_retrieval = {"vs1": RetrievalConfig(rephrase_query=False)}
+        rag._get_data()
+
+        # No rephrase LLM call, and the raw original question is searched.
+        mock_llm.gen.assert_not_called()
+        assert docsearch.search.call_args.args[0] == "original"
+
+    @patch("application.retriever.classic_rag.VectorCreator")
+    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    def test_rephrase_true_uses_rephrased(
+        self, _tok, mock_vc, _patch_llm_creator, mock_llm
+    ):
+        from application.storage.db.source_config import RetrievalConfig
+
+        docsearch = MagicMock()
+        docsearch.search.return_value = []
+        mock_vc.create_vectorstore.return_value = docsearch
+        mock_llm.gen = Mock(return_value="REPHRASED")
+
+        rag = _make_rag(
+            source={"question": "original", "active_docs": ["vs1"]},
+            chat_history=[{"prompt": "hi", "response": "yo"}],
+            defer_rephrase=True,
+        )
+        rag.per_source_retrieval = {"vs1": RetrievalConfig(rephrase_query=True)}
+        rag._get_data()
+        assert docsearch.search.call_args.args[0] == "REPHRASED"

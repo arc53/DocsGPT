@@ -12,10 +12,8 @@ import {
 } from '../components/ui/select';
 import { useDarkTheme } from '../hooks';
 import {
-  selectChunks,
   selectPrompt,
   selectPrompts,
-  setChunks,
   setModalStateDeleteConv,
   setPrompt,
   setPrompts,
@@ -41,9 +39,7 @@ export default function General() {
     { label: '繁體中文（臺灣）', value: 'zhTW' },
     { label: 'Русский', value: 'ru' },
   ];
-  const chunks = ['0', '2', '4', '6', '8', '10'];
   const prompts = useSelector(selectPrompts);
-  const selectedChunks = useSelector(selectChunks);
   const [isDarkTheme, toggleTheme] = useDarkTheme();
   const [selectedTheme, setSelectedTheme] = React.useState(
     isDarkTheme ? 'Dark' : 'Light',
@@ -72,26 +68,6 @@ export default function General() {
           }
           setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
         />
-      </div>
-      <div className="flex flex-col gap-4">
-        <label className="text-foreground dark:text-foreground text-base font-medium">
-          {t('settings.general.chunks')}
-        </label>
-        <Select
-          value={selectedChunks}
-          onValueChange={(value) => dispatch(setChunks(value))}
-        >
-          <SelectTrigger className="w-56 rounded-3xl px-5 py-3" size="lg">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {chunks.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
       <div className="flex flex-col gap-4">
         <label className="text-foreground dark:text-foreground text-base font-medium">

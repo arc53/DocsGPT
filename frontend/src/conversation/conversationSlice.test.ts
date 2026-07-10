@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import reducer, {
   applyMessageTail,
+  raiseNotice,
   setConversation,
 } from './conversationSlice';
 
@@ -149,5 +150,35 @@ describe('applyMessageTail — streaming partial', () => {
     expect(next.queries[0].messageStatus).toBe('failed');
     expect(next.queries[0].error).toBe('worker died');
     expect(next.queries[0].response).toBeUndefined();
+  });
+});
+
+describe('raiseNotice — non-fatal notice', () => {
+  it('records a notice without setting an error (turn is not failed)', () => {
+    // seedSlice leaves conversationId at its initial null; match that.
+    const state = seedSlice();
+    const next = reducer(
+      state,
+      raiseNotice({
+        conversationId: null,
+        index: 0,
+        message: 'big.txt was dropped (too large)',
+      }),
+    );
+    expect(next.queries[0].notice).toBe('big.txt was dropped (too large)');
+    expect(next.queries[0].error).toBeUndefined();
+  });
+
+  it('is a no-op when the conversationId does not match', () => {
+    const state = seedSlice();
+    const next = reducer(
+      state,
+      raiseNotice({
+        conversationId: 'some-other-conversation',
+        index: 0,
+        message: 'ignored',
+      }),
+    );
+    expect(next.queries[0].notice).toBeUndefined();
   });
 });

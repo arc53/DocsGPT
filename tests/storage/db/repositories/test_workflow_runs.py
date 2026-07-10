@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 from application.storage.db.repositories.workflows import WorkflowsRepository
@@ -98,3 +98,38 @@ class TestListForWorkflow:
         wf = _wf(pg_conn)
         repo = _repo(pg_conn)
         assert repo.list_for_workflow(wf["id"]) == []
+
+
+class TestMarkStaleRunningFailed:
+    def test_fails_old_running_run(self, pg_conn):
+        wf = _wf(pg_conn)
+        repo = _repo(pg_conn)
+        old = datetime.now(timezone.utc) - timedelta(hours=2)
+        run = repo.create(wf["id"], "user-1", "running", started_at=old)
+
+        reaped = repo.mark_stale_running_failed(
+            datetime.now(timezone.utc) - timedelta(hours=1)
+        )
+        assert reaped == 1
+        fetched = repo.get(run["id"])
+        assert fetched["status"] == "failed"
+        assert fetched["ended_at"] is not None
+        assert "did not complete" in (fetched["result"] or {}).get("error", "")
+        # ended_at is the reap time, not when the run died; the marker says so.
+        assert (fetched["result"] or {}).get("failed_reason") == "stale_reaper"
+
+    def test_leaves_recent_running_and_terminal_runs(self, pg_conn):
+        wf = _wf(pg_conn)
+        repo = _repo(pg_conn)
+        now = datetime.now(timezone.utc)
+        recent = repo.create(wf["id"], "user-1", "running", started_at=now)
+        # A terminal run that started long ago must not be touched (has ended_at).
+        done = repo.create(
+            wf["id"], "user-1", "completed",
+            started_at=now - timedelta(hours=2), ended_at=now - timedelta(hours=2),
+        )
+
+        reaped = repo.mark_stale_running_failed(now - timedelta(hours=1))
+        assert reaped == 0
+        assert repo.get(recent["id"])["status"] == "running"
+        assert repo.get(done["id"])["status"] == "completed"

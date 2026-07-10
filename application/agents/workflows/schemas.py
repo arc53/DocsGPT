@@ -12,6 +12,7 @@ class NodeType(str, Enum):
     NOTE = "note"
     STATE = "state"
     CONDITION = "condition"
+    CODE = "code"
 
 
 class AgentType(str, Enum):
@@ -47,6 +48,24 @@ class AgentNodeConfig(BaseModel):
     chunks: str = "2"
     retriever: str = ""
     model_id: Optional[str] = None
+    json_schema: Optional[Dict[str, Any]] = None
+    # Run-scoped documents fed to this node's LLM. Entries are state-var names
+    # holding artifact refs (single dict or a list of dicts), raw artifact ids,
+    # short refs (``A1``), or the ``"*"``/``"input_documents"`` token meaning
+    # "every ref in ``state['input_documents']``".
+    input_documents: List[str] = Field(default_factory=list)
+    # How selected documents reach the model: ``auto`` (native when the model
+    # accepts the mime, else extract to text), ``native`` (force native; raise
+    # on an unsupported mime), or ``extract`` (always inline extracted text).
+    file_passing: Literal["auto", "native", "extract"] = "auto"
+
+
+class CodeNodeConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    code: str = ""
+    inputs: List[str] = Field(default_factory=list)
+    output_variable: Optional[str] = None
+    timeout: Optional[int] = None
     json_schema: Optional[Dict[str, Any]] = None
 
 
@@ -146,8 +165,14 @@ class NodeExecutionLog(BaseModel):
     status: ExecutionStatus
     started_at: datetime
     completed_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
     error: Optional[str] = None
-    state_snapshot: Dict[str, Any] = Field(default_factory=dict)
+    # The node's state DELTA (keys it added or changed), not the full state:
+    # point-in-time state is the merge of deltas up to this step. Runs
+    # persisted before the rename carry this as ``state_snapshot``.
+    state_delta: Dict[str, Any] = Field(default_factory=dict)
+    # Compact per-node tool-call summary: [{tool_name, action_name, status}].
+    tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class WorkflowRunCreate(BaseModel):

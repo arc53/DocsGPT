@@ -66,6 +66,12 @@ On macOS, prefer the solo pool for Celery:
 python -m celery -A application.app.celery worker -l INFO --pool=solo
 ```
 
+A bare worker (no `-Q`) consumes every configured queue, so one worker does the
+whole job — app tasks and document parsing (the `read_document` tool / workflow
+native-file parse) alike. Use `-Q` only to split load: run the main worker with
+`-Q docsgpt` and a dedicated (e.g. GPU-enabled) parser worker with `-Q parsing`
+for heavy OCR.
+
 ### Frontend
 
 Install dependencies only when needed, then run the dev server:

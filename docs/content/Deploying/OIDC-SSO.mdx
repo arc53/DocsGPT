@@ -43,6 +43,7 @@ Sessions last `OIDC_SESSION_LIFETIME_SECONDS` (8 hours by default) and renew wit
 | `OIDC_SESSION_LIFETIME_SECONDS` | no | `28800` (8h) | Lifetime of the DocsGPT session JWT. Sessions renew before expiry — see [Silent session renewal](#silent-session-renewal). |
 | `OIDC_PROVIDER_NAME` | no | — | Display name on the sign-in button: `Acme SSO` renders "Sign in with Acme SSO". Unset, the button shows a generic "SSO". |
 | `OIDC_ALLOWED_GROUPS` | no | — | Comma-separated group allowlist. Unset, any authenticated IdP user may sign in — see [Restricting sign-in by group](#restricting-sign-in-by-group). |
+| `OIDC_ADMIN_GROUPS` | no | — | Comma-separated groups whose members are granted the global `admin` role. Re-checked at every login and renewal — see [Granting admin via groups](#granting-admin-via-groups). |
 | `OIDC_GROUPS_CLAIM` | no | `groups` | ID-token/userinfo claim carrying the user's group membership. |
 | `JWT_SECRET_KEY` | recommended | auto-generated | Signs DocsGPT session tokens. Set it explicitly in production — required when running multiple API replicas. |
 
@@ -107,6 +108,16 @@ Getting groups into the token:
 
 - **Authentik** includes group names in the `groups` claim through its default `profile` scope — no extra configuration needed.
 - **Keycloak** does not emit groups by default. On the client, open **Client scopes → the client's dedicated scope → Add mapper → By configuration → Group Membership**, set the claim name to `groups`, and turn **Full group path** off so the claim carries plain names (`devs`) rather than paths (`/devs`).
+
+## Granting admin via groups
+
+Separately from *who may sign in*, you can map an IdP group to the global **admin** role with `OIDC_ADMIN_GROUPS`:
+
+```env
+OIDC_ADMIN_GROUPS=platform-admins
+```
+
+Members of the listed groups are granted admin; the mapping is re-evaluated at every login **and** every [silent renewal](#silent-session-renewal), so removing a user from the admin group revokes their admin at the next renewal (exactly like the sign-in allowlist). It is independent of `OIDC_ALLOWED_GROUPS`, and leaving it unset never mass-revokes admin. On a fresh deployment this is the only way to create the first admin. For the full roles, teams, and admin-dashboard model see [Access Control, Roles & Teams](/Deploying/Access-Control).
 
 ## Silent session renewal
 
@@ -183,6 +194,12 @@ Authentication activity is recorded in `auth_events`, an append-only Postgres ta
 | `oidc_refresh` | A session is silently renewed. |
 | `backchannel_logout` | The IdP revokes sessions via back-channel logout. |
 | `scim_created` / `scim_deactivated` / `scim_reactivated` | SCIM lifecycle changes. |
+| `role_granted` / `role_revoked` | The admin role is granted/revoked (`metadata.source` is `manual` or `oidc_group`). |
+| `admin_user_activated` / `admin_user_deactivated` | An admin activates/deactivates a user. |
+| `admin_sessions_revoked` | An admin force-logs-out a user. |
+| `team.*` | Team management — `team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete`. |
+
+The acting admin is recorded in the event metadata. See [Access Control, Roles & Teams](/Deploying/Access-Control) for the admin and team features that emit these events.
 
 There is no UI for these events yet — query the table directly:
 

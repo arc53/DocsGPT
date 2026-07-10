@@ -75,7 +75,11 @@ export function MultiSelect({
             className,
           )}
         >
-          <div className="flex min-w-0 flex-wrap gap-1">
+          {/* flex-1 gives the chip row a definite width; without it, a lone
+              chip's percentage max-width resolves against its own natural
+              width and shaves 1rem off the label (a short ref like "A1"
+              disappears entirely). */}
+          <div className="flex min-w-0 flex-1 flex-wrap gap-1">
             {selected.length === 0 ? (
               placeholder
             ) : (

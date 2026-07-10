@@ -1,0 +1,112 @@
+# docsgpt-sandbox runner (Jupyter Kernel Gateway). OPT-IN: this manifest and its
+# NetworkPolicy are NOT in kustomization.yaml; apply them only when enabling
+# code execution. Sessions are in-process kernels, never child containers; the
+# Docker socket is NOT mounted. Network egress is constrained by the NetworkPolicy
+# under deployment/k8s/network-policies/sandbox-egress-policy.yaml -- apply both.
+#
+# REQUIRED before enabling: create the shared gateway-token Secret and add the
+# runner env to the app pods (docsgpt-api / docsgpt-worker), which the default
+# docsgpt-deploy.yaml intentionally omits (sandbox is off by default):
+#   kubectl create secret generic docsgpt-sandbox-gateway \
+#     --from-literal=token="$(openssl rand -hex 32)"
+#   # on docsgpt-api and docsgpt-worker containers, add:
+#   #   - name: SANDBOX_GATEWAY_URL
+#   #     value: "http://docsgpt-sandbox:8888"
+#   #   - name: SANDBOX_KERNEL_NAME
+#   #     value: "docsgpt-python"
+#   #   - name: SANDBOX_GATEWAY_AUTH_TOKEN
+#   #     valueFrom: { secretKeyRef: { name: docsgpt-sandbox-gateway, key: token } }
+# The gateway authenticates every HTTP + WebSocket request with the token, so
+# kernel code cannot reach the gateway control API over loopback (enumerate/kill
+# sibling kernels or bypass the session cap). The gateway fails closed if the
+# token is unset.
+#
+# On Linux prod, schedule this onto a gVisor `runsc` RuntimeClass for kernel
+# isolation (uncomment `runtimeClassName` once the node has it installed).
+#
+# SINGLE TRUST DOMAIN: all sessions in this pod share one container/uid and are
+# isolated by working directory only (per-session cwd) — not by a kernel/OS
+# boundary. This image ships an env-scrubbing kernelspec under the distinct name
+# "docsgpt-python"; the app (docsgpt-api / docsgpt-worker) MUST select it via
+# SANDBOX_KERNEL_NAME=docsgpt-python (already set in docsgpt-deploy.yaml) so the
+# scrubber runs. The stock "python3" spec stays untouched, so it can never
+# shadow the scrubbing kernel. Sibling workspaces are still readable under the
+# shared uid and kernels share one address space. Do NOT inject app secrets
+# (DB/LLM creds) into this pod's env; the runner needs none. For cross-tenant /
+# untrusted multi-tenant workloads use a per-session VM via
+# SANDBOX_BACKEND=daytona instead.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docsgpt-sandbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docsgpt-sandbox
+  template:
+    metadata:
+      labels:
+        app: docsgpt-sandbox
+    spec:
+      # runtimeClassName: gvisor
+      securityContext:
+        runAsNonRoot: true
+        # Numeric UID the kubelet can verify as non-root; MUST match the sandbox
+        # image's `USER` (deployment/sandbox/Dockerfile). Without it the pod
+        # fails to start with CreateContainerConfigError.
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: docsgpt-sandbox
+          image: arc53/docsgpt-sandbox
+          ports:
+            - containerPort: 8888
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            # Shared gateway token; the launcher fails closed if it is unset.
+            # Must match SANDBOX_GATEWAY_AUTH_TOKEN on the app pods.
+            - name: SANDBOX_GATEWAY_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: docsgpt-sandbox-gateway
+                  key: token
+            - name: JUPYTER_RUNTIME_DIR
+              value: /tmp/jupyter-runtime
+            - name: JUPYTER_DATA_DIR
+              value: /tmp/jupyter-data
+          resources:
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+          volumeMounts:
+            # Per-session workspaces + Jupyter runtime files on an emptyDir;
+            # the root FS stays read-only everywhere else.
+            - name: scratch
+              mountPath: /tmp
+      volumes:
+        - name: scratch
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docsgpt-sandbox
+spec:
+  selector:
+    app: docsgpt-sandbox
+  ports:
+    - protocol: TCP
+      port: 8888
+      targetPort: 8888
+  # Cluster-internal only: the runner must never be exposed outside the cluster.
+  type: ClusterIP

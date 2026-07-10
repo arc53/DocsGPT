@@ -1,0 +1,177 @@
+---
+title: Per-Source Configuration (Chunking & Retrieval)
+description: Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, pre-screening and more.
+---
+
+import { Callout } from 'nextra/components'
+import Image from 'next/image'
+
+# Per-Source Configuration
+
+Every source in DocsGPT carries its own **behavior contract** — a small config object that controls how that source is *chunked* when it is ingested and how it is *retrieved* when you ask a question. This lets you tune each source independently: a large reference manual can use a different chunking strategy and retriever than a short FAQ.
+
+You edit this config from a source's settings in the UI (shown below), or through the API. The same options are also available in **Advanced settings** when you first upload a document.
+
+<Image
+  src="/sources-settings-screen.png"
+  alt="Source settings panel showing Retrieval options (retriever, top-k, score threshold, rephrase, exposure, prescreen) and Chunking options (strategy, max/min tokens, duplicate headers)"
+  width={633}
+  height={862}
+/>
+
+<Callout type="info" emoji="ℹ️">
+Per-source retrieval is enabled by default. Operators can turn it off instance-wide with `PER_SOURCE_RETRIEVAL_ENABLED=false`, in which case all sources fall back to the classic retriever regardless of their stored config.
+</Callout>
+
+## Two kinds of settings: live vs. bake-time
+
+The config has two groups of settings that differ in *when* they take effect:
+
+| Group | When it applies | Re-ingest needed? |
+| --- | --- | --- |
+| **Retrieval** (`retrieval.*`) | Query time — applied live on the next question | No |
+| **Chunking** (`chunking.*`) | Ingest time — baked into the stored chunks | **Yes** |
+
+Changing a retrieval setting takes effect immediately. Changing a chunking setting only affects documents ingested *after* the change, so you must re-ingest the source to apply it to existing content. The API response includes a `requires_reingest` flag to make this explicit.
+
+## Chunking configuration
+
+Chunking decides how a document is split into the pieces that get embedded and stored.
+
+```json
+{
+  "chunking": {
+    "strategy": "classic_chunk",
+    "max_tokens": 1250,
+    "min_tokens": 150,
+    "duplicate_headers": false
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `strategy` | `classic_chunk` | Which chunking algorithm to use (see below). |
+| `max_tokens` | `1250` | Upper bound on chunk size in tokens. |
+| `min_tokens` | `150` | Lower bound; small fragments are merged up to this size. |
+| `duplicate_headers` | `false` | Repeat section headers into each child chunk for context. |
+
+### Available chunking strategies
+
+| Strategy | Behavior |
+| --- | --- |
+| `classic_chunk` | The default token-window splitter. An empty config reproduces DocsGPT's historical chunking byte-for-byte. |
+| `recursive` | Recursive character/token splitter that tries to break on natural boundaries (paragraphs, sentences). |
+| `markdown` | Splits along Markdown structure (headings, sections) — good for docs and wikis. |
+| `parent_child` | Embeds small **child** chunks for precise matching but carries a larger **parent** window in metadata, so the model still sees surrounding context. |
+| `semantic` | Embeds sentences and splits where meaning shifts (at the 95th-percentile cosine-distance gap between adjacent sentences), falling back to `recursive` on failure. Produces topically coherent chunks at the cost of extra embedding calls during ingest. |
+
+<Callout type="warning" emoji="⚠️">
+Chunking is bake-time. After changing `strategy`, `max_tokens`, `min_tokens`, or `duplicate_headers`, re-ingest the source so existing chunks are rebuilt.
+</Callout>
+
+## Retrieval configuration
+
+Retrieval decides which chunks are pulled in to answer a question. These settings apply live.
+
+```json
+{
+  "retrieval": {
+    "retriever": "classic",
+    "exposure": "prefetch",
+    "chunks": 2,
+    "score_threshold": null,
+    "rephrase_query": true,
+    "prescreen": null
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `retriever` | `classic` | Retrieval strategy: `classic`, `hybrid`, or `graphrag`. |
+| `exposure` | `prefetch` | How retrieved context reaches the model: `prefetch` or `agentic_tool` (see below). |
+| `chunks` | `2` | Final number of chunks (top-k) returned to the answer. Range 1–500. |
+| `score_threshold` | `null` | Minimum similarity score. Honored by pgvector and MongoDB Atlas; other stores ignore it. |
+| `rephrase_query` | `true` | Whether to run a query-rephrasing side-call before retrieval. |
+| `prescreen` | `null` | Optional LLM relevance filter (see below). `null` = off. |
+
+### Retrievers
+
+- **`classic`** — Vector similarity search. The default and a safe choice for any vector store.
+- **`hybrid`** — Fuses vector search with full-text keyword search using Reciprocal Rank Fusion, which improves recall for exact terms, codes, and names that pure vector search can miss.
+- **`graphrag`** — Knowledge-graph retrieval. Set indirectly when you enable GraphRAG on a source. See [GraphRAG](/Sources/GraphRAG).
+
+<Callout type="warning" emoji="⚠️">
+Keyword search for the **hybrid** retriever is currently implemented only for the **pgvector** vector store. On other stores (FAISS, Qdrant, Milvus, etc.) the keyword half returns nothing, so `hybrid` quietly behaves like `classic` (vector-only).
+</Callout>
+
+Operators can restrict which retrievers are usable instance-wide with the `RETRIEVERS_ENABLED` setting; a per-source `retriever` value must be within that allow-list.
+
+### Exposure: prefetch vs. agentic tool
+
+`exposure` controls *how* a source's content is delivered to the model:
+
+- **`prefetch`** (default) — DocsGPT retrieves the top chunks up front and injects them into the prompt before the model answers. Best for focused Q&A over a source.
+- **`agentic_tool`** — The source is exposed to the model as a search tool it can call on demand, deciding when and what to look up (browse-as-you-go) rather than receiving a bulk prefetch. This is the default exposure for [Wiki sources](/Sources/Wiki-sources).
+
+### Pre-screening (LLM relevance filter)
+
+Pre-screening adds an optional map-reduce step between retrieval and answering: a base retriever fetches a wider set of candidates, an LLM screens them in batches, and only the most relevant survivors are passed to the answer. It improves precision on noisy sources at the cost of extra query-time LLM calls, so it is **off by default**.
+
+```json
+{
+  "retrieval": {
+    "chunks": 8,
+    "prescreen": {
+      "candidate_k": 40,
+      "batch_size": 10,
+      "max_keep": 8,
+      "model": null
+    }
+  }
+}
+```
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `candidate_k` | `40` | Candidates fetched before screening. Must be `>= chunks`. |
+| `batch_size` | `10` | Candidates screened per LLM call. |
+| `max_keep` | `8` | Survivors kept after screening. Must be `<= candidate_k`. |
+| `model` | `null` | Model used for screening. `null` reuses the request's resolved model. |
+
+## Editing the config via API
+
+The config is edited with a `PATCH` to the source's config endpoint:
+
+```bash
+curl -X PATCH https://your-docsgpt/api/sources/<source_id>/config \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "retrieval": { "retriever": "hybrid", "chunks": 4 },
+    "chunking":  { "strategy": "semantic" }
+  }'
+```
+
+The response echoes the stored config and a `requires_reingest` flag:
+
+```json
+{
+  "success": true,
+  "config": { "...": "..." },
+  "requires_reingest": true
+}
+```
+
+Notes:
+
+- Invalid values are rejected with `400` (strict validation on write).
+- The `kind` field (classic / wiki / graphrag) cannot be changed through this endpoint — converting a source to a [Wiki](/Sources/Wiki-sources) or enabling [GraphRAG](/Sources/GraphRAG) uses dedicated endpoints.
+- Editing requires ownership of the source or a team `editor` grant; viewers receive `403`.
+
+## Related
+
+- [GraphRAG](/Sources/GraphRAG) — knowledge-graph retrieval for a source.
+- [Wiki Sources](/Sources/Wiki-sources) — LLM-editable living documentation.
+- [Embeddings](/Models/embeddings) — the embedding model used during ingest and retrieval.

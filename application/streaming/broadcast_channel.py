@@ -19,7 +19,9 @@ from __future__ import annotations
 import logging
 from typing import Callable, Iterator, Optional
 
-from application.cache import get_redis_instance
+import redis as redis_lib
+
+from application.cache import get_pubsub_redis_instance, get_redis_instance
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +67,13 @@ class Topic:
 
         If Redis is unavailable, returns immediately without yielding.
         Cleanly unsubscribes on ``GeneratorExit`` (client disconnect).
+
+        Uses the pub/sub-dedicated client (bounded ``socket_timeout``): a
+        subscriber whose connection went half-open must fail within seconds
+        and release its WSGI thread, not block in ``get_message`` until the
+        worker restarts.
         """
-        redis = get_redis_instance()
+        redis = get_pubsub_redis_instance()
         if redis is None:
             logger.debug("Redis unavailable; subscribe to %s yielded nothing", self.name)
             return
@@ -86,6 +93,17 @@ class Topic:
             while True:
                 try:
                     msg = pubsub.get_message(timeout=poll_timeout)
+                except redis_lib.exceptions.TimeoutError:
+                    # A bounded read timed out mid-message/health-check: the
+                    # connection is half-open (NAT/IPVS dropped the flow).
+                    # End the subscription so the SSE client reconnects on a
+                    # fresh connection; expected during network churn, so no
+                    # stack trace.
+                    logger.info(
+                        "pubsub read timed out for %s; closing subscriber",
+                        self.name,
+                    )
+                    return
                 except Exception:
                     logger.exception("pubsub.get_message failed for %s", self.name)
                     return

@@ -2,6 +2,7 @@ import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 import conversationService from '../../api/services/conversationService';
 import { Query, Status } from '../../conversation/conversationModels';
+import { Attachment, clearAttachments } from '../../upload/uploadSlice';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
 
 export interface WorkflowExecutionStep {
@@ -12,7 +13,7 @@ export interface WorkflowExecutionStep {
   reasoning?: string;
   startedAt?: number;
   completedAt?: number;
-  stateSnapshot?: Record<string, unknown>;
+  stateDelta?: Record<string, unknown>;
   output?: unknown;
   error?: string;
 }
@@ -26,6 +27,9 @@ interface WorkflowData {
 
 export interface WorkflowQuery extends Query {
   executionSteps?: WorkflowExecutionStep[];
+  // The run id for this query's execution; lets the artifacts panel list the
+  // run's produced artifacts (GET /api/artifacts?workflow_run_id=).
+  workflowRunId?: string;
 }
 
 export interface WorkflowPreviewState {
@@ -33,6 +37,9 @@ export interface WorkflowPreviewState {
   status: Status;
   executionSteps: WorkflowExecutionStep[];
   activeNodeId: string | null;
+  // True while the Preview drawer is mounted; lets global overlays (the
+  // upload toast) shift off the drawer's right-side input.
+  previewOpen: boolean;
 }
 
 const initialState: WorkflowPreviewState = {
@@ -40,6 +47,7 @@ const initialState: WorkflowPreviewState = {
   status: 'idle',
   executionSteps: [],
   activeNodeId: null,
+  previewOpen: false,
 };
 
 let abortController: AbortController | null = null;
@@ -56,6 +64,50 @@ interface ThunkState {
     token: string | null;
   };
   workflowPreview: WorkflowPreviewState;
+  upload: { attachments: Attachment[] };
+}
+
+/** Server-assigned ids of completed attachments, for the run's ``attachments``. */
+export function collectCompletedAttachmentIds(
+  attachments: Attachment[],
+): string[] {
+  return attachments
+    .filter((att) => att.status === 'completed' && att.id)
+    .map((att) => att.id);
+}
+
+/** User-facing message shown when a Preview send is blocked. */
+export const UNSAVED_DRAFT_ATTACHMENTS_MESSAGE =
+  'Save the workflow before attaching documents in Preview.';
+
+/**
+ * Reason a Preview send must be blocked, or null when it may proceed. An
+ * unsaved draft has no persisted ``workflow_id``, so the backend can't bridge
+ * uploaded documents into the run — it would execute with the docs silently
+ * dropped. Block instead, keeping the uploads for a retry after the save.
+ */
+export function previewSendBlockReason(
+  workflowId: string | null | undefined,
+  hasCompletedAttachment: boolean,
+): string | null {
+  if (!workflowId && hasCompletedAttachment) {
+    return UNSAVED_DRAFT_ATTACHMENTS_MESSAGE;
+  }
+  return null;
+}
+
+/**
+ * Completed attachment ids eligible for a run. Attachments only survive as
+ * run-scoped artifacts when the run persists a ``workflow_runs`` row, which
+ * needs a saved ``workflow_id``; on an unsaved draft none are eligible (the UI
+ * blocks that send upstream), so they are neither sent nor cleared.
+ */
+export function collectRunAttachmentIds(
+  attachments: Attachment[],
+  workflowId: string | null | undefined,
+): string[] {
+  if (!workflowId) return [];
+  return collectCompletedAttachmentIds(attachments);
 }
 
 export const fetchWorkflowPreviewAnswer = createAsyncThunk<
@@ -64,11 +116,15 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
     question: string;
     workflowData: WorkflowData;
     indx?: number;
+    workflowId?: string | null;
   },
   { state: ThunkState }
 >(
   'workflowPreview/fetchAnswer',
-  async ({ question, workflowData, indx }, { dispatch, getState }) => {
+  async (
+    { question, workflowData, indx, workflowId },
+    { dispatch, getState },
+  ) => {
     if (abortController) abortController.abort();
     abortController = new AbortController();
     const { signal } = abortController;
@@ -76,9 +132,24 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
     const state = getState();
 
     if (state.preference) {
+      // Doc-driven workflows read uploaded files as run-scoped artifacts; pass
+      // the completed attachment ids so the backend bridges them (user-scoped).
+      // Gated on a saved workflow_id: an unsaved draft can't bridge them, so we
+      // neither send nor clear the uploads (the Preview UI blocks that send and
+      // keeps them for a retry after saving).
+      const attachmentIds = collectRunAttachmentIds(
+        state.upload.attachments,
+        workflowId,
+      );
+      if (attachmentIds.length > 0) dispatch(clearAttachments());
+
+      // A saved workflow id lets the run persist a ``workflow_runs`` row so its
+      // produced artifacts are listable + authz'd; omitted for unsaved drafts.
       const payload = {
         question,
         workflow: workflowData,
+        ...(workflowId ? { workflow_id: workflowId } : {}),
+        ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
         save_conversation: false,
         visibility: 'hidden',
       };
@@ -117,6 +188,13 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
 
                     if (data.type === 'end') {
                       dispatch(workflowPreviewSlice.actions.setStatus('idle'));
+                    } else if (data.type === 'workflow_run') {
+                      dispatch(
+                        setWorkflowRunId({
+                          index: targetIndex,
+                          workflowRunId: data.workflow_run_id,
+                        }),
+                      );
                     } else if (data.type === 'thought') {
                       dispatch(
                         updateThought({
@@ -134,7 +212,8 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                             nodeTitle: data.node_title,
                             status: data.status,
                             reasoning: data.reasoning,
-                            stateSnapshot: data.state_snapshot,
+                            // Older streams (pre-rename) still say state_snapshot.
+                            stateDelta: data.state_delta ?? data.state_snapshot,
                             output: data.output,
                             error: data.error,
                           },
@@ -332,7 +411,7 @@ export const workflowPreviewSlice = createSlice({
         nodeTitle: step.nodeTitle,
         status: step.status,
         reasoning: step.reasoning,
-        stateSnapshot: step.stateSnapshot,
+        stateDelta: step.stateDelta,
         output: step.output,
         error: step.error,
         startedAt:
@@ -348,8 +427,8 @@ export const workflowPreviewSlice = createSlice({
       };
 
       if (existingIndex !== -1) {
-        updatedStep.stateSnapshot =
-          step.stateSnapshot ?? querySteps[existingIndex].stateSnapshot;
+        updatedStep.stateDelta =
+          step.stateDelta ?? querySteps[existingIndex].stateDelta;
         updatedStep.output = step.output ?? querySteps[existingIndex].output;
         updatedStep.error = step.error ?? querySteps[existingIndex].error;
         querySteps[existingIndex] = updatedStep;
@@ -364,6 +443,15 @@ export const workflowPreviewSlice = createSlice({
         state.executionSteps[globalIndex] = updatedStep;
       } else {
         state.executionSteps.push(updatedStep);
+      }
+    },
+    setWorkflowRunId(
+      state,
+      action: PayloadAction<{ index: number; workflowRunId: string }>,
+    ) {
+      const { index, workflowRunId } = action.payload;
+      if (state.queries[index]) {
+        state.queries[index].workflowRunId = workflowRunId;
       }
     },
     setActiveNodeId(state, action: PayloadAction<string | null>) {
@@ -392,6 +480,9 @@ export const workflowPreviewSlice = createSlice({
     clearExecutionSteps: (state) => {
       state.executionSteps = [];
       state.activeNodeId = null;
+    },
+    setPreviewOpen: (state, action: PayloadAction<boolean>) => {
+      state.previewOpen = action.payload;
     },
   },
   extraReducers(builder) {
@@ -430,6 +521,9 @@ export const selectWorkflowExecutionSteps = (
 ) => state.workflowPreview.executionSteps;
 export const selectActiveNodeId = (state: RootStateWithWorkflowPreview) =>
   state.workflowPreview.activeNodeId;
+export const selectWorkflowPreviewOpen = (
+  state: RootStateWithWorkflowPreview,
+) => state.workflowPreview.previewOpen;
 
 export const {
   addQuery,
@@ -440,11 +534,13 @@ export const {
   updateStreamingSource,
   updateToolCall,
   updateExecutionStep,
+  setWorkflowRunId,
   setActiveNodeId,
   setStatus,
   raiseError,
   resetWorkflowPreview,
   clearExecutionSteps,
+  setPreviewOpen,
 } = workflowPreviewSlice.actions;
 
 export default workflowPreviewSlice.reducer;

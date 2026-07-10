@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
     EMBEDDINGS_BASE_URL: Optional[str] = None  # Remote embeddings API URL (OpenAI-compatible)
     EMBEDDINGS_KEY: Optional[str] = None  # api key for embeddings (if using openai, just copy API_KEY)
+    EMBEDDINGS_MAX_INPUT_TOKENS: Optional[int] = None  # truncate each remote embed input to N tokens (overflow lost)
     # Optional directory of operator-supplied model YAMLs, loaded after the
     # built-in catalog under application/core/models/. Later wins on
     # duplicate model id. See application/core/models/README.md.
@@ -95,7 +96,22 @@ class Settings(BaseSettings):
     # default (100) drives worker RSS to ~3 GB on a mid-size PDF.
     DOCLING_PIPELINE_QUEUE_MAX_SIZE: int = 2
     VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector" or "valkey"
-    RETRIEVERS_ENABLED: list = ["classic_rag"]
+    # Allow-list of retriever keys an agent may use. Values must match the
+    # ``RetrieverCreator.retrievers`` registry keys (``classic`` / ``default``),
+    # NOT the legacy ``classic_rag`` label which never matched the registry.
+    RETRIEVERS_ENABLED: list = ["classic", "default"]
+    # Kill-switch for per-source retrieval dispatch. When False the retrieval
+    # path collapses to today's single-retriever behavior (consumed by the
+    # Dispatcher in a later change; defined here so the flag exists up front).
+    PER_SOURCE_RETRIEVAL_ENABLED: bool = True
+    # Flagship GraphRAG flag. Reserved and unused for now; gates graph-aware
+    # ingestion/retrieval when that feature lands.
+    GRAPHRAG_ENABLED: bool = False
+    # Model for ingest-time graph extraction; None reuses the instance default
+    # model (LLM_PROVIDER/LLM_NAME). Operator-overridable (e.g. a cheaper model).
+    GRAPHRAG_EXTRACTION_MODEL: Optional[str] = None
+    # Hard cap on chunks extracted per source (cost control).
+    GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION: int = 2000
     AGENT_NAME: str = "classic"
     FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
     FALLBACK_LLM_NAME: Optional[str] = None  # model name for fallback llm
@@ -247,8 +263,11 @@ class Settings(BaseSettings):
 
     # Config-free tools on by default in agentless chats. ``scheduler`` is
     # dual-registered (also in ``BUILTIN_AGENT_TOOLS``) so the same synthetic id
-    # resolves whether reached via defaults or the agent picker.
-    DEFAULT_CHAT_TOOLS: list = ["memory", "read_webpage", "scheduler"]
+    DEFAULT_CHAT_TOOLS: list = [
+        "memory",
+        "read_webpage",
+        "scheduler",
+    ]
 
     # Conversation Compression Settings
     ENABLE_CONVERSATION_COMPRESSION: bool = True
@@ -268,6 +287,7 @@ class Settings(BaseSettings):
     # --graceful-timeout). Keep below the gunicorn --timeout (180) watchdog.
     # Used by gunicorn_worker.BoundedDrainUvicornWorker.
     GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = 30
+    WSGI_THREADPOOL_WORKERS: int = 96
     # SSE keepalive comment cadence. Must sit under Cloudflare's 100s idle
     # close and iOS Safari's ~60s — 15s gives generous headroom.
     SSE_KEEPALIVE_SECONDS: int = 15
@@ -284,6 +304,7 @@ class Settings(BaseSettings):
     # connection cap above and the windowed budget below, total
     # enumeration throughput is bounded.
     EVENTS_REPLAY_MAX_PER_REQUEST: int = 200
+    EVENTS_REPLAY_MAX_AGE_HOURS: int = 48
     # Sliding-window cap on snapshot replays per user. Once the budget
     # is exhausted the route returns HTTP 429 with the cursor pinned;
     # the client backs off and retries after the window rolls over.
@@ -319,6 +340,72 @@ class Settings(BaseSettings):
     SCHEDULE_AUTOPAUSE_FAILURES: int = 3
     SCHEDULE_ONCE_MAX_HORIZON: int = 31_536_000
     SCHEDULE_RUN_OUTPUT_RETENTION_DAYS: int = 90
+
+    # Code-execution sandbox (see artifacts-code-execution-spec.md §4 C2).
+    # The app is a CLIENT of an always-on runner; defaults are safe so app
+    # import never fails when the sandbox is unconfigured.
+    SANDBOX_BACKEND: str = "jupyter"  # "jupyter" (self-host) | "daytona" (Daytona Cloud)
+    # URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service).
+    SANDBOX_GATEWAY_URL: str = "http://localhost:8888"
+    SANDBOX_GATEWAY_AUTH_TOKEN: Optional[str] = None  # gateway auth token, if set
+    # Kernelspec launched per session. Defaults to the env-scrubbing "docsgpt-python"
+    # spec (shipped by the docsgpt-sandbox runner) so kernel code cannot read the
+    # gateway auth token or operator secrets from os.environ. The stock "python3"
+    # spec inherits the gateway env verbatim and must not be used with untrusted code.
+    SANDBOX_KERNEL_NAME: str = "docsgpt-python"
+    SANDBOX_MAX_TTL: int = 1200  # hard cap (s) on agent-selectable keep-alive TTL
+    # Per-process/worker cap on concurrent live sandbox sessions. Backend-agnostic
+    # (complements DAYTONA_MAX_SANDBOXES); when reached, an LRU-idle session is
+    # evicted to make room. This bound is local to each app/worker process.
+    # 0 (or any non-positive value) disables the cap (unlimited sessions).
+    SANDBOX_MAX_SESSIONS: int = 32
+    SANDBOX_EXEC_TIMEOUT: int = 60  # default wall-clock cap (s) per exec call
+    SANDBOX_HTTP_TIMEOUT: int = 10  # fixed cap (s) for REST control calls (create/delete/alive/interrupt)
+    SANDBOX_MAX_OUTPUT_BYTES: int = 8 * 1024 * 1024  # cap on buffered stdout+stderr per exec
+    SANDBOX_MAX_FILE_BYTES: int = 10 * 1024 * 1024  # cap on get_file size routed through stdout
+    SANDBOX_MAX_INPUT_BYTES: int = 25 * 1024 * 1024  # cap on an input document staged into a sandbox session
+    # ``read_document`` parsing on a dedicated Celery ``parsing`` queue (backend parser).
+    DOCUMENT_PARSE_QUEUE: str = "parsing"  # queue the parse_document task is routed to
+    DOCUMENT_PARSE_TIMEOUT: int = 120  # seconds the tool awaits the enqueued parse before degrading
+    DOCUMENT_PARSE_MAX_BYTES: int = 0  # cap on a parsed document's bytes (0 = reuse SANDBOX_MAX_INPUT_BYTES)
+    DOCUMENT_MAX_DECOMPRESSED_BYTES: int = 300 * 1024 * 1024
+    DOCUMENT_MAX_ARCHIVE_ENTRIES: int = 10000
+    # Per-agent-node cap on files passed natively to the node's LLM (vision/doc
+    # inputs). Files past the cap are extracted to text or dropped, not attached
+    # natively, to bound context/cost. Re-uses SANDBOX_MAX_INPUT_BYTES per file.
+    WORKFLOW_NODE_NATIVE_MAX_FILES: int = 5
+    # Per-agent-node cap on documents extracted to text via the parsing worker.
+    # Each non-native, non-text document issues a separate blocking parse, so a
+    # node referencing many documents (e.g. the ``*`` token) is bounded here to
+    # avoid serializing dozens of parses; documents past the cap are skipped with
+    # a truncation note instead of extracted.
+    WORKFLOW_NODE_EXTRACT_MAX_FILES: int = 5
+    # A workflow run row is pre-created as ``running`` and finalized when its
+    # generator completes; a client disconnect or worker crash can strand it in
+    # ``running`` forever. The beat reaper fails runs still ``running`` past this
+    # many seconds. Generous so a legitimately long run is never cut off.
+    WORKFLOW_RUN_STALE_SECONDS: int = 3600
+    # Runner container resource caps — consumed by the docsgpt-sandbox compose
+    # service (deployment/sandbox), not by the app client. cgroup CPU/mem caps
+    # are part of the untrusted-code security boundary.
+    SANDBOX_MEMORY: str = "1g"  # docker mem_limit for the runner container
+    SANDBOX_CPUS: str = "1.0"  # docker cpu quota for the runner container
+    # Daytona Cloud managed backend (used only when SANDBOX_BACKEND="daytona").
+    # The app is a REST client of Daytona Cloud authenticated by DAYTONA_API_KEY;
+    # all knobs are optional so app import never fails when the backend is unused.
+    DAYTONA_API_KEY: Optional[str] = None  # Daytona Cloud API key (secret)
+    DAYTONA_API_URL: Optional[str] = None  # override Daytona API base URL, if self-targeting
+    DAYTONA_TARGET: Optional[str] = None  # Daytona region/target, e.g. "us"
+    DAYTONA_SNAPSHOT: Optional[str] = None  # image for new sandboxes; render libs via scripts/build_daytona_snapshot.py
+    DAYTONA_LANGUAGE: str = "python"  # default runtime language for created sandboxes
+    DAYTONA_AUTO_STOP_INTERVAL: int = 15  # minutes idle before Daytona auto-stops a sandbox (0 disables)
+    DAYTONA_AUTO_DELETE_INTERVAL: int = 60  # minutes after stop before Daytona auto-deletes (-1 disables)
+    DAYTONA_MAX_SANDBOXES: int = 50  # cap on concurrent live Daytona sandboxes (cost-DoS guard)
+    # Per-user artifact quotas (generous defaults; enforced at persistence time).
+    # For all three, 0 (or any non-positive value) disables that quota (unlimited).
+    ARTIFACT_MAX_BYTES: int = 50 * 1024 * 1024  # cap on a single stored artifact version's bytes
+    ARTIFACT_MAX_COUNT_PER_USER: int = 5000  # cap on artifacts a user may own
+    ARTIFACT_MAX_TOTAL_BYTES_PER_USER: int = 5 * 1024 * 1024 * 1024  # cap on a user's total stored bytes
 
     @field_validator("POSTGRES_URI", mode="before")
     @classmethod

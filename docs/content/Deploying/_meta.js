@@ -7,6 +7,10 @@ export default {
     "title": "🔐 SSO with OIDC",
     "href": "/Deploying/OIDC-SSO"
   },
+  "Access-Control": {
+    "title": "👥 Access Control & Teams",
+    "href": "/Deploying/Access-Control"
+  },
   "Docker-Deploying": {
     "title": "🛳️ Docker Setup",
     "href": "/Deploying/Docker-Deploying"

@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from application.storage.db.base_repository import row_to_dict
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import workflows_table
 
 
@@ -116,6 +116,31 @@ class WorkflowsRepository:
         return row[0] if row else None
 
     def delete(self, workflow_id: str, user_id: str) -> bool:
+        # Run artifacts parent to ``workflow_runs`` (which cascade-delete with the
+        # workflow), but ``artifacts.workflow_run_id`` is a bare uuid with no FK, so
+        # the rows + bytes + the quota they consume would leak. Reclaim them BEFORE
+        # deleting the workflow, while the run rows still resolve the subquery.
+        # Ownership is confirmed first so this never reaps another user's artifacts.
+        from application.storage.db.repositories.artifacts import ArtifactsRepository
+
+        if not looks_like_uuid(workflow_id):
+            return False
+        owned = (
+            self._conn.execute(
+                text(
+                    "SELECT 1 FROM workflows "
+                    "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                ),
+                {"id": workflow_id, "user_id": user_id},
+            ).fetchone()
+            is not None
+        )
+        if not owned:
+            return False
+
+        artifacts = ArtifactsRepository(self._conn)
+        paths = artifacts.storage_paths_for_workflow(workflow_id)
+        artifacts.delete_for_workflow(workflow_id)
         result = self._conn.execute(
             text(
                 "DELETE FROM workflows "
@@ -123,7 +148,10 @@ class WorkflowsRepository:
             ),
             {"id": workflow_id, "user_id": user_id},
         )
-        return result.rowcount > 0
+        deleted = result.rowcount > 0
+        if deleted:
+            artifacts.reap_storage(paths)
+        return deleted
 
     def delete_by_legacy_id(self, legacy_mongo_id: str, user_id: str) -> bool:
         """Delete a workflow addressed by the Mongo ObjectId string.

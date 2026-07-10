@@ -293,6 +293,10 @@ type MessageInputProps = {
   showSourceButton?: boolean;
   showToolButton?: boolean;
   autoFocus?: boolean;
+  // Opt-in: enable send with empty text when there are completed
+  // attachments (used by doc-driven workflow runs). Normal chat leaves this
+  // unset, preserving the text-required behavior.
+  allowSendWithoutText?: boolean;
 };
 
 export default function MessageInput({
@@ -301,6 +305,7 @@ export default function MessageInput({
   showSourceButton = true,
   showToolButton = true,
   autoFocus = true,
+  allowSendWithoutText = false,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -908,14 +913,13 @@ export default function MessageInput({
   });
 
   const handleInput = useCallback(() => {
-    if (inputRef.current) {
-      if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
-      else inputRef.current.style.height = '64px';
-      inputRef.current.style.height = `${Math.min(
-        inputRef.current.scrollHeight,
-        96,
-      )}px`;
-    }
+    if (!inputRef.current) return;
+    if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
+    else inputRef.current.style.height = '64px';
+    inputRef.current.style.height = `${Math.min(
+      inputRef.current.scrollHeight,
+      Math.round(window.innerHeight * 0.4),
+    )}px`;
   }, []);
 
   const buildVoiceDraftValue = (baseText: string, transcript: string) => {
@@ -1467,13 +1471,21 @@ export default function MessageInput({
     setIsSourcesPopupOpen(false);
   };
 
+  // When ``allowSendWithoutText`` is set, an attachment-only submit is
+  // permitted as long as at least one attachment has finished processing.
+  const hasCompletedAttachment = attachments.some(
+    (attachment) => attachment.status === 'completed',
+  );
+  const hasSubmittableContent =
+    Boolean(value.trim()) || (allowSendWithoutText && hasCompletedAttachment);
+  const canSubmit =
+    hasSubmittableContent &&
+    !loading &&
+    recordingState !== 'recording' &&
+    recordingState !== 'transcribing';
+
   const handleSubmit = () => {
-    if (
-      value.trim() &&
-      !loading &&
-      recordingState !== 'recording' &&
-      recordingState !== 'transcribing'
-    ) {
+    if (canSubmit) {
       onSubmit(value);
       setValue('');
       if (isTouch) {
@@ -1570,7 +1582,7 @@ export default function MessageInput({
             }
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style no-scrollbar dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
+            className="inputbox-style dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full scrollbar-thin overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
@@ -1635,19 +1647,11 @@ export default function MessageInput({
               onClick={handleSubmit}
               aria-label={t('send')}
               className={`ml-auto h-7 w-7 shrink-0 rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
-                value.trim() &&
-                !loading &&
-                recordingState !== 'recording' &&
-                recordingState !== 'transcribing'
+                canSubmit
                   ? 'bg-primary text-white'
                   : 'bg-muted text-muted-foreground dark:bg-accent dark:text-muted-foreground'
               }`}
-              disabled={
-                !value.trim() ||
-                loading ||
-                recordingState === 'recording' ||
-                recordingState === 'transcribing'
-              }
+              disabled={!canSubmit}
             >
               <SendArrow
                 className="mx-auto my-auto block h-3.5 w-3.5 sm:h-4 sm:w-4"

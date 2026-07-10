@@ -22,10 +22,12 @@ In essence, embedding models are the bridge that allows DocsGPT to understand th
 
 ## Out-of-the-Box Embedding Model Support in DocsGPT
 
-DocsGPT is designed to be flexible and supports a wide range of embedding models right out of the box. Currently, DocsGPT provides native support for models from two major sources:
+DocsGPT is designed to be flexible and supports a wide range of embedding models right out of the box:
 
-*   **Sentence Transformers:** DocsGPT supports all models available through the [Sentence Transformers library](https://www.sbert.net/). This library offers a vast selection of pre-trained embedding models, known for their quality and efficiency in various semantic tasks.
-*   **OpenAI Embeddings:** DocsGPT also supports using embedding models from OpenAI, specifically the `text-embedding-ada-002` model, which is a powerful and widely used embedding model from OpenAI's API.
+*   **Sentence Transformers:** DocsGPT supports all models available through the [Sentence Transformers library](https://www.sbert.net/). This library offers a vast selection of pre-trained embedding models, known for their quality and efficiency in various semantic tasks. This is the default (`EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2`).
+*   **OpenAI Embeddings:** DocsGPT supports OpenAI embedding models (for example `text-embedding-ada-002`, `text-embedding-3-small`, `text-embedding-3-large`) via the OpenAI API.
+*   **Azure OpenAI Embeddings:** Set `AZURE_EMBEDDINGS_DEPLOYMENT_NAME` alongside your Azure OpenAI configuration.
+*   **Remote OpenAI-compatible Embeddings:** Any server that exposes an OpenAI-compatible `/v1/embeddings` endpoint (for example llama.cpp, vLLM, TEI, or a hosted provider) by setting `EMBEDDINGS_BASE_URL`. See [Remote Embeddings](#remote-openai-compatible-embeddings) below.
 
 ## Configuring Sentence Transformer Models
 
@@ -64,6 +66,36 @@ LLM_PROVIDER=openai
 API_KEY=YOUR_OPENAI_API_KEY # Your OpenAI API Key
 EMBEDDINGS_NAME=openai_text-embedding-ada-002
 ```
+
+## Remote (OpenAI-compatible) Embeddings
+
+If you run your own embedding server, or use a provider that exposes an OpenAI-style embeddings API, point DocsGPT at it with `EMBEDDINGS_BASE_URL`. When this is set, all embedding calls (ingestion and querying) are sent to `{EMBEDDINGS_BASE_URL}/v1/embeddings` in OpenAI format instead of running a local model.
+
+```env
+EMBEDDINGS_BASE_URL=http://localhost:8080   # your OpenAI-compatible embeddings server
+EMBEDDINGS_NAME=your-model-name             # sent as the "model" field in the request
+EMBEDDINGS_KEY=YOUR_API_KEY                 # optional; sent as a Bearer token
+```
+
+- `EMBEDDINGS_BASE_URL` — base URL of the remote server. Setting it switches DocsGPT into remote-embeddings mode.
+- `EMBEDDINGS_NAME` — forwarded as the `model` field in each request.
+- `EMBEDDINGS_KEY` — optional bearer token. If you are using OpenAI directly you can copy `API_KEY` here.
+
+### Guarding against oversized inputs
+
+Some remote servers (notably llama.cpp) reject any single input larger than their physical batch size with a `500` error. Set `EMBEDDINGS_MAX_INPUT_TOKENS` to clip each input to a fixed number of tokens before it is sent:
+
+```env
+EMBEDDINGS_MAX_INPUT_TOKENS=512
+```
+
+When set, each input string is truncated to that many tokens and the overflow is dropped (lossy by design). Token counts use DocsGPT's shared tiktoken encoding, which differs from your server's tokenizer, so choose a limit with some headroom below the server's true limit to absorb tokenizer skew. Leave the setting unset (or `0`) to disable truncation.
+
+## Important: Embedding Dimensions Must Stay Consistent
+
+Each embedding model produces vectors of a fixed dimension, and your vector store is created with that dimension. **Changing `EMBEDDINGS_NAME` to a model with a different dimension is not compatible with an existing index** — FAISS and LanceDB will raise a dimension-mismatch error, and pgvector/Qdrant tables are sized to the original dimension.
+
+If you need to switch embedding models, you must re-ingest your sources so the index is rebuilt with the new dimension. This also applies to the [GraphRAG](/Sources/GraphRAG) graph tables, which are sized to the embedding dimension at creation time.
 
 ## Adding Support for Other Embedding Models
 

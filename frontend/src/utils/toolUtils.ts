@@ -24,3 +24,10 @@ export const isChatToolVisible = (tool: {
   default?: boolean;
   builtin?: boolean;
 }): boolean => Boolean(tool.default) || !tool.builtin;
+
+// Classic agent picker visibility rule: hide ``workflow_only`` builtins
+// (e.g. ``read_document``) so they surface only in the workflow-node picker.
+// Everything else stays visible.
+export const isClassicAgentToolVisible = (tool: {
+  workflow_only?: boolean;
+}): boolean => !tool.workflow_only;

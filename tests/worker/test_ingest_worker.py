@@ -70,6 +70,29 @@ def _patch_ingest_pipeline(monkeypatch, captured):
     )
 
 
+def _spy_chunker(monkeypatch):
+    """Spy on ``ChunkerCreator.create_chunker`` and return the recorded kwargs.
+
+    Replaces it with a fake that records the call's kwargs and returns a
+    chunker whose ``chunk`` passes documents through unchanged, so the
+    config the worker threads into chunking can be asserted.
+    """
+    from application import worker
+
+    calls: list[dict] = []
+
+    def _create_chunker(strategy, **kwargs):
+        calls.append({"strategy": strategy, **kwargs})
+        chunker = MagicMock(name="chunker")
+        chunker.chunk.side_effect = lambda documents: documents
+        return chunker
+
+    monkeypatch.setattr(
+        worker.ChunkerCreator, "create_chunker", staticmethod(_create_chunker)
+    )
+    return calls
+
+
 @pytest.mark.unit
 class TestIngestWorker:
     def test_invokes_upload_index_with_expected_payload(
@@ -103,6 +126,70 @@ class TestIngestWorker:
         assert payload["type"] == "local"
         # A fresh source UUID is minted for the backend /upload_index route.
         assert payload["id"]
+
+
+@pytest.mark.unit
+class TestIngestWorkerConfigThreading:
+    """``config.chunking`` must drive the chunker the worker builds (D1/D8)."""
+
+    def test_no_config_uses_classic_defaults(
+        self, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        captured: list[dict] = []
+        _patch_ingest_pipeline(monkeypatch, captured)
+        calls = _spy_chunker(monkeypatch)
+
+        worker.ingest_worker(
+            task_self,
+            directory="inputs",
+            formats=[".txt"],
+            job_name="job1",
+            file_path="inputs/eve/job1/a.txt",
+            filename="a.txt",
+            user="eve",
+        )
+
+        assert len(calls) == 1
+        # Byte-identical-defaults guarantee: empty config → classic 1250/150.
+        assert calls[0]["strategy"] == "classic_chunk"
+        assert calls[0]["chunking_strategy"] == "classic_chunk"
+        assert calls[0]["max_tokens"] == 1250
+        assert calls[0]["min_tokens"] == 150
+        assert calls[0]["duplicate_headers"] is False
+
+    def test_non_default_config_is_threaded(
+        self, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        captured: list[dict] = []
+        _patch_ingest_pipeline(monkeypatch, captured)
+        calls = _spy_chunker(monkeypatch)
+
+        worker.ingest_worker(
+            task_self,
+            directory="inputs",
+            formats=[".txt"],
+            job_name="job1",
+            file_path="inputs/eve/job1/a.txt",
+            filename="a.txt",
+            user="eve",
+            config={
+                "chunking": {
+                    "strategy": "recursive",
+                    "max_tokens": 800,
+                    "min_tokens": 50,
+                }
+            },
+        )
+
+        assert len(calls) == 1
+        assert calls[0]["strategy"] == "recursive"
+        assert calls[0]["chunking_strategy"] == "recursive"
+        assert calls[0]["max_tokens"] == 800
+        assert calls[0]["min_tokens"] == 50
 
 
 @pytest.mark.unit

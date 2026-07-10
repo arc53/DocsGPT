@@ -10,9 +10,10 @@ from starlette.routing import Mount
 
 from application.api.async_sse import async_sse_routes
 from application.app import app as flask_app
+from application.core.settings import settings
 from application.mcp_server import mcp
 
-_WSGI_THREADPOOL = 32
+_WSGI_THREADPOOL = int(settings.WSGI_THREADPOOL_WORKERS)
 
 mcp_app = mcp.http_app(path="/")
 

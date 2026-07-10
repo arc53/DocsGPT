@@ -559,20 +559,22 @@ class TestBaseAgentToolExecution:
     ):
         agent = ClassicAgent(**agent_base_params)
 
+        from application.agents.tool_executor import PERSISTED_RESULT_MAX_LEN
+
         agent.tool_calls = [
             {
                 "tool_name": "test_tool",
                 "call_id": "123",
                 "action_name": "action",
                 "arguments": {},
-                "result": "a" * 100,
+                "result": "a" * (PERSISTED_RESULT_MAX_LEN + 100),
             }
         ]
 
         truncated = agent._get_truncated_tool_calls()
 
         assert len(truncated) == 1
-        assert len(truncated[0]["result"]) <= 53
+        assert len(truncated[0]["result"]) == PERSISTED_RESULT_MAX_LEN + 3
         assert truncated[0]["result"].endswith("...")
 
 

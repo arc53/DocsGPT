@@ -77,8 +77,11 @@ class CompressionService:
             # Get queries to compress
             queries_to_compress = queries[: compress_up_to_index + 1]
 
-            # Check if there are existing compressions
-            existing_compressions = conversation.get("compression_metadata", {}).get(
+            # Check if there are existing compressions. ``compression_metadata``
+            # is a nullable JSONB column, so a never-compressed conversation
+            # reads back as None; ``get(key, {})`` would return that None (the
+            # default only applies to absent keys), so coalesce with ``or {}``.
+            existing_compressions = (conversation.get("compression_metadata") or {}).get(
                 "compression_points", []
             )
 
@@ -201,7 +204,9 @@ class CompressionService:
             (compressed_summary, recent_messages)
         """
         try:
-            compression_metadata = conversation.get("compression_metadata", {})
+            # ``or {}`` guards against a NULL ``compression_metadata`` column
+            # (reads back as None), which would crash the ``.get`` calls below.
+            compression_metadata = conversation.get("compression_metadata") or {}
 
             if not compression_metadata.get("is_compressed"):
                 logger.debug("No compression metadata found - using full history")

@@ -52,7 +52,15 @@ class MongoDBVectorStore(BaseVectorStore):
     def _collection(self):
         return self._database[self._collection_name]
 
-    def search(self, question, k=2, *args, **kwargs):
+    def search(self, question, k=2, *args, score_threshold=None, **kwargs):
+        """Search via Atlas ``$vectorSearch``.
+
+        Args:
+            question: The query string.
+            k: Maximum number of results.
+            score_threshold: Optional ``vectorSearchScore`` floor in ``[0, 1]``;
+                results scoring below it are dropped.
+        """
         query_vector = self._embedding.embed_query(question)
 
         pipeline = [
@@ -67,6 +75,9 @@ class MongoDBVectorStore(BaseVectorStore):
                 }
             }
         ]
+        if score_threshold is not None:
+            pipeline.append({"$addFields": {"_score": {"$meta": "vectorSearchScore"}}})
+            pipeline.append({"$match": {"_score": {"$gte": float(score_threshold)}}})
 
         cursor = self._collection.aggregate(pipeline)
 
@@ -76,6 +87,7 @@ class MongoDBVectorStore(BaseVectorStore):
             doc.pop("_id")
             doc.pop(self._text_key)
             doc.pop(self._embedding_key)
+            doc.pop("_score", None)
             metadata = doc
             results.append(Document(text, metadata))
         return results

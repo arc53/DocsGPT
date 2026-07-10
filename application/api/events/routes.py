@@ -103,33 +103,18 @@ def _allow_replay(
 ) -> bool:
     """Per-user sliding-window snapshot-replay budget.
 
-    Fails open on Redis errors or when the budget is disabled. Empty-backlog
-    no-cursor connects skip INCR so dev double-mounts don't trip 429.
+    Fails open on Redis errors or when the budget is disabled. No-cursor
+    connects never consume budget: fresh sessions start live and do no
+    snapshot work, so counting them only starved real reconnects (a burst
+    of fresh tabs could 429 a user's cursor-bearing reconnect).
     """
     budget = int(settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW)
     if budget <= 0:
         return True
     if redis_client is None:
         return True
-
-    # Cheap pre-check: only INCR when we might actually replay. XLEN
-    # is one Redis op; the alternative (INCR every connect) is two
-    # ops AND wrongly counts no-op probes. The check is conservative:
-    # if ``last_event_id`` is set we always INCR, even if the cursor
-    # has already overtaken the latest entry — that case is rare and
-    # short-lived, and probing further would mean a redundant XRANGE.
     if last_event_id is None:
-        try:
-            if int(redis_client.xlen(stream_key(user_id))) == 0:
-                return True
-        except Exception:
-            # XLEN probe failed; fall through to the INCR path so a
-            # transient Redis hiccup can't bypass the budget.
-            logger.debug(
-                "XLEN probe failed for replay budget check user=%s; "
-                "proceeding to INCR",
-                user_id,
-            )
+        return True
 
     window = max(1, int(settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS))
     key = replay_budget_key(user_id)
@@ -154,7 +139,7 @@ def _normalize_last_event_id(raw: Optional[str]) -> Optional[str]:
 
     Returns the value unchanged when it parses as a Redis Streams id,
     otherwise ``None`` — callers treat ``None`` as "client has nothing"
-    and replay from the start of the retained window. Invalid ids would
+    and start the stream live (no snapshot). Invalid ids would
     otherwise pass straight to XRANGE and surface as a quiet replay
     failure plus broken truncation detection.
     """
@@ -166,6 +151,21 @@ def _normalize_last_event_id(raw: Optional[str]) -> Optional[str]:
     return raw
 
 
+def _replay_floor_id() -> Optional[str]:
+    """Oldest stream id the snapshot replay may reach, or ``None``.
+
+    Streams ids are millisecond timestamps, so an age ceiling maps
+    directly to an id floor. MAXLEN caps the stream by count, not time —
+    for a low-traffic user 1000 entries can span weeks, and shipping
+    that on reconnect helps no one.
+    """
+    max_age_hours = int(settings.EVENTS_REPLAY_MAX_AGE_HOURS)
+    if max_age_hours <= 0:
+        return None
+    floor_ms = int(time.time() * 1000) - max_age_hours * 3600 * 1000
+    return f"{floor_ms}-0"
+
+
 def _replay_backlog(
     redis_client, user_id: str, last_event_id: Optional[str], max_count: int
 ) -> Iterator[tuple[str, str]]:
@@ -175,8 +175,16 @@ def _replay_backlog(
     Parse failures are skipped; the Streams id is injected into the
     envelope so replay matches live-tail shape.
     """
-    # Exclusive start: '(<id>' skips the already-delivered entry.
-    start = f"({last_event_id}" if last_event_id else "-"
+    floor = _replay_floor_id()
+    if last_event_id is None:
+        start = floor or "-"
+    elif floor and stream_id_compare(last_event_id, floor) < 0:
+        # Cursor is past the age ceiling: clamp to the floor (inclusive).
+        # The caller emits ``backlog.truncated`` for this case.
+        start = floor
+    else:
+        # Exclusive start: '(<id>' skips the already-delivered entry.
+        start = f"({last_event_id}"
     try:
         entries = redis_client.xrange(
             stream_key(user_id), min=start, max="+", count=max_count
@@ -385,15 +393,34 @@ def stream_events() -> Response:
                 try:
                     if redis_client is None:
                         return
+                    if last_event_id is None:
+                        # Fresh session: start live. A no-cursor connect has
+                        # no state to catch up on — replaying the whole
+                        # retained window shipped weeks-old entries on every
+                        # tab-open (MAXLEN caps by count, not age). Clients
+                        # that had state present a cursor; the malformed-
+                        # cursor case already got its truncation notice
+                        # before the subscribe loop.
+                        return
                     oldest = _oldest_retained_id(redis_client, user_id)
-                    if (
-                        last_event_id
-                        and oldest
-                        and stream_id_compare(last_event_id, oldest) < 0
+                    floor = _replay_floor_id()
+                    # The snapshot can't reach past whichever is newer:
+                    # the MAXLEN'd window edge or the age floor.
+                    effective_oldest = oldest
+                    if floor and (
+                        effective_oldest is None
+                        or stream_id_compare(floor, effective_oldest) > 0
                     ):
-                        # The Last-Event-ID has slid off the MAXLEN window.
-                        # Tell the client so it can fetch full state.
-                        replay_lines.append(_truncation_notice_line(oldest))
+                        effective_oldest = floor
+                    if (
+                        effective_oldest
+                        and stream_id_compare(last_event_id, effective_oldest) < 0
+                    ):
+                        # The Last-Event-ID has slid off the replayable
+                        # window. Tell the client so it can fetch full state.
+                        replay_lines.append(
+                            _truncation_notice_line(effective_oldest)
+                        )
                     replay_cap = int(settings.EVENTS_REPLAY_MAX_PER_REQUEST)
                     for entry_id, sse_line in _replay_backlog(
                         redis_client, user_id, last_event_id, replay_cap

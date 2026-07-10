@@ -108,6 +108,41 @@ class TestStreamProcessorAgentConfiguration:
         assert isinstance(processor.agent_config, dict)
         assert processor.agent_id is None
 
+    def test_embedded_workflow_without_saved_id(self):
+        """A preview run with no saved workflow id carries no ``workflow_id``."""
+        from application.api.answer.services.stream_processor import StreamProcessor
+
+        request_data = {
+            "question": "Test",
+            "workflow": {"nodes": [], "edges": []},
+        }
+        processor = StreamProcessor(request_data, {"sub": "user_123"})
+        processor._configure_agent()
+
+        assert processor.agent_config["agent_type"] == "workflow"
+        assert processor.agent_config["workflow"] == {"nodes": [], "edges": []}
+        assert "workflow_id" not in processor.agent_config
+
+    def test_embedded_workflow_with_saved_id_persists_run(self):
+        """A saved workflow id alongside the embedded graph is captured so the
+        run can persist a ``workflow_runs`` row for artifact listing."""
+        from application.api.answer.services.stream_processor import StreamProcessor
+
+        request_data = {
+            "question": "Test",
+            "workflow": {"nodes": [], "edges": []},
+            "workflow_id": "11111111-1111-1111-1111-111111111111",
+        }
+        processor = StreamProcessor(request_data, {"sub": "user_123"})
+        processor._configure_agent()
+
+        assert processor.agent_config["agent_type"] == "workflow"
+        assert (
+            processor.agent_config["workflow_id"]
+            == "11111111-1111-1111-1111-111111111111"
+        )
+        assert processor.agent_config["workflow_owner"] == "user_123"
+
 
 
 @pytest.mark.unit

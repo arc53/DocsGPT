@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import socket as _socket
 import time
 from threading import Lock
 
@@ -10,6 +11,12 @@ from application.core.settings import settings
 from application.utils import get_hash
 
 logger = logging.getLogger(__name__)
+
+# Upper bound on any single blocking read by a pub/sub subscriber. Must stay
+# comfortably above Topic.subscribe's poll_timeout (1 s) — get_message's idle
+# wait polls with select() and never trips socket_timeout, but a half-open
+# connection's pending read (e.g. the health-check PONG) does.
+PUBSUB_SOCKET_TIMEOUT_SECONDS = 10
 
 
 def _cache_default(value):
@@ -49,6 +56,64 @@ def get_redis_instance():
                     logger.error(f"Redis connection error: {e}")
                     _redis_instance = None  # Keep trying for connection errors
     return _redis_instance
+
+
+_pubsub_redis_instance = None
+_pubsub_redis_creation_failed = False
+
+
+def _tcp_keepalive_options():
+    """Kernel keepalive knobs for long-lived, mostly-idle pub/sub sockets.
+
+    Probing well inside NAT/IPVS idle-expiry windows (Docker Swarm's IPVS
+    expires idle flows after ~15 min) keeps the flow-table entry alive and
+    lets the kernel surface a dead peer instead of leaving the socket
+    half-open. The constants are Linux-specific, so build the dict from
+    whatever this platform exposes.
+    """
+    options = {}
+    for name, value in (("TCP_KEEPIDLE", 300), ("TCP_KEEPINTVL", 60), ("TCP_KEEPCNT", 3)):
+        const = getattr(_socket, name, None)
+        if const is not None:
+            options[const] = value
+    return options
+
+
+def get_pubsub_redis_instance():
+    """Redis client dedicated to pub/sub subscribers.
+
+    Separate from ``get_redis_instance`` because subscribers hold a socket
+    open for the life of an SSE connection. Without ``socket_timeout``, a
+    connection silently dropped by NAT/IPVS blocks ``pubsub.get_message``
+    forever — including the ``health_check_interval`` PONG read — pinning
+    the subscriber's WSGI thread until the worker restarts. Bounding every
+    read lets a dead subscriber fail within seconds and release its thread.
+
+    Returns:
+        A shared ``redis.Redis`` client, or ``None`` if Redis is
+        unavailable or ``CACHE_REDIS_URL`` is invalid.
+    """
+    global _pubsub_redis_instance, _pubsub_redis_creation_failed
+    if _pubsub_redis_instance is None and not _pubsub_redis_creation_failed:
+        with _instance_lock:
+            if _pubsub_redis_instance is None and not _pubsub_redis_creation_failed:
+                try:
+                    _pubsub_redis_instance = redis.Redis.from_url(
+                        settings.CACHE_REDIS_URL,
+                        socket_connect_timeout=2,
+                        socket_timeout=PUBSUB_SOCKET_TIMEOUT_SECONDS,
+                        socket_keepalive=True,
+                        socket_keepalive_options=_tcp_keepalive_options(),
+                        health_check_interval=10,
+                    )
+                except ValueError as e:
+                    logger.error(f"Invalid Redis URL: {e}")
+                    _pubsub_redis_creation_failed = True  # Stop future attempts
+                    _pubsub_redis_instance = None
+                except redis.ConnectionError as e:
+                    logger.error(f"Redis connection error: {e}")
+                    _pubsub_redis_instance = None  # Keep trying for connection errors
+    return _pubsub_redis_instance
 
 
 def gen_cache_key(messages, model="docgpt", tools=None):

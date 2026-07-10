@@ -201,8 +201,8 @@ export function MultiSelectPopover({
           <Spinner size="small" />
         </div>
       ) : (
-        <div className="dark:border-border mx-4 my-4 min-h-0 overflow-hidden rounded-md border border-[#D9D9D9]">
-          <CommandList className="max-h-[min(400px,55vh)] overflow-y-auto">
+        <div className="dark:border-border mx-4 my-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-[#D9D9D9]">
+          <CommandList className="max-h-none min-h-0 flex-1 overflow-y-auto">
             <CommandEmpty>{renderEmptyState()}</CommandEmpty>
             {hasGroups ? (
               grouped.groupOrder.map((groupKey) => {

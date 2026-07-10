@@ -305,7 +305,7 @@ class TestTopic:
         # Must not raise.
         assert Topic("user:alice").publish("hi") == 0
 
-    @patch("application.streaming.broadcast_channel.get_redis_instance")
+    @patch("application.streaming.broadcast_channel.get_pubsub_redis_instance")
     def test_subscribe_returns_immediately_when_redis_unavailable(
         self, mock_redis
     ):
@@ -313,7 +313,7 @@ class TestTopic:
         # Generator should produce nothing, not raise.
         assert list(Topic("user:alice").subscribe(poll_timeout=0.01)) == []
 
-    @patch("application.streaming.broadcast_channel.get_redis_instance")
+    @patch("application.streaming.broadcast_channel.get_pubsub_redis_instance")
     def test_subscribe_yields_none_on_poll_timeout(self, mock_redis):
         client = MagicMock()
         pubsub = MagicMock()
@@ -331,7 +331,7 @@ class TestTopic:
         assert third == b"x"
         gen.close()
 
-    @patch("application.streaming.broadcast_channel.get_redis_instance")
+    @patch("application.streaming.broadcast_channel.get_pubsub_redis_instance")
     def test_subscribe_fires_on_subscribe_after_ack(self, mock_redis):
         client = MagicMock()
         pubsub = MagicMock()
@@ -355,7 +355,7 @@ class TestTopic:
         assert callback_calls == [1]
         gen.close()
 
-    @patch("application.streaming.broadcast_channel.get_redis_instance")
+    @patch("application.streaming.broadcast_channel.get_pubsub_redis_instance")
     def test_subscribe_cleans_up_on_generator_close(self, mock_redis):
         client = MagicMock()
         pubsub = MagicMock()
@@ -373,7 +373,7 @@ class TestTopic:
         pubsub.unsubscribe.assert_called_once_with("user:alice")
         pubsub.close.assert_called_once()
 
-    @patch("application.streaming.broadcast_channel.get_redis_instance")
+    @patch("application.streaming.broadcast_channel.get_pubsub_redis_instance")
     def test_subscribe_skips_unsubscribe_if_subscribe_never_acked(
         self, mock_redis
     ):

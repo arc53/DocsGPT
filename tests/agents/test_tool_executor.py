@@ -66,6 +66,33 @@ class TestToolExecutorGetTools:
         assert str(tool["id"]) in tools
         assert tools[str(tool["id"])]["id"] == tool["id"]
 
+    def test_api_key_agent_never_resolves_workflow_only_builtins(self, pg_conn, monkeypatch):
+        """read_document is workflow-only: a chat/scheduled agent carrying its
+        builtin id must not get it; workflow nodes get it via allowed_tool_ids."""
+        from application.agents.default_tools import default_tool_id
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        read_doc_id = default_tool_id("read_document")
+        artifact_id = default_tool_id("artifact_generator")
+        AgentsRepository(pg_conn).create(
+            user_id="alice",
+            name="a",
+            status="active",
+            key="wf_only_key",
+            tools=[read_doc_id, artifact_id],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        chat_tools = ToolExecutor(user_api_key="wf_only_key", user="alice").get_tools()
+        chat_names = {t["name"] for t in chat_tools.values()}
+        assert "artifact_generator" in chat_names
+        assert "read_document" not in chat_names
+
+        scoped = ToolExecutor(user="alice")
+        scoped.allowed_tool_ids = [read_doc_id]
+        node_names = {t["name"] for t in scoped.get_tools().values()}
+        assert node_names == {"read_document"}
+
     def test_agentless_chat_synthesizes_defaults(self, pg_conn, monkeypatch):
         from application.agents.default_tools import loaded_default_tools
         from application.storage.db.repositories.user_tools import UserToolsRepository
@@ -965,6 +992,8 @@ class TestToolExecutorExecute:
         assert "completed" in statuses
 
     def test_get_truncated_tool_calls(self):
+        from application.agents.tool_executor import PERSISTED_RESULT_MAX_LEN
+
         executor = ToolExecutor()
         executor.tool_calls = [
             {
@@ -973,13 +1002,49 @@ class TestToolExecutorExecute:
                 "action_name": "act",
                 "arguments": {},
                 "result": "A" * 100,
+            },
+            {
+                "tool_name": "test",
+                "call_id": "2",
+                "action_name": "act",
+                "arguments": {},
+                "result": "B" * (PERSISTED_RESULT_MAX_LEN + 100),
+            },
+        ]
+
+        truncated = executor.get_truncated_tool_calls()
+        assert len(truncated) == 2
+        # Short results persist verbatim so stored errors stay diagnosable.
+        assert truncated[0]["result"] == "A" * 100
+        assert truncated[0]["status"] == "completed"
+        # Oversize results are bounded for the message JSONB copy.
+        assert len(truncated[1]["result"]) == PERSISTED_RESULT_MAX_LEN + 3
+        assert truncated[1]["result"].endswith("...")
+
+    def test_get_truncated_tool_calls_preserves_error_status(self):
+        executor = ToolExecutor()
+        executor.tool_calls = [
+            {
+                "tool_name": "test",
+                "call_id": "1",
+                "action_name": "act",
+                "arguments": {},
+                "result": "boom",
+                "status": "error",
             }
         ]
 
         truncated = executor.get_truncated_tool_calls()
-        assert len(truncated) == 1
-        assert len(truncated[0]["result"]) <= 53
-        assert truncated[0]["status"] == "completed"
+        assert truncated[0]["status"] == "error"
+
+    def test_result_status_reflects_in_band_tool_errors(self):
+        from application.agents.tool_executor import result_status
+
+        assert result_status({"status": "error", "error": "invalid spec"}) == "error"
+        assert result_status({"error": "input artifact A9 not found"}) == "error"
+        assert result_status({"status": "ok", "artifact_id": "x"}) == "completed"
+        assert result_status({"error": None, "status": "ok"}) == "completed"
+        assert result_status("plain text result") == "completed"
 
     def test_tool_caching(self, mock_tool_manager, monkeypatch):
         executor = ToolExecutor(user="test_user")
@@ -1332,3 +1397,19 @@ class TestToolExecutorAdditionalCoverage:
         tool_config = call_args[1].get("tool_config", call_args[0][1] if len(call_args[0]) > 1 else {})
         assert tool_config.get("body_content_type") == "application/json"
         assert tool_config.get("body_encoding_rules") == {"encode_as": "json"}
+
+
+@pytest.mark.unit
+class TestGetEnabledToolNames:
+    def test_returns_names_from_get_tools(self, monkeypatch):
+        executor = ToolExecutor()
+        monkeypatch.setattr(
+            executor,
+            "get_tools",
+            lambda: {
+                "id1": {"name": "code_executor"},
+                "id2": {"name": "search"},
+                "id3": {},  # nameless rows are skipped
+            },
+        )
+        assert executor.get_enabled_tool_names() == {"code_executor", "search"}

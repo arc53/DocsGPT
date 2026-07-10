@@ -450,11 +450,10 @@ class TestReplayRateLimit:
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
             assert _allow_replay(None, "alice", "1735682400000-0") is True
 
-    def test_allow_replay_skips_incr_when_no_cursor_and_empty_backlog(self):
-        """Fresh client with no cursor and an empty user stream cannot
-        do snapshot work — INCR'ing the counter would needlessly
-        burn budget. Catches the React-StrictMode dev-burst case where
-        double-mounted components would otherwise 429 in 5 connects.
+    def test_allow_replay_never_consumes_budget_without_cursor(self):
+        """No cursor ⇒ no replay work ⇒ no budget. Fresh sessions start
+        live and must never 429 on the replay budget, no matter how many
+        tabs open at once (30 fresh connects/min used to exhaust it).
         """
         from application.api.events.routes import _allow_replay
 
@@ -462,31 +461,13 @@ class TestReplayRateLimit:
             mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 3
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
             redis = MagicMock()
-            redis.xlen.return_value = 0
+            redis.xlen.return_value = 42
 
-            # 5 connects in a row, all with no cursor — none consume
-            # budget because the backlog is empty.
-            for _ in range(5):
+            for _ in range(50):
                 assert _allow_replay(redis, "alice", None) is True
 
-            redis.xlen.assert_called()
             redis.incr.assert_not_called()
-
-    def test_allow_replay_incrs_when_no_cursor_but_backlog_present(self):
-        """A no-cursor connect against a non-empty backlog *will* do
-        snapshot work, so it consumes budget normally.
-        """
-        from application.api.events.routes import _allow_replay
-
-        with patch("application.api.events.routes.settings") as mock_settings:
-            mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 5
-            mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
-            redis = MagicMock()
-            redis.xlen.return_value = 42
-            redis.incr.return_value = 1
-
-            assert _allow_replay(redis, "alice", None) is True
-            redis.incr.assert_called_once()
+            redis.xlen.assert_not_called()
 
     def test_allow_replay_passes_until_budget_exhausted(self):
         from application.api.events.routes import _allow_replay
@@ -647,3 +628,119 @@ class TestFormatHelpers:
         from application.api.events.routes import _normalize_last_event_id
 
         assert _normalize_last_event_id(candidate) == expected
+
+
+# ── replay policy: fresh sessions start live, snapshots are age-capped ──
+
+
+class TestReplayPolicy:
+    def test_replay_floor_id_disabled_when_setting_zero(self):
+        from application.api.events.routes import _replay_floor_id
+
+        with patch("application.api.events.routes.settings") as mock_settings:
+            mock_settings.EVENTS_REPLAY_MAX_AGE_HOURS = 0
+            assert _replay_floor_id() is None
+
+    def test_replay_floor_id_is_ms_stream_id(self):
+        from application.api.events.routes import _replay_floor_id
+
+        with patch("application.api.events.routes.settings") as mock_settings:
+            mock_settings.EVENTS_REPLAY_MAX_AGE_HOURS = 48
+            with patch(
+                "application.api.events.routes.time.time",
+                return_value=1_800_000_000.0,
+            ):
+                floor = _replay_floor_id()
+        assert floor == f"{(1_800_000_000 - 48 * 3600) * 1000}-0"
+
+    def test_replay_backlog_uses_cursor_when_newer_than_floor(self):
+        from application.api.events.routes import _replay_backlog
+
+        redis = MagicMock()
+        redis.xrange.return_value = []
+        with patch(
+            "application.api.events.routes._replay_floor_id",
+            return_value="1000-0",
+        ):
+            list(_replay_backlog(redis, "alice", "2000-0", 200))
+        assert redis.xrange.call_args.kwargs["min"] == "(2000-0"
+
+    def test_replay_backlog_clamps_start_to_age_floor(self):
+        from application.api.events.routes import _replay_backlog
+
+        redis = MagicMock()
+        redis.xrange.return_value = []
+        with patch(
+            "application.api.events.routes._replay_floor_id",
+            return_value="5000-0",
+        ):
+            list(_replay_backlog(redis, "alice", "2000-0", 200))
+        # Cursor is older than the floor: replay starts at the floor
+        # (inclusive), not the cursor — entries past their shelf life
+        # are never shipped.
+        assert redis.xrange.call_args.kwargs["min"] == "5000-0"
+
+    def test_no_cursor_connect_never_replays(self):
+        """A fresh session (no Last-Event-ID) starts live: no XRANGE, no
+        weeks-old backlog on every tab-open."""
+        from application.api.events import routes as events_module
+
+        app = _make_app()
+        redis_client = MagicMock()
+        redis_client.incr.return_value = 1
+
+        def _fake_subscribe(self, on_subscribe=None, poll_timeout=1.0):
+            if on_subscribe is not None:
+                on_subscribe()
+            yield None
+
+        with patch.object(
+            events_module, "get_redis_instance", return_value=redis_client
+        ), patch.object(
+            events_module.Topic, "subscribe", _fake_subscribe, create=False
+        ):
+            with app.test_client() as c:
+                r = c.get("/api/events", headers={"X-Test-Sub": "alice"})
+                body = _drain_until(
+                    r, lambda b: b": connected" in b, max_chunks=40
+                )
+        assert b": connected" in body
+        redis_client.xrange.assert_not_called()
+
+    def test_cursor_older_than_floor_emits_truncation_notice(self):
+        """An age-clamped snapshot has a gap the client can't see from
+        entry ids alone — it must get the truncation notice so it
+        refetches full state instead of trusting a partial replay."""
+        from application.api.events import routes as events_module
+
+        app = _make_app()
+        redis_client = MagicMock()
+        redis_client.incr.return_value = 1
+        # No retained-oldest available: the floor alone must trigger it.
+        redis_client.xinfo_stream.side_effect = Exception("nope")
+        redis_client.xrange.return_value = []
+
+        def _fake_subscribe(self, on_subscribe=None, poll_timeout=1.0):
+            if on_subscribe is not None:
+                on_subscribe()
+            yield None
+
+        with patch.object(
+            events_module, "get_redis_instance", return_value=redis_client
+        ), patch.object(
+            events_module.Topic, "subscribe", _fake_subscribe, create=False
+        ), patch.object(
+            events_module, "_replay_floor_id", return_value="9999999999999-0"
+        ):
+            with app.test_client() as c:
+                r = c.get(
+                    "/api/events",
+                    headers={
+                        "X-Test-Sub": "alice",
+                        "Last-Event-ID": "1735682400000-0",
+                    },
+                )
+                body = _drain_until(
+                    r, lambda b: b"backlog.truncated" in b, max_chunks=40
+                )
+        assert b"backlog.truncated" in body

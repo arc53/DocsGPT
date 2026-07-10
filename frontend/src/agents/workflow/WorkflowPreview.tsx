@@ -2,7 +2,9 @@ import {
   Bot,
   CheckCircle2,
   Circle,
+  Code2,
   Database,
+  FileBox,
   Flag,
   GitBranch,
   Loader2,
@@ -23,14 +25,18 @@ import MessageInput from '../../components/MessageInput';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
 import { AppDispatch } from '../../store';
+import { selectCompletedAttachments } from '../../upload/uploadSlice';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
+import WorkflowRunArtifacts from './WorkflowRunArtifacts';
 import {
   addQuery,
   fetchWorkflowPreviewAnswer,
   handleWorkflowPreviewAbort,
+  previewSendBlockReason,
   resendQuery,
   resetWorkflowPreview,
   selectActiveNodeId,
+  setPreviewOpen,
   selectWorkflowExecutionSteps,
   selectWorkflowPreviewQueries,
   selectWorkflowPreviewStatus,
@@ -47,6 +53,9 @@ interface WorkflowData {
 
 interface WorkflowPreviewProps {
   workflowData: WorkflowData;
+  // Saved workflow id (when the draft has been persisted); enables run-artifact
+  // listing by persisting a ``workflow_runs`` row for the preview run.
+  workflowId?: string | null;
 }
 
 const NODE_ICONS: Record<string, React.ReactNode> = {
@@ -56,6 +65,7 @@ const NODE_ICONS: Record<string, React.ReactNode> = {
   note: <StickyNote className="h-3 w-3" />,
   state: <Database className="h-3 w-3" />,
   condition: <GitBranch className="h-3 w-3" />,
+  code: <Code2 className="h-3 w-3" />,
 };
 
 const NODE_COLORS: Record<string, string> = {
@@ -65,6 +75,7 @@ const NODE_COLORS: Record<string, string> = {
   note: 'text-yellow-600 dark:text-yellow-400',
   state: 'text-blue-600 dark:text-blue-400',
   condition: 'text-orange-600 dark:text-orange-400',
+  code: 'text-indigo-600 dark:text-indigo-400',
 };
 
 function ExecutionDetails({
@@ -134,8 +145,8 @@ function ExecutionDetails({
               const node = nodes.find((n) => n.id === step.nodeId);
               const displayName =
                 node?.title || node?.data?.title || step.nodeTitle;
-              const stateVars = step.stateSnapshot
-                ? Object.entries(step.stateSnapshot).filter(
+              const stateVars = step.stateDelta
+                ? Object.entries(step.stateDelta).filter(
                     ([key]) => !['query', 'chat_history'].includes(key),
                   )
                 : [];
@@ -231,6 +242,61 @@ function ExecutionDetails({
                 </div>
               );
             })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RunArtifactsSection({
+  workflowRunId,
+  isOpen,
+  onToggle,
+  runInProgress = false,
+}: {
+  workflowRunId: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  runInProgress?: boolean;
+}) {
+  return (
+    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+      <div className="my-2 flex flex-row items-center justify-center gap-3">
+        <div className="flex h-[26px] w-[30px] items-center justify-center">
+          <FileBox className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onToggle}
+          className="h-auto gap-2 px-0 py-0 hover:bg-transparent"
+        >
+          <p className="text-base font-semibold">Artifacts</p>
+          <img
+            src={ChevronDownIcon}
+            alt="ChevronDown"
+            className={cn(
+              'h-4 w-4 transform transition-transform duration-200 dark:invert',
+              isOpen ? 'rotate-180' : '',
+            )}
+          />
+        </Button>
+      </div>
+      <div
+        className={cn(
+          'ml-3 grid w-full transition-all duration-300 ease-in-out',
+          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="max-h-[480px] overflow-y-auto pr-2">
+            {isOpen && (
+              <WorkflowRunArtifacts
+                workflowRunId={workflowRunId}
+                inProgress={runInProgress}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -373,6 +439,7 @@ function WorkflowMiniMap({
 
 export default function WorkflowPreview({
   workflowData,
+  workflowId,
 }: WorkflowPreviewProps) {
   const dispatch = useDispatch<AppDispatch>();
 
@@ -380,9 +447,17 @@ export default function WorkflowPreview({
   const status = useSelector(selectWorkflowPreviewStatus);
   const executionSteps = useSelector(selectWorkflowExecutionSteps);
   const activeNodeId = useSelector(selectActiveNodeId);
+  const completedAttachments = useSelector(selectCompletedAttachments);
+  const hasCompletedAttachment = completedAttachments.length > 0;
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
+  const [sendBlockedMessage, setSendBlockedMessage] = useState<string | null>(
+    null,
+  );
   const [openDetailsIndex, setOpenDetailsIndex] = useState<number | null>(null);
+  const [openArtifactsIndex, setOpenArtifactsIndex] = useState<number | null>(
+    null,
+  );
 
   const fetchStream = useRef<{ abort: () => void } | null>(null);
   const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -411,11 +486,12 @@ export default function WorkflowPreview({
           question,
           workflowData,
           indx: index,
+          workflowId,
         }),
       );
       fetchStream.current = promise;
     },
-    [dispatch, workflowData],
+    [dispatch, workflowData, workflowId],
   );
 
   const handleQuestion = useCallback(
@@ -428,8 +504,24 @@ export default function WorkflowPreview({
       isRetry?: boolean;
       index?: number;
     }) => {
+      // An unsaved draft can't bridge uploaded documents into the run (no
+      // persisted workflow_id), so block the send rather than run with the docs
+      // silently dropped. The uploads are kept (not cleared) for a retry after
+      // the workflow is saved.
+      const blockReason = previewSendBlockReason(
+        workflowId,
+        hasCompletedAttachment,
+      );
+      if (blockReason) {
+        setSendBlockedMessage(blockReason);
+        return;
+      }
+      setSendBlockedMessage(null);
+
       const trimmedQuestion = question.trim();
-      if (trimmedQuestion === '') return;
+      // Doc-driven nodes read ``input_documents`` rather than the query, so an
+      // attachment-only run is allowed to proceed with an empty question.
+      if (trimmedQuestion === '' && !hasCompletedAttachment) return;
 
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
@@ -442,8 +534,14 @@ export default function WorkflowPreview({
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer],
+    [dispatch, handleFetchAnswer, hasCompletedAttachment, workflowId],
   );
+
+  // Clear the block message once it no longer applies (the workflow was saved,
+  // or the attachments were removed) so a stale warning doesn't linger.
+  useEffect(() => {
+    if (workflowId || !hasCompletedAttachment) setSendBlockedMessage(null);
+  }, [workflowId, hasCompletedAttachment]);
 
   const handleQuestionSubmission = (
     question?: string,
@@ -456,8 +554,8 @@ export default function WorkflowPreview({
         index: indx,
         isRetry: false,
       });
-    } else if (question && status !== 'loading') {
-      const currentInput = question.trim();
+    } else if ((question || hasCompletedAttachment) && status !== 'loading') {
+      const currentInput = (question ?? '').trim();
       if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
@@ -477,10 +575,12 @@ export default function WorkflowPreview({
 
   useEffect(() => {
     dispatch(resetWorkflowPreview());
+    dispatch(setPreviewOpen(true));
     return () => {
       if (fetchStream.current) fetchStream.current.abort();
       handleWorkflowPreviewAbort();
       dispatch(resetWorkflowPreview());
+      dispatch(setPreviewOpen(false));
     };
   }, [dispatch]);
 
@@ -526,7 +626,7 @@ export default function WorkflowPreview({
               Workflow
             </h3>
           </div>
-          <div className="scrollbar-thin flex-1 overflow-y-auto p-3">
+          <div className="flex-1 scrollbar-thin overflow-y-auto p-3">
             <WorkflowMiniMap
               nodes={workflowData.nodes}
               activeNodeId={activeNodeId}
@@ -541,7 +641,7 @@ export default function WorkflowPreview({
         <div className="relative flex min-w-0 flex-1 flex-col">
           <div
             ref={chatContainerRef}
-            className="scrollbar-thin absolute inset-0 bottom-[100px] overflow-y-auto px-4 pt-4"
+            className="absolute inset-0 bottom-[100px] scrollbar-thin overflow-y-auto px-4 pt-4"
           >
             {queries.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center">
@@ -594,6 +694,22 @@ export default function WorkflowPreview({
                         />
                       )}
 
+                      {/* Run artifacts — shown as soon as a persisted run id
+                          is known; mid-run it lists artifacts as nodes produce
+                          them and refetches when the run completes. */}
+                      {query.workflowRunId && (
+                        <RunArtifactsSection
+                          workflowRunId={query.workflowRunId}
+                          isOpen={openArtifactsIndex === index}
+                          onToggle={() =>
+                            setOpenArtifactsIndex(
+                              openArtifactsIndex === index ? null : index,
+                            )
+                          }
+                          runInProgress={isStreamingLastQuery}
+                        />
+                      )}
+
                       {/* Response bubble */}
                       {(query.response ||
                         shouldShowThought ||
@@ -627,12 +743,18 @@ export default function WorkflowPreview({
             )}
           </div>
           <div className="bg-card absolute right-0 bottom-0 left-0 flex w-full flex-col gap-2 px-4 pt-2 pb-4">
+            {sendBlockedMessage && (
+              <p className="text-xs text-red-500" role="alert">
+                {sendBlockedMessage}
+              </p>
+            )}
             <MessageInput
               onSubmit={(text) => handleQuestionSubmission(text)}
               loading={status === 'loading'}
               showSourceButton={false}
               showToolButton={false}
               autoFocus={true}
+              allowSendWithoutText={true}
             />
           </div>
         </div>

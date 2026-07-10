@@ -115,6 +115,34 @@ class TestFaissStoreSearch:
         mock_ds.similarity_search.assert_called_once_with("query", k=5)
         assert result == ["doc1"]
 
+    @patch("application.vectorstore.faiss.StorageCreator")
+    @patch("application.vectorstore.faiss.FAISS")
+    @patch.object(
+        __import__("application.vectorstore.base", fromlist=["BaseVectorStore"]).BaseVectorStore,
+        "_get_embeddings",
+    )
+    @patch("application.vectorstore.faiss.settings")
+    def test_search_ignores_score_threshold(
+        self, mock_settings, mock_get_emb, mock_faiss, mock_storage_creator
+    ):
+        # FAISS has no relevance-threshold knob; the per-source score_threshold
+        # must be safely dropped, not forwarded (which would crash langchain).
+        mock_settings.EMBEDDINGS_NAME = "test_model"
+        mock_get_emb.return_value = Mock(dimension=3)
+        mock_ds = Mock()
+        mock_ds.index = Mock(d=3)
+        mock_ds.similarity_search.return_value = ["doc1"]
+        mock_faiss.from_documents.return_value = mock_ds
+        mock_storage_creator.get_storage.return_value = Mock()
+
+        from application.vectorstore.faiss import FaissStore
+
+        store = FaissStore(source_id="t", embeddings_key="k", docs_init=[Mock()])
+        result = store.search("query", k=5, score_threshold=0.9)
+        # score_threshold is stripped before the forward.
+        mock_ds.similarity_search.assert_called_once_with("query", k=5)
+        assert result == ["doc1"]
+
 
 @pytest.mark.unit
 class TestFaissStoreAddTexts:

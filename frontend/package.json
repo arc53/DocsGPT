@@ -34,19 +34,21 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "copy-to-clipboard": "^3.3.3",
-    "date-fns": "^4.2.1",
+    "d3-force": "^3.0.0",
+    "date-fns": "^4.4.0",
     "i18next": "^26.0.4",
     "i18next-browser-languagedetector": "^8.2.1",
     "lodash": "^4.18.1",
     "lucide-react": "^1.18.0",
     "mermaid": "^11.14.0",
     "prop-types": "^15.8.1",
-    "radix-ui": "^1.4.3",
+    "radix-ui": "^1.6.2",
     "react": "^19.1.0",
     "react-chartjs-2": "^5.3.0",
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.5",
     "react-dropzone": "^15.0.0",
+    "react-force-graph-2d": "^1.29.1",
     "react-google-drive-picker": "^1.2.2",
     "react-i18next": "^17.0.6",
     "react-markdown": "^9.0.1",
@@ -60,7 +62,8 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.4",
+    "@tailwindcss/postcss": "^4.3.2",
+    "@types/d3-force": "^3.0.10",
     "@types/lodash": "^4.17.20",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -78,7 +81,7 @@
     "eslint-plugin-unused-imports": "^4.1.4",
     "happy-dom": "^17.6.3",
     "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
+    "lint-staged": "^17.0.8",
     "postcss": "^8.5.12",
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.7.2",
@@ -87,6 +90,6 @@
     "typescript": "^6.0.3",
     "vite": "^8.0.10",
     "vite-plugin-svgr": "^4.3.0",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.9"
   }
 }

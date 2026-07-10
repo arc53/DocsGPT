@@ -14,6 +14,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
 import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
+import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
 import ChevronDown from '../assets/chevron-down.svg';
 import Cloud from '../assets/cloud.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
@@ -49,6 +50,11 @@ import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import ResearchProgress from './ResearchProgress';
 import { ToolCallsType } from './types';
+import {
+  isWikiWriteCall,
+  wikiWriteActionKey,
+  wikiWritePath,
+} from './wikiToolCall';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -63,6 +69,9 @@ const ConversationBubble = forwardRef<
     thought?: string;
     sources?: { title: string; text: string; link: string }[];
     toolCalls?: ToolCallsType[];
+    /** Set when this answer came from a workflow agent run; renders the
+     * run's produced artifacts as click-through chips/previews. */
+    workflowRunId?: string;
     research?: ResearchState;
     retryBtn?: React.ReactElement;
     questionNumber?: number;
@@ -92,6 +101,7 @@ const ConversationBubble = forwardRef<
     thought,
     sources,
     toolCalls,
+    workflowRunId,
     research,
     retryBtn,
     questionNumber,
@@ -122,12 +132,15 @@ const ConversationBubble = forwardRef<
   const completedArtifactCalls = (toolCalls ?? []).filter(
     (toolCall) => toolCall.artifact_id && toolCall.status === 'completed',
   );
-  const primaryArtifactCall =
-    completedArtifactCalls[completedArtifactCalls.length - 1] ?? null;
   const artifactCount = completedArtifactCalls.length;
 
   const formatToolName = (toolName: string | undefined): string => {
     if (!toolName) return '';
+    // Display-name overrides for tools whose label differs from the formatted key.
+    const overrides: Record<string, string> = {
+      artifact_generator: 'Artifact',
+    };
+    if (overrides[toolName]) return overrides[toolName];
     return toolName
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
@@ -442,43 +455,53 @@ const ConversationBubble = forwardRef<
             agentId={agentId}
           />
         )}
-        {!message && primaryArtifactCall?.artifact_id && onOpenArtifact && (
-          <div className="my-2 ml-2 flex justify-start">
-            <Button
-              type="button"
-              onClick={() =>
-                onOpenArtifact({
-                  id: primaryArtifactCall.artifact_id!,
-                  toolName: primaryArtifactCall.tool_name,
-                })
-              }
-              className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+        {!message && onOpenArtifact && completedArtifactCalls.length > 0 && (
+          <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
+            {completedArtifactCalls.map((artifactCall, artifactIndex) => (
+              <Button
+                key={artifactCall.call_id ?? artifactIndex}
+                type="button"
+                onClick={() =>
+                  onOpenArtifact({
+                    id: artifactCall.artifact_id!,
+                    toolName: artifactCall.tool_name,
+                  })
+                }
+                className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                />
-              </svg>
-              {primaryArtifactCall.tool_name
-                ? formatToolName(primaryArtifactCall.tool_name)
-                : artifactCount > 1
-                  ? `View artifacts (${artifactCount})`
-                  : 'View artifact'}
-            </Button>
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                  />
+                </svg>
+                {(artifactCall.tool_name
+                  ? formatToolName(artifactCall.tool_name)
+                  : 'Artifact') +
+                  (artifactCount > 1 ? ` (${artifactIndex + 1})` : '')}
+              </Button>
+            ))}
+          </div>
+        )}
+        {workflowRunId && (
+          <div className="my-2 mr-5 ml-2">
+            <WorkflowRunArtifacts
+              workflowRunId={workflowRunId}
+              inProgress={isStreaming}
+            />
           </div>
         )}
         {thought && (
@@ -513,7 +536,10 @@ const ConversationBubble = forwardRef<
                         {segment.type === 'text' ? (
                           <ReactMarkdown
                             className="fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap"
-                            remarkPlugins={[remarkGfm, remarkMath]}
+                            remarkPlugins={[
+                              remarkGfm,
+                              [remarkMath, { singleDollarTextMath: false }],
+                            ]}
                             rehypePlugins={[rehypeKatex]}
                             components={{
                               a({ href, children }) {
@@ -686,60 +712,63 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         {message && (
-          <div className="my-2 ml-2 flex justify-start">
+          <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
             {type === 'ERROR' ? (
-              <div className="relative mr-2 block items-center justify-center">
+              <div className="relative block items-center justify-center">
                 <div>{retryBtn}</div>
               </div>
             ) : (
               <>
-                {primaryArtifactCall?.artifact_id && onOpenArtifact && (
-                  <div className="relative mr-2 flex items-center justify-center">
-                    <Button
-                      type="button"
-                      onClick={() =>
-                        onOpenArtifact({
-                          id: primaryArtifactCall.artifact_id!,
-                          toolName: primaryArtifactCall.tool_name,
-                        })
-                      }
-                      className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
-                      aria-label="View artifacts"
+                {onOpenArtifact &&
+                  completedArtifactCalls.map((artifactCall, artifactIndex) => (
+                    <div
+                      key={artifactCall.call_id ?? artifactIndex}
+                      className="relative flex items-center justify-center"
                     >
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
+                      <Button
+                        type="button"
+                        onClick={() =>
+                          onOpenArtifact({
+                            id: artifactCall.artifact_id!,
+                            toolName: artifactCall.tool_name,
+                          })
+                        }
+                        className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                        aria-label="View artifact"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
-                      </svg>
-                      {primaryArtifactCall.tool_name
-                        ? formatToolName(primaryArtifactCall.tool_name)
-                        : artifactCount > 1
-                          ? `Artifacts (${artifactCount})`
-                          : 'Artifact'}
-                    </Button>
-                  </div>
-                )}
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                          />
+                        </svg>
+                        {(artifactCall.tool_name
+                          ? formatToolName(artifactCall.tool_name)
+                          : 'Artifact') +
+                          (artifactCount > 1 ? ` (${artifactIndex + 1})` : '')}
+                      </Button>
+                    </div>
+                  ))}
                 {!isStreaming && (
                   <>
-                    <div className="relative mr-2 block items-center justify-center">
+                    <div className="relative block items-center justify-center">
                       <CopyButton textToCopy={message} />
                     </div>
                     {research && message && (
-                      <div className="relative mr-2 block items-center justify-center">
+                      <div className="relative block items-center justify-center">
                         <Button
                           type="button"
                           variant="ghost"
@@ -774,12 +803,12 @@ const ConversationBubble = forwardRef<
                         </Button>
                       </div>
                     )}
-                    <div className="relative mr-2 block items-center justify-center">
+                    <div className="relative block items-center justify-center">
                       <SpeakButton text={message} />
                     </div>
                     {handleFeedback && (
                       <>
-                        <div className="relative mr-2 flex items-center justify-center">
+                        <div className="relative flex items-center justify-center">
                           <Button
                             type="button"
                             variant="ghost"
@@ -802,7 +831,7 @@ const ConversationBubble = forwardRef<
                           </Button>
                         </div>
 
-                        <div className="relative mr-2 flex items-center justify-center">
+                        <div className="relative flex items-center justify-center">
                           <Button
                             type="button"
                             variant="ghost"
@@ -838,6 +867,7 @@ const ConversationBubble = forwardRef<
           <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
             <SheetContent
               side="right"
+              title="Sources"
               className="bg-card w-64 border-l border-[#9ca3af]/10 sm:w-80 sm:max-w-none"
             >
               <div className="flex h-full flex-col items-center gap-2 px-6 py-4 text-center">
@@ -1064,7 +1094,47 @@ function ToolCallApprovalBar({
   );
 }
 
-function ToolCalls({
+export function WikiWriteToolCallCard({
+  toolCall,
+}: {
+  toolCall: ToolCallsType;
+}) {
+  const { t } = useTranslation();
+  const path = wikiWritePath(toolCall);
+  const actionKey = wikiWriteActionKey(toolCall.action_name);
+  const isError = toolCall.status === 'error';
+
+  return (
+    <div
+      className={`flex items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-sm ${
+        isError
+          ? 'border-destructive/40 bg-destructive/5'
+          : 'border-primary/30 bg-primary/5 dark:bg-primary/10'
+      }`}
+    >
+      <span aria-hidden="true" className="text-base leading-none">
+        ✏️
+      </span>
+      <span className="text-foreground font-medium">
+        {t(`conversation.wikiWrite.${actionKey}`, {
+          defaultValue: t('conversation.wikiWrite.edited'),
+        })}
+      </span>
+      {path && (
+        <code className="dark:bg-card min-w-0 truncate rounded-md bg-black/10 px-1.5 py-0.5 font-mono text-xs">
+          {path}
+        </code>
+      )}
+      {isError && (
+        <span className="text-destructive text-xs">
+          {t('conversation.wikiWrite.failed')}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function ToolCalls({
   toolCalls,
   onToolAction,
   agentId,
@@ -1082,8 +1152,11 @@ function ToolCalls({
   const awaitingCalls = toolCalls.filter(
     (tc) => tc.status === 'awaiting_approval',
   );
+  const wikiWriteCalls = toolCalls.filter(
+    (tc) => tc.status !== 'awaiting_approval' && isWikiWriteCall(tc),
+  );
   const resolvedCalls = toolCalls.filter(
-    (tc) => tc.status !== 'awaiting_approval',
+    (tc) => tc.status !== 'awaiting_approval' && !isWikiWriteCall(tc),
   );
 
   return (
@@ -1096,6 +1169,18 @@ function ToolCalls({
               key={`approval-${tc.call_id}`}
               toolCall={tc}
               onToolAction={onToolAction}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Wiki write cards — always visible (D24: visibility is the control) */}
+      {wikiWriteCalls.length > 0 && (
+        <div className="fade-in mt-4 mr-5 ml-3 grid w-[90vw] grid-cols-1 gap-2 md:w-[70vw] lg:w-full">
+          {wikiWriteCalls.map((toolCall, index) => (
+            <WikiWriteToolCallCard
+              key={`wiki-write-${toolCall.call_id ?? index}`}
+              toolCall={toolCall}
             />
           ))}
         </div>
@@ -1266,7 +1351,10 @@ function Thought({
           <div className="bg-muted dark:bg-answer-bubble rounded-3xl px-7 py-4.5">
             <ReactMarkdown
               className="fade-in leading-normal wrap-break-word whitespace-pre-wrap"
-              remarkPlugins={[remarkGfm, remarkMath]}
+              remarkPlugins={[
+                remarkGfm,
+                [remarkMath, { singleDollarTextMath: false }],
+              ]}
               rehypePlugins={[rehypeKatex]}
               components={{
                 code(props) {

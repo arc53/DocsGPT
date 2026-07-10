@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 
 from application.agents.tools.base import Tool
 from application.core.settings import settings
+from application.retriever.dispatcher import build_dispatcher
 from application.retriever.retriever_creator import RetrieverCreator
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,7 @@ class InternalSearchTool(Tool):
 
     def _get_retriever(self):
         if self._retriever is None:
-            self._retriever = RetrieverCreator.create_retriever(
-                self.config.get("retriever_name", "classic"),
+            retriever_kwargs = dict(
                 source=self.config.get("source", {}),
                 chat_history=[],
                 prompt="",
@@ -45,6 +45,21 @@ class InternalSearchTool(Tool):
                 llm_name=self.config.get("llm_name", settings.LLM_PROVIDER),
                 api_key=self.config.get("api_key", settings.API_KEY),
                 decoded_token=self.config.get("decoded_token"),
+                request_id=self.config.get("request_id"),
+            )
+
+            def _legacy_classic():
+                return RetrieverCreator.create_retriever(
+                    self.config.get("retriever_name", "classic"),
+                    **retriever_kwargs,
+                )
+
+            # Dispatch per-source so on-demand agentic search honours the same
+            # per-source config as pre-fetch; kill-switch falls back to legacy.
+            self._retriever = build_dispatcher(
+                _legacy_classic,
+                sources=self.config.get("sources") or [],
+                **retriever_kwargs,
             )
         return self._retriever
 
@@ -435,6 +450,10 @@ def add_internal_search_tool(tools_dict: Dict, retriever_config: Dict) -> None:
 
     has_dir = sources_have_directory_structure(source)
     internal_entry = build_internal_tool_entry(has_directory_structure=has_dir)
+    # The executor resolves a tool row by ``id``; the internal tool is synthetic
+    # (no DB row), so stamp its sentinel id or _get_or_load_tool drops it with
+    # ``tool_missing_row_id``.
+    internal_entry["id"] = INTERNAL_TOOL_ID
     internal_entry["config"] = build_internal_tool_config(
         **retriever_config,
         has_directory_structure=has_dir,
@@ -447,6 +466,7 @@ def build_internal_tool_config(
     retriever_name: str = "classic",
     chunks: int = 2,
     doc_token_limit: int = 50000,
+    sources: Optional[List[Dict]] = None,
     model_id: str = "docsgpt-local",
     model_user_id: Optional[str] = None,
     source_owner_id: Optional[str] = None,
@@ -455,6 +475,7 @@ def build_internal_tool_config(
     llm_name: str = None,
     api_key: str = None,
     decoded_token: Optional[Dict] = None,
+    request_id: Optional[str] = None,
     has_directory_structure: bool = False,
 ) -> Dict:
     """Build the config dict for InternalSearchTool."""
@@ -463,6 +484,8 @@ def build_internal_tool_config(
         "retriever_name": retriever_name,
         "chunks": chunks,
         "doc_token_limit": doc_token_limit,
+        # Per-source list threaded through to the Dispatcher in _get_retriever.
+        "sources": sources or [],
         "model_id": model_id,
         "model_user_id": model_user_id,
         # The agent owner — the sources belong to them, so directory-structure
@@ -474,5 +497,6 @@ def build_internal_tool_config(
         "llm_name": llm_name or settings.LLM_PROVIDER,
         "api_key": api_key or settings.API_KEY,
         "decoded_token": decoded_token,
+        "request_id": request_id,
         "has_directory_structure": has_directory_structure,
     }

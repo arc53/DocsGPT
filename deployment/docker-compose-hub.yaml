@@ -39,7 +39,8 @@ services:
   worker:
     user: root
     image: arc53/docsgpt:develop
-    command: celery -A application.app.celery worker -l INFO -B
+    # `parsing` queue carries read_document/parse_document; required for its await to resolve.
+    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing
     env_file:
       - ../.env
     environment:
@@ -57,6 +58,13 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+
+  # NOTE: sandboxed code execution (the `code_executor` / `artifact_generator`
+  # tools) is an OPT-IN feature and is intentionally NOT part of this default
+  # stack. To run it, layer the sandbox overlay on top of this file:
+  #   docker compose -f docker-compose-hub.yaml \
+  #     -f optional/docker-compose.optional.sandbox.yaml up
+  # See deployment/sandbox/README.md.
 
   redis:
     image: redis:6-alpine

@@ -96,6 +96,52 @@ const userService = {
     apiClient.post(endpoints.USER.SYNC_SOURCE, data, token),
   reingestSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.REINGEST_SOURCE, data, token),
+  updateSourceConfig: (
+    sourceId: string,
+    config: any,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.patch(endpoints.USER.SOURCE_CONFIG(sourceId), config, token),
+  createWiki: (
+    data: { name: string; initial_content?: string },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.CREATE_WIKI, data, token),
+  convertToWiki: (sourceId: string, token: string | null): Promise<Response> =>
+    apiClient.post(endpoints.USER.CONVERT_TO_WIKI(sourceId), {}, token),
+  enableGraphRAG: (sourceId: string, token: string | null): Promise<Response> =>
+    apiClient.post(endpoints.USER.ENABLE_GRAPHRAG(sourceId), {}, token),
+  getSourceGraph: (
+    sourceId: string,
+    token: string | null,
+    limit?: number,
+  ): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.SOURCE_GRAPH(sourceId, limit), token),
+  getSourceGraphNode: (
+    sourceId: string,
+    nodeId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    throttledApiClient.get(
+      endpoints.USER.SOURCE_GRAPH_NODE(sourceId, nodeId),
+      token,
+    ),
+  getTaskStatus: (taskId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.TASK_STATUS(taskId), token),
+  getWikiPages: (sourceId: string, token: string | null): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.WIKI_PAGES(sourceId), token),
+  getWikiPage: (
+    sourceId: string,
+    path: string,
+    token: string | null,
+  ): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.WIKI_PAGE(sourceId, path), token),
+  updateWikiPage: (
+    sourceId: string,
+    data: { path: string; content: string; expected_version?: number },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.put(endpoints.USER.WIKI_PAGE(sourceId, data.path), data, token),
   getAvailableTools: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
   getUserTools: (token: string | null): Promise<any> =>
@@ -276,6 +322,43 @@ const userService = {
     apiClient.post(endpoints.USER.MOVE_AGENT_TO_FOLDER, data, token),
   getArtifact: (artifactId: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_ARTIFACT(artifactId), token),
+  getDocumentArtifact: (
+    artifactId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(endpoints.USER.GET_DOCUMENT_ARTIFACT(artifactId), token),
+  listWorkflowRunArtifacts: (
+    workflowRunId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(
+      endpoints.USER.LIST_WORKFLOW_RUN_ARTIFACTS(workflowRunId),
+      token,
+    ),
+  downloadArtifact: (
+    artifactId: string,
+    token: string | null,
+    version?: number,
+    disposition?: 'url',
+  ): Promise<Response> =>
+    apiClient.get(
+      endpoints.USER.DOWNLOAD_ARTIFACT(artifactId, version, disposition),
+      token,
+      // ?disposition=url asks the s3 strategy to return the presigned URL as
+      // JSON (for a top-level navigation) instead of a CORS-blocked 302; the
+      // Accept header is the same opt-in via content negotiation.
+      disposition === 'url' ? { Accept: 'application/json' } : {},
+    ),
+  restoreArtifactVersion: (
+    artifactId: string,
+    version: number,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(
+      endpoints.USER.RESTORE_ARTIFACT(artifactId),
+      { version },
+      token,
+    ),
   getWorkflow: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.WORKFLOW(id), token),
   createWorkflow: (data: any, token: string | null): Promise<any> =>
