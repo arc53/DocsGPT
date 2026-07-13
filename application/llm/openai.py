@@ -363,10 +363,13 @@ class OpenAILLM(BaseLLM):
             request_params["response_format"] = response_format
         response = self.client.chat.completions.create(**request_params)
         logging.info(f"OpenAI response: {response}")
+        if not response.choices:
+            raise ValueError("LLM returned empty or filtered response")
         if tools:
             return response.choices[0]
-        else:
-            return response.choices[0].message.content
+        if response.choices[0].message is None:
+            raise ValueError("LLM returned empty or filtered response")
+        return response.choices[0].message.content
 
     def _raw_gen_stream(
         self,
