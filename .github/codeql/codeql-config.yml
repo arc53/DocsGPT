@@ -1,0 +1,15 @@
+name: DocsGPT Security
+
+queries:
+  - uses: security-and-quality
+
+paths:
+  - application/agents
+  - application/agents/workflows
+  - application/api/user/workflows
+  - application/security
+
+paths-ignore:
+  - tests
+  - docs
+  - frontend
