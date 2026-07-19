@@ -187,6 +187,8 @@ The settings below control speech-to-text behaviour for both voice input and aud
 | --- | --- | --- |
 | `STT_PROVIDER` | Speech-to-text backend provider. | `openai`, `faster_whisper` |
 | `OPENAI_STT_MODEL` | OpenAI transcription model used when `STT_PROVIDER=openai`. | `gpt-4o-mini-transcribe` |
+| `OPENAI_STT_BASE_URL` | Optional OpenAI-compatible transcription endpoint used only by the OpenAI STT provider. Leave unset to reuse `OPENAI_BASE_URL` or OpenAI's default API. | `http://127.0.0.1:8000/v1`, unset |
+| `OPENAI_STT_API_KEY` | Optional API key used only by the OpenAI STT provider. Leave unset to reuse `OPENAI_API_KEY` or `API_KEY`. | `EMPTY`, unset |
 | `STT_LANGUAGE` | Optional language hint passed to the provider. Leave unset for auto-detection when supported. | `en`, `es`, unset |
 | `STT_MAX_FILE_SIZE_MB` | Maximum file size accepted by the synchronous `/api/stt` endpoint. | `50` |
 | `STT_ENABLE_TIMESTAMPS` | Include timestamp segments in the normalized transcript response and stored parser metadata. | `true`, `false` |
@@ -205,6 +207,26 @@ STT_ENABLE_DIARIZATION=false
 ```
 
 If you already use `API_KEY` for OpenAI, DocsGPT can reuse that key for transcription. Set `OPENAI_API_KEY` only when you want a dedicated key.
+
+### Example: Local FunASR or SenseVoice Server
+
+FunASR can expose an OpenAI-compatible `/v1/audio/transcriptions` endpoint.
+Use the STT-specific endpoint settings when your chat model and transcription
+server are different services.
+
+```bash
+funasr-server --model iic/SenseVoiceSmall --host 127.0.0.1 --port 8000
+```
+
+```env
+STT_PROVIDER=openai
+OPENAI_STT_BASE_URL=http://127.0.0.1:8000/v1
+OPENAI_STT_API_KEY=EMPTY
+OPENAI_STT_MODEL=iic/SenseVoiceSmall
+STT_LANGUAGE=
+STT_ENABLE_TIMESTAMPS=false
+STT_ENABLE_DIARIZATION=false
+```
 
 ### Example: Local `faster_whisper`
 

@@ -12,6 +12,8 @@ class TestOpenAISTTInit:
     @patch("application.stt.openai_stt.OpenAI")
     @patch("application.stt.openai_stt.settings")
     def test_init_defaults_from_settings(self, mock_settings, mock_openai_cls):
+        mock_settings.OPENAI_STT_API_KEY = None
+        mock_settings.OPENAI_STT_BASE_URL = None
         mock_settings.OPENAI_API_KEY = "sk-from-settings"
         mock_settings.API_KEY = "sk-fallback"
         mock_settings.OPENAI_BASE_URL = "https://custom.api.com/v1"
@@ -32,6 +34,8 @@ class TestOpenAISTTInit:
     @patch("application.stt.openai_stt.OpenAI")
     @patch("application.stt.openai_stt.settings")
     def test_init_explicit_params_override_settings(self, mock_settings, mock_openai_cls):
+        mock_settings.OPENAI_STT_API_KEY = "sk-stt-settings"
+        mock_settings.OPENAI_STT_BASE_URL = "https://stt-settings.example/v1"
         mock_settings.OPENAI_API_KEY = "sk-settings"
         mock_settings.API_KEY = None
         mock_settings.OPENAI_BASE_URL = None
@@ -51,7 +55,31 @@ class TestOpenAISTTInit:
 
     @patch("application.stt.openai_stt.OpenAI")
     @patch("application.stt.openai_stt.settings")
+    def test_init_uses_stt_specific_settings(self, mock_settings, mock_openai_cls):
+        mock_settings.OPENAI_STT_API_KEY = "funasr-token"
+        mock_settings.OPENAI_STT_BASE_URL = "http://127.0.0.1:8000/v1"
+        mock_settings.OPENAI_API_KEY = "sk-chat-key"
+        mock_settings.API_KEY = "sk-fallback"
+        mock_settings.OPENAI_BASE_URL = "https://chat.example/v1"
+        mock_settings.OPENAI_STT_MODEL = "iic/SenseVoiceSmall"
+
+        from application.stt.openai_stt import OpenAISTT
+
+        stt = OpenAISTT()
+
+        assert stt.api_key == "funasr-token"
+        assert stt.base_url == "http://127.0.0.1:8000/v1"
+        assert stt.model == "iic/SenseVoiceSmall"
+        mock_openai_cls.assert_called_once_with(
+            api_key="funasr-token",
+            base_url="http://127.0.0.1:8000/v1",
+        )
+
+    @patch("application.stt.openai_stt.OpenAI")
+    @patch("application.stt.openai_stt.settings")
     def test_init_falls_back_to_api_key(self, mock_settings, mock_openai_cls):
+        mock_settings.OPENAI_STT_API_KEY = None
+        mock_settings.OPENAI_STT_BASE_URL = None
         mock_settings.OPENAI_API_KEY = None
         mock_settings.API_KEY = "sk-fallback-key"
         mock_settings.OPENAI_BASE_URL = None
@@ -66,6 +94,8 @@ class TestOpenAISTTInit:
     @patch("application.stt.openai_stt.OpenAI")
     @patch("application.stt.openai_stt.settings")
     def test_init_default_base_url(self, mock_settings, mock_openai_cls):
+        mock_settings.OPENAI_STT_API_KEY = None
+        mock_settings.OPENAI_STT_BASE_URL = None
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
         mock_settings.OPENAI_BASE_URL = None
@@ -84,6 +114,8 @@ class TestOpenAISTTTranscribe:
     @patch("application.stt.openai_stt.OpenAI")
     @patch("application.stt.openai_stt.settings")
     def test_transcribe_basic(self, mock_settings, mock_openai_cls):
+        mock_settings.OPENAI_STT_API_KEY = None
+        mock_settings.OPENAI_STT_BASE_URL = None
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
         mock_settings.OPENAI_BASE_URL = None
@@ -118,6 +150,8 @@ class TestOpenAISTTTranscribe:
     @patch("application.stt.openai_stt.OpenAI")
     @patch("application.stt.openai_stt.settings")
     def test_transcribe_with_language(self, mock_settings, mock_openai_cls):
+        mock_settings.OPENAI_STT_API_KEY = None
+        mock_settings.OPENAI_STT_BASE_URL = None
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
         mock_settings.OPENAI_BASE_URL = None
@@ -150,6 +184,8 @@ class TestOpenAISTTTranscribe:
     @patch("application.stt.openai_stt.OpenAI")
     @patch("application.stt.openai_stt.settings")
     def test_transcribe_with_timestamps(self, mock_settings, mock_openai_cls):
+        mock_settings.OPENAI_STT_API_KEY = None
+        mock_settings.OPENAI_STT_BASE_URL = None
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
         mock_settings.OPENAI_BASE_URL = None
@@ -189,6 +225,8 @@ class TestOpenAISTTTranscribe:
     @patch("application.stt.openai_stt.OpenAI")
     @patch("application.stt.openai_stt.settings")
     def test_transcribe_no_segments_key(self, mock_settings, mock_openai_cls):
+        mock_settings.OPENAI_STT_API_KEY = None
+        mock_settings.OPENAI_STT_BASE_URL = None
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
         mock_settings.OPENAI_BASE_URL = None
@@ -217,6 +255,8 @@ class TestOpenAISTTTranscribe:
     @patch("application.stt.openai_stt.OpenAI")
     @patch("application.stt.openai_stt.settings")
     def test_transcribe_language_fallback_to_param(self, mock_settings, mock_openai_cls):
+        mock_settings.OPENAI_STT_API_KEY = None
+        mock_settings.OPENAI_STT_BASE_URL = None
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
         mock_settings.OPENAI_BASE_URL = None

@@ -233,6 +233,8 @@ class Settings(BaseSettings):
     TTS_PROVIDER: str = "google_tts"  # google_tts or elevenlabs
     ELEVENLABS_API_KEY: Optional[str] = None
     STT_PROVIDER: str = "openai"  # openai or faster_whisper
+    OPENAI_STT_API_KEY: Optional[str] = None
+    OPENAI_STT_BASE_URL: Optional[str] = None
     OPENAI_STT_MODEL: str = "gpt-4o-mini-transcribe"
     STT_LANGUAGE: Optional[str] = None
     STT_MAX_FILE_SIZE_MB: int = 50

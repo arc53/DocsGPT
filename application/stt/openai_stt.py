@@ -14,8 +14,18 @@ class OpenAISTT(BaseSTT):
         base_url: Optional[str] = None,
         model: Optional[str] = None,
     ):
-        self.api_key = api_key or settings.OPENAI_API_KEY or settings.API_KEY
-        self.base_url = base_url or settings.OPENAI_BASE_URL or "https://api.openai.com/v1"
+        self.api_key = (
+            api_key
+            or settings.OPENAI_STT_API_KEY
+            or settings.OPENAI_API_KEY
+            or settings.API_KEY
+        )
+        self.base_url = (
+            base_url
+            or settings.OPENAI_STT_BASE_URL
+            or settings.OPENAI_BASE_URL
+            or "https://api.openai.com/v1"
+        )
         self.model = model or settings.OPENAI_STT_MODEL
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
