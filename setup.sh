@@ -438,12 +438,23 @@ prompt_advanced_settings() {
     done
 }
 
+
+ensure_postgres_password() {
+    if ! grep -q "^POSTGRES_PASSWORD=" "$ENV_FILE" 2>/dev/null; then
+        local postgres_password
+        postgres_password=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        echo "POSTGRES_PASSWORD=$postgres_password" >> "$ENV_FILE"
+    fi
+}
+
 # 1) Use DocsGPT Public API Endpoint (simple and free)
 use_docs_public_api_endpoint() {
     echo -e "\n${NC}Setting up DocsGPT Public API Endpoint...${NC}"
     echo "LLM_PROVIDER=docsgpt" > "$ENV_FILE"
     echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for DocsGPT Public API.${NC}"
+
+    ensure_postgres_password
 
     prompt_advanced_settings
 
@@ -517,6 +528,8 @@ serve_local_ollama() {
     echo "OPENAI_BASE_URL=http://ollama:11434/v1" >> "$ENV_FILE"
     echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for Ollama ($(echo "$docker_compose_file_suffix" | tr '[:lower:]' '[:upper:]')${NC}${GREEN}).${NC}"
+
+    ensure_postgres_password
 
     prompt_advanced_settings
 
@@ -632,6 +645,8 @@ connect_local_inference_engine() {
     echo -e "${GREEN}.env file configured for ${BOLD}${engine_name}${NC}${GREEN} with OpenAI API format.${NC}"
     echo -e "${YELLOW}Note: MODEL_NAME is set to '${BOLD}$model_name${NC}${YELLOW}'. You can change it later in the .env file.${NC}"
 
+    ensure_postgres_password
+
     prompt_advanced_settings
 
     check_and_start_docker
@@ -717,6 +732,8 @@ connect_cloud_api_provider() {
     echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
 
     echo -e "${GREEN}.env file configured for ${BOLD}${provider_name}${NC}${GREEN}.${NC}"
+
+    ensure_postgres_password
 
     prompt_advanced_settings
 
