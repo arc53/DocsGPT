@@ -297,7 +297,8 @@
             "recursive": "递归",
             "markdown": "Markdown",
             "parent_child": "父级 / 子级",
-            "semantic": "语义"
+            "semantic": "语义",
+            "sentence_window": "Sentence window"
           },
           "maxTokens": "每块最大令牌数",
           "minTokens": "每块最小令牌数",

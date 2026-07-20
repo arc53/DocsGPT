@@ -297,7 +297,8 @@
             "recursive": "再帰",
             "markdown": "Markdown",
             "parent_child": "親 / 子",
-            "semantic": "セマンティック"
+            "semantic": "セマンティック",
+            "sentence_window": "Sentence window"
           },
           "maxTokens": "チャンクあたりの最大トークン数",
           "minTokens": "チャンクあたりの最小トークン数",

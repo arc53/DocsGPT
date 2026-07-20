@@ -297,7 +297,8 @@
             "recursive": "Рекурсивная",
             "markdown": "Markdown",
             "parent_child": "Родитель / потомок",
-            "semantic": "Семантическая"
+            "semantic": "Семантическая",
+            "sentence_window": "Sentence window"
           },
           "maxTokens": "Макс. токенов на фрагмент",
           "minTokens": "Мин. токенов на фрагмент",

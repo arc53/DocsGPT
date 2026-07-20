@@ -12,7 +12,8 @@ export type ChunkingStrategy =
   | 'recursive'
   | 'markdown'
   | 'parent_child'
-  | 'semantic';
+  | 'semantic'
+  | 'sentence_window';
 
 export type RetrievalExposure = 'prefetch' | 'agentic_tool';
 

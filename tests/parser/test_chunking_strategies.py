@@ -1,4 +1,4 @@
-"""Tests for the recursive / markdown / parent_child / semantic strategies."""
+"""Tests for the recursive / markdown / parent_child / semantic / sentence_window strategies."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from application.parser.chunking_strategies import (
     ParentChildChunker,
     RecursiveChunker,
     SemanticChunker,
+    SentenceWindowChunker,
 )
 from application.parser.schema.base import Document
 from application.utils import get_encoding
@@ -32,12 +33,13 @@ class TestRegistration:
             ("markdown", MarkdownChunker),
             ("parent_child", ParentChildChunker),
             ("semantic", SemanticChunker),
+            ("sentence_window", SentenceWindowChunker),
         ):
             assert ChunkerCreator.chunkers.get(key) is cls
 
     def test_worker_kwargs_accepted(self):
         # The worker builds every strategy with the classic kwarg set.
-        for strat in ("recursive", "markdown", "parent_child", "semantic"):
+        for strat in ("recursive", "markdown", "parent_child", "semantic", "sentence_window"):
             chunker = ChunkerCreator.create_chunker(
                 strat,
                 chunking_strategy=strat,
@@ -229,6 +231,103 @@ class TestSemantic:
             assert c.extra_info["title"] == "T"
             assert c.extra_info["token_count"] == _tok(c.text)
             assert c.doc_id.startswith("d-")
+
+
+@pytest.mark.unit
+class TestSentenceWindow:
+    def test_single_sentence_per_chunk(self):
+        text = "Alpha one. Beta two. Gamma three. Delta four. Epsilon five."
+        chunker = SentenceWindowChunker(max_tokens=2000, min_tokens=0, window_size=1)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        # 5 sentences → 5 chunks, each containing a single sentence.
+        assert len(out) == 5
+        assert out[0].text == "Alpha one."
+        assert out[1].text == "Beta two."
+        assert out[4].text == "Epsilon five."
+        # Each chunk's window_text includes surrounding context.
+        for c in out:
+            assert "window_text" in c.extra_info
+            assert c.extra_info["token_count"] == _tok(c.text)
+
+    def test_window_size_boundaries(self):
+        """First and last sentences have truncated windows; no IndexError."""
+        text = "First. Second. Third. Fourth. Fifth."
+        chunker = SentenceWindowChunker(max_tokens=2000, min_tokens=0, window_size=2)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        # Window for first sentence: sentences [0, 1, 2]
+        assert "First." in out[0].extra_info["window_text"]
+        assert "Second." in out[0].extra_info["window_text"]
+        assert "Third." in out[0].extra_info["window_text"]
+        # Window for last sentence: sentences [2, 3, 4]
+        assert "Third." in out[4].extra_info["window_text"]
+        assert "Fourth." in out[4].extra_info["window_text"]
+        assert "Fifth." in out[4].extra_info["window_text"]
+        # Middle sentence gets the full window.
+        assert "First." in out[2].extra_info["window_text"]
+        assert "Fifth." in out[2].extra_info["window_text"]
+
+    def test_window_text_in_metadata(self):
+        """window_text survives to_langchain_format()."""
+        text = "One. Two. Three."
+        chunker = SentenceWindowChunker(max_tokens=2000, min_tokens=0, window_size=1)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        lc = out[0].to_langchain_format()
+        assert "window_text" in lc.metadata
+        assert lc.metadata["window_text"]
+        assert lc.page_content == out[0].text
+
+    def test_too_few_sentences_fallback(self):
+        """A single-sentence doc falls back to RecursiveChunker."""
+        chunker = SentenceWindowChunker(max_tokens=2000, min_tokens=0)
+        out = chunker.chunk([Document(text="only one sentence", doc_id="d")])
+        assert len(out) == 1
+        assert out[0].text.strip() == "only one sentence"
+        # No window_text on fallback chunks.
+        assert "window_text" not in out[0].extra_info
+
+    def test_oversized_sentence_token_capped(self):
+        """A sentence exceeding max_tokens is hard-split."""
+        long_sent = "word " * 300 + "."
+        text = f"{long_sent} Short."
+        chunker = SentenceWindowChunker(max_tokens=40, min_tokens=0, window_size=1)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        # More than 2 chunks: the oversized sentence is split.
+        assert len(out) > 2
+        for c in out:
+            assert _tok(c.text) <= 40
+            assert "window_text" in c.extra_info
+
+    def test_source_extra_info_preserved(self):
+        """Inherited extra_info (source, title) is preserved."""
+        text = "Alpha one. Beta two. Gamma three."
+        doc = Document(
+            text=text,
+            doc_id="d",
+            extra_info={"source": "file.md", "title": "T"},
+        )
+        chunker = SentenceWindowChunker(max_tokens=2000, min_tokens=0)
+        out = chunker.chunk([doc])
+        assert len(out) == 3
+        for c in out:
+            assert c.extra_info["source"] == "file.md"
+            assert c.extra_info["title"] == "T"
+            assert c.extra_info["token_count"] == _tok(c.text)
+            assert c.doc_id.startswith("d-")
+
+    def test_default_window_size(self):
+        """Default window_size=2 produces a 5-sentence window for middle."""
+        text = "A. B. C. D. E. F. G."
+        chunker = SentenceWindowChunker(max_tokens=2000, min_tokens=0)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        # For sentence "D." (index 3), window should span [1..5] = B C D E F
+        d_chunk = out[3]
+        assert d_chunk.text == "D."
+        window = d_chunk.extra_info["window_text"]
+        assert "B." in window
+        assert "C." in window
+        assert "D." in window
+        assert "E." in window
+        assert "F." in window
 
 
 @pytest.mark.unit
