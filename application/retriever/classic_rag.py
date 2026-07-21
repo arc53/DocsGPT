@@ -7,6 +7,7 @@ from application.retriever.labels import labels_from_metadata
 from application.utils import num_tokens_from_string
 from application.vectorstore.vector_creator import VectorCreator
 
+logger = logging.getLogger(__name__)
 
 class ClassicRAG(BaseRetriever):
     # The group's real top-k, set by the Dispatcher when it inflates ``chunks``
@@ -144,7 +145,7 @@ class ClassicRAG(BaseRetriever):
                 model=getattr(self.llm, "model_id", None) or self.model_id,
                 messages=messages,
             )
-            print(f"Rephrased query: {rephrased_query}")
+            logger.info(f"Rephrased query: {rephrased_query}")
             return rephrased_query if rephrased_query else self.original_question
         except Exception as e:
             logging.error(f"Error rephrasing query: {e}", exc_info=True)
