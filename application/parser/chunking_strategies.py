@@ -315,10 +315,112 @@ class SemanticChunker(_BaseStrategyChunker):
         return processed
 
 
+class SentenceWindowChunker(_BaseStrategyChunker):
+    """Emit one chunk per sentence with a surrounding context window.
+
+    Each sentence becomes a ``Document`` whose ``text`` is the sentence
+    itself (the embedding target for precise vector matching).  The
+    surrounding window (``window_size`` sentences on each side) is stored
+    in ``extra_info["window_text"]`` so the LLM receives broader context
+    at generation time without diluting the embedding.
+
+    Falls back to ``RecursiveChunker`` when the text contains fewer than
+    two sentences (not enough for a meaningful window).
+    """
+
+    _SENTENCE = re.compile(r"(?<=[.!?])\s+")
+
+    def __init__(
+        self,
+        chunking_strategy: str = "classic_chunk",
+        max_tokens: int = 2000,
+        min_tokens: int = 150,
+        duplicate_headers: bool = False,
+        window_size: int = 2,
+    ):
+        super().__init__(
+            chunking_strategy=chunking_strategy,
+            max_tokens=max_tokens,
+            min_tokens=min_tokens,
+            duplicate_headers=duplicate_headers,
+        )
+        self.window_size = max(0, int(window_size))
+
+    def _split_sentences(self, text: str) -> List[str]:
+        """Split ``text`` into sentences, dropping empty fragments."""
+        return [s for s in (p.strip() for p in self._SENTENCE.split(text)) if s]
+
+    def _build_window(self, sentences: List[str], index: int) -> str:
+        """Return the text of a window centred on ``sentences[index]``."""
+        start = max(0, index - self.window_size)
+        end = min(len(sentences), index + self.window_size + 1)
+        return " ".join(sentences[start:end])
+
+    def _fallback(self, documents: List[Document]) -> List[Document]:
+        recursive = RecursiveChunker(
+            chunking_strategy=self.chunking_strategy,
+            max_tokens=self.max_tokens,
+            min_tokens=self.min_tokens,
+            duplicate_headers=self.duplicate_headers,
+        )
+        return recursive.chunk(documents)
+
+    def chunk(self, documents: List[Document]) -> List[Document]:
+        processed: List[Document] = []
+        for doc in documents:
+            sentences = self._split_sentences(doc.text)
+            if len(sentences) < 2:
+                processed.extend(self._fallback([doc]))
+                continue
+            part_index = 0
+            for idx, sentence in enumerate(sentences):
+                window_text = self._build_window(sentences, idx)
+                # Hard-split an oversized sentence to honour max_tokens.
+                if self._token_count(sentence) > self.max_tokens:
+                    for piece in self._split_by_tokens(sentence):
+                        if not piece.strip():
+                            continue
+                        child = Document(
+                            text=piece,
+                            doc_id=(
+                                f"{doc.doc_id}-{part_index}"
+                                if doc.doc_id
+                                else None
+                            ),
+                            embedding=doc.embedding,
+                            extra_info={
+                                **(doc.extra_info or {}),
+                                "token_count": self._token_count(piece),
+                                "window_text": window_text,
+                            },
+                        )
+                        processed.append(child)
+                        part_index += 1
+                else:
+                    child = Document(
+                        text=sentence,
+                        doc_id=(
+                            f"{doc.doc_id}-{part_index}"
+                            if doc.doc_id
+                            else None
+                        ),
+                        embedding=doc.embedding,
+                        extra_info={
+                            **(doc.extra_info or {}),
+                            "token_count": self._token_count(sentence),
+                            "window_text": window_text,
+                        },
+                    )
+                    processed.append(child)
+                    part_index += 1
+        return processed
+
+
 ChunkerCreator.register("recursive", RecursiveChunker)
 ChunkerCreator.register("markdown", MarkdownChunker)
 ChunkerCreator.register("parent_child", ParentChildChunker)
 ChunkerCreator.register("semantic", SemanticChunker)
+ChunkerCreator.register("sentence_window", SentenceWindowChunker)
 
 # Reuse the classic Chunker reference so this module can be the single import
 # that pulls every strategy into the registry.
@@ -327,5 +429,6 @@ __all__ = [
     "MarkdownChunker",
     "ParentChildChunker",
     "SemanticChunker",
+    "SentenceWindowChunker",
     "Chunker",
 ]

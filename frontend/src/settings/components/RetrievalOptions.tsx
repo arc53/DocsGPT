@@ -99,6 +99,7 @@ const CHUNKING_STRATEGIES: ChunkingStrategy[] = [
   'markdown',
   'parent_child',
   'semantic',
+  'sentence_window',
 ];
 
 const CLASSIC_RETRIEVER = 'classic';

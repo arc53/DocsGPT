@@ -297,7 +297,8 @@
             "recursive": "遞迴",
             "markdown": "Markdown",
             "parent_child": "父／子",
-            "semantic": "語意"
+            "semantic": "語意",
+            "sentence_window": "Sentence window"
           },
           "maxTokens": "每區塊最大 Token 數",
           "minTokens": "每區塊最小 Token 數",

@@ -297,7 +297,8 @@
             "recursive": "Recursiva",
             "markdown": "Markdown",
             "parent_child": "Padre / hijo",
-            "semantic": "Semántica"
+            "semantic": "Semántica",
+            "sentence_window": "Sentence window"
           },
           "maxTokens": "Máximo de tokens por fragmento",
           "minTokens": "Mínimo de tokens por fragmento",
