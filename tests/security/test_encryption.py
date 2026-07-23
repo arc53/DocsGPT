@@ -4,6 +4,7 @@ import pytest
 from application.security import encryption
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers import algorithms, Cipher, modes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 
@@ -41,16 +42,19 @@ def test_derive_key_uses_secret_and_user(monkeypatch):
 def test_encrypt_and_decrypt_round_trip(monkeypatch):
     monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
     salt = bytes(range(16))
-    iv = bytes(range(16, 32))
-    monkeypatch.setattr(encryption.os, "urandom", _fake_os_urandom_factory([salt, iv]))
+    nonce = bytes(range(12))
+    monkeypatch.setattr(
+        encryption.os, "urandom", _fake_os_urandom_factory([salt, nonce])
+    )
 
     credentials = {"token": "abc123", "refresh": "xyz789"}
 
     encrypted = encryption.encrypt_credentials(credentials, "user-123")
 
     decoded = base64.b64decode(encrypted)
-    assert decoded[:16] == salt
-    assert decoded[16:32] == iv
+    assert decoded[0:1] == encryption._VERSION_GCM
+    assert decoded[1:17] == salt
+    assert decoded[17:29] == nonce
 
     decrypted = encryption.decrypt_credentials(encrypted, "user-123")
 
@@ -87,6 +91,99 @@ def test_decrypt_credentials_returns_empty_for_invalid_input(monkeypatch):
 
     invalid_payload = base64.b64encode(b"short").decode()
     assert encryption.decrypt_credentials(invalid_payload, "user-123") == {}
+
+
+@pytest.mark.unit
+def test_decrypt_legacy_cbc_format(monkeypatch):
+    """Old AES-CBC encrypted data should still decrypt correctly."""
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+
+    salt = bytes(range(16))
+    iv = bytes(range(16, 32))
+    key = encryption._derive_key("user-123", salt)
+
+    import json
+
+    plaintext = json.dumps({"token": "legacy-abc"}).encode()
+    padded = encryption._pad_data(plaintext)
+
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    ciphertext = encryptor.update(padded) + encryptor.finalize()
+
+    legacy_blob = base64.b64encode(salt + iv + ciphertext).decode()
+
+    result = encryption.decrypt_credentials(legacy_blob, "user-123")
+    assert result == {"token": "legacy-abc"}
+
+
+@pytest.mark.unit
+def test_tampered_gcm_ciphertext_returns_empty(monkeypatch):
+    """Tampered GCM ciphertext must fail authentication and return {}."""
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(encryption.os, "urandom", lambda length: b"\x00" * length)
+
+    credentials = {"secret": "value"}
+    encrypted = encryption.encrypt_credentials(credentials, "user-123")
+
+    raw = bytearray(base64.b64decode(encrypted))
+    raw[-1] ^= 0xFF  # flip last byte of ciphertext+tag
+    tampered = base64.b64encode(bytes(raw)).decode()
+
+    assert encryption.decrypt_credentials(tampered, "user-123") == {}
+
+
+@pytest.mark.unit
+def test_gcm_cross_user_replay_returns_empty(monkeypatch):
+    """GCM ciphertext encrypted for one user must not decrypt under another user."""
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(encryption.os, "urandom", lambda length: b"\x00" * length)
+
+    credentials = {"secret": "value"}
+    encrypted = encryption.encrypt_credentials(credentials, "user-A")
+
+    assert encryption.decrypt_credentials(encrypted, "user-B") == {}
+
+
+@pytest.mark.unit
+def test_legacy_cbc_salt_starting_with_version_byte(monkeypatch):
+    """Legacy CBC blob whose salt starts with 0x01 must still decrypt via fallback."""
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+
+    # Salt intentionally starts with 0x01 — same as _VERSION_GCM
+    salt = b"\x01" + bytes(range(1, 16))
+    iv = bytes(range(16, 32))
+    key = encryption._derive_key("user-123", salt)
+
+    import json
+
+    plaintext = json.dumps({"token": "collision-test"}).encode()
+    padded = encryption._pad_data(plaintext)
+
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    ciphertext = encryptor.update(padded) + encryptor.finalize()
+
+    legacy_blob = base64.b64encode(salt + iv + ciphertext).decode()
+
+    result = encryption.decrypt_credentials(legacy_blob, "user-123")
+    assert result == {"token": "collision-test"}
+
+
+@pytest.mark.unit
+def test_corrupt_legacy_cbc_payload_returns_empty(monkeypatch):
+    """Structurally valid but corrupt CBC payload should return {} via unpad error."""
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+
+    salt = bytes(range(16))
+    iv = bytes(range(16, 32))
+
+    # 16 bytes of garbage — valid block size but invalid padding and JSON
+    corrupt_ciphertext = bytes(range(32, 48))
+
+    corrupt_blob = base64.b64encode(salt + iv + corrupt_ciphertext).decode()
+
+    assert encryption.decrypt_credentials(corrupt_blob, "user-123") == {}
 
 
 @pytest.mark.unit
