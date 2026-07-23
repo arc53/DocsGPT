@@ -144,7 +144,7 @@ class ClassicRAG(BaseRetriever):
                 model=getattr(self.llm, "model_id", None) or self.model_id,
                 messages=messages,
             )
-            print(f"Rephrased query: {rephrased_query}")
+            logging.info(f"Rephrased query: {rephrased_query}")
             return rephrased_query if rephrased_query else self.original_question
         except Exception as e:
             logging.error(f"Error rephrasing query: {e}", exc_info=True)
