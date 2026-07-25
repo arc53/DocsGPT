@@ -33,6 +33,32 @@ class TestInsert:
         assert mapping["user_id"] == "u1"
         assert mapping["stacks"] == [{"component": "retriever", "data": {"docs": 3}}]
 
+    def test_inserts_with_agent_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        agent_uuid = "11111111-1111-1111-1111-111111111111"
+        repo.insert(
+            activity_id="act-agent",
+            api_key="k-agent",
+            agent_id=agent_uuid,
+        )
+        row = pg_conn.execute(
+            text("SELECT agent_id FROM stack_logs WHERE activity_id = 'act-agent'")
+        ).fetchone()
+        assert str(dict(row._mapping)["agent_id"]) == agent_uuid
+
+    def test_non_uuid_agent_id_coerced_to_null(self, pg_conn):
+        # A stray/legacy (non-UUID) id must not break the activity-log write.
+        repo = _repo(pg_conn)
+        repo.insert(
+            activity_id="act-badid",
+            api_key="k-badid",
+            agent_id="507f1f77bcf86cd799439011",  # 24-hex Mongo ObjectId
+        )
+        row = pg_conn.execute(
+            text("SELECT agent_id FROM stack_logs WHERE activity_id = 'act-badid'")
+        ).fetchone()
+        assert dict(row._mapping)["agent_id"] is None
+
     def test_inserts_with_empty_stacks(self, pg_conn):
         repo = _repo(pg_conn)
         repo.insert(activity_id="act-2", level="error")
@@ -171,3 +197,33 @@ class TestInsert:
             text("SELECT stacks FROM stack_logs WHERE activity_id = 'act-small'")
         ).fetchone()
         assert dict(row._mapping)["stacks"][0]["data"]["result"] == "ok"
+
+
+class TestReassignApiKey:
+    def test_rewrites_matching_rows_regardless_of_user(self, pg_conn):
+        # stack_logs has no agent_id; on key rotation, rows must follow the
+        # key. Rows are stamped with the caller's user_id (not the owner),
+        # so the migration must NOT be scoped by user_id.
+        repo = _repo(pg_conn)
+        repo.insert(activity_id="ra-1", api_key="old-k", user_id="owner")
+        repo.insert(activity_id="ra-2", api_key="old-k", user_id="a-caller")
+        repo.insert(activity_id="ra-3", api_key="other-k", user_id="owner")
+
+        moved = repo.reassign_api_key(old_key="old-k", new_key="new-k")
+        assert moved == 2
+
+        assert pg_conn.execute(
+            text("SELECT COUNT(*) FROM stack_logs WHERE api_key = 'old-k'")
+        ).scalar() == 0
+        assert pg_conn.execute(
+            text("SELECT COUNT(*) FROM stack_logs WHERE api_key = 'new-k'")
+        ).scalar() == 2
+        # Unrelated key untouched.
+        assert pg_conn.execute(
+            text("SELECT COUNT(*) FROM stack_logs WHERE api_key = 'other-k'")
+        ).scalar() == 1
+
+    def test_noop_on_blank_keys(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.reassign_api_key(old_key="", new_key="x") == 0
+        assert repo.reassign_api_key(old_key="x", new_key="") == 0

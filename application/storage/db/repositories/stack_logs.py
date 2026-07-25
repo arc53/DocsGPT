@@ -52,16 +52,26 @@ class StackLogsRepository:
         level: Optional[str] = None,
         user_id: Optional[str] = None,
         api_key: Optional[str] = None,
+        agent_id: Optional[str] = None,
         query: Optional[str] = None,
         stacks: Optional[list] = None,
         timestamp: Optional[datetime] = None,
     ) -> None:
+        # ``agent_id`` is a UUID column. Coerce anything not shaped like a UUID
+        # (36 chars with hyphens) to NULL so a stray/legacy id never breaks the
+        # activity-log write. Mirrors TokenUsageRepository.insert.
+        agent_id_uuid: Optional[str] = None
+        if agent_id:
+            s = str(agent_id)
+            if len(s) == 36 and "-" in s:
+                agent_id_uuid = s
         self._conn.execute(
             text(
                 """
-                INSERT INTO stack_logs (activity_id, endpoint, level, user_id, api_key, query, stacks, timestamp)
+                INSERT INTO stack_logs (activity_id, endpoint, level, user_id, api_key, agent_id, query, stacks, timestamp)
                 VALUES (
-                    :activity_id, :endpoint, :level, :user_id, :api_key, :query,
+                    :activity_id, :endpoint, :level, :user_id, :api_key,
+                    CAST(:agent_id AS uuid), :query,
                     CAST(:stacks AS jsonb),
                     COALESCE(:timestamp, now())
                 )
@@ -73,6 +83,7 @@ class StackLogsRepository:
                 "level": strip_null_bytes(level),
                 "user_id": strip_null_bytes(user_id),
                 "api_key": strip_null_bytes(api_key),
+                "agent_id": agent_id_uuid,
                 "query": strip_null_bytes(query),
                 "stacks": json.dumps(
                     redact_secrets(
@@ -83,3 +94,27 @@ class StackLogsRepository:
                 "timestamp": timestamp,
             },
         )
+
+    def reassign_api_key(self, *, old_key: str, new_key: str) -> int:
+        """Re-point historical rows from ``old_key`` to ``new_key``.
+
+        ``stack_logs`` has no ``agent_id`` column, so webhook / system-error
+        logs are matched by the api-key string alone (see the analytics
+        ``webhook_where`` / ``system_where`` clauses). When an agent's key is
+        rotated this rewrite keeps that history attached to the agent instead
+        of orphaning it.
+
+        Matched by ``api_key`` only — deliberately NOT scoped by ``user_id``:
+        ``agents.key`` is globally unique, so a key maps to exactly one agent,
+        and rows are stamped with the *caller's* user_id (which is not the
+        owner for webhook / external-api-key traffic). Scoping by owner would
+        skip precisely the rows this migration exists to preserve.
+        Returns the number of rows updated.
+        """
+        if not old_key or not new_key:
+            return 0
+        result = self._conn.execute(
+            text("UPDATE stack_logs SET api_key = :new_key WHERE api_key = :old_key"),
+            {"old_key": old_key, "new_key": new_key},
+        )
+        return result.rowcount

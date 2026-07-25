@@ -413,6 +413,55 @@ class TestGetUserLogs:
         assert response.status_code == 200
         assert len(response.json["logs"]) == 1
 
+    def test_webhook_logs_match_by_agent_id_after_key_rotation(
+        self, app, pg_conn,
+    ):
+        """A webhook activity-log row stamped with the agent's id but an
+        *old* api_key (the state after a key rotation) must still surface on
+        the agent's timeline via the stable agent_id join."""
+        from application.api.user.analytics.routes import GetUserLogs
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.stack_logs import (
+            StackLogsRepository,
+        )
+
+        user = "u-logs-rotate"
+        agent = AgentsRepository(pg_conn).create(
+            user, "a", "published", key="current-key",
+        )
+        stack_repo = StackLogsRepository(pg_conn)
+        # Written under the previous key, but carries the stable agent_id.
+        stack_repo.insert(
+            activity_id="wh-rotated",
+            endpoint="webhook",
+            level="info",
+            user_id="external-caller",
+            api_key="rotated-away-key",
+            agent_id=str(agent["id"]),
+        )
+        # A different agent's webhook log must NOT leak in.
+        stack_repo.insert(
+            activity_id="wh-other",
+            endpoint="webhook",
+            level="info",
+            user_id="external-caller",
+            api_key="unrelated-key",
+            agent_id="99999999-9999-9999-9999-999999999999",
+        )
+
+        with _patch_analytics_db(pg_conn), app.test_request_context(
+            "/api/get_user_logs",
+            method="POST",
+            json={"api_key_id": str(agent["id"]), "event_type": "webhook"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetUserLogs().post()
+        assert response.status_code == 200
+        logs = response.json["logs"]
+        assert len(logs) == 1
+        assert logs[0]["id"]  # the rotated-away row surfaced via agent_id
+
     def test_db_error_returns_400(self, app):
         from application.api.user.analytics.routes import GetUserLogs
 

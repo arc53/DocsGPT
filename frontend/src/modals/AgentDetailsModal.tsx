@@ -11,6 +11,7 @@ import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import ConfirmationModal from './ConfirmationModal';
 
 const baseURL = import.meta.env.VITE_BASE_URL;
 
@@ -19,6 +20,7 @@ type AgentDetailsModalProps = {
   mode: 'new' | 'edit' | 'draft';
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
+  onKeyRegenerated?: (key: string) => void;
 };
 
 export default function AgentDetailsModal({
@@ -26,6 +28,7 @@ export default function AgentDetailsModal({
   mode,
   modalState,
   setModalState,
+  onKeyRegenerated,
 }: AgentDetailsModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -35,6 +38,8 @@ export default function AgentDetailsModal({
   );
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
+  const [resetKeyConfirmState, setResetKeyConfirmState] =
+    useState<ActiveState>('INACTIVE');
   const [loadingStates, setLoadingStates] = useState({
     publicLink: false,
     apiKey: false,
@@ -75,12 +80,26 @@ export default function AgentDetailsModal({
     setLoading('webhook', false);
   };
 
+  const handleRegenerateKey = async () => {
+    setLoading('apiKey', true);
+    const response = await userService.regenerateAgentKey(agent.id ?? '', token);
+    if (!response.ok) {
+      setLoading('apiKey', false);
+      return;
+    }
+    const data = await response.json();
+    setApiKey(data.key);
+    onKeyRegenerated?.(data.key);
+    setLoading('apiKey', false);
+  };
+
   useEffect(() => {
     setSharedToken(agent.shared_token ?? null);
     setApiKey(agent.key ?? null);
   }, [agent]);
 
   return (
+    <>
     <Modal
       open={modalState === 'ACTIVE'}
       onOpenChange={(o) => !o && setModalState('INACTIVE')}
@@ -174,6 +193,20 @@ export default function AgentDetailsModal({
                       />
                     </a>
                   )}
+                  {apiKey.includes('...') && (
+                    <button
+                      type="button"
+                      onClick={() => setResetKeyConfirmState('ACTIVE')}
+                      disabled={loadingStates.apiKey}
+                      className="border-primary text-primary hover:bg-primary/90 ml-8 flex items-center justify-center gap-1 rounded-full border px-5 py-1.5 text-sm font-medium transition-colors hover:text-white disabled:opacity-60"
+                    >
+                      {loadingStates.apiKey ? (
+                        <Spinner size="small" />
+                      ) : (
+                        t('modals.agentDetails.resetKey')
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -238,5 +271,14 @@ export default function AgentDetailsModal({
         </div>
       </div>
     </Modal>
+    <ConfirmationModal
+      message={t('modals.agentDetails.resetKeyConfirm')}
+      modalState={resetKeyConfirmState}
+      setModalState={setResetKeyConfirmState}
+      submitLabel={t('modals.agentDetails.resetKey')}
+      handleSubmit={handleRegenerateKey}
+      variant="danger"
+    />
+    </>
   );
 }

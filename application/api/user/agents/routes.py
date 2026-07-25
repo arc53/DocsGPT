@@ -28,6 +28,8 @@ from application.api.user.team_sharing import (
 )
 from application.storage.db.repositories.agent_folders import AgentFoldersRepository
 from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.stack_logs import StackLogsRepository
+from application.storage.db.repositories.token_usage import TokenUsageRepository
 from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
 from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
@@ -1291,6 +1293,95 @@ class UpdateAgent(Resource):
         if newly_generated_key:
             response_data["key"] = newly_generated_key
         return make_response(jsonify(response_data), 200)
+
+
+@agents_ns.route("/regenerate_agent_key/<string:agent_id>")
+class RegenerateAgentKey(Resource):
+    @api.doc(
+        params={"agent_id": "ID of the agent"},
+        description=(
+            "Rotate an agent's API key. The previous key is invalidated "
+            "immediately and a fresh key is returned once. Historical logging "
+            "and usage records are re-pointed to the new key so analytics stay "
+            "intact. Owner only."
+        ),
+    )
+    def post(self, agent_id):
+        if not (decoded_token := request.decoded_token):
+            return make_response(
+                jsonify({"success": False, "message": "Unauthorized"}), 401
+            )
+        user = decoded_token.get("sub")
+
+        try:
+            with db_session() as conn:
+                agents_repo = AgentsRepository(conn)
+                # Owner-only: rotating a credential is destructive to live
+                # integrations, so this is intentionally stricter than
+                # update_agent (which also allows team editors).
+                existing_agent = agents_repo.get_any(agent_id, user)
+                if not existing_agent:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Agent not found or not authorized",
+                            }
+                        ),
+                        404,
+                    )
+
+                pg_agent_id = str(existing_agent["id"])
+                old_key = existing_agent.get("key")
+                if not old_key:
+                    # Draft agents have no key; the first key is minted on
+                    # publish. Nothing to rotate.
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Publish the agent before resetting its key",
+                            }
+                        ),
+                        400,
+                    )
+
+                new_key = str(uuid.uuid4())
+                updated = agents_repo.update(pg_agent_id, user, {"key": new_key})
+                if not updated:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Failed to regenerate key",
+                            }
+                        ),
+                        500,
+                    )
+
+                # Re-point key-string-only history to the new key so it is not
+                # orphaned. conversations/token analytics also match on
+                # agent_id, but stack_logs (webhook + system-error logs) has no
+                # agent_id column, and the 24h rate-limit window is keyed by the
+                # api-key string only. Runs in the same transaction as the swap.
+                StackLogsRepository(conn).reassign_api_key(
+                    old_key=old_key, new_key=new_key
+                )
+                TokenUsageRepository(conn).reassign_api_key(
+                    old_key=old_key, new_key=new_key
+                )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error regenerating agent key: {err}", exc_info=True
+            )
+            return make_response(
+                jsonify(
+                    {"success": False, "message": "Error regenerating agent key"}
+                ),
+                500,
+            )
+
+        return make_response(jsonify({"success": True, "key": new_key}), 200)
 
 
 @agents_ns.route("/delete_agent")
