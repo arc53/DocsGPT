@@ -55,7 +55,7 @@ app never creates roles.
 
 ```sql
 CREATE ROLE docsgpt LOGIN PASSWORD 'docsgpt' CREATEDB;
--- Then: POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost/docsgpt
+-- Then: POSTGRES_URI=postgresql://<postgres-user>:<postgres-password>@localhost:5432/<postgres-db>
 ```
 
 ## How auto-bootstrap works
@@ -115,7 +115,7 @@ Postgres schema when it boots — you only need to run the data copy.
 pip install -r application/requirements.txt
 pip install 'pymongo>=4.6'
 
-export POSTGRES_URI="postgresql://docsgpt:docsgpt@localhost:5432/docsgpt"
+export POSTGRES_URI="postgresql://<postgres-user>:<postgres-password>@localhost:5432/<postgres-db>"
 export MONGO_URI="mongodb://user:pass@host:27017/docsgpt"
 
 python scripts/db/backfill.py --dry-run    # preview
