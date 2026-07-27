@@ -243,6 +243,76 @@ class TestOpenAISTTTranscribe:
 
         assert result["language"] == "de"
 
+    @patch("application.stt.openai_stt.OpenAI")
+    @patch("application.stt.openai_stt.settings")
+    def test_transcribe_diarize_emits_warning(self, mock_settings, mock_openai_cls, caplog):
+        mock_settings.OPENAI_API_KEY = "sk-test"
+        mock_settings.API_KEY = None
+        mock_settings.OPENAI_BASE_URL = None
+        mock_settings.OPENAI_STT_MODEL = "whisper-1"
+
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+
+        mock_response = MagicMock()
+        mock_response.model_dump.return_value = {
+            "text": "Hello",
+            "language": "en",
+            "duration": 1.0,
+            "segments": [],
+        }
+        mock_client.audio.transcriptions.create.return_value = mock_response
+
+        from application.stt.openai_stt import OpenAISTT
+
+        stt = OpenAISTT()
+
+        file_path = Path("/tmp/test_audio.wav")
+        with patch("builtins.open", mock_open(read_data=b"audio_data")):
+            with caplog.at_level("WARNING"):
+                stt.transcribe(file_path, diarize=True)
+
+        assert any(
+            "diarization is not supported by the OpenAI STT provider"
+            in record.message
+            for record in caplog.records
+        )
+
+    @patch("application.stt.openai_stt.OpenAI")
+    @patch("application.stt.openai_stt.settings")
+    def test_transcribe_diarize_false_emits_no_warning(
+        self, mock_settings, mock_openai_cls, caplog
+    ):
+        mock_settings.OPENAI_API_KEY = "sk-test"
+        mock_settings.API_KEY = None
+        mock_settings.OPENAI_BASE_URL = None
+        mock_settings.OPENAI_STT_MODEL = "whisper-1"
+
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+
+        mock_response = MagicMock()
+        mock_response.model_dump.return_value = {
+            "text": "Hello",
+            "language": "en",
+            "duration": 1.0,
+            "segments": [],
+        }
+        mock_client.audio.transcriptions.create.return_value = mock_response
+
+        from application.stt.openai_stt import OpenAISTT
+
+        stt = OpenAISTT()
+
+        file_path = Path("/tmp/test_audio.wav")
+        with patch("builtins.open", mock_open(read_data=b"audio_data")):
+            with caplog.at_level("WARNING"):
+                stt.transcribe(file_path, diarize=False)
+
+        assert not any(
+            "diarization is not supported" in record.message for record in caplog.records
+        )
+
 
 @pytest.mark.unit
 class TestOpenAISTTToDict:
