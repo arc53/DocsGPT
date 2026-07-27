@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
@@ -943,9 +949,6 @@ export default function MessageInput({
     setValue(
       buildVoiceDraftValue(voiceBaseValueRef.current, normalizedTranscript),
     );
-    setTimeout(() => {
-      handleInput();
-    }, 0);
   };
 
   const promptVoiceFileFallback = (message: string) => {
@@ -1331,20 +1334,23 @@ export default function MessageInput({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     handleInput();
+  }, [value, handleInput]);
+
+  useEffect(() => {
+    window.addEventListener('resize', handleInput);
+    return () => window.removeEventListener('resize', handleInput);
   }, [handleInput]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
-    handleInput();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
-      handleInput();
     }
   };
 
@@ -1583,7 +1589,6 @@ export default function MessageInput({
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
             className="inputbox-style dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full scrollbar-thin overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
-            onInput={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             aria-label={t('inputPlaceholder')}
