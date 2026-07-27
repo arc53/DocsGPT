@@ -1359,11 +1359,13 @@ class RegenerateAgentKey(Resource):
                         500,
                     )
 
-                # Re-point key-string-only history to the new key so it is not
-                # orphaned. conversations/token analytics also match on
-                # agent_id, but stack_logs (webhook + system-error logs) has no
-                # agent_id column, and the 24h rate-limit window is keyed by the
-                # api-key string only. Runs in the same transaction as the swap.
+                # Re-point key-string history to the new key. conversations,
+                # token_usage and stack_logs (since 0026) all carry agent_id, so
+                # per-agent analytics survive rotation via agent_id regardless.
+                # These rewrites still run to (a) preserve the 24h rate-limit
+                # window, which is keyed by api_key only (token_usage), and (b)
+                # keep the api_key column consistent / re-attach any legacy rows
+                # whose agent_id is NULL. Runs in the same transaction as the swap.
                 StackLogsRepository(conn).reassign_api_key(
                     old_key=old_key, new_key=new_key
                 )

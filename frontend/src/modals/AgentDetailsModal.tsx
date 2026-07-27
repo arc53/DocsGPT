@@ -82,15 +82,18 @@ export default function AgentDetailsModal({
 
   const handleRegenerateKey = async () => {
     setLoading('apiKey', true);
-    const response = await userService.regenerateAgentKey(agent.id ?? '', token);
-    if (!response.ok) {
+    try {
+      const response = await userService.regenerateAgentKey(
+        agent.id ?? '',
+        token,
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+      setApiKey(data.key);
+      onKeyRegenerated?.(data.key);
+    } finally {
       setLoading('apiKey', false);
-      return;
     }
-    const data = await response.json();
-    setApiKey(data.key);
-    onKeyRegenerated?.(data.key);
-    setLoading('apiKey', false);
   };
 
   useEffect(() => {

@@ -10,6 +10,7 @@ Covers the single operation the legacy Mongo code performs:
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -57,14 +58,16 @@ class StackLogsRepository:
         stacks: Optional[list] = None,
         timestamp: Optional[datetime] = None,
     ) -> None:
-        # ``agent_id`` is a UUID column. Coerce anything not shaped like a UUID
-        # (36 chars with hyphens) to NULL so a stray/legacy id never breaks the
-        # activity-log write. Mirrors TokenUsageRepository.insert.
+        # ``agent_id`` is a UUID column. Parse it with ``uuid.UUID`` and coerce
+        # anything that isn't a valid UUID (e.g. a 24-hex legacy Mongo ObjectId)
+        # to NULL so a stray/legacy id never reaches ``CAST(... AS uuid)`` and
+        # breaks the activity-log write.
         agent_id_uuid: Optional[str] = None
         if agent_id:
-            s = str(agent_id)
-            if len(s) == 36 and "-" in s:
-                agent_id_uuid = s
+            try:
+                agent_id_uuid = str(uuid.UUID(str(agent_id)))
+            except (ValueError, AttributeError, TypeError):
+                agent_id_uuid = None
         self._conn.execute(
             text(
                 """
@@ -98,17 +101,18 @@ class StackLogsRepository:
     def reassign_api_key(self, *, old_key: str, new_key: str) -> int:
         """Re-point historical rows from ``old_key`` to ``new_key``.
 
-        ``stack_logs`` has no ``agent_id`` column, so webhook / system-error
-        logs are matched by the api-key string alone (see the analytics
-        ``webhook_where`` / ``system_where`` clauses). When an agent's key is
-        rotated this rewrite keeps that history attached to the agent instead
-        of orphaning it.
+        Since migration 0026 ``stack_logs`` has an ``agent_id`` column and the
+        analytics ``webhook_where`` / ``system_where`` clauses match
+        ``agent_id`` first with ``api_key`` as a fallback, so most rows already
+        survive a key rotation via ``agent_id``. This rewrite still runs to keep
+        the ``api_key`` column consistent and to re-attach any rows whose
+        ``agent_id`` is NULL (e.g. a log written without agent context).
 
         Matched by ``api_key`` only — deliberately NOT scoped by ``user_id``:
         ``agents.key`` is globally unique, so a key maps to exactly one agent,
         and rows are stamped with the *caller's* user_id (which is not the
         owner for webhook / external-api-key traffic). Scoping by owner would
-        skip precisely the rows this migration exists to preserve.
+        skip precisely the rows this rewrite exists to preserve.
         Returns the number of rows updated.
         """
         if not old_key or not new_key:

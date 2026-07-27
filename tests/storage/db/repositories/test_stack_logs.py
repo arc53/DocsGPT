@@ -199,11 +199,35 @@ class TestInsert:
         assert dict(row._mapping)["stacks"][0]["data"]["result"] == "ok"
 
 
+class TestAgentId:
+    def test_valid_agent_id_stored(self, pg_conn):
+        repo = _repo(pg_conn)
+        agent_id = "11111111-2222-3333-4444-555555555555"
+        repo.insert(activity_id="ai-valid", agent_id=agent_id)
+        row = pg_conn.execute(
+            text("SELECT agent_id FROM stack_logs WHERE activity_id = 'ai-valid'")
+        ).fetchone()
+        assert str(dict(row._mapping)["agent_id"]) == agent_id
+
+    def test_invalid_agent_id_coerced_to_null(self, pg_conn):
+        # A 24-hex legacy Mongo ObjectId is not a valid UUID; it must be
+        # coerced to NULL rather than reaching CAST(... AS uuid) and killing
+        # the whole activity-log write.
+        repo = _repo(pg_conn)
+        repo.insert(activity_id="ai-legacy", agent_id="507f1f77bcf86cd799439011")
+        row = pg_conn.execute(
+            text("SELECT agent_id FROM stack_logs WHERE activity_id = 'ai-legacy'")
+        ).fetchone()
+        assert dict(row._mapping)["agent_id"] is None
+
+
 class TestReassignApiKey:
     def test_rewrites_matching_rows_regardless_of_user(self, pg_conn):
-        # stack_logs has no agent_id; on key rotation, rows must follow the
-        # key. Rows are stamped with the caller's user_id (not the owner),
-        # so the migration must NOT be scoped by user_id.
+        # On key rotation the rewrite is intentionally NOT scoped by user_id:
+        # agents.key is unique so a key maps to one agent, and rows are stamped
+        # with the caller's user_id (not the owner), so scoping by owner would
+        # skip caller-logged rows. (Rows also carry agent_id since 0026, but
+        # this rewrite still covers api_key consistency and NULL-agent_id rows.)
         repo = _repo(pg_conn)
         repo.insert(activity_id="ra-1", api_key="old-k", user_id="owner")
         repo.insert(activity_id="ra-2", api_key="old-k", user_id="a-caller")

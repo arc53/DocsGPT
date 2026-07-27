@@ -5,7 +5,7 @@ import time
 
 import logging
 import uuid
-from typing import Any, Callable, Dict, Generator, List
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 from application.core import log_context
 from application.storage.db.repositories.stack_logs import StackLogsRepository
@@ -247,7 +247,7 @@ def _log_activity_to_db(
     query: str,
     stacks: List[Dict],
     level: str,
-    agent_id: str = None,
+    agent_id: Optional[str] = None,
 ) -> None:
     """Append a per-request activity log row to Postgres (``stack_logs``)."""
     try:
