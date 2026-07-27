@@ -1343,11 +1343,16 @@ class TestRegenerateAgentKey:
         assert repo.find_by_key(new_key)["id"] == agent["id"]
 
     def test_migrates_historical_logs_and_usage(self, app, pg_conn):
-        """stack_logs + token_usage rows follow the key so analytics and the
-        rate-limit window are not orphaned. The stack_logs row is stamped with
-        a *different* user_id (a caller, not the owner) to prove the migration
-        is not owner-scoped."""
+        """stack_logs + token_usage + conversations rows follow the key so
+        analytics and the rate-limit window are not orphaned. The stack_logs row
+        is stamped with a *different* user_id (a caller, not the owner) to prove
+        the migration is not owner-scoped, and the conversation is created with
+        api_key set but agent_id NULL to prove the api_key-only path is covered.
+        """
         from application.api.user.agents.routes import RegenerateAgentKey
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
         from application.storage.db.repositories.stack_logs import (
             StackLogsRepository,
         )
@@ -1369,6 +1374,10 @@ class TestRegenerateAgentKey:
         TokenUsageRepository(pg_conn).insert(
             api_key=old_key, prompt_tokens=7, generated_tokens=3,
         )
+        # api_key set, agent_id intentionally omitted (NULL) — the orphan case.
+        ConversationsRepository(pg_conn).create(
+            user, "conv", api_key=old_key,
+        )
 
         with _patch_db(pg_conn), app.test_request_context(
             f"/api/regenerate_agent_key/{agent['id']}", method="POST"
@@ -1380,24 +1389,19 @@ class TestRegenerateAgentKey:
         new_key = response.json["key"]
 
         from sqlalchemy import text
-        stack_old = pg_conn.execute(
-            text("SELECT COUNT(*) FROM stack_logs WHERE api_key = :k"),
-            {"k": old_key},
-        ).scalar()
-        stack_new = pg_conn.execute(
-            text("SELECT COUNT(*) FROM stack_logs WHERE api_key = :k"),
-            {"k": new_key},
-        ).scalar()
-        usage_old = pg_conn.execute(
-            text("SELECT COUNT(*) FROM token_usage WHERE api_key = :k"),
-            {"k": old_key},
-        ).scalar()
-        usage_new = pg_conn.execute(
-            text("SELECT COUNT(*) FROM token_usage WHERE api_key = :k"),
-            {"k": new_key},
-        ).scalar()
-        assert stack_old == 0 and stack_new == 1
-        assert usage_old == 0 and usage_new == 1
+
+        def _count(table, key):
+            return pg_conn.execute(
+                text(f"SELECT COUNT(*) FROM {table} WHERE api_key = :k"),
+                {"k": key},
+            ).scalar()
+
+        assert _count("stack_logs", old_key) == 0
+        assert _count("stack_logs", new_key) == 1
+        assert _count("token_usage", old_key) == 0
+        assert _count("token_usage", new_key) == 1
+        assert _count("conversations", old_key) == 0
+        assert _count("conversations", new_key) == 1
 
     def test_db_error_returns_500(self, app):
         from application.api.user.agents.routes import RegenerateAgentKey

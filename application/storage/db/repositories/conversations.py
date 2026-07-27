@@ -574,6 +574,27 @@ class ConversationsRepository:
         self._reap_artifact_storage(paths)
         return result.rowcount
 
+    def reassign_api_key(self, *, old_key: str, new_key: str) -> int:
+        """Re-point conversation rows from ``old_key`` to ``new_key``.
+
+        Called when an agent's key is rotated. Per-agent analytics match
+        ``c.api_key = :api_key OR c.agent_id = :agent_pg_id``, but a
+        conversation created from api-key traffic may have ``api_key`` set and
+        ``agent_id`` NULL (``conversation_service`` only sets ``agent_id`` when
+        the caller passes one). Rewriting ``api_key`` keeps those rows attached
+        to the agent after rotation instead of orphaning them.
+
+        Matched by ``api_key`` only — ``agents.key`` is globally unique so a key
+        maps to exactly one agent. Returns the number of rows updated.
+        """
+        if not old_key or not new_key:
+            return 0
+        result = self._conn.execute(
+            text("UPDATE conversations SET api_key = :new_key WHERE api_key = :old_key"),
+            {"old_key": old_key, "new_key": new_key},
+        )
+        return result.rowcount
+
     @staticmethod
     def _reap_artifact_storage(paths: list) -> None:
         """Best-effort delete artifact bytes whose rows were cascade-removed; never raises."""
