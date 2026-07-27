@@ -191,7 +191,7 @@ const ConversationBubble = forwardRef<
           )}
           <div
             ref={ref}
-            className={`flex min-w-0 flex-row-reverse justify-items-start`}
+            className={`flex flex-row-reverse justify-items-start`}
           >
             <Avatar className="mt-2 shrink-0 text-2xl">
               <img className="mr-1 rounded-full" width={30} src={UserIcon} />
