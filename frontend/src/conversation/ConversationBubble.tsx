@@ -198,11 +198,11 @@ const ConversationBubble = forwardRef<
             </Avatar>
             {!isEditClicked && (
               <>
-                <div className="relative mr-2 flex w-full flex-col">
-                  <div className="mr-2 ml-2 flex max-w-full items-start gap-2 rounded-3xl bg-linear-to-b from-violet-500 to-violet-600 px-5 py-4 text-sm leading-normal wrap-break-word whitespace-pre-wrap text-white sm:text-base">
+                <div className="relative mr-2 flex w-full min-w-0 flex-col">
+                  <div className="mr-2 ml-2 flex max-w-full min-w-0 items-start gap-2 rounded-3xl bg-linear-to-b from-violet-500 to-violet-600 px-5 py-4 text-sm leading-normal wrap-anywhere whitespace-pre-wrap text-white sm:text-base">
                     <div
                       ref={messageRef}
-                      className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full`}
+                      className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full min-w-0`}
                     >
                       {message}
                     </div>
