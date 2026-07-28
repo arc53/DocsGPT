@@ -5,6 +5,11 @@ from application.vectorstore.mongodb import MongoDBVectorStore
 from application.vectorstore.qdrant import QdrantStore
 from application.vectorstore.pgvector import PGVectorStore
 
+# ValkeyStore uses a try/except ImportError guard around its glide_sync
+# dependency so that this eager import does NOT break VectorCreator when
+# valkey-glide-sync is not installed.  Do not remove that guard.
+from application.vectorstore.valkey import ValkeyStore
+
 
 class VectorCreator:
     vectorstores = {
@@ -13,7 +18,8 @@ class VectorCreator:
         "mongodb": MongoDBVectorStore,
         "qdrant": QdrantStore,
         "milvus": MilvusStore,
-        "pgvector": PGVectorStore
+        "pgvector": PGVectorStore,
+        "valkey": ValkeyStore,
     }
 
     @classmethod
