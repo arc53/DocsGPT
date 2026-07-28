@@ -211,3 +211,31 @@ class SharedConversationsRepository:
             {"conv_id": conversation_id},
         )
         return [row_to_dict(r) for r in result.fetchall()]
+
+    def reassign_api_key(self, *, old_key: str, new_key: str) -> int:
+        """Re-point promptable share rows from ``old_key`` to ``new_key``.
+
+        A *promptable* shared-conversation link stores the backing agent's key
+        in ``api_key`` and the public share endpoint returns it so the shared
+        widget can keep prompting. If that agent's key is rotated without this
+        rewrite, the endpoint would hand out an invalidated key and break every
+        existing shared link. Rewriting keeps those links working with the new
+        key.
+
+        Matched by ``api_key`` only — ``agents.key`` is globally unique, so a
+        key maps to exactly one agent. The uniform rewrite cannot violate the
+        ``(conversation_id, user_id, is_promptable, first_n_queries,
+        COALESCE(api_key, ''))`` partial unique index: rows already differ on
+        the non-key columns, and ``new_key`` is freshly generated so no row
+        already holds it. Returns the number of rows updated.
+        """
+        if not old_key or not new_key:
+            return 0
+        result = self._conn.execute(
+            text(
+                "UPDATE shared_conversations SET api_key = :new_key "
+                "WHERE api_key = :old_key"
+            ),
+            {"old_key": old_key, "new_key": new_key},
+        )
+        return result.rowcount

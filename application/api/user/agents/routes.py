@@ -29,6 +29,9 @@ from application.api.user.team_sharing import (
 from application.storage.db.repositories.agent_folders import AgentFoldersRepository
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.shared_conversations import (
+    SharedConversationsRepository,
+)
 from application.storage.db.repositories.stack_logs import StackLogsRepository
 from application.storage.db.repositories.token_usage import TokenUsageRepository
 from application.storage.db.repositories.users import UsersRepository
@@ -1360,13 +1363,16 @@ class RegenerateAgentKey(Resource):
                         500,
                     )
 
-                # Re-point key-string history to the new key so per-agent
-                # analytics survive rotation. token_usage/stack_logs (0026)
-                # carry agent_id, but rows can still be api_key-only:
+                # Re-point every api_key reference to the new key so rotation
+                # doesn't break history or live links. token_usage/stack_logs
+                # (0026) carry agent_id, but rows can still be api_key-only:
                 # conversations set api_key without an agent_id unless the caller
                 # passes one, stack_logs rows may have a NULL agent_id, and the
                 # 24h rate-limit window is keyed by api_key only (token_usage).
-                # All three rewrites run in the same transaction as the swap.
+                # shared_conversations is functional, not just analytics: the
+                # public share endpoint hands its stored api_key to the widget,
+                # so a stale key would break promptable shared links.
+                # All rewrites run in the same transaction as the key swap.
                 StackLogsRepository(conn).reassign_api_key(
                     old_key=old_key, new_key=new_key
                 )
@@ -1374,6 +1380,9 @@ class RegenerateAgentKey(Resource):
                     old_key=old_key, new_key=new_key
                 )
                 ConversationsRepository(conn).reassign_api_key(
+                    old_key=old_key, new_key=new_key
+                )
+                SharedConversationsRepository(conn).reassign_api_key(
                     old_key=old_key, new_key=new_key
                 )
         except Exception as err:

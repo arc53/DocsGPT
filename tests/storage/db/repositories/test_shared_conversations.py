@@ -115,3 +115,34 @@ class TestFindByUuidShapeGate:
         share = repo.create(conv["id"], "user-1", first_n_queries=1)
         found = repo.find_by_uuid(str(share["uuid"]))
         assert found is not None
+
+
+class TestReassignApiKey:
+    def test_rewrites_promptable_share_keys(self, pg_conn):
+        # A promptable share stores the backing agent's key; on rotation it must
+        # follow the key so the public share endpoint keeps returning a valid one.
+        from sqlalchemy import text
+
+        repo = _repo(pg_conn)
+        c1, c2, c3 = _conv(pg_conn), _conv(pg_conn), _conv(pg_conn)
+        repo.create(c1["id"], "u", is_promptable=True, api_key="sc-old")
+        repo.create(c2["id"], "u", is_promptable=True, api_key="sc-old")
+        repo.create(c3["id"], "u", is_promptable=True, api_key="sc-other")
+
+        moved = repo.reassign_api_key(old_key="sc-old", new_key="sc-new")
+        assert moved == 2
+
+        def _count(key):
+            return pg_conn.execute(
+                text("SELECT COUNT(*) FROM shared_conversations WHERE api_key = :k"),
+                {"k": key},
+            ).scalar()
+
+        assert _count("sc-old") == 0
+        assert _count("sc-new") == 2
+        assert _count("sc-other") == 1
+
+    def test_noop_on_blank_keys(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.reassign_api_key(old_key="", new_key="x") == 0
+        assert repo.reassign_api_key(old_key="x", new_key="") == 0

@@ -1343,15 +1343,19 @@ class TestRegenerateAgentKey:
         assert repo.find_by_key(new_key)["id"] == agent["id"]
 
     def test_migrates_historical_logs_and_usage(self, app, pg_conn):
-        """stack_logs + token_usage + conversations rows follow the key so
-        analytics and the rate-limit window are not orphaned. The stack_logs row
-        is stamped with a *different* user_id (a caller, not the owner) to prove
-        the migration is not owner-scoped, and the conversation is created with
-        api_key set but agent_id NULL to prove the api_key-only path is covered.
+        """stack_logs + token_usage + conversations + shared_conversations rows
+        follow the key so analytics, the rate-limit window, and promptable shared
+        links are not orphaned/broken. The stack_logs row is stamped with a
+        *different* user_id (a caller, not the owner) to prove the migration is
+        not owner-scoped, and the conversation is created with api_key set but
+        agent_id NULL to prove the api_key-only path is covered.
         """
         from application.api.user.agents.routes import RegenerateAgentKey
         from application.storage.db.repositories.conversations import (
             ConversationsRepository,
+        )
+        from application.storage.db.repositories.shared_conversations import (
+            SharedConversationsRepository,
         )
         from application.storage.db.repositories.stack_logs import (
             StackLogsRepository,
@@ -1375,8 +1379,13 @@ class TestRegenerateAgentKey:
             api_key=old_key, prompt_tokens=7, generated_tokens=3,
         )
         # api_key set, agent_id intentionally omitted (NULL) — the orphan case.
-        ConversationsRepository(pg_conn).create(
+        conv = ConversationsRepository(pg_conn).create(
             user, "conv", api_key=old_key,
+        )
+        # A promptable shared link stores the agent key; rotation must not
+        # leave it pointing at an invalidated key.
+        SharedConversationsRepository(pg_conn).create(
+            conv["id"], user, is_promptable=True, api_key=old_key,
         )
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -1402,6 +1411,8 @@ class TestRegenerateAgentKey:
         assert _count("token_usage", new_key) == 1
         assert _count("conversations", old_key) == 0
         assert _count("conversations", new_key) == 1
+        assert _count("shared_conversations", old_key) == 0
+        assert _count("shared_conversations", new_key) == 1
 
     def test_db_error_returns_500(self, app):
         from application.api.user.agents.routes import RegenerateAgentKey

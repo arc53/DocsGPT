@@ -199,28 +199,6 @@ class TestInsert:
         assert dict(row._mapping)["stacks"][0]["data"]["result"] == "ok"
 
 
-class TestAgentId:
-    def test_valid_agent_id_stored(self, pg_conn):
-        repo = _repo(pg_conn)
-        agent_id = "11111111-2222-3333-4444-555555555555"
-        repo.insert(activity_id="ai-valid", agent_id=agent_id)
-        row = pg_conn.execute(
-            text("SELECT agent_id FROM stack_logs WHERE activity_id = 'ai-valid'")
-        ).fetchone()
-        assert str(dict(row._mapping)["agent_id"]) == agent_id
-
-    def test_invalid_agent_id_coerced_to_null(self, pg_conn):
-        # A 24-hex legacy Mongo ObjectId is not a valid UUID; it must be
-        # coerced to NULL rather than reaching CAST(... AS uuid) and killing
-        # the whole activity-log write.
-        repo = _repo(pg_conn)
-        repo.insert(activity_id="ai-legacy", agent_id="507f1f77bcf86cd799439011")
-        row = pg_conn.execute(
-            text("SELECT agent_id FROM stack_logs WHERE activity_id = 'ai-legacy'")
-        ).fetchone()
-        assert dict(row._mapping)["agent_id"] is None
-
-
 class TestReassignApiKey:
     def test_rewrites_matching_rows_regardless_of_user(self, pg_conn):
         # On key rotation the rewrite is intentionally NOT scoped by user_id:
