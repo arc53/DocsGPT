@@ -198,6 +198,10 @@ class Settings(BaseSettings):
     # dialect form (``postgresql+psycopg://``) are all accepted and
     # normalized internally for ``psycopg.connect()``.
     PGVECTOR_CONNECTION_STRING: Optional[str] = None
+
+    # OceanBase vectorstore config
+    OCEANBASE_URI: Optional[str] = None
+
     # Milvus vectorstore config
     MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
     MILVUS_URI: Optional[str] = "./milvus_local.db"  # milvus lite version as default
