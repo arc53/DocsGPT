@@ -46,6 +46,6 @@ class OpenAPI3Parser(BaseParser):
                 f"parameters: {path.parameters}\nmethods: {info}\n"
             )
             i += 1
-        with open("results.txt", "w") as f:
+        with open("results.txt", "w", encoding="utf-8") as f:
             f.write(results)
         return results

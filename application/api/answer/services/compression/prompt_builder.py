@@ -37,7 +37,7 @@ class CompressionPromptBuilder:
         prompt_path = current_dir / "prompts" / "compression" / f"{version}.txt"
 
         try:
-            with open(prompt_path, "r") as f:
+            with open(prompt_path, "r", encoding="utf-8") as f:
                 return f.read()
         except FileNotFoundError:
             logger.error(f"Compression prompt template not found: {prompt_path}")

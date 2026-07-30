@@ -1,0 +1,35 @@
+# 前端(容器) + Redis + Postgres，后端本地跑
+name: docsgpt-oss
+services:
+
+  frontend:
+    image: arc53/docsgpt-fe:develop
+    environment:
+      - VITE_API_HOST=http://localhost:7091
+      - VITE_API_STREAMING=true
+    ports:
+      - "11573:5173"
+
+  redis:
+    image: redis:6-alpine
+    ports:
+      - 6379:6379
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=docsgpt
+      - POSTGRES_PASSWORD=docsgpt
+      - POSTGRES_DB=docsgpt
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docsgpt -d docsgpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

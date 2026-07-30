@@ -40,7 +40,7 @@ class CSVParser(BaseParser):
         except ImportError:
             raise ValueError("csv module is required to read CSV files.")
         text_list = []
-        with open(file, "r") as fp:
+        with open(file, "r", encoding="utf-8") as fp:
             csv_reader = csv.reader(fp)
             for row in csv_reader:
                 text_list.append(", ".join(row))
