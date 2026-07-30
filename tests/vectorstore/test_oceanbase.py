@@ -148,7 +148,6 @@ class TestOceanBaseStoreInit:
 
         assert store._source_filter == "source_id = 'source'' OR 1=1 --'"
 
-
 @pytest.mark.unit
 class TestOceanBaseStoreWrites:
     def test_add_texts_adds_source_isolation_and_returns_ids(self):
@@ -191,6 +190,21 @@ class TestOceanBaseStoreWrites:
             store.add_texts(["one"], [{}], ids=["one", "two"])
         with pytest.raises(ValueError, match="reserves extras"):
             store.add_texts(["one"], [{}], extras=[{}])
+
+    def test_add_texts_ensures_beng_fulltext_index_once(self):
+        store, backend, client, _ = _make_store()
+        backend.add_texts.side_effect = lambda *args, **kwargs: kwargs["ids"]
+
+        store.add_texts(["one"], [{}], ids=["one"])
+        store.add_texts(["two"], [{}], ids=["two"])
+
+        client.create_fts_idx_with_fts_index_param.assert_called_once()
+        call = client.create_fts_idx_with_fts_index_param.call_args
+        assert call.kwargs["table_name"] == "docsgpt"
+        index_param = call.kwargs["fts_idx_param"]
+        assert index_param.index_name == "docsgpt_document_fts_idx"
+        assert index_param.field_names == ["document"]
+        assert index_param.parser_type == "beng"
 
 
 @pytest.mark.unit
@@ -256,6 +270,55 @@ class TestOceanBaseStoreSearch:
         client.check_table_exists.return_value = False
         assert store.search_with_scores("question", k=2) == []
         backend.similarity_search_with_score.assert_not_called()
+
+    def test_keyword_search_returns_ranked_documents_with_source_filter(self):
+        store, _, client, embedding = _make_store()
+        connection = client.engine.connect.return_value.__enter__.return_value
+        connection.execute.return_value.fetchall.return_value = [
+            ("first", {"source": "a.md"}, 0.9),
+            ("second", json.dumps({"source": "b.md"}), 0.5),
+            ("third", None, 0.2),
+        ]
+
+        results = store.keyword_search("OceanBase migration", k=3)
+
+        assert [document.page_content for document in results] == [
+            "first",
+            "second",
+            "third",
+        ]
+        assert [document.metadata for document in results] == [
+            {"source": "a.md"},
+            {"source": "b.md"},
+            {},
+        ]
+        embedding.embed_query.assert_not_called()
+
+        statement = connection.execute.call_args.args[0]
+        compiled = statement.compile(dialect=mysql_dialect())
+        sql = str(compiled)
+        assert "MATCH (docsgpt.document) AGAINST" in sql
+        assert "docsgpt.source_id =" in sql
+        assert "ORDER BY relevance DESC" in sql
+        assert "OceanBase migration" not in sql
+        assert "OceanBase migration" in compiled.params.values()
+        assert "source-1" in compiled.params.values()
+        assert 3 in compiled.params.values()
+
+    def test_keyword_search_short_circuits_or_degrades_safely(self):
+        store, _, client, _ = _make_store()
+
+        assert store.keyword_search("question", k=0) == []
+
+        client.check_table_exists.return_value = False
+        assert store.keyword_search("question", k=2) == []
+        client.create_fts_idx_with_fts_index_param.assert_not_called()
+        client.engine.connect.assert_not_called()
+
+        client.check_table_exists.return_value = True
+        client.create_fts_idx_with_fts_index_param.side_effect = RuntimeError("fts unavailable")
+        assert store.keyword_search("question", k=2) == []
+        client.engine.connect.assert_not_called()
 
 
 @pytest.mark.unit

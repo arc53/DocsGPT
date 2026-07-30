@@ -9,7 +9,17 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 
-from sqlalchemy import JSON, Column, String, Table, column, delete, literal
+from sqlalchemy import (
+    JSON,
+    Column,
+    String,
+    Table,
+    column,
+    delete,
+    literal,
+    select,
+    table,
+)
 
 from application.core.settings import settings
 from application.vectorstore.base import BaseVectorStore
@@ -37,6 +47,19 @@ def _import_oceanbase_vector_store() -> Any:
         ) from exc
 
     return OceanbaseVectorStore
+
+
+def _import_oceanbase_fulltext() -> tuple[Any, Any]:
+    """Import pyobvector's optional full-text helpers on first use."""
+    try:
+        from pyobvector import FtsIndexParam, MatchAgainst
+    except ImportError as exc:
+        raise ImportError(
+            "Could not import the OceanBase full-text dependencies. "
+            "Install them with `pip install 'langchain-oceanbase>=0.6,<0.7'`."
+        ) from exc
+
+    return FtsIndexParam, MatchAgainst
 
 
 class OceanBaseStore(BaseVectorStore):
@@ -80,6 +103,9 @@ class OceanBaseStore(BaseVectorStore):
         if not configured_connection:
             raise ValueError("OceanBase connection string is required. Set OCEANBASE_URI or pass connection_string.")
         connection_args = self._parse_connection_string(configured_connection)
+
+        self._fulltext_index_checked = False
+        self._fulltext_index_ready = False
 
         oceanbase_vector_store = _import_oceanbase_vector_store()
         self._embedding = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
@@ -253,6 +279,29 @@ class OceanBaseStore(BaseVectorStore):
             result = conn.execute(delete(table).where(*conditions))
             return result.rowcount or 0
 
+    def _ensure_fulltext_index(self) -> bool:
+        """Create the shared document full-text index once per store instance."""
+        if self._fulltext_index_checked:
+            return self._fulltext_index_ready
+        if not self._table_exists():
+            return False
+
+        self._fulltext_index_checked = True
+        try:
+            fts_index_param, _ = _import_oceanbase_fulltext()
+            self._client.create_fts_idx_with_fts_index_param(
+                table_name=self._table_name,
+                fts_idx_param=fts_index_param(
+                    index_name=f"{self._table_name}_{self._docsearch.text_field}_fts_idx",
+                    field_names=[self._docsearch.text_field],
+                    parser_type="beng",
+                ),
+            )
+            self._fulltext_index_ready = True
+        except Exception:
+            logger.exception("Error creating OceanBase full-text index")
+        return self._fulltext_index_ready
+
     def search(
         self,
         question: str,
@@ -341,6 +390,53 @@ class OceanBaseStore(BaseVectorStore):
             logger.exception("Error searching OceanBase vectors")
             return []
 
+    def keyword_search(self, question: str, k: int = 10) -> list[Document]:
+        """Search this source's chunks using OceanBase full-text relevance."""
+        if k <= 0:
+            return []
+
+        try:
+            if not self._ensure_fulltext_index():
+                return []
+
+            _, match_against = _import_oceanbase_fulltext()
+            keyword_table = table(
+                self._table_name,
+                column(self._docsearch.text_field),
+                column(self._docsearch.metadata_field, JSON),
+                column(self.SOURCE_ID_FIELD),
+            )
+            relevance = match_against(
+                question,
+                keyword_table.c[self._docsearch.text_field],
+            ).label("relevance")
+            statement = (
+                select(
+                    keyword_table.c[self._docsearch.text_field],
+                    keyword_table.c[self._docsearch.metadata_field],
+                    relevance,
+                )
+                .where(
+                    keyword_table.c[self.SOURCE_ID_FIELD] == self._source_id,
+                    relevance > 0,
+                )
+                .order_by(relevance.desc())
+                .limit(k)
+            )
+
+            with self._client.engine.connect() as connection:
+                rows = connection.execute(statement).fetchall()
+            return [
+                Document(
+                    page_content=str(row[0] or ""),
+                    metadata=self._decode_metadata(row[1]),
+                )
+                for row in rows
+            ]
+        except Exception:
+            logger.exception("Error searching OceanBase full text")
+            return []
+
     def add_texts(
         self,
         texts: Iterable[str],
@@ -402,6 +498,7 @@ class OceanBaseStore(BaseVectorStore):
         inserted_ids = [str(document_id) for document_id in inserted_ids]
         if len(inserted_ids) != len(text_list):
             raise RuntimeError(f"OceanBase inserted {len(inserted_ids)} of {len(text_list)} requested chunks.")
+        self._ensure_fulltext_index()
         return inserted_ids
 
     def add_chunk(
