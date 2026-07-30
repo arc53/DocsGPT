@@ -1,7 +1,7 @@
 import base64
 import logging
 
-from anthropic import AI_PROMPT, Anthropic, HUMAN_PROMPT
+from anthropic import Anthropic
 
 from application.core.settings import settings
 from application.llm.base import BaseLLM
@@ -25,8 +25,6 @@ class AnthropicLLM(BaseLLM):
         else:
             self.anthropic = Anthropic(api_key=self.api_key)
 
-        self.HUMAN_PROMPT = HUMAN_PROMPT
-        self.AI_PROMPT = AI_PROMPT
         self.storage = StorageCreator.get_storage()
 
     def _raw_gen(
@@ -39,18 +37,12 @@ class AnthropicLLM(BaseLLM):
         max_tokens=300,
         **kwargs,
     ):
-        context = messages[0]["content"]
-        user_question = messages[-1]["content"]
-        prompt = f"### Context \n {context} \n ### Question \n {user_question}"
-        if stream:
-            return self.gen_stream(model, prompt, stream, max_tokens, **kwargs)
-        completion = self.anthropic.completions.create(
-            model=model,
-            max_tokens_to_sample=max_tokens,
-            stream=stream,
-            prompt=f"{self.HUMAN_PROMPT} {prompt}{self.AI_PROMPT}",
-        )
-        return completion.completion
+        system, api_messages = self._split_messages(messages)
+        request_params = {"model": model, "max_tokens": max_tokens, "messages": api_messages}
+        if system:
+            request_params["system"] = system
+        response = self.anthropic.messages.create(**request_params)
+        return response.content[0].text
 
     def _raw_gen_stream(
         self,
@@ -62,22 +54,28 @@ class AnthropicLLM(BaseLLM):
         max_tokens=300,
         **kwargs,
     ):
-        context = messages[0]["content"]
-        user_question = messages[-1]["content"]
-        prompt = f"### Context \n {context} \n ### Question \n {user_question}"
-        stream_response = self.anthropic.completions.create(
-            model=model,
-            prompt=f"{self.HUMAN_PROMPT} {prompt}{self.AI_PROMPT}",
-            max_tokens_to_sample=max_tokens,
-            stream=True,
-        )
+        system, api_messages = self._split_messages(messages)
+        request_params = {"model": model, "max_tokens": max_tokens, "messages": api_messages}
+        if system:
+            request_params["system"] = system
+        with self.anthropic.messages.stream(**request_params) as stream_response:
+            for text in stream_response.text_stream:
+                yield text
 
-        try:
-            for completion in stream_response:
-                yield completion.completion
-        finally:
-            if hasattr(stream_response, "close"):
-                stream_response.close()
+    def _split_messages(self, messages):
+        """Separate an optional leading system message from the conversation turns.
+
+        Returns a (system, api_messages) tuple where system is a string or None
+        and api_messages is the list of user/assistant turns for the Messages API.
+        """
+        system = None
+        api_messages = []
+        for msg in messages:
+            if msg.get("role") == "system" and system is None and not api_messages:
+                system = msg["content"]
+            else:
+                api_messages.append({"role": msg["role"], "content": msg["content"]})
+        return system, api_messages
 
     def get_supported_attachment_types(self):
         """
