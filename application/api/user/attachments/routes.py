@@ -680,8 +680,18 @@ class TextToSpeech(Resource):
     @api.expect(tts_model)
     @api.doc(description="Synthesize audio speech from text")
     def post(self):
-        data = request.get_json()
-        text = data["text"]
+        data = request.get_json(silent=True) or {}
+        text = data.get("text")
+        if not isinstance(text, str) or not text.strip():
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Field 'text' must be a non-empty string",
+                    }
+                ),
+                400,
+            )
         try:
             tts_instance = TTSCreator.create_tts(settings.TTS_PROVIDER)
             audio_base64, detected_language = tts_instance.text_to_speech(text)
@@ -696,5 +706,11 @@ class TextToSpeech(Resource):
                 200,
             )
         except Exception as err:
-            current_app.logger.error(f"Error synthesizing audio: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
+            current_app.logger.error(
+                   f"Error synthesizing audio: {err}",
+                   exc_info=True,
+            )
+            return make_response(
+                   jsonify({"success": False}),
+                   400,
+                )
