@@ -1634,7 +1634,74 @@ class TestTextToSpeech:
             assert _get_response_status(response) == 400
             assert _get_response_json(response)["success"] is False
 
+    def test_tts_missing_field(self, flask_app):
+        from application.api.user.attachments.routes import TextToSpeech
 
+        app = Flask(__name__)
+
+        with app.test_request_context(
+            "/api/tts",
+            method="POST",
+            json={},
+        ):
+            resource = TextToSpeech()
+            response = resource.post()
+            payload = _get_response_json(response)
+            
+            assert _get_response_status(response) == 400
+            assert payload["success"] is False
+            assert payload["message"] == "Field 'text' must be a non-empty string"
+
+    def test_tts_empty_string(self, flask_app):
+        from application.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+
+        with app.test_request_context(
+            "/api/tts",
+            method="POST",
+            json={"text": ""},
+        ):
+            resource = TextToSpeech()
+            response = resource.post()
+            payload = _get_response_json(response)
+            
+            assert _get_response_status(response) == 400
+            assert payload["success"] is False
+
+    def test_tts_whitespace(self, flask_app):
+        from application.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+
+        with app.test_request_context(
+            "/api/tts",
+            method="POST",
+            json={"text": "    "},
+        ):
+            resource = TextToSpeech()
+            response = resource.post()
+            payload = _get_response_json(response)
+            
+            assert _get_response_status(response) == 400
+            assert payload["success"] is False
+
+    def test_tts_wrong_type(self, flask_app):
+        from application.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+
+        with app.test_request_context(
+            "/api/tts",
+            method="POST",
+            json={"text": 123},
+        ):
+            resource = TextToSpeech()
+            response = resource.post()
+            payload = _get_response_json(response)
+            
+            assert _get_response_status(response) == 400
+            assert payload["success"] is False
 # =====================================================================
 # Coverage gap tests  (lines 136, 256, 330, 337, 443, 457, 560, 590)
 # =====================================================================
