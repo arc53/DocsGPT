@@ -48,7 +48,12 @@ from application.storage.db.repositories.wiki_pages import (
 from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
-from application.utils import count_tokens_docs, num_tokens_from_string, safe_filename
+from application.utils import (
+    count_tokens_docs,
+    num_tokens_from_string,
+    safe_filename,
+    truncate_to_line_boundary,
+)
 
 # Constants
 
@@ -1469,6 +1474,88 @@ def sync_worker(self, frequency):
     }
 
 
+# Line-oriented text formats that stay parseable after a head-truncation.
+# Structured/binary formats (pdf, docx, xlsx, json, html, ...) are excluded —
+# cutting them mid-stream would break their parsers entirely.
+_TRUNCATABLE_ATTACHMENT_SUFFIXES = {
+    ".csv",
+    ".tsv",
+    ".txt",
+    ".log",
+    ".md",
+    ".mdx",
+    ".rst",
+    ".jsonl",
+}
+
+
+class AttachmentRejectedError(Exception):
+    """A deterministic reason an attachment must not be parsed (e.g. zip bomb).
+
+    Raised before parsing and marked non-retryable on the Celery task so a
+    poison upload fails once instead of retrying identically.
+    """
+
+
+def _reject_attachment_zip_bomb(local_path: str) -> None:
+    """Reject a zip-container attachment that decompresses to too much.
+
+    Applies the shared guard (``document_reader.reject_zip_bomb_path``) on the
+    attachment path, which previously had no such check.
+
+    Args:
+        local_path: Filesystem path of the attachment about to be parsed.
+
+    Raises:
+        AttachmentRejectedError: If the archive exceeds the entry-count or
+            inner-uncompressed-size caps.
+    """
+    from application.parser.document_reader import reject_zip_bomb_path
+
+    reason = reject_zip_bomb_path(local_path)
+    if reason is not None:
+        raise AttachmentRejectedError(reason)
+
+
+def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
+    """Bound how much of a text attachment reaches the parser.
+
+    Attachment content is capped at ~250k chars after parsing, so bytes past
+    ``ATTACHMENT_TEXT_MAX_BYTES`` only cost parse time and memory. Oversized
+    line-oriented text files are head-truncated on a line boundary into a
+    temp copy; the stored original is never modified (local storage hands the
+    canonical file path to ``process_file`` callbacks).
+
+    Args:
+        local_path: Filesystem path handed to the parse callback.
+
+    Returns:
+        Tuple of (path to parse, whether it is a temp copy the caller must
+        delete).
+    """
+    max_bytes = settings.ATTACHMENT_TEXT_MAX_BYTES
+    if max_bytes <= 0:
+        return local_path, False
+    suffix = os.path.splitext(local_path)[1].lower()
+    if suffix not in _TRUNCATABLE_ATTACHMENT_SUFFIXES:
+        return local_path, False
+    try:
+        if os.path.getsize(local_path) <= max_bytes:
+            return local_path, False
+        with open(local_path, "rb") as src:
+            head = src.read(max_bytes)
+    except OSError:
+        return local_path, False
+    head = truncate_to_line_boundary(head)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(head)
+    logging.warning(
+        f"Attachment {os.path.basename(local_path)} exceeds "
+        f"ATTACHMENT_TEXT_MAX_BYTES ({max_bytes}); parsing first {len(head)} bytes"
+    )
+    return tmp.name, True
+
+
 def attachment_worker(self, file_info, user):
     """
     Process and store a single attachment without vectorization.
@@ -1508,17 +1595,25 @@ def attachment_worker(self, file_info, user):
         file_extractor = get_default_file_extractor(
             ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED
         )
-        attachment_document = storage.process_file(
-            relative_path,
-            lambda local_path, **kwargs: SimpleDirectoryReader(
-                input_files=[local_path],
-                exclude_hidden=True,
-                errors="ignore",
-                file_extractor=file_extractor,
-                file_metadata=metadata_from_filename,
-            )
-            .load_data()[0],
-        )
+        def _parse_local_file(local_path: str, **kwargs) -> Document:
+            _reject_attachment_zip_bomb(local_path)
+            parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
+            try:
+                return SimpleDirectoryReader(
+                    input_files=[parse_path],
+                    exclude_hidden=True,
+                    errors="ignore",
+                    file_extractor=file_extractor,
+                    file_metadata=metadata_from_filename,
+                ).load_data()[0]
+            finally:
+                if is_temp_copy:
+                    try:
+                        os.unlink(parse_path)
+                    except OSError:
+                        pass
+
+        attachment_document = storage.process_file(relative_path, _parse_local_file)
         content = attachment_document.text
         parser_metadata = {
             key: value

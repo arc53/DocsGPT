@@ -67,6 +67,44 @@ def test_reject_zip_bomb_ignores_non_zip_formats():
 
 
 @pytest.mark.unit
+def test_reject_zip_bomb_path_matches_the_bytes_variant(tmp_path, monkeypatch):
+    # The path-taking sibling (used by the attachment worker, which has a file
+    # rather than bytes) must reach the same verdict as the bytes variant.
+    monkeypatch.setattr(dr.settings, "DOCUMENT_MAX_DECOMPRESSED_BYTES", 1000, raising=False)
+    data = _make_zip({"word/document.xml": b"A" * 50_000})
+    path = tmp_path / "bomb.docx"
+    path.write_bytes(data)
+
+    reason = dr.reject_zip_bomb_path(str(path))
+
+    assert reason is not None and "too much data" in reason
+    assert reason == dr._reject_zip_bomb(data, ".docx")
+
+
+@pytest.mark.unit
+def test_reject_zip_bomb_path_allows_reasonable_archive(tmp_path, monkeypatch):
+    monkeypatch.setattr(dr.settings, "DOCUMENT_MAX_DECOMPRESSED_BYTES", 300 * 1024 * 1024, raising=False)
+    monkeypatch.setattr(dr.settings, "DOCUMENT_MAX_ARCHIVE_ENTRIES", 10000, raising=False)
+    path = tmp_path / "fine.docx"
+    path.write_bytes(_make_zip({"word/document.xml": b"hello"}))
+
+    assert dr.reject_zip_bomb_path(path) is None
+
+
+@pytest.mark.unit
+def test_reject_zip_bomb_path_ignores_non_container_and_corrupt_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(dr.settings, "DOCUMENT_MAX_DECOMPRESSED_BYTES", 1, raising=False)
+    text = tmp_path / "notes.txt"
+    text.write_bytes(b"x" * 5000)
+    broken = tmp_path / "broken.xlsx"
+    broken.write_bytes(b"not a real zip")
+
+    # Non-container suffix is never inspected; a corrupt zip is left to the parser.
+    assert dr.reject_zip_bomb_path(str(text)) is None
+    assert dr.reject_zip_bomb_path(str(broken)) is None
+
+
+@pytest.mark.unit
 def test_size_cap_rejects_oversize(monkeypatch):
     monkeypatch.setattr(dr.settings, "DOCUMENT_PARSE_MAX_BYTES", 8, raising=False)
     out = parse_document_bytes(b"P" * 64, "note.txt", output="text")
