@@ -200,7 +200,7 @@ class ExcelParser(BaseParser):
             raise ValueError("pandas module is required to read Excel files.")
 
         df = pd.read_excel(file, **self._pandas_config)
-        headers = df.columns.tolist()
+        headers = [str(h) for h in df.columns.tolist()]
         header_row = f"{self._header_prefix}{self._col_joiner.join(headers)}"
         
         if not self._concat_rows:
