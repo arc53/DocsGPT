@@ -5,7 +5,7 @@ import time
 
 import logging
 import uuid
-from typing import Any, Callable, Dict, Generator, List
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 from application.core import log_context
 from application.storage.db.repositories.stack_logs import StackLogsRepository
@@ -17,11 +17,12 @@ logging.basicConfig(
 
 
 class LogContext:
-    def __init__(self, endpoint, activity_id, user, api_key, query):
+    def __init__(self, endpoint, activity_id, user, api_key, query, agent_id=None):
         self.endpoint = endpoint
         self.activity_id = activity_id
         self.user = user
         self.api_key = api_key
+        self.agent_id = agent_id
         self.query = query
         self.stacks = []
         # Per-activity response aggregates populated by ``_consume_and_log``
@@ -100,7 +101,9 @@ def log_activity() -> Callable:
             # so nested activities record the parent → child link.
             parent_activity_id = log_context.snapshot().get("activity_id")
 
-            context = LogContext(endpoint, activity_id, user, api_key, query)
+            context = LogContext(
+                endpoint, activity_id, user, api_key, query, agent_id=agent_id
+            )
             kwargs["log_context"] = context
 
             ctx_token = log_context.bind(
@@ -217,6 +220,7 @@ def _consume_and_log(generator: Generator, context: "LogContext"):
             activity_id=context.activity_id,
             user=context.user,
             api_key=context.api_key,
+            agent_id=context.agent_id,
             query=context.query,
             stacks=context.stacks,
             level="error",
@@ -228,6 +232,7 @@ def _consume_and_log(generator: Generator, context: "LogContext"):
             activity_id=context.activity_id,
             user=context.user,
             api_key=context.api_key,
+            agent_id=context.agent_id,
             query=context.query,
             stacks=context.stacks,
             level="info",
@@ -242,6 +247,7 @@ def _log_activity_to_db(
     query: str,
     stacks: List[Dict],
     level: str,
+    agent_id: Optional[str] = None,
 ) -> None:
     """Append a per-request activity log row to Postgres (``stack_logs``)."""
     try:
@@ -259,6 +265,7 @@ def _log_activity_to_db(
                 level=_truncate(level),
                 user_id=_truncate(user),
                 api_key=_truncate(api_key),
+                agent_id=agent_id,
                 query=_truncate(query),
                 stacks=stacks,
                 timestamp=datetime.datetime.now(datetime.timezone.utc),

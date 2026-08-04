@@ -66,6 +66,8 @@ const userService = {
     apiClient.post(endpoints.USER.ADOPT_AGENT(id), {}, token),
   getAgentWebhook: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.AGENT_WEBHOOK(id), token),
+  regenerateAgentKey: (id: string, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.REGENERATE_AGENT_KEY(id), {}, token),
   getPrompts: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.PROMPTS, token),
   createPrompt: (data: any, token: string | null): Promise<any> =>

@@ -27,6 +27,7 @@ const endpoints = {
     TEMPLATE_AGENTS: '/api/template_agents',
     ADOPT_AGENT: (id: string) => `/api/adopt_agent?id=${id}`,
     AGENT_WEBHOOK: (id: string) => `/api/agent_webhook?id=${id}`,
+    REGENERATE_AGENT_KEY: (id: string) => `/api/regenerate_agent_key/${id}`,
     EXPORT_AGENT: (id: string) => `/api/export_agent?id=${id}`,
     IMPORT_AGENT_PLAN: '/api/import_agent/plan',
     IMPORT_AGENT: '/api/import_agent',

@@ -83,6 +83,25 @@ class TokenUsageRepository:
             },
         )
 
+    def reassign_api_key(self, *, old_key: str, new_key: str) -> int:
+        """Re-point historical rows from ``old_key`` to ``new_key``.
+
+        Called when an agent's key is rotated. Although per-agent analytics
+        also match on ``agent_id``, the 24h rate-limit window
+        (``sum_tokens_in_range`` / ``count_in_range``) and any legacy rows with
+        a NULL ``agent_id`` are keyed by the api-key string only. Rewriting the
+        key here preserves the running rate-limit window across a rotation (so
+        rotating cannot be used to reset it) and keeps legacy rows attributed.
+        Returns the number of rows updated.
+        """
+        if not old_key or not new_key:
+            return 0
+        result = self._conn.execute(
+            text("UPDATE token_usage SET api_key = :new_key WHERE api_key = :old_key"),
+            {"old_key": old_key, "new_key": new_key},
+        )
+        return result.rowcount
+
     def sum_tokens_in_range(
         self,
         *,

@@ -255,6 +255,11 @@ stack_logs_table = Table(
     Column("level", Text),
     Column("user_id", Text),
     Column("api_key", Text),
+    # Stable per-agent attribution. ``api_key`` is mutable (agents can rotate
+    # their key), so analytics join on this UUID first and fall back to the
+    # key string. No FK (mirrors ``token_usage.agent_id``) so a stray/legacy
+    # id can never block an activity-log write. Added in ``0026``.
+    Column("agent_id", UUID(as_uuid=True)),
     Column("query", Text),
     Column("stacks", JSONB, nullable=False, server_default="[]"),
     Column("timestamp", DateTime(timezone=True), nullable=False, server_default=func.now()),

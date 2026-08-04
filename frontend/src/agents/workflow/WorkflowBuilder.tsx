@@ -3077,6 +3077,9 @@ function WorkflowBuilderInner() {
             mode="edit"
             modalState={agentDetails}
             setModalState={setAgentDetails}
+            onKeyRegenerated={(key) =>
+              setCurrentAgent((prev) => ({ ...prev, key }))
+            }
           />
         )}
       </div>

@@ -1001,7 +1001,9 @@
       "webhookUrl": "Webhook URL",
       "generate": "Generate",
       "test": "Test",
-      "learnMore": "Learn more"
+      "learnMore": "Learn more",
+      "resetKey": "キーをリセット",
+      "resetKeyConfirm": "APIキーをリセットしてもよろしいですか？現在のキーは直ちに無効になり、この操作は元に戻せません。"
     },
     "importSpec": {
       "title": "API仕様のインポート",
