@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from application.parser.file.base_parser import BaseParser
+from application.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
 
@@ -121,9 +122,7 @@ def _capped_markup_copy(file: Path) -> Optional[str]:
             head = src.read(max_bytes)
     except OSError:
         return None
-    cut = head.rfind(b"\n")
-    if cut > max_bytes // 2:
-        head = head[: cut + 1]
+    head = truncate_to_line_boundary(head)
     with tempfile.NamedTemporaryFile(
         delete=False, suffix=Path(file).suffix
     ) as tmp:

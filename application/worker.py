@@ -48,7 +48,12 @@ from application.storage.db.repositories.wiki_pages import (
 from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
-from application.utils import count_tokens_docs, num_tokens_from_string, safe_filename
+from application.utils import (
+    count_tokens_docs,
+    num_tokens_from_string,
+    safe_filename,
+    truncate_to_line_boundary,
+)
 
 # Constants
 
@@ -1484,12 +1489,6 @@ _TRUNCATABLE_ATTACHMENT_SUFFIXES = {
 }
 
 
-# Zip-container document formats. A malicious archive can declare a tiny
-# on-disk size but a huge inner-uncompressed payload (or a huge entry count),
-# so these are size-checked before a parser touches them.
-_ZIP_CONTAINER_ATTACHMENT_EXTS = frozenset({".docx", ".xlsx", ".pptx", ".epub"})
-
-
 class AttachmentRejectedError(Exception):
     """A deterministic reason an attachment must not be parsed (e.g. zip bomb).
 
@@ -1501,9 +1500,8 @@ class AttachmentRejectedError(Exception):
 def _reject_attachment_zip_bomb(local_path: str) -> None:
     """Reject a zip-container attachment that decompresses to too much.
 
-    Mirrors the ingest-path guard (``document_reader._reject_zip_bomb``) on the
-    attachment path, which previously had no such check. Reads only the zip
-    central directory (declared sizes), never decompressing.
+    Applies the shared guard (``document_reader.reject_zip_bomb_path``) on the
+    attachment path, which previously had no such check.
 
     Args:
         local_path: Filesystem path of the attachment about to be parsed.
@@ -1512,28 +1510,11 @@ def _reject_attachment_zip_bomb(local_path: str) -> None:
         AttachmentRejectedError: If the archive exceeds the entry-count or
             inner-uncompressed-size caps.
     """
-    suffix = os.path.splitext(local_path)[1].lower()
-    if suffix not in _ZIP_CONTAINER_ATTACHMENT_EXTS:
-        return
-    max_entries = int(getattr(settings, "DOCUMENT_MAX_ARCHIVE_ENTRIES", 10000))
-    cap = int(getattr(settings, "DOCUMENT_MAX_DECOMPRESSED_BYTES", 300 * 1024 * 1024))
-    try:
-        with zipfile.ZipFile(local_path) as zf:
-            infos = zf.infolist()
-    except zipfile.BadZipFile:
-        # Not a readable zip; the format parser will surface a clean error.
-        return
-    if len(infos) > max_entries:
-        raise AttachmentRejectedError(
-            f"archive has too many entries ({len(infos)} > {max_entries})"
-        )
-    total = 0
-    for info in infos:
-        total += info.file_size
-        if total > cap:
-            raise AttachmentRejectedError(
-                f"archive decompresses to too much data (exceeds {cap} bytes)"
-            )
+    from application.parser.document_reader import reject_zip_bomb_path
+
+    reason = reject_zip_bomb_path(local_path)
+    if reason is not None:
+        raise AttachmentRejectedError(reason)
 
 
 def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
@@ -1565,9 +1546,7 @@ def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
             head = src.read(max_bytes)
     except OSError:
         return local_path, False
-    cut = head.rfind(b"\n")
-    if cut > 0:
-        head = head[: cut + 1]
+    head = truncate_to_line_boundary(head)
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(head)
     logging.warning(

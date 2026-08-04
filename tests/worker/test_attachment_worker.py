@@ -158,6 +158,26 @@ class TestBoundedAttachmentCopy:
         assert len(data) == 256
         Path(parse_path).unlink()
 
+    def test_leading_newline_does_not_collapse_the_copy(self, tmp_path, monkeypatch):
+        """A window whose only newline sits at byte 0 must keep its content.
+
+        ``rfind`` returns 0 for this shape, so cutting at that boundary would
+        write a one-byte copy and throw the attachment away — the partial
+        final line is the better trade.
+        """
+        from application import worker
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_TEXT_MAX_BYTES", 256)
+        original = self._write(tmp_path, "leading.log", b"\n" + b"x" * 5000)
+
+        parse_path, is_temp = worker._bounded_attachment_copy(str(original))
+
+        assert is_temp is True
+        data = Path(parse_path).read_bytes()
+        assert len(data) == 256
+        Path(parse_path).unlink()
+
 
 @pytest.mark.unit
 class TestAttachmentZipBombGuard:

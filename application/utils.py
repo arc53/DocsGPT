@@ -79,6 +79,28 @@ def strip_null_bytes(value):
     return value
 
 
+def truncate_to_line_boundary(data: bytes) -> bytes:
+    """Trim a head-truncated byte window back to its last line boundary.
+
+    The trim is skipped when it would discard more than half the window — a
+    file whose only newline sits near the start (or at byte 0) would otherwise
+    collapse to a few bytes, which is far worse than a partial final line.
+    Callers pass a window already read at their size cap, so the cut never
+    grows the result.
+
+    Args:
+        data: The head window read from an oversized file.
+
+    Returns:
+        ``data`` up to and including its last newline, or ``data`` unchanged
+        when no newline is far enough in to be worth cutting at.
+    """
+    cut = data.rfind(b"\n")
+    if cut > len(data) // 2:
+        return data[: cut + 1]
+    return data
+
+
 def num_tokens_from_string(string: str) -> int:
     encoding = get_encoding()
     if isinstance(string, str):
