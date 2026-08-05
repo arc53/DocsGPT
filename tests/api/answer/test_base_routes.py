@@ -909,6 +909,15 @@ def _patch_db_session(conn):
         # uncommitted writes from this transaction.
         "application.api.answer.routes.base.db_readonly",
         _yield,
+    ), patch(
+        # The terminal ``stream_answer`` user_logs write opens its own
+        # ``db_session``. Left unpatched it is a *second* connection that
+        # blocks on the uncommitted ``users`` row this transaction just
+        # inserted (via the ``ensure_user_exists`` trigger) until the
+        # statement timeout fires — ~30s per test, swallowed by the
+        # caller's except, so it only ever showed up as slowness.
+        "application.api.answer.routes.base.db_session",
+        _yield,
     ):
         yield
 
@@ -971,6 +980,161 @@ class TestCompleteStreamWalAcceptance:
             assert msgs[0]["status"] == "failed"
             assert "RuntimeError" in msgs[0]["metadata"]["error"]
             assert "LLM upstream failed" in msgs[0]["metadata"]["error"]
+
+    def test_workflow_node_error_persists_as_failed_not_blank_complete(
+        self, pg_conn, flask_app,
+    ):
+        """A workflow node failure must not land as a blank ``complete`` row.
+
+        The engine reports node failures by *yielding* ``{"type": "error"}``
+        rather than raising, so the generator returns normally and the turn
+        used to be finalized ``complete`` with an empty response. Live, the
+        client shows an error bubble; on reload the row mapped to an empty
+        answer with no error and no retry affordance — the user saw a blank
+        message and re-sent the prompt. Reproduces the 2026-08-01 report.
+        """
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [{"type": "error", "error": "No LLM class found for type foundry"}]
+            )
+
+            with _patch_db_session(pg_conn):
+                stream = list(
+                    resource.complete_stream(
+                        question="hello",
+                        agent=mock_agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-wf-error"},
+                        should_persist=True,
+                        model_id="gpt-4",
+                    )
+                )
+            assert len([s for s in stream if '"type": "error"' in s]) == 1
+
+            from sqlalchemy import text as sql_text
+            convs = pg_conn.execute(
+                sql_text("SELECT id FROM conversations WHERE user_id = :u"),
+                {"u": "u-wf-error"},
+            ).fetchall()
+            assert len(convs) == 1
+            msgs = ConversationsRepository(pg_conn).get_messages(str(convs[0][0]))
+            assert len(msgs) == 1
+            assert msgs[0]["prompt"] == "hello"
+            assert msgs[0]["status"] == "failed", (
+                "a turn that produced no answer and emitted an error must be "
+                "failed, so history renders the error and a retry button"
+            )
+            assert "foundry" in msgs[0]["metadata"]["error"]
+
+    def test_error_after_partial_answer_keeps_the_answer(
+        self, pg_conn, flask_app,
+    ):
+        """A late error must not discard text the user already received.
+
+        Only the *blank* turn is a failure. If a workflow produced output and
+        then a downstream node failed, the row stays ``complete`` so the
+        partial answer still renders; the error was already surfaced live.
+        """
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [
+                    {"answer": "partial result"},
+                    {"type": "error", "error": "node 2 blew up"},
+                ]
+            )
+
+            with _patch_db_session(pg_conn):
+                list(
+                    resource.complete_stream(
+                        question="run the workflow",
+                        agent=mock_agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-wf-partial"},
+                        should_persist=True,
+                        model_id="gpt-4",
+                    )
+                )
+
+            from sqlalchemy import text as sql_text
+            convs = pg_conn.execute(
+                sql_text("SELECT id FROM conversations WHERE user_id = :u"),
+                {"u": "u-wf-partial"},
+            ).fetchall()
+            msgs = ConversationsRepository(pg_conn).get_messages(str(convs[0][0]))
+            assert msgs[0]["status"] == "complete"
+            assert msgs[0]["response"] == "partial result"
+            # Still recorded, so the failure is greppable in review queries.
+            assert "node 2 blew up" in msgs[0]["metadata"]["error"]
+
+    def test_workflow_error_fails_the_row_on_the_non_wal_path_too(
+        self, pg_conn, flask_app,
+    ):
+        """The same guarantee when no placeholder row was reserved.
+
+        ``save_conversation`` has its own insert path (used when the WAL
+        reservation failed, or on a continuation carrying no
+        ``reserved_message_id``). It took no status, so the row landed on the
+        column default ``complete`` — leaving exactly the blank bubble this
+        changeset removes on the other branch.
+        """
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [{"type": "error", "error": "CEL error in node 'Build reply'"}]
+            )
+
+            with _patch_db_session(pg_conn), patch.object(
+                resource.conversation_service,
+                "save_user_question",
+                side_effect=RuntimeError("WAL reservation unavailable"),
+            ):
+                list(
+                    resource.complete_stream(
+                        question="hello",
+                        agent=mock_agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-wf-nonwal"},
+                        should_persist=True,
+                        model_id="gpt-4",
+                    )
+                )
+
+            from sqlalchemy import text as sql_text
+            convs = pg_conn.execute(
+                sql_text("SELECT id FROM conversations WHERE user_id = :u"),
+                {"u": "u-wf-nonwal"},
+            ).fetchall()
+            assert len(convs) == 1
+            msgs = ConversationsRepository(pg_conn).get_messages(str(convs[0][0]))
+            assert len(msgs) == 1
+            assert msgs[0]["status"] == "failed"
+            assert "CEL error" in msgs[0]["metadata"]["error"]
 
     def test_tool_approval_event_only_fires_when_state_saved(
         self, pg_conn, flask_app,

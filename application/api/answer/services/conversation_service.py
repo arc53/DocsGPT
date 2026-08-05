@@ -100,8 +100,14 @@ class ConversationService:
         attachment_ids: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         visibility: str = "hidden",
+        status: str = "complete",
     ) -> str:
         """Save or update a conversation in Postgres.
+
+        ``status`` lets a caller record a turn that failed without producing
+        an answer. It defaults to ``complete``, matching the column default
+        this path relied on before; passing ``failed`` is what stops a blank
+        errored turn from rendering as an empty bubble with no retry.
 
         Returns the string conversation id (PG UUID as string, or the
         caller-provided id if it was already a UUID).
@@ -127,6 +133,7 @@ class ConversationService:
             "attachments": attachment_ids,
             "model_id": model_id,
             "timestamp": current_time,
+            "status": status,
         }
         if metadata:
             message_payload["metadata"] = metadata
@@ -410,7 +417,12 @@ class ConversationService:
             repo.confirm_executed_tool_calls(message_id)
 
         # Outside the txn — title-gen is a multi-second LLM round trip.
-        if title_inputs and status == "complete":
+        # ``failed`` counts too: the conversation is still listed, and
+        # ``_maybe_generate_title`` only regenerates while the name is still
+        # the question-prefix fallback. Skipping it here would strand a
+        # conversation whose first turn failed with the raw prompt as its
+        # name forever, because by turn two the fallback no longer matches.
+        if title_inputs and status in ("complete", "failed"):
             if async_title_generation:
                 threading.Thread(
                     target=self._generate_title_safely,

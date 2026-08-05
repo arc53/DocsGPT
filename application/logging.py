@@ -34,6 +34,12 @@ class LogContext:
         self.thought_length = 0
         self.source_count = 0
         self.tool_call_count = 0
+        # Terminal ``error`` events are *yielded*, not raised (workflow node
+        # failures, agent-reported errors), so they never reach the decorator's
+        # ``except``. Recording one here keeps ``activity_finished`` from
+        # reporting ``status="ok"`` on a turn the user saw fail — that gap is
+        # why blank-answer incidents did not show up in error dashboards.
+        self.stream_error: str | None = None
 
 
 def build_stack_data(
@@ -174,8 +180,12 @@ def _emit_activity_finished(
             "user_id": context.user,
             "endpoint": context.endpoint,
             "duration_ms": duration_ms,
-            "status": "error" if error is not None else "ok",
-            "error_class": type(error).__name__ if error is not None else None,
+            "status": "error" if (error is not None or context.stream_error) else "ok",
+            "error_class": (
+                type(error).__name__
+                if error is not None
+                else ("StreamError" if context.stream_error else None)
+            ),
             "answer_length": context.answer_length,
             "thought_length": context.thought_length,
             "source_count": context.source_count,
@@ -191,6 +201,11 @@ def _accumulate_response_summary(item: Any, context: "LogContext") -> None:
     gets the same summary.
     """
     if not isinstance(item, dict):
+        return
+    if item.get("type") == "error":
+        # Fall back to a sentinel: an error event carrying no message would
+        # otherwise store "" and read as falsy, reporting the activity "ok".
+        context.stream_error = str(item.get("error") or "")[:200] or "unspecified"
         return
     if "answer" in item:
         context.answer_length += len(str(item["answer"]))
