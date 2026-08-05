@@ -89,7 +89,11 @@ class FakeChatCompletions:
 
 
 class FakeFiles:
+    def __init__(self):
+        self.created = []
+
     def create(self, file=None, purpose=None):
+        self.created.append(purpose)
         return types.SimpleNamespace(id="file_id_uploaded")
 
 
@@ -729,6 +733,149 @@ class TestPrepareMessagesWithAttachments:
         assert isinstance(user_msg["content"], list)
 
 
+@pytest.mark.unit
+class TestPdfAttachmentNullFileIdCache:
+    """A NULL ``openai_file_id`` column must not read as a cache hit.
+
+    Attachment dicts come from ``SELECT *`` (``row_to_dict``), so every row
+    carries an ``openai_file_id`` key and it is NULL until an upload caches
+    one. Testing for key *membership* therefore treated every fresh
+    attachment as cached, returned ``None`` without uploading, and — because
+    nothing raised — skipped the fallback that inlines the extracted text.
+    The user was told their perfectly good PDF "could not be processed".
+    """
+
+    @pytest.fixture(autouse=True)
+    def _real_pdf_on_disk(self, tmp_path):
+        """The upload path opens the file, so it has to exist."""
+        pdf = tmp_path / "contract.pdf"
+        pdf.write_bytes(b"%PDF-1.4\ntrailer<</Root 1 0 R>>\n")
+        self._pdf_path = str(pdf)
+
+    def _pg_shaped_attachment(self, **overrides):
+        """What ``_attachment_to_dict`` actually produces for a fresh row."""
+        attachment = {
+            "id": "att-1",
+            "filename": "contract.pdf",
+            "path": self._pdf_path,
+            "upload_path": self._pdf_path,
+            "mime_type": "application/pdf",
+            "size": 120_000,
+            "content": "REAL EXTRACTED TEXT",
+            "token_count": 6748,
+            "openai_file_id": None,
+            "google_file_uri": None,
+        }
+        attachment.update(overrides)
+        return attachment
+
+    def test_null_cached_id_still_uploads(self, llm):
+        file_id = llm._upload_file_to_openai(self._pg_shaped_attachment())
+        assert file_id, "a NULL cached id must not short-circuit the upload"
+        assert llm.client.files.created, "files.create was never called"
+
+    def test_populated_cached_id_short_circuits(self, llm):
+        stamped = llm._stamp_file_id("file-cached")
+        attachment = self._pg_shaped_attachment(openai_file_id=stamped)
+        assert llm._upload_file_to_openai(attachment) == "file-cached"
+        assert not llm.client.files.created, "should not re-upload a cached file"
+
+    def test_cached_id_from_another_endpoint_is_ignored(self, llm):
+        """A file_id only resolves at the endpoint that minted it.
+
+        ``attachments.openai_file_id`` is one global column, so an id cached
+        against deployment A would otherwise be replayed against deployment B,
+        which answers "No such File object" on every retry — permanently,
+        since the row keeps the bad id.
+        """
+        attachment = self._pg_shaped_attachment(
+            openai_file_id="0123456789abcdef:file-from-elsewhere"
+        )
+        file_id = llm._upload_file_to_openai(attachment)
+        assert file_id == "file_id_uploaded"
+        assert llm.client.files.created, "a foreign-scope id must re-upload"
+
+    def test_legacy_unscoped_cached_id_is_ignored(self, llm):
+        """Rows written before scoping carry a bare id; re-upload and restamp."""
+        attachment = self._pg_shaped_attachment(openai_file_id="file-legacy")
+        assert llm._upload_file_to_openai(attachment) == "file_id_uploaded"
+        assert llm.client.files.created
+
+    def test_oversized_content_is_truncated_before_inlining(self, llm):
+        """Attachments merge in *after* the context-window check, so nothing
+        downstream trims this — a big PDF would blow the whole request."""
+        llm._upload_file_to_openai = lambda _attachment: None
+        llm.model_id = None  # exercise the no-registry default budget
+        huge = "word " * 200_000
+        attachment = self._pg_shaped_attachment(content=huge)
+
+        result = llm.prepare_messages_with_attachments(
+            [{"role": "user", "content": "summarize"}], [attachment]
+        )
+        text = next(
+            p["text"]
+            for p in result[-1]["content"]
+            if p.get("type") == "text" and p["text"].startswith("File content:")
+        )
+        assert len(text) < len(huge)
+        assert "Content truncated" in text
+
+    def test_extracted_text_reaches_the_model_when_upload_yields_no_id(self, llm):
+        """The production failure: no id, no exception, no text, wrong answer."""
+        llm._upload_file_to_openai = lambda _attachment: None
+
+        msgs = [{"role": "user", "content": "summarize the attached pdf"}]
+        result = llm.prepare_messages_with_attachments(
+            msgs, [self._pg_shaped_attachment()]
+        )
+
+        user_msg = next(m for m in result if m["role"] == "user")
+        assert not any(
+            p.get("type") == "file" and not p.get("file", {}).get("file_id")
+            for p in user_msg["content"]
+        ), "must not emit a file part with an empty file_id"
+        assert any(
+            "REAL EXTRACTED TEXT" in p.get("text", "")
+            for p in user_msg["content"]
+            if p.get("type") == "text"
+        ), "extracted content must be inlined rather than dropped"
+
+    def test_degrade_note_names_the_real_file(self, llm):
+        """Fall back to the note only with no text, and never say 'upload.pdf'."""
+        llm._upload_file_to_openai = lambda _attachment: None
+        attachment = self._pg_shaped_attachment(content="")
+
+        msgs = [{"role": "user", "content": "summarize"}]
+        result = llm.prepare_messages_with_attachments(msgs, [attachment])
+
+        user_msg = next(m for m in result if m["role"] == "user")
+        notes = [
+            p["text"]
+            for p in user_msg["content"]
+            if p.get("type") == "text" and "could not be processed" in p.get("text", "")
+        ]
+        assert len(notes) == 1
+        assert "contract.pdf" in notes[0]
+        assert "upload.pdf" not in notes[0]
+
+    def test_file_part_carries_only_file_id(self, llm):
+        """Never send ``filename`` next to ``file_id``.
+
+        Verified against the Azure Foundry deployment: a file part carrying
+        both is rejected outright —
+        ``400 Unknown parameter: 'messages[0].content[1].file.filename'``.
+        The upload itself and a ``file_id``-only part both return 200 and the
+        model reads the PDF correctly, so the reference is all we may send.
+        """
+        msgs = [{"role": "user", "content": "summarize"}]
+        result = llm.prepare_messages_with_attachments(
+            msgs, [self._pg_shaped_attachment()]
+        )
+        user_msg = next(m for m in result if m["role"] == "user")
+        file_part = next(p for p in user_msg["content"] if p.get("type") == "file")
+        assert file_part["file"] == {"file_id": "file_id_uploaded"}
+
+
 # _get_base64_image
 
 
@@ -1048,8 +1195,15 @@ class TestPrepareMessagesWithAttachmentsAdditional:
 class TestUploadFileToOpenai:
 
     def test_cached_file_id_returned(self, llm):
-        """Cover line 469: cached openai_file_id."""
-        result = llm._upload_file_to_openai({"openai_file_id": "cached_id"})
+        """A cached openai_file_id short-circuits the upload.
+
+        The stored value is endpoint-scoped: a bare id is a legacy row and is
+        deliberately treated as a miss (see
+        ``TestPdfAttachmentNullFileIdCache``).
+        """
+        result = llm._upload_file_to_openai(
+            {"openai_file_id": llm._stamp_file_id("cached_id")}
+        )
         assert result == "cached_id"
 
     def test_file_not_found_raises(self, llm):
@@ -1156,8 +1310,10 @@ class TestOpenAILLMConstructor:
 class TestUploadFileToOpenai2:
 
     def test_returns_cached_file_id(self, llm):
-        """Cover line 491-492: returns cached openai_file_id."""
-        result = llm._upload_file_to_openai({"openai_file_id": "file-123"})
+        """Returns the cached openai_file_id when it belongs to this endpoint."""
+        result = llm._upload_file_to_openai(
+            {"openai_file_id": llm._stamp_file_id("file-123")}
+        )
         assert result == "file-123"
 
     def test_file_not_found_raises(self, llm):
@@ -1386,7 +1542,9 @@ class TestUploadFileToOpenaiLine469:
     """Cover line 469: cached openai_file_id returned early."""
 
     def test_cached_id_returned_immediately(self, llm):
-        result = llm._upload_file_to_openai({"openai_file_id": "file-cached-123"})
+        result = llm._upload_file_to_openai(
+            {"openai_file_id": llm._stamp_file_id("file-cached-123")}
+        )
         assert result == "file-cached-123"
 
 
@@ -1529,9 +1687,9 @@ class TestUploadFileToOpenAIError:
             llm._upload_file_to_openai({"path": "/doc.pdf"})
 
     def test_upload_cached_file_id(self, llm):
-        """Cover line 491-492: already has openai_file_id."""
+        """Already has an endpoint-scoped openai_file_id."""
         result = llm._upload_file_to_openai(
-            {"path": "/doc.pdf", "openai_file_id": "file-cached"}
+            {"path": "/doc.pdf", "openai_file_id": llm._stamp_file_id("file-cached")}
         )
         assert result == "file-cached"
 
