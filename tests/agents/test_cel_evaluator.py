@@ -204,12 +204,44 @@ class TestCelErrorMessages:
         assert "NameContainer" not in message
 
     @pytest.mark.unit
-    def test_error_does_not_echo_state_values(self):
+    @pytest.mark.parametrize(
+        "secret",
+        [
+            "SUPER-SECRET-VALUE",
+            # An identifier-shaped value is indistinguishable from a variable
+            # name, so it must be redacted too — this is the realistic case
+            # (a one-word user query) and the earlier redaction let it through.
+            "invoice",
+            "SECRET",
+        ],
+    )
+    def test_error_does_not_echo_state_values(self, secret):
         """Config errors skip sanitize_api_error now, so they must not carry
         state contents — a shared agent's runner is not its owner."""
         with pytest.raises(CelEvaluationError) as exc:
-            evaluate_cel("int(query)", {"query": "SUPER-SECRET-VALUE"})
-        assert "SUPER-SECRET-VALUE" not in str(exc.value)
+            evaluate_cel("int(query)", {"query": secret})
+        assert secret not in str(exc.value)
+
+    @pytest.mark.unit
+    def test_error_keeps_the_exception_class(self):
+        """Redaction must not swallow the one safe diagnostic."""
+        with pytest.raises(CelEvaluationError) as exc:
+            evaluate_cel("int(query)", {"query": "nope"})
+        assert "ValueError" in str(exc.value)
+
+    @pytest.mark.unit
+    def test_long_error_is_truncated(self):
+        """Backstop for celpy messages that survive activation-stripping."""
+        from application.agents.workflows.cel_evaluator import _summarize_cel_error
+
+        summary = _summarize_cel_error(Exception("word " * 200))
+        assert len(summary) <= 200
+        assert summary.endswith("…")
+
+    @pytest.mark.unit
+    def test_validate_rejects_empty_expression(self):
+        with pytest.raises(CelEvaluationError, match="Empty expression"):
+            validate_cel_expression("   ")
 
     @pytest.mark.unit
     @pytest.mark.parametrize(

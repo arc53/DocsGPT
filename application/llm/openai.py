@@ -1742,9 +1742,12 @@ class OpenAILLM(BaseLLM):
         # Half the window: the prompt, history and the answer share the rest.
         budget = int(limit * 0.5) if limit else 24000
         try:
-            if num_tokens_from_string(content) <= budget:
+            # Tokenize once: this is a full BPE pass over the whole extraction
+            # (~12ms per 250k chars), on the hot path of every attachment turn.
+            token_count = num_tokens_from_string(content)
+            if token_count <= budget:
                 return content
-            chars_per_token = len(content) / max(num_tokens_from_string(content), 1)
+            chars_per_token = len(content) / max(token_count, 1)
             keep = max(int(budget * chars_per_token * 0.95), 0)
         except Exception:
             keep = budget * 4

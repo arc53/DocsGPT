@@ -52,12 +52,19 @@ def _summarize_cel_error(exc: Exception) -> str:
     if marker in text:
         text = text.split(marker, 1)[0]
     text = text.strip().lstrip("(").strip()
-    # Quoted fragments in celpy messages are either the offending identifier
-    # (safe, and the useful part) or a state value (not ours to echo). Keep
-    # bare identifiers, redact anything else.
+
+    # Redact quoted fragments by DEFAULT. celpy interpolates state values into
+    # messages (``StringType('SECRET')``), and a value that happens to look
+    # like an identifier is indistinguishable from a variable name — so allow
+    # only the two positions that are known to hold names, not data: the
+    # offending variable in "undeclared reference to 'x'", and the exception
+    # class in "<class 'ValueError'>".
     def _redact(match: "re.Match[str]") -> str:
         inner = match.group(1)
-        return f"'{inner}'" if inner.isidentifier() else "'…'"
+        prefix = text[max(0, match.start() - 14):match.start()]
+        if prefix.endswith("reference to ") or prefix.endswith("<class "):
+            return f"'{inner}'"
+        return "'…'"
 
     text = re.sub(r"'([^']*)'", _redact, text)
     text = text.strip().strip('"').strip()
