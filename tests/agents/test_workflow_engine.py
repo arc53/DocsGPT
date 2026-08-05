@@ -507,3 +507,96 @@ class TestWorkflowEngineAdditionalCoverage:
         # A non-dict schema triggers JsonSchemaValidationError
         with pytest.raises(ValueError, match="Invalid JSON schema"):
             engine._normalize_node_json_schema("not_a_dict", "TestNode")
+
+
+class TestAgentNodeProviderResolution:
+    """``llm_name`` stored on a node is a *display* label, not a dispatch name.
+
+    ``/api/models`` reports ``display_provider`` (e.g. ``foundry``,
+    ``azure_foundry``, ``cloudflare``) and the builder stores that string on
+    the node. Handing it to ``LLMCreator`` raises ``No LLM class found for
+    type <label>``, which fails the node before any LLM call and returns a
+    blank answer to the user. The engine must resolve the real dispatch
+    provider from the model registry instead.
+    """
+
+    @staticmethod
+    def _run(monkeypatch, node, *, registry_provider="openai_compatible"):
+        """Execute one agent node, returning the kwargs the factory saw."""
+        engine = create_engine()
+        engine.state["query"] = "test"
+        captured = {}
+
+        def _capture(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(
+            WorkflowNodeAgentFactory, "create", staticmethod(_capture)
+        )
+        monkeypatch.setattr(
+            "application.core.model_utils.get_api_key_for_provider",
+            lambda name: f"key-for-{name}",
+        )
+        monkeypatch.setattr(
+            "application.core.model_utils.get_provider_from_model_id",
+            lambda _, **_kwargs: registry_provider,
+        )
+        monkeypatch.setattr(
+            "application.core.model_utils.get_model_capabilities",
+            lambda _, **_kwargs: None,
+        )
+        list(engine._execute_agent_node(node))
+        return captured
+
+    @pytest.mark.parametrize(
+        "display_label", ["azure_foundry", "cloudflare", "foundry"]
+    )
+    def test_display_provider_label_resolves_to_dispatch_provider(
+        self, monkeypatch, display_label
+    ):
+        """A display label must not reach LLMCreator (err#33)."""
+        node = create_agent_node(node_id="n1")
+        node.config["model_id"] = "Kimi-K2.6"
+        node.config["llm_name"] = display_label
+
+        captured = self._run(monkeypatch, node)
+
+        assert captured["llm_name"] == "openai_compatible"
+        # The api_key must follow the *normalized* name: resolving against the
+        # display label silently falls through to settings.API_KEY.
+        assert captured["api_key"] == "key-for-openai_compatible"
+
+    def test_real_provider_name_is_preserved(self, monkeypatch):
+        """A node storing a genuine dispatch name keeps it."""
+        node = create_agent_node(node_id="n2")
+        node.config["model_id"] = "gpt-4o"
+        node.config["llm_name"] = "openai"
+
+        captured = self._run(monkeypatch, node, registry_provider="openai")
+
+        assert captured["llm_name"] == "openai"
+
+    def test_unresolvable_label_falls_back_to_parent_agent(self, monkeypatch):
+        """No registry hit: inherit the parent agent rather than dispatching junk."""
+        node = create_agent_node(node_id="n3")
+        node.config["model_id"] = "mystery-model"
+        node.config["llm_name"] = "some_unknown_label"
+
+        captured = self._run(monkeypatch, node, registry_provider=None)
+
+        # create_engine()'s parent agent is llm_name="openai"
+        assert captured["llm_name"] == "openai"
+
+    def test_retriever_config_uses_normalized_provider(self, monkeypatch):
+        """The agentic retriever path builds its own kwargs — normalize there too."""
+        node = create_agent_node(node_id="n4")
+        node.config["model_id"] = "Kimi-K2.6"
+        node.config["llm_name"] = "azure_foundry"
+        node.config["agent_type"] = "agentic"
+        node.config["sources"] = ["src-1"]
+
+        captured = self._run(monkeypatch, node)
+
+        assert captured["retriever_config"]["llm_name"] == "openai_compatible"
+        assert captured["retriever_config"]["api_key"] == "key-for-openai_compatible"
