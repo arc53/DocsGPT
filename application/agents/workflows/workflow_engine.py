@@ -165,7 +165,19 @@ class WorkflowEngine:
                 self._finalize_log_entry(log_entry, pre_state)
                 self.execution_log.append(log_entry)
 
-                user_friendly_error = sanitize_api_error(e)
+                # A misconfigured expression is the builder's own typo, and the
+                # message says exactly how to fix it. Routing it through
+                # sanitize_api_error would match the ``{`` in ``{{query}}`` and
+                # replace the whole thing with "An error occurred … try again
+                # later" — advice that sends the user round the same loop.
+                # Everything else stays sanitized: node internals and upstream
+                # provider errors are not for end users.
+                is_config_error = isinstance(e, CelEvaluationError)
+                user_friendly_error = (
+                    f"{node.title or node.type.value}: {e}"
+                    if is_config_error
+                    else sanitize_api_error(e)
+                )
                 yield {
                     "type": "workflow_step",
                     "node_id": node.id,
@@ -175,7 +187,11 @@ class WorkflowEngine:
                     "state_delta": log_entry["state_delta"],
                     "error": user_friendly_error,
                 }
-                yield {"type": "error", "error": user_friendly_error}
+                yield {
+                    "type": "error",
+                    "error": user_friendly_error,
+                    "user_facing": is_config_error,
+                }
                 break
             self.execution_log.append(log_entry)
             pre_state = dict(self.state)

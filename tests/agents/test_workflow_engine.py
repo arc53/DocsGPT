@@ -146,6 +146,96 @@ def test_execute_agent_node_falls_back_to_text_when_schema_not_configured(monkey
     assert engine.state["result"] == "plain text answer"
 
 
+def _state_workflow(operations, nested=True):
+    """Start → state → end, with state config in either accepted shape."""
+    data = {"config": {"operations": operations}} if nested else {
+        "operations": operations
+    }
+    nodes = [
+        {"id": "start", "type": "start", "title": "Start", "data": {}},
+        {"id": "state", "type": "state", "title": "Build reply", "data": data},
+        {"id": "end", "type": "end", "title": "End", "data": {}},
+    ]
+    edges = [
+        {"id": "edge_1", "source": "start", "target": "state"},
+        {"id": "edge_2", "source": "state", "target": "end"},
+    ]
+    return nodes, edges
+
+
+@pytest.mark.parametrize("nested", [True, False])
+def test_validate_workflow_structure_rejects_template_syntax_in_state_node(nested):
+    """``{{query}}`` compiles nowhere but used to save and publish clean.
+
+    It then aborted the run on the first message with a bare caret dump that
+    ``sanitize_api_error`` collapsed into "try again later" — the 2026-08-01
+    report, where a new user retried eight times over seven hours.
+    """
+    nodes, edges = _state_workflow(
+        [{"expression": "{{query}}", "target_variable": "reply"}], nested=nested
+    )
+
+    errors = validate_workflow_structure(nodes, edges)
+
+    assert any(
+        "Set State node 'Build reply'" in err and "invalid expression" in err
+        for err in errors
+    ), errors
+    # The message must teach the correction, not just report a failure.
+    assert any("CEL" in err for err in errors), errors
+
+
+def test_validate_workflow_structure_accepts_valid_state_expression():
+    nodes, edges = _state_workflow(
+        [{"expression": 'query + "!"', "target_variable": "reply"}]
+    )
+    assert validate_workflow_structure(nodes, edges) == []
+
+
+def test_validate_workflow_structure_accepts_runtime_only_state_reference():
+    """Names resolve from run state, so they cannot be checked at save time."""
+    nodes, edges = _state_workflow(
+        [{"expression": "node_agent_1_output", "target_variable": "reply"}]
+    )
+    assert validate_workflow_structure(nodes, edges) == []
+
+
+def test_validate_workflow_structure_rejects_half_configured_state_operation():
+    """The engine skips these silently, so downstream reads an unset var."""
+    nodes, edges = _state_workflow(
+        [{"expression": "query", "target_variable": ""}]
+    )
+    errors = validate_workflow_structure(nodes, edges)
+    assert any("no target variable" in err for err in errors), errors
+
+
+def test_validate_workflow_structure_rejects_invalid_condition_expression():
+    nodes = [
+        {"id": "start", "type": "start", "title": "Start", "data": {}},
+        {
+            "id": "cond",
+            "type": "condition",
+            "title": "Route",
+            "data": {
+                "cases": [
+                    {"expression": "{{query}}", "sourceHandle": "case_0"},
+                    {"expression": "true", "sourceHandle": "else"},
+                ]
+            },
+        },
+        {"id": "end", "type": "end", "title": "End", "data": {}},
+    ]
+    edges = [
+        {"id": "e1", "source": "start", "target": "cond"},
+        {"id": "e2", "source": "cond", "target": "end", "sourceHandle": "case_0"},
+        {"id": "e3", "source": "cond", "target": "end", "sourceHandle": "else"},
+    ]
+
+    errors = validate_workflow_structure(nodes, edges)
+
+    assert any("invalid expression" in err for err in errors), errors
+
+
 def test_validate_workflow_structure_rejects_invalid_agent_json_schema():
     nodes = [
         {"id": "start", "type": "start", "title": "Start", "data": {}},

@@ -2473,11 +2473,13 @@ function WorkflowBuilderInner() {
                                         }}
                                         className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent mb-1 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                         rows={2}
-                                        placeholder="input.foo + 1"
+                                        placeholder="query"
                                       />
                                       <p className="text-muted-foreground mb-3 text-xs">
                                         Use Common Expression Language to create
-                                        a custom expression.{' '}
+                                        a custom expression. Reference state by
+                                        bare name (<code>query</code>), not{' '}
+                                        <code>{'{{query}}'}</code>.{' '}
                                         <a
                                           href="https://cel.dev/"
                                           target="_blank"
@@ -2818,11 +2820,14 @@ function WorkflowBuilderInner() {
                                             }}
                                             className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                             rows={2}
-                                            placeholder="Enter condition, e.g. input == 5"
+                                            placeholder='Enter condition, e.g. query.contains("refund")'
                                           />
                                           <p className="text-muted-foreground mt-1 text-xs">
                                             Use Common Expression Language to
-                                            create a custom expression.{' '}
+                                            create a custom expression.
+                                            Reference state by bare name (
+                                            <code>query</code>), not{' '}
+                                            <code>{'{{query}}'}</code>.{' '}
                                             <a
                                               href="https://cel.dev/"
                                               target="_blank"
