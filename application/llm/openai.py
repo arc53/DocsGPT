@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import logging
+import os.path
 
 from openai import OpenAI
 
@@ -1654,16 +1655,49 @@ class OpenAILLM(BaseLLM):
                 logging.info(f"Attempting to upload PDF to OpenAI: {attachment.get('path', 'unknown')}")
                 try:
                     file_id = self._upload_file_to_openai(attachment)
+                    if not file_id:
+                        # Never emit ``{"file_id": None}``: the part carries no
+                        # document, providers 4xx or silently ignore it, and
+                        # downstream cleaning degrades it to a note claiming the
+                        # file "could not be processed" — while the parsed text
+                        # sits unused on the attachment row.
+                        raise ValueError(
+                            "no file_id returned for PDF upload "
+                            f"{attachment.get('path', 'unknown')!r}"
+                        )
+                    # ``file_id`` only. Sending ``filename`` alongside it is
+                    # rejected: 400 "Unknown parameter: …file.filename".
                     prepared_messages[user_message_index]["content"].append(
                         {"type": "file", "file": {"file_id": file_id}}
                     )
                 except Exception as e:
                     logging.error(f"Error uploading PDF to OpenAI: {e}", exc_info=True)
-                    if "content" in attachment:
+                    # Truthy, not membership — ``content`` is always a key on a
+                    # PG-backed attachment and is "" when extraction produced
+                    # nothing, which would otherwise send an empty "File
+                    # content:" block and read as a successfully-read document.
+                    if attachment.get("content"):
                         prepared_messages[user_message_index]["content"].append(
                             {
                                 "type": "text",
-                                "text": f"File content:\n\n{attachment['content']}",
+                                "text": (
+                                    "File content:\n\n"
+                                    f"{self._fit_attachment_text(attachment['content'])}"
+                                ),
+                            }
+                        )
+                    else:
+                        # Nothing to fall back on: say so, naming the user's own
+                        # file so the answer can't invent a generic excuse.
+                        filename = (
+                            attachment.get("filename")
+                            or os.path.basename(attachment.get("path") or "")
+                            or "the attached file"
+                        )
+                        prepared_messages[user_message_index]["content"].append(
+                            {
+                                "type": "text",
+                                "text": f"[File '{filename}' could not be processed]",
                             }
                         )
             else:
@@ -1689,6 +1723,78 @@ class OpenAILLM(BaseLLM):
         except FileNotFoundError:
             raise FileNotFoundError(f"File not found: {file_path}")
 
+    def _fit_attachment_text(self, content: str) -> str:
+        """Bound inlined attachment text to a share of the model's window.
+
+        ``_enforce_context_window`` runs in ``_llm_gen``, *before* attachments
+        are merged into the messages here, so nothing downstream trims this.
+        A 200-page PDF on an endpoint without a Files API would otherwise be
+        appended whole and get the whole request rejected for length — a worse
+        outcome than the degrade note it replaces.
+        """
+        from application.core.model_utils import get_token_limit
+        from application.utils import num_tokens_from_string
+
+        try:
+            limit = get_token_limit(self.model_id) if self.model_id else 0
+        except Exception:
+            limit = 0
+        # Half the window: the prompt, history and the answer share the rest.
+        budget = int(limit * 0.5) if limit else 24000
+        try:
+            # Tokenize once: this is a full BPE pass over the whole extraction
+            # (~12ms per 250k chars), on the hot path of every attachment turn.
+            token_count = num_tokens_from_string(content)
+            if token_count <= budget:
+                return content
+            chars_per_token = len(content) / max(token_count, 1)
+            keep = max(int(budget * chars_per_token * 0.95), 0)
+        except Exception:
+            keep = budget * 4
+        if keep <= 0 or keep >= len(content):
+            return content
+        return (
+            f"{content[:keep]}\n\n[Content truncated: the file is larger than "
+            "this model's context window.]"
+        )
+
+    def _endpoint_scope(self) -> str:
+        """Short fingerprint of ``(provider, base_url, api_key)``.
+
+        A Files-API ``file_id`` is only meaningful to the endpoint and
+        credential it was uploaded to — the same reasoning the Redis inline
+        cache already applies in ``_inline_file_id_cache_key``.
+        """
+        creds = "\0".join(
+            (
+                self.provider_name or "",
+                self._effective_base_url or "",
+                self.api_key or "",
+            )
+        )
+        return hashlib.sha256(creds.encode("utf-8")).hexdigest()[:16]
+
+    def _stamp_file_id(self, file_id: str) -> str:
+        """Tag a file_id with the endpoint it belongs to before persisting."""
+        return f"{self._endpoint_scope()}:{file_id}"
+
+    def _scoped_file_id(self, stored):
+        """Return a persisted file_id only if this endpoint can resolve it.
+
+        ``attachments.openai_file_id`` is a single global column, so without a
+        scope an id minted against one deployment would be replayed against
+        another, which answers ``No such File object`` on every retry —
+        permanently, since the row keeps the bad id. A miss re-uploads and
+        overwrites, so this self-heals both cross-endpoint reuse and ids that
+        aged out of provider retention. Legacy unscoped values are ignored.
+        """
+        if not stored or not isinstance(stored, str):
+            return None
+        scope, _, file_id = stored.partition(":")
+        if not file_id or scope != self._endpoint_scope():
+            return None
+        return file_id
+
     def _upload_file_to_openai(self, attachment):
         """
         Upload a file to OpenAI and return the file_id.
@@ -1702,8 +1808,13 @@ class OpenAILLM(BaseLLM):
         Returns:
             str: OpenAI file_id for the uploaded file.
         """
-        if "openai_file_id" in attachment:
-            return attachment["openai_file_id"]
+        # Truthy check, not membership: attachment dicts are built from
+        # ``SELECT *``, so ``openai_file_id`` is always a key and is NULL
+        # until an upload caches one. Testing membership treated every fresh
+        # attachment as a cache hit and returned None without uploading.
+        cached = self._scoped_file_id(attachment.get("openai_file_id"))
+        if cached:
+            return cached
         file_path = attachment.get("path")
 
         if not self.storage.file_exists(file_path):
@@ -1740,7 +1851,7 @@ class OpenAILLM(BaseLLM):
                         AttachmentsRepository(conn).update_any(
                             str(attachment_id),
                             user_id,
-                            {"openai_file_id": file_id},
+                            {"openai_file_id": self._stamp_file_id(file_id)},
                         )
                 except Exception as cache_err:
                     logging.warning(

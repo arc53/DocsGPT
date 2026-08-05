@@ -165,7 +165,19 @@ class WorkflowEngine:
                 self._finalize_log_entry(log_entry, pre_state)
                 self.execution_log.append(log_entry)
 
-                user_friendly_error = sanitize_api_error(e)
+                # A misconfigured expression is the builder's own typo, and the
+                # message says exactly how to fix it. Routing it through
+                # sanitize_api_error would match the ``{`` in ``{{query}}`` and
+                # replace the whole thing with "An error occurred … try again
+                # later" — advice that sends the user round the same loop.
+                # Everything else stays sanitized: node internals and upstream
+                # provider errors are not for end users.
+                is_config_error = isinstance(e, CelEvaluationError)
+                user_friendly_error = (
+                    f"{node.title or node.type.value}: {e}"
+                    if is_config_error
+                    else sanitize_api_error(e)
+                )
                 yield {
                     "type": "workflow_step",
                     "node_id": node.id,
@@ -175,7 +187,11 @@ class WorkflowEngine:
                     "state_delta": log_entry["state_delta"],
                     "error": user_friendly_error,
                 }
-                yield {"type": "error", "error": user_friendly_error}
+                yield {
+                    "type": "error",
+                    "error": user_friendly_error,
+                    "user_facing": is_config_error,
+                }
                 break
             self.execution_log.append(log_entry)
             pre_state = dict(self.state)
@@ -291,7 +307,7 @@ class WorkflowEngine:
         from application.core.model_utils import (
             get_api_key_for_provider,
             get_model_capabilities,
-            get_provider_from_model_id,
+            resolve_dispatch_provider,
         )
 
         node_config = AgentNodeConfig(**node.config.get("config", node.config))
@@ -314,13 +330,22 @@ class WorkflowEngine:
             if isinstance(self.agent.decoded_token, dict)
             else None
         )
-        node_llm_name = (
-            node_config.llm_name
-            or get_provider_from_model_id(
-                node_model_id or "", user_id=node_user_id
-            )
-            or self.agent.llm_name
+        # ``node_config.llm_name`` is whatever the builder stored, which for
+        # catalogs with a ``display_provider`` is a presentation label
+        # ("foundry", "azure_foundry", "cloudflare") that no LLM class is
+        # registered under. Trusting it verbatim fails the node before any LLM
+        # call and hands the user a blank answer, so resolve it to a real
+        # dispatch provider first — this also repairs nodes already saved with
+        # a label, without a migration.
+        node_llm_name = resolve_dispatch_provider(
+            node_config.llm_name,
+            node_model_id,
+            user_id=node_user_id,
+            fallback=self.agent.llm_name,
         )
+        # Resolve the key from the normalized name: get_api_key_for_provider
+        # silently returns settings.API_KEY for names it does not know, so a
+        # label here would leak the deployment key to the wrong endpoint.
         node_api_key = get_api_key_for_provider(node_llm_name) or self.agent.api_key
 
         # Structured output gates on the model's registry capability flags;

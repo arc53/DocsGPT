@@ -8,6 +8,7 @@ from application.agents.workflows.cel_evaluator import (
     build_activation,
     cel_to_python,
     evaluate_cel,
+    validate_cel_expression,
 )
 import celpy.celtypes
 
@@ -167,3 +168,117 @@ class TestCelToPython:
     def test_unknown_type_passthrough(self):
         result = cel_to_python("raw_value")
         assert result == "raw_value"
+
+
+class TestCelErrorMessages:
+    """State/condition expressions are authored by users in the builder, so
+    their errors have to read like guidance, not like a parser dump."""
+
+    @pytest.mark.unit
+    def test_template_syntax_gets_a_targeted_hint(self):
+        """``{{query}}`` is valid in agent/end templates but not here.
+
+        The docs used to document ``{{variable}}`` for Set State nodes, so
+        users type it, get a bare caret dump, and have no way to learn that
+        this one field is CEL.
+        """
+        with pytest.raises(CelEvaluationError) as exc:
+            evaluate_cel("{{query}}", {"query": "hi"})
+        message = str(exc.value)
+        # The pre-fix message was "CEL error: {{query}}\n       ^\n", which
+        # already contained "CEL", "query" and "{{" — so assert on the
+        # guidance itself, not on incidental substrings.
+        assert "not {{ }} template syntax" in message
+        assert "Write query instead of {{query}}" in message
+
+    @pytest.mark.unit
+    def test_undeclared_reference_error_is_short(self):
+        """celpy embeds the whole activation — thousands of chars, and it
+        contains the user's own query text, which then lands in logs."""
+        with pytest.raises(CelEvaluationError) as exc:
+            evaluate_cel("customer_email", {"query": "a very secret question"})
+        message = str(exc.value)
+        assert len(message) <= 240, f"error is {len(message)} chars"
+        assert "customer_email" in message
+        assert "a very secret question" not in message
+        assert "NameContainer" not in message
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "secret",
+        [
+            "SUPER-SECRET-VALUE",
+            # An identifier-shaped value is indistinguishable from a variable
+            # name, so it must be redacted too — this is the realistic case
+            # (a one-word user query) and the earlier redaction let it through.
+            "invoice",
+            "SECRET",
+        ],
+    )
+    def test_error_does_not_echo_state_values(self, secret):
+        """Config errors skip sanitize_api_error now, so they must not carry
+        state contents — a shared agent's runner is not its owner."""
+        with pytest.raises(CelEvaluationError) as exc:
+            evaluate_cel("int(query)", {"query": secret})
+        assert secret not in str(exc.value)
+
+    @pytest.mark.unit
+    def test_error_keeps_the_exception_class(self):
+        """Redaction must not swallow the one safe diagnostic."""
+        with pytest.raises(CelEvaluationError) as exc:
+            evaluate_cel("int(query)", {"query": "nope"})
+        assert "ValueError" in str(exc.value)
+
+    @pytest.mark.unit
+    def test_long_error_is_truncated(self):
+        """Backstop for celpy messages that survive activation-stripping."""
+        from application.agents.workflows.cel_evaluator import _summarize_cel_error
+
+        summary = _summarize_cel_error(Exception("word " * 200))
+        assert len(summary) <= 200
+        assert summary.endswith("…")
+
+    @pytest.mark.unit
+    def test_validate_rejects_empty_expression(self):
+        with pytest.raises(CelEvaluationError, match="Empty expression"):
+            validate_cel_expression("   ")
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            'query == "{{y}}"',  # braces inside a string literal
+            '{{"a": 1}: 2}',     # map literal used as a map key
+        ],
+    )
+    def test_valid_cel_containing_braces_is_not_rejected(self, expression):
+        """The hint must never fire on expressions that actually compile."""
+        validate_cel_expression(expression)
+
+    @pytest.mark.unit
+    def test_valid_expression_still_evaluates(self):
+        assert evaluate_cel('query + "!"', {"query": "hi"}) == "hi!"
+
+
+class TestValidateCelExpression:
+    """Save-time gate: a workflow that cannot run should not save clean."""
+
+    @pytest.mark.unit
+    def test_accepts_valid_expression(self):
+        validate_cel_expression("query + \"!\"")
+
+    @pytest.mark.unit
+    def test_rejects_template_syntax(self):
+        with pytest.raises(CelEvaluationError, match="CEL"):
+            validate_cel_expression("{{query}}")
+
+    @pytest.mark.unit
+    def test_rejects_syntax_error(self):
+        with pytest.raises(CelEvaluationError):
+            validate_cel_expression("query +")
+
+    @pytest.mark.unit
+    def test_accepts_reference_unknown_at_save_time(self):
+        """Only syntax is knowable when saving — state is built at runtime,
+        so an unresolved name must not block saving a valid workflow."""
+        validate_cel_expression("node_abc_output + customer_email")

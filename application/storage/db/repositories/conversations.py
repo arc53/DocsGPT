@@ -720,6 +720,11 @@ class ConversationsRepository:
             "model_id": message.get("model_id"),
             "message_metadata": message.get("metadata") or {},
         }
+        # Callers that know the turn failed (e.g. an agent that yielded a
+        # terminal error) must be able to say so; without this the column
+        # default silently made every appended row "complete".
+        if message.get("status") is not None:
+            values["status"] = message["status"]
         if message.get("timestamp") is not None:
             values["timestamp"] = message["timestamp"]
 
@@ -758,7 +763,7 @@ class ConversationsRepository:
         """
         allowed = {
             "prompt", "response", "thought", "sources", "tool_calls",
-            "attachments", "model_id", "metadata", "timestamp",
+            "attachments", "model_id", "metadata", "timestamp", "status",
             # Feedback can be re-set in rare continuation flows; without
             # it in the whitelist an upstream re-append that happens to
             # carry feedback would silently lose it. Mirrors

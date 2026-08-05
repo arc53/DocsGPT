@@ -246,6 +246,14 @@ class BaseAnswerResource:
         structured_chunks = []
         query_metadata: Dict[str, Any] = {}
         paused = False
+        # Set when the agent *yields* a terminal ``error`` event instead of
+        # raising. Workflow node failures take that route (the engine catches
+        # the node exception and reports it as an event), so the generator
+        # returns normally and the ``except`` handler below never runs. Without
+        # this flag the turn was finalized ``complete`` with an empty response:
+        # the live client showed an error bubble, but on reload history mapped
+        # the row to a blank answer with no error text and no retry.
+        stream_error: Optional[str] = None
         # A ``tool_calls_pending`` event is held back and only flushed after
         # continuation state is committed (or the stateless finalize path is
         # reached): the v1 translator turns it into ``finish_reason:"tool_calls"``,
@@ -568,6 +576,7 @@ class BaseAnswerResource:
                         error_text = line.get("error", "An error occurred")
                         if not line.get("user_facing"):
                             error_text = sanitize_api_error(error_text)
+                        stream_error = error_text
                         yield _emit({"type": "error", "error": error_text})
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
@@ -594,6 +603,14 @@ class BaseAnswerResource:
                         "schema": schema_info,
                     }
                 )
+
+            # Record a yielded error before any early return so the pause /
+            # stateless-tool-round paths persist it too. No producer currently
+            # emits a non-terminal error and then pauses, but leaving the only
+            # write below the pause blocks would make that combination lose the
+            # error silently — the exact shape of the bug being fixed here.
+            if stream_error:
+                query_metadata.setdefault("error", stream_error)
 
             # ---- Paused: save continuation state and end stream early ----
             if paused:
@@ -848,6 +865,19 @@ class BaseAnswerResource:
                 )
                 llm._token_usage_source = "title"
 
+            # The error was recorded above so the failure stays greppable, but
+            # it only *fails* the turn when nothing was produced. An error
+            # arriving after partial output (e.g. a later workflow node) must
+            # stay ``complete``, since the client only renders ``response`` for
+            # complete rows — failing it would discard text the user already
+            # saw. ``structured_chunks`` counts as output for the same reason:
+            # a structured answer lives there, not in ``response_full``.
+            errored_empty = (
+                bool(stream_error)
+                and not response_full.strip()
+                and not structured_chunks
+            )
+
             if should_persist:
                 if reserved_message_id is not None:
                     self.conversation_service.finalize_message(
@@ -858,7 +888,7 @@ class BaseAnswerResource:
                         tool_calls=tool_calls,
                         model_id=model_id or self.default_model_id,
                         metadata=query_metadata if query_metadata else None,
-                        status="complete",
+                        status="failed" if errored_empty else "complete",
                         title_inputs={
                             "llm": llm,
                             "question": question,
@@ -889,6 +919,7 @@ class BaseAnswerResource:
                         attachment_ids=attachment_ids,
                         metadata=query_metadata if query_metadata else None,
                         visibility=visibility,
+                        status="failed" if errored_empty else "complete",
                     )
                 # Persist compression metadata/summary if it exists and wasn't saved mid-execution
                 compression_meta = getattr(agent, "compression_metadata", None)
