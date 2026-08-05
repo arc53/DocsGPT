@@ -18,6 +18,7 @@ import {
   selectCompletedAttachments,
 } from '../upload/uploadSlice';
 import { newIdempotencyKey } from '../utils/idempotency';
+import { appendThoughtText, recordToolCall } from './answerSegments';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
@@ -785,6 +786,7 @@ export const conversationSlice = createSlice({
       delete state.queries[index].thought;
       delete state.queries[index].sources;
       delete state.queries[index].tool_calls;
+      delete state.queries[index].segments;
       delete state.queries[index].error;
       delete state.queries[index].structured;
       delete state.queries[index].schema;
@@ -852,6 +854,8 @@ export const conversationSlice = createSlice({
       if (query.thought != undefined) {
         state.queries[index].thought =
           (state.queries[index].thought || '') + query.thought;
+        if (!state.queries[index].segments) state.queries[index].segments = [];
+        appendThoughtText(state.queries[index].segments, query.thought);
       }
     },
     updateStreamingSource(
@@ -884,6 +888,9 @@ export const conversationSlice = createSlice({
           ...tool_call,
         };
       } else state.queries[index].tool_calls.push(tool_call);
+
+      if (!state.queries[index].segments) state.queries[index].segments = [];
+      recordToolCall(state.queries[index].segments, tool_call.call_id);
     },
     // Records the workflow run id so the answer bubble can render the run's
     // produced artifacts (WorkflowRunArtifacts fetches by this id).
@@ -1006,6 +1013,9 @@ export const conversationSlice = createSlice({
       const { index, tail } = action.payload;
       const query = state.queries[index];
       if (!query) return;
+      // A tail is a flat snapshot with no ordering, so any live segments it
+      // overwrites would be stale; drop them and let rendering synthesize.
+      delete query.segments;
       const status = tail?.status as MessageStatus | undefined;
       query.messageStatus = status;
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;

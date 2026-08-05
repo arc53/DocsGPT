@@ -1101,6 +1101,37 @@
       "delete": "Удалена страница вики",
       "rename": "Переименована страница вики",
       "failed": "не удалось"
+    },
+    "streamingStatus": {
+      "thinking": "Думаю…",
+      "generating": "Генерирую…",
+      "searchingWeb": "Ищу в интернете «{{query}}»…",
+      "searchingWebGeneric": "Ищу в интернете…",
+      "searchingImages": "Ищу изображения «{{query}}»…",
+      "readingPage": "Читаю {{target}}…",
+      "searchingKnowledge": "Ищу в базе знаний…",
+      "accessingMemory": "Обращаюсь к памяти…",
+      "runningCode": "Выполняю код…",
+      "creatingArtifact": "Создаю артефакт…",
+      "usingTool": "Использую {{tool}}…"
+    },
+    "toolChip": {
+      "searchingWeb": "Поиск в интернете · «{{query}}»",
+      "searchedWebGeneric": "Выполнен поиск в интернете",
+      "searchingImages": "Поиск изображений · «{{query}}»",
+      "readingPage": "Прочитано {{target}}",
+      "searchingKnowledge": "Выполнен поиск в базе знаний",
+      "accessingMemory": "Обращение к памяти выполнено",
+      "runningCode": "Код выполнен",
+      "creatingArtifact": "Артефакт создан",
+      "usingTool": "Использован {{tool}}"
+    },
+    "inlineSteps": {
+      "arguments": "Аргументы",
+      "response": "Ответ",
+      "running": "Выполняется…",
+      "denied": "Отклонено пользователем",
+      "failed": "не удалось"
     }
   },
   "agents": {

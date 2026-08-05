@@ -713,46 +713,44 @@ Avoid over-scrolling in mobile browsers
     animation: fadeInUp 0.5s forwards;
   }
 
-  .thinking-dots {
-    display: inline-flex;
-    gap: 4px;
-    align-items: center;
+  .shimmer-text {
+    background: linear-gradient(
+      90deg,
+      #6b7280 0%,
+      #6b7280 40%,
+      #d1d5db 50%,
+      #6b7280 60%,
+      #6b7280 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer-sweep 2s linear infinite;
   }
 
-  .thinking-dots span {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background-color: #7d54d1;
-    animation: thinkingBounce 1.4s infinite ease-in-out both;
+  .dark .shimmer-text {
+    background-image: linear-gradient(
+      90deg,
+      #9ca3af 0%,
+      #9ca3af 40%,
+      #f9fafb 50%,
+      #9ca3af 60%,
+      #9ca3af 100%
+    );
   }
 
-  .dark .thinking-dots span {
-    background-color: #976af3;
-  }
-
-  .thinking-dots span:nth-child(1) {
-    animation-delay: -0.32s;
-  }
-
-  .thinking-dots span:nth-child(2) {
-    animation-delay: -0.16s;
-  }
-
-  .thinking-dots span:nth-child(3) {
-    animation-delay: 0s;
-  }
-
-  @keyframes thinkingBounce {
-    0%,
-    80%,
-    100% {
-      transform: scale(0.6);
-      opacity: 0.4;
+  @keyframes shimmer-sweep {
+    to {
+      background-position: -200% 0;
     }
-    40% {
-      transform: scale(1);
-      opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shimmer-text {
+      animation: none;
+      color: inherit;
+      background: none;
     }
   }
 

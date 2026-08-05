@@ -4,7 +4,8 @@ import { I18nextProvider, initReactI18next } from 'react-i18next';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import en from '../locale/en.json';
-import { ToolCalls, WikiWriteToolCallCard } from './ConversationBubble';
+import AnswerFlow from './AnswerFlow';
+import { WikiWriteToolCallCard } from './ConversationBubble';
 import { ToolCallsType } from './types';
 
 const testI18n = i18n.createInstance();
@@ -63,11 +64,17 @@ describe('WikiWriteToolCallCard', () => {
   });
 });
 
-describe('ToolCalls placement', () => {
+describe('tool call placement in the answer flow', () => {
   const renderToolCalls = (toolCalls: ToolCallsType[]): string =>
     renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
-        <ToolCalls toolCalls={toolCalls} />
+        <AnswerFlow
+          toolCalls={toolCalls}
+          renderApproval={() => null}
+          renderWikiWrite={(toolCall) => (
+            <WikiWriteToolCallCard toolCall={toolCall} />
+          )}
+        />
       </I18nextProvider>,
     );
 
@@ -87,14 +94,14 @@ describe('ToolCalls placement', () => {
     status: 'completed',
   };
 
-  it('renders wiki write cards outside the collapsed accordion (default closed)', () => {
+  it('shows wiki write cards inline and keeps other call arguments collapsed', () => {
     const html = renderToolCalls([wikiWrite, otherCall]);
     expect(html).toContain('Edited wiki page');
     expect(html).toContain('/policy.md');
     expect(html).not.toContain('secret-arg');
   });
 
-  it('does not double-render wiki write cards inside the accordion', () => {
+  it('renders each wiki write card exactly once', () => {
     const html = renderToolCalls([wikiWrite]);
     const occurrences = html.split('Edited wiki page').length - 1;
     expect(occurrences).toBe(1);

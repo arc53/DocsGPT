@@ -22,6 +22,7 @@ import {
 import Hero from '../Hero';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
+import StreamingStatusLine from './StreamingStatusLine';
 
 type ConversationMessagesProps = {
   handleQuestion: (params: {
@@ -55,6 +56,8 @@ const STICK_THRESHOLD_PX = 48;
 
 const DEFAULT_BUBBLE_MARGIN = 'mb-7';
 const FIRST_QUESTION_BUBBLE_MARGIN_TOP = 'mt-5';
+// Below DEFAULT_BUBBLE_MARGIN so a question groups with its own answer.
+const QUESTION_BUBBLE_MARGIN_BOTTOM = 'mb-3';
 
 export default function ConversationMessages({
   handleQuestion,
@@ -126,7 +129,7 @@ export default function ConversationMessages({
 
   const columnClass = isSplitView
     ? 'w-full max-w-325 px-2'
-    : 'w-full max-w-325 px-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12';
+    : 'w-full max-w-325 px-2 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12';
 
   const renderResponseView = (query: Query, index: number) => {
     const isLastMessage = index === queries.length - 1;
@@ -201,6 +204,7 @@ export default function ConversationMessages({
             thought={query.thought}
             sources={query.sources}
             toolCalls={query.tool_calls}
+            segments={query.segments}
             workflowRunId={query.workflow_run_id}
             research={query.research}
             onOpenArtifact={onOpenArtifact}
@@ -236,13 +240,7 @@ export default function ConversationMessages({
                 {t('conversation.answer')}
               </p>
             </div>
-            <div className="bg-muted mr-5 flex rounded-3xl px-6 py-5">
-              <div className="thinking-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-            </div>
+            <StreamingStatusLine className="my-2 ml-3" />
           </div>
         </div>
       );
@@ -279,9 +277,9 @@ export default function ConversationMessages({
                 <Fragment key={`${index}-query-fragment`}>
                   <MessageScrollerItem messageId={`q-${index}`} scrollAnchor>
                     <ConversationBubble
-                      className={
+                      className={`${QUESTION_BUBBLE_MARGIN_BOTTOM} ${
                         index === 0 ? FIRST_QUESTION_BUBBLE_MARGIN_TOP : ''
-                      }
+                      }`}
                       message={query.prompt}
                       type="QUESTION"
                       handleUpdatedQuestionSubmission={handleQuestionSubmission}

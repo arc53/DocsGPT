@@ -1,6 +1,10 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 import {
+  appendThoughtText,
+  recordToolCall,
+} from '../conversation/answerSegments';
+import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
 } from '../conversation/conversationHandlers';
@@ -206,6 +210,7 @@ export const agentPreviewSlice = createSlice({
       delete state.queries[index].thought;
       delete state.queries[index].sources;
       delete state.queries[index].tool_calls;
+      delete state.queries[index].segments;
       delete state.queries[index].error;
       delete state.queries[index].structured;
       delete state.queries[index].schema;
@@ -245,6 +250,8 @@ export const agentPreviewSlice = createSlice({
       if (query.thought != undefined) {
         state.queries[index].thought =
           (state.queries[index].thought || '') + query.thought;
+        if (!state.queries[index].segments) state.queries[index].segments = [];
+        appendThoughtText(state.queries[index].segments, query.thought);
       }
     },
     updateStreamingSource(
@@ -279,6 +286,9 @@ export const agentPreviewSlice = createSlice({
           ...tool_call,
         };
       } else state.queries[index].tool_calls.push(tool_call);
+
+      if (!state.queries[index].segments) state.queries[index].segments = [];
+      recordToolCall(state.queries[index].segments, tool_call.call_id);
     },
     updateQuery(
       state,
