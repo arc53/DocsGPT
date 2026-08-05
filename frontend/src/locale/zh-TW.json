@@ -1001,7 +1001,9 @@
       "webhookUrl": "Webhook URL",
       "generate": "Generate",
       "test": "Test",
-      "learnMore": "Learn more"
+      "learnMore": "Learn more",
+      "resetKey": "重設金鑰",
+      "resetKeyConfirm": "確定要重設 API 金鑰嗎？目前的金鑰將立即停止運作，此操作無法復原。"
     },
     "importSpec": {
       "title": "匯入 API 規格",

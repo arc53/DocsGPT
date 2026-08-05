@@ -885,3 +885,32 @@ class TestUuidShapeGate:
         msg = repo.get_message_at(conv["id"], 0)
         assert msg is not None
         assert msg["prompt"] == "q"
+
+
+class TestReassignApiKey:
+    def test_rewrites_matching_rows_including_null_agent(self, pg_conn):
+        # A conversation created from api-key traffic can have api_key set and
+        # agent_id NULL; on key rotation it must follow the key so per-agent
+        # analytics (api_key OR agent_id) don't orphan it.
+        repo = _repo(pg_conn)
+        repo.create("owner", "c1", api_key="conv-old")
+        repo.create("caller", "c2", api_key="conv-old")
+        repo.create("owner", "c3", api_key="conv-other")
+
+        moved = repo.reassign_api_key(old_key="conv-old", new_key="conv-new")
+        assert moved == 2
+
+        assert pg_conn.execute(
+            text("SELECT COUNT(*) FROM conversations WHERE api_key = 'conv-old'")
+        ).scalar() == 0
+        assert pg_conn.execute(
+            text("SELECT COUNT(*) FROM conversations WHERE api_key = 'conv-new'")
+        ).scalar() == 2
+        assert pg_conn.execute(
+            text("SELECT COUNT(*) FROM conversations WHERE api_key = 'conv-other'")
+        ).scalar() == 1
+
+    def test_noop_on_blank_keys(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.reassign_api_key(old_key="", new_key="x") == 0
+        assert repo.reassign_api_key(old_key="x", new_key="") == 0

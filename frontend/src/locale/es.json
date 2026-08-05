@@ -1001,7 +1001,9 @@
       "webhookUrl": "Webhook URL",
       "generate": "Generate",
       "test": "Test",
-      "learnMore": "Learn more"
+      "learnMore": "Learn more",
+      "resetKey": "Restablecer clave",
+      "resetKeyConfirm": "¿Seguro que quieres restablecer la clave de API? La clave actual dejará de funcionar de inmediato y esta acción no se puede deshacer."
     },
     "importSpec": {
       "title": "Importar especificación de API",

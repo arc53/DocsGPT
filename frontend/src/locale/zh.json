@@ -1001,7 +1001,9 @@
       "webhookUrl": "Webhook URL",
       "generate": "生成",
       "test": "测试",
-      "learnMore": "了解详情"
+      "learnMore": "了解详情",
+      "resetKey": "重置密钥",
+      "resetKeyConfirm": "确定要重置 API 密钥吗？当前密钥将立即停止工作，此操作无法撤销。"
     },
     "importSpec": {
       "title": "导入 API 规范",

@@ -213,3 +213,23 @@ def test_excel_parser_import_error(excel_parser):
     with patch.dict(sys.modules, {"pandas": None}):
         with pytest.raises(ValueError, match="pandas module is required to read Excel files"):
             excel_parser.parse_file(Path("test.xlsx"))
+
+def test_excel_numeric_headers_do_not_crash(tmp_path):
+    """Regression: a headerless/numeric xlsx gives integer column labels, and
+    ``", ".join(headers)`` used to raise TypeError. The XLSX size-gate delegates
+    to this parser, so it must handle numeric headers."""
+    from openpyxl import Workbook
+
+    from application.parser.file.tabular_parser import ExcelParser
+
+    wb = Workbook()
+    ws = wb.active
+    for i in range(5):
+        ws.append([i, i * 2, i * 3])
+    path = tmp_path / "numeric.xlsx"
+    wb.save(str(path))
+
+    out = ExcelParser().parse_file(path)
+
+    assert isinstance(out, str)
+    assert len(out) > 0

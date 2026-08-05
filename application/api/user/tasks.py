@@ -6,6 +6,7 @@ from sqlalchemy.exc import DataError
 from application.api.user.idempotency import with_idempotency
 from application.celery_init import celery
 from application.worker import (
+    AttachmentRejectedError,
     agent_webhook_worker,
     attachment_worker,
     ingest_worker,
@@ -235,10 +236,11 @@ def _emit_attachment_poison_event(task_name, bound):
     )
 
 
-# ``dont_autoretry_for``: a DataError is deterministic (poison payload,
-# e.g. NUL bytes or an over-long value) — retrying re-fails identically
-# and multiplies log noise, so it goes straight to the failure path.
-@celery.task(**DURABLE_TASK, dont_autoretry_for=(DataError,))
+# ``dont_autoretry_for``: a DataError (poison payload, e.g. NUL bytes or an
+# over-long value) or an AttachmentRejectedError (zip bomb) is deterministic —
+# retrying re-fails identically and multiplies log noise, so it goes straight
+# to the failure path.
+@celery.task(**DURABLE_TASK, dont_autoretry_for=(DataError, AttachmentRejectedError))
 @with_idempotency(
     task_name="store_attachment", on_poison=_emit_attachment_poison_event,
 )

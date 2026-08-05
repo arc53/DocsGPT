@@ -1001,7 +1001,9 @@
       "webhookUrl": "Webhook URL",
       "generate": "Generate",
       "test": "Test",
-      "learnMore": "Learn more"
+      "learnMore": "Learn more",
+      "resetKey": "Сбросить ключ",
+      "resetKeyConfirm": "Вы уверены, что хотите сбросить API-ключ? Текущий ключ немедленно перестанет работать, и это действие нельзя отменить."
     },
     "importSpec": {
       "title": "Импорт спецификации API",
