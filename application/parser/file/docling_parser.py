@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from application.parser.file.base_parser import BaseParser
+from application.parser.file.base_parser import BaseParser, DocumentParseError
 from application.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
@@ -346,9 +346,14 @@ class DoclingParser(BaseParser):
 
         except Exception as e:
             logger.error(f"Error parsing file with docling: {e}", exc_info=True)
-            if errors == "ignore":
-                return f"[Error parsing file with docling: {str(e)}]"
-            raise
+            # ``errors`` governs *decoding* leniency, not whether a total
+            # conversion failure may be substituted for the document. Returning
+            # the message here (the old ``errors == "ignore"`` branch) made the
+            # caller store the traceback as the file's text and report the
+            # upload successful — the model then read the error as the document.
+            raise DocumentParseError(
+                f"Failed to parse {Path(file).name} with docling: {e}"
+            ) from e
 
 
 class DoclingPDFParser(DoclingParser):

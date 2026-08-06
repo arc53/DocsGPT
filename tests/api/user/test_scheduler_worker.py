@@ -173,6 +173,171 @@ class TestExecuteScheduledRunBody:
         assert row["status"] == "failed"
         assert row["error_type"] == "tool_not_allowed"
 
+    def test_stream_error_from_runner_marks_failed(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        """The runner's ``error_type`` must be honoured, not re-derived.
+
+        Regression: the worker only ever inferred ``tool_not_allowed`` itself
+        and never read ``outcome["error_type"]``, so a stream that failed
+        mid-flight was recorded ``success``.
+        """
+        with pg_engine.begin() as conn:
+            schedule, run, _ = _make_pending_run(conn)
+        with patch(
+            "application.api.user.scheduler_worker.run_agent_headless",
+            return_value={
+                "answer": "",
+                "tool_calls": [],
+                "sources": [],
+                "thought": "",
+                "prompt_tokens": 9417,
+                "generated_tokens": 0,
+                "denied": [],
+                "error_type": "stream_error",
+                "error": "Fallback LLM also failed mid-stream; giving up",
+                "model_id": "fake",
+            },
+        ):
+            result = execute_scheduled_run_body(str(run["id"]), "celery-se")
+        assert result["status"] == "failed"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+            sched = SchedulesRepository(conn).get_internal(str(schedule["id"]))
+        assert row["status"] == "failed"
+        assert row["error_type"] == "stream_error"
+        assert "Fallback LLM also failed" in (row["error"] or "")
+        assert sched["consecutive_failure_count"] == 1
+        assert "schedule.run.failed" in {e[0] for e in stub_events}
+
+    def test_empty_output_run_marks_failed(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        """A run that produced nothing at all is not a success.
+
+        This is the exact prod shape: seven consecutive daily runs recorded
+        ``success`` with NULL output and 0/0 tokens, so nothing surfaced that
+        the user's scheduled agent had been dead since it was created. It is
+        the backstop for silent paths that emit no error event either.
+        """
+        with pg_engine.begin() as conn:
+            schedule, run, _ = _make_pending_run(conn)
+        with patch(
+            "application.api.user.scheduler_worker.run_agent_headless",
+            return_value={
+                "answer": "",
+                "tool_calls": [],
+                "sources": [],
+                "thought": "",
+                "prompt_tokens": 0,
+                "generated_tokens": 0,
+                "denied": [],
+                "error_type": None,
+                "model_id": "fake",
+            },
+        ):
+            result = execute_scheduled_run_body(str(run["id"]), "celery-eo")
+        assert result["status"] == "failed"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["status"] == "failed"
+        assert row["error_type"] == "empty_output"
+
+    def test_tool_call_only_run_is_not_empty_output(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        """A run whose work was tool side effects still counts as a success.
+
+        Guards the backstop against over-reach: "no prose answer" is normal
+        for a schedule whose whole job is to call a tool (post to Slack, file
+        a ticket), so tokens or tool calls are enough to call it a success.
+        """
+        with pg_engine.begin() as conn:
+            schedule, run, _ = _make_pending_run(conn)
+        with patch(
+            "application.api.user.scheduler_worker.run_agent_headless",
+            return_value={
+                "answer": "",
+                "tool_calls": [{"tool_name": "telegram_send", "result": "ok"}],
+                "sources": [],
+                "thought": "",
+                "prompt_tokens": 120,
+                "generated_tokens": 8,
+                "denied": [],
+                "error_type": None,
+                "model_id": "fake",
+            },
+        ):
+            result = execute_scheduled_run_body(str(run["id"]), "celery-tc")
+        assert result["status"] == "success"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["status"] == "success"
+        assert row["error_type"] is None
+
+    def test_workflow_run_with_completed_steps_is_not_empty_output(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        """A workflow that ran its nodes did work, however quiet the stream.
+
+        Workflow tool calls never surface as ``tool_calls`` events (the engine
+        keeps them in its execution log) and node agents own their LLMs, so
+        the runner reports 0 generated tokens. A workflow whose nodes don't
+        stream and whose end node has no output template therefore matches the
+        empty-output shape exactly — ``steps_completed`` is what tells them
+        apart. Without it, every such schedule fails and then autopauses.
+        """
+        with pg_engine.begin() as conn:
+            schedule, run, _ = _make_pending_run(conn)
+        with patch(
+            "application.api.user.scheduler_worker.run_agent_headless",
+            return_value={
+                "answer": "",
+                "tool_calls": [],
+                "sources": [],
+                "thought": "",
+                "prompt_tokens": 0,
+                "generated_tokens": 0,
+                "denied": [],
+                "error_type": None,
+                "steps_completed": 3,
+                "model_id": "fake",
+            },
+        ):
+            result = execute_scheduled_run_body(str(run["id"]), "celery-wf")
+        assert result["status"] == "success"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["status"] == "success"
+        assert row["error_type"] is None
+
+    def test_workflow_run_with_no_completed_steps_is_empty_output(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        """A workflow that completed no node still did nothing."""
+        with pg_engine.begin() as conn:
+            schedule, run, _ = _make_pending_run(conn)
+        with patch(
+            "application.api.user.scheduler_worker.run_agent_headless",
+            return_value={
+                "answer": "",
+                "tool_calls": [],
+                "sources": [],
+                "thought": "",
+                "prompt_tokens": 0,
+                "generated_tokens": 0,
+                "denied": [],
+                "error_type": None,
+                "steps_completed": 0,
+                "model_id": "fake",
+            },
+        ):
+            result = execute_scheduled_run_body(str(run["id"]), "celery-wf0")
+        assert result["status"] == "failed"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["error_type"] == "empty_output"
+
     def test_one_time_loads_chat_history(
         self, pg_engine, patched_engine, stub_events,
     ):
