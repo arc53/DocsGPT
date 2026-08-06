@@ -12,11 +12,6 @@ cryptography==46.0.7
 dataclasses-json==0.6.7
 daytona==0.190.1
 defusedxml==0.7.1
-# Pinned, not floating: docling 2.118.0 torch.compile()s its PDF layout stage,
-# which needs a C++ compiler at runtime. The runtime image has none (gcc/g++ are
-# installed in the builder stage and discarded), so a floating ">=" pulled in a
-# release that broke every PDF parse in prod on 2026-08-04. 2.84.0 is verified
-# to parse with no compiler present. Re-verify that before bumping.
 docling==2.84.0
 rapidocr>=1.4.0
 onnxruntime>=1.19.0
