@@ -270,7 +270,16 @@ class TestDoclingParserParseFile:
             result = parser.parse_file(Path("test.pdf"))
             assert "content" in result
 
-    def test_parse_file_error_ignore(self):
+    def test_parse_file_error_ignore_raises_instead_of_returning_error_text(self):
+        """A failed conversion must never become the document's text.
+
+        Regression: ``errors="ignore"`` used to return
+        ``"[Error parsing file with docling: ...]"``, which the attachment
+        worker then stored as ``attachments.content`` and handed to the LLM
+        as if it were the PDF. ``errors`` controls *decoding* leniency, not
+        "substitute the traceback for the document".
+        """
+        from application.parser.file.base_parser import DocumentParseError
         from application.parser.file.docling_parser import DoclingParser
 
         parser = DoclingParser()
@@ -278,8 +287,37 @@ class TestDoclingParserParseFile:
         mock_converter.convert.side_effect = Exception("Parse failed")
         parser._converter = mock_converter
 
-        result = parser.parse_file(Path("bad.pdf"), errors="ignore")
-        assert "Error" in result
+        with pytest.raises(DocumentParseError) as excinfo:
+            parser.parse_file(Path("bad.pdf"), errors="ignore")
+
+        # The message identifies the file and preserves the cause for triage…
+        assert "bad.pdf" in str(excinfo.value)
+        assert "Parse failed" in str(excinfo.value)
+        # …and the original exception is chained, not swallowed.
+        assert isinstance(excinfo.value.__cause__, Exception)
+        assert "Parse failed" in str(excinfo.value.__cause__)
+
+    def test_parse_file_error_ignore_never_returns_a_string(self):
+        """Belt-and-braces: no code path may hand back error text as content."""
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import DoclingParser
+
+        parser = DoclingParser()
+        mock_converter = MagicMock()
+        mock_converter.convert.side_effect = RuntimeError(
+            "Conversion failed for: x.pdf with status: failure. Errors: "
+            "InvalidCxxCompiler: No working C++ compiler found"
+        )
+        parser._converter = mock_converter
+
+        try:
+            result = parser.parse_file(Path("x.pdf"), errors="ignore")
+        except DocumentParseError:
+            return  # expected
+        pytest.fail(
+            f"parse_file returned {result!r} instead of raising; error text "
+            "must not be usable as document content"
+        )
 
     def test_parse_file_error_raise(self):
         from application.parser.file.docling_parser import DoclingParser

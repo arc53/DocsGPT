@@ -29,6 +29,34 @@ def _resolve_agent_id(agent_config: Dict[str, Any]) -> Optional[str]:
     return str(raw) if raw else None
 
 
+def _workflow_kwargs(agent_config: Dict[str, Any], owner: str) -> Dict[str, Any]:
+    """Bind a workflow agent to its graph, mirroring ``StreamProcessor``.
+
+    A ``WorkflowAgent`` built without one of these loads no graph and its
+    entire run is a single "Failed to load workflow configuration." error, so
+    a scheduled or webhook-fired workflow agent never does anything. The PG
+    ``agents`` row stores a UUID under ``workflow_id``; the legacy Mongo shape
+    used ``workflow``, which also carried an embedded graph.
+    """
+    kwargs: Dict[str, Any] = {"workflow_owner": owner}
+    embedded = agent_config.get("workflow")
+    if isinstance(embedded, dict):
+        kwargs["workflow"] = embedded
+        saved_id = agent_config.get("workflow_id")
+        if saved_id:
+            kwargs["workflow_id"] = str(saved_id)
+        return kwargs
+    wf_ref = agent_config.get("workflow_id") or embedded
+    if wf_ref:
+        kwargs["workflow_id"] = str(wf_ref)
+    else:
+        logger.warning(
+            "Workflow agent %s has no workflow reference; the run will load no graph.",
+            _resolve_agent_id(agent_config),
+        )
+    return kwargs
+
+
 def run_agent_headless(
     agent_config: Dict[str, Any],
     query: str,
@@ -133,22 +161,24 @@ def run_agent_headless(
     if conversation_id:
         tool_executor.conversation_id = str(conversation_id)
 
-    agent = AgentCreator.create_agent(
-        agent_type,
-        endpoint=endpoint,
-        llm_name=provider or settings.LLM_PROVIDER,
-        model_id=model_id,
-        api_key=system_api_key,
-        agent_id=agent_id,
-        user_api_key=user_api_key,
-        prompt=prompt,
-        chat_history=chat_history or [],
-        retrieved_docs=retrieved_docs,
-        decoded_token=decoded_token,
-        attachments=[],
-        json_schema=json_schema,
-        tool_executor=tool_executor,
-    )
+    agent_kwargs: Dict[str, Any] = {
+        "endpoint": endpoint,
+        "llm_name": provider or settings.LLM_PROVIDER,
+        "model_id": model_id,
+        "api_key": system_api_key,
+        "agent_id": agent_id,
+        "user_api_key": user_api_key,
+        "prompt": prompt,
+        "chat_history": chat_history or [],
+        "retrieved_docs": retrieved_docs,
+        "decoded_token": decoded_token,
+        "attachments": [],
+        "json_schema": json_schema,
+        "tool_executor": tool_executor,
+    }
+    if agent_type == "workflow":
+        agent_kwargs.update(_workflow_kwargs(agent_config, owner))
+    agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
     if conversation_id:
         agent.conversation_id = str(conversation_id)
 
@@ -156,8 +186,27 @@ def run_agent_headless(
     thought = ""
     sources_log: List[Dict[str, Any]] = []
     tool_calls: List[Dict[str, Any]] = []
+    stream_error: Optional[str] = None
+    steps_completed = 0
     for event in agent.gen(query=query):
         if not isinstance(event, dict):
+            continue
+        # ``Agent.gen`` reports a failed stream with an error event rather than
+        # by raising. Dropping it here (as this loop used to) makes a broken run
+        # indistinguishable from one that simply had nothing to say, and the
+        # caller records it as a success. Mirrors the sentinel in
+        # ``application/logging.py`` so an error carrying no message is still
+        # truthy instead of reading as "ok".
+        if event.get("type") == "error":
+            stream_error = str(event.get("error") or "")[:500] or "unspecified"
+            continue
+        # A workflow's work is its nodes: its tool calls stay in the engine's
+        # execution log and its node agents own their LLMs, so neither
+        # ``tool_calls`` nor the token tally below sees them. Counting
+        # completed steps is the only evidence a quiet workflow ran at all.
+        if event.get("type") == "workflow_step":
+            if event.get("status") == "completed":
+                steps_completed += 1
             continue
         if "answer" in event:
             answer_full += str(event["answer"])
@@ -169,7 +218,22 @@ def run_agent_headless(
             thought += str(event["thought"])
 
     denied = list(getattr(tool_executor, "headless_denials", []))
-    error_type = "tool_not_allowed" if denied and not answer_full.strip() else None
+    error: Optional[str] = None
+    if denied and not answer_full.strip():
+        error_type = "tool_not_allowed"
+        blocked = ", ".join(
+            str(d.get("tool_name") or d.get("action_name") or "?") for d in denied
+        )
+        error = f"headless allowlist blocked required tool: {blocked}"[:500]
+    elif stream_error:
+        error_type = "stream_error"
+        error = stream_error
+    else:
+        error_type = None
+    if stream_error:
+        logger.warning(
+            "Headless run for agent %s failed mid-stream: %s", agent_id, stream_error
+        )
 
     # Use the LLM accumulator (gen_token_usage / stream_token_usage decorators);
     # current_token_count is a context-size sentinel, not a usage tally.
@@ -186,5 +250,7 @@ def run_agent_headless(
         "generated_tokens": generated_tokens,
         "denied": denied,
         "error_type": error_type,
+        "error": error,
+        "steps_completed": steps_completed,
         "model_id": model_id,
     }

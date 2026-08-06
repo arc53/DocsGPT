@@ -290,14 +290,14 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
 
     finished = datetime.now(timezone.utc)
 
-    # Headless denial with no usable output → tool_not_allowed.
-    if (
-        error_type is None
-        and (outcome.get("denied") or [])
-        and not (outcome.get("answer") or "").strip()
-    ):
-        error_type = "tool_not_allowed"
-        error_text = "headless allowlist blocked required tool"
+    # Honour the outcome the runner reported: it classifies headless denials
+    # (``tool_not_allowed``) and mid-stream failures (``stream_error``) alike,
+    # and owns the message. Re-deriving the denial case here only duplicated
+    # the runner's rule while leaving a failed stream — which returns normally,
+    # with an empty answer — to fall through to "success".
+    if error_type is None and outcome.get("error_type"):
+        error_type = str(outcome["error_type"])
+        error_text = str(outcome.get("error") or "") or error_type
 
     prompt_tokens = int(outcome.get("prompt_tokens", 0) or 0)
     generated_tokens = int(outcome.get("generated_tokens", 0) or 0)
@@ -312,6 +312,22 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             f"used {used_tokens} tokens exceeds budget "
             f"{schedule['token_budget']}"
         )
+
+    # Backstop for silent failures that raise nothing and emit no error event:
+    # a run that produced no answer, did no work and burned no completion
+    # tokens did not do its job, whatever the absence of an exception suggests.
+    # "Work" is deliberately broad — tool calls for a chat agent, completed
+    # nodes for a workflow — so a schedule whose whole purpose is a side effect
+    # (post a message, file a ticket) is never flagged for staying quiet.
+    if (
+        error_type is None
+        and not (outcome.get("answer") or "").strip()
+        and not (outcome.get("tool_calls") or [])
+        and not int(outcome.get("steps_completed") or 0)
+        and generated_tokens == 0
+    ):
+        error_type = "empty_output"
+        error_text = "run produced no answer, tool calls or completion tokens"
 
     answer = outcome.get("answer") or ""
     truncated = False

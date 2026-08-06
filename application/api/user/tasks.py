@@ -5,6 +5,7 @@ from sqlalchemy.exc import DataError
 
 from application.api.user.idempotency import with_idempotency
 from application.celery_init import celery
+from application.parser.file.base_parser import DocumentParseError
 from application.worker import (
     AttachmentRejectedError,
     agent_webhook_worker,
@@ -69,7 +70,10 @@ def _emit_ingest_poison_event(task_name, bound):
     )
 
 
-@celery.task(**DURABLE_TASK)
+# ``dont_autoretry_for``: a file that cannot be converted to text fails
+# identically on every attempt, so retrying only multiplies the log noise
+# before the same failure — go straight to the poison/failure path.
+@celery.task(**DURABLE_TASK, dont_autoretry_for=(DocumentParseError,))
 @with_idempotency(task_name="ingest", on_poison=_emit_ingest_poison_event)
 def ingest(
     self,
@@ -237,10 +241,14 @@ def _emit_attachment_poison_event(task_name, bound):
 
 
 # ``dont_autoretry_for``: a DataError (poison payload, e.g. NUL bytes or an
-# over-long value) or an AttachmentRejectedError (zip bomb) is deterministic —
-# retrying re-fails identically and multiplies log noise, so it goes straight
-# to the failure path.
-@celery.task(**DURABLE_TASK, dont_autoretry_for=(DataError, AttachmentRejectedError))
+# over-long value), an AttachmentRejectedError (zip bomb) or a
+# DocumentParseError (the file cannot be converted to text at all) is
+# deterministic — retrying re-fails identically and multiplies log noise, so it
+# goes straight to the failure path.
+@celery.task(
+    **DURABLE_TASK,
+    dont_autoretry_for=(DataError, AttachmentRejectedError, DocumentParseError),
+)
 @with_idempotency(
     task_name="store_attachment", on_poison=_emit_attachment_poison_event,
 )
