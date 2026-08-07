@@ -14,6 +14,7 @@ class TestVectorCreator:
         assert "qdrant" in VectorCreator.vectorstores
         assert "milvus" in VectorCreator.vectorstores
         assert "pgvector" in VectorCreator.vectorstores
+        assert "oceanbase" in VectorCreator.vectorstores
 
     def test_create_vectorstore_invalid_type(self):
         with pytest.raises(ValueError, match="No vectorstore class found for type"):
