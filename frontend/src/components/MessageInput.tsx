@@ -907,6 +907,11 @@ export default function MessageInput({
     onDrop,
     noClick: true,
     noKeyboard: true,
+    // The textarea below owns paste-to-attach via handlePaste. react-dropzone
+    // added its own paste handling in v19.2 (on by default), which fires on the
+    // root for pastes into any focused descendant - so both would upload the
+    // same file. Leave paste to handlePaste.
+    noPaste: true,
     multiple: true,
     onDragEnter: () => {
       setHandleDragActive(true);
