@@ -25,6 +25,21 @@ TEAM_SHARED = "src-team-shared"
 FOREIGN = "src-foreign"
 
 
+@pytest.fixture(autouse=True)
+def _stub_db(monkeypatch):
+    """``_load_request_sources`` opens a connection; it needn't be a real one."""
+    import contextlib
+    from unittest.mock import MagicMock
+
+    @contextlib.contextmanager
+    def _conn():
+        yield MagicMock()
+
+    # Patch the name bound in stream_processor, not the source module: it is
+    # imported at module load, so rebinding the origin has no effect.
+    monkeypatch.setattr(sp_mod, "db_readonly", _conn)
+
+
 @pytest.fixture
 def access_model(monkeypatch):
     """``can_access`` semantics: own it, or hold a direct team grant."""

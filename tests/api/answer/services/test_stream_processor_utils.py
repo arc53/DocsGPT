@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 import pytest
 
+import application.api.answer.services.stream_processor as sp_mod
+
 
 @contextmanager
 def _patch_db(conn):
@@ -350,6 +352,23 @@ class TestGetAgentKey:
         with _patch_db(pg_conn), pytest.raises(Exception):
             sp._get_agent_key(str(agent["id"]), "not-owner")
 
+def _stub_db_readonly(monkeypatch, sp_mod):
+    """``_load_request_sources`` opens a connection to run the access check.
+
+    Patch the name bound in ``stream_processor`` — it is imported at module
+    load, so rebinding the source module has no effect. Without this these
+    pass only where a database happens to be reachable.
+    """
+    import contextlib
+    from unittest.mock import MagicMock
+
+    @contextlib.contextmanager
+    def _conn():
+        yield MagicMock()
+
+    monkeypatch.setattr(sp_mod, "db_readonly", _conn)
+
+
 
 class TestConfigureSource:
     def test_agent_data_with_sources_list(self):
@@ -385,9 +404,9 @@ class TestConfigureSource:
         assert sp.source == {}
 
     def test_request_active_docs_used(self, monkeypatch):
-        import application.api.answer.services.stream_processor as sp_mod
         StreamProcessor = sp_mod.StreamProcessor
 
+        _stub_db_readonly(monkeypatch, sp_mod)
         monkeypatch.setattr(sp_mod, "can_access", lambda *a, **k: True)
         sp = StreamProcessor({"active_docs": "abc"}, {"sub": "u"})
         sp._configure_source()
@@ -399,7 +418,6 @@ class TestConfigureSource:
         An unchecked id read another tenant's documents straight into the
         answer, while /api/sources/<id>/search correctly refused the same id.
         """
-        import application.api.answer.services.stream_processor as sp_mod
         StreamProcessor = sp_mod.StreamProcessor
 
         monkeypatch.setattr(sp_mod, "can_access", lambda *a, **k: False)
@@ -409,9 +427,9 @@ class TestConfigureSource:
         assert sp.all_sources == []
 
     def test_mixed_access_keeps_only_the_readable_ids(self, monkeypatch):
-        import application.api.answer.services.stream_processor as sp_mod
         StreamProcessor = sp_mod.StreamProcessor
 
+        _stub_db_readonly(monkeypatch, sp_mod)
         monkeypatch.setattr(
             sp_mod, "can_access", lambda conn, kind, sid, user: sid == "mine"
         )
@@ -420,7 +438,6 @@ class TestConfigureSource:
         assert sp.source == {"active_docs": ["mine"]}
 
     def test_access_check_failure_fails_closed(self, monkeypatch):
-        import application.api.answer.services.stream_processor as sp_mod
         StreamProcessor = sp_mod.StreamProcessor
 
         def _boom(*a, **k):

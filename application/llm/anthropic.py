@@ -383,10 +383,9 @@ class AnthropicLLM(BaseLLM):
             return
         try:
             output = int(getattr(usage, "output_tokens", 0) or 0)
-            if output_only:
-                # Input counts come from the message_start record below.
-                base_input = created = cached = 0
-            else:
+            # On a message_delta the input bins are absent; the counts kept at
+            # message_start are reused below instead.
+            if not output_only:
                 base_input = int(getattr(usage, "input_tokens", 0) or 0)
                 created = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
                 cached = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
