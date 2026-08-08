@@ -379,18 +379,63 @@ class TestResolveSourcePgId:
     def test_returns_none_for_falsy(self, pg_conn):
         from application.api.user.sharing.routes import _resolve_source_pg_id
 
-        assert _resolve_source_pg_id(pg_conn, None) is None
-        assert _resolve_source_pg_id(pg_conn, "") is None
+        assert _resolve_source_pg_id(pg_conn, None, "u") is None
+        assert _resolve_source_pg_id(pg_conn, "", "u") is None
 
     def test_returns_none_for_unknown_uuid(self, pg_conn):
         from application.api.user.sharing.routes import _resolve_source_pg_id
 
         assert (
-            _resolve_source_pg_id(pg_conn, "00000000-0000-0000-0000-000000000000")
+            _resolve_source_pg_id(
+                pg_conn, "00000000-0000-0000-0000-000000000000", "u"
+            )
             is None
         )
 
     def test_returns_none_for_unknown_legacy(self, pg_conn):
         from application.api.user.sharing.routes import _resolve_source_pg_id
 
-        assert _resolve_source_pg_id(pg_conn, "507f1f77bcf86cd799439011") is None
+        assert _resolve_source_pg_id(pg_conn, "507f1f77bcf86cd799439011", "u") is None
+
+
+@pytest.mark.unit
+class TestShareSourceAuthorization:
+    """A share must not attach a source the sharer cannot read.
+
+    ``_resolve_source_pg_id`` resolved any id with no ownership predicate, and
+    the id was baked into the agent the share creates — which ``/api/search``
+    then searched, returning another tenant's documents.
+    """
+
+    def test_unauthorized_source_is_refused(self, monkeypatch, pg_conn):
+        """A resolvable id the caller cannot read must not reach the agent."""
+        import application.api.user.team_sharing as ts
+
+        from application.api.user.sharing.routes import _resolve_source_pg_id
+
+        monkeypatch.setattr(ts, "can_access", lambda *a, **k: False)
+        assert (
+            _resolve_source_pg_id(
+                pg_conn, "00000000-0000-0000-0000-000000000000", "attacker"
+            )
+            is None
+        )
+
+    def test_missing_principal_resolves_nothing(self, pg_conn):
+        from application.api.user.sharing.routes import _resolve_source_pg_id
+
+        assert _resolve_source_pg_id(pg_conn, "any-id", None) is None
+
+    def test_authorized_source_passes_through(self, monkeypatch):
+        import application.api.user.team_sharing as ts
+        from application.api.user.sharing.routes import _authorized_source
+
+        monkeypatch.setattr(ts, "can_access", lambda *a, **k: True)
+        assert _authorized_source(None, ("src-1",), "owner") == "src-1"
+
+    def test_denied_source_returns_none(self, monkeypatch):
+        import application.api.user.team_sharing as ts
+        from application.api.user.sharing.routes import _authorized_source
+
+        monkeypatch.setattr(ts, "can_access", lambda *a, **k: False)
+        assert _authorized_source(None, ("src-1",), "stranger") is None

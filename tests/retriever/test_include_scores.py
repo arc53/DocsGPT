@@ -204,3 +204,33 @@ class TestCandidateKDoesNotLeakAcrossSources:
         docs = _retrieve(ClassicRAG, store, chunks=4)
 
         assert len(docs) == 4
+
+
+@pytest.mark.unit
+class TestChunksCeiling:
+    """``chunks`` is documented as a top-k but had a per-source floor of 1.
+
+    Four sources at ``chunks=2`` returned four documents. The floor stays (no
+    source should be starved), but the overshoot is now bounded by it.
+    """
+
+    def _rag(self, n_sources, chunks):
+        from application.retriever.classic_rag import ClassicRAG
+
+        rag = ClassicRAG.__new__(ClassicRAG)
+        rag.vectorstores = [f"src-{i}" for i in range(n_sources)]
+        rag.chunks = chunks
+        rag.base_chunks = None
+        rag.doc_token_limit = 100000
+        rag.include_scores = False
+        rag.question = "q"
+        return rag
+
+    @pytest.mark.parametrize(
+        "n_sources,chunks,ceiling",
+        [(4, 2, 4), (4, 10, 10), (1, 5, 5), (10, 2, 10)],
+    )
+    def test_ceiling_is_max_of_topk_and_source_count(self, n_sources, chunks, ceiling):
+        rag = self._rag(n_sources, chunks)
+        base = rag.base_chunks if rag.base_chunks is not None else rag.chunks
+        assert max(base, len(rag.vectorstores)) == ceiling

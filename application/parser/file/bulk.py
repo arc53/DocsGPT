@@ -309,10 +309,13 @@ class SimpleDirectoryReader(BaseReader):
             if isinstance(data, List):
                 # Extend data_list with each item in the data list
                 data_list.extend([str(d) for d in data])
-                metadata_list.extend([base_metadata for _ in data])
+                # copy(): chunking writes token_count into this dict in
+                # place, so a shared reference gives every chunk the last
+                # chunk's count.
+                metadata_list.extend([base_metadata.copy() for _ in data])
             else:
                 data_list.append(str(data))
-                metadata_list.append(base_metadata)
+                metadata_list.append(base_metadata.copy())
 
             report_progress(file_index + 1)
 

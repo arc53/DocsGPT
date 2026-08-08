@@ -1,4 +1,6 @@
 import logging
+import math
+import re
 from typing import List, Optional, Any, Dict
 
 from psycopg.types.json import Jsonb
@@ -6,6 +8,9 @@ from psycopg.types.json import Jsonb
 from application.core.settings import settings
 from application.vectorstore.base import BaseVectorStore
 from application.vectorstore.document_class import Document
+
+# table name -> IVFFlat ``lists`` (None when the table has no such index)
+_IVFFLAT_LISTS_CACHE: Dict[str, Optional[int]] = {}
 
 
 class PGVectorStore(BaseVectorStore):
@@ -66,7 +71,59 @@ class PGVectorStore(BaseVectorStore):
             self._connection = self._psycopg.connect(self._connection_string)
             # Register pgvector types
             self._register_vector(self._connection)
+            self._apply_ivfflat_probes(self._connection)
         return self._connection
+
+    def _ivfflat_lists(self, conn) -> Optional[int]:
+        """Return the ``lists`` value of this table's IVFFlat index, if any.
+
+        Cached per table because it only changes when the index is rebuilt.
+        """
+        if self._table_name in _IVFFLAT_LISTS_CACHE:
+            return _IVFFLAT_LISTS_CACHE[self._table_name]
+        lists = None
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT indexdef FROM pg_indexes "
+                    "WHERE tablename = %s AND indexdef ILIKE %s",
+                    (self._table_name, "%ivfflat%"),
+                )
+                row = cursor.fetchone()
+            if row:
+                match = re.search(r"lists\s*=\s*'?(\d+)", row[0])
+                if match:
+                    lists = int(match.group(1))
+        except Exception as e:  # index introspection must never break search
+            logging.debug("Could not read IVFFlat lists for %s: %s", self._table_name, e)
+        # Only cache a hit: an index may be created after this process booted,
+        # and caching None would keep probes unset for the process's lifetime.
+        if lists:
+            _IVFFLAT_LISTS_CACHE[self._table_name] = lists
+        return lists
+
+    def _apply_ivfflat_probes(self, conn) -> None:
+        """Raise ``ivfflat.probes`` so a filtered search cannot come back empty.
+
+        An IVFFlat index partitions vectors into ``lists`` clusters and the
+        default ``probes = 1`` scans exactly one of them. Our searches filter by
+        ``source_id`` *after* the index picks candidates, so with one probe the
+        candidates frequently all belong to other sources and the query returns
+        nothing — retrieval reports zero documents and the model answers with no
+        source material, silently. ``sqrt(lists)`` is pgvector's own recall
+        guidance and costs a proportional amount of scan.
+        """
+        probes = settings.PGVECTOR_IVFFLAT_PROBES
+        if probes is None:
+            lists = self._ivfflat_lists(conn)
+            if not lists:
+                return
+            probes = max(1, math.isqrt(lists))
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(f"SET ivfflat.probes = {int(probes)};")
+        except Exception as e:  # older pgvector / no index — search still works
+            logging.debug("Could not set ivfflat.probes: %s", e)
 
     def _ensure_table_exists(self):
         """Create table and enable pgvector extension if they don't exist"""
@@ -92,14 +149,21 @@ class PGVectorStore(BaseVectorStore):
             """
             cursor.execute(create_table_query)
             
-            # Create index for vector similarity search
-            index_query = f"""
-            CREATE INDEX IF NOT EXISTS {self._table_name}_{self._vector_column}_idx 
-            ON {self._table_name} USING ivfflat ({self._vector_column} vector_cosine_ops)
-            WITH (lists = 100);
-            """
-            cursor.execute(index_query)
-            
+            # NO vector index is created here, deliberately.
+            #
+            # This runs when the table is first created, i.e. on an EMPTY
+            # table. IVFFlat computes its cluster centroids at build time, so
+            # an index built on no rows gets random centroids and never
+            # recovers — measured recall 0.06 once 5k rows are added. Combined
+            # with our ``WHERE source_id = ...`` post-filter, that returned
+            # ZERO rows for sources with hundreds of chunks: retrieval reported
+            # no documents and the model answered from nothing, silently.
+            # pgvector only warns when sampled_rows < lists, so the common bad
+            # case is silent.
+            #
+            # Exact search is correct and fast well past the sizes most
+            # deployments ever reach. Add an index deliberately, sized to real
+            # data, once a corpus is large enough to need one.
             # Create index for source_id filtering
             source_index_query = f"""
             CREATE INDEX IF NOT EXISTS {self._table_name}_source_id_idx
@@ -148,6 +212,79 @@ class PGVectorStore(BaseVectorStore):
             )
         ]
 
+    def _nearest_sql(self) -> str:
+        """Build the nearest-neighbour SELECT for this store's table.
+
+        Identifiers (table/column names) come from this instance's
+        construction, never from a request, so they cannot be interpolated by a
+        caller; the query *values* are always bound parameters.
+        """
+        return (
+            f"SELECT {self._text_column}, {self._metadata_column}, "
+            f"({self._vector_column} <=> %s::vector) AS distance "
+            f"FROM {self._table_name} "
+            "WHERE source_id = %s "
+            f"ORDER BY {self._vector_column} <=> %s::vector "
+            "LIMIT %s;"
+        )
+
+    def _exact_search(self, cursor, query_vector, k: int, ann_results: list) -> list:
+        """Redo a short indexed search exactly, when the source has more rows.
+
+        Args:
+            cursor: Open cursor on the search connection.
+            query_vector: The embedded query.
+            k: Requested top-k.
+            ann_results: What the indexed search returned.
+
+        Returns:
+            list: Exact rows when the indexed search under-returned, otherwise
+            ``ann_results`` unchanged.
+        """
+        try:
+            cursor.execute(
+                f"SELECT count(*) FROM {self._table_name} WHERE source_id = %s",
+                (self._source_id,),
+            )
+            available = cursor.fetchone()[0]
+            if len(ann_results) >= min(k, available):
+                return ann_results
+
+            cursor.execute("SET LOCAL enable_indexscan = off;")
+            cursor.execute("SET LOCAL enable_bitmapscan = off;")
+            cursor.execute(
+                self._nearest_sql(),
+                (query_vector, self._source_id, query_vector, k),
+            )
+            exact = cursor.fetchall()
+            if len(exact) > len(ann_results):
+                logging.info(
+                    "Vector index under-returned for source %s (%d of %d); "
+                    "used exact search instead.",
+                    self._source_id, len(ann_results), min(k, available),
+                )
+                return exact
+            return ann_results
+        except Exception as e:
+            # Never let the safety net take down the search it is protecting —
+            # but roll back, or the aborted transaction poisons the connection
+            # and every later search on this store returns nothing.
+            logging.warning("Exact-search fallback failed: %s", e)
+            try:
+                cursor.connection.rollback()
+            except Exception:
+                # Connection already gone; nothing left to roll back.
+                pass
+            return ann_results
+        finally:
+            try:
+                # RESET, not "= on": a deployment may disable these globally.
+                cursor.execute("RESET enable_indexscan;")
+                cursor.execute("RESET enable_bitmapscan;")
+            except Exception:
+                # Cursor/transaction already unusable; the settings die with it.
+                pass
+
     def search_with_scores(
         self,
         question: str,
@@ -169,17 +306,19 @@ class PGVectorStore(BaseVectorStore):
 
         try:
             # Use cosine distance for similarity search with proper vector formatting
-            search_query = f"""
-            SELECT {self._text_column}, {self._metadata_column},
-                   ({self._vector_column} <=> %s::vector) as distance
-            FROM {self._table_name}
-            WHERE source_id = %s
-            ORDER BY {self._vector_column} <=> %s::vector
-            LIMIT %s;
-            """
+            search_query = self._nearest_sql()
 
             cursor.execute(search_query, (query_vector, self._source_id, query_vector, k))
             results = cursor.fetchall()
+
+            # An ANN index filters ``source_id`` *after* choosing candidates, so
+            # a source holding a small share of the table can come back short —
+            # or empty — no matter how the index is tuned. Raising probes /
+            # ef_search only moves that threshold. When the result looks short,
+            # redo the query exactly: correctness is worth one extra scan, and a
+            # silent empty result reaches the model as "no documents exist".
+            if len(results) < k:
+                results = self._exact_search(cursor, query_vector, k, results)
 
             max_distance = None
             if score_threshold is not None:
@@ -199,6 +338,11 @@ class PGVectorStore(BaseVectorStore):
 
         except Exception as e:
             logging.error(f"Error searching documents: {e}", exc_info=True)
+            try:
+                conn.rollback()
+            except Exception:
+                # Connection already gone; nothing left to roll back.
+                pass
             return []
         finally:
             cursor.close()

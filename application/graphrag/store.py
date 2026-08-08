@@ -200,11 +200,12 @@ class GraphStore:
                 "CREATE INDEX IF NOT EXISTS graph_node_chunks_node_id_idx "
                 "ON graph_node_chunks (node_id);"
             )
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS graph_nodes_name_embedding_idx "
-                "ON graph_nodes USING ivfflat (name_embedding vector_cosine_ops) "
-                "WITH (lists = 100);"
-            )
+            # No vector index here, deliberately: this runs at table-creation
+            # time, so an IVFFlat index would be built on an EMPTY table and get
+            # random centroids. Combined with the ``WHERE source_id = ...``
+            # post-filter in search_nodes_by_embedding that silently returns
+            # zero nodes, and graph_rag does not fall back when the source has
+            # nodes. Add an index deliberately once a graph is large enough.
 
             conn.commit()
         except Exception as e:

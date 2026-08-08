@@ -195,9 +195,19 @@ def embed_and_store_documents(
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
 
-    # Validate docs is not empty
+    # Drop blank documents before validating. A file that parses to nothing
+    # (empty upload, whitespace-only, an image-only PDF with no OCR) used to
+    # reach here as a one-element list of "" and ingest as a healthy source,
+    # putting an embedding of the empty string into the index.
+    docs = [
+        d for d in docs
+        if str(getattr(d, "text", getattr(d, "page_content", d)) or "").strip()
+    ]
     if not docs:
-        raise ValueError("No documents to embed - check file format and extension")
+        raise ValueError(
+            "No text could be extracted from this file. It may be empty, "
+            "image-only, or in an unsupported format."
+        )
 
     total_docs = len(docs)
     # Atomic upsert that preserves checkpoint state on attempt-id match

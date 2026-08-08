@@ -415,7 +415,7 @@ class UploadRemote(Resource):
 
             if data["source"] == "github":
                 source_data = config.get("repo_url")
-            elif data["source"] in ["crawler", "url"]:
+            elif data["source"] in ["crawler", "url", "sitemap"]:
                 source_data = config.get("url")
             elif data["source"] == "reddit":
                 source_data = config

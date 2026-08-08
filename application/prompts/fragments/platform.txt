@@ -1,0 +1,4 @@
+{% if system.platform %}
+
+{{ system.platform }}
+{% endif %}

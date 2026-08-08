@@ -1,7 +1,7 @@
 provider: anthropic
 defaults:
   supports_tools: true
-  attachments: [image]
+  attachments: [image, pdf]
   context_window: 200000
 
 models:

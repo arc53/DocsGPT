@@ -671,10 +671,43 @@ class SourceConfigResource(Resource):
                     "success": True,
                     "config": new_config.model_dump(),
                     "requires_reingest": requires_reingest,
+                    "warnings": _unsupported_retrieval_warnings(new_config),
                 }
             ),
             200,
         )
+
+
+def _unsupported_retrieval_warnings(config) -> list:
+    """Flag retrieval knobs the active backend cannot honour.
+
+    ``score_threshold`` was accepted and echoed back on every store, but only
+    stores whose scores are cosine similarities can apply it — on the others it
+    silently did nothing, so an operator could tune a threshold forever with no
+    feedback. ``hybrid`` drops it by design (RRF ranks are not similarities).
+    """
+    warnings = []
+    retrieval = getattr(config, "retrieval", None)
+    if retrieval is None or retrieval.score_threshold is None:
+        return warnings
+
+    if (retrieval.retriever or "").lower() == "hybrid":
+        warnings.append(
+            "score_threshold is ignored by the 'hybrid' retriever: its scores "
+            "are reciprocal-rank fusion ranks, not similarities."
+        )
+        return warnings
+
+    from application.vectorstore.vector_creator import VectorCreator
+
+    store_cls = VectorCreator.vectorstores.get(settings.VECTOR_STORE)
+    if getattr(store_cls, "score_kind", None) != "cosine_similarity":
+        warnings.append(
+            f"score_threshold is ignored by the configured vector store "
+            f"'{settings.VECTOR_STORE}', which does not report cosine "
+            f"similarity."
+        )
+    return warnings
 
 
 def _resolve_readable_source(conn, source_id, user):

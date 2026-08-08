@@ -15,6 +15,17 @@ DocsGPT can generate documents, run code, and read files for you during a chat o
 
 All three are opt-in: enable Artifact and Code Executor per agent in the tool picker (they need a running [sandbox runner](https://github.com/arc53/DocsGPT/tree/main/deployment/sandbox)), and Read Document is available inside workflows. A new agent starts with no tools enabled.
 
+If your deployment runs a sandbox and you want these available in every chat
+rather than per agent, add them to `DEFAULT_CHAT_TOOLS`:
+
+```python
+DEFAULT_CHAT_TOOLS = ["memory", "read_webpage", "scheduler",
+                      "code_executor", "artifact_generator"]
+```
+
+They are left out of the shipped default deliberately: both execute through the
+sandbox runner, so on a deployment without one they would fail on every call.
+
 ## Artifacts
 
 An **artifact** is a file the assistant produces that you can open, download, and edit later. Artifacts are versioned: every edit appends a new version at the same artifact, so you can review or restore an earlier one. Bytes are stored on the server and are never passed through the model, so large files stay fast and cheap to work with.

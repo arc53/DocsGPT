@@ -1,7 +1,6 @@
 import datetime
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
@@ -10,9 +9,12 @@ from application.agents.default_tools import synthesized_default_tools
 from application.api.answer.services.compression import CompressionOrchestrator
 from application.api.answer.services.compression.token_counter import TokenCounter
 from application.api.answer.services.conversation_service import ConversationService
+from application.prompts.composer import compose_preset, is_composed_preset
 from application.api.answer.services.prompt_renderer import (
     PromptRenderer,
     format_docs_for_prompt,
+    prompt_embeds_documents,
+    resolve_prompt_skeleton,
 )
 from application.core.model_utils import (
     get_api_key_for_provider,
@@ -31,6 +33,7 @@ from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.repositories.team_scope import TeamScopeRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository
 from application.storage.db.repositories.users import UsersRepository
+from application.api.user.team_sharing import can_access
 from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import SourceConfig
 from application.retriever.dispatcher import build_dispatcher
@@ -41,6 +44,17 @@ from application.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _clamp_chunks(value: int) -> int:
+    """Bound top-k to the range ``RetrievalConfig`` enforces, keeping 0.
+
+    Both the request body and agent config took ``chunks`` unbounded, so a
+    caller could ask for an arbitrary number of chunks. ``0`` is preserved
+    because callers use it to suppress retrieval entirely
+    (``classic_rag.py`` treats 0 as "skip"); negatives collapse to it.
+    """
+    return max(0, min(int(value), 500))
 
 
 def get_prompt(prompt_id: str, prompts_collection=None) -> str:
@@ -60,31 +74,16 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
         prompt_id = "default"
     elif not isinstance(prompt_id, str):
         prompt_id = str(prompt_id)
-    current_dir = Path(__file__).resolve().parents[3]
-    prompts_dir = current_dir / "prompts"
+    # The chat presets are assembled from shared fragments (see
+    # ``application/prompts/composer.py``); only ``reduce`` is still a
+    # standalone file.
+    if is_composed_preset(prompt_id):
+        return compose_preset(prompt_id)
 
-    CLASSIC_PRESETS = {
-        "default": "chat_combine_default.txt",
-        "creative": "chat_combine_creative.txt",
-        "strict": "chat_combine_strict.txt",
-        "reduce": "chat_reduce_prompt.txt",
-    }
-    AGENTIC_PRESETS = {
-        "default": "agentic/default.txt",
-        "creative": "agentic/creative.txt",
-        "strict": "agentic/strict.txt",
-    }
-
-    preset_mapping = {
-        **CLASSIC_PRESETS,
-        **{f"agentic_{k}": v for k, v in AGENTIC_PRESETS.items()},
-    }
-
-    if prompt_id in preset_mapping:
-        file_path = os.path.join(prompts_dir, preset_mapping[prompt_id])
+    if prompt_id == "reduce":
+        file_path = Path(__file__).resolve().parents[3] / "prompts" / "chat_reduce_prompt.txt"
         try:
-            with open(file_path, "r") as f:
-                return f.read()
+            return file_path.read_text(encoding="utf-8")
         except FileNotFoundError:
             raise FileNotFoundError(f"Prompt file not found: {file_path}")
     try:
@@ -141,6 +140,7 @@ class StreamProcessor:
         )
         self.prompt_renderer = PromptRenderer()
         self._prompt_content: Optional[str] = None
+        self._persona: Optional[str] = None
         self._required_tool_actions: Optional[Dict[str, Set[Optional[str]]]] = None
         self.compressed_summary: Optional[str] = None
         self.compressed_summary_tokens: int = 0
@@ -680,8 +680,18 @@ class StreamProcessor:
         if "active_docs" in self.data:
             active_docs = self.data["active_docs"]
             if active_docs and active_docs != "default":
-                self.source = {"active_docs": active_docs}
+                # The retriever queries ``self.source["active_docs"]``, so it
+                # must carry only the ids the caller may actually read — the
+                # authorized set that _load_request_sources resolved, not the
+                # raw client input.
                 self.all_sources = self._load_request_sources(active_docs)
+                allowed = [entry["id"] for entry in self.all_sources]
+                if not allowed:
+                    self.source = {}
+                elif isinstance(active_docs, list):
+                    self.source = {"active_docs": allowed}
+                else:
+                    self.source = {"active_docs": allowed[0]}
             else:
                 self.source = {}
                 self.all_sources = []
@@ -701,13 +711,48 @@ class StreamProcessor:
         for sid in ids:
             if not sid or sid == "default":
                 continue
+            # AUTHORIZATION. ``active_docs`` is client-supplied, and the
+            # retriever queries ``WHERE source_id = <id>`` with no owner
+            # predicate — so an unchecked id read another tenant's documents
+            # straight into the answer. The config read below is owner-scoped
+            # but was lenient on a miss, which let the id through anyway.
+            # ``/api/sources/<id>/search`` and ``/api/get_chunks`` already gate
+            # on this helper; the answer path must use the same gate.
+            # No principal means no basis to authorize anything, so client-
+            # supplied ids are dropped outright. Gating this behind ``if owner``
+            # left a bypass: a signed token with no ``sub`` claim skipped the
+            # check entirely and streamed the source text back.
+            if not owner:
+                logger.warning(
+                    "Dropping source %s: request has no authenticated principal.",
+                    sid,
+                )
+                continue
+            try:
+                with db_readonly() as conn:
+                    permitted = can_access(conn, "source", str(sid), owner)
+            except Exception:
+                # Fail closed: a check we could not complete is not permission
+                # to read someone's documents.
+                logger.warning("Access check failed for source %s; dropping it.", sid)
+                continue
+            if not permitted:
+                logger.warning(
+                    "Dropping source %s from request: %s has no access.", sid, owner
+                )
+                continue
+
+            # Config is best-effort: a blip here must not drop an authorized
+            # source, it just falls back to the default retrieval config.
+            # Read unscoped — ``can_access`` has already passed, and the
+            # owner-scoped read misses for a team grantee, silently costing
+            # them the source's configured chunks/exposure.
             source_doc = None
-            if owner:
-                try:
-                    with db_readonly() as conn:
-                        source_doc = SourcesRepository(conn).get(str(sid), owner)
-                except Exception:
-                    source_doc = None
+            try:
+                with db_readonly() as conn:
+                    source_doc = SourcesRepository(conn).get_by_id(str(sid))
+            except Exception:
+                source_doc = None
             sources.append(
                 {
                     "id": sid,
@@ -854,6 +899,28 @@ class StreamProcessor:
             # (otherwise the configured json_schema would silently override it).
             self.agent_config["json_schema"] = None
 
+    def _configured_source_chunks(self) -> Optional[int]:
+        """Return the top-k a source explicitly configured, or None.
+
+        Only an *explicit* ``retrieval.chunks`` counts. A source left at
+        defaults returns None so the request body still applies — otherwise
+        every unconfigured source would silently clamp callers to the schema
+        default.
+        """
+        from application.storage.db.source_config import RetrievalConfig
+
+        default_chunks = RetrievalConfig().chunks
+        values = {
+            _clamp_chunks(entry["retrieval"].chunks)
+            for entry in (self.all_sources or [])
+            if getattr(entry.get("retrieval"), "chunks", default_chunks) != default_chunks
+        }
+        if not values:
+            return None
+        # Several configured sources in one request: the largest wins so no
+        # source is under-served by another's tighter setting.
+        return max(values)
+
     def _configure_retriever(self):
         """Assemble retriever config; agent's values are authoritative when bound."""
         # BYOM scope: owner for shared-agent BYOM, caller for own BYOM,
@@ -873,7 +940,7 @@ class StreamProcessor:
                 retriever_name = self._agent_data["retriever"]
             if self._agent_data.get("chunks") is not None:
                 try:
-                    chunks = int(self._agent_data["chunks"])
+                    chunks = _clamp_chunks(int(self._agent_data["chunks"]))
                 except (ValueError, TypeError):
                     logger.warning(
                         f"Invalid agent chunks value: {self._agent_data['chunks']}, "
@@ -884,12 +951,18 @@ class StreamProcessor:
                 retriever_name = self.data["retriever"]
             if "chunks" in self.data:
                 try:
-                    chunks = int(self.data["chunks"])
+                    chunks = _clamp_chunks(int(self.data["chunks"]))
                 except (ValueError, TypeError):
                     logger.warning(
                         f"Invalid request chunks value: {self.data['chunks']}, "
                         "using default value 2"
                     )
+            # A source that configured its own retrieval knobs outranks the
+            # request body: the owner tuned top-k for that corpus, a client
+            # should not be able to override it per call.
+            source_chunks = self._configured_source_chunks()
+            if source_chunks is not None:
+                chunks = source_chunks
 
         self.retriever_config = {
             "retriever_name": retriever_name,
@@ -1281,7 +1354,10 @@ class StreamProcessor:
         ):
             prompt_id = f"agentic_{prompt_id}"
         try:
-            self._prompt_content = get_prompt(prompt_id, self.prompts_collection)
+            content = get_prompt(prompt_id, self.prompts_collection)
+            self._prompt_content, self._persona = resolve_prompt_skeleton(
+                content, prompt_id, self.agent_config.get("agent_type")
+            )
         except ValueError as e:
             logger.debug(f"Invalid prompt ID '{prompt_id}': {str(e)}")
             self._prompt_content = None
@@ -1536,10 +1612,13 @@ class StreamProcessor:
 
         # Allow API callers to override the system prompt when the agent
         # has opted in via allow_system_prompt_override.
-        if (
+        # An override replaces the rendered prompt wholesale, so it cannot have
+        # interpolated documents no matter what the agent's own prompt says.
+        override_used = bool(
             self.agent_config.get("allow_system_prompt_override", False)
             and self.data.get("system_prompt_override")
-        ):
+        )
+        if override_used:
             rendered_prompt = self.data["system_prompt_override"]
         else:
             rendered_prompt = self.prompt_renderer.render_prompt(
@@ -1552,6 +1631,7 @@ class StreamProcessor:
                 tools_data=tools_data,
                 attachments=self.attachments,
                 enabled_tools=self._enabled_tool_names(),
+                persona=self._persona,
                 artifact_parent={"conversation_id": self.conversation_id},
             )
 
@@ -1627,6 +1707,10 @@ class StreamProcessor:
             "prompt": rendered_prompt,
             "chat_history": self.history,
             "retrieved_docs": self.retrieved_docs,
+            "prompt_embeds_documents": (
+                False if override_used else prompt_embeds_documents(raw_prompt)
+            ),
+            "sources_were_searched": self._has_active_docs(),
             "decoded_token": self.decoded_token,
             "attachments": self.attachments,
             "json_schema": self.agent_config.get("json_schema"),

@@ -1,3 +1,4 @@
+from application.llm.handlers.anthropic import AnthropicLLMHandler
 from application.llm.handlers.base import LLMHandler
 from application.llm.handlers.google import GoogleLLMHandler
 from application.llm.handlers.openai import OpenAILLMHandler
@@ -7,6 +8,7 @@ class LLMHandlerCreator:
     handlers = {
         "openai": OpenAILLMHandler,
         "google": GoogleLLMHandler,
+        "anthropic": AnthropicLLMHandler,
         "novita": OpenAILLMHandler,  # Novita uses OpenAI-compatible API
         "default": OpenAILLMHandler,
     }

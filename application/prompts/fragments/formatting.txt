@@ -1,0 +1,4 @@
+## Formatting
+- Use markdown. Put code in fenced blocks with a language tag.
+- Only use a mermaid diagram when the user asks for one or a diagram is clearly the best way to answer, and make sure the syntax is valid.
+

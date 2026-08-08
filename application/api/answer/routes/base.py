@@ -549,10 +549,12 @@ class BaseAnswerResource:
                                 truncated_source["text"][:100].strip() + "..."
                             )
                         truncated_sources.append(truncated_source)
-                    if truncated_sources:
-                        yield _emit(
-                            {"type": "source", "source": truncated_sources}
-                        )
+                    # Emit even when empty. Suppressing it made "searched your
+                    # sources and found nothing" indistinguishable from "no
+                    # source was attached" — the client cannot tell a grounded
+                    # answer from an ungrounded one, which is what hid a
+                    # retrieval outage behind a confident, fabricated answer.
+                    yield _emit({"type": "source", "source": truncated_sources})
                 elif "tool_calls" in line:
                     tool_calls = line["tool_calls"]
                     yield _emit({"type": "tool_calls", "tool_calls": tool_calls})

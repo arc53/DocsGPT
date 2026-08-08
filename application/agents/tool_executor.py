@@ -944,6 +944,33 @@ class ToolExecutor:
         artifact_id = str(artifact_id).strip() if artifact_id is not None else ""
         if artifact_id:
             tool_call_data["artifact_id"] = artifact_id
+
+        # A single call can produce several files (``run_code`` writing more
+        # than one). ``artifact_id`` names only the first, which left the rest
+        # with no way into the UI, so report the full set with display names.
+        get_artifacts = (
+            getattr(tool, "get_artifacts", None)
+            if tool_data["name"] != "api_tool"
+            else None
+        )
+        if callable(get_artifacts):
+            artifacts = []
+            try:
+                # Normalize inside the guard: a tool returning an unexpected
+                # shape must not break the call it just completed.
+                artifacts = [
+                    {"id": str(a["id"]).strip(), "filename": a.get("filename")}
+                    for a in (get_artifacts(action_name, **parameters) or [])
+                    if isinstance(a, dict) and a.get("id")
+                ]
+            except Exception:
+                logger.exception(
+                    "Failed to extract artifacts from tool %s for action %s",
+                    tool_data["name"],
+                    action_name,
+                )
+            if artifacts:
+                tool_call_data["artifacts"] = artifacts
         result_full = bound_result_full(str(result))
         tool_call_data["resolved_arguments"] = resolved_arguments
         tool_call_data["result_full"] = result_full
