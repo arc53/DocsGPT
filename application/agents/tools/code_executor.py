@@ -73,6 +73,7 @@ class CodeExecutorTool(Tool):
         # Static, deployment-level approval gate (mirrors the action metadata flag).
         self._require_approval: bool = bool(self.config.get("require_approval", False))
         self._last_artifact_id: Optional[str] = None
+        self._last_artifacts: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -181,6 +182,15 @@ class CodeExecutorTool(Tool):
         """Return the primary produced artifact id so the UI artifact rail lights up."""
         return self._last_artifact_id
 
+    def get_artifacts(self, action_name: str, **kwargs: Any) -> List[Dict[str, Any]]:
+        """Return every artifact this call produced, with display names.
+
+        A single ``run_code`` can write several files. Reporting only the first
+        left the others reachable by API but invisible in the UI, and gave the
+        one button the tool's name rather than the file's.
+        """
+        return list(self._last_artifacts)
+
     def preview_decision(self, action_name: str, params: dict) -> Tuple[bool, bool]:
         """Return ``(requires_approval, denylist_forced)`` for the approval gate; never denylist-forced here."""
         if action_name != "run_code":
@@ -195,6 +205,7 @@ class CodeExecutorTool(Tool):
         if action_name != "run_code":
             return {"status": "error", "error": f"unknown action: {action_name}"}
         self._last_artifact_id = None
+        self._last_artifacts = []
         return self._run_code(**kwargs)
 
     def _run_code(self, **kwargs: Any) -> Dict[str, Any]:
@@ -404,6 +415,11 @@ class CodeExecutorTool(Tool):
         )
         if captured:
             self._last_artifact_id = captured[0]["artifact_id"]
+            self._last_artifacts = [
+                {"id": a["artifact_id"], "filename": a.get("filename")}
+                for a in captured
+                if a.get("artifact_id")
+            ]
         return captured
 
     def _shape_payload(

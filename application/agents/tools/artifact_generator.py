@@ -435,6 +435,7 @@ class ArtifactGeneratorTool(Tool):
         self.workflow_run_id: Optional[str] = self.config.get("workflow_run_id")
         self.message_id: Optional[str] = self.config.get("message_id")
         self._last_artifact_id: Optional[str] = None
+        self._last_filename: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -536,12 +537,19 @@ class ArtifactGeneratorTool(Tool):
         """Return the produced artifact id so the UI artifact rail lights up."""
         return self._last_artifact_id
 
+    def get_artifacts(self, action_name: str, **kwargs: Any) -> List[Dict[str, Any]]:
+        """Return the produced artifact with its filename, for UI labelling."""
+        if not self._last_artifact_id:
+            return []
+        return [{"id": self._last_artifact_id, "filename": self._last_filename}]
+
     # ------------------------------------------------------------------
     # Dispatch
     # ------------------------------------------------------------------
     def execute_action(self, action_name: str, **kwargs: Any) -> Dict[str, Any]:
         """Dispatch a create/edit/rewrite action."""
         self._last_artifact_id = None
+        self._last_filename = None
         if not self.user_id:
             return {"status": "error", "error": "artifact_generator requires a valid user_id."}
         if self.conversation_id is None and self.workflow_run_id is None:
@@ -595,6 +603,7 @@ class ArtifactGeneratorTool(Tool):
         if ref is None:
             return {"status": "error", "error": "failed to persist artifact."}
         self._last_artifact_id = ref["artifact_id"]
+        self._last_filename = ref.get("filename")
         return {"status": "ok", **ref}
 
     def _edit(self, **kwargs: Any) -> Dict[str, Any]:
@@ -661,6 +670,7 @@ class ArtifactGeneratorTool(Tool):
         if ref is None:
             return {"status": "error", "error": "failed to persist artifact version."}
         self._last_artifact_id = ref["artifact_id"]
+        self._last_filename = ref.get("filename")
         return {"status": "ok", **ref}
 
     # ------------------------------------------------------------------

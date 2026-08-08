@@ -129,11 +129,6 @@ const ConversationBubble = forwardRef<
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
-  const completedArtifactCalls = (toolCalls ?? []).filter(
-    (toolCall) => toolCall.artifact_id && toolCall.status === 'completed',
-  );
-  const artifactCount = completedArtifactCalls.length;
-
   const formatToolName = (toolName: string | undefined): string => {
     if (!toolName) return '';
     // Display-name overrides for tools whose label differs from the formatted key.
@@ -146,6 +141,27 @@ const ConversationBubble = forwardRef<
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
   };
+
+  // One entry per artifact, not per tool call: a single call (``run_code``)
+  // can write several files, and only the first was reachable before.
+  const completedArtifacts = (toolCalls ?? [])
+    .filter((toolCall) => toolCall.status === 'completed')
+    .flatMap((toolCall) => {
+      const produced = toolCall.artifacts?.length
+        ? toolCall.artifacts
+        : toolCall.artifact_id
+          ? [{ id: toolCall.artifact_id, filename: undefined }]
+          : [];
+      return produced.map((artifact) => ({
+        id: artifact.id,
+        // The file's own name is what the user recognises; the tool that made
+        // it ("Code Executor") tells them nothing about which file this is.
+        label:
+          artifact.filename || formatToolName(toolCall.tool_name) || 'Artifact',
+        toolName: toolCall.tool_name,
+        callId: toolCall.call_id,
+      }));
+    });
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
@@ -455,16 +471,16 @@ const ConversationBubble = forwardRef<
             agentId={agentId}
           />
         )}
-        {!message && onOpenArtifact && completedArtifactCalls.length > 0 && (
+        {!message && onOpenArtifact && completedArtifacts.length > 0 && (
           <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
-            {completedArtifactCalls.map((artifactCall, artifactIndex) => (
+            {completedArtifacts.map((artifact, artifactIndex) => (
               <Button
-                key={artifactCall.call_id ?? artifactIndex}
+                key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
                 type="button"
                 onClick={() =>
                   onOpenArtifact({
-                    id: artifactCall.artifact_id!,
-                    toolName: artifactCall.tool_name,
+                    id: artifact.id,
+                    toolName: artifact.toolName,
                   })
                 }
                 className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
@@ -488,10 +504,9 @@ const ConversationBubble = forwardRef<
                     d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                   />
                 </svg>
-                {(artifactCall.tool_name
-                  ? formatToolName(artifactCall.tool_name)
-                  : 'Artifact') +
-                  (artifactCount > 1 ? ` (${artifactIndex + 1})` : '')}
+                <span className="max-w-50 truncate" title={artifact.label}>
+                  {artifact.label}
+                </span>
               </Button>
             ))}
           </div>
@@ -720,17 +735,17 @@ const ConversationBubble = forwardRef<
             ) : (
               <>
                 {onOpenArtifact &&
-                  completedArtifactCalls.map((artifactCall, artifactIndex) => (
+                  completedArtifacts.map((artifact, artifactIndex) => (
                     <div
-                      key={artifactCall.call_id ?? artifactIndex}
+                      key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
                       className="relative flex items-center justify-center"
                     >
                       <Button
                         type="button"
                         onClick={() =>
                           onOpenArtifact({
-                            id: artifactCall.artifact_id!,
-                            toolName: artifactCall.tool_name,
+                            id: artifact.id,
+                            toolName: artifact.toolName,
                           })
                         }
                         className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
@@ -755,10 +770,12 @@ const ConversationBubble = forwardRef<
                             d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                           />
                         </svg>
-                        {(artifactCall.tool_name
-                          ? formatToolName(artifactCall.tool_name)
-                          : 'Artifact') +
-                          (artifactCount > 1 ? ` (${artifactIndex + 1})` : '')}
+                        <span
+                          className="max-w-50 truncate"
+                          title={artifact.label}
+                        >
+                          {artifact.label}
+                        </span>
                       </Button>
                     </div>
                   ))}
