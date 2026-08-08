@@ -285,6 +285,23 @@ class ClassicRAG(BaseRetriever):
                     )
                     continue
 
+        # ``chunks_per_source`` has a floor of 1 so no attached source is
+        # starved, which means N sources always yield at least N documents —
+        # ``chunks=2`` across 4 sources returned 4, though ``chunks`` is
+        # documented as a top-k. Bound the overshoot to exactly that floor so
+        # attaching more sources can no longer inflate the result without limit.
+        # Ceiling on ``self.chunks`` (the actual fetch target), not
+        # ``base_chunks``: under prescreen the former is the inflated
+        # candidate_k the Dispatcher asked for and trims itself later.
+        ceiling = max(self.chunks, len(self.vectorstores))
+        if len(all_docs) > ceiling:
+            logger.info(
+                "ClassicRAG._get_data: trimming %d documents to the %d ceiling "
+                "(top-k=%d across %d sources).",
+                len(all_docs), ceiling, base_chunks, len(self.vectorstores),
+            )
+            all_docs = all_docs[:ceiling]
+
         logger.info(
             f"ClassicRAG._get_data: Retrieval complete - retrieved {len(all_docs)} documents "
             f"(requested chunks={self.chunks}, chunks_per_source={chunks_per_source}, "

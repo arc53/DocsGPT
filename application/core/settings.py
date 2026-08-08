@@ -201,6 +201,9 @@ class Settings(BaseSettings):
     # dialect form (``postgresql+psycopg://``) are all accepted and
     # normalized internally for ``psycopg.connect()``.
     PGVECTOR_CONNECTION_STRING: Optional[str] = None
+    # IVFFlat probes for vector search. ``None`` derives sqrt(lists) from the
+    # index itself; set an integer to pin it. Higher = better recall, more scan.
+    PGVECTOR_IVFFLAT_PROBES: Optional[int] = None
     # Milvus vectorstore config
     MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
     MILVUS_URI: Optional[str] = "./milvus_local.db"  # milvus lite version as default
@@ -265,6 +268,15 @@ class Settings(BaseSettings):
 
     # Config-free tools on by default in agentless chats. ``scheduler`` is
     # dual-registered (also in ``BUILTIN_AGENT_TOOLS``) so the same synthetic id
+    # resolves whether reached via defaults or the agent picker.
+    #
+    # ``code_executor`` and ``artifact_generator`` belong here too on any
+    # deployment that runs a sandbox (see SANDBOX_BACKEND / SANDBOX_GATEWAY_URL):
+    # ``artifact_generator`` renders the .docx/.pdf/.xlsx/.pptx files users ask
+    # chat for. They are left out of the shipped default because both execute
+    # through the sandbox runner and would fail on every call without one — add
+    # them explicitly once a runner is configured:
+    #     DEFAULT_CHAT_TOOLS = [..., "code_executor", "artifact_generator"]
     DEFAULT_CHAT_TOOLS: list = [
         "memory",
         "read_webpage",

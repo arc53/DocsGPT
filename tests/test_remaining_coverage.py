@@ -372,26 +372,39 @@ class TestPromptRendererGap:
 
 
 # ---------------------------------------------------------------------------
-# application/llm/anthropic.py  (line 45)
+# application/llm/anthropic.py
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-class TestAnthropicLLMStreamBranch:
-    def test_raw_gen_stream_path(self):
-        """Cover line 45: _raw_gen calls gen_stream when stream=True."""
-        with patch("application.llm.anthropic.Anthropic"):
+class TestAnthropicLLMRawGen:
+    def test_raw_gen_does_not_reenter_the_streaming_orchestrator(self):
+        """``_raw_gen`` used to delegate to ``gen_stream`` when ``stream``
+        was truthy, handing it a flattened prompt STRING where a message
+        list belongs. It now always makes one Messages API call."""
+        import types as _types
+
+        with patch("application.llm.anthropic.Anthropic") as MockAnthropic:
             with patch("application.llm.anthropic.StorageCreator") as MockStorage:
                 MockStorage.get_storage.return_value = MagicMock()
                 from application.llm.anthropic import AnthropicLLM
 
+                client = MockAnthropic.return_value
+                client.messages.create.return_value = _types.SimpleNamespace(
+                    content=[_types.SimpleNamespace(type="text", text="answer")],
+                    stop_reason="end_turn",
+                    usage=None,
+                )
+
                 llm = AnthropicLLM(api_key="test_key")
-                llm.gen_stream = MagicMock(return_value="streamed")
+                llm.gen_stream = MagicMock()
                 messages = [
                     {"role": "system", "content": "context"},
                     {"role": "user", "content": "question"},
                 ]
-                result = llm._raw_gen(None, "claude-2", messages, stream=True)
-                llm.gen_stream.assert_called_once()
-                assert result == "streamed"
+                result = llm._raw_gen(None, "claude-x", messages, stream=True)
+
+                llm.gen_stream.assert_not_called()
+                client.messages.create.assert_called_once()
+                assert result == "answer"
 
 
 # ---------------------------------------------------------------------------
@@ -852,7 +865,7 @@ class TestEmbeddingPipelineGaps:
         """Cover line 69: raises ValueError when docs is empty."""
         from application.parser.embedding_pipeline import embed_and_store_documents
 
-        with pytest.raises(ValueError, match="No documents to embed"):
+        with pytest.raises(ValueError, match="No text could be extracted"):
             embed_and_store_documents([], "/tmp/test", "source_id", MagicMock())
 
 
@@ -1032,7 +1045,7 @@ class TestEmbeddingPipelineCoverage:
         """Cover line 69: empty docs raises ValueError."""
         from application.parser.embedding_pipeline import embed_and_store_documents
 
-        with pytest.raises(ValueError, match="No documents to embed"):
+        with pytest.raises(ValueError, match="No text could be extracted"):
             embed_and_store_documents([], str(tmp_path / "test"), "src-1", None)
 
     def test_embed_and_store_creates_folder(self, tmp_path):
@@ -1202,3 +1215,24 @@ class TestEmbeddingPipelineAddDocWithRetry:
 
         with pytest.raises(RuntimeError, match="fail"):
             add_text_to_store_with_retry(mock_store, doc, "src-1")
+
+
+@pytest.mark.unit
+class TestBlankDocumentsAreRejected:
+    """A file that parses to nothing must fail, not ingest as a healthy source.
+
+    An empty or whitespace-only upload reached the pipeline as a one-element
+    list of "" and stored a real embedding of the empty string, which then
+    scored against unrelated queries.
+    """
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\n\t  \n"])
+    def test_whitespace_only_document_is_rejected(self, blank, tmp_path):
+        from application.parser.embedding_pipeline import embed_and_store_documents
+
+        class _Doc:
+            def __init__(self, text):
+                self.text = text
+
+        with pytest.raises(ValueError, match="No text could be extracted"):
+            embed_and_store_documents([_Doc(blank)], str(tmp_path), "src-1", None)

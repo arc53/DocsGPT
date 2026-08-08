@@ -37,7 +37,11 @@ class SystemNamespace(NamespaceBuilder):
         return "system"
 
     def build(
-        self, request_id: Optional[str] = None, user_id: Optional[str] = None, **kwargs
+        self,
+        request_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        persona: Optional[str] = None,
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Build system context with metadata.
@@ -60,6 +64,10 @@ class SystemNamespace(NamespaceBuilder):
             "user_id": user_id,
             "api_base_url": api_base_url,
             "platform": platform,
+            # Operator-authored persona, injected as a VALUE: braces inside it
+            # are inert, so a custom prompt can never break the skeleton or
+            # reach the template sandbox.
+            "persona": persona,
         }
 
     @staticmethod

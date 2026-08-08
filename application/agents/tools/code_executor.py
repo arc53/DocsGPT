@@ -110,7 +110,11 @@ class CodeExecutorTool(Tool):
             {
                 "name": "run_code",
                 "description": (
-                    "Execute Python in a sandboxed, stateful session bound to this conversation. "
+                    "Execute Python in a sandboxed, stateful session bound to this conversation. ""Use it for real computation, data processing, file parsing or conversion, and "
+                    "charts rather than estimating or writing results by hand; each run is "
+                    "time-limited, so start long work in the background and check on it with "
+                    "another run. Do NOT use it for arithmetic you can do inline. "
+                    
                     "Files written by the code are saved as downloadable artifacts (write throwaway "
                     "files under `tmp/`, or pass `outputs` to save only specific files); only a compact "
                     "summary (output tail + artifact references) is returned, never raw bytes. "

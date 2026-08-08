@@ -448,7 +448,13 @@ class ArtifactGeneratorTool(Tool):
                 "description": (
                     "Render a new editable document from a JSON spec and store it as version 1. "
                     "The spec is the source of truth; the rendered file is derived. The response "
-                    "carries a short ref (like `A1`) you can pass to edit_artifact/rewrite_artifact."
+                    "carries a short ref (like `A1`) you can pass to edit_artifact/rewrite_artifact.\n"
+                    "Use this whenever the user asks for a document, slide deck, spreadsheet, PDF "
+                    "or HTML file: it gives them a downloadable, versioned file. Never paste a "
+                    "whole file into the chat instead, and never claim a file was produced unless "
+                    "this tool returned a ref.\n"
+                    "Do NOT use it for a short snippet the user only wants to read inline, or to "
+                    "change a file you already made — use edit_artifact for that."
                 ),
                 "active": True,
                 "parameters": {
@@ -501,7 +507,11 @@ class ArtifactGeneratorTool(Tool):
             },
             {
                 "name": "rewrite_artifact",
-                "description": "Replace the spec wholesale, re-render, and append a new version.",
+                "description": (
+                    "Replace the spec wholesale, re-render, and append a new version. "
+                    "Use when the document is rewritten end to end; prefer edit_artifact "
+                    "for targeted changes so the version history stays readable."
+                ),
                 "active": True,
                 "parameters": {
                     "type": "object",

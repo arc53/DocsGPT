@@ -214,6 +214,12 @@ class TestWorkflowEngineAgenticNode:
 
     def test_agentic_node_passes_retriever_config(self, monkeypatch):
         engine = create_engine()
+        # The node-source authorization gate is exercised separately;
+        # these ids are fixtures with no rows to authorize against.
+        monkeypatch.setattr(
+            type(engine), "_authorized_node_sources",
+            lambda self, sources: list(sources or []),
+        )
         node = create_agent_node(
             node_id="agent_rc",
             agent_type="agentic",
@@ -312,6 +318,12 @@ class TestWorkflowEngineResearchNode:
 
     def test_research_node_passes_retriever_config(self, monkeypatch):
         engine = create_engine()
+        # The node-source authorization gate is exercised separately;
+        # these ids are fixtures with no rows to authorize against.
+        monkeypatch.setattr(
+            type(engine), "_authorized_node_sources",
+            lambda self, sources: list(sources or []),
+        )
         node = create_agent_node(
             node_id="agent_rr",
             agent_type="research",
@@ -473,3 +485,110 @@ class TestWorkflowEngineStreamingEvents:
 
         # State still captures the full text
         assert engine.state["node_agent_s2_output"] == "final report"
+
+
+@pytest.mark.unit
+class TestWorkflowNodeSourceAuthorization:
+    """A node's ``sources`` are client-written and must be authorized.
+
+    ``AgentNodeConfig.sources`` is stored verbatim from the workflow JSON and
+    nothing validated it, so a node could name any tenant's source id and the
+    retriever — which filters only on ``source_id`` — returned the documents.
+    The check runs against the workflow *owner*, so a shared workflow keeps
+    reading its owner's sources exactly like a shared agent does.
+    """
+
+    def _engine(self, owner):
+        engine = create_engine()
+        engine.agent._resolve_owner_id = lambda: owner
+        return engine
+
+    def test_owner_sources_survive(self, monkeypatch):
+        import application.api.user.team_sharing as ts
+
+        monkeypatch.setattr(ts, "can_access", lambda *a, **k: True)
+        engine = self._engine("owner")
+        assert engine._authorized_node_sources(["s1", "s2"]) == ["s1", "s2"]
+
+    def test_foreign_sources_are_dropped(self, monkeypatch):
+        import application.api.user.team_sharing as ts
+
+        monkeypatch.setattr(ts, "can_access", lambda conn, k, sid, u: sid == "mine")
+        engine = self._engine("owner")
+        assert engine._authorized_node_sources(["mine", "theirs"]) == ["mine"]
+
+    def test_no_owner_drops_everything(self):
+        engine = create_engine()
+        engine.agent._resolve_owner_id = lambda: None
+        engine.agent.decoded_token = {}
+        engine.agent.user = None
+        assert engine._authorized_node_sources(["s1"]) == []
+
+    def test_authorization_error_fails_closed(self, monkeypatch):
+        import application.api.user.team_sharing as ts
+
+        def _boom(*a, **k):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(ts, "can_access", _boom)
+        engine = self._engine("owner")
+        assert engine._authorized_node_sources(["s1"]) == []
+
+    def test_empty_is_noop(self):
+        assert create_engine()._authorized_node_sources([]) == []
+
+
+@pytest.mark.unit
+class TestWorkflowNodeDocumentsReachTheAgent:
+    """A classic node's retrieved documents must reach its agent.
+
+    Retrieval ran and the results were stashed on the *parent* agent for
+    ``{{ source.* }}`` template resolution only, and ``factory_kwargs`` never
+    carried them — so a node with a source and an ordinary prompt answered "I
+    do not have any documents" while ``workflow_runs.status`` stayed
+    ``completed``. Classic is the schema default, so this was the common case.
+    """
+
+    def test_retrieve_returns_the_documents(self, monkeypatch):
+        engine = create_engine()
+        docs = [{"text": "the radius is 88 metres", "title": "spec.md"}]
+
+        class _R:
+            def search(self, q):
+                return docs
+
+        monkeypatch.setattr(
+            "application.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            lambda *a, **k: _R(),
+        )
+        monkeypatch.setattr(
+            type(engine), "_authorized_node_sources", lambda self, s: list(s or [])
+        )
+        engine.state["query"] = "what is the radius?"
+        cfg = create_agent_node(node_id="n", agent_type="classic", sources=["s1"])
+        node_config = AgentNodeConfig(
+            **cfg.config.get("config", cfg.config)
+        )
+
+        assert engine._retrieve_node_sources(node_config) == docs
+        # still mirrored onto the parent for template resolution
+        assert engine.agent.retrieved_docs == docs
+
+    def test_retrieval_failure_returns_empty_not_none(self, monkeypatch):
+        engine = create_engine()
+
+        def _boom(*a, **k):
+            raise RuntimeError("vector store down")
+
+        monkeypatch.setattr(
+            "application.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            _boom,
+        )
+        monkeypatch.setattr(
+            type(engine), "_authorized_node_sources", lambda self, s: list(s or [])
+        )
+        engine.state["query"] = "q"
+        cfg = create_agent_node(node_id="n", agent_type="classic", sources=["s1"])
+        node_config = AgentNodeConfig(**cfg.config.get("config", cfg.config))
+
+        assert engine._retrieve_node_sources(node_config) == []

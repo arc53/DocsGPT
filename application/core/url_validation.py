@@ -110,6 +110,8 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
     Raises:
         SSRFError: If the URL fails validation
     """
+    if not url or not isinstance(url, str):
+        raise SSRFError("No URL was provided.")
     # Ensure URL has a scheme
     if not urlparse(url).scheme:
         url = "http://" + url

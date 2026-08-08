@@ -310,10 +310,15 @@ class WorkflowEngine:
             resolve_dispatch_provider,
         )
 
+        from application.api.answer.services.prompt_renderer import (
+            prompt_embeds_documents as _prompt_embeds_documents,
+        )
+
         node_config = AgentNodeConfig(**node.config.get("config", node.config))
 
-        if node_config.sources:
-            self._retrieve_node_sources(node_config)
+        node_docs = (
+            self._retrieve_node_sources(node_config) if node_config.sources else []
+        )
 
         if node_config.prompt_template:
             formatted_prompt = self._format_template(node_config.prompt_template)
@@ -376,12 +381,23 @@ class WorkflowEngine:
             "chat_history": self.agent.chat_history,
             "decoded_token": self.agent.decoded_token,
             "json_schema": node_json_schema,
+            "retrieved_docs": node_docs,
+            # A template that interpolates the documents itself already carries
+            # them; suppress the user-turn block so they are not sent twice.
+            "prompt_embeds_documents": _prompt_embeds_documents(
+                node_config.prompt_template
+            ),
+            "sources_were_searched": bool(node_config.sources),
         }
 
         # Agentic/research agents need retriever_config for on-demand search
         if node_config.agent_type in (AgentType.AGENTIC, AgentType.RESEARCH):
             factory_kwargs["retriever_config"] = {
-                "source": {"active_docs": node_config.sources} if node_config.sources else {},
+                "source": (
+                    {"active_docs": self._authorized_node_sources(node_config.sources)}
+                    if node_config.sources
+                    else {}
+                ),
                 "retriever_name": node_config.retriever or "classic",
                 "chunks": int(node_config.chunks) if node_config.chunks else 2,
                 "model_id": node_model_id,
@@ -1153,6 +1169,9 @@ class WorkflowEngine:
             tools_data=tools_data,
             artifacts_data=self._collect_artifact_refs(),
             artifact_parent={"workflow_run_id": self.workflow_run_id},
+            # Node templates gate tool-specific sections on this; an unresolved
+            # set would fail open and advertise tools the node does not have.
+            enabled_tools=set(),
         )
 
         agent_context: Dict[str, Any] = {}
@@ -1208,8 +1227,61 @@ class WorkflowEngine:
         docs_together = "\n\n".join(docs_together_parts) if docs_together_parts else None
         return docs, docs_together
 
-    def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> None:
-        """Retrieve documents from the node's sources for template resolution."""
+    def _authorized_node_sources(self, sources) -> list:
+        """Filter a node's configured source ids to those its owner may read.
+
+        ``AgentNodeConfig.sources`` is written verbatim from client JSON when a
+        workflow is saved and nothing validated it, so a node could name any
+        tenant's source id and the retriever — which filters only on
+        ``source_id`` — handed the documents back. Gate on the workflow owner
+        (not the runner): a shared workflow legitimately reads its owner's
+        sources, exactly like a shared agent does.
+
+        Args:
+            sources: Source ids from the stored node config.
+
+        Returns:
+            list: The subset the owner may read.
+        """
+        if not sources:
+            return []
+        ids = sources if isinstance(sources, list) else [sources]
+        resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
+        owner = (resolve_owner() if callable(resolve_owner) else None) or (
+            self._resolve_user_id()
+        )
+        if not owner:
+            logger.warning("Workflow node sources dropped: no owner to authorize.")
+            return []
+
+        from application.api.user.team_sharing import can_access
+        from application.storage.db.session import db_readonly
+
+        allowed = []
+        try:
+            with db_readonly() as conn:
+                for sid in ids:
+                    if sid and can_access(conn, "source", str(sid), owner):
+                        allowed.append(sid)
+                    else:
+                        logger.warning(
+                            "Workflow node source %s dropped: %s has no access.",
+                            sid, owner,
+                        )
+        except Exception:
+            logger.exception("Workflow node source authorization failed; dropping all.")
+            return []
+        return allowed
+
+    def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> list:
+        """Retrieve this node's source documents.
+
+        Args:
+            node_config: The node's resolved configuration.
+
+        Returns:
+            list: Retrieved documents, empty when there was nothing to fetch.
+        """
         from application.retriever.retriever_creator import RetrieverCreator
 
         query = self.state.get("query", "")
@@ -1219,7 +1291,7 @@ class WorkflowEngine:
         try:
             retriever = RetrieverCreator.create_retriever(
                 node_config.retriever or "classic",
-                source={"active_docs": node_config.sources},
+                source={"active_docs": self._authorized_node_sources(node_config.sources)},
                 chat_history=[],
                 prompt="",
                 chunks=int(node_config.chunks) if node_config.chunks else 2,
@@ -1227,9 +1299,13 @@ class WorkflowEngine:
             )
             docs = retriever.search(query)
             if docs:
+                # The parent copy still backs ``{{ source.* }}`` template
+                # resolution; the return value is what reaches the node agent.
                 self.agent.retrieved_docs = docs
+            return docs or []
         except Exception:
             logger.exception("Failed to retrieve docs for workflow node")
+            return []
 
     def get_execution_summary(self) -> List[NodeExecutionLog]:
         return [

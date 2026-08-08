@@ -1,0 +1,11 @@
+{% if attachments.files %}
+
+## Attached files
+The user attached these files to this message:
+{% for f in attachments.files %}
+- {{ f.filename }} ({{ f.mime_type }}{% if f.size %}, {{ f.size }} bytes{% endif %})
+{% endfor %}
+{% if 'code_executor' in tools.enabled %}
+You can pass any attached file to a code or document tool by its name to read or process it.
+{% endif %}
+{% endif %}

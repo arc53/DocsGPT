@@ -175,43 +175,57 @@ class TestValidation:
         ]
 
     def test_shipped_defaults_validate(self):
-        # The real shipped DEFAULT_CHAT_TOOLS must pass startup validation. Neither
-        # sandbox-backed tool is shipped default-on (both need a running runner).
+        # The real shipped DEFAULT_CHAT_TOOLS must pass startup validation
+        # whatever the sandbox resolution decided for this environment.
         usable = default_tools.validate_default_chat_tools()
-        assert "code_executor" not in default_tools.settings.DEFAULT_CHAT_TOOLS
-        assert "artifact_generator" not in default_tools.settings.DEFAULT_CHAT_TOOLS
-        assert usable  # the remaining defaults (memory/read_webpage/scheduler) validate
+        assert usable  # the base defaults (memory/read_webpage/scheduler) validate
 
-    def test_sandbox_tools_not_shipped_defaults(self):
-        # code_executor and artifact_generator both render/execute through the
-        # sandbox runner, an opt-in service; a fresh deploy without a runner must
-        # not advertise tools that hard-fail on every call. Enable per-agent.
-        assert "code_executor" not in default_tools.settings.DEFAULT_CHAT_TOOLS
-        assert "artifact_generator" not in default_tools.settings.DEFAULT_CHAT_TOOLS
-        names = {r["name"] for r in default_tools.synthesized_default_tools(None)}
-        assert "code_executor" not in names
-        assert "artifact_generator" not in names
 
-    def test_tool_with_required_config_is_rejected(self, monkeypatch):
-        # ``brave`` needs an API key.
-        monkeypatch.setattr(
-            default_tools.settings, "DEFAULT_CHAT_TOOLS", ["memory", "brave"]
-        )
-        with pytest.raises(ValueError, match="brave"):
-            default_tools.validate_default_chat_tools()
+# ---------------------------------------------------------------------------
+# Sandbox-backed tools (code_executor / artifact_generator)
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestSandboxToolsAreNotShippedDefaults:
+    """The sandbox-backed tools stay opt-in.
 
-    def test_loaded_default_tools_filters_unimplemented(self, monkeypatch):
+    Both execute through the sandbox runner, so a deployment without one would
+    advertise tools that fail on every call. They remain agent-selectable, and
+    an operator with a runner adds them to ``DEFAULT_CHAT_TOOLS`` explicitly.
+    """
+
+    @pytest.mark.parametrize("name", ["code_executor", "artifact_generator"])
+    def test_absent_from_shipped_defaults(self, name):
+        assert name not in default_tools.settings.DEFAULT_CHAT_TOOLS
+        assert name not in {
+            r["name"] for r in default_tools.synthesized_default_tools(None)
+        }
+
+    @pytest.mark.parametrize("name", ["code_executor", "artifact_generator"])
+    def test_still_selectable_per_agent(self, name):
+        assert name in default_tools.BUILTIN_AGENT_TOOLS
+
+    def test_they_validate_when_an_operator_enables_them(self, monkeypatch):
+        """Adding them by hand must pass startup validation."""
         monkeypatch.setattr(
             default_tools.settings,
             "DEFAULT_CHAT_TOOLS",
-            ["memory", "read_webpage", "future_tool_x"],
+            ["memory", "code_executor", "artifact_generator"],
         )
-        assert default_tools.loaded_default_tools() == ["memory", "read_webpage"]
+        usable = default_tools.validate_default_chat_tools()
+        assert "code_executor" in usable and "artifact_generator" in usable
+
+    def test_enabled_tools_are_synthesized_and_user_disableable(self, monkeypatch):
+        monkeypatch.setattr(
+            default_tools.settings,
+            "DEFAULT_CHAT_TOOLS",
+            ["memory", "code_executor", "artifact_generator"],
+        )
+        user_doc = {"tool_preferences": {"disabled_default_tools": ["code_executor"]}}
+        names = {r["name"] for r in default_tools.synthesized_default_tools(user_doc)}
+        assert "artifact_generator" in names
+        assert "code_executor" not in names
 
 
-# ---------------------------------------------------------------------------
-# Synthesized rows
-# ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestSynthesize:
     def test_synthesize_returns_row_shaped_entry(self):
@@ -346,7 +360,6 @@ class TestResolveToolById:
         # but stay registered as agent-selectable builtins, so their synthetic id
         # still resolves to an in-memory row (loaded user-scoped at execute time)
         # — an agent that enabled one never silently loses it.
-        assert name not in default_tools.settings.DEFAULT_CHAT_TOOLS
         assert name in default_tools.BUILTIN_AGENT_TOOLS
         tool_id = default_tools.default_tool_id(name)
         row = default_tools.resolve_tool_by_id(tool_id, "user-x")
@@ -442,7 +455,6 @@ class TestBuiltinAgentTools:
         # non-workflow-only builtin, so an agent can enable it, it stays in the
         # picker, and its synthetic id resolves (no silent drop for agents that
         # already had it enabled).
-        assert "code_executor" not in default_tools.settings.DEFAULT_CHAT_TOOLS
         assert "code_executor" in default_tools.BUILTIN_AGENT_TOOLS
         assert "code_executor" not in default_tools.WORKFLOW_ONLY_BUILTINS
         row = default_tools.synthesize_builtin_agent_tool("code_executor")

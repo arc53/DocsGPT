@@ -384,13 +384,60 @@ class TestConfigureSource:
         sp._configure_source()
         assert sp.source == {}
 
-    def test_request_active_docs_used(self):
+    def test_request_active_docs_used(self, monkeypatch):
+        import application.api.answer.services.stream_processor as sp_mod
         from application.api.answer.services.stream_processor import (
             StreamProcessor,
         )
+
+        monkeypatch.setattr(sp_mod, "can_access", lambda *a, **k: True)
         sp = StreamProcessor({"active_docs": "abc"}, {"sub": "u"})
         sp._configure_source()
         assert sp.source == {"active_docs": "abc"}
+
+    def test_request_active_docs_the_caller_cannot_read_is_dropped(self, monkeypatch):
+        """``active_docs`` is client input; the retriever has no owner predicate.
+
+        An unchecked id read another tenant's documents straight into the
+        answer, while /api/sources/<id>/search correctly refused the same id.
+        """
+        import application.api.answer.services.stream_processor as sp_mod
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        monkeypatch.setattr(sp_mod, "can_access", lambda *a, **k: False)
+        sp = StreamProcessor({"active_docs": "someone-elses-id"}, {"sub": "u"})
+        sp._configure_source()
+        assert sp.source == {}
+        assert sp.all_sources == []
+
+    def test_mixed_access_keeps_only_the_readable_ids(self, monkeypatch):
+        import application.api.answer.services.stream_processor as sp_mod
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        monkeypatch.setattr(
+            sp_mod, "can_access", lambda conn, kind, sid, user: sid == "mine"
+        )
+        sp = StreamProcessor({"active_docs": ["mine", "theirs"]}, {"sub": "u"})
+        sp._configure_source()
+        assert sp.source == {"active_docs": ["mine"]}
+
+    def test_access_check_failure_fails_closed(self, monkeypatch):
+        import application.api.answer.services.stream_processor as sp_mod
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        def _boom(*a, **k):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(sp_mod, "can_access", _boom)
+        sp = StreamProcessor({"active_docs": "abc"}, {"sub": "u"})
+        sp._configure_source()
+        assert sp.source == {}
 
     def test_request_active_docs_default(self):
         from application.api.answer.services.stream_processor import (
@@ -509,7 +556,31 @@ class TestGetPromptContent:
 
         with _patch_db(pg_conn):
             content = sp._get_prompt_content()
-        assert content == "My prompt content"
+        # A plain-text custom prompt is staged as a persona value inside the
+        # composed skeleton so it keeps Boundaries/platform/memory rather than
+        # replacing them wholesale.
+        assert sp._persona == "My prompt content"
+        assert "## Boundaries" in content
+        assert "{{ system.persona }}" in content
+
+    def test_templated_custom_prompt_is_left_alone(self, pg_conn):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        from application.storage.db.repositories.prompts import (
+            PromptsRepository,
+        )
+
+        prompt = PromptsRepository(pg_conn).create(
+            "u", "p2", "Answer as of {{ system.date }}.",
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": str(prompt["id"])}
+
+        with _patch_db(pg_conn):
+            content = sp._get_prompt_content()
+        assert content == "Answer as of {{ system.date }}."
+        assert sp._persona is None
 
     def test_returns_none_on_missing(self, pg_conn):
         from application.api.answer.services.stream_processor import (
@@ -559,7 +630,9 @@ class TestGetPromptContent:
         sp = StreamProcessor({}, {"sub": "u"})
         sp.agent_config = {"prompt_id": "default", "agent_type": "classic"}
         content = sp._get_prompt_content()
-        assert "source.summaries" in content
+        # Classic presets ground on documents supplied with the question;
+        # agentic ones instruct the model to call the search tool.
+        assert "documents are provided with the question" in content
 
     def test_null_prompt_id_agentic_agent_gets_agentic_preset(self):
         from application.api.answer.services.stream_processor import (
@@ -582,7 +655,9 @@ class TestGetPromptContent:
         sp.agent_config = {"prompt_id": None}
         content = sp._get_prompt_content()
         assert content is not None
-        assert "source.summaries" in content
+        # Classic presets ground on documents supplied with the question;
+        # agentic ones instruct the model to call the search tool.
+        assert "documents are provided with the question" in content
 
 
 class TestPreFetchDocs:

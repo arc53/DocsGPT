@@ -10,6 +10,8 @@ from application.agents.tool_executor import ToolExecutor
 from application.api.answer.services.prompt_renderer import (
     PromptRenderer,
     format_docs_for_prompt,
+    prompt_embeds_documents,
+    resolve_prompt_skeleton,
 )
 from application.api.answer.services.stream_processor import get_prompt
 from application.core.settings import settings
@@ -97,7 +99,10 @@ def run_agent_headless(
     agent_id = _resolve_agent_id(agent_config)
     agent_type = agent_config.get("agent_type", "classic")
     json_schema = agent_config.get("json_schema")
-    prompt = get_prompt(prompt_id)
+    raw_prompt, persona = resolve_prompt_skeleton(
+        get_prompt(prompt_id), prompt_id, agent_type
+    )
+    prompt = raw_prompt
 
     candidate_model = model_id_override or agent_config.get("default_model_id") or ""
     if candidate_model and validate_model_id(candidate_model, user_id=owner):
@@ -137,19 +142,6 @@ def run_agent_headless(
     except Exception as exc:
         logger.warning("Headless retrieve failed: %s", exc)
 
-    # Render the prompt (Jinja namespaces / legacy {summaries}) so retrieved
-    # docs actually reach the model — mirroring StreamProcessor.create_agent.
-    try:
-        prompt = PromptRenderer().render_prompt(
-            prompt_content=prompt,
-            user_id=owner,
-            docs=retrieved_docs or None,
-            docs_together=format_docs_for_prompt(retrieved_docs),
-            artifact_parent={"conversation_id": conversation_id},
-        )
-    except Exception as exc:
-        logger.warning("Headless prompt rendering failed; using raw prompt: %s", exc)
-
     tool_executor = ToolExecutor(
         user_api_key=user_api_key,
         user=owner,
@@ -161,6 +153,23 @@ def run_agent_headless(
     if conversation_id:
         tool_executor.conversation_id = str(conversation_id)
 
+    # Render the prompt (Jinja namespaces / legacy {summaries}) so retrieved
+    # docs actually reach the model — mirroring StreamProcessor.create_agent.
+    # ``enabled_tools`` gates the tool-specific sections; without it they fail
+    # open and a scheduled run is told about tools it does not have.
+    try:
+        prompt = PromptRenderer().render_prompt(
+            prompt_content=raw_prompt,
+            user_id=owner,
+            docs=retrieved_docs or None,
+            docs_together=format_docs_for_prompt(retrieved_docs),
+            artifact_parent={"conversation_id": conversation_id},
+            enabled_tools=tool_executor.get_enabled_tool_names(),
+            persona=persona,
+        )
+    except Exception as exc:
+        logger.warning("Headless prompt rendering failed; using raw prompt: %s", exc)
+
     agent_kwargs: Dict[str, Any] = {
         "endpoint": endpoint,
         "llm_name": provider or settings.LLM_PROVIDER,
@@ -171,6 +180,8 @@ def run_agent_headless(
         "prompt": prompt,
         "chat_history": chat_history or [],
         "retrieved_docs": retrieved_docs,
+        "prompt_embeds_documents": prompt_embeds_documents(raw_prompt),
+        "sources_were_searched": bool(source_active),
         "decoded_token": decoded_token,
         "attachments": [],
         "json_schema": json_schema,

@@ -1,5 +1,6 @@
 
 from application.llm.handlers.handler_creator import LLMHandlerCreator
+from application.llm.handlers.anthropic import AnthropicLLMHandler
 from application.llm.handlers.base import LLMHandler
 from application.llm.handlers.openai import OpenAILLMHandler
 from application.llm.handlers.google import GoogleLLMHandler
@@ -52,11 +53,13 @@ class TestLLMHandlerCreator:
 
         assert isinstance(handler, OpenAILLMHandler)
 
-    def test_create_anthropic_handler_fallback(self):
-        """Test creating Anthropic handler falls back to OpenAI (not supported in handlers)."""
+    def test_create_anthropic_handler(self):
+        """Anthropic has its own handler: the OpenAI one cannot read Claude's
+        content-block responses and would silently drop every tool call."""
         handler = LLMHandlerCreator.create_handler("anthropic")
 
-        assert isinstance(handler, OpenAILLMHandler)
+        assert isinstance(handler, AnthropicLLMHandler)
+        assert isinstance(handler, LLMHandler)
 
     def test_create_empty_string_handler_fallback(self):
         """Test creating handler with empty string falls back to OpenAI."""
@@ -71,6 +74,7 @@ class TestLLMHandlerCreator:
         expected_handlers = {
             "openai": OpenAILLMHandler,
             "google": GoogleLLMHandler,
+            "anthropic": AnthropicLLMHandler,
             "novita": OpenAILLMHandler,
             "default": OpenAILLMHandler,
         }
