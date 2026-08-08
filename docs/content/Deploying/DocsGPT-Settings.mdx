@@ -438,6 +438,37 @@ See [Access Control, Roles & Teams](/Deploying/Access-Control) for the full mode
 
 The realtime notifications channel has its own settings — see [Realtime Events & Notifications](/Agents/notifications) (`ENABLE_SSE_PUSH`, `EVENTS_STREAM_MAXLEN`, `SSE_MAX_CONCURRENT_PER_USER`, and related).
 
+## Vector indexes on pgvector
+
+DocsGPT does **not** create a vector index on the `documents` table, and for
+most deployments it should not have one. Exact search is correct and fast well
+past the size most corpora reach, and searches are filtered to a single source
+(`WHERE source_id = ...`) — a filter an approximate index applies only *after*
+picking its candidates.
+
+That combination is what makes a badly-sized index dangerous rather than merely
+slow: the index picks candidates from the whole table, the source filter
+discards them, and the query returns **too few rows or none at all**, silently.
+The model then answers as if the source were empty.
+
+If you have an existing `documents_embedding_idx` from an older version and
+your corpus is small (roughly under 50k vectors), drop it:
+
+```sql
+DROP INDEX IF EXISTS documents_embedding_idx;
+```
+
+DocsGPT still works with one in place — it raises `ivfflat.probes` to
+`sqrt(lists)` automatically and falls back to an exact search whenever an
+indexed search returns fewer rows than the source actually holds. You can pin
+probes explicitly with `PGVECTOR_IVFFLAT_PROBES`.
+
+Only add an index once a corpus is genuinely large, size it to the data you
+actually have (IVFFlat's `lists` guidance is roughly `rows / 1000`), and build
+it **after** the data is loaded — IVFFlat computes its cluster centroids at
+build time, so an index built on an empty table gets random centroids and never
+recovers.
+
 ## Exploring More Settings
 
 These are just the basic settings to get you started. The `settings.py` file contains many more advanced options that you can explore to further customize DocsGPT, such as:

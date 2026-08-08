@@ -91,10 +91,19 @@ Retrieval decides which chunks are pulled in to answer a question. These setting
 | --- | --- | --- |
 | `retriever` | `classic` | Retrieval strategy: `classic`, `hybrid`, or `graphrag`. |
 | `exposure` | `prefetch` | How retrieved context reaches the model: `prefetch` or `agentic_tool` (see below). |
-| `chunks` | `2` | Final number of chunks (top-k) returned to the answer. Range 1–500. |
-| `score_threshold` | `null` | Minimum similarity score. Honored by pgvector and MongoDB Atlas; other stores ignore it. |
+| `chunks` | `2` | Final number of chunks (top-k) returned to the answer. Range 1–500. Set here, it **overrides** whatever a request asks for. |
+| `score_threshold` | `null` | Minimum similarity score. Honored by pgvector and MongoDB Atlas; FAISS, Qdrant, Milvus and the `hybrid` retriever ignore it — the config API returns a `warnings` entry when you set it on one of those. |
 | `rephrase_query` | `true` | Whether to run a query-rephrasing side-call before retrieval. |
 | `prescreen` | `null` | Optional LLM relevance filter (see below). `null` = off. |
+
+### Who wins: source config or the request?
+
+A source that has configured `retrieval.chunks` **outranks the value sent with a
+request**. The owner tuned top-k for that corpus, so a client cannot raise or
+lower it per call. Sources left at the default still let the request decide.
+
+Requests are also bounded: `chunks` is clamped to 0–500, and `0` still means
+"skip retrieval for this turn".
 
 ### Retrievers
 
