@@ -212,6 +212,22 @@ class PGVectorStore(BaseVectorStore):
             )
         ]
 
+    def _nearest_sql(self) -> str:
+        """Build the nearest-neighbour SELECT for this store's table.
+
+        Identifiers (table/column names) come from this instance's
+        construction, never from a request, so they cannot be interpolated by a
+        caller; the query *values* are always bound parameters.
+        """
+        return (
+            f"SELECT {self._text_column}, {self._metadata_column}, "
+            f"({self._vector_column} <=> %s::vector) AS distance "
+            f"FROM {self._table_name} "
+            "WHERE source_id = %s "
+            f"ORDER BY {self._vector_column} <=> %s::vector "
+            "LIMIT %s;"
+        )
+
     def _exact_search(self, cursor, query_vector, k: int, ann_results: list) -> list:
         """Redo a short indexed search exactly, when the source has more rows.
 
@@ -237,14 +253,7 @@ class PGVectorStore(BaseVectorStore):
             cursor.execute("SET LOCAL enable_indexscan = off;")
             cursor.execute("SET LOCAL enable_bitmapscan = off;")
             cursor.execute(
-                f"""
-                SELECT {self._text_column}, {self._metadata_column},
-                       ({self._vector_column} <=> %s::vector) as distance
-                FROM {self._table_name}
-                WHERE source_id = %s
-                ORDER BY {self._vector_column} <=> %s::vector
-                LIMIT %s;
-                """,
+                self._nearest_sql(),
                 (query_vector, self._source_id, query_vector, k),
             )
             exact = cursor.fetchall()
@@ -264,6 +273,7 @@ class PGVectorStore(BaseVectorStore):
             try:
                 cursor.connection.rollback()
             except Exception:
+                # Connection already gone; nothing left to roll back.
                 pass
             return ann_results
         finally:
@@ -272,6 +282,7 @@ class PGVectorStore(BaseVectorStore):
                 cursor.execute("RESET enable_indexscan;")
                 cursor.execute("RESET enable_bitmapscan;")
             except Exception:
+                # Cursor/transaction already unusable; the settings die with it.
                 pass
 
     def search_with_scores(
@@ -295,14 +306,7 @@ class PGVectorStore(BaseVectorStore):
 
         try:
             # Use cosine distance for similarity search with proper vector formatting
-            search_query = f"""
-            SELECT {self._text_column}, {self._metadata_column},
-                   ({self._vector_column} <=> %s::vector) as distance
-            FROM {self._table_name}
-            WHERE source_id = %s
-            ORDER BY {self._vector_column} <=> %s::vector
-            LIMIT %s;
-            """
+            search_query = self._nearest_sql()
 
             cursor.execute(search_query, (query_vector, self._source_id, query_vector, k))
             results = cursor.fetchall()
@@ -337,6 +341,7 @@ class PGVectorStore(BaseVectorStore):
             try:
                 conn.rollback()
             except Exception:
+                # Connection already gone; nothing left to roll back.
                 pass
             return []
         finally:

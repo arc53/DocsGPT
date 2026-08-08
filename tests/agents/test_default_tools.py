@@ -195,7 +195,24 @@ class TestSandboxToolsAreNotShippedDefaults:
 
     @pytest.mark.parametrize("name", ["code_executor", "artifact_generator"])
     def test_absent_from_shipped_defaults(self, name):
-        assert name not in default_tools.settings.DEFAULT_CHAT_TOOLS
+        """Assert the *shipped* default, not this deployment's resolved one.
+
+        Reading ``settings.DEFAULT_CHAT_TOOLS`` here would fail on any install
+        that legitimately enabled these — which is the documented way to turn
+        them on when a sandbox runner exists.
+        """
+        from application.core.settings import Settings
+
+        shipped = Settings.model_fields["DEFAULT_CHAT_TOOLS"].default
+        assert name not in shipped
+
+    @pytest.mark.parametrize("name", ["code_executor", "artifact_generator"])
+    def test_not_synthesized_when_not_configured(self, name, monkeypatch):
+        monkeypatch.setattr(
+            default_tools.settings,
+            "DEFAULT_CHAT_TOOLS",
+            ["memory", "read_webpage", "scheduler"],
+        )
         assert name not in {
             r["name"] for r in default_tools.synthesized_default_tools(None)
         }

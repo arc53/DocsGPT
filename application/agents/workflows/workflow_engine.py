@@ -1286,7 +1286,7 @@ class WorkflowEngine:
 
         query = self.state.get("query", "")
         if not query:
-            return
+            return []
 
         try:
             retriever = RetrieverCreator.create_retriever(

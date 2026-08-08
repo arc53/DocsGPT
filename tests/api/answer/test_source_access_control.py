@@ -17,7 +17,8 @@ from __future__ import annotations
 import pytest
 
 import application.api.answer.services.stream_processor as sp_mod
-from application.api.answer.services.stream_processor import StreamProcessor
+
+StreamProcessor = sp_mod.StreamProcessor
 
 OWNED = "src-owned"
 TEAM_SHARED = "src-team-shared"

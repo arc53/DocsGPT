@@ -386,9 +386,7 @@ class TestConfigureSource:
 
     def test_request_active_docs_used(self, monkeypatch):
         import application.api.answer.services.stream_processor as sp_mod
-        from application.api.answer.services.stream_processor import (
-            StreamProcessor,
-        )
+        StreamProcessor = sp_mod.StreamProcessor
 
         monkeypatch.setattr(sp_mod, "can_access", lambda *a, **k: True)
         sp = StreamProcessor({"active_docs": "abc"}, {"sub": "u"})
@@ -402,9 +400,7 @@ class TestConfigureSource:
         answer, while /api/sources/<id>/search correctly refused the same id.
         """
         import application.api.answer.services.stream_processor as sp_mod
-        from application.api.answer.services.stream_processor import (
-            StreamProcessor,
-        )
+        StreamProcessor = sp_mod.StreamProcessor
 
         monkeypatch.setattr(sp_mod, "can_access", lambda *a, **k: False)
         sp = StreamProcessor({"active_docs": "someone-elses-id"}, {"sub": "u"})
@@ -414,9 +410,7 @@ class TestConfigureSource:
 
     def test_mixed_access_keeps_only_the_readable_ids(self, monkeypatch):
         import application.api.answer.services.stream_processor as sp_mod
-        from application.api.answer.services.stream_processor import (
-            StreamProcessor,
-        )
+        StreamProcessor = sp_mod.StreamProcessor
 
         monkeypatch.setattr(
             sp_mod, "can_access", lambda conn, kind, sid, user: sid == "mine"
@@ -427,9 +421,7 @@ class TestConfigureSource:
 
     def test_access_check_failure_fails_closed(self, monkeypatch):
         import application.api.answer.services.stream_processor as sp_mod
-        from application.api.answer.services.stream_processor import (
-            StreamProcessor,
-        )
+        StreamProcessor = sp_mod.StreamProcessor
 
         def _boom(*a, **k):
             raise RuntimeError("db down")

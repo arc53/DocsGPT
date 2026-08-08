@@ -384,8 +384,8 @@ class AnthropicLLM(BaseLLM):
         try:
             output = int(getattr(usage, "output_tokens", 0) or 0)
             if output_only:
-                cached = created = 0
-                base_input = 0
+                # Input counts come from the message_start record below.
+                base_input = created = cached = 0
             else:
                 base_input = int(getattr(usage, "input_tokens", 0) or 0)
                 created = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
