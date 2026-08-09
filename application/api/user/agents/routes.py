@@ -178,6 +178,30 @@ def _resolve_folder_id(conn, folder_id, user):
     return str(folder["id"]), None
 
 
+def _reject(message: str, user: str, field: str = "-"):
+    """Log a request-validation rejection at WARN and return its 400 response.
+
+    Every validation branch in the agent write paths used to ``make_response``
+    a 400 without logging anything, so a rejected update left no server-side
+    trace — the only evidence was the request span's status code. The client
+    compounded it by discarding the response body, which made an entirely
+    deterministic failure undiagnosable from any telemetry we keep. Route all
+    400s through here so the field and user always reach the logs.
+
+    Args:
+        message: User-facing reason, returned verbatim in the response body.
+        user: Subject claim of the caller, for correlating with client reports.
+        field: Name of the offending field, or ``"-"`` when not field-specific.
+
+    Returns:
+        A Flask 400 response carrying ``{"success": False, "message": ...}``.
+    """
+    current_app.logger.warning(
+        "Agent update rejected: %s (field=%s, user=%s)", message, field, user
+    )
+    return make_response(jsonify({"success": False, "message": message}), 400)
+
+
 def _format_agent_output(
     agent: dict,
     *,
@@ -771,14 +795,10 @@ class UpdateAgent(Resource):
                         try:
                             data[field] = json.loads(data[field])
                         except json.JSONDecodeError:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Invalid JSON format for field: {field}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                f"Invalid JSON format for field: {field}",
+                                user,
+                                field,
                             )
                 if data.get("json_schema") == "":
                     data["json_schema"] = None
@@ -855,14 +875,10 @@ class UpdateAgent(Resource):
                     if field == "status":
                         new_status = data.get("status")
                         if new_status not in ["draft", "published"]:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Invalid status value. Must be 'draft' or 'published'",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Invalid status value. Must be 'draft' or 'published'",
+                                user,
+                                field,
                             )
                         update_fields["status"] = new_status
                     elif field == "source":
@@ -872,14 +888,8 @@ class UpdateAgent(Resource):
                         elif looks_like_uuid(source_id):
                             update_fields["source_id"] = source_id
                         else:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Invalid source ID format: {source_id}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                f"Invalid source ID format: {source_id}", user, field
                             )
                     elif field == "sources":
                         sources_list = data.get("sources", []) or []
@@ -893,14 +903,8 @@ class UpdateAgent(Resource):
                             if looks_like_uuid(src):
                                 valid.append(src)
                             else:
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": f"Invalid source ID in list: {src}",
-                                        }
-                                    ),
-                                    400,
+                                return _reject(
+                                    f"Invalid source ID in list: {src}", user, field
                                 )
                         update_fields["extra_source_ids"] = valid
                     elif field == "chunks":
@@ -911,33 +915,20 @@ class UpdateAgent(Resource):
                             try:
                                 chunks_int = int(chunks_value)
                                 if chunks_int < 0:
-                                    return make_response(
-                                        jsonify(
-                                            {
-                                                "success": False,
-                                                "message": "Chunks value must be a non-negative integer",
-                                            }
-                                        ),
-                                        400,
+                                    return _reject(
+                                        "Chunks value must be a non-negative integer",
+                                        user,
+                                        field,
                                     )
                                 update_fields["chunks"] = chunks_int
                             except (ValueError, TypeError):
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": f"Invalid chunks value: {chunks_value}",
-                                        }
-                                    ),
-                                    400,
+                                return _reject(
+                                    f"Invalid chunks value: {chunks_value}", user, field
                                 )
                     elif field == "tools":
                         tools_list = data.get("tools", [])
                         if not isinstance(tools_list, list):
-                            return make_response(
-                                jsonify({"success": False, "message": "Tools must be a list"}),
-                                400,
-                            )
+                            return _reject("Tools must be a list", user, field)
                         update_fields["tools"] = tools_list
                     elif field == "json_schema":
                         json_schema = data.get("json_schema")
@@ -947,10 +938,7 @@ class UpdateAgent(Resource):
                                     json_schema
                                 )
                             except JsonSchemaValidationError:
-                                return make_response(
-                                    jsonify({"success": False, "message": "Invalid JSON schema"}),
-                                    400,
-                                )
+                                return _reject("Invalid JSON schema", user, field)
                         else:
                             update_fields["json_schema"] = None
                     elif field == "limited_token_mode":
@@ -962,14 +950,10 @@ class UpdateAgent(Resource):
                         )
                         update_fields["limited_token_mode"] = bool_value
                         if bool_value and data.get("token_limit") is None:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Token limit must be provided when limited token mode is enabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Token limit must be provided when limited token mode is enabled",
+                                user,
+                                field,
                             )
                     elif field == "limited_request_mode":
                         raw_value = data.get("limited_request_mode", False)
@@ -980,40 +964,34 @@ class UpdateAgent(Resource):
                         )
                         update_fields["limited_request_mode"] = bool_value
                         if bool_value and data.get("request_limit") is None:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Request limit must be provided when limited request mode is enabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Request limit must be provided when limited request mode is enabled",
+                                user,
+                                field,
                             )
                     elif field == "token_limit":
                         token_limit = data.get("token_limit")
                         update_fields["token_limit"] = int(token_limit) if token_limit else 0
+                        # NOTE: unreachable from a multipart/form submit. ``data``
+                        # then comes from ``request.form.to_dict()``, so this is
+                        # the *string* "False" and ``not "False"`` is False. Left
+                        # as-is deliberately: tightening it here would start
+                        # rejecting form payloads that currently succeed.
                         if update_fields["token_limit"] > 0 and not data.get("limited_token_mode"):
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Token limit cannot be set when limited token mode is disabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Token limit cannot be set when limited token mode is disabled",
+                                user,
+                                field,
                             )
                     elif field == "request_limit":
                         request_limit = data.get("request_limit")
                         update_fields["request_limit"] = int(request_limit) if request_limit else 0
+                        # Same string-truthiness caveat as ``token_limit`` above.
                         if update_fields["request_limit"] > 0 and not data.get("limited_request_mode"):
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Request limit cannot be set when limited request mode is disabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Request limit cannot be set when limited request mode is disabled",
+                                user,
+                                field,
                             )
                     elif field == "folder_id":
                         folder_input = data.get("folder_id")
@@ -1036,10 +1014,7 @@ class UpdateAgent(Resource):
                         normalized = normalize_workflow_reference(workflow_input)
                         if not normalized:
                             if workflow_required:
-                                return make_response(
-                                    jsonify({"success": False, "message": "Workflow is required"}),
-                                    400,
-                                )
+                                return _reject("Workflow is required", user, field)
                             update_fields["workflow_id"] = None
                         else:
                             pg_workflow_id, wf_err = _resolve_workflow_for_user(
@@ -1055,12 +1030,7 @@ class UpdateAgent(Resource):
                         elif looks_like_uuid(value):
                             update_fields["prompt_id"] = value
                         else:
-                            return make_response(
-                                jsonify(
-                                    {"success": False, "message": f"Invalid prompt_id: {value}"}
-                                ),
-                                400,
-                            )
+                            return _reject(f"Invalid prompt_id: {value}", user, field)
                     elif field == "allow_system_prompt_override":
                         raw_value = data.get("allow_system_prompt_override", False)
                         update_fields["allow_system_prompt_override"] = (
@@ -1072,28 +1042,14 @@ class UpdateAgent(Resource):
                         value = data[field]
                         if field in ["name", "description", "agent_type"]:
                             if not value or not str(value).strip():
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": f"Field '{field}' cannot be empty",
-                                        }
-                                    ),
-                                    400,
+                                return _reject(
+                                    f"Field '{field}' cannot be empty", user, field
                                 )
                         update_fields[field] = value
                 if image_url:
                     update_fields["image"] = image_url
                 if not update_fields:
-                    return make_response(
-                        jsonify(
-                            {
-                                "success": False,
-                                "message": "No valid update data provided",
-                            }
-                        ),
-                        400,
-                    )
+                    return _reject("No valid update data provided", user)
 
                 newly_generated_key = None
                 final_status = update_fields.get("status", existing_agent.get("status"))
@@ -1112,14 +1068,11 @@ class UpdateAgent(Resource):
                         if not workflow_final:
                             missing_published_fields.append("Workflow")
                         if missing_published_fields:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Cannot publish workflow agent. Missing required fields: {', '.join(missing_published_fields)}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Cannot publish workflow agent. Missing required "
+                                f"fields: {', '.join(missing_published_fields)}",
+                                user,
+                                ",".join(missing_published_fields),
                             )
                     else:
                         # ``prompt_id`` is intentionally omitted: the
@@ -1163,14 +1116,11 @@ class UpdateAgent(Resource):
                         ):
                             missing_published_fields.append("Source or retriever")
                         if missing_published_fields:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Cannot publish agent. Missing or invalid required fields: {', '.join(missing_published_fields)}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Cannot publish agent. Missing or invalid required "
+                                f"fields: {', '.join(missing_published_fields)}",
+                                user,
+                                ",".join(missing_published_fields),
                             )
                     if not existing_agent.get("key"):
                         newly_generated_key = str(uuid.uuid4())

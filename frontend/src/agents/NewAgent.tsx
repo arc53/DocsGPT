@@ -62,6 +62,29 @@ import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
 
+/**
+ * Pull the backend's own explanation out of a failed response.
+ *
+ * The agent write endpoints answer a rejected save with
+ * `{"success": false, "message": "<why>"}` — e.g. "Invalid chunks value: …"
+ * or "Field 'description' cannot be empty". Callers used to test only
+ * `response.ok` and throw a fixed string, so the one piece of information
+ * that could tell the user what to change was dropped on the floor.
+ */
+const extractApiError = async (
+  response: Response,
+  fallback: string,
+): Promise<string> => {
+  try {
+    const body = await response.json();
+    if (typeof body?.message === 'string' && body.message.trim())
+      return body.message;
+  } catch {
+    // Non-JSON body (proxy HTML error page, empty 502) — use the fallback.
+  }
+  return fallback;
+};
+
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -126,6 +149,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
   const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] =
@@ -312,11 +336,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
     try {
       setDraftLoading(true);
+      setSubmitError(null);
       const response =
         effectiveMode === 'new'
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
-      if (!response.ok) throw new Error('Failed to create agent draft');
+      if (!response.ok) {
+        setSubmitError(
+          await extractApiError(
+            response,
+            t('agents.form.errors.saveDraftFailed'),
+          ),
+        );
+        return;
+      }
       const data = await response.json();
 
       const updatedAgent = {
@@ -329,7 +362,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       if (effectiveMode === 'new') setEffectiveMode('draft');
     } catch (error) {
       console.error('Error saving draft:', error);
-      throw new Error('Failed to save draft');
+      setSubmitError(t('agents.form.errors.saveDraftFailed'));
     } finally {
       setDraftLoading(false);
     }
@@ -427,11 +460,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
     try {
       setPublishLoading(true);
+      setSubmitError(null);
       const response =
         effectiveMode === 'new'
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
-      if (!response.ok) throw new Error('Failed to publish agent');
+      if (!response.ok) {
+        setSubmitError(
+          await extractApiError(
+            response,
+            t('agents.form.errors.publishFailed'),
+          ),
+        );
+        return;
+      }
       const data = await response.json();
 
       const updatedAgent = {
@@ -451,7 +493,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       setImageFile(null);
     } catch (error) {
       console.error('Error publishing agent:', error);
-      throw new Error('Failed to publish agent');
+      setSubmitError(t('agents.form.errors.publishFailed'));
     } finally {
       setPublishLoading(false);
     }
@@ -812,6 +854,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           <span aria-hidden />
         )}
         <div className="flex flex-wrap items-center gap-2">
+          {submitError && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400"
+            >
+              <span className="h-4 w-4 shrink-0 bg-[url('/src/assets/circle-x.svg')] bg-contain bg-center bg-no-repeat" />
+              {submitError}
+            </div>
+          )}
           {hasChanges && (
             <Button
               type="button"

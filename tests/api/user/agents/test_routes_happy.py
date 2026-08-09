@@ -534,6 +534,56 @@ class TestUpdateAgent:
             response = UpdateAgent().put(str(agent["id"]))
         assert response.status_code == 400
 
+    @pytest.mark.parametrize(
+        "payload,field",
+        [
+            ({"status": "bogus"}, "status"),
+            ({"source": "not-a-uuid"}, "source"),
+            ({"sources": ["not-uuid"]}, "sources"),
+            ({"chunks": -1}, "chunks"),
+            ({"chunks": "not-an-int"}, "chunks"),
+            ({"tools": "not-a-list"}, "tools"),
+            ({"prompt_id": "not-a-uuid"}, "prompt_id"),
+            ({"description": "   "}, "description"),
+        ],
+    )
+    def test_validation_rejection_is_logged(
+        self, app, pg_conn, caplog, payload, field
+    ):
+        """Every 400 must leave a WARN naming the field and the user.
+
+        Regression test for the silent-publish-failure bug: the route used to
+        ``make_response(..., 400)`` without logging, so a rejected publish left
+        no server-side trace at all — the only evidence it happened was the
+        OTel span's status code. Combined with the frontend discarding the
+        response body, that made a deterministic validation failure impossible
+        to diagnose from any telemetry we keep.
+        """
+        import logging
+
+        from application.api.user.agents.routes import UpdateAgent
+
+        user = f"u-log-{field}"
+        agent = _seed_agent(pg_conn, user=user)
+        body = {"name": "n", "description": "d", "status": "draft", **payload}
+
+        with caplog.at_level(logging.WARNING), _patch_db(
+            pg_conn
+        ), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT", json=body,
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+
+        assert response.status_code == 400
+        warnings = [
+            r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING
+        ]
+        assert any(
+            field in msg and user in msg for msg in warnings
+        ), f"no WARN naming field={field!r} and user={user!r}; got {warnings!r}"
+
     def test_invalid_chunks_returns_400(self, app, pg_conn):
         from application.api.user.agents.routes import UpdateAgent
 

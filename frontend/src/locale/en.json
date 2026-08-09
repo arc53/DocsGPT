@@ -1250,7 +1250,11 @@
         "description": "Deleting this agent is permanent and will remove all its schedules and run history.",
         "deleteButton": "Delete agent"
       },
-      "externalKb": "External KB"
+      "externalKb": "External KB",
+      "errors": {
+        "publishFailed": "Could not publish the agent. Please try again.",
+        "saveDraftFailed": "Could not save the draft. Please try again."
+      }
     },
     "logs": {
       "title": "Agent Logs",

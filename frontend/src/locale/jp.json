@@ -1249,7 +1249,11 @@
         "description": "このエージェントを削除すると元に戻せません。すべてのスケジュールと実行履歴も削除されます。",
         "deleteButton": "エージェントを削除"
       },
-      "externalKb": "外部KB"
+      "externalKb": "外部KB",
+      "errors": {
+        "publishFailed": "エージェントを公開できませんでした。もう一度お試しください。",
+        "saveDraftFailed": "下書きを保存できませんでした。もう一度お試しください。"
+      }
     },
     "logs": {
       "title": "エージェントログ",

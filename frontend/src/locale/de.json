@@ -1249,7 +1249,11 @@
         "description": "Das Löschen dieses Agenten ist endgültig und entfernt alle seine Zeitpläne und den Ausführungsverlauf.",
         "deleteButton": "Agent löschen"
       },
-      "externalKb": "Externe KB"
+      "externalKb": "Externe KB",
+      "errors": {
+        "publishFailed": "Der Agent konnte nicht veröffentlicht werden. Bitte erneut versuchen.",
+        "saveDraftFailed": "Der Entwurf konnte nicht gespeichert werden. Bitte erneut versuchen."
+      }
     },
     "logs": {
       "title": "Agenten-Protokolle",
