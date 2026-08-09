@@ -11,6 +11,9 @@ from application.core.settings import settings
 from application.llm.base import BaseLLM
 from application.storage.storage_creator import StorageCreator
 
+# Placeholder sent to OpenAI-compatible backends that require no credentials.
+NO_API_KEY = "sk-no-key"
+
 
 def _truncate_base64_for_logging(messages):
     """
@@ -124,7 +127,12 @@ class OpenAILLM(BaseLLM):
     ):
 
         super().__init__(*args, **kwargs)
-        self.api_key = api_key or settings.OPENAI_API_KEY or settings.API_KEY
+        # openai>=2.53 rejects a falsy api_key at construction. Keyless
+        # OpenAI-compatible backends (Ollama, llama.cpp, vLLM) legitimately have
+        # none, and pydantic-settings yields "" for a bare `API_KEY=` in .env.
+        self.api_key = (
+            api_key or settings.OPENAI_API_KEY or settings.API_KEY or NO_API_KEY
+        )
         self.user_api_key = user_api_key
 
         # Priority: 1) Parameter base_url, 2) Settings OPENAI_BASE_URL, 3) Default

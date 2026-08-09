@@ -326,7 +326,7 @@ class DaytonaSandbox(CodeSandbox):
 
         The tools pass a token DIRECTORY (e.g. ``artifacts/{token}``), so the delete is
         recursive — ``fs.delete_file`` with ``recursive=True`` removes a folder and its
-        contents (daytona==0.190.1).
+        contents (daytona==0.203.0).
         """
         try:
             handle = self._get_handle(session_id)
