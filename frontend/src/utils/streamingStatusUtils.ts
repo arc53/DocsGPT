@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 
-import { ToolCallsType } from '../conversation/types';
+import type { ToolCallsType } from '../conversation/types';
 
 const WEB_SEARCH_ACTIONS = new Set([
   'brave_web_search',
@@ -96,9 +96,7 @@ export function getToolChipLabel(
   t: TFunction,
 ): string {
   const activity = describeToolCall(toolCall);
-  const settled =
-    toolCall.status && toolCall.status !== 'pending'
-      ? 'toolChip'
-      : 'streamingStatus';
-  return activityLabel(activity, settled, t);
+  const namespace =
+    toolCall.status === 'pending' ? 'streamingStatus' : 'toolChip';
+  return activityLabel(activity, namespace, t);
 }

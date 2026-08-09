@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import { describe, expect, it } from 'vitest';
 
-import { ToolCallsType } from '../conversation/types';
+import type { ToolCallsType } from '../conversation/types';
 import { getToolChipLabel } from './streamingStatusUtils';
 
 // Stub that renders "key" or "key|value,value" so assertions can check both
@@ -40,6 +40,18 @@ describe('getToolChipLabel', () => {
       'conversation.streamingStatus.searchingWebGeneric',
     );
     expect(getToolChipLabel(call({}), t)).toBe(
+      'conversation.toolChip.searchedWebGeneric',
+    );
+  });
+
+  it('treats a status-less call as settled, matching the non-shimmer row', () => {
+    expect(
+      getToolChipLabel(
+        call({ arguments: { query: 'docsgpt' }, status: undefined }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.searchingWeb|docsgpt');
+    expect(getToolChipLabel(call({ status: undefined }), t)).toBe(
       'conversation.toolChip.searchedWebGeneric',
     );
   });
