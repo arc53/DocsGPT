@@ -1249,7 +1249,11 @@
         "description": "删除此代理将无法恢复，并会移除其所有计划和运行历史。",
         "deleteButton": "删除代理"
       },
-      "externalKb": "外部知识库"
+      "externalKb": "外部知识库",
+      "errors": {
+        "publishFailed": "无法发布该助手，请重试。",
+        "saveDraftFailed": "无法保存草稿，请重试。"
+      }
     },
     "logs": {
       "title": "代理日志",

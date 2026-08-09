@@ -1249,7 +1249,11 @@
         "description": "刪除此代理將無法復原，並會移除其所有排程和執行歷史。",
         "deleteButton": "刪除代理"
       },
-      "externalKb": "外部知識庫"
+      "externalKb": "外部知識庫",
+      "errors": {
+        "publishFailed": "無法發布該助理，請重試。",
+        "saveDraftFailed": "無法儲存草稿，請重試。"
+      }
     },
     "logs": {
       "title": "代理日誌",

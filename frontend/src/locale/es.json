@@ -1249,7 +1249,11 @@
         "description": "Eliminar este agente es permanente y eliminará todas sus programaciones e historial de ejecuciones.",
         "deleteButton": "Eliminar agente"
       },
-      "externalKb": "KB Externa"
+      "externalKb": "KB Externa",
+      "errors": {
+        "publishFailed": "No se pudo publicar el agente. Inténtalo de nuevo.",
+        "saveDraftFailed": "No se pudo guardar el borrador. Inténtalo de nuevo."
+      }
     },
     "logs": {
       "title": "Registros del Agente",
