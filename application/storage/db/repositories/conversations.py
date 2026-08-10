@@ -45,6 +45,19 @@ class MessageUpdateOutcome(str, Enum):
     INVALID = "invalid"
 
 
+class HeartbeatState(str, Enum):
+    """What a liveness heartbeat found when it tried to stamp a row.
+
+    ``TERMINAL`` and ``MISSING`` both mean "not stamped", but they want
+    opposite handling: a terminal row may still be reclaimed by a finishing
+    stream, whereas a missing one can never be written again.
+    """
+
+    STAMPED = "stamped"
+    TERMINAL = "terminal"
+    MISSING = "missing"
+
+
 def _message_row_to_dict(row) -> dict:
     """Like ``row_to_dict`` but renames the DB column ``message_metadata``
     back to the public API key ``metadata`` so callers keep the Mongo-era
@@ -873,6 +886,7 @@ class ConversationsRepository:
     def update_message_by_id(
         self, message_id: str, fields: dict,
         *, only_if_non_terminal: bool = False,
+        reclaim_reconciler_failed: bool = False,
     ) -> MessageUpdateOutcome:
         """Update specific fields on a message identified by its UUID.
 
@@ -882,9 +896,36 @@ class ConversationsRepository:
         True, the update is gated so a late finalize cannot retract a
         reconciler-set ``failed`` (or a prior ``complete``).
 
+        ``reclaim_reconciler_failed`` punches one hole in that gate: a row
+        the **reconciler** failed for staleness may still be finalized by the
+        stream that owns it, because such a stream demonstrably was not dead.
+        Production showed a 20-minute tool loop swept at minute 6 and then
+        completing normally at minute 20, its answer refused and replaced by
+        "Response was terminated prior to completion". The hole is deliberately
+        narrow — it matches only the reconciler's own error string, so genuine
+        terminal failures (client disconnect, provider errors, the pending-tool
+        cleanup task) stay terminal, and it skips rows whose awaiting-approval
+        prompt the reconciler already revoked.
+
+        Reclaiming also strips the reconciler's bookkeeping keys, which
+        otherwise survive the metadata merge and leave a ``complete`` row
+        carrying a stale ``error``.
+
         The return value discriminates "I updated the row" from "the
         row was already at a terminal state" so the abort handler can
-        journal ``end`` when the normal-path finalize already ran.
+        journal ``end`` when the normal-path finalize already ran. A reclaim
+        returns plain ``UPDATED``: callers that branch on the outcome should
+        treat it as an ordinary successful finalize.
+
+        Args:
+            message_id: UUID of the message row.
+            fields: Field/value pairs to write.
+            only_if_non_terminal: Gate the write on a non-terminal status.
+            reclaim_reconciler_failed: Also allow rows the reconciler failed
+                for staleness.
+
+        Returns:
+            MessageUpdateOutcome: What happened to the row.
         """
         if not looks_like_uuid(message_id):
             return MessageUpdateOutcome.INVALID
@@ -899,6 +940,16 @@ class ConversationsRepository:
 
         api_to_col = {"metadata": "message_metadata"}
 
+        # On reclaim the reconciler's bookkeeping must not survive into the
+        # finished row: ``error`` would show a stale failure in the API
+        # response, and leaving the counters behind corrupts any "how often
+        # does this fire" query.
+        reclaim_strip = (
+            " - 'error' - 'reconcile_attempts' - 'last_reconcile_seen_heartbeat'"
+            if reclaim_reconciler_failed
+            else ""
+        )
+
         set_parts = []
         params: dict = {"id": message_id}
         for key, val in filtered.items():
@@ -908,7 +959,7 @@ class ConversationsRepository:
                     set_parts.append(f"{col} = NULL")
                 else:
                     set_parts.append(
-                        f"{col} = COALESCE({col}, '{{}}'::jsonb) "
+                        f"{col} = (COALESCE({col}, '{{}}'::jsonb){reclaim_strip}) "
                         f"|| CAST(:{col} AS jsonb)"
                     )
                     params[col] = (
@@ -932,9 +983,28 @@ class ConversationsRepository:
                 params[col] = val
 
         set_parts.append("updated_at = now()")
+        # Metadata may not be among the written fields (a finalize with no
+        # query metadata passes none), but the strip must still happen.
+        if reclaim_reconciler_failed and "metadata" not in filtered:
+            set_parts.append(
+                f"message_metadata = COALESCE(message_metadata, '{{}}'::jsonb)"
+                f"{reclaim_strip}"
+            )
         update_where = ["id = CAST(:id AS uuid)"]
         if only_if_non_terminal:
-            update_where.append("status NOT IN ('complete', 'failed')")
+            terminal_gate = "status NOT IN ('complete', 'failed')"
+            if reclaim_reconciler_failed:
+                terminal_gate = (
+                    "(" + terminal_gate + " OR ("
+                    "status = 'failed' "
+                    "AND message_metadata->>'error' LIKE "
+                    "'reconciler: stuck in pending/streaming%' "
+                    "AND COALESCE("
+                    "(message_metadata->>'reconciler_cleared_approval')::boolean,"
+                    " false) = false"
+                    "))"
+                )
+            update_where.append(terminal_gate)
         # Single-statement attempt + prior-status probe. Both CTEs see
         # the same MVCC snapshot, so ``prior.status`` reflects the row
         # state before the UPDATE — exactly what we need to tell
@@ -958,6 +1028,15 @@ class ConversationsRepository:
             return MessageUpdateOutcome.NOT_FOUND
         updated, prior_status = row[0], row[1]
         if updated:
+            if reclaim_reconciler_failed and prior_status == "failed":
+                # Distinct, greppable signal: each of these is one user-visible
+                # answer that would previously have been discarded. Should
+                # trend to zero once false sweeps stop.
+                logger.info(
+                    "finalize_message: reclaimed reconciler-failed row "
+                    "message_id=%s",
+                    message_id,
+                )
             return MessageUpdateOutcome.UPDATED
         if prior_status is None:
             return MessageUpdateOutcome.NOT_FOUND
@@ -993,34 +1072,67 @@ class ConversationsRepository:
         )
         return result.rowcount > 0
 
-    def heartbeat_message(self, message_id: str) -> bool:
-        """Stamp ``message_metadata.last_heartbeat_at`` with ``clock_timestamp()``.
+    def heartbeat_message_state(self, message_id: str) -> HeartbeatState:
+        """Stamp the liveness heartbeat and report what the row looks like.
 
-        The reconciler's staleness check uses ``GREATEST(timestamp,
-        last_heartbeat_at)``, so this call extends a long-running
-        stream's effective freshness without touching ``timestamp`` (the
-        creation time, used for history sort) or ``status`` (the WAL
-        marker). Skips terminal rows so a late heartbeat can't silently
-        retract a reconciler-set ``failed``.
+        One round trip, three outcomes. The distinction matters because the
+        two "not stamped" cases want opposite handling:
+
+        - ``MISSING`` — the row was deleted mid-stream (``truncate_after`` on
+          a retry/edit). Nothing this stream produces can ever be read, so the
+          caller should stop working.
+        - ``TERMINAL`` — the row exists but is ``complete``/``failed``,
+          typically because the reconciler swept it. The stream must NOT be
+          cancelled: if it finishes, ``finalize_message`` is allowed to reclaim
+          a reconciler-failed row and land the real answer.
+        - ``STAMPED`` — normal in-flight row, freshness extended.
+
+        The stamp deliberately avoids ``timestamp`` (creation time, used for
+        history sort) and ``status`` (the WAL marker), and skips terminal rows
+        so a late heartbeat can't retract a reconciler-set ``failed``.
+
+        Args:
+            message_id: UUID of the message row.
+
+        Returns:
+            HeartbeatState: What the row was at stamp time.
         """
         if not looks_like_uuid(message_id):
-            return False
-        result = self._conn.execute(
+            return HeartbeatState.MISSING
+        # Both CTEs read the same MVCC snapshot, so ``present`` describes the
+        # row as it was when the UPDATE ran — no follow-up SELECT needed.
+        row = self._conn.execute(
             text(
                 """
-                UPDATE conversation_messages
-                SET message_metadata = jsonb_set(
-                    COALESCE(message_metadata, '{}'::jsonb),
-                    '{last_heartbeat_at}',
-                    to_jsonb(clock_timestamp())
+                WITH stamped AS (
+                    UPDATE conversation_messages
+                    SET message_metadata = jsonb_set(
+                        COALESCE(message_metadata, '{}'::jsonb),
+                        '{last_heartbeat_at}',
+                        to_jsonb(clock_timestamp())
+                    )
+                    WHERE id = CAST(:id AS uuid)
+                      AND status NOT IN ('complete', 'failed')
+                    RETURNING 1 AS ok
                 )
-                WHERE id = CAST(:id AS uuid)
-                  AND status NOT IN ('complete', 'failed')
+                SELECT (SELECT ok FROM stamped) AS stamped,
+                       EXISTS(
+                           SELECT 1 FROM conversation_messages
+                           WHERE id = CAST(:id AS uuid)
+                       ) AS present
                 """
             ),
             {"id": message_id},
-        )
-        return result.rowcount > 0
+        ).fetchone()
+        if row is not None and row[0]:
+            return HeartbeatState.STAMPED
+        if row is not None and row[1]:
+            return HeartbeatState.TERMINAL
+        return HeartbeatState.MISSING
+
+    def heartbeat_message(self, message_id: str) -> bool:
+        """Stamp the heartbeat; True when an in-flight row was updated."""
+        return self.heartbeat_message_state(message_id) is HeartbeatState.STAMPED
 
     def confirm_executed_tool_calls(self, message_id: str) -> int:
         """Flip ``tool_call_attempts.status='executed' → 'confirmed'`` for the message."""
@@ -1041,11 +1153,62 @@ class ConversationsRepository:
 
         Mirrors Mongo's ``$push`` + ``$slice`` that trims queries after an
         index-based update.
+
+        Rows being deleted may still be **owned by a running stream**: this
+        runs on the retry/edit path, and a stream survives client disconnect
+        (the SSE keepalive pump drains the generator in a daemon thread), while
+        a stream paused on a client-side tool can resume many minutes later.
+        Deleting such a row cascades its ``message_events`` away and makes
+        every subsequent journal and ``tool_call_attempts`` write FK-fail — in
+        production one paused stream, deleted 9 minutes before it resumed,
+        produced 342 WARNs plus 60 ERRORs and finalized into nothing.
+
+        Deleting is still correct — the user explicitly asked to replace these
+        turns — so the rows go, but any non-terminal one is first stamped
+        terminal. That makes the owning stream's late ``finalize_message``
+        report ``ALREADY_FAILED`` (a known, quiet outcome) rather than
+        ``NOT_FOUND``, and leaves an audit trail of what was superseded.
+
+        Args:
+            conversation_id: Conversation whose tail is being trimmed.
+            keep_up_to: Highest position to keep.
+
+        Returns:
+            Number of rows deleted.
         """
         # Shape-gate: see ``rename`` — prevents transaction poisoning when
         # a non-UUID id reaches this code path.
         if not looks_like_uuid(conversation_id):
             return 0
+        superseded = self._conn.execute(
+            text(
+                """
+                UPDATE conversation_messages
+                SET status = 'failed',
+                    message_metadata = jsonb_set(
+                        COALESCE(message_metadata, '{}'::jsonb),
+                        '{error}',
+                        to_jsonb(
+                            CAST('superseded by a newer turn at this position'
+                                 AS text)
+                        )
+                    )
+                WHERE conversation_id = CAST(:conv_id AS uuid)
+                  AND position > :pos
+                  AND status NOT IN ('complete', 'failed')
+                RETURNING id
+                """
+            ),
+            {"conv_id": conversation_id, "pos": keep_up_to},
+        ).fetchall()
+        if superseded:
+            logger.info(
+                "truncate_after: superseding %d in-flight message(s) in "
+                "conversation %s: %s",
+                len(superseded),
+                conversation_id,
+                ", ".join(str(r[0]) for r in superseded),
+            )
         result = self._conn.execute(
             text(
                 "DELETE FROM conversation_messages "

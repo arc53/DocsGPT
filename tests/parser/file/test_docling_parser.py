@@ -788,3 +788,106 @@ class TestDoclingMarkupGate:
         dp.DoclingVTTParser().parse_file(path)
 
         assert seen["path"] == str(path), "disabled gate must parse the original"
+
+
+# =====================================================================
+# Gate seam: the oversized path through the REAL lightweight parser
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestTabularGateSeam:
+    """Exercise the gate and the lightweight parser together.
+
+    Every test in ``TestDoclingTabularSizeGate`` monkeypatches
+    ``ExcelParser.parse_file`` away, so the seam between the size gate and
+    the real fallback had zero coverage — which is how a crash on blank
+    cells reached production and silently destroyed an upload.
+    """
+
+    def _write_xlsx_with_hole(self, path: Path) -> Path:
+        openpyxl = pytest.importorskip("openpyxl")
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append([f"col{i}" for i in range(14)])
+        ws.append(list(range(14)))
+        holed = list(range(14))
+        holed[11] = None
+        ws.append(holed)
+        wb.save(path)
+        return path
+
+    def test_oversized_xlsx_with_blank_cells_parses_end_to_end(
+        self, tmp_path, monkeypatch
+    ):
+        """The real incident, end to end: gate trips, blanks do not crash."""
+        from application.core.settings import settings
+        from application.parser.file.docling_parser import (
+            DoclingParser,
+            DoclingXLSXParser,
+        )
+
+        monkeypatch.setattr(settings, "DOCLING_TABULAR_MAX_BYTES", 64)
+        docling_parse = MagicMock(name="docling_parse")
+        monkeypatch.setattr(DoclingParser, "parse_file", docling_parse)
+
+        path = self._write_xlsx_with_hole(tmp_path / "focus.xlsx")
+
+        out = DoclingXLSXParser().parse_file(path)
+
+        docling_parse.assert_not_called()
+        assert isinstance(out, str) and out
+        assert "nan" not in out
+
+    def test_lightweight_failure_becomes_document_parse_error(
+        self, tmp_path, monkeypatch
+    ):
+        """A fallback crash must be non-retryable and batch-skippable.
+
+        ``DocumentParseError`` is listed in ``dont_autoretry_for`` on both
+        ``ingest`` and ``store_attachment``, and is the only exception
+        ``SimpleDirectoryReader.load_data`` skips rather than propagating.
+        """
+        from application.core.settings import settings
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import (
+            DoclingParser,
+            DoclingXLSXParser,
+        )
+        from application.parser.file.tabular_parser import ExcelParser
+
+        monkeypatch.setattr(settings, "DOCLING_TABULAR_MAX_BYTES", 64)
+        monkeypatch.setattr(DoclingParser, "parse_file", MagicMock())
+        monkeypatch.setattr(
+            ExcelParser,
+            "parse_file",
+            MagicMock(side_effect=TypeError("sequence item 11")),
+        )
+
+        path = self._write_xlsx_with_hole(tmp_path / "boom.xlsx")
+
+        with pytest.raises(DocumentParseError):
+            DoclingXLSXParser().parse_file(path)
+
+    def test_oversized_csv_failure_becomes_document_parse_error(
+        self, tmp_path, monkeypatch
+    ):
+        from application.core.settings import settings
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import (
+            DoclingCSVParser,
+            DoclingParser,
+        )
+        from application.parser.file.tabular_parser import CSVParser
+
+        monkeypatch.setattr(settings, "DOCLING_TABULAR_MAX_BYTES", 8)
+        monkeypatch.setattr(DoclingParser, "parse_file", MagicMock())
+        monkeypatch.setattr(
+            CSVParser, "parse_file", MagicMock(side_effect=ValueError("bad"))
+        )
+
+        path = tmp_path / "data.csv"
+        path.write_text("a,b\n1,2\n" * 20)
+
+        with pytest.raises(DocumentParseError):
+            DoclingCSVParser().parse_file(path)

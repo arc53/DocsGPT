@@ -18,6 +18,7 @@ from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.conversations import (
     ConversationsRepository,
+    HeartbeatState,
     MessageUpdateOutcome,
 )
 from application.storage.db.session import db_readonly, db_session
@@ -348,6 +349,22 @@ class ConversationService:
         with db_session() as conn:
             return ConversationsRepository(conn).heartbeat_message(message_id)
 
+    def heartbeat_message_state(self, message_id: str) -> HeartbeatState:
+        """Heartbeat, reporting whether the row is live, terminal, or gone.
+
+        Args:
+            message_id: UUID of the message row.
+
+        Returns:
+            HeartbeatState: What the row was at stamp time.
+        """
+        if not message_id:
+            return HeartbeatState.MISSING
+        with db_session() as conn:
+            return ConversationsRepository(conn).heartbeat_message_state(
+                message_id
+            )
+
     def finalize_message(
         self,
         message_id: str,
@@ -402,11 +419,20 @@ class ConversationService:
         # Atomic message update + tool_call_attempts confirm; the
         # ``only_if_non_terminal`` guard prevents a late stream from
         # retracting a row the reconciler already escalated.
+        #
+        # Exception: a *successful* finalize is allowed to reclaim a row the
+        # reconciler failed for staleness. A stream that reaches this point
+        # with an answer was self-evidently not stuck, so refusing it throws
+        # away real output and leaves the user staring at "Response was
+        # terminated prior to completion". Only on success — a late failure
+        # must never overwrite the reconciler's failure with a different one.
+        reclaim = status == "complete"
         with db_session() as conn:
             repo = ConversationsRepository(conn)
             outcome = repo.update_message_by_id(
                 message_id, update_fields,
                 only_if_non_terminal=True,
+                reclaim_reconciler_failed=reclaim,
             )
             if outcome is not MessageUpdateOutcome.UPDATED:
                 logger.warning(
