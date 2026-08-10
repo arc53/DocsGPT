@@ -60,7 +60,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
-    "@babel/preset-env": "^7.24.0",
+    "@babel/preset-env": "^8.0.2",
     "@babel/preset-react": "^7.23.3",
     "@eslint/js": "^9.39.4",
     "@parcel/packager-ts": "^2.16.4",
