@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -5,6 +6,8 @@ from openai import OpenAI
 
 from application.core.settings import settings
 from application.stt.base import BaseSTT
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAISTT(BaseSTT):
@@ -26,7 +29,11 @@ class OpenAISTT(BaseSTT):
         timestamps: bool = False,
         diarize: bool = False,
     ) -> Dict[str, Any]:
-        _ = diarize
+        if diarize:
+            logger.warning(
+                "Speaker diarization is not supported by the OpenAI STT provider; "
+                "STT_ENABLE_DIARIZATION has no effect."
+            )
         request: Dict[str, Any] = {
             "file": file_path,
             "model": self.model,

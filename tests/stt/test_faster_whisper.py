@@ -191,7 +191,7 @@ class TestFasterWhisperSTTTranscribe:
         # Empty text stripped should not be included in text_parts
         assert result["text"] == ""
 
-    def test_transcribe_diarize_is_ignored(self):
+    def test_transcribe_diarize_emits_warning(self, caplog):
         stt, mock_model = self._make_stt_with_mock_model()
 
         info = MagicMock()
@@ -200,13 +200,34 @@ class TestFasterWhisperSTTTranscribe:
 
         mock_model.transcribe.return_value = (iter([]), info)
 
-        # diarize param should be accepted but ignored
-        result = stt.transcribe(
-            Path("/tmp/audio.wav"),
-            diarize=True,
-        )
+        with caplog.at_level("WARNING"):
+            result = stt.transcribe(
+                Path("/tmp/audio.wav"),
+                diarize=True,
+            )
 
         assert result["provider"] == "faster_whisper"
+        assert any(
+            "diarization is not supported by the faster_whisper STT provider"
+            in record.message
+            for record in caplog.records
+        )
+
+    def test_transcribe_diarize_false_emits_no_warning(self, caplog):
+        stt, mock_model = self._make_stt_with_mock_model()
+
+        info = MagicMock()
+        info.language = "en"
+        info.duration = 1.0
+
+        mock_model.transcribe.return_value = (iter([]), info)
+
+        with caplog.at_level("WARNING"):
+            stt.transcribe(Path("/tmp/audio.wav"), diarize=False)
+
+        assert not any(
+            "diarization is not supported" in record.message for record in caplog.records
+        )
 
     def test_transcribe_missing_attrs_use_none(self):
         stt, mock_model = self._make_stt_with_mock_model()
