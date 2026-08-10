@@ -4,6 +4,7 @@ Contains parsers for tabular data files.
 
 """
 import datetime
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
@@ -35,18 +36,25 @@ def cell_to_text(value: Any) -> str:
     """
     if value is None:
         return ""
-    # NaN is the only float that is not equal to itself. Checked before the
-    # pandas call because it is by far the common case and needs no import.
-    if isinstance(value, float) and value != value:
+    # Handled before the pandas lookup below: it is by far the common case
+    # (every blank cell) and needs no import.
+    if isinstance(value, float) and math.isnan(value):
         return ""
     try:
         import pandas as pd
-
-        # Raises on array-like cells, which are legitimate values, not NA.
-        if pd.isna(value):
-            return ""
-    except (ImportError, TypeError, ValueError):
-        pass
+    except ImportError:
+        # pandas is optional here — plain float NaN is already covered above,
+        # and pd.NA/NaT can only reach us via pandas in the first place.
+        pd = None
+    if pd is not None:
+        try:
+            if pd.isna(value):
+                return ""
+        except (TypeError, ValueError):
+            # pd.isna raises on array-like cells (lists, ndarrays). Those are
+            # real values rather than missing data, so fall through and
+            # stringify them below.
+            pass
     if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
         return value.isoformat()
     if isinstance(value, float) and value.is_integer():
