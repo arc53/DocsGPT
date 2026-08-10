@@ -10,6 +10,7 @@ import Analytics from '../settings/Analytics';
 import Logs from '../settings/Logs';
 import { formatDateTime } from '../utils/dateTimeUtils';
 import AgentPageHeader from './AgentPageHeader';
+import GuardrailEvents from './components/GuardrailEvents';
 import { Agent } from './types';
 
 export default function AgentLogs() {
@@ -73,6 +74,7 @@ export default function AgentLogs() {
       ) : (
         agent && <Analytics agentId={agent.id} />
       )}
+      {!loadingAgent && agent && <GuardrailEvents agentId={agent.id} />}
       {loadingAgent ? (
         <div className="flex h-[55vh] w-full items-center justify-center">
           <Spinner />

@@ -186,6 +186,10 @@ def run_agent_headless(
         "attachments": [],
         "json_schema": json_schema,
         "tool_executor": tool_executor,
+        # ``agent_config`` here is the agent row; ``config`` is its per-agent
+        # behavior contract. A scheduled or webhook run is still a run of this
+        # agent, so it carries the same guardrails an interactive turn would.
+        "agent_config": agent_config.get("config") or {},
     }
     if agent_type == "workflow":
         agent_kwargs.update(_workflow_kwargs(agent_config, owner))
@@ -245,6 +249,13 @@ def run_agent_headless(
         logger.warning(
             "Headless run for agent %s failed mid-stream: %s", agent_id, stream_error
         )
+
+    # A guardrail that fired on an unattended run is exactly the event an
+    # operator needs to find later, so the journal is written here too.
+    try:
+        agent.flush_guardrail_audit()
+    except Exception:
+        logger.exception("Guardrail audit flush failed for headless agent %s", agent_id)
 
     # Use the LLM accumulator (gen_token_usage / stream_token_usage decorators);
     # current_token_count is a context-size sentinel, not a usage tally.

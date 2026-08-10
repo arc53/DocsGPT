@@ -15,6 +15,12 @@ const endpoints = {
     DELETE_API_KEY: '/api/delete_api_key',
     AGENT: (id: string) => `/api/get_agent?id=${id}`,
     AGENTS: '/api/get_agents',
+    GUARDRAIL_CATALOG: '/api/guardrails/catalog',
+    GUARDRAIL_EVENTS: (agentId: string, limit = 100, offset = 0) =>
+      `/api/guardrails/events?agent_id=${agentId}&limit=${limit}&offset=${offset}`,
+    GUARDRAIL_SUMMARY: (agentId?: string, days = 30) =>
+      `/api/guardrails/summary?days=${days}` +
+      (agentId ? `&agent_id=${agentId}` : ''),
     CREATE_AGENT: '/api/create_agent',
     UPDATE_AGENT: (agent_id: string) => `/api/update_agent/${agent_id}`,
     DELETE_AGENT: (id: string) => `/api/delete_agent?id=${id}`,

@@ -656,6 +656,23 @@ class BaseAnswerResource:
                         if not line.get("user_facing"):
                             error_text = sanitize_api_error(error_text)
                         stream_error = error_text
+                        guardrail_meta = line.get("guardrail")
+                        if guardrail_meta:
+                            # A guardrail tripped mid-stream. Tokens already on
+                            # the wire cannot be recalled, but the persisted
+                            # message must not keep them — otherwise reloading
+                            # the page redisplays exactly what was just blocked.
+                            response_full = error_text
+                            structured_chunks.clear()
+                            is_structured = False
+                            query_metadata["guardrail"] = guardrail_meta
+                            yield _emit(
+                                {
+                                    "type": "guardrail",
+                                    "guardrail": guardrail_meta,
+                                    "retract": True,
+                                }
+                            )
                         yield _emit({"type": "error", "error": error_text})
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
@@ -805,6 +822,13 @@ class BaseAnswerResource:
                                     "prompt": getattr(agent, "prompt", ""),
                                     "json_schema": getattr(agent, "json_schema", None),
                                     "retriever_config": getattr(agent, "retriever_config", None),
+                                    # Guardrails must survive the pause: a
+                                    # resumed turn is still the same turn.
+                                    "guardrails": (
+                                        agent.guardrails_config.model_dump(mode="json")
+                                        if getattr(agent, "guardrails_config", None)
+                                        else None
+                                    ),
                                     # Reused on resume so the same WAL row
                                     # is finalised and request_id stays
                                     # consistent across token_usage rows.
@@ -1355,6 +1379,15 @@ class BaseAnswerResource:
             # recycles.
             if heartbeat_stop is not None:
                 heartbeat_stop.set()
+            # The audit trail must survive an aborted or failed turn — a
+            # guardrail that fired on a stream the client dropped is exactly
+            # the event an operator needs to see.
+            flush_guardrails = getattr(agent, "flush_guardrail_audit", None)
+            if callable(flush_guardrails):
+                try:
+                    flush_guardrails(reserved_message_id)
+                except Exception:
+                    logger.exception("Guardrail audit flush failed")
 
     def _finalize_stateless_tool_pause(
         self,

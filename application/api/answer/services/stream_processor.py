@@ -126,6 +126,8 @@ class StreamProcessor:
         self.is_shared_usage = False
         self.shared_token = None
         self.agent_id = self.data.get("agent_id")
+        # Set by _get_agent_key once access checks pass; read for keyless runs.
+        self._authorized_agent_row: Optional[Dict[str, Any]] = None
         self.agent_key = None
         self.model_id: Optional[str] = None
         # BYOM-resolution scope, set by _validate_and_set_model.
@@ -521,6 +523,10 @@ class StreamProcessor:
 
             if not (is_owner or is_shared_with_user or is_team_shared):
                 raise Exception("Unauthorized access to the agent")
+            # Authorized. Keep the row so _configure_agent can read fields that
+            # do not depend on an API key — a draft agent has key = NULL, and
+            # the builder preview runs exactly that path.
+            self._authorized_agent_row = agent
             if is_owner:
                 now = datetime.datetime.now(datetime.timezone.utc)
                 try:
@@ -832,6 +838,9 @@ class StreamProcessor:
                     # resolve owner-stored BYOM default_model_id against the
                     # owner's per-user model layer rather than the caller's.
                     "user_id": self._agent_data.get("user"),
+                    # Per-agent behavior contract (guardrails). The floor is
+                    # applied at agent construction, not here.
+                    "config": self._agent_data.get("config") or {},
                 }
             )
 
@@ -857,7 +866,13 @@ class StreamProcessor:
                 self.agent_config["workflow"] = str(wf_ref)
                 self.agent_config["workflow_owner"] = self._agent_data.get("user")
         else:
-            # No API key — default/workflow configuration
+            # No API key — default/workflow configuration. A draft agent still
+            # has a behavior contract, and the builder preview is the one place
+            # an operator would try a guardrail before publishing, so load it
+            # from the row _get_agent_key already authorized.
+            row = getattr(self, "_authorized_agent_row", None)
+            if row:
+                self.agent_config["config"] = row.get("config") or {}
             agent_type = settings.AGENT_NAME
             if self.data.get("workflow") and isinstance(
                 self.data.get("workflow"), dict
@@ -1549,6 +1564,13 @@ class StreamProcessor:
         if retriever_config and agent_key in ("classic", "agentic", "research"):
             agent_kwargs["retriever_config"] = retriever_config
 
+        # A resumed turn is still the same turn: rebuild it with the guardrails
+        # config captured at pause, floor already applied.
+        saved_guardrails = agent_config.get("guardrails")
+        if saved_guardrails:
+            agent_kwargs["agent_config"] = {"guardrails": saved_guardrails}
+        agent_kwargs["request_id"] = agent_config.get("request_id")
+
         agent = AgentCreator.create_agent(agent_key, **agent_kwargs)
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id
@@ -1722,6 +1744,8 @@ class StreamProcessor:
             "llm": llm,
             "llm_handler": llm_handler,
             "tool_executor": tool_executor,
+            "agent_config": self.agent_config.get("config") or {},
+            "request_id": self.request_id or self.data.get("request_id"),
         }
 
         # Wiki tool injection + authz: only for agent types that build a

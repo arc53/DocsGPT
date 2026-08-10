@@ -14,6 +14,18 @@ exists under ``mock_llm_fixtures/<hash>.json`` it wins; otherwise a generic
 "I don't know" fallback is returned and the hash + request is logged to stderr
 so a developer can promote it into a fixture later.
 
+**In-band reply directive.** A spec that needs to pin the assistant's exact
+words cannot use a hash fixture, because DocsGPT's system prompt embeds
+``Today's date is <YYYY-MM-DD>`` — the digest of the same question changes
+every midnight, so a committed ``<hash>.json`` rots within a day. Instead, a
+spec may embed ``[[MOCK_LLM_EMIT:<base64url>]]`` anywhere in the question; the
+stub decodes it and returns exactly that text as the assistant's content.
+The payload is base64 so a spec can drive the model into emitting secrets,
+PII, or banned terms without those literals appearing in the request itself
+(which would otherwise be scanned by an input-stage guardrail, and persisted
+verbatim as the conversation's prompt). See
+``tests/e2e/specs/tier-b/guardrails*.spec.ts``.
+
 Run standalone (does NOT import anything from ``application/``). Python 3.11+.
 Flask is the only non-stdlib dependency and is already in
 ``application/requirements.txt``.
@@ -28,10 +40,13 @@ Defaults to ``127.0.0.1:7899`` to match the ``OPENAI_BASE_URL`` referenced in
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import os
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -51,6 +66,11 @@ GENERIC_FALLBACK_TEXT = (
     "I don't have enough information to answer that from the provided sources."
 )
 STREAM_CHUNK_COUNT = 5
+
+# In-band directive: ``[[MOCK_LLM_EMIT:<base64url payload>]]`` anywhere in the
+# request messages pins the assistant's reply to the decoded payload. See the
+# module docstring for why hash fixtures cannot serve this purpose.
+EMIT_DIRECTIVE = re.compile(r"\[\[MOCK_LLM_EMIT:([A-Za-z0-9_=\-]+)\]\]")
 
 app = Flask(__name__)
 
@@ -192,14 +212,51 @@ def _split_into_chunks(text: str, count: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _directive_content(messages: list[dict[str, Any]] | None) -> str | None:
+    """Decoded ``[[MOCK_LLM_EMIT:...]]`` payload from ``messages``, or None.
+
+    The whole conversation is searched (not just the last turn) because
+    DocsGPT wraps the user's question inside a composed turn and may replay
+    history; the last directive seen wins so a follow-up turn can override an
+    earlier one.
+    """
+
+    found: str | None = None
+    for match in EMIT_DIRECTIVE.finditer(_messages_text(messages) or ""):
+        raw = match.group(1)
+        try:
+            padded = raw + "=" * (-len(raw) % 4)
+            found = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+            sys.stderr.write(f"[mock-llm] bad MOCK_LLM_EMIT payload {raw!r}: {exc}\n")
+            sys.stderr.flush()
+    return found
+
+
 def _resolve_chat_response(
     payload: dict[str, Any], digest: str
 ) -> tuple[str, list[dict[str, Any]] | None, str, dict[str, int]]:
     """Return ``(content, tool_calls, finish_reason, usage)`` for ``payload``.
 
-    Looks up a fixture by digest first; falls back to the generic response if
-    no fixture is present, and logs the miss so the dev can convert it.
+    An in-band ``[[MOCK_LLM_EMIT:...]]`` directive wins outright. Otherwise a
+    fixture is looked up by digest; failing that the generic response is
+    returned and the miss is logged so the dev can convert it.
     """
+
+    directive = _directive_content(payload.get("messages"))
+    if directive is not None:
+        prompt_tokens = _estimate_tokens(_messages_text(payload.get("messages")))
+        completion_tokens = _estimate_tokens(directive)
+        return (
+            directive,
+            None,
+            "stop",
+            {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        )
 
     fixture = _load_fixture(digest)
     if fixture is None:

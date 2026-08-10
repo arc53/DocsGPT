@@ -13,6 +13,10 @@ from application.agents.default_tools import (
 )
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
+from application.guardrails.types import (
+    Stage as GuardrailStage,
+    StageDecision as GuardrailStageDecision,
+)
 from application.security.encryption import decrypt_credentials
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
@@ -349,6 +353,8 @@ class ToolExecutor:
         self.headless = bool(headless)
         # Tool-instance ids pre-authorized for headless approval-gated execution.
         self.tool_allowlist: set = {str(x) for x in tool_allowlist} if tool_allowlist else set()
+        # Set by BaseAgent._prepare_tools when the agent has tool-stage controls.
+        self.guardrail_engine = None
         self.tool_calls: List[Dict] = []
         self._loaded_tools: Dict[str, object] = {}
         # Explicit tool-id scope (workflow agent nodes): when set (even empty),
@@ -599,6 +605,62 @@ class ToolExecutor:
                             params["required"].append(k)
         return params
 
+    def _guardrail_tool_decision(self, tool_name: str, action_name: str, arguments: Dict):
+        """Evaluate tool-call controls, or None when none are configured.
+
+        Fails closed: a policy engine that errors denies the call, because the
+        alternative is executing an action the operator asked us to gate.
+        """
+        engine = getattr(self, "guardrail_engine", None)
+        if engine is None or not engine.has_stage(GuardrailStage.TOOL_CALL):
+            return None
+        try:
+            import json as _json
+
+            engine.context.tool_name = tool_name
+            engine.context.action_name = action_name
+            engine.context.tool_args = arguments
+            payload = _json.dumps(
+                {"tool": tool_name, "action": action_name, "arguments": arguments},
+                default=str,
+            )[:20000]
+            return engine.evaluate(payload, GuardrailStage.TOOL_CALL)
+        except Exception:
+            logger.exception(
+                "Tool guardrail evaluation failed for %s.%s; denying the call",
+                tool_name,
+                action_name,
+            )
+            decision = GuardrailStageDecision(stage=GuardrailStage.TOOL_CALL, text="")
+            decision.blocked = True
+            return decision
+
+    def _guardrail_tool_result(self, result: Any, tool_name: str, action_name: str) -> Any:
+        """Scan a tool result before it fans out to the LLM, UI and journal.
+
+        A tool result is untrusted third-party text on the same footing as a
+        retrieved document, and it is a common exfiltration path for secrets
+        that the calling API happened to echo back.
+        """
+        engine = getattr(self, "guardrail_engine", None)
+        if engine is None or not engine.has_stage(GuardrailStage.TOOL_RESULT):
+            return result
+        if not isinstance(result, str) or not result:
+            return result
+        try:
+            engine.context.tool_name = tool_name
+            engine.context.action_name = action_name
+            decision = engine.evaluate(result, GuardrailStage.TOOL_RESULT)
+        except Exception:
+            logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
+            return result
+        if decision.blocked:
+            return (
+                "[Tool result withheld by a content policy. Tell the user the "
+                "result could not be used; do not speculate about its contents.]"
+            )
+        return decision.text if decision.redacted else result
+
     def check_pause(self, tools_dict: Dict, call, llm_class_name: str) -> Optional[Dict]:
         """Return a pending-action dict (approval / client / headless_denied) or None.
 
@@ -616,6 +678,48 @@ class ToolExecutor:
 
         tool_data = tools_dict[tool_id]
         arguments = call_args if isinstance(call_args, dict) else {}
+
+        policy = self._guardrail_tool_decision(
+            tool_data.get("name", ""), action_name, arguments
+        )
+        if policy is not None:
+            base = {
+                "call_id": call_id,
+                "name": llm_name,
+                "tool_name": tool_data.get("name", "unknown"),
+                "tool_id": tool_id,
+                "action_name": action_name,
+                "llm_name": llm_name,
+                "arguments": arguments,
+                "thought_signature": getattr(call, "thought_signature", None),
+            }
+            if policy.blocked:
+                reason = "; ".join(
+                    v.outcome.detail for v in policy.triggered if v.outcome.detail
+                )
+                return {
+                    **base,
+                    "pause_type": "headless_denied",
+                    "deny_reason": (
+                        f"Blocked by tool policy. {reason}" if reason
+                        else "Blocked by tool policy."
+                    ),
+                    "error_type": "tool_not_allowed",
+                }
+            if policy.approval_required:
+                # Nothing can answer an approval prompt in a scheduled run, so
+                # the same fail-closed rule as every other approval applies.
+                if self.headless:
+                    return {
+                        **base,
+                        "pause_type": "headless_denied",
+                        "deny_reason": (
+                            "Tool policy requires approval, which cannot be "
+                            "granted in a headless / scheduled run."
+                        ),
+                        "error_type": "tool_not_allowed",
+                    }
+                return {**base, "pause_type": "awaiting_approval"}
 
         # Client-side tools
         if tool_data.get("client_side"):
@@ -1002,6 +1106,7 @@ class ToolExecutor:
         # the conversation row, tool_call_attempts, and the stream event —
         # sanitize once so every lane gets clean text.
         result = sanitize_tool_result(result)
+        result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
 

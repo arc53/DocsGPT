@@ -266,6 +266,24 @@ def _serialize_models(conn, agent: dict, user: str) -> dict:
     return {"default": default_value, "available": available}
 
 
+def _import_config(spec: dict) -> dict:
+    """Validate a spec's ``config`` through the same gate as the API.
+
+    A YAML is hand-editable, so it must not be a way to install a control the
+    write path would have rejected. An invalid block is dropped rather than
+    failing the whole import, and the caller surfaces it as a warning.
+    """
+    from application.api.user.agents.routes import normalize_agent_config
+
+    try:
+        return normalize_agent_config(spec.get("config")) or {}
+    except ValueError:
+        current_app.logger.warning(
+            "Dropping invalid guardrails config during agent import"
+        )
+        return {}
+
+
 def serialize_agent(conn, agent: dict, user: str) -> dict:
     """Build the portable export document for an agent row."""
     spec = {
@@ -286,6 +304,7 @@ def serialize_agent(conn, agent: dict, user: str) -> dict:
         },
         "json_schema": agent.get("json_schema"),
         "allow_system_prompt_override": bool(agent.get("allow_system_prompt_override", False)),
+        "config": agent.get("config") or {},
     }
     return {
         "apiVersion": API_VERSION,
@@ -795,6 +814,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         "limited_token_mode": bool(_limit(spec, "limited_token_mode")),
         "limited_request_mode": bool(_limit(spec, "limited_request_mode")),
         "allow_system_prompt_override": bool(spec.get("allow_system_prompt_override")),
+        "config": _import_config(spec),
         "slug": slug,
     }
     # Optional fields — applied only when present so a partial file doesn't wipe them.

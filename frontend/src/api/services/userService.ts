@@ -29,6 +29,27 @@ const userService = {
     throttledApiClient.get(endpoints.USER.AGENT(id), token),
   getAgents: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.AGENTS, token),
+  getGuardrailCatalog: (token: string | null): Promise<any> =>
+    throttledApiClient.get(endpoints.USER.GUARDRAIL_CATALOG, token),
+  getGuardrailEvents: (
+    agentId: string,
+    token: string | null,
+    limit = 100,
+    offset = 0,
+  ): Promise<any> =>
+    throttledApiClient.get(
+      endpoints.USER.GUARDRAIL_EVENTS(agentId, limit, offset),
+      token,
+    ),
+  getGuardrailSummary: (
+    token: string | null,
+    agentId?: string,
+    days = 30,
+  ): Promise<any> =>
+    throttledApiClient.get(
+      endpoints.USER.GUARDRAIL_SUMMARY(agentId, days),
+      token,
+    ),
   createAgent: (data: any, token: string | null): Promise<any> =>
     apiClient.postFormData(endpoints.USER.CREATE_AGENT, data, token),
   updateAgent: (

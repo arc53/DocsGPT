@@ -286,7 +286,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 13
+        assert sender.add_periodic_task.call_count == 14
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -310,20 +310,23 @@ class TestSetupPeriodicTasks:
         # message_events retention sweep (24h)
         assert calls[7][0][0] == timedelta(hours=24)
         assert calls[7][1].get("name") == "cleanup-message-events"
-        # orphan memories sweep (24h)
+        # guardrail_events retention sweep (24h)
         assert calls[8][0][0] == timedelta(hours=24)
-        assert calls[8][1].get("name") == "cleanup-orphan-memories"
+        assert calls[8][1].get("name") == "cleanup-guardrail-events"
+        # orphan memories sweep (24h)
+        assert calls[9][0][0] == timedelta(hours=24)
+        assert calls[9][1].get("name") == "cleanup-orphan-memories"
         # scheduler dispatcher
-        assert calls[9][1].get("name") == "dispatch-scheduled-runs"
+        assert calls[10][1].get("name") == "dispatch-scheduled-runs"
         # schedule runs cleanup (24h)
-        assert calls[10][0][0] == timedelta(hours=24)
-        assert calls[10][1].get("name") == "cleanup-schedule-runs"
+        assert calls[11][0][0] == timedelta(hours=24)
+        assert calls[11][1].get("name") == "cleanup-schedule-runs"
         # sandbox session reaper (60s)
-        assert calls[11][0][0] == timedelta(seconds=60)
-        assert calls[11][1].get("name") == "reap-sandbox-sessions"
+        assert calls[12][0][0] == timedelta(seconds=60)
+        assert calls[12][1].get("name") == "reap-sandbox-sessions"
         # stale workflow-run reaper (5m)
-        assert calls[12][0][0] == timedelta(seconds=300)
-        assert calls[12][1].get("name") == "reap-stale-workflow-runs"
+        assert calls[13][0][0] == timedelta(seconds=300)
+        assert calls[13][1].get("name") == "reap-stale-workflow-runs"
 
 
 class TestMcpOauthTask:

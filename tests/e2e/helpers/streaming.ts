@@ -35,6 +35,62 @@ export async function streamOnce(
   return match[1];
 }
 
+/** One `data: <json>` line of an SSE body. */
+export interface SseFrame {
+  raw: string;
+  // The backend emits many distinct payload shapes on one channel.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: any;
+}
+
+/**
+ * Parse an SSE-over-text body into structured frames. Each non-empty
+ * `data: <json>` line becomes a frame with a parsed `data` payload. Lines
+ * that don't parse as JSON (e.g. `data: [DONE]`) are surfaced with
+ * `data = null` and the raw text preserved for the caller.
+ */
+export function parseSseFrames(text: string): SseFrame[] {
+  const frames: SseFrame[] = [];
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) continue;
+    const payload = trimmed.slice('data:'.length).trim();
+    if (!payload) continue;
+    try {
+      frames.push({ raw: payload, data: JSON.parse(payload) });
+    } catch {
+      frames.push({ raw: payload, data: null });
+    }
+  }
+  return frames;
+}
+
+/**
+ * POST /stream, drain the SSE body, and return parsed frames plus the raw
+ * text and status. `APIRequestContext` buffers the whole body, so by the
+ * time this resolves the server-side generator has emitted its terminal
+ * `{"type":"end"}` frame (or errored).
+ */
+export async function streamFrames(
+  api: APIRequestContext,
+  body: Record<string, unknown>,
+): Promise<{ status: number; frames: SseFrame[]; text: string }> {
+  const res = await api.post('/stream', { data: body });
+  const text = await res.text();
+  return { status: res.status(), frames: parseSseFrames(text), text };
+}
+
+/**
+ * Concatenate every `{"type":"answer"}` delta in order — the exact text the
+ * user ends up seeing in the chat bubble.
+ */
+export function answerText(frames: SseFrame[]): string {
+  return frames
+    .filter((f) => f.data?.type === 'answer')
+    .map((f) => String(f.data.answer ?? ''))
+    .join('');
+}
+
 /**
  * Start a /stream POST and return a promise resolving to the HTTP status.
  * For races where the caller wants to kick off a stream and concurrently
