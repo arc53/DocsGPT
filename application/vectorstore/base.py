@@ -3,9 +3,9 @@ import os
 from abc import ABC, abstractmethod
 
 import requests
-from langchain_openai import OpenAIEmbeddings
 
 from application.core.settings import settings
+from application.vectorstore.embeddings_openai import OpenAIEmbeddings
 from application.utils import get_encoding
 
 
@@ -295,7 +295,6 @@ class BaseVectorStore(ABC):
 
         if embeddings_name == "openai_text-embedding-ada-002":
             if self.is_azure_configured():
-                os.environ["OPENAI_API_TYPE"] = "azure"
                 embedding_instance = EmbeddingsSingleton.get_instance(
                     embeddings_name, model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME
                 )

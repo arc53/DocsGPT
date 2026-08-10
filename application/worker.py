@@ -679,7 +679,7 @@ def ingest_worker(
             )
             raw_docs = chunker.chunk(documents=raw_docs)
 
-            docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+            docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
 
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
@@ -1224,7 +1224,7 @@ def remote_worker(
             duplicate_headers=cfg.chunking.duplicate_headers,
         )
         raw_docs = chunker.chunk(documents=raw_docs)
-        docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+        docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
         tokens = count_tokens_docs(docs)
         logging.info("Total tokens calculated: %d", tokens)
 
@@ -2068,7 +2068,7 @@ def ingest_connector(
                             source, start=temp_dir
                         )
 
-            docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+            docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
 
             # Validate operation_mode here too (the source_uuid path
             # at the top of the function only branches on the

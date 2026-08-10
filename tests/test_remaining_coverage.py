@@ -129,9 +129,9 @@ class TestToolABC:
 # application/parser/file/base.py  (lines 18-19)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-class TestBaseReaderLoadLangchain:
-    def test_load_langchain_documents(self):
-        """Cover lines 18-19: BaseReader.load_langchain_documents."""
+class TestBaseReaderLoadVectorDocuments:
+    def test_load_vector_documents(self):
+        """Cover lines 18-19: BaseReader.load_vector_documents."""
         from application.parser.file.base import BaseReader
         from application.parser.schema.base import Document
 
@@ -143,7 +143,7 @@ class TestBaseReaderLoadLangchain:
                 ]
 
         reader = ConcreteReader()
-        lc_docs = reader.load_langchain_documents()
+        lc_docs = reader.load_vector_documents()
         assert len(lc_docs) == 2
         assert lc_docs[0].page_content == "hello"
         assert lc_docs[0].metadata == {"k": "v"}
