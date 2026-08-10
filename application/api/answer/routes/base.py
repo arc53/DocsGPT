@@ -24,7 +24,10 @@ from application.core.settings import settings
 from application.error import sanitize_api_error
 from application.llm.llm_creator import LLMCreator
 from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.conversations import MessageUpdateOutcome
+from application.storage.db.repositories.conversations import (
+    HeartbeatState,
+    MessageUpdateOutcome,
+)
 from application.storage.db.repositories.token_usage import TokenUsageRepository
 from application.storage.db.repositories.user_logs import UserLogsRepository
 from application.storage.db.session import db_readonly, db_session
@@ -47,6 +50,15 @@ STREAM_HEARTBEAT_INTERVAL = 30
 # worst case for a 25-round tool loop, but finite, so a wedged-but-alive
 # stream still gets swept eventually.
 STREAM_HEARTBEAT_MAX_SECONDS = 3600
+
+
+class StreamSuperseded(Exception):
+    """Raised to unwind a stream whose message row was deleted mid-flight.
+
+    Not an error condition: the user replaced this turn (retry or edited
+    question) and `truncate_after` removed the row. Carries the message id
+    purely for logging.
+    """
 
 
 answer_ns = Namespace("answer", description="Answer related operations", path="/")
@@ -333,6 +345,9 @@ class BaseAnswerResource:
         # ``heartbeat_message`` only touches non-terminal rows, so stamping a
         # still-``pending`` row is safe and does NOT change its status.
         heartbeat_stop: Optional[threading.Event] = None
+        # Set by the heartbeat ticker when it finds the row gone. Checked by
+        # the emit loop, which is where the stream regains control.
+        stream_cancelled = threading.Event()
 
         def _mark_streaming_once() -> None:
             """Flip the reserved row ``pending → streaming`` exactly once.
@@ -400,6 +415,7 @@ class BaseAnswerResource:
             stop = threading.Event()
             message_id = reserved_message_id
             service = self.conversation_service
+            cancelled = stream_cancelled
 
             def _tick() -> None:
                 deadline = time.monotonic() + STREAM_HEARTBEAT_MAX_SECONDS
@@ -413,16 +429,39 @@ class BaseAnswerResource:
                         )
                         return
                     try:
-                        # Returns False once the row is terminal, which is the
-                        # natural stop signal for a reclaimed or finished row.
-                        if not service.heartbeat_message(message_id):
-                            return
+                        state = service.heartbeat_message_state(message_id)
                     except Exception:
                         # Swallowed deliberately: a transient DB blip must not
-                        # kill the stream. The reconciler is the backstop.
+                        # kill the stream, and must never be mistaken for the
+                        # row being gone. The reconciler is the backstop.
                         logger.exception(
                             "stream heartbeat update failed for %s", message_id,
                         )
+                        continue
+                    if state is HeartbeatState.MISSING:
+                        # The row was deleted mid-stream — a retry or an
+                        # edited question truncated this position away. Nothing
+                        # this stream produces can ever be read, so stop the
+                        # work instead of burning tool calls and LLM rounds
+                        # into a void. Production saw a superseded stream run
+                        # 4 further minutes and 12 further rounds.
+                        logger.info(
+                            "stream superseded: message row %s was deleted "
+                            "mid-stream; cancelling",
+                            message_id,
+                            extra={
+                                "alert": "stream_superseded",
+                                "message_id": message_id,
+                            },
+                        )
+                        cancelled.set()
+                        return
+                    if state is HeartbeatState.TERMINAL:
+                        # Row exists but is complete/failed — usually the
+                        # reconciler having swept it. Deliberately NOT
+                        # cancelled: if this stream finishes, finalize is
+                        # allowed to reclaim the row and land the real answer.
+                        return
 
             threading.Thread(
                 target=_tick,
@@ -557,6 +596,12 @@ class BaseAnswerResource:
             heartbeat_stop = _start_heartbeat_ticker()
 
             for line in gen_iter:
+                # The emit loop is where the stream regains control between
+                # rounds, so this is the cheapest place to honour a cancel.
+                # Bound: a stream sitting inside one long tool call emits
+                # nothing and is only cancelled when that call returns.
+                if stream_cancelled.is_set():
+                    raise StreamSuperseded(reserved_message_id or "")
                 if "metadata" in line:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
@@ -1251,6 +1296,26 @@ class BaseAnswerResource:
                         exc_info=True,
                     )
             raise
+        except StreamSuperseded as e:
+            # Deliberately ahead of the generic handler below: this is not a
+            # failure and must not be finalized as one. The row is gone, so
+            # there is nothing to write and nothing to journal (the writer has
+            # already latched on the same FK violation). The client that
+            # replaced this turn is watching a different stream.
+            logger.info(
+                "stream superseded mid-flight for message_id=%s after "
+                "%d chars; abandoning without persisting",
+                str(e),
+                len(response_full or ""),
+                extra={
+                    "alert": "stream_superseded",
+                    "message_id": str(e),
+                    "answer_length": len(response_full or ""),
+                },
+            )
+            if journal_writer is not None:
+                journal_writer.close()
+            return
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)
             if reserved_message_id is not None:

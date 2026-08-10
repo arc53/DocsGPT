@@ -45,6 +45,19 @@ class MessageUpdateOutcome(str, Enum):
     INVALID = "invalid"
 
 
+class HeartbeatState(str, Enum):
+    """What a liveness heartbeat found when it tried to stamp a row.
+
+    ``TERMINAL`` and ``MISSING`` both mean "not stamped", but they want
+    opposite handling: a terminal row may still be reclaimed by a finishing
+    stream, whereas a missing one can never be written again.
+    """
+
+    STAMPED = "stamped"
+    TERMINAL = "terminal"
+    MISSING = "missing"
+
+
 def _message_row_to_dict(row) -> dict:
     """Like ``row_to_dict`` but renames the DB column ``message_metadata``
     back to the public API key ``metadata`` so callers keep the Mongo-era
@@ -1059,34 +1072,67 @@ class ConversationsRepository:
         )
         return result.rowcount > 0
 
-    def heartbeat_message(self, message_id: str) -> bool:
-        """Stamp ``message_metadata.last_heartbeat_at`` with ``clock_timestamp()``.
+    def heartbeat_message_state(self, message_id: str) -> HeartbeatState:
+        """Stamp the liveness heartbeat and report what the row looks like.
 
-        The reconciler's staleness check uses ``GREATEST(timestamp,
-        last_heartbeat_at)``, so this call extends a long-running
-        stream's effective freshness without touching ``timestamp`` (the
-        creation time, used for history sort) or ``status`` (the WAL
-        marker). Skips terminal rows so a late heartbeat can't silently
-        retract a reconciler-set ``failed``.
+        One round trip, three outcomes. The distinction matters because the
+        two "not stamped" cases want opposite handling:
+
+        - ``MISSING`` — the row was deleted mid-stream (``truncate_after`` on
+          a retry/edit). Nothing this stream produces can ever be read, so the
+          caller should stop working.
+        - ``TERMINAL`` — the row exists but is ``complete``/``failed``,
+          typically because the reconciler swept it. The stream must NOT be
+          cancelled: if it finishes, ``finalize_message`` is allowed to reclaim
+          a reconciler-failed row and land the real answer.
+        - ``STAMPED`` — normal in-flight row, freshness extended.
+
+        The stamp deliberately avoids ``timestamp`` (creation time, used for
+        history sort) and ``status`` (the WAL marker), and skips terminal rows
+        so a late heartbeat can't retract a reconciler-set ``failed``.
+
+        Args:
+            message_id: UUID of the message row.
+
+        Returns:
+            HeartbeatState: What the row was at stamp time.
         """
         if not looks_like_uuid(message_id):
-            return False
-        result = self._conn.execute(
+            return HeartbeatState.MISSING
+        # Both CTEs read the same MVCC snapshot, so ``present`` describes the
+        # row as it was when the UPDATE ran — no follow-up SELECT needed.
+        row = self._conn.execute(
             text(
                 """
-                UPDATE conversation_messages
-                SET message_metadata = jsonb_set(
-                    COALESCE(message_metadata, '{}'::jsonb),
-                    '{last_heartbeat_at}',
-                    to_jsonb(clock_timestamp())
+                WITH stamped AS (
+                    UPDATE conversation_messages
+                    SET message_metadata = jsonb_set(
+                        COALESCE(message_metadata, '{}'::jsonb),
+                        '{last_heartbeat_at}',
+                        to_jsonb(clock_timestamp())
+                    )
+                    WHERE id = CAST(:id AS uuid)
+                      AND status NOT IN ('complete', 'failed')
+                    RETURNING 1 AS ok
                 )
-                WHERE id = CAST(:id AS uuid)
-                  AND status NOT IN ('complete', 'failed')
+                SELECT (SELECT ok FROM stamped) AS stamped,
+                       EXISTS(
+                           SELECT 1 FROM conversation_messages
+                           WHERE id = CAST(:id AS uuid)
+                       ) AS present
                 """
             ),
             {"id": message_id},
-        )
-        return result.rowcount > 0
+        ).fetchone()
+        if row is not None and row[0]:
+            return HeartbeatState.STAMPED
+        if row is not None and row[1]:
+            return HeartbeatState.TERMINAL
+        return HeartbeatState.MISSING
+
+    def heartbeat_message(self, message_id: str) -> bool:
+        """Stamp the heartbeat; True when an in-flight row was updated."""
+        return self.heartbeat_message_state(message_id) is HeartbeatState.STAMPED
 
     def confirm_executed_tool_calls(self, message_id: str) -> int:
         """Flip ``tool_call_attempts.status='executed' → 'confirmed'`` for the message."""

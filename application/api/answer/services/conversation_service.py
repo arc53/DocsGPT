@@ -18,6 +18,7 @@ from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.conversations import (
     ConversationsRepository,
+    HeartbeatState,
     MessageUpdateOutcome,
 )
 from application.storage.db.session import db_readonly, db_session
@@ -347,6 +348,22 @@ class ConversationService:
             return False
         with db_session() as conn:
             return ConversationsRepository(conn).heartbeat_message(message_id)
+
+    def heartbeat_message_state(self, message_id: str) -> HeartbeatState:
+        """Heartbeat, reporting whether the row is live, terminal, or gone.
+
+        Args:
+            message_id: UUID of the message row.
+
+        Returns:
+            HeartbeatState: What the row was at stamp time.
+        """
+        if not message_id:
+            return HeartbeatState.MISSING
+        with db_session() as conn:
+            return ConversationsRepository(conn).heartbeat_message_state(
+                message_id
+            )
 
     def finalize_message(
         self,
