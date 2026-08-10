@@ -65,7 +65,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.2",
     "@types/d3-force": "^3.0.10",
-    "@types/lodash": "^4.17.20",
+    "@types/lodash": "^4.17.25",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
