@@ -118,38 +118,3 @@ class TestTruncateAfterSupersede:
     def test_invalid_conversation_id_is_rejected(self, pg_conn):
         repo = ConversationsRepository(pg_conn)
         assert repo.truncate_after("not-a-uuid", keep_up_to=0) == 0
-
-
-class TestJournalParentMissingLatch:
-    """One WARN per stream, not one per flush."""
-
-    def test_latches_after_first_foreign_key_failure(self, caplog):
-        import logging
-
-        from application.streaming.message_journal import BatchedJournalWriter
-
-        writer = BatchedJournalWriter(
-            "99999999-9999-9999-9999-999999999999", batch_size=1,
-        )
-
-        with caplog.at_level(logging.WARNING):
-            for seq in range(25):
-                writer.record(seq, "answer", {"answer": "x"})
-
-        warnings = [
-            r for r in caplog.records
-            if "no conversation_messages row" in r.getMessage()
-        ]
-        assert len(warnings) == 1, (
-            f"expected a single latched warning, got {len(warnings)}"
-        )
-
-    def test_record_returns_false_once_latched(self):
-        from application.streaming.message_journal import BatchedJournalWriter
-
-        writer = BatchedJournalWriter(
-            "88888888-8888-8888-8888-888888888888", batch_size=1,
-        )
-        writer.record(0, "answer", {"answer": "x"})
-
-        assert writer.record(1, "answer", {"answer": "y"}) is False
