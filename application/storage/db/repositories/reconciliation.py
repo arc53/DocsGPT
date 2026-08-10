@@ -14,7 +14,8 @@ class ReconciliationRepository:
         self._conn = conn
 
     def find_and_lock_stuck_messages(
-        self, *, age_minutes: int = 5, limit: int = 100,
+        self, *, age_minutes: int = 5, tool_grace_minutes: int = 15,
+        limit: int = 100,
     ) -> list[dict]:
         """Lock stuck pending/streaming messages skipping live resumes.
 
@@ -27,6 +28,33 @@ class ReconciliationRepository:
         waiting for resume) and ``resuming`` (actively executing)
         ``pending_tool_state`` rows so a paused message survives until
         the PT row's own TTL retires it.
+
+        A second exemption covers **server-executed** tools.
+        ``pending_tool_state`` is only written on the pause path (client-side
+        tools, approval gates), so an agent grinding through
+        ``google_search``/``read_webpage``/``code_executor`` rounds has no PT
+        row and was swept as "stuck" while perfectly healthy. A message with a
+        ``proposed``/``executed`` ``tool_call_attempts`` row that transitioned
+        within ``tool_grace_minutes`` is therefore also exempt. This is
+        deliberately redundant with the stream's timed heartbeat: that write
+        shares the app's connection pool, so pool pressure is exactly the
+        moment liveness should not depend on it, whereas these rows were
+        committed earlier by a different code path.
+
+        Note the coupling — the ``proposed`` (5 min) and ``executed`` (15 min)
+        sweeps below both flip rows to ``failed``, which drops them out of this
+        exemption. That is intentional (a genuinely dead stream's exemption
+        expires rather than lasting forever), but it means shortening either
+        sweep silently shortens this grace too.
+
+        Args:
+            age_minutes: Staleness threshold for the message row.
+            tool_grace_minutes: How recently a tool call must have transitioned
+                for its message to count as live.
+            limit: Maximum rows to lock per tick.
+
+        Returns:
+            The locked rows as dicts.
         """
         result = self._conn.execute(
             text(
@@ -54,12 +82,24 @@ class ReconciliationRepository:
                                  > now() - interval '10 minutes')
                         )
                   )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM tool_call_attempts tca
+                      WHERE tca.message_id = cm.id
+                        AND tca.status IN ('proposed', 'executed')
+                        AND tca.updated_at
+                            > now() - make_interval(mins => :tool_grace)
+                  )
                 ORDER BY cm.timestamp ASC
                 LIMIT :limit
                 FOR UPDATE OF cm SKIP LOCKED
                 """
             ),
-            {"age": age_minutes, "limit": limit},
+            {
+                "age": age_minutes,
+                "tool_grace": tool_grace_minutes,
+                "limit": limit,
+            },
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
@@ -149,21 +189,60 @@ class ReconciliationRepository:
         return result.rowcount > 0
 
     def increment_message_reconcile_attempts(self, message_id: str) -> int:
-        """Bump ``message_metadata.reconcile_attempts`` and return the new count."""
+        """Bump ``reconcile_attempts``, resetting it if the row proved alive.
+
+        The counter means *consecutive* stale ticks, not a lifetime total. It
+        used to be a pure accumulator, so a long tool loop that stalled, then
+        recovered, then stalled again died on its second stall — with a
+        counter whose name lied about what it counted. Each tick records the
+        ``last_heartbeat_at`` it observed; if the heartbeat has advanced since
+        the previous tick, the stream demonstrably produced life in between
+        and the count restarts at 1.
+
+        This also absorbs a race the timed heartbeat introduces: the
+        reconciler can lock a row microseconds before the ticker's stamp
+        commits, and without the reset that phantom attempt would be
+        permanent.
+
+        Safe against masking a dead stream: ``last_heartbeat_at`` is only ever
+        written by ``heartbeat_message``, which runs in the process producing
+        the stream. A dead producer cannot advance it, so the reset condition
+        can never be met and escalation proceeds unchanged.
+
+        Args:
+            message_id: The message row to bump.
+
+        Returns:
+            The new consecutive-stale-tick count.
+        """
         result = self._conn.execute(
             text(
                 """
                 UPDATE conversation_messages
-                SET message_metadata = jsonb_set(
-                    COALESCE(message_metadata, '{}'::jsonb),
-                    '{reconcile_attempts}',
-                    to_jsonb(
+                SET message_metadata =
+                    jsonb_set(
+                        jsonb_set(
+                            COALESCE(message_metadata, '{}'::jsonb),
+                            '{reconcile_attempts}',
+                            to_jsonb(
+                                CASE
+                                    WHEN message_metadata->>'last_heartbeat_at'
+                                         IS DISTINCT FROM
+                                         message_metadata->>'last_reconcile_seen_heartbeat'
+                                    THEN 1
+                                    ELSE COALESCE(
+                                        (message_metadata->>'reconcile_attempts')::int,
+                                        0
+                                    ) + 1
+                                END
+                            )
+                        ),
+                        '{last_reconcile_seen_heartbeat}',
                         COALESCE(
-                            (message_metadata->>'reconcile_attempts')::int,
-                            0
-                        ) + 1
+                            message_metadata->'last_heartbeat_at',
+                            'null'::jsonb
+                        )
                     )
-                )
                 WHERE id = CAST(:message_id AS uuid)
                 RETURNING (message_metadata->>'reconcile_attempts')::int
                          AS new_count
@@ -190,6 +269,35 @@ class ReconciliationRepository:
                 """
             ),
             {"message_id": message_id, "error": error},
+        )
+        return result.rowcount > 0
+
+    def mark_message_approval_cleared(self, message_id: str) -> bool:
+        """Record that this sweep also revoked an awaiting-approval prompt.
+
+        Read by ``finalize_message``'s reclaim path, which refuses to revive a
+        row whose ``pending_tool_state`` the reconciler already deleted and
+        whose ``tool.approval.cleared`` event has already been published.
+
+        Args:
+            message_id: The message row to stamp.
+
+        Returns:
+            True when the row was stamped.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE conversation_messages
+                SET message_metadata = jsonb_set(
+                    COALESCE(message_metadata, '{}'::jsonb),
+                    '{reconciler_cleared_approval}',
+                    'true'::jsonb
+                )
+                WHERE id = CAST(:message_id AS uuid)
+                """
+            ),
+            {"message_id": message_id},
         )
         return result.rowcount > 0
 

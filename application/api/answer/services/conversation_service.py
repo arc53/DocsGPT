@@ -402,11 +402,20 @@ class ConversationService:
         # Atomic message update + tool_call_attempts confirm; the
         # ``only_if_non_terminal`` guard prevents a late stream from
         # retracting a row the reconciler already escalated.
+        #
+        # Exception: a *successful* finalize is allowed to reclaim a row the
+        # reconciler failed for staleness. A stream that reaches this point
+        # with an answer was self-evidently not stuck, so refusing it throws
+        # away real output and leaves the user staring at "Response was
+        # terminated prior to completion". Only on success — a late failure
+        # must never overwrite the reconciler's failure with a different one.
+        reclaim = status == "complete"
         with db_session() as conn:
             repo = ConversationsRepository(conn)
             outcome = repo.update_message_by_id(
                 message_id, update_fields,
                 only_if_non_terminal=True,
+                reclaim_reconciler_failed=reclaim,
             )
             if outcome is not MessageUpdateOutcome.UPDATED:
                 logger.warning(

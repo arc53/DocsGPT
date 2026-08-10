@@ -86,6 +86,13 @@ def run_reconciliation() -> Dict[str, Any]:
                     and conversation_id
                     and pt_repo.delete_state(str(conversation_id), str(user_id))
                 ):
+                    # Mark the row as having had its approval revoked. A late
+                    # finalize is allowed to reclaim a reconciler-failed row
+                    # (see ``finalize_message``), but must not reclaim this
+                    # one: the resumable state is gone and the UI has already
+                    # been told the approval was cleared, so landing an answer
+                    # here would contradict what the user was shown.
+                    repo.mark_message_approval_cleared(msg["id"])
                     events.append(
                         (
                             str(user_id),

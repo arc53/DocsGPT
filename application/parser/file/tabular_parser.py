@@ -3,10 +3,61 @@
 Contains parsers for tabular data files.
 
 """
+import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
 from application.parser.file.base_parser import BaseParser
+
+
+def cell_to_text(value: Any) -> str:
+    """Render one spreadsheet/CSV cell as text that is always safe to join.
+
+    ``Series.astype(str)`` cannot be trusted for this. Up to pandas 2.x it
+    rendered missing values as the string ``"nan"``; pandas 3.0 *preserves*
+    them, so ``.tolist()`` hands back Python ``float`` NaNs and ``str.join``
+    raises ``TypeError: sequence item N: expected str instance, float found``.
+    A single blank cell anywhere in a sheet was therefore enough to destroy
+    an entire upload.
+
+    Missing values (blank cells, ``NaT``, Excel error values, and formulas
+    with no cached result) become the empty string. Dates and times are
+    rendered ISO-8601 rather than pandas' repr. Integral floats drop the
+    ``.0`` that pandas adds when a blank upcasts an integer column — an ID
+    column with one gap otherwise turns every id into ``1001.0``. NUL bytes
+    are stripped here because they crash the downstream Postgres text write.
+
+    Args:
+        value: A single cell value, of any type pandas or openpyxl may yield.
+
+    Returns:
+        str: The cell rendered as text; ``""`` for missing values.
+    """
+    if value is None:
+        return ""
+    # NaN is the only float that is not equal to itself. Checked before the
+    # pandas call because it is by far the common case and needs no import.
+    if isinstance(value, float) and value != value:
+        return ""
+    try:
+        import pandas as pd
+
+        # Raises on array-like cells, which are legitimate values, not NA.
+        if pd.isna(value):
+            return ""
+    except (ImportError, TypeError, ValueError):
+        pass
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    text = str(value)
+    return text.replace("\x00", "") if "\x00" in text else text
+
+
+def _row_to_texts(row: Any) -> List[str]:
+    """Render a pandas row as a list of join-safe strings."""
+    return [cell_to_text(v) for v in row.tolist()]
 
 
 class CSVParser(BaseParser):
@@ -114,22 +165,22 @@ class PandasCSVParser(BaseParser):
             raise ValueError("pandas module is required to read CSV files.")
 
         df = pd.read_csv(file, **self._pandas_config)
-        headers = df.columns.tolist()
+        headers = [cell_to_text(h) for h in df.columns.tolist()]
         header_row = f"{self._header_prefix}{self._col_joiner.join(headers)}"
 
         if not self._concat_rows:
             return df.apply(
-                lambda row: (self._col_joiner).join(row.astype(str).tolist()), axis=1
+                lambda row: (self._col_joiner).join(_row_to_texts(row)), axis=1
             ).tolist()
-        
+
         text_list = []
         if self._header_period != 1:
             text_list.append(header_row)
-        
+
         for i, row in df.iterrows():
             if (self._header_period > 1 and i > 0 and i % self._header_period == 0):
                 text_list.append(header_row)
-            text_list.append(self._col_joiner.join(row.astype(str).tolist()))
+            text_list.append(self._col_joiner.join(_row_to_texts(row)))
             if self._header_period == 1 and i < len(df) - 1:
                 text_list.append(header_row)
 
@@ -200,14 +251,14 @@ class ExcelParser(BaseParser):
             raise ValueError("pandas module is required to read Excel files.")
 
         df = pd.read_excel(file, **self._pandas_config)
-        headers = [str(h) for h in df.columns.tolist()]
+        headers = [cell_to_text(h) for h in df.columns.tolist()]
         header_row = f"{self._header_prefix}{self._col_joiner.join(headers)}"
-        
+
         if not self._concat_rows:
             return df.apply(
-                lambda row: (self._col_joiner).join(row.astype(str).tolist()), axis=1
+                lambda row: (self._col_joiner).join(_row_to_texts(row)), axis=1
             ).tolist()
-        
+
         text_list = []
         if self._header_period != 1:
             text_list.append(header_row)
@@ -215,7 +266,7 @@ class ExcelParser(BaseParser):
         for i, row in df.iterrows():
             if (self._header_period > 1 and i > 0 and i % self._header_period == 0):
                 text_list.append(header_row)
-            text_list.append(self._col_joiner.join(row.astype(str).tolist()))
+            text_list.append(self._col_joiner.join(_row_to_texts(row)))
             if self._header_period == 1 and i < len(df) - 1:
                 text_list.append(header_row)
         return self._row_joiner.join(text_list)

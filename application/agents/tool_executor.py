@@ -1,8 +1,10 @@
 import logging
 import re
 import uuid
-from collections import Counter
+from collections import Counter, OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
+
+from sqlalchemy.exc import IntegrityError
 
 from application.agents.default_tools import (
     is_headless_excluded_tool,
@@ -22,6 +24,16 @@ from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
+
+
+def _is_foreign_key_violation(exc: BaseException) -> bool:
+    """Whether ``exc`` is a Postgres FK violation (SQLSTATE 23503)."""
+    if not isinstance(exc, IntegrityError):
+        return False
+    pgcode = getattr(getattr(exc, "orig", None), "sqlstate", None) or getattr(
+        getattr(exc, "orig", None), "pgcode", None
+    )
+    return pgcode == "23503"
 
 
 # Tightest provider limit on function-call names (OpenAI: ^[a-zA-Z0-9_-]{1,64}$).
@@ -122,6 +134,41 @@ def _redact_args_for_log(args: Any) -> Any:
     return redacted
 
 
+# ``message_id``s whose ``conversation_messages`` parent has been found
+# missing. Every tool-call journal write for such a message FK-fails
+# identically, and a long tool loop produces one ERROR *pair* per call — 60
+# ERRORs from a single stream in production, the whole api-tier error volume
+# for that day. Latch the first failure and log the rest at debug.
+# Bounded so a long-lived worker cannot grow this without limit.
+_MISSING_PARENTS: "OrderedDict[str, None]" = OrderedDict()
+_MISSING_PARENTS_MAX = 256
+
+
+def _is_missing_parent(message_id: Optional[str]) -> bool:
+    return bool(message_id) and message_id in _MISSING_PARENTS
+
+
+def _note_missing_parent(message_id: Optional[str], exc: BaseException) -> bool:
+    """Record a FK failure against ``message_id``. True if newly latched.
+
+    Args:
+        message_id: The message the write was scoped to, if any.
+        exc: The exception raised by the write.
+
+    Returns:
+        True when this is the first sighting for the message (so the caller
+        should log loudly), False when already latched or not a FK error.
+    """
+    if not message_id or not _is_foreign_key_violation(exc):
+        return False
+    if message_id in _MISSING_PARENTS:
+        return False
+    _MISSING_PARENTS[message_id] = None
+    while len(_MISSING_PARENTS) > _MISSING_PARENTS_MAX:
+        _MISSING_PARENTS.popitem(last=False)
+    return True
+
+
 def _journal_key(call_id: str, message_id: Optional[str]) -> str:
     """Namespace the durability-journal key by the per-turn ``message_id``.
 
@@ -177,8 +224,26 @@ def _record_proposed(
                 extra={"alert": "tool_call_id_collision", "call_id": call_id},
             )
         return inserted
-    except Exception:
-        logger.exception("tool_call_attempts proposed write failed for %s", call_id)
+    except Exception as exc:
+        if _note_missing_parent(message_id, exc):
+            logger.warning(
+                "tool_call_attempts: parent message row %s is gone "
+                "(deleted mid-stream); suppressing further journal errors "
+                "for this message. First failing call: %s",
+                message_id,
+                call_id,
+            )
+        elif _is_missing_parent(message_id):
+            logger.debug(
+                "tool_call_attempts proposed write skipped for %s "
+                "(parent %s already known missing)",
+                call_id,
+                message_id,
+            )
+        else:
+            logger.exception(
+                "tool_call_attempts proposed write failed for %s", call_id
+            )
         return False
 
 
@@ -229,8 +294,18 @@ def _mark_executed(
                 user_id=user_id,
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),
             )
-    except Exception:
-        logger.exception("tool_call_attempts executed write failed for %s", call_id)
+    except Exception as exc:
+        if _note_missing_parent(message_id, exc) or _is_missing_parent(message_id):
+            logger.debug(
+                "tool_call_attempts executed write skipped for %s "
+                "(parent %s gone)",
+                call_id,
+                message_id,
+            )
+        else:
+            logger.exception(
+                "tool_call_attempts executed write failed for %s", call_id
+            )
 
 
 def _mark_failed(
