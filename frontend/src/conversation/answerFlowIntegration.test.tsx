@@ -7,6 +7,7 @@ import en from '../locale/en.json';
 import AnswerFlow from './AnswerFlow';
 import reducer, {
   addQuery,
+  applyMessageTail,
   setStatus,
   updateStreamingQuery,
   updateThought,
@@ -91,5 +92,57 @@ describe('stream reducers feeding the answer flow', () => {
     expect(html.indexOf('Searched the web')).toBeLessThan(
       html.indexOf('DocsGPT rocks.'),
     );
+  });
+
+  // Reopening the streaming conversation polls /tail alongside the live SSE, so
+  // the flat snapshot lands between two deltas.
+  it('keeps every step visible when a tail snapshot interleaves with the stream', () => {
+    const at = { index: 0, conversationId: null };
+    let state = reducer(undefined, addQuery({ prompt: 'hi' }));
+    state = reducer(state, setStatus('loading'));
+    state = reducer(
+      state,
+      updateThought({ ...at, query: { thought: 'I should search.' } }),
+    );
+    state = reducer(
+      state,
+      updateToolCall({ ...at, tool_call: searchCall('completed') }),
+    );
+    state = reducer(
+      state,
+      applyMessageTail({
+        index: 0,
+        tail: {
+          status: 'pending',
+          thought: 'I should search.',
+          tool_calls: [searchCall('completed')],
+        },
+      }),
+    );
+    // A second call arrives after the tail; it must not become the whole order.
+    state = reducer(
+      state,
+      updateToolCall({
+        ...at,
+        tool_call: { ...searchCall('completed'), call_id: 'c2' },
+      }),
+    );
+
+    const query = state.queries[0];
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <AnswerFlow
+          thought={query.thought}
+          toolCalls={query.tool_calls}
+          segments={query.segments}
+          isStreaming
+          renderApproval={() => null}
+          renderWikiWrite={() => null}
+        />
+      </I18nextProvider>,
+    );
+
+    expect(html).toContain('I should search.');
+    expect(html.split('Searched the web').length - 1).toBe(2);
   });
 });

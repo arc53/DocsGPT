@@ -33,6 +33,7 @@ const render = (props: {
   toolCalls?: ToolCallsType[];
   segments?: AnswerSegment[];
   isStreaming?: boolean;
+  suppressStatusLine?: boolean;
 }): string =>
   renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
@@ -139,5 +140,83 @@ describe('AnswerFlow', () => {
     });
     expect(html).toContain('Searching the web');
     expect(html).not.toContain('fade-in-bubble');
+  });
+});
+
+describe('AnswerFlow activity indicator', () => {
+  const thoughtThenCall: AnswerSegment[] = [
+    { kind: 'thought', text: 'reasoning here' },
+    { kind: 'tool', call_id: 'c1' },
+  ];
+
+  it('shows the status line once every step has settled', () => {
+    const html = render({
+      thought: 'reasoning here',
+      toolCalls: [search()],
+      segments: thoughtThenCall,
+      isStreaming: true,
+    });
+    expect(html).toContain('Thinking…');
+  });
+
+  it('leaves the status line out while a call is still running', () => {
+    const html = render({
+      thought: 'reasoning here',
+      toolCalls: [search({ status: 'pending' })],
+      segments: thoughtThenCall,
+      isStreaming: true,
+    });
+    expect(html).not.toContain('Thinking…');
+    expect(html).toContain('Searching the web');
+  });
+
+  it('leaves the status line out while reasoning is the live step', () => {
+    const html = render({
+      thought: 'reasoning here',
+      segments: [{ kind: 'thought', text: 'reasoning here' }],
+      isStreaming: true,
+    });
+    expect(html).not.toContain('Thinking…');
+    expect(html).toContain('shimmer-text');
+  });
+
+  it('says it is generating once answer text has started', () => {
+    const html = render({
+      message: 'the answer',
+      thought: 'reasoning here',
+      toolCalls: [search()],
+      segments: thoughtThenCall,
+      isStreaming: true,
+    });
+    expect(html).toContain('Generating…');
+  });
+
+  it('stays quiet when the answer is no longer streaming', () => {
+    const html = render({
+      thought: 'reasoning here',
+      toolCalls: [search()],
+      segments: thoughtThenCall,
+    });
+    expect(html).not.toContain('Thinking…');
+  });
+
+  it('defers to a run that already shows its own progress', () => {
+    const html = render({
+      toolCalls: [search()],
+      segments: [{ kind: 'tool', call_id: 'c1' }],
+      isStreaming: true,
+      suppressStatusLine: true,
+    });
+    expect(html).not.toContain('Thinking…');
+  });
+
+  it('treats a call handed to the client as still running', () => {
+    const html = render({
+      toolCalls: [search({ status: 'requires_client_execution' })],
+      segments: [{ kind: 'tool', call_id: 'c1' }],
+      isStreaming: true,
+    });
+    expect(html).not.toContain('Thinking…');
+    expect(html).toContain('Searching the web');
   });
 });

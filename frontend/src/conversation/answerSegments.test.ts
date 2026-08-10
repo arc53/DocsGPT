@@ -87,13 +87,77 @@ describe('synthesizeSegments / getAnswerSegments', () => {
   });
 
   it('prefers live steps when present', () => {
-    const live: AnswerSegment[] = [{ kind: 'thought', text: 'live' }];
-    expect(getAnswerSegments({ thought: 'flat', segments: live })).toBe(live);
+    const live: AnswerSegment[] = [
+      { kind: 'thought', text: 'live' },
+      { kind: 'tool', call_id: 'c1' },
+    ];
+    expect(
+      getAnswerSegments({
+        thought: 'live',
+        tool_calls: [call({ call_id: 'c1' })],
+        segments: live,
+      }),
+    ).toBe(live);
   });
 
   it('falls back when steps were cleared by a tail snapshot', () => {
     expect(getAnswerSegments({ thought: 'flat', segments: [] })).toEqual([
       { kind: 'thought', text: 'flat' },
     ]);
+  });
+
+  it('falls back when the order misses a call the answer holds', () => {
+    expect(
+      getAnswerSegments({
+        thought: 'reasoning',
+        tool_calls: [call({ call_id: 'c1' }), call({ call_id: 'c2' })],
+        segments: [{ kind: 'tool', call_id: 'c2' }],
+      }),
+    ).toEqual([
+      { kind: 'thought', text: 'reasoning' },
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'tool', call_id: 'c2' },
+    ]);
+  });
+
+  it('falls back when the order misses reasoning the answer holds', () => {
+    expect(
+      getAnswerSegments({
+        thought: 'full reasoning',
+        tool_calls: [call({ call_id: 'c1' })],
+        segments: [
+          { kind: 'tool', call_id: 'c1' },
+          { kind: 'thought', text: 'reasoning' },
+        ],
+      }),
+    ).toEqual([
+      { kind: 'thought', text: 'full reasoning' },
+      { kind: 'tool', call_id: 'c1' },
+    ]);
+  });
+
+  it('keeps the live order when reasoning arrived in several pieces', () => {
+    const live: AnswerSegment[] = [
+      { kind: 'thought', text: 'plan' },
+      { kind: 'tool', call_id: 'c1' },
+      { kind: 'thought', text: 'verify' },
+    ];
+    expect(
+      getAnswerSegments({
+        thought: 'planverify',
+        tool_calls: [call({ call_id: 'c1' })],
+        segments: live,
+      }),
+    ).toBe(live);
+  });
+
+  it('does not fall back for a call the backend left without an id', () => {
+    const live: AnswerSegment[] = [{ kind: 'tool', call_id: 'c1' }];
+    expect(
+      getAnswerSegments({
+        tool_calls: [call({ call_id: 'c1' }), call({ call_id: '' })],
+        segments: live,
+      }),
+    ).toBe(live);
   });
 });

@@ -45,10 +45,38 @@ export function synthesizeSegments(query: {
   return segments;
 }
 
+/**
+ * Whether the recorded order still accounts for every part of the answer. A
+ * call with no id can never be recorded, so it never counts against the order.
+ */
+function coversAnswer(
+  query: { thought?: string; tool_calls?: ToolCallsType[] },
+  segments: AnswerSegment[],
+): boolean {
+  const ordered = new Set(
+    segments.flatMap((segment) =>
+      segment.kind === 'tool' ? [segment.call_id] : [],
+    ),
+  );
+  const everyCallOrdered = (query.tool_calls ?? []).every(
+    (call) => !call.call_id || ordered.has(call.call_id),
+  );
+  const orderedThought = segments
+    .flatMap((segment) => (segment.kind === 'thought' ? [segment.text] : []))
+    .join('');
+  return everyCallOrdered && orderedThought === (query.thought ?? '');
+}
+
 export function getAnswerSegments(query: {
   thought?: string;
   tool_calls?: ToolCallsType[];
   segments?: AnswerSegment[];
 }): AnswerSegment[] {
-  return query.segments?.length ? query.segments : synthesizeSegments(query);
+  // The order only arranges what ``thought``/``tool_calls`` already hold, so one
+  // that no longer accounts for them (a tail snapshot landed mid-stream, a
+  // reconnect replayed part of it) loses to synthesis rather than hiding the
+  // steps it never recorded.
+  if (query.segments?.length && coversAnswer(query, query.segments))
+    return query.segments;
+  return synthesizeSegments(query);
 }

@@ -1,12 +1,12 @@
 import 'katex/dist/katex.min.css';
 
+import { Pencil } from 'lucide-react';
 import { forwardRef, Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
 import ChevronDown from '../assets/chevron-down.svg';
-import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
 import DocumentationDark from '../assets/documentation-dark.svg';
@@ -14,7 +14,6 @@ import Edit from '../assets/edit.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
-import UserIcon from '../assets/user.svg';
 import CopyButton from '../components/CopyButton';
 
 import { Avatar } from '../components/ui/avatar';
@@ -22,18 +21,18 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Sheet, SheetContent } from '../components/ui/sheet';
 import SpeakButton from '../components/TextToSpeechButton';
-import { useDarkTheme, useOutsideAlerter } from '../hooks';
+import { useOutsideAlerter } from '../hooks';
 import {
   selectChunks,
   selectSelectedDocs,
   selectToken,
 } from '../preferences/preferenceSlice';
+import { isToolCallRunning } from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
 import { AnswerSegment } from './answerSegments';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import MarkdownAnswer from './MarkdownAnswer';
 import ResearchProgress from './ResearchProgress';
-import StreamingStatusLine from './StreamingStatusLine';
 import { ToolCallsType } from './types';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
@@ -99,7 +98,6 @@ const ConversationBubble = forwardRef<
   ref,
 ) {
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -112,11 +110,6 @@ const ConversationBubble = forwardRef<
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
-
-  // These already shimmer in place above; the status line would say it twice.
-  const hasLiveInlineStep =
-    (toolCalls ?? []).some((call) => call.status === 'pending') ||
-    Boolean(thought && !message);
 
   const formatToolName = (toolName: string | undefined): string => {
     if (!toolName) return '';
@@ -173,7 +166,7 @@ const ConversationBubble = forwardRef<
       <div className={`group ${className}`}>
         <div className="flex flex-col items-end">
           {filesAttached && filesAttached.length > 0 && (
-            <div className="mr-12 mb-4 flex flex-wrap justify-end gap-2">
+            <div className="mr-5 mb-4 flex flex-wrap justify-end gap-2">
               {filesAttached.map((file, index) => (
                 <div
                   key={index}
@@ -198,12 +191,11 @@ const ConversationBubble = forwardRef<
             ref={ref}
             className={`flex flex-row-reverse justify-items-start`}
           >
-            <Avatar className="mt-2 shrink-0 text-2xl">
-              <img className="mr-1 rounded-full" width={30} src={UserIcon} />
-            </Avatar>
             {!isEditClicked && (
               <>
-                <div className="relative mr-2 flex w-full min-w-0 flex-col">
+                {/* ``mr-3`` plus the pill's own ``mr-2`` puts the question's
+                    right edge on the answer's ``mr-5`` gutter. */}
+                <div className="relative mr-3 flex w-full min-w-0 flex-col">
                   <div className="mr-2 ml-2 flex max-w-full min-w-0 items-start gap-2 rounded-3xl bg-linear-to-b from-violet-500 to-violet-600 px-5 py-4 text-sm leading-normal wrap-anywhere whitespace-pre-wrap text-white sm:text-base">
                     <div
                       ref={messageRef}
@@ -295,60 +287,6 @@ const ConversationBubble = forwardRef<
       </div>
     );
   } else {
-    const preprocessLaTeX = (content: string) => {
-      // Replace block-level LaTeX delimiters \[ \] with $$ $$
-      const blockProcessedContent = content.replace(
-        /\\\[(.*?)\\\]/gs,
-        (_, equation) => `$$${equation}$$`,
-      );
-
-      // Replace inline LaTeX delimiters \( \) with $ $
-      const inlineProcessedContent = blockProcessedContent.replace(
-        /\\\((.*?)\\\)/gs,
-        (_, equation) => `$${equation}$`,
-      );
-
-      return inlineProcessedContent;
-    };
-    const processMarkdownContent = (content: string) => {
-      let processedContent = preprocessLaTeX(content);
-
-      // Convert citation references [N] into markdown links [N](#cite-N)
-      // so ReactMarkdown renders them as <a> tags we can style.
-      // Avoid matching inside code blocks or existing links.
-      processedContent = processedContent.replace(
-        /(?<!\[)\[(\d+)\](?!\()/g,
-        (_, num) => `[${num}](#cite-${num})`,
-      );
-
-      const contentSegments: Array<{
-        type: 'text' | 'mermaid';
-        content: string;
-      }> = [];
-
-      let lastIndex = 0;
-      const regex = /```mermaid\n([\s\S]*?)```/g;
-      let match;
-
-      while ((match = regex.exec(processedContent)) !== null) {
-        const textBefore = processedContent.substring(lastIndex, match.index);
-        if (textBefore) {
-          contentSegments.push({ type: 'text', content: textBefore });
-        }
-
-        contentSegments.push({ type: 'mermaid', content: match[1].trim() });
-
-        lastIndex = match.index + match[0].length;
-      }
-
-      const textAfter = processedContent.substring(lastIndex);
-      if (textAfter) {
-        contentSegments.push({ type: 'text', content: textAfter });
-      }
-
-      return contentSegments;
-    };
-
     bubble = (
       <div
         ref={ref}
@@ -360,8 +298,10 @@ const ConversationBubble = forwardRef<
         sources?.some((source) => source.link === 'None')
           ? null
           : sources && (
-              <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
-                <div className="my-2 flex flex-row items-center justify-center gap-3">
+              // Stretched, not shrink-to-fit: the grid below sizes off this box,
+              // so a fit-content parent would leave its width to the cards.
+              <div className="mb-4 flex w-full flex-col flex-wrap items-start self-stretch lg:flex-nowrap">
+                <div className="my-2 ml-6 flex flex-row items-center justify-center gap-3">
                   <Avatar
                     src={Sources}
                     alt={t('conversation.sources.title')}
@@ -372,7 +312,9 @@ const ConversationBubble = forwardRef<
                     {t('conversation.sources.title')}
                   </p>
                 </div>
-                <div className="fade-in mr-5 ml-3 w-full">
+                {/* Width comes from the stretched parent minus these margins;
+                    w-full here would be the column width plus them. */}
+                <div className="fade-in mr-5 ml-6">
                   <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     {sources?.slice(0, 3)?.map((source, index) => (
                       <div
@@ -454,7 +396,7 @@ const ConversationBubble = forwardRef<
             )}
         {research && <ResearchProgress research={research} />}
         {!message && onOpenArtifact && completedArtifacts.length > 0 && (
-          <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
+          <div className="my-2 ml-6 flex flex-wrap justify-start gap-2">
             {completedArtifacts.map((artifact, artifactIndex) => (
               <Button
                 key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
@@ -494,7 +436,7 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         {workflowRunId && (
-          <div className="my-2 mr-5 ml-2">
+          <div className="my-2 mr-5 ml-6">
             <WorkflowRunArtifacts
               workflowRunId={workflowRunId}
               inProgress={isStreaming}
@@ -504,17 +446,6 @@ const ConversationBubble = forwardRef<
         {type === 'ERROR' ? (
           message && (
             <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-              <div className="my-2 flex flex-row items-center justify-center gap-3">
-                <Avatar
-                  src={DocsGPT3}
-                  alt={t('conversation.answer')}
-                  className="h-8.5 w-8.5 text-2xl"
-                  imgClassName="h-full w-full object-cover"
-                />
-                <p className="text-base font-semibold">
-                  {t('conversation.answer')}
-                </p>
-              </div>
               <div className="fade-in-bubble text-destructive/80 dark:border-destructive dark:bg-destructive/15 relative mr-5 flex max-w-full flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 px-6 py-5 text-sm font-normal dark:text-white">
                 <MarkdownAnswer content={message} isStreaming={isStreaming} />
               </div>
@@ -528,32 +459,26 @@ const ConversationBubble = forwardRef<
             segments={segments}
             isStreaming={isStreaming}
             agentId={agentId}
+            // A research run already narrates itself above; the status line
+            // would be a second live indicator away from the point of action.
+            suppressStatusLine={Boolean(research)}
             renderApproval={(toolCall: ToolCallsType) => (
-              <div className="fade-in mt-4 w-full">
+              <div className="fade-in mt-4 mr-5 ml-6">
                 <ToolCallApprovalBar
                   toolCall={toolCall}
                   onToolAction={onToolAction}
                 />
               </div>
             )}
-            renderWikiWrite={(toolCall: ToolCallsType) => (
-              <div className="fade-in mt-4 w-full">
-                <WikiWriteToolCallCard toolCall={toolCall} />
-              </div>
+            renderWikiWrite={(toolCall: ToolCallsType, isLive: boolean) => (
+              <WikiWriteToolCallCard toolCall={toolCall} isLive={isLive} />
             )}
           />
         )}
-        {/* Only when nothing inline is already showing the activity: a live
-            reasoning or tool segment carries its own shimmer, so this would be
-            a second indicator away from the point of action. */}
-        {isStreaming && !hasLiveInlineStep && (
-          <StreamingStatusLine
-            hasAnswerText={Boolean(message)}
-            className="my-2 ml-3"
-          />
-        )}
         {message && (
-          <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
+          // ml-4 plus each button's own p-2 puts the first glyph on the answer's
+          // ml-6 text column.
+          <div className="my-2 ml-4 flex flex-wrap justify-start gap-2">
             {type === 'ERROR' ? (
               <div className="relative block items-center justify-center">
                 <div>{retryBtn}</div>
@@ -937,39 +862,48 @@ function ToolCallApprovalBar({
   );
 }
 
+/** The wiki-write step, in the same inline chip language as the other steps. */
 export function WikiWriteToolCallCard({
   toolCall,
+  isLive,
 }: {
   toolCall: ToolCallsType;
+  isLive?: boolean;
 }) {
   const { t } = useTranslation();
   const path = wikiWritePath(toolCall);
   const actionKey = wikiWriteActionKey(toolCall.action_name);
   const isError = toolCall.status === 'error';
+  const namespace = isToolCallRunning(toolCall)
+    ? 'wikiWrite.active'
+    : 'wikiWrite';
+  const label = t(`conversation.${namespace}.${actionKey}`, {
+    defaultValue: t(`conversation.${namespace}.edited`),
+  });
 
   return (
-    <div
-      className={`flex items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-sm ${
-        isError
-          ? 'border-destructive/40 bg-destructive/5'
-          : 'border-primary/30 bg-primary/5 dark:bg-primary/10'
-      }`}
-    >
-      <span aria-hidden="true" className="text-base leading-none">
-        ✏️
-      </span>
-      <span className="text-foreground font-medium">
-        {t(`conversation.wikiWrite.${actionKey}`, {
-          defaultValue: t('conversation.wikiWrite.edited'),
-        })}
+    <div className="my-2 mr-5 ml-6 flex min-w-0 items-center gap-2 py-1.5 text-sm">
+      <Pencil
+        aria-hidden
+        className={`text-muted-foreground h-4 w-4 shrink-0 ${
+          isLive ? 'animate-pulse' : ''
+        }`}
+      />
+      <span
+        className={`shrink-0 ${isLive ? 'shimmer-text' : 'text-muted-foreground'}`}
+      >
+        {label}
       </span>
       {path && (
-        <code className="dark:bg-card min-w-0 truncate rounded-md bg-black/10 px-1.5 py-0.5 font-mono text-xs">
+        <code
+          className="text-muted-foreground bg-muted dark:bg-answer-bubble min-w-0 truncate rounded-md px-1.5 py-0.5 font-mono text-xs"
+          title={path}
+        >
           {path}
         </code>
       )}
       {isError && (
-        <span className="text-destructive text-xs">
+        <span className="text-destructive shrink-0 text-xs">
           {t('conversation.wikiWrite.failed')}
         </span>
       )}

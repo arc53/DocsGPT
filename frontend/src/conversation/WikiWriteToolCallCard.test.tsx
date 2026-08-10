@@ -18,10 +18,10 @@ beforeAll(async () => {
   });
 });
 
-const render = (toolCall: ToolCallsType): string =>
+const render = (toolCall: ToolCallsType, isLive?: boolean): string =>
   renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
-      <WikiWriteToolCallCard toolCall={toolCall} />
+      <WikiWriteToolCallCard toolCall={toolCall} isLive={isLive} />
     </I18nextProvider>,
   );
 
@@ -34,9 +34,47 @@ describe('WikiWriteToolCallCard', () => {
       arguments: { path: '/policy.md', old_str: 'a', new_str: 'b' },
       status: 'completed',
     });
-    expect(html).toContain('✏️');
     expect(html).toContain('Edited wiki page');
     expect(html).toContain('/policy.md');
+  });
+
+  it('reads in the present tense while the write is still running', () => {
+    const html = render(
+      {
+        tool_name: 'wiki',
+        action_name: 'wiki_create',
+        call_id: 'c1',
+        arguments: { path: '/policy.md' },
+        status: 'pending',
+      },
+      true,
+    );
+    expect(html).toContain('Creating wiki page…');
+    expect(html).toContain('shimmer-text');
+  });
+
+  it('drops the shimmer once the write has settled', () => {
+    const html = render({
+      tool_name: 'wiki',
+      action_name: 'wiki_create',
+      call_id: 'c1',
+      arguments: { path: '/policy.md' },
+      status: 'completed',
+    });
+    expect(html).not.toContain('shimmer-text');
+  });
+
+  it('marks a failed write', () => {
+    const html = render({
+      tool_name: 'wiki',
+      action_name: 'wiki_delete',
+      call_id: 'c1',
+      arguments: { path: '/policy.md' },
+      status: 'error',
+      error: 'boom',
+    });
+    expect(html).toContain('Deleted wiki page');
+    expect(html).toContain('failed');
   });
 
   it('uses the new path for a rename', () => {

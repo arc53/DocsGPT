@@ -8,7 +8,6 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Retry from '../assets/retry.svg?react';
 import { Button } from '../components/ui/button';
 import {
@@ -131,6 +130,12 @@ export default function ConversationMessages({
     ? 'w-full max-w-325 px-2'
     : 'w-full max-w-325 px-2 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12';
 
+  // The empty state sits directly on top of the composer with nothing between
+  // them, so it takes the composer's width rather than the wider message column.
+  const emptyStateColumnClass = isSplitView
+    ? 'w-full max-w-290 px-2'
+    : 'w-full max-w-290 px-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12';
+
   const renderResponseView = (query: Query, index: number) => {
     const isLastMessage = index === queries.length - 1;
     const bubbleMargin = DEFAULT_BUBBLE_MARGIN;
@@ -228,19 +233,7 @@ export default function ConversationMessages({
           className={`fade-in-bubble group dark:text-foreground flex flex-col flex-wrap self-start ${bubbleMargin}`}
         >
           <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-            <div className="my-2 flex flex-row items-center justify-center gap-3">
-              <div className="flex h-8.5 w-8.5 items-center justify-center overflow-hidden rounded-full">
-                <img
-                  src={DocsGPT3}
-                  alt={t('conversation.answer')}
-                  className="h-full w-full object-cover"
-                />
-              </div>
-              <p className="text-base font-semibold">
-                {t('conversation.answer')}
-              </p>
-            </div>
-            <StreamingStatusLine className="my-2 ml-3" />
+            <StreamingStatusLine className="my-2 ml-6" />
           </div>
         </div>
       );
@@ -252,7 +245,7 @@ export default function ConversationMessages({
   if (queries.length === 0) {
     return (
       <div className="flex h-full w-full justify-center overflow-y-auto will-change-scroll sm:pt-6 lg:pt-12">
-        <div className={columnClass}>
+        <div className={emptyStateColumnClass}>
           {headerContent}
           {showHeroOnEmpty ? <Hero handleQuestion={handleQuestion} /> : null}
         </div>

@@ -140,7 +140,7 @@ export const SharedConversation = () => {
         twitterDescription="Shared conversations with DocsGPT"
       />
       <div className="bg-background flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden">
-        <div className="border-b-border w-full max-w-[1200px] border-b p-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
+        <div className="border-b-border w-full max-w-325 border-b p-2 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12">
           <h1 className="text-foreground dark:text-foreground text-4xl font-semibold">
             {title}
           </h1>
@@ -160,7 +160,7 @@ export const SharedConversation = () => {
           queries={queries}
           status={status}
         />
-        <div className="flex w-full max-w-[1200px] flex-col items-center gap-4 pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
+        <div className="flex w-full max-w-290 flex-col items-center gap-4 pb-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12">
           {apiKey ? (
             <div className="w-full px-2">
               <MessageInput

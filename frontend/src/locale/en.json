@@ -1101,7 +1101,15 @@
       "insert": "Edited wiki page",
       "delete": "Deleted wiki page",
       "rename": "Renamed wiki page",
-      "failed": "failed"
+      "failed": "failed",
+      "active": {
+        "edited": "Editing wiki…",
+        "create": "Creating wiki page…",
+        "str_replace": "Editing wiki page…",
+        "insert": "Editing wiki page…",
+        "delete": "Deleting wiki page…",
+        "rename": "Renaming wiki page…"
+      }
     },
     "streamingStatus": {
       "thinking": "Thinking…",

@@ -1100,7 +1100,15 @@
       "insert": "Wikiページを編集",
       "delete": "Wikiページを削除",
       "rename": "Wikiページの名前を変更",
-      "failed": "失敗"
+      "failed": "失敗",
+      "active": {
+        "edited": "Wikiを編集中…",
+        "create": "Wikiページを作成中…",
+        "str_replace": "Wikiページを編集中…",
+        "insert": "Wikiページを編集中…",
+        "delete": "Wikiページを削除中…",
+        "rename": "Wikiページの名前を変更中…"
+      }
     },
     "streamingStatus": {
       "thinking": "考え中…",

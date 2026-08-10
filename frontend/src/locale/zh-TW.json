@@ -1100,7 +1100,15 @@
       "insert": "已編輯 Wiki 頁面",
       "delete": "已刪除 Wiki 頁面",
       "rename": "已重新命名 Wiki 頁面",
-      "failed": "失敗"
+      "failed": "失敗",
+      "active": {
+        "edited": "正在編輯 Wiki…",
+        "create": "正在建立 Wiki 頁面…",
+        "str_replace": "正在編輯 Wiki 頁面…",
+        "insert": "正在編輯 Wiki 頁面…",
+        "delete": "正在刪除 Wiki 頁面…",
+        "rename": "正在重新命名 Wiki 頁面…"
+      }
     },
     "streamingStatus": {
       "thinking": "思考中…",
