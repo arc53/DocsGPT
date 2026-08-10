@@ -1049,19 +1049,31 @@ class TestEmbeddingPipelineCoverage:
             embed_and_store_documents([], str(tmp_path / "test"), "src-1", None)
 
     def test_embed_and_store_creates_folder(self, tmp_path):
-        """Cover line 65: folder creation."""
+        """Cover line 65: the folder is created before the vector store is built.
+
+        The failure is forced through ``VectorCreator`` rather than left to
+        whatever the store happens to reject — this previously relied on
+        langchain's ``from_documents`` reading a ``.id`` the stub lacks, so it
+        stopped failing the moment the FAISS store stopped going via langchain.
+        """
+        import os
+
         from application.parser.embedding_pipeline import embed_and_store_documents
 
         folder = str(tmp_path / "new_dir")
-        with pytest.raises(Exception):
-            # Will fail at VectorCreator but folder should be created
-            embed_and_store_documents(
-                [type("Doc", (), {"page_content": "text", "metadata": {}})()],
-                folder,
-                "src-1",
-                None,
+        with patch(
+            "application.parser.embedding_pipeline.VectorCreator"
+        ) as mock_vc:
+            mock_vc.create_vectorstore.side_effect = RuntimeError(
+                "vector store unavailable"
             )
-        import os
+            with pytest.raises(RuntimeError, match="vector store unavailable"):
+                embed_and_store_documents(
+                    [type("Doc", (), {"page_content": "text", "metadata": {}})()],
+                    folder,
+                    "src-1",
+                    None,
+                )
         assert os.path.exists(folder)
 
 
