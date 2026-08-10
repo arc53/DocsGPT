@@ -177,7 +177,7 @@ class ParentChildChunker(_BaseStrategyChunker):
     50) tokens. Each child stashes its parent window text in
     ``extra_info["parent_text"]`` so retrieval can expand to the parent later.
     The child text is what gets embedded; ``parent_text`` rides through
-    ``Document.to_langchain_format`` into vector-store metadata.
+    ``Document.to_vector_format`` into vector-store metadata.
     """
 
     def _child_size(self) -> int:

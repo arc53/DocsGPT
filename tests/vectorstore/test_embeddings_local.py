@@ -9,7 +9,7 @@ class TestEmbeddingsWrapper:
     def test_init_success(self, mock_st_cls):
         mock_model = MagicMock()
         mock_model._first_module.return_value = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_model.get_embedding_dimension.return_value = 768
         mock_st_cls.return_value = mock_model
 
         from application.vectorstore.embeddings_local import EmbeddingsWrapper
@@ -18,6 +18,22 @@ class TestEmbeddingsWrapper:
 
         mock_st_cls.assert_called_once()
         assert wrapper.dimension == 768
+
+    @patch("application.vectorstore.embeddings_local.SentenceTransformer")
+    def test_init_falls_back_to_legacy_dimension_api(self, mock_st_cls):
+        """sentence-transformers < 5.4 only exposes get_sentence_embedding_dimension."""
+        mock_model = MagicMock()
+        mock_model._first_module.return_value = MagicMock()
+        del mock_model.get_embedding_dimension
+        mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_st_cls.return_value = mock_model
+
+        from application.vectorstore.embeddings_local import EmbeddingsWrapper
+
+        wrapper = EmbeddingsWrapper("test-model")
+
+        assert wrapper.dimension == 768
+        mock_model.get_sentence_embedding_dimension.assert_called_once()
 
     @patch("application.vectorstore.embeddings_local.SentenceTransformer")
     def test_init_failure(self, mock_st_cls):

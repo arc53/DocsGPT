@@ -1,230 +1,183 @@
-from unittest.mock import MagicMock, Mock, patch
+"""QdrantStore tests, run against a real in-process Qdrant.
+
+qdrant-client is a first-party dependency now that the store no longer goes
+through langchain, so these exercise the real client in ``:memory:`` mode
+rather than asserting against mocks.
+"""
+
+from unittest.mock import patch
 
 import pytest
 
 
-def _make_qdrant_store(source_id="test-source"):
-    """Helper to create a QdrantStore with all external deps mocked."""
-    mock_models = MagicMock()
-    mock_qdrant_langchain = MagicMock()
+class _FakeEmbeddings:
+    """Deterministic 3-dim embeddings: distinct texts get distinct directions."""
+
+    dimension = 3
+
+    _VECTORS = {
+        "paris": [1.0, 0.0, 0.0],
+        "database": [0.0, 1.0, 0.0],
+        "celery": [0.0, 0.0, 1.0],
+    }
+
+    def _vector(self, text):
+        lowered = (text or "").lower()
+        for keyword, vector in self._VECTORS.items():
+            if keyword in lowered:
+                return vector
+        return [0.577, 0.577, 0.577]
+
+    def embed_query(self, query):
+        return self._vector(query)
+
+    def embed_documents(self, documents):
+        return [self._vector(d) for d in documents]
+
+
+def _settings(mock_settings, collection="test_collection"):
+    mock_settings.EMBEDDINGS_NAME = "test_model"
+    mock_settings.QDRANT_COLLECTION_NAME = collection
+    mock_settings.QDRANT_LOCATION = ":memory:"
+    mock_settings.QDRANT_DISTANCE_FUNC = "Cosine"
+    mock_settings.QDRANT_PREFER_GRPC = False
+    mock_settings.QDRANT_GRPC_PORT = 6334
+    for unset in (
+        "QDRANT_URL", "QDRANT_HOST", "QDRANT_PORT", "QDRANT_HTTPS",
+        "QDRANT_API_KEY", "QDRANT_PREFIX", "QDRANT_TIMEOUT", "QDRANT_PATH",
+    ):
+        setattr(mock_settings, unset, None)
+
+
+@pytest.fixture
+def store():
+    from application.vectorstore.qdrant import QdrantStore
 
     with patch(
-        "application.vectorstore.base.BaseVectorStore._get_embeddings"
-    ) as mock_get_emb, patch(
-        "application.vectorstore.qdrant.settings"
-    ) as mock_settings, patch.dict(
-        "sys.modules",
-        {
-            "qdrant_client": MagicMock(),
-            "qdrant_client.models": mock_models,
-            "langchain_community": MagicMock(),
-            "langchain_community.vectorstores": MagicMock(),
-            "langchain_community.vectorstores.qdrant": mock_qdrant_langchain,
-        },
-    ):
-        mock_emb = Mock()
-        mock_emb.embed_query = Mock(return_value=[0.1, 0.2, 0.3])
-        mock_emb.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
-        mock_emb.client = [None, Mock(word_embedding_dimension=768)]
-        mock_get_emb.return_value = mock_emb
+        "application.vectorstore.base.BaseVectorStore._get_embeddings",
+        return_value=_FakeEmbeddings(),
+    ), patch("application.vectorstore.qdrant.settings") as mock_settings:
+        _settings(mock_settings)
+        yield QdrantStore(source_id="src-A", embeddings_key="k")
 
-        mock_settings.EMBEDDINGS_NAME = "test_model"
-        mock_settings.QDRANT_COLLECTION_NAME = "test_collection"
-        mock_settings.QDRANT_LOCATION = ":memory:"
-        mock_settings.QDRANT_URL = None
-        mock_settings.QDRANT_PORT = 6333
-        mock_settings.QDRANT_GRPC_PORT = 6334
-        mock_settings.QDRANT_HTTPS = False
-        mock_settings.QDRANT_PREFER_GRPC = False
-        mock_settings.QDRANT_API_KEY = None
-        mock_settings.QDRANT_PREFIX = None
-        mock_settings.QDRANT_TIMEOUT = None
-        mock_settings.QDRANT_PATH = None
-        mock_settings.QDRANT_DISTANCE_FUNC = "Cosine"
 
-        mock_docsearch = MagicMock()
-        mock_collections = MagicMock()
-        mock_collections.collections = [MagicMock(name="test_collection")]
-        mock_docsearch.client.get_collections.return_value = mock_collections
-        mock_qdrant_langchain.Qdrant.construct_instance.return_value = mock_docsearch
+@pytest.fixture
+def populated(store):
+    store.add_texts(
+        ["The capital of France is Paris.",
+         "Postgres is a relational database.",
+         "Celery runs background tasks."],
+        [{"source": "geo.txt"}, {"source": "db.txt"}, {"source": "queue.txt"}],
+    )
+    return store
 
+
+@pytest.mark.unit
+class TestQdrantStore:
+    def test_source_id_strips_index_prefix(self, store):
+        assert store._source_id == "src-A"
+
+    def test_add_texts_returns_one_id_per_text(self, store):
+        ids = store.add_texts(["a", "b"], [{}, {}])
+        assert len(ids) == 2 and len(set(ids)) == 2
+
+    def test_add_texts_empty_is_noop(self, store):
+        assert store.add_texts([], []) == []
+
+    def test_search_ranks_by_similarity(self, populated):
+        hits = populated.search("Tell me about Paris", k=2)
+        assert "Paris" in str(hits[0])
+        assert hits[0].metadata["source"] == "geo.txt"
+
+    def test_search_with_scores_reports_cosine(self, populated):
+        scored = populated.search_with_scores("Tell me about Paris", k=3)
+        assert populated.score_kind == "cosine_similarity"
+        assert scored[0][1] == pytest.approx(1.0, abs=1e-3)
+        # Scores must come back in descending rank order.
+        assert [s for _, s in scored] == sorted(
+            (s for _, s in scored), reverse=True
+        )
+
+    def test_search_honours_score_threshold(self, populated):
+        assert populated.search_with_scores("Paris", k=3, score_threshold=0.99)
+        assert not populated.search_with_scores("Paris", k=3, score_threshold=1.01)
+
+    def test_add_texts_stamps_source_id(self, populated):
+        assert all(c["metadata"]["source_id"] == "src-A" for c in populated.get_chunks())
+
+    def test_get_chunks_returns_all(self, populated):
+        chunks = populated.get_chunks()
+        assert len(chunks) == 3
+        assert {c["metadata"]["source"] for c in chunks} == {
+            "geo.txt", "db.txt", "queue.txt"
+        }
+
+    def test_add_and_delete_chunk(self, populated):
+        chunk_id = populated.add_chunk("Redis caches things.", {"source": "cache.txt"})
+        assert len(populated.get_chunks()) == 4
+        assert populated.delete_chunk(chunk_id) is True
+        assert len(populated.get_chunks()) == 3
+
+    def test_delete_chunk_returns_false_when_client_raises(self, populated):
+        with patch.object(
+            populated._client, "delete", side_effect=RuntimeError("qdrant down")
+        ):
+            assert populated.delete_chunk("some-id") is False
+
+    def test_get_chunks_returns_empty_when_client_raises(self, populated):
+        with patch.object(
+            populated._client, "scroll", side_effect=RuntimeError("qdrant down")
+        ):
+            assert populated.get_chunks() == []
+
+    def test_delete_chunks_by_source_path(self, populated):
+        assert populated.delete_chunks_by_source_path("db.txt") == 1
+        assert len(populated.get_chunks()) == 2
+
+    def test_delete_index_removes_only_this_source(self, populated):
         from application.vectorstore.qdrant import QdrantStore
 
-        store = QdrantStore(source_id=source_id, embeddings_key="key")
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            return_value=_FakeEmbeddings(),
+        ), patch("application.vectorstore.qdrant.settings") as mock_settings:
+            _settings(mock_settings)
+            other = QdrantStore(source_id="src-B", embeddings_key="k")
+        # Share the in-memory backend so both sources live in one collection.
+        other._client = populated._client
+        other.add_texts(["Another source entirely."], [{"source": "other.txt"}])
 
-        return store, mock_docsearch, mock_settings
+        populated.delete_index()
 
+        assert populated.get_chunks() == []
+        assert len(other.get_chunks()) == 1
 
-@pytest.mark.unit
-class TestQdrantStoreInit:
-    def test_source_id_cleaned(self):
-        store, _, _ = _make_qdrant_store(source_id="application/indexes/abc123/")
-        assert store._source_id == "abc123"
-
-    def test_filter_constructed(self):
-        store, _, _ = _make_qdrant_store(source_id="src1")
-        assert store._filter is not None
-
-
-@pytest.mark.unit
-class TestQdrantStoreSearch:
-    def test_search_delegates(self):
-        store, mock_ds, _ = _make_qdrant_store()
-        mock_ds.similarity_search.return_value = ["result1"]
-
-        results = store.search("query", k=5)
-
-        mock_ds.similarity_search.assert_called_once()
-        assert results == ["result1"]
-
-
-@pytest.mark.unit
-class TestQdrantStoreAddTexts:
-    def test_add_texts_delegates(self):
-        store, mock_ds, _ = _make_qdrant_store()
-        mock_ds.add_texts.return_value = ["id1"]
-
-        result = store.add_texts(["text1"], metadatas=[{"a": 1}])
-        mock_ds.add_texts.assert_called_once_with(["text1"], metadatas=[{"a": 1}])
-        assert result == ["id1"]
-
-
-@pytest.mark.unit
-class TestQdrantStoreSaveLocal:
-    def test_save_local_is_noop(self):
-        store, _, _ = _make_qdrant_store()
+    def test_save_local_is_noop(self, store):
         assert store.save_local() is None
 
 
 @pytest.mark.unit
-class TestQdrantStoreDeleteIndex:
-    def test_delete_index(self):
-        store, mock_ds, _ = _make_qdrant_store()
+class TestQdrantClientKwargs:
+    def test_unset_settings_are_omitted(self):
+        from application.vectorstore.qdrant import QdrantStore
 
-        with patch("application.vectorstore.qdrant.settings") as ms:
-            ms.QDRANT_COLLECTION_NAME = "test_collection"
-            store.delete_index()
+        with patch("application.vectorstore.qdrant.settings") as mock_settings:
+            _settings(mock_settings)
+            kwargs = QdrantStore._client_kwargs()
+        # location/url/path are mutually exclusive in qdrant-client, so only
+        # the configured one may be forwarded.
+        assert kwargs["location"] == ":memory:"
+        assert "url" not in kwargs and "path" not in kwargs and "host" not in kwargs
 
-        mock_ds.client.delete.assert_called_once_with(
-            collection_name="test_collection",
-            points_selector=store._filter,
-        )
+    def test_configured_settings_are_forwarded(self):
+        from application.vectorstore.qdrant import QdrantStore
 
-
-@pytest.mark.unit
-class TestQdrantStoreGetChunks:
-    def test_get_chunks(self):
-        store, mock_ds, _ = _make_qdrant_store()
-
-        record1 = MagicMock()
-        record1.id = "id1"
-        record1.payload = {
-            "page_content": "text1",
-            "metadata": {"source": "test"},
-        }
-        record2 = MagicMock()
-        record2.id = "id2"
-        record2.payload = {
-            "page_content": "text2",
-            "metadata": {"source": "test2"},
-        }
-
-        # First call returns records with offset, second returns empty with None offset
-        mock_ds.client.scroll.side_effect = [
-            ([record1, record2], None),
-        ]
-
-        chunks = store.get_chunks()
-
-        assert len(chunks) == 2
-        assert chunks[0] == {
-            "doc_id": "id1",
-            "text": "text1",
-            "metadata": {"source": "test"},
-        }
-
-    def test_get_chunks_pagination(self):
-        store, mock_ds, _ = _make_qdrant_store()
-
-        record1 = MagicMock()
-        record1.id = "id1"
-        record1.payload = {"page_content": "text1", "metadata": {}}
-
-        record2 = MagicMock()
-        record2.id = "id2"
-        record2.payload = {"page_content": "text2", "metadata": {}}
-
-        mock_ds.client.scroll.side_effect = [
-            ([record1], "offset_token"),
-            ([record2], None),
-        ]
-
-        chunks = store.get_chunks()
-        assert len(chunks) == 2
-        assert mock_ds.client.scroll.call_count == 2
-
-    def test_get_chunks_returns_empty_on_error(self):
-        store, mock_ds, _ = _make_qdrant_store()
-        mock_ds.client.scroll.side_effect = Exception("fail")
-
-        assert store.get_chunks() == []
-
-
-@pytest.mark.unit
-class TestQdrantStoreAddChunk:
-    def test_add_chunk(self):
-        store, mock_ds, _ = _make_qdrant_store(source_id="src1")
-        mock_ds.add_documents.return_value = ["new-id"]
-
-        result = store.add_chunk("hello", metadata={"key": "val"})
-
-        assert result == "new-id"
-        mock_ds.add_documents.assert_called_once()
-        doc = mock_ds.add_documents.call_args[0][0][0]
-        assert doc.page_content == "hello"
-        assert doc.metadata["source_id"] == "src1"
-        assert doc.metadata["key"] == "val"
-
-    def test_add_chunk_default_metadata(self):
-        store, mock_ds, _ = _make_qdrant_store(source_id="src1")
-        mock_ds.add_documents.return_value = ["id"]
-
-        store.add_chunk("text")
-
-        doc = mock_ds.add_documents.call_args[0][0][0]
-        assert doc.metadata["source_id"] == "src1"
-
-    def test_add_chunk_fallback_id(self):
-        store, mock_ds, _ = _make_qdrant_store()
-        mock_ds.add_documents.return_value = []
-
-        result = store.add_chunk("text")
-        # Should return the uuid that was generated
-        assert result is not None
-        assert isinstance(result, str)
-
-
-@pytest.mark.unit
-class TestQdrantStoreDeleteChunk:
-    def test_delete_chunk_success(self):
-        store, mock_ds, _ = _make_qdrant_store()
-
-        with patch("application.vectorstore.qdrant.settings") as ms:
-            ms.QDRANT_COLLECTION_NAME = "test_collection"
-            result = store.delete_chunk("chunk-id")
-
-        mock_ds.client.delete.assert_called_once_with(
-            collection_name="test_collection",
-            points_selector=["chunk-id"],
-        )
-        assert result is True
-
-    def test_delete_chunk_returns_false_on_error(self):
-        store, mock_ds, _ = _make_qdrant_store()
-
-        with patch("application.vectorstore.qdrant.settings") as ms:
-            ms.QDRANT_COLLECTION_NAME = "test_collection"
-            mock_ds.client.delete.side_effect = Exception("fail")
-            result = store.delete_chunk("bad-id")
-
-        assert result is False
+        with patch("application.vectorstore.qdrant.settings") as mock_settings:
+            _settings(mock_settings)
+            mock_settings.QDRANT_LOCATION = None
+            mock_settings.QDRANT_URL = "http://qdrant:6333"
+            mock_settings.QDRANT_API_KEY = "secret"
+            kwargs = QdrantStore._client_kwargs()
+        assert kwargs["url"] == "http://qdrant:6333"
+        assert kwargs["api_key"] == "secret"
+        assert "location" not in kwargs

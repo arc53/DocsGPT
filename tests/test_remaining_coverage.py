@@ -129,9 +129,9 @@ class TestToolABC:
 # application/parser/file/base.py  (lines 18-19)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-class TestBaseReaderLoadLangchain:
-    def test_load_langchain_documents(self):
-        """Cover lines 18-19: BaseReader.load_langchain_documents."""
+class TestBaseReaderLoadVectorDocuments:
+    def test_load_vector_documents(self):
+        """Cover lines 18-19: BaseReader.load_vector_documents."""
         from application.parser.file.base import BaseReader
         from application.parser.schema.base import Document
 
@@ -143,7 +143,7 @@ class TestBaseReaderLoadLangchain:
                 ]
 
         reader = ConcreteReader()
-        lc_docs = reader.load_langchain_documents()
+        lc_docs = reader.load_vector_documents()
         assert len(lc_docs) == 2
         assert lc_docs[0].page_content == "hello"
         assert lc_docs[0].metadata == {"k": "v"}
@@ -1049,19 +1049,31 @@ class TestEmbeddingPipelineCoverage:
             embed_and_store_documents([], str(tmp_path / "test"), "src-1", None)
 
     def test_embed_and_store_creates_folder(self, tmp_path):
-        """Cover line 65: folder creation."""
+        """Cover line 65: the folder is created before the vector store is built.
+
+        The failure is forced through ``VectorCreator`` rather than left to
+        whatever the store happens to reject — this previously relied on
+        langchain's ``from_documents`` reading a ``.id`` the stub lacks, so it
+        stopped failing the moment the FAISS store stopped going via langchain.
+        """
+        import os
+
         from application.parser.embedding_pipeline import embed_and_store_documents
 
         folder = str(tmp_path / "new_dir")
-        with pytest.raises(Exception):
-            # Will fail at VectorCreator but folder should be created
-            embed_and_store_documents(
-                [type("Doc", (), {"page_content": "text", "metadata": {}})()],
-                folder,
-                "src-1",
-                None,
+        with patch(
+            "application.parser.embedding_pipeline.VectorCreator"
+        ) as mock_vc:
+            mock_vc.create_vectorstore.side_effect = RuntimeError(
+                "vector store unavailable"
             )
-        import os
+            with pytest.raises(RuntimeError, match="vector store unavailable"):
+                embed_and_store_documents(
+                    [type("Doc", (), {"page_content": "text", "metadata": {}})()],
+                    folder,
+                    "src-1",
+                    None,
+                )
         assert os.path.exists(folder)
 
 

@@ -183,6 +183,10 @@ def _reset_log_context(_exc):
     # leak into the stream's view of the context.
     token = getattr(request, _LOG_CTX_TOKEN_ATTR, None)
     if token is not None:
+        # Flask >= 3.1.2 tears a stream_with_context request down twice: once
+        # when the view returns, once when the generator is finalized. Clear
+        # the token first — resetting one twice raises RuntimeError.
+        setattr(request, _LOG_CTX_TOKEN_ATTR, None)
         log_context.reset(token)
 
 

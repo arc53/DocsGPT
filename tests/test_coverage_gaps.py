@@ -2031,70 +2031,54 @@ class TestInternalRoutes:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestFaissStore:
-    def test_faiss_init_load_from_storage(self):
-        mock_emb = MagicMock()
-        mock_storage = MagicMock()
-        mock_storage.file_exists.return_value = True
-        faiss_data = b"faiss_data"
-        pkl_data = b"pkl_data"
-        mock_storage.get_file.side_effect = [io.BytesIO(faiss_data), io.BytesIO(pkl_data)]
+    """Storage round-trip against a real FAISS index and real local storage."""
 
-        mock_faiss_class = MagicMock()
-        mock_faiss_class.load_local.return_value = MagicMock()
+    class _Embeddings:
+        dimension = 3
 
-        with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
-            return_value=mock_emb,
-        ), patch(
-            "application.vectorstore.faiss.StorageCreator.get_storage",
-            return_value=mock_storage,
-        ), patch(
-            "application.vectorstore.faiss.FAISS", mock_faiss_class,
-        ), patch(
-            "application.vectorstore.faiss.settings"
-        ) as ms:
-            ms.EMBEDDINGS_NAME = "test"
-            from application.vectorstore.faiss import FaissStore
+        def embed_documents(self, documents):
+            return [[0.1, 0.2, 0.3] for _ in documents]
 
-            store = FaissStore(source_id="test", embeddings_key="key")
-            assert store.docsearch is not None
+        def embed_query(self, query):
+            return [0.1, 0.2, 0.3]
 
-    def test_faiss_save_to_storage(self):
-        mock_emb = MagicMock()
-        mock_storage = MagicMock()
-        mock_docsearch = MagicMock()
+    class _Doc:
+        def __init__(self, page_content, metadata):
+            self.page_content = page_content
+            self.metadata = metadata
+
+    def _make(self, storage, source_id="test", docs_init=None):
+        from application.vectorstore.faiss import FaissStore
 
         with patch(
             "application.vectorstore.base.BaseVectorStore._get_embeddings",
-            return_value=mock_emb,
+            return_value=self._Embeddings(),
         ), patch(
             "application.vectorstore.faiss.StorageCreator.get_storage",
-            return_value=mock_storage,
-        ), patch(
-            "application.vectorstore.faiss.settings"
-        ) as ms:
+            return_value=storage,
+        ), patch("application.vectorstore.faiss.settings") as ms:
             ms.EMBEDDINGS_NAME = "test"
-            from application.vectorstore.faiss import FaissStore
+            return FaissStore(source_id, "key", docs_init=docs_init)
 
-            store = FaissStore.__new__(FaissStore)
-            store.source_id = "test"
-            store.path = "indexes/test"
-            store.embeddings = mock_emb
-            store.storage = mock_storage
-            store.docsearch = mock_docsearch
+    def test_faiss_save_to_storage_writes_all_three_files(self, tmp_path):
+        from application.storage.local import LocalStorage
 
-            def fake_save_local(temp_dir):
-                os.makedirs(temp_dir, exist_ok=True)
-                with open(os.path.join(temp_dir, "index.faiss"), "wb") as f:
-                    f.write(b"faiss")
-                with open(os.path.join(temp_dir, "index.pkl"), "wb") as f:
-                    f.write(b"pkl")
+        storage = LocalStorage(base_dir=str(tmp_path))
+        store = self._make(storage, docs_init=[self._Doc("hello", {"source": "a"})])
 
-            mock_docsearch.save_local.side_effect = fake_save_local
+        assert store._save_to_storage() is True
+        for name in ("index.faiss", "index.json", "index.pkl"):
+            assert storage.file_exists(f"indexes/test/{name}"), name
 
-            result = store._save_to_storage()
-            assert result is True
-            assert mock_storage.save_file.call_count == 2
+    def test_faiss_init_load_from_storage(self, tmp_path):
+        from application.storage.local import LocalStorage
+
+        storage = LocalStorage(base_dir=str(tmp_path))
+        self._make(storage, docs_init=[self._Doc("hello", {"source": "a"})]).save_local()
+
+        reloaded = self._make(storage)
+        assert reloaded.index.ntotal == 1
+        assert reloaded.get_chunks()[0]["text"] == "hello"
 
 
 # ---------------------------------------------------------------------------
@@ -2102,58 +2086,52 @@ class TestFaissStore:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestQdrantStoreIndexCreation:
-    def test_init_index_already_exists_error(self):
-        mock_models = MagicMock()
-        mock_qdrant_langchain = MagicMock()
+    """A concurrent worker may create the collection or index first."""
 
-        with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings"
-        ) as mock_get_emb, patch(
-            "application.vectorstore.qdrant.settings"
-        ) as mock_settings, patch.dict(
-            "sys.modules",
-            {
-                "qdrant_client": MagicMock(),
-                "qdrant_client.models": mock_models,
-                "langchain_community": MagicMock(),
-                "langchain_community.vectorstores": MagicMock(),
-                "langchain_community.vectorstores.qdrant": mock_qdrant_langchain,
-            },
+    @staticmethod
+    def _settings(mock_settings):
+        mock_settings.EMBEDDINGS_NAME = "test"
+        mock_settings.QDRANT_COLLECTION_NAME = "coll"
+        mock_settings.QDRANT_LOCATION = ":memory:"
+        mock_settings.QDRANT_DISTANCE_FUNC = "Cosine"
+        mock_settings.QDRANT_PREFER_GRPC = False
+        mock_settings.QDRANT_GRPC_PORT = 6334
+        for unset in (
+            "QDRANT_URL", "QDRANT_HOST", "QDRANT_PORT", "QDRANT_HTTPS",
+            "QDRANT_API_KEY", "QDRANT_PREFIX", "QDRANT_TIMEOUT", "QDRANT_PATH",
         ):
-            mock_emb = Mock()
-            mock_emb.client = [None, Mock(word_embedding_dimension=768)]
-            mock_get_emb.return_value = mock_emb
+            setattr(mock_settings, unset, None)
 
-            mock_settings.EMBEDDINGS_NAME = "test"
-            mock_settings.QDRANT_COLLECTION_NAME = "coll"
-            mock_settings.QDRANT_LOCATION = ":memory:"
-            mock_settings.QDRANT_URL = None
-            mock_settings.QDRANT_PORT = 6333
-            mock_settings.QDRANT_GRPC_PORT = 6334
-            mock_settings.QDRANT_HTTPS = False
-            mock_settings.QDRANT_PREFER_GRPC = False
-            mock_settings.QDRANT_API_KEY = None
-            mock_settings.QDRANT_PREFIX = None
-            mock_settings.QDRANT_TIMEOUT = None
-            mock_settings.QDRANT_PATH = None
-            mock_settings.QDRANT_DISTANCE_FUNC = "Cosine"
+    def test_init_swallows_already_exists_error(self):
+        from application.vectorstore.qdrant import QdrantStore
 
-            mock_docsearch = MagicMock()
-            mock_docsearch.client.get_collections.return_value.collections = [
-                MagicMock(name="coll")
-            ]
-            # Index creation error with "already exists"
-            mock_docsearch.client.create_payload_index.side_effect = Exception(
-                "Index already exists"
-            )
-            mock_qdrant_langchain.Qdrant.construct_instance.return_value = (
-                mock_docsearch
-            )
-
-            from application.vectorstore.qdrant import QdrantStore
-
+        emb = Mock(dimension=8)
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            return_value=emb,
+        ), patch("application.vectorstore.qdrant.settings") as mock_settings, patch(
+            "qdrant_client.QdrantClient.create_payload_index",
+            side_effect=Exception("Index already exists"),
+        ):
+            self._settings(mock_settings)
             store = QdrantStore(source_id="test", embeddings_key="key")
-            assert store._docsearch is mock_docsearch
+        assert store._source_id == "test"
+
+    def test_init_logs_other_setup_errors(self, caplog):
+        from application.vectorstore.qdrant import QdrantStore
+
+        emb = Mock(dimension=8)
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            return_value=emb,
+        ), patch("application.vectorstore.qdrant.settings") as mock_settings, patch(
+            "qdrant_client.QdrantClient.create_payload_index",
+            side_effect=Exception("connection refused"),
+        ):
+            self._settings(mock_settings)
+            store = QdrantStore(source_id="test", embeddings_key="key")
+        assert store._source_id == "test"
+        assert "connection refused" in caplog.text
 
 
 # ---------------------------------------------------------------------------

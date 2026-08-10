@@ -257,10 +257,11 @@ class DeleteOldIndexes(Resource):
         try:
             if settings.VECTOR_STORE == "faiss":
                 index_path = f"indexes/{resolved_id}"
-                if storage.file_exists(f"{index_path}/index.faiss"):
-                    storage.delete_file(f"{index_path}/index.faiss")
-                if storage.file_exists(f"{index_path}/index.pkl"):
-                    storage.delete_file(f"{index_path}/index.pkl")
+                # index.pkl is the legacy sidecar; index.json the current one.
+                # Older sources have only the former, so clear whichever exist.
+                for index_file in ("index.faiss", "index.json", "index.pkl"):
+                    if storage.file_exists(f"{index_path}/{index_file}"):
+                        storage.delete_file(f"{index_path}/{index_file}")
             else:
                 vectorstore = VectorCreator.create_vectorstore(
                     settings.VECTOR_STORE, source_id=resolved_id

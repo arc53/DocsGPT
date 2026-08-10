@@ -115,7 +115,7 @@ class TestParentChild:
     def test_parent_text_reaches_vectorstore_metadata(self):
         chunker = ParentChildChunker(max_tokens=80, min_tokens=20)
         out = chunker.chunk([Document(text="beta " * 150, doc_id="d")])
-        lc = out[0].to_langchain_format()
+        lc = out[0].to_vector_format()
         # parent_text must survive the langchain conversion into metadata.
         assert "parent_text" in lc.metadata
         assert lc.metadata["parent_text"]

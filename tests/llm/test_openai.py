@@ -2049,3 +2049,34 @@ class TestInlineFilePartResolution:
         # Upload happened because the read errored → treated as miss.
         assert len(llm.client.files.calls) == 1
         assert out[0]["content"][1] == {"type": "file", "file": {"file_id": "file-1"}}
+
+
+@pytest.mark.unit
+class TestKeylessConstruction:
+    """openai>=2.53 raises on a falsy api_key at construction.
+
+    Keyless OpenAI-compatible backends (Ollama, llama.cpp, vLLM) have no
+    credential, and pydantic-settings yields "" — not None — for a bare
+    `API_KEY=` line in .env, so the empty string must not reach the SDK.
+    """
+
+    @pytest.mark.parametrize("blank", ["", None])
+    def test_llm_accepts_blank_key(self, blank):
+        with patch("application.llm.openai.settings") as mock_settings:
+            mock_settings.OPENAI_API_KEY = blank
+            mock_settings.API_KEY = blank
+            mock_settings.OPENAI_BASE_URL = "http://localhost:11434/v1"
+            llm = OpenAILLM(api_key=blank)
+        assert llm.api_key == "sk-no-key"
+
+    @pytest.mark.parametrize("blank", ["", None])
+    def test_stt_accepts_blank_key(self, blank):
+        from application.stt.openai_stt import OpenAISTT
+
+        with patch("application.stt.openai_stt.settings") as mock_settings:
+            mock_settings.OPENAI_API_KEY = blank
+            mock_settings.API_KEY = blank
+            mock_settings.OPENAI_BASE_URL = "http://localhost:11434/v1"
+            mock_settings.OPENAI_STT_MODEL = "whisper-1"
+            stt = OpenAISTT(api_key=blank)
+        assert stt.api_key == "sk-no-key"
