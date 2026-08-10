@@ -1101,6 +1101,37 @@
       "delete": "Wiki-Seite gelöscht",
       "rename": "Wiki-Seite umbenannt",
       "failed": "fehlgeschlagen"
+    },
+    "streamingStatus": {
+      "thinking": "Denke nach…",
+      "generating": "Generiere…",
+      "searchingWeb": "Suche im Web nach „{{query}}“…",
+      "searchingWebGeneric": "Suche im Web…",
+      "searchingImages": "Suche Bilder zu „{{query}}“…",
+      "readingPage": "Lese {{target}}…",
+      "searchingKnowledge": "Durchsuche Wissensdatenbank…",
+      "accessingMemory": "Greife auf das Gedächtnis zu…",
+      "runningCode": "Führe Code aus…",
+      "creatingArtifact": "Erstelle ein Artefakt…",
+      "usingTool": "Verwende {{tool}}…"
+    },
+    "toolChip": {
+      "searchingWeb": "Im Web gesucht · „{{query}}“",
+      "searchedWebGeneric": "Im Web gesucht",
+      "searchingImages": "Bilder gesucht · „{{query}}“",
+      "readingPage": "{{target}} gelesen",
+      "searchingKnowledge": "Wissensdatenbank durchsucht",
+      "accessingMemory": "Auf Gedächtnis zugegriffen",
+      "runningCode": "Code ausgeführt",
+      "creatingArtifact": "Artefakt erstellt",
+      "usingTool": "{{tool}} verwendet"
+    },
+    "inlineSteps": {
+      "arguments": "Argumente",
+      "response": "Antwort",
+      "running": "Läuft…",
+      "denied": "Vom Benutzer abgelehnt",
+      "failed": "fehlgeschlagen"
     }
   },
   "agents": {

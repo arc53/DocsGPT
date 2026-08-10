@@ -1101,6 +1101,37 @@
       "delete": "Wikiページを削除",
       "rename": "Wikiページの名前を変更",
       "failed": "失敗"
+    },
+    "streamingStatus": {
+      "thinking": "考え中…",
+      "generating": "生成中…",
+      "searchingWeb": "「{{query}}」をウェブ検索中…",
+      "searchingWebGeneric": "ウェブ検索中…",
+      "searchingImages": "「{{query}}」の画像を検索中…",
+      "readingPage": "{{target}} を読み込み中…",
+      "searchingKnowledge": "ナレッジベースを検索中…",
+      "accessingMemory": "メモリにアクセス中…",
+      "runningCode": "コードを実行中…",
+      "creatingArtifact": "アーティファクトを作成中…",
+      "usingTool": "{{tool}} を使用中…"
+    },
+    "toolChip": {
+      "searchingWeb": "ウェブ検索済み · 「{{query}}」",
+      "searchedWebGeneric": "ウェブ検索済み",
+      "searchingImages": "画像検索済み · 「{{query}}」",
+      "readingPage": "{{target}} を読み込み済み",
+      "searchingKnowledge": "ナレッジベース検索済み",
+      "accessingMemory": "メモリにアクセス済み",
+      "runningCode": "コード実行済み",
+      "creatingArtifact": "アーティファクト作成済み",
+      "usingTool": "{{tool}} を使用済み"
+    },
+    "inlineSteps": {
+      "arguments": "引数",
+      "response": "レスポンス",
+      "running": "実行中…",
+      "denied": "ユーザーによって拒否されました",
+      "failed": "失敗"
     }
   },
   "agents": {

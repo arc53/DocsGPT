@@ -1101,6 +1101,37 @@
       "delete": "已刪除 Wiki 頁面",
       "rename": "已重新命名 Wiki 頁面",
       "failed": "失敗"
+    },
+    "streamingStatus": {
+      "thinking": "思考中…",
+      "generating": "生成中…",
+      "searchingWeb": "正在網路搜尋「{{query}}」…",
+      "searchingWebGeneric": "正在搜尋網路…",
+      "searchingImages": "正在搜尋「{{query}}」的圖片…",
+      "readingPage": "正在閱讀 {{target}}…",
+      "searchingKnowledge": "正在搜尋知識庫…",
+      "accessingMemory": "正在存取記憶…",
+      "runningCode": "正在執行程式碼…",
+      "creatingArtifact": "正在建立 Artifact…",
+      "usingTool": "正在使用 {{tool}}…"
+    },
+    "toolChip": {
+      "searchingWeb": "已搜尋網路 · 「{{query}}」",
+      "searchedWebGeneric": "已搜尋網路",
+      "searchingImages": "已搜尋圖片 · 「{{query}}」",
+      "readingPage": "已閱讀 {{target}}",
+      "searchingKnowledge": "已搜尋知識庫",
+      "accessingMemory": "已存取記憶",
+      "runningCode": "已執行程式碼",
+      "creatingArtifact": "已建立 Artifact",
+      "usingTool": "已使用 {{tool}}"
+    },
+    "inlineSteps": {
+      "arguments": "參數",
+      "response": "回應",
+      "running": "執行中…",
+      "denied": "已被使用者拒絕",
+      "failed": "失敗"
     }
   },
   "agents": {

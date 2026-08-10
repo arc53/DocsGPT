@@ -1101,6 +1101,37 @@
       "delete": "已删除 Wiki 页面",
       "rename": "已重命名 Wiki 页面",
       "failed": "失败"
+    },
+    "streamingStatus": {
+      "thinking": "思考中…",
+      "generating": "生成中…",
+      "searchingWeb": "正在网上搜索“{{query}}”…",
+      "searchingWebGeneric": "正在搜索网络…",
+      "searchingImages": "正在搜索“{{query}}”的图片…",
+      "readingPage": "正在阅读 {{target}}…",
+      "searchingKnowledge": "正在搜索知识库…",
+      "accessingMemory": "正在访问记忆…",
+      "runningCode": "正在运行代码…",
+      "creatingArtifact": "正在创建工件…",
+      "usingTool": "正在使用 {{tool}}…"
+    },
+    "toolChip": {
+      "searchingWeb": "已搜索网络 · “{{query}}”",
+      "searchedWebGeneric": "已搜索网络",
+      "searchingImages": "已搜索图片 · “{{query}}”",
+      "readingPage": "已阅读 {{target}}",
+      "searchingKnowledge": "已搜索知识库",
+      "accessingMemory": "已访问记忆",
+      "runningCode": "已运行代码",
+      "creatingArtifact": "已创建工件",
+      "usingTool": "已使用 {{tool}}"
+    },
+    "inlineSteps": {
+      "arguments": "参数",
+      "response": "响应",
+      "running": "正在运行…",
+      "denied": "已被用户拒绝",
+      "failed": "失败"
     }
   },
   "agents": {

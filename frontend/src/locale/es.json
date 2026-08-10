@@ -1101,6 +1101,37 @@
       "delete": "Página de wiki eliminada",
       "rename": "Página de wiki renombrada",
       "failed": "falló"
+    },
+    "streamingStatus": {
+      "thinking": "Pensando…",
+      "generating": "Generando…",
+      "searchingWeb": "Buscando en la web “{{query}}”…",
+      "searchingWebGeneric": "Buscando en la web…",
+      "searchingImages": "Buscando imágenes de “{{query}}”…",
+      "readingPage": "Leyendo {{target}}…",
+      "searchingKnowledge": "Buscando en la base de conocimientos…",
+      "accessingMemory": "Accediendo a la memoria…",
+      "runningCode": "Ejecutando código…",
+      "creatingArtifact": "Creando un artefacto…",
+      "usingTool": "Usando {{tool}}…"
+    },
+    "toolChip": {
+      "searchingWeb": "Buscado en la web · “{{query}}”",
+      "searchedWebGeneric": "Buscado en la web",
+      "searchingImages": "Buscadas imágenes · “{{query}}”",
+      "readingPage": "Leído {{target}}",
+      "searchingKnowledge": "Buscado en la base de conocimientos",
+      "accessingMemory": "Memoria consultada",
+      "runningCode": "Código ejecutado",
+      "creatingArtifact": "Artefacto creado",
+      "usingTool": "Usado {{tool}}"
+    },
+    "inlineSteps": {
+      "arguments": "Argumentos",
+      "response": "Respuesta",
+      "running": "Ejecutando…",
+      "denied": "Denegado por el usuario",
+      "failed": "falló"
     }
   },
   "agents": {
