@@ -1288,7 +1288,6 @@
         "saveDraftFailed": "Could not save the draft. Please try again."
       },
       "guardrails": {
-        "intro": "Guardrails inspect what goes into and out of this agent. They give you an audit trail and consistent policy — they are not a defence against a determined attacker.",
         "enable": "Enable guardrails",
         "enableDescription": "Run the selected checks on this agent's runs",
         "mode": "Enforcement mode",
@@ -1335,7 +1334,7 @@
           "block": "Block"
         },
         "modes": {
-          "monitorOnly": "Monitor only — log, never enforce",
+          "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
       }

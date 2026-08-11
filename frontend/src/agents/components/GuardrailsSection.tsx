@@ -251,10 +251,6 @@ export default function GuardrailsSection({
 
       {expanded && (
         <div className="mt-3 pb-3">
-          <p className="text-xs text-gray-600 dark:text-gray-400">
-            {t('agents.form.guardrails.intro')}
-          </p>
-
           {loadError && (
             <p className="text-destructive mt-3 text-xs">{loadError}</p>
           )}
