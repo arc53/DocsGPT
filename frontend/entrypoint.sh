@@ -11,6 +11,7 @@ VITE_NOTIFICATION_LINK=$(strip_quotes "${VITE_NOTIFICATION_LINK:-}")
 VITE_API_HOST=$(strip_quotes "${VITE_API_HOST:-}")
 VITE_API_STREAMING=$(strip_quotes "${VITE_API_STREAMING:-}")
 VITE_GOOGLE_CLIENT_ID=$(strip_quotes "${VITE_GOOGLE_CLIENT_ID:-}")
+VITE_GOOGLE_PICKER_API_KEY=$(strip_quotes "${VITE_GOOGLE_PICKER_API_KEY:-}")
 VITE_BASE_URL=$(strip_quotes "${VITE_BASE_URL:-}")
 
 VITE_ENABLE_VOICE_INPUT=$(strip_quotes "${VITE_ENABLE_VOICE_INPUT:-}")
@@ -25,6 +26,7 @@ jq -n \
   --arg apiHost "$VITE_API_HOST" \
   --arg streaming "$VITE_API_STREAMING" \
   --arg googleId "$VITE_GOOGLE_CLIENT_ID" \
+  --arg googlePickerApiKey "$VITE_GOOGLE_PICKER_API_KEY" \
   --arg baseUrl "$VITE_BASE_URL" \
   --arg enableVoiceInput "$VITE_ENABLE_VOICE_INPUT" \
   --arg disableSourceFE "$VITE_DISABLE_SOURCE_FE" \
@@ -37,6 +39,7 @@ jq -n \
     VITE_API_HOST: $apiHost,
     VITE_API_STREAMING: $streaming,
     VITE_GOOGLE_CLIENT_ID: $googleId,
+    VITE_GOOGLE_PICKER_API_KEY: $googlePickerApiKey,
     VITE_BASE_URL: $baseUrl,
     VITE_ENABLE_VOICE_INPUT: $enableVoiceInput,
     VITE_DISABLE_SOURCE_FE: $disableSourceFE,
