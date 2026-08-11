@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import Speaker from '../assets/speaker.svg?react';
 import Stopspeech from '../assets/stopspeech.svg?react';
 import LoadingIcon from '../assets/Loading.svg?react'; // Add a loading icon SVG here
+import { getEnv } from '@/utils/envUtils';
 
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+const apiHost = getEnv('VITE_API_HOST') || 'https://docsapi.arc53.com';
 
 let currentlyPlayingAudio: {
   audio: HTMLAudioElement;

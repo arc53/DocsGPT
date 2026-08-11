@@ -11,8 +11,9 @@ import {
   selectCompletedAttachments,
   clearAttachments,
 } from '../upload/uploadSlice';
+import { getEnv } from '@/utils/envUtils';
 
-const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
+const API_STREAMING = getEnv('VITE_API_STREAMING') === 'true';
 interface SharedConversationsType {
   queries: Query[];
   apiKey?: string;

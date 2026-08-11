@@ -10,8 +10,9 @@ import Spinner from '../components/Spinner';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import WrapperModal from './WrapperModal';
+import { getEnv } from '@/utils/envUtils';
 
-const baseURL = import.meta.env.VITE_BASE_URL;
+const baseURL = getEnv('VITE_BASE_URL');
 
 type AgentDetailsModalProps = {
   agent: Agent;

@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableCell,
 } from './Table';
+import { getEnv } from '@/utils/envUtils';
 
 interface CloudFile {
   id: string;
@@ -126,7 +127,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
       setIsLoading(true);
 
-      const apiHost = import.meta.env.VITE_API_HOST;
+      const apiHost = getEnv('VITE_API_HOST');
       if (!pageToken) {
         setFiles([]);
       }
@@ -187,7 +188,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     }
 
     try {
-      const apiHost = import.meta.env.VITE_API_HOST;
+      const apiHost = getEnv('VITE_API_HOST');
       const validateResponse = await fetch(
         `${apiHost}/api/connectors/validate-session`,
         {
@@ -424,7 +425,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         onDisconnect={() => {
           const sessionToken = getSessionToken(provider);
           if (sessionToken) {
-            const apiHost = import.meta.env.VITE_API_HOST;
+            const apiHost = getEnv('VITE_API_HOST');
             fetch(`${apiHost}/api/connectors/disconnect`, {
               method: 'POST',
               headers: {

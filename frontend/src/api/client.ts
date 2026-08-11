@@ -1,5 +1,6 @@
-export const baseURL =
-  import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+import { getEnv } from '@/utils/envUtils';
+
+export const baseURL = getEnv('VITE_API_HOST') || 'https://docsapi.arc53.com';
 
 const getHeaders = (
   token: string | null,

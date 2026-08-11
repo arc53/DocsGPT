@@ -17,6 +17,7 @@ import Navigation from './Navigation';
 import PageNotFound from './PageNotFound';
 import Setting from './settings';
 import Notification from './components/Notification';
+import { getEnv } from './utils/envUtils';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { isAuthLoading } = useTokenAuth();
@@ -59,8 +60,8 @@ export default function App() {
     const saved = localStorage.getItem('showNotification');
     return saved ? JSON.parse(saved) : true;
   });
-  const notificationText = import.meta.env.VITE_NOTIFICATION_TEXT;
-  const notificationLink = import.meta.env.VITE_NOTIFICATION_LINK;
+  const notificationText = getEnv('VITE_NOTIFICATION_TEXT');
+  const notificationLink = getEnv('VITE_NOTIFICATION_LINK');
   if (!componentMounted) {
     return <div />;
   }

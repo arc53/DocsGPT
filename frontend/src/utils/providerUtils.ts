@@ -3,6 +3,8 @@
  * Follows the convention: {provider}_session_token
  */
 
+import { getEnv } from "./envUtils";
+
 export const getSessionToken = (provider: string): string | null => {
   return localStorage.getItem(`${provider}_session_token`);
 };
@@ -19,7 +21,7 @@ export const validateProviderSession = async (
   token: string | null,
   provider: string,
 ) => {
-  const apiHost = import.meta.env.VITE_API_HOST;
+  const apiHost = getEnv('VITE_API_HOST')!;
   return await fetch(`${apiHost}/api/connectors/validate-session`, {
     method: 'POST',
     headers: {

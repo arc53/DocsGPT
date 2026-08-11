@@ -11,6 +11,7 @@ import {
 } from '../utils/providerUtils';
 import ConnectedStateSkeleton from './ConnectedStateSkeleton';
 import FilesSectionSkeleton from './FileSelectionSkeleton';
+import { getEnv } from '@/utils/envUtils';
 
 interface PickerFile {
   id: string;
@@ -114,7 +115,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     }
 
     try {
-      const clientId: string = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      const clientId: string = getEnv('VITE_GOOGLE_CLIENT_ID')!;
 
       // Derive appId from clientId (extract numeric part before first dash)
       const appId = clientId ? clientId.split('-')[0] : null;
@@ -199,7 +200,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     const sessionToken = getSessionToken('google_drive');
     if (sessionToken) {
       try {
-        const apiHost = import.meta.env.VITE_API_HOST;
+        const apiHost = getEnv('VITE_API_HOST');
         await fetch(`${apiHost}/api/connectors/disconnect`, {
           method: 'POST',
           headers: {

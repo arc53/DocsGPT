@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import { getEnv } from '@/utils/envUtils';
 
 interface ConnectorAuthProps {
   provider: string;
@@ -68,7 +69,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
       completedRef.current = false;
       cleanup();
 
-      const apiHost = import.meta.env.VITE_API_HOST;
+      const apiHost = getEnv('VITE_API_HOST');
       const authResponse = await fetch(
         `${apiHost}/api/connectors/auth?provider=${provider}`,
         {
