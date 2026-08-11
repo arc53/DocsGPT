@@ -30,9 +30,6 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Copy nginx configuration file
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy env template 
-COPY env.template.js /usr/share/nginx/html/env.template.js
-
 # Copy entrypoint file and add execute permission
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
