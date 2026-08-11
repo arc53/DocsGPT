@@ -7,13 +7,27 @@ all-defaults so a malformed row never breaks a stream).
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from application.guardrails.types import ACTIONS_BY_STAGE, Action, Stage
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_BLOCK_MESSAGE = "Sorry, I can't help with that request."
+
+
+def _reason(exc: Exception) -> str:
+    """The operator-readable half of a pydantic validation error."""
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            return str(errors()[0].get("msg", exc)).replace("Value error, ", "")
+        except Exception:
+            pass
+    return str(exc)
 
 MODES = ("monitor_only", "scan_all")
 
@@ -141,13 +155,55 @@ class GuardrailsConfig(BaseModel):
 
     @classmethod
     def parse(cls, raw: Optional[dict]) -> "GuardrailsConfig":
-        """Lenient read: all-defaults (disabled) for empty or invalid input."""
+        """Lenient read: never raises, so a bad row can't break a stream.
+
+        A control that stopped validating — its check disallowed by
+        ``GUARDRAILS_CHECKS_ENABLED``, or renamed/removed in an upgrade — is
+        dropped on its own. Discarding the whole config instead turned one
+        stale control into "this agent has no guardrails at all", so an
+        operator *tightening* the allowlist silently stripped every remaining
+        control from every affected agent.
+        """
         if not raw or not isinstance(raw, dict):
             return cls()
         try:
             return cls.model_validate(raw)
         except Exception:
+            return cls._salvage(raw)
+
+    @classmethod
+    def _salvage(cls, raw: dict) -> "GuardrailsConfig":
+        """Re-validate control by control, keeping the ones that still pass."""
+        rest = {key: value for key, value in raw.items() if key != "controls"}
+        entries = raw.get("controls")
+        kept: List[Any] = []
+        dropped: List[str] = []
+        if isinstance(entries, list):
+            for entry in entries:
+                try:
+                    GuardrailControl.model_validate(entry)
+                except Exception as exc:
+                    label = entry.get("check") if isinstance(entry, dict) else "?"
+                    stage = entry.get("stage") if isinstance(entry, dict) else "?"
+                    dropped.append(f"{label}:{stage} — {_reason(exc)}")
+                    continue
+                kept.append(entry)
+        try:
+            parsed = cls.model_validate({**rest, "controls": kept})
+        except Exception:
+            logger.warning(
+                "Agent guardrails config is unusable and is being ignored; "
+                "this agent runs unguarded until it is re-saved"
+            )
             return cls()
+        if dropped:
+            logger.warning(
+                "Dropped %d unusable guardrail control(s); %d still active: %s",
+                len(dropped),
+                len(kept),
+                "; ".join(dropped),
+            )
+        return parsed
 
 
 class AgentConfig(BaseModel):

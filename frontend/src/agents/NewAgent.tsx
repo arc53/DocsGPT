@@ -210,6 +210,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     return jsonSchemaText.trim() !== '' && !jsonSchemaValid;
   };
 
+  // Draft saves post the same `config` blob and hit the same server-side
+  // validation as publish, so they need the same gate — otherwise an
+  // incomplete control 400s the draft behind a message that names no field.
+  const isDraftBlocked = () =>
+    isJsonSchemaInvalid() || guardrailsIncomplete(agent.config?.guardrails);
+
   // Resolve a selected source id to its display name. Prefer the caller's own
   // source list; fall back to the owner-resolved name embedded in the agent
   // payload (source_details) so a team member viewing a shared agent sees the
@@ -885,10 +891,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           {modeConfig[effectiveMode].showSaveDraft && (
             <Button
               type="button"
-              disabled={isJsonSchemaInvalid()}
+              disabled={isDraftBlocked()}
               onClick={handleSaveDraft}
               className={`border-primary text-primary hover:bg-primary/90 min-w-28 rounded-3xl border border-solid bg-transparent px-5 whitespace-nowrap hover:text-white ${
-                isJsonSchemaInvalid() ? 'disabled:opacity-30' : ''
+                isDraftBlocked() ? 'disabled:opacity-30' : ''
               }`}
             >
               <span className="flex items-center justify-center transition-all duration-200">

@@ -693,7 +693,13 @@ class BaseAnswerResource:
                             # the wire cannot be recalled, but the persisted
                             # message must not keep them — otherwise reloading
                             # the page redisplays exactly what was just blocked.
+                            # ``thought`` counts: a reasoning model states its
+                            # intent before acting on it, so the trace is where
+                            # the blocked material appears first. The client
+                            # clears it live, so leaving it here would surface
+                            # it only on reload.
                             response_full = error_text
+                            thought = ""
                             structured_chunks.clear()
                             is_structured = False
                             query_metadata["guardrail"] = guardrail_meta

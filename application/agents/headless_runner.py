@@ -214,6 +214,12 @@ def run_agent_headless(
         # truthy instead of reading as "ok".
         if event.get("type") == "error":
             stream_error = str(event.get("error") or "")[:500] or "unspecified"
+            if event.get("guardrail"):
+                # Same rule as the streaming route: a blocked turn must not
+                # record what was blocked. A scheduled run has no client to
+                # retract from, so the stored result is all there is.
+                answer_full = ""
+                thought = ""
             continue
         # A workflow's work is its nodes: its tool calls stay in the engine's
         # execution log and its node agents own their LLMs, so neither

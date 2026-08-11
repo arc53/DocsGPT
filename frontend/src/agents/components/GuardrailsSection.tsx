@@ -68,10 +68,14 @@ export function controlNeedsSetup(control: GuardrailControl): boolean {
  * True when saving would 400. The form gates Save on this so a single click on
  * a stage chip can't leave the whole agent — name, model and all — unsavable
  * behind an error naming an array index.
+ *
+ * Deliberately ignores `config.enabled`: the backend validates every control
+ * whether or not guardrails are switched on, so gating on `enabled` here let
+ * an incomplete control through the moment the user toggled guardrails off.
  */
 export function guardrailsIncomplete(config?: GuardrailsConfig): boolean {
-  if (!config?.enabled) return false;
-  return config.controls.some(controlNeedsSetup);
+  if (!config) return false;
+  return (config.controls ?? []).some(controlNeedsSetup);
 }
 
 function latencyLabel(ms: number): string {

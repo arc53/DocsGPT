@@ -754,6 +754,18 @@ export const submitToolActions = createAsyncThunk<
             message: data.notice ?? '',
           }),
         );
+      } else if (data.type === 'guardrail') {
+        // A resumed turn is still the same turn: the output guard runs on the
+        // continuation too, so this path needs the same retraction as the
+        // initial stream or the blocked text stays on screen until reload.
+        if (data.retract) {
+          dispatch(
+            conversationSlice.actions.retractResponse({
+              conversationId,
+              index: targetIndex,
+            }),
+          );
+        }
       } else if (data.type === 'error') {
         dispatch(conversationSlice.actions.setStatus('failed'));
         dispatch(

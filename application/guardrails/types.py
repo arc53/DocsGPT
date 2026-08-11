@@ -126,6 +126,15 @@ class StageDecision:
     redacted: bool = False
     block_message: Optional[str] = None
     verdicts: List[ControlVerdict] = field(default_factory=list)
+    # The text as it was scanned, before any redaction. Span offsets belong to
+    # this string; once ``text`` has been masked they no longer index it, so
+    # anything resolving a span back to its matched value must read this.
+    original_text: Optional[str] = None
+
+    @property
+    def scanned_text(self) -> str:
+        """The string span offsets are valid against."""
+        return self.original_text if self.original_text is not None else self.text
 
     @property
     def triggered(self) -> List[ControlVerdict]:

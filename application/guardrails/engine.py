@@ -86,7 +86,7 @@ class GuardrailEngine:
         ``controls`` narrows the run to a subset of the stage's controls; the
         streaming guard uses it to defer complete-text checks to the final scan.
         """
-        decision = StageDecision(stage=stage, text=text)
+        decision = StageDecision(stage=stage, text=text, original_text=text)
         if controls is None:
             controls = self.config.controls_for(stage)
         if not controls:

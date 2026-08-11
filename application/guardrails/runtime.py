@@ -197,7 +197,9 @@ class GuardrailRecorder:
                         "score": verdict.outcome.score,
                         "match_count": len(verdict.outcome.spans),
                         "matched_value": (
-                            self._sample(decision.text, verdict) if store_text else None
+                            self._sample(decision.scanned_text, verdict)
+                            if store_text
+                            else None
                         ),
                         "detail": verdict.outcome.detail or verdict.outcome.error,
                     }

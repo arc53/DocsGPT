@@ -22,7 +22,13 @@ from typing import List, Optional
 
 from application.guardrails.engine import GuardrailEngine
 from application.guardrails.guardrail_creator import GuardrailCreator
-from application.guardrails.types import Stage, StageDecision
+from application.guardrails.types import (
+    Action,
+    Span,
+    Stage,
+    StageDecision,
+    apply_spans,
+)
 
 DEFAULT_LOOKBACK = 128
 DEFAULT_SEGMENT_CHARS = 400
@@ -242,22 +248,54 @@ class StreamingOutputGuard:
                 decisions=[decision],
             )
 
-        return self._split(decision.text, force=force, final=final, decision=decision)
+        return self._split(combined, force=force, final=final, decision=decision)
+
+    @staticmethod
+    def _redact_spans(decision: Optional[StageDecision]) -> List[Span]:
+        """Spans a redact control asked to mask, in scan-buffer coordinates."""
+        if decision is None:
+            return []
+        spans: List[Span] = []
+        for verdict in decision.verdicts:
+            if verdict.action is Action.REDACT and verdict.outcome.triggered:
+                spans.extend(verdict.outcome.spans)
+        return spans
+
+    @staticmethod
+    def _safe_release(emit_end: int, spans: List[Span]) -> int:
+        """Pull the release point back so no masked span is cut in half.
+
+        Emitting the front of a match and holding the rest leaks it: the held
+        remainder is a truncated tail that no longer satisfies the pattern, so
+        nothing re-matches it and it goes out in the clear.
+        """
+        while True:
+            crossing = [s.start for s in spans if s.start < emit_end < s.end]
+            if not crossing:
+                return emit_end
+            emit_end = min(crossing)
 
     def _split(
-        self, scanned: str, force: bool, final: bool, decision: Optional[StageDecision]
+        self, raw: str, force: bool, final: bool, decision: Optional[StageDecision]
     ) -> StreamChunk:
+        spans = self._redact_spans(decision)
         if final:
-            emit_end = len(scanned)
+            emit_end = len(raw)
         else:
-            emit_end = self._release_point(scanned)
+            emit_end = self._release_point(raw)
             if force and emit_end == 0:
                 # Over the hold ceiling with no boundary in sight: release all
                 # but the lookback tail so the stream cannot stall forever.
-                emit_end = max(0, len(scanned) - self.lookback)
+                emit_end = max(0, len(raw) - self.lookback)
+            emit_end = self._safe_release(emit_end, spans)
 
-        self._held = scanned[emit_end:]
-        emitted = scanned[:emit_end]
+        # The tail is held *unredacted*. Masking before holding would freeze a
+        # partial match: a detector firing on a prefix of a value still arriving
+        # bakes the mask in, and the characters that follow append after it and
+        # are never re-scanned. Holding raw is safe because the tail is
+        # re-scanned in full on every subsequent round.
+        self._held = raw[emit_end:]
+        emitted = apply_spans(raw[:emit_end], [s for s in spans if s.end <= emit_end])
         if self._full is not None:
             self._full += emitted
         return StreamChunk(
