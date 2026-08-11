@@ -61,18 +61,33 @@ async function gotoSettings(
  * This helper clicks the trigger whose visible label is `currentValue`,
  * then clicks the option whose visible label is `targetValue`.
  */
+/** Anchored matcher so picking "2" cannot match "20". */
+function exactText(value: string): RegExp {
+  return new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+}
+
 async function pickDropdown(
   page: import('@playwright/test').Page,
   currentValue: string,
   targetValue: string,
 ): Promise<void> {
-  await page.getByRole('button', { name: currentValue, exact: true })
+  // Settings dropdowns are shadcn <Select> since #2495. Two consequences the
+  // old locators tripped on:
+  //   1. Radix gives the trigger role="combobox", not "button".
+  //   2. That trigger has no aria-label, and for a combobox the accessible
+  //      name comes from a label — not from content — so the current value is
+  //      only matchable as text. Hence filter() rather than { name }.
+  await page
+    .getByRole('combobox')
+    .filter({ hasText: exactText(currentValue) })
     .first()
     .click();
-  // Options render as spans; click by exact text. Use `.last()` because
-  // sometimes the same text appears in the trigger label too (collapsed
-  // state overlap). The panel appends after the trigger in DOM order.
-  await page.getByText(targetValue, { exact: true }).last().click();
+  // Options are portalled with role="option"; matching the role avoids
+  // colliding with the same text still shown in the trigger.
+  await page
+    .getByRole('option', { name: targetValue, exact: true })
+    .first()
+    .click();
 }
 
 /**
@@ -226,28 +241,9 @@ test.describe('tier-c · UI smoke', () => {
     }
   });
 
-  test('C3 · chunk-count change persists to DocsGPTChunks localStorage', async ({
-    browser,
-  }) => {
-    const { context } = await newUserContext(browser);
-    try {
-      const page = await context.newPage();
-      await gotoSettings(page);
-
-      // Default chunks value is '2'. Only the chunks dropdown's trigger has
-      // the exact text "2"; other dropdowns show their own labels. Pick '6'.
-      await pickDropdown(page, '2', '6');
-
-      // localStorage persisted (listener middleware fires on setChunks).
-      await expect
-        .poll(async () =>
-          page.evaluate(() => localStorage.getItem('DocsGPTChunks')),
-        )
-        .toBe(JSON.stringify('6'));
-    } finally {
-      await context.close();
-    }
-  });
+  // C3 removed: the chunk-count dropdown was deleted from Settings in
+  // babc067a "feat: remove old chunk management" (2026-06-22). There is no
+  // longer a DocsGPTChunks setting to persist, so there is nothing to smoke.
 
   test('C4 · default prompt selection persists to DocsGPTPrompt', async ({
     browser,
@@ -257,9 +253,11 @@ test.describe('tier-c · UI smoke', () => {
       const page = await context.newPage();
       await gotoSettings(page);
 
-      // The active prompt dropdown starts on "default". Open it and pick
-      // "creative" — a built-in so no seeding needed.
-      await pickDropdown(page, 'default', 'creative');
+      // The prompt picker is a Popover + cmdk list (settings/Prompts.tsx), not
+      // a Select, so pickDropdown does not apply: the trigger is a button with
+      // aria-label="Toggle prompt list" and the entries are cmdk options.
+      await page.getByRole('button', { name: 'Toggle prompt list' }).click();
+      await page.getByRole('option', { name: 'creative' }).first().click();
 
       await expect
         .poll(async () => {
@@ -321,23 +319,24 @@ test.describe('tier-c · UI smoke', () => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto('/');
 
-      // Sidebar open: the Collapse button's img has alt="Collapse sidebar"
-      // (Navigation.tsx:367). Click it to collapse.
-      const collapse = page.getByAltText('Collapse sidebar');
+      // Sidebar open: the toggle is a button carrying
+      // aria-label="Collapse sidebar" (Navigation.tsx:415). It used to be an
+      // <img alt=...>, which is why this was getByAltText before.
+      const collapse = page.getByRole('button', { name: 'Collapse sidebar' });
       await expect(collapse).toBeVisible();
       await collapse.click();
 
       // When collapsed, Navigation.tsx renders a floating reopen button at
-      // `absolute top-3 left-3` whose img has alt="Open navigation menu"
-      // (Navigation.tsx:312). The off-screen nav's own toggle flips to
+      // `absolute top-3 left-3` with aria-label="Open navigation menu"
+      // (Navigation.tsx:329). The off-screen nav's own toggle flips to
       // "Expand sidebar" but that one is outside the viewport. We target
       // the visible floating button for the re-open interaction.
-      const reopen = page.getByAltText('Open navigation menu');
+      const reopen = page.getByRole('button', { name: 'Open navigation menu' });
       await expect(reopen).toBeVisible();
       await reopen.click();
 
       // Collapse button visible again — toggle is symmetric.
-      await expect(page.getByAltText('Collapse sidebar')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible();
     } finally {
       await context.close();
     }
@@ -468,12 +467,13 @@ test.describe('tier-c · UI smoke', () => {
       const page = await context.newPage();
       await page.goto(`/agents/logs/${agentId}`);
 
-      // AgentLogs.tsx renders the i18n "agents.logs.title" heading and an
-      // "agents.backToAll" label. The title is the load-bearing assertion —
-      // if the route resolves, useParams gives us an agentId, and the page
-      // mounts, the h1 appears regardless of whether analytics have data.
+      // AgentPageHeader renders a breadcrumb plus a labelled sub-nav; it has
+      // no heading element (it used to, before #2495 moved it to shadcn
+      // Breadcrumb). The sub-nav landmark is the load-bearing assertion — it
+      // only mounts once the route resolves and useParams yields an agentId,
+      // and it is there regardless of whether analytics have data.
       await expect(
-        page.getByRole('heading', { level: 1 }).first(),
+        page.getByRole('navigation', { name: 'Agent sub-navigation' }),
       ).toBeVisible();
 
       // Agent name renders once the fetch resolves.

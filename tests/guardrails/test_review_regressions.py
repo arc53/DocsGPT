@@ -96,23 +96,20 @@ class TestFloorSettingsAreAuthoritative:
         assert "US_SSN" in merged.controls[0].settings["entities"]
 
 
-class TestModeMergeCoverage:
-    """``dangerous_tools_only`` is not "stricter than" a mode that scans all stages."""
+class TestModeMerge:
+    """A floor that enforces must pull a monitoring agent up with it."""
 
-    def test_agent_cannot_shed_stages_by_picking_tools_only(self):
+    def test_floor_enforcement_wins(self):
         floor = _cfg(
-            enabled=True, mode="background_scan",
+            enabled=True, mode="scan_all",
             controls=[{"check": "pii", "stage": "output", "action": "redact"}],
         )
-        agent = _cfg(enabled=True, mode="dangerous_tools_only")
-        merged = merge_floor(agent, floor)
-        assert merged.controls_for(Stage.OUTPUT), (
-            "the floor's output control must survive the agent's mode choice"
-        )
-
-    def test_enforcement_and_coverage_both_take_the_stronger_side(self):
-        floor = _cfg(enabled=True, mode="dangerous_tools_only")
         agent = _cfg(enabled=True, mode="monitor_only")
+        assert merge_floor(agent, floor).mode == "scan_all"
+
+    def test_monitoring_floor_leaves_the_agent_alone(self):
+        floor = _cfg(enabled=True, mode="monitor_only")
+        agent = _cfg(enabled=True, mode="scan_all")
         assert merge_floor(agent, floor).mode == "scan_all"
 
 
@@ -260,67 +257,6 @@ class TestRemoteDoesNotWeakenLocal:
             )
         finally:
             GuardrailCreator.checks.pop(Judge.name, None)
-
-
-class TestRedosIsRejectedAtWriteTime:
-    """A stage deadline cannot save us here.
-
-    CPython's ``re`` holds the GIL for the whole match, so a catastrophically
-    backtracking pattern starves every thread in the worker, not just its own.
-    Writing such a pattern must therefore be impossible in the first place.
-    """
-
-    @pytest.mark.parametrize(
-        "pattern",
-        ["^(a+)+$", "(a*)*", r"(\d+){2,}", "((ab)+)+", "(x+x+)+y"],
-    )
-    def test_nested_quantifiers_are_rejected(self, pattern):
-        from application.guardrails.checks.tool_policy import ToolPolicyCheck
-
-        with pytest.raises(ValueError, match="backtrack exponentially"):
-            ToolPolicyCheck.validate_settings(
-                {"arg_patterns": [{"arg": "q", "pattern": pattern}]}
-            )
-
-    @pytest.mark.parametrize(
-        "pattern",
-        [r".*@(?!arc53\.com)", "(abc)+", "(a|b)*", "^rm -rf", r"\d{3}-\d{4}"],
-    )
-    def test_ordinary_patterns_are_still_accepted(self, pattern):
-        from application.guardrails.checks.tool_policy import ToolPolicyCheck
-
-        out = ToolPolicyCheck.validate_settings(
-            {"arg_patterns": [{"arg": "q", "pattern": pattern}]}
-        )
-        assert out["arg_patterns"][0]["pattern"] == pattern
-
-    def test_rejection_happens_through_the_config_boundary(self):
-        with pytest.raises(ValueError, match="backtrack exponentially"):
-            GuardrailsConfig.model_validate(
-                {"controls": [{"check": "tool_policy", "stage": "tool_call",
-                               "settings": {"arg_patterns": [
-                                   {"arg": "q", "pattern": "^(a+)+$"}]}}]}
-            )
-
-    def test_haystack_is_bounded(self):
-        from application.guardrails.checks.tool_policy import (
-            _MAX_HAYSTACK,
-            ToolPolicyCheck,
-        )
-        from application.guardrails.base import ScanContext
-
-        settings = ToolPolicyCheck.validate_settings(
-            {"arg_patterns": [{"arg": "q", "pattern": "NEEDLE"}]}
-        )
-        far_out = "a" * (_MAX_HAYSTACK + 50) + "NEEDLE"
-        ctx = ScanContext(tool_name="t", action_name="a", tool_args={"q": far_out})
-        outcome = ToolPolicyCheck(settings).scan("", Stage.TOOL_CALL, ctx)
-        assert outcome.triggered is False, "the haystack must be truncated"
-
-    def test_tool_policy_still_runs_under_the_deadline(self):
-        from application.guardrails.checks.tool_policy import ToolPolicyCheck
-
-        assert ToolPolicyCheck.unbounded_runtime is True
 
 
 class TestGroundednessDeferredToCompleteAnswer:

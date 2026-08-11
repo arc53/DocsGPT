@@ -12,7 +12,6 @@ class Stage(str, Enum):
 
     INPUT = "input"
     RETRIEVAL = "retrieval"
-    TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     OUTPUT = "output"
 
@@ -23,15 +22,11 @@ class Action(str, Enum):
     FLAG = "flag"
     REDACT = "redact"
     BLOCK = "block"
-    REQUIRE_APPROVAL = "require_approval"
 
 
-# ``require_approval`` only has a resolution path at the tool-call gate; every
-# other stage would have nothing to hand the pause flow.
 ACTIONS_BY_STAGE = {
     Stage.INPUT: {Action.FLAG, Action.REDACT, Action.BLOCK},
     Stage.RETRIEVAL: {Action.FLAG, Action.REDACT, Action.BLOCK},
-    Stage.TOOL_CALL: {Action.FLAG, Action.BLOCK, Action.REQUIRE_APPROVAL},
     Stage.TOOL_RESULT: {Action.FLAG, Action.REDACT, Action.BLOCK},
     Stage.OUTPUT: {Action.FLAG, Action.REDACT, Action.BLOCK},
 }
@@ -106,10 +101,6 @@ class ControlVerdict:
     def blocking(self) -> bool:
         return self.outcome.triggered and self.action is Action.BLOCK
 
-    @property
-    def needs_approval(self) -> bool:
-        return self.outcome.triggered and self.action is Action.REQUIRE_APPROVAL
-
     def as_log(self) -> Dict[str, Any]:
         return {
             "check": self.check,
@@ -132,7 +123,6 @@ class StageDecision:
     stage: Stage
     text: str
     blocked: bool = False
-    approval_required: bool = False
     redacted: bool = False
     block_message: Optional[str] = None
     verdicts: List[ControlVerdict] = field(default_factory=list)
@@ -162,7 +152,6 @@ class StageDecision:
             "stage": self.stage.value,
             "blocked": self.blocked,
             "redacted": self.redacted,
-            "approval_required": self.approval_required,
             "categories": self.categories(),
             "verdicts": [v.as_log() for v in self.verdicts if v.outcome.triggered or not v.outcome.evaluated],
         }

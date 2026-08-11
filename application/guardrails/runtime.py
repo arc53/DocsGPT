@@ -21,36 +21,19 @@ logger = logging.getLogger(__name__)
 _ACTION_RANK = {
     Action.FLAG: 0,
     Action.REDACT: 1,
-    Action.REQUIRE_APPROVAL: 2,
-    Action.BLOCK: 3,
+    Action.BLOCK: 2,
 }
 
-# Mode is two independent axes, and ranking it on one scale gets the merge
-# wrong: ``dangerous_tools_only`` enforces, but it also drops every stage
-# except tool_call, so it is not simply "stricter than" a monitoring mode that
-# still watches everything. Merge each axis separately, then map back.
-_MODE_AXES = {
-    # mode: (covers_all_stages, enforces)
-    "monitor_only": (True, False),
-    "background_scan": (True, False),
-    "dangerous_tools_only": (False, True),
-    "scan_all": (True, True),
-}
-_AXES_TO_MODE = {
-    (True, True): "scan_all",
-    (True, False): "monitor_only",
-    (False, True): "dangerous_tools_only",
-    (False, False): "monitor_only",
-}
+# Both modes scan every stage, so the merge is only about whether the floor
+# enforces.
+_ENFORCING_MODES = {"scan_all"}
 
 
 def _merge_mode(agent_mode: str, floor_mode: str) -> str:
-    """Take the wider coverage and the stronger enforcement of the two."""
-    agent_axes = _MODE_AXES.get(agent_mode, (True, False))
-    floor_axes = _MODE_AXES.get(floor_mode, (True, False))
-    return _AXES_TO_MODE[
-        (agent_axes[0] or floor_axes[0], agent_axes[1] or floor_axes[1])
-    ]
+    """Enforce if either side enforces; otherwise keep the agent's label."""
+    if floor_mode in _ENFORCING_MODES:
+        return floor_mode
+    return agent_mode
 
 
 def instance_floor() -> Optional[GuardrailsConfig]:

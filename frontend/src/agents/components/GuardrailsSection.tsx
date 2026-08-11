@@ -36,7 +36,6 @@ export const DEFAULT_GUARDRAILS: GuardrailsConfig = {
 const STAGE_KEYS: Record<GuardrailStage, string> = {
   input: 'agents.form.guardrails.stages.input',
   retrieval: 'agents.form.guardrails.stages.retrieval',
-  tool_call: 'agents.form.guardrails.stages.toolCall',
   tool_result: 'agents.form.guardrails.stages.toolResult',
   output: 'agents.form.guardrails.stages.output',
 };
@@ -45,13 +44,10 @@ const ACTION_KEYS: Record<GuardrailAction, string> = {
   flag: 'agents.form.guardrails.actions.flag',
   redact: 'agents.form.guardrails.actions.redact',
   block: 'agents.form.guardrails.actions.block',
-  require_approval: 'agents.form.guardrails.actions.requireApproval',
 };
 
 const MODE_KEYS: Record<string, string> = {
   monitor_only: 'agents.form.guardrails.modes.monitorOnly',
-  background_scan: 'agents.form.guardrails.modes.backgroundScan',
-  dangerous_tools_only: 'agents.form.guardrails.modes.dangerousToolsOnly',
   scan_all: 'agents.form.guardrails.modes.scanAll',
 };
 
@@ -59,15 +55,6 @@ const MODE_KEYS: Record<string, string> = {
 const REQUIRES_SETUP: Record<string, (s: Record<string, any>) => boolean> = {
   denylist: (s) => !(s.terms ?? []).length,
   url: (s) => !(s.allow_hosts ?? []).length && !(s.block_hosts ?? []).length,
-  tool_policy: (s) =>
-    !(s.allow_tools ?? []).length &&
-    !(s.block_tools ?? []).length &&
-    !(s.arg_patterns ?? []).length,
-  topic: (s) =>
-    String(s.topic_name ?? '').trim().length < 3 ||
-    String(s.description ?? '').trim().length < 10 ||
-    (s.unsafe_examples ?? []).filter(Boolean).length < 2 ||
-    (s.safe_examples ?? []).filter(Boolean).length < 2,
   policy: (s) => String(s.policy ?? '').trim().length < 10,
   pii: (s) => !(s.entities ?? []).length,
 };
@@ -335,8 +322,7 @@ export default function GuardrailsSection({
                     ))}
                   </SelectContent>
                 </Select>
-                {(config.mode === 'monitor_only' ||
-                  config.mode === 'background_scan') && (
+                {config.mode === 'monitor_only' && (
                   <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
                     {t('agents.form.guardrails.monitorHint')}
                   </p>
@@ -512,22 +498,10 @@ function defaultSettingsFor(
       return { terms: [], match: 'word', case_sensitive: false };
     case 'url':
       return { allow_hosts: [], block_hosts: [] };
-    case 'moderation':
-      return { categories: catalog?.moderation_categories ?? [] };
-    case 'topic':
-      return {
-        topic_name: '',
-        description: '',
-        unsafe_examples: [],
-        safe_examples: [],
-        confidence_threshold: 0.7,
-      };
     case 'policy':
       return { policy: '', confidence_threshold: 0.7 };
     case 'groundedness':
       return { min_overlap: 0.3, min_words: 25, require_retrieval: true };
-    case 'tool_policy':
-      return { allow_tools: [], block_tools: [], arg_patterns: [] };
     default:
       return {};
   }
@@ -752,15 +726,7 @@ function CheckCard({
 }
 
 function hasSettings(check: string): boolean {
-  return [
-    'pii',
-    'denylist',
-    'url',
-    'topic',
-    'policy',
-    'groundedness',
-    'tool_policy',
-  ].includes(check);
+  return ['pii', 'denylist', 'url', 'policy', 'groundedness'].includes(check);
 }
 
 function CheckSettings({
@@ -859,62 +825,6 @@ function CheckSettings({
         </>
       )}
 
-      {control.check === 'tool_policy' && (
-        <>
-          {listField(
-            'allow_tools',
-            t('agents.form.guardrails.allowTools'),
-            'search.query',
-          )}
-          {listField(
-            'block_tools',
-            t('agents.form.guardrails.blockTools'),
-            'shell.*',
-          )}
-        </>
-      )}
-
-      {control.check === 'topic' && (
-        <>
-          <div className="mt-2">
-            <label className="mb-1 block text-xs font-medium">
-              {t('agents.form.guardrails.topicName')}
-            </label>
-            <Input
-              type="text"
-              value={s.topic_name ?? ''}
-              disabled={disabled}
-              data-testid="guardrail-topic-name"
-              onChange={(e) => set({ topic_name: e.target.value })}
-              className="bg-card h-auto rounded-xl px-3 py-2 text-xs md:text-xs"
-            />
-          </div>
-          <div className="mt-2">
-            <label className="mb-1 block text-xs font-medium">
-              {t('agents.form.guardrails.topicDescription')}
-            </label>
-            <textarea
-              rows={2}
-              value={s.description ?? ''}
-              disabled={disabled}
-              data-testid="guardrail-topic-description"
-              onChange={(e) => set({ description: e.target.value })}
-              className="bg-card w-full rounded-xl border border-gray-200 px-3 py-2 text-xs dark:border-gray-700"
-            />
-          </div>
-          {listField(
-            'unsafe_examples',
-            t('agents.form.guardrails.unsafeExamples'),
-            t('agents.form.guardrails.examplesPlaceholder'),
-          )}
-          {listField(
-            'safe_examples',
-            t('agents.form.guardrails.safeExamples'),
-            t('agents.form.guardrails.examplesPlaceholder'),
-          )}
-        </>
-      )}
-
       {control.check === 'policy' && (
         <div className="mt-2">
           <label className="mb-1 block text-xs font-medium">
@@ -964,7 +874,7 @@ function CheckSettings({
         </div>
       )}
 
-      {(control.check === 'topic' || control.check === 'policy') && (
+      {control.check === 'policy' && (
         <div className="mt-2">
           <label className="mb-1 block text-xs font-medium">
             {t('agents.form.guardrails.confidence')}

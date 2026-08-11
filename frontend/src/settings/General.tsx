@@ -46,16 +46,20 @@ export default function General() {
   );
   const dispatch = useDispatch();
   const locale = localStorage.getItem('docsgpt-locale');
+  // Fall back to English when the stored locale is not one we offer. Without
+  // the fallback `find` returns undefined, the effect below writes the string
+  // "undefined" into localStorage, and every subsequent load fails the same
+  // lookup — the picker renders blank and can never recover.
   const [selectedLanguage, setSelectedLanguage] = React.useState(
-    locale
-      ? languageOptions.find((option) => option.value === locale)
-      : languageOptions[0],
+    languageOptions.find((option) => option.value === locale) ??
+      languageOptions[0],
   );
   const selectedPrompt = useSelector(selectPrompt);
 
   React.useEffect(() => {
-    localStorage.setItem('docsgpt-locale', selectedLanguage?.value as string);
-    changeLanguage(selectedLanguage?.value);
+    if (!selectedLanguage?.value) return;
+    localStorage.setItem('docsgpt-locale', selectedLanguage.value);
+    changeLanguage(selectedLanguage.value);
   }, [selectedLanguage, changeLanguage]);
   return (
     <div className="mt-8 flex flex-col gap-6">

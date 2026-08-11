@@ -22,9 +22,9 @@
  * // Silent-break covered #2: a malformed control accepted with a 200. Every
  * // rejection case below is a configuration an operator could plausibly
  * // write and reasonably believe was enforcing something —
- * // `require_approval` on user input (there is nothing to approve), `redact`
- * // on a check that reports no spans, a duplicate control that shadows the
- * // stricter twin. Each must 400 AND leave no row behind.
+ * // `redact` on a check that reports no spans, a duplicate control that
+ * // shadows the stricter twin, a typo'd key. Each must 400 AND leave no row
+ * // behind — and the 400 must not echo the validator's own text back.
  *
  * // Silent-break covered #3: the builder writes state the backend then
  * // normalises away, so a reload shows the operator something different
@@ -50,22 +50,13 @@ const EXPECTED_CHECKS = [
   'denylist',
   'groundedness',
   'injection',
-  'moderation',
   'pii',
   'policy',
   'secrets',
-  'tool_policy',
-  'topic',
   'url',
 ];
 
-const VALID_STAGES = [
-  'input',
-  'retrieval',
-  'tool_call',
-  'tool_result',
-  'output',
-];
+const VALID_STAGES = ['input', 'retrieval', 'tool_result', 'output'];
 
 /**
  * Defaults `GuardrailsConfig` fills in for anything the caller omitted
@@ -343,7 +334,8 @@ test.describe('tier-b · guardrails strict validation on write', () => {
   const REJECTIONS: Array<{
     label: string;
     config: unknown;
-    expectedMessage: string;
+    /** Validator text that must appear in the SERVER LOG, never the body. */
+    internalHint: string;
   }> = [
     {
       label: 'unknown check name',
@@ -353,25 +345,7 @@ test.describe('tier-b · guardrails strict validation on write', () => {
           controls: [{ check: 'no_such_check', stage: 'input', action: 'flag' }],
         },
       },
-      expectedMessage: "unknown check 'no_such_check'",
-    },
-    {
-      label: 'require_approval at a stage that has no approval flow (input)',
-      config: {
-        guardrails: {
-          enabled: true,
-          controls: [
-            {
-              check: 'denylist',
-              stage: 'input',
-              action: 'require_approval',
-              settings: { terms: ['x'] },
-            },
-          ],
-        },
-      },
-      expectedMessage:
-        "action 'require_approval' is not valid at stage 'input'",
+      internalHint: "unknown check 'no_such_check'",
     },
     {
       label: 'redact on a check that reports no spans (groundedness)',
@@ -383,7 +357,7 @@ test.describe('tier-b · guardrails strict validation on write', () => {
           ],
         },
       },
-      expectedMessage: "check 'groundedness' cannot redact",
+      internalHint: "check 'groundedness' cannot redact",
     },
     {
       label: 'a check bound to a stage it does not support',
@@ -395,7 +369,7 @@ test.describe('tier-b · guardrails strict validation on write', () => {
           ],
         },
       },
-      expectedMessage:
+      internalHint:
         "check 'groundedness' does not support stage 'input'",
     },
     {
@@ -419,7 +393,7 @@ test.describe('tier-b · guardrails strict validation on write', () => {
           ],
         },
       },
-      expectedMessage:
+      internalHint:
         "duplicate control for check 'denylist' at stage 'input'",
     },
     {
@@ -437,7 +411,7 @@ test.describe('tier-b · guardrails strict validation on write', () => {
           ],
         },
       },
-      expectedMessage: 'terms must be a non-empty list',
+      internalHint: 'terms must be a non-empty list',
     },
     {
       label: 'pii with an entity the detector has no pattern for',
@@ -454,7 +428,7 @@ test.describe('tier-b · guardrails strict validation on write', () => {
           ],
         },
       },
-      expectedMessage: 'unknown PII entities: NOT_A_THING',
+      internalHint: 'unknown PII entities: NOT_A_THING',
     },
     {
       label: 'url policy with neither an allow nor a block list',
@@ -466,22 +440,22 @@ test.describe('tier-b · guardrails strict validation on write', () => {
           ],
         },
       },
-      expectedMessage: 'provide allow_hosts or block_hosts',
+      internalHint: 'provide allow_hosts or block_hosts',
     },
     {
       label: 'an unknown enforcement mode',
       config: { guardrails: { enabled: true, mode: 'yolo' } },
-      expectedMessage: 'mode must be one of',
+      internalHint: 'mode must be one of',
     },
     {
       label: 'a timeout below the floor',
       config: { guardrails: { enabled: true, timeout_ms: 5 } },
-      expectedMessage: 'must be >= 100',
+      internalHint: 'must be >= 100',
     },
     {
       label: 'a typo\'d key at the top level of config',
       config: { guardrails: { enabled: true }, guardrail: {} },
-      expectedMessage: 'Extra inputs are not permitted',
+      internalHint: 'Extra inputs are not permitted',
     },
     {
       label: 'a typo\'d key inside a control',
@@ -498,16 +472,16 @@ test.describe('tier-b · guardrails strict validation on write', () => {
           ],
         },
       },
-      expectedMessage: 'Extra inputs are not permitted',
+      internalHint: 'Extra inputs are not permitted',
     },
     {
       label: 'config that is not a JSON object at all',
       config: ['not', 'an', 'object'],
-      expectedMessage: 'config must be a JSON object',
+      internalHint: 'config must be a JSON object',
     },
   ];
 
-  for (const { label, config, expectedMessage } of REJECTIONS) {
+  for (const { label, config, internalHint } of REJECTIONS) {
     test(`create_agent rejects ${label} with a 400 and writes no row`, async () => {
       const sub = `e2e-guardrails-reject-${Date.now()}-${Math.random()
         .toString(36)
@@ -520,10 +494,18 @@ test.describe('tier-b · guardrails strict validation on write', () => {
         expect(res.status(), `expected 400 for ${label}, body: ${body}`).toBe(
           400,
         );
+        // The body is deliberately static — CodeQL flagged returning
+        // validator text, and `api/user/sources/routes.py` set the precedent
+        // of a fixed message with the detail logged instead. So assert the
+        // stable contract AND that the internals did not escape with it.
         expect(
           body,
-          `the 400 for "${label}" must name the problem; got: ${body}`,
-        ).toContain(expectedMessage);
+          `the 400 for "${label}" must carry the static message; got: ${body}`,
+        ).toContain('Invalid config');
+        expect(
+          body,
+          `the 400 for "${label}" must not leak validator internals (${internalHint})`,
+        ).not.toContain(internalHint);
 
         // Nothing may persist. A rejected config that still creates the
         // agent (minus its guardrails) is the worst outcome: the operator
@@ -589,7 +571,7 @@ test.describe('tier-b · guardrails catalog endpoint', () => {
     await resetDb();
   });
 
-  test('GET /api/guardrails/catalog describes all ten checks with the metadata the builder renders', async () => {
+  test('GET /api/guardrails/catalog describes every registered check with the metadata the builder renders', async () => {
     const sub = `e2e-guardrails-catalog-${Date.now()}`;
     const token = signJwt(sub);
     const api = await authedRequest(playwright, token);
@@ -615,7 +597,6 @@ test.describe('tier-b · guardrails catalog endpoint', () => {
         default_block_message: string;
         pii_entities: string[];
         default_pii_entities: string[];
-        moderation_categories: string[];
         floor: unknown;
       };
 
@@ -666,31 +647,19 @@ test.describe('tier-b · guardrails catalog endpoint', () => {
       // and changes when text is released.
       expect(byName.secrets.remote).toBe(false);
       expect(byName.pii.remote).toBe(false);
-      expect(byName.moderation.remote).toBe(true);
+      // The judge is the only check that leaves the process.
+      expect(byName.policy.remote).toBe(true);
 
-      // `tool_policy` only makes sense at the tool gate.
-      expect(byName.tool_policy.stages).toEqual(['tool_call']);
       expect(byName.groundedness.stages).toEqual(['output']);
 
       expect(body.stages).toEqual(VALID_STAGES);
-      expect(body.modes).toEqual([
-        'monitor_only',
-        'background_scan',
-        'dangerous_tools_only',
-        'scan_all',
-      ]);
+      expect(body.modes).toEqual(['monitor_only', 'scan_all']);
 
-      // `require_approval` has a resolution path only at the tool gate.
+      // Every stage takes the same three actions now that the tool gate is
+      // gone; nothing may advertise an action the validator would reject.
       for (const [stage, actions] of Object.entries(body.actions_by_stage)) {
         expect(VALID_STAGES).toContain(stage);
-        if (stage === 'tool_call') {
-          expect(actions).toEqual(['block', 'flag', 'require_approval']);
-        } else {
-          expect(
-            actions,
-            `stage ${stage} must not advertise require_approval`,
-          ).not.toContain('require_approval');
-        }
+        expect(actions).toEqual(['block', 'flag', 'redact']);
       }
 
       expect(body.default_block_message).toBe(
@@ -711,7 +680,6 @@ test.describe('tier-b · guardrails catalog endpoint', () => {
           `default PII entity ${entity} is not in the advertised entity list`,
         ).toContain(entity);
       }
-      expect(body.moderation_categories.length).toBeGreaterThan(0);
       // No instance floor is configured in the e2e env, so the builder must
       // be told there is nothing to lock.
       expect(body.floor).toBeNull();

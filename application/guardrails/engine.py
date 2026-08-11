@@ -72,15 +72,13 @@ class GuardrailEngine:
     def _needs_deadline(control) -> bool:
         """True when this control must be run under the stage deadline.
 
-        Remote checks block on I/O; ``unbounded_runtime`` checks accept
-        operator-supplied regex, which can backtrack catastrophically. Anything
-        else is a bounded local pattern match and runs inline.
+        Only remote checks block on I/O. Everything else is a bounded local
+        pattern match and runs inline.
         """
         try:
-            check_cls = GuardrailCreator.get(control.check)
+            return bool(GuardrailCreator.get(control.check).remote)
         except Exception:
             return True
-        return bool(check_cls.remote or check_cls.unbounded_runtime)
 
     def evaluate(self, text: str, stage: Stage, controls=None) -> StageDecision:
         """Scan ``text`` for ``stage`` and reduce to the most restrictive outcome.
@@ -182,7 +180,6 @@ class GuardrailEngine:
                 # otherwise release the PII it was there to remove.
                 if not self.config.fail_open and verdict.action in (
                     Action.BLOCK,
-                    Action.REQUIRE_APPROVAL,
                     Action.REDACT,
                 ):
                     decision.blocked = True
@@ -193,8 +190,6 @@ class GuardrailEngine:
             if verdict.action is Action.BLOCK:
                 decision.blocked = True
                 decision.block_message = self.config.block_message
-            elif verdict.action is Action.REQUIRE_APPROVAL:
-                decision.approval_required = True
             elif verdict.action is Action.REDACT:
                 redact_spans.extend(verdict.outcome.spans)
 

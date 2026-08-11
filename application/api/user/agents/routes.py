@@ -50,6 +50,13 @@ from application.utils import (
 
 agents_ns = Namespace("agents", description="Agent management operations", path="/api")
 
+# Returned verbatim on a rejected ``config`` write. Deliberately static — the
+# validator's own text can carry input-derived detail, and an error body is not
+# the place for it.
+INVALID_CONFIG_MESSAGE = (
+    "Invalid config: one or more guardrail controls failed validation."
+)
+
 
 AGENT_TYPE_SCHEMAS = {
     "classic": {
@@ -610,8 +617,16 @@ class CreateAgent(Resource):
             try:
                 normalized_config = normalize_agent_config(data.get("config"))
             except ValueError as exc:
+                # Static message, detail to the log: validation internals must
+                # not reach the caller (same policy as SourceConfig writes in
+                # api/user/sources/routes.py). The builder validates the same
+                # rules client-side, so this path is for API callers.
+                current_app.logger.warning(
+                    "Agent config rejected on create (user=%s): %s", user, exc
+                )
                 return make_response(
-                    jsonify({"success": False, "message": str(exc)}), 400
+                    jsonify({"success": False, "message": INVALID_CONFIG_MESSAGE}),
+                    400,
                 )
             if normalized_config is None:
                 data.pop("config", None)
@@ -1006,7 +1021,12 @@ class UpdateAgent(Resource):
                         try:
                             normalized_config = normalize_agent_config(data.get("config"))
                         except ValueError as exc:
-                            return _reject(str(exc), user, field)
+                            current_app.logger.warning(
+                                "Agent config rejected on update (user=%s): %s",
+                                user,
+                                exc,
+                            )
+                            return _reject(INVALID_CONFIG_MESSAGE, user, field)
                         update_fields["config"] = normalized_config or {}
                     elif field == "limited_token_mode":
                         raw_value = data.get("limited_token_mode", False)

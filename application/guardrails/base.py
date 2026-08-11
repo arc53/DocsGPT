@@ -49,10 +49,6 @@ class GuardrailCheck(ABC):
     description: ClassVar[str] = ""
     #: True when the check needs a network round trip (LLM or vendor API).
     remote: ClassVar[bool] = False
-    #: True when the check's runtime is not provably bounded by input size —
-    #: user-supplied regex, say — so the engine must run it under a deadline
-    #: even though it is local.
-    unbounded_runtime: ClassVar[bool] = False
     #: Longest match this check can report, in characters. The streaming guard
     #: sizes its withhold window from this, so a check that under-declares it
     #: will miss matches straddling a chunk boundary.

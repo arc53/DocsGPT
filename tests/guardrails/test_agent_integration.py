@@ -253,7 +253,7 @@ class TestRetrievalStage:
 
 
 @pytest.mark.unit
-class TestToolStage:
+class TestToolResultStage:
     def _executor(self, controls):
         config = GuardrailsConfig.model_validate(
             {"enabled": True, "mode": "scan_all", "controls": controls}
@@ -262,46 +262,9 @@ class TestToolStage:
         executor.guardrail_engine = GuardrailEngine(config)
         return executor
 
-    def test_blocked_tool_is_denied(self):
-        executor = self._executor(
-            [{"check": "tool_policy", "stage": "tool_call", "action": "block",
-              "settings": {"block_tools": ["shell"]}}]
-        )
-        decision = executor._guardrail_tool_decision("shell", "run", {"cmd": "rm -rf /"})
-        assert decision.blocked is True
-
-    def test_allowed_tool_passes(self):
-        executor = self._executor(
-            [{"check": "tool_policy", "stage": "tool_call", "action": "block",
-              "settings": {"allow_tools": ["search"]}}]
-        )
-        assert executor._guardrail_tool_decision("search", "query", {}).blocked is False
-
-    def test_require_approval_is_reported_separately_from_block(self):
-        executor = self._executor(
-            [{"check": "tool_policy", "stage": "tool_call", "action": "require_approval",
-              "settings": {"block_tools": ["email"]}}]
-        )
-        decision = executor._guardrail_tool_decision("email", "send", {})
-        assert decision.approval_required is True
-        assert decision.blocked is False
-
-    def test_engine_failure_denies_the_call(self, monkeypatch):
-        executor = self._executor(
-            [{"check": "tool_policy", "stage": "tool_call", "action": "block",
-              "settings": {"block_tools": ["shell"]}}]
-        )
-        monkeypatch.setattr(
-            executor.guardrail_engine,
-            "evaluate",
-            Mock(side_effect=RuntimeError("policy engine down")),
-        )
-        decision = executor._guardrail_tool_decision("anything", "at_all", {})
-        assert decision.blocked is True, "tool policy must fail closed"
-
     def test_no_engine_is_a_noop(self):
         executor = ToolExecutor(user="u", decoded_token={"sub": "u"})
-        assert executor._guardrail_tool_decision("shell", "run", {}) is None
+        assert executor._guardrail_tool_result("x", "api", "fetch") == "x"
 
     def test_tool_result_secret_is_redacted(self):
         executor = self._executor(

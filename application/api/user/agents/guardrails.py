@@ -6,11 +6,10 @@ from flask_restx import Namespace, Resource
 from application.api import api
 from application.api.user.team_sharing import team_access_for
 from application.core.settings import settings
-from application.guardrails.checks.moderation import CATEGORIES as MODERATION_CATEGORIES
 from application.guardrails.checks.patterns import DEFAULT_PII_ENTITIES, PII_PATTERNS
 from application.guardrails.config import DEFAULT_BLOCK_MESSAGE, MODES
 from application.guardrails.guardrail_creator import GuardrailCreator
-from application.guardrails.runtime import instance_floor
+from application.guardrails import runtime as guardrails_runtime
 from application.guardrails.types import ACTIONS_BY_STAGE, Stage
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.guardrail_events import (
@@ -29,7 +28,7 @@ class GuardrailCatalog(Resource):
     def get(self):
         if not request.decoded_token:
             return {"success": False}, 401
-        floor = instance_floor()
+        floor = guardrails_runtime.instance_floor()
         return make_response(
             jsonify(
                 {
@@ -45,7 +44,6 @@ class GuardrailCatalog(Resource):
                     "default_block_message": DEFAULT_BLOCK_MESSAGE,
                     "pii_entities": sorted(PII_PATTERNS),
                     "default_pii_entities": DEFAULT_PII_ENTITIES,
-                    "moderation_categories": MODERATION_CATEGORIES,
                     # Only which (check, stage) pairs the floor claims, and the
                     # action it imposes. The settings stay server-side: handing
                     # every authenticated user the banned-term list and the

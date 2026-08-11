@@ -15,7 +15,7 @@ from application.guardrails.types import ACTIONS_BY_STAGE, Action, Stage
 
 DEFAULT_BLOCK_MESSAGE = "Sorry, I can't help with that request."
 
-MODES = ("monitor_only", "background_scan", "dangerous_tools_only", "scan_all")
+MODES = ("monitor_only", "scan_all")
 
 
 class GuardrailControl(BaseModel):
@@ -127,15 +127,12 @@ class GuardrailsConfig(BaseModel):
 
         ``monitor_only`` degrades every action to a log-only flag, which is the
         supported rollout path: turn checks on, watch what they would have
-        done, then promote. ``dangerous_tools_only`` narrows scanning to the
-        gate where an action has real-world effect.
+        done, then promote.
         """
         if not self.enabled:
             return []
-        if self.mode == "dangerous_tools_only" and stage is not Stage.TOOL_CALL:
-            return []
         selected = [c for c in self.controls if c.enabled and c.stage == stage]
-        if self.mode in ("monitor_only", "background_scan"):
+        if self.mode != "scan_all":
             return [c.model_copy(update={"action": Action.FLAG}) for c in selected]
         return selected
 

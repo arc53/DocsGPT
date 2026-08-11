@@ -12,7 +12,6 @@ from application.guardrails.checks.patterns import (
     SecretsCheck,
     URLCheck,
 )
-from application.guardrails.checks.tool_policy import ToolPolicyCheck
 from application.guardrails.types import Stage, apply_spans
 
 
@@ -197,45 +196,3 @@ class TestGroundednessCheck:
         ctx = ScanContext(retrieved_docs=[])
         check = GroundednessCheck(self._settings(min_words=25, require_retrieval=True))
         assert check.scan("Yes.", Stage.OUTPUT, ctx).triggered is False
-
-
-class TestToolPolicyCheck:
-    def test_blocklist_denies(self):
-        settings = ToolPolicyCheck.validate_settings({"block_tools": ["shell"]})
-        ctx = ScanContext(tool_name="shell", action_name="run")
-        outcome = ToolPolicyCheck(settings).scan("", Stage.TOOL_CALL, ctx)
-        assert outcome.triggered is True
-        assert "TOOL_BLOCKED" in outcome.categories
-
-    def test_allowlist_denies_unlisted(self):
-        settings = ToolPolicyCheck.validate_settings({"allow_tools": ["search.query"]})
-        allowed = ScanContext(tool_name="search", action_name="query")
-        denied = ScanContext(tool_name="shell", action_name="run")
-        assert ToolPolicyCheck(settings).scan("", Stage.TOOL_CALL, allowed).triggered is False
-        assert ToolPolicyCheck(settings).scan("", Stage.TOOL_CALL, denied).triggered is True
-
-    def test_wildcard_prefix(self):
-        settings = ToolPolicyCheck.validate_settings({"block_tools": ["admin_*"]})
-        ctx = ScanContext(tool_name="admin_delete", action_name="all")
-        assert ToolPolicyCheck(settings).scan("", Stage.TOOL_CALL, ctx).triggered is True
-
-    def test_arg_pattern_triggers(self):
-        settings = ToolPolicyCheck.validate_settings(
-            {"arg_patterns": [{"arg": "to", "pattern": r".*@(?!arc53\.com)"}]}
-        )
-        external = ScanContext(
-            tool_name="email", action_name="send", tool_args={"to": "x@evil.test"}
-        )
-        internal = ScanContext(
-            tool_name="email", action_name="send", tool_args={"to": "x@arc53.com"}
-        )
-        assert ToolPolicyCheck(settings).scan("", Stage.TOOL_CALL, external).triggered is True
-        assert ToolPolicyCheck(settings).scan("", Stage.TOOL_CALL, internal).triggered is False
-
-    def test_invalid_regex_rejected_on_write(self):
-        with pytest.raises(ValueError, match="invalid regex"):
-            ToolPolicyCheck.validate_settings({"arg_patterns": [{"pattern": "([a-z"}]})
-
-    def test_empty_policy_rejected(self):
-        with pytest.raises(ValueError, match="provide allow_tools"):
-            ToolPolicyCheck.validate_settings({})

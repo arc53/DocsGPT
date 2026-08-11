@@ -87,14 +87,6 @@ class TestNormalizeAgentConfig:
                 ]}}
             )
 
-    def test_rejects_require_approval_outside_tool_call(self):
-        with pytest.raises(ValueError, match="not valid at stage"):
-            self._norm(
-                {"guardrails": {"controls": [
-                    {"check": "pii", "stage": "input", "action": "require_approval"}
-                ]}}
-            )
-
     def test_rejects_redact_on_a_spanless_check(self):
         with pytest.raises(ValueError, match="cannot redact"):
             self._norm(
@@ -167,7 +159,7 @@ class TestCatalogRoute:
         names = {c["name"] for c in payload["checks"]}
         assert names == {
             "pii", "secrets", "denylist", "url", "injection",
-            "groundedness", "topic", "policy", "moderation", "tool_policy",
+            "groundedness", "policy",
         }, f"unexpected catalog: {sorted(names)}"
 
     def test_each_check_carries_the_ui_contract(self, app):
@@ -184,10 +176,9 @@ class TestCatalogRoute:
         import json
 
         payload = json.loads(self._get(app).get_data(as_text=True))
-        assert payload["actions_by_stage"]["tool_call"] == [
-            "block", "flag", "require_approval",
-        ]
-        assert "require_approval" not in payload["actions_by_stage"]["input"]
+        for stage in ("input", "retrieval", "tool_result", "output"):
+            assert payload["actions_by_stage"][stage] == ["block", "flag", "redact"]
+        assert "tool_call" not in payload["actions_by_stage"]
 
     def test_reports_the_instance_floor(self, app, monkeypatch):
         import json
@@ -318,8 +309,8 @@ class TestSummaryRoute:
                  "detector_type": "PII", "action": "flag",
                  "outcome": "triggered"},
                 {"user_id": "u-gr", "agent_id": str(agent["id"]),
-                 "stage": "output", "check_name": "topic",
-                 "detector_type": "TOPIC", "action": "flag",
+                 "stage": "output", "check_name": "policy",
+                 "detector_type": "POLICY", "action": "flag",
                  "outcome": "not_evaluated"},
             ]
         )
@@ -396,3 +387,35 @@ class TestSummaryAgentScoping:
             app, pg_conn, f"?agent_id={first}", decoded_token={"sub": "intruder"}
         )
         assert resp.status_code == 404
+
+
+@pytest.mark.unit
+class TestConfigRejectionDoesNotLeakInternals:
+    """CodeQL: exception text must not reach the caller.
+
+    ``normalize_agent_config`` still raises a detailed error — portability
+    warnings and the unit tests above rely on it — but the HTTP boundary
+    returns a static message and logs the detail, matching the SourceConfig
+    write path in ``api/user/sources/routes.py``.
+    """
+
+    def test_the_static_message_is_not_derived_from_the_exception(self):
+        from application.api.user.agents.routes import (
+            INVALID_CONFIG_MESSAGE,
+            normalize_agent_config,
+        )
+
+        with pytest.raises(ValueError) as exc:
+            normalize_agent_config(
+                {"guardrails": {"controls": [{"check": "nope", "stage": "input"}]}}
+            )
+        detail = str(exc.value)
+        assert "nope" in detail, "the internal error stays specific"
+        assert "nope" not in INVALID_CONFIG_MESSAGE
+        assert INVALID_CONFIG_MESSAGE not in detail
+
+    def test_internal_validator_text_still_names_the_field(self):
+        from application.api.user.agents.routes import normalize_agent_config
+
+        with pytest.raises(ValueError, match="timeout_ms"):
+            normalize_agent_config({"guardrails": {"timeout_ms": 5}})

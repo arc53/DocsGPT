@@ -211,10 +211,6 @@ class TestModes:
         assert decision.blocked is False
         assert len(decision.triggered) == 1, "still observed, just not enforced"
 
-    def test_dangerous_tools_only_skips_non_tool_stages(self):
-        engine = GuardrailEngine(_config(mode="dangerous_tools_only"))
-        assert engine.evaluate("some text", Stage.INPUT).verdicts == []
-
     def test_disabled_config_runs_nothing(self):
         engine = GuardrailEngine(_config(enabled=False))
         assert engine.evaluate("some text", Stage.INPUT).verdicts == []
@@ -230,15 +226,7 @@ class TestConfigValidation:
     def test_stage_unsupported_by_check_rejected(self):
         with pytest.raises(ValueError, match="does not support stage"):
             GuardrailsConfig.model_validate(
-                {"controls": [{"check": "tool_policy", "stage": "input",
-                               "settings": {"block_tools": ["x"]}}]}
-            )
-
-    def test_require_approval_rejected_outside_tool_stage(self):
-        with pytest.raises(ValueError, match="not valid at stage"):
-            GuardrailsConfig.model_validate(
-                {"controls": [{"check": "pii", "stage": "input",
-                               "action": "require_approval"}]}
+                {"controls": [{"check": "groundedness", "stage": "input"}]}
             )
 
     def test_redact_rejected_for_check_without_spans(self):

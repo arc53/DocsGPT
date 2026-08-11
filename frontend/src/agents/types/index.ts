@@ -52,13 +52,11 @@ export type Agent = {
   config?: AgentConfig;
 };
 
-export type GuardrailStage =
-  'input' | 'retrieval' | 'tool_call' | 'tool_result' | 'output';
+export type GuardrailStage = 'input' | 'retrieval' | 'tool_result' | 'output';
 
-export type GuardrailAction = 'flag' | 'redact' | 'block' | 'require_approval';
+export type GuardrailAction = 'flag' | 'redact' | 'block';
 
-export type GuardrailMode =
-  'monitor_only' | 'background_scan' | 'dangerous_tools_only' | 'scan_all';
+export type GuardrailMode = 'monitor_only' | 'scan_all';
 
 export type GuardrailControl = {
   check: string;
@@ -101,7 +99,6 @@ export type GuardrailCatalog = {
   default_block_message: string;
   pii_entities: string[];
   default_pii_entities: string[];
-  moderation_categories: string[];
   floor: GuardrailsConfig | null;
 };
 

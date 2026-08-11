@@ -1308,13 +1308,6 @@
         "termsPlaceholder": "competitor name\\ninternal codename",
         "allowHosts": "Allowed hosts (one per line)",
         "blockHosts": "Blocked hosts (one per line)",
-        "allowTools": "Allowed tools (one per line)",
-        "blockTools": "Blocked tools (one per line)",
-        "topicName": "Topic name",
-        "topicDescription": "What this topic covers",
-        "unsafeExamples": "Examples inside this topic (one per line)",
-        "safeExamples": "Examples outside this topic (one per line)",
-        "examplesPlaceholder": "one example per line",
         "policyText": "Policy",
         "minOverlap": "Minimum source overlap",
         "minWords": "Minimum answer length (words)",
@@ -1332,20 +1325,16 @@
         "stages": {
           "input": "User input",
           "retrieval": "Retrieved sources",
-          "toolCall": "Tool call",
           "toolResult": "Tool result",
           "output": "Answer"
         },
         "actions": {
           "flag": "Flag only",
           "redact": "Redact",
-          "block": "Block",
-          "requireApproval": "Require approval"
+          "block": "Block"
         },
         "modes": {
           "monitorOnly": "Monitor only — log, never enforce",
-          "backgroundScan": "Background scan — log, never enforce",
-          "dangerousToolsOnly": "Tool calls only",
           "scanAll": "Enforce everywhere"
         }
       }
