@@ -1471,7 +1471,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           <GuardrailsSection
             value={agent.config?.guardrails}
             token={token}
-            disabled={agent.team_access === 'viewer'}
+            // Guardrails are the owner's policy: the update route drops
+            // ``config`` for team members, editors included. Leaving the
+            // controls live for editors let them save a change the server
+            // silently discarded, and the success toast said it had worked.
+            disabled={Boolean(agent.team_access)}
+            disabledNotice={
+              agent.team_access
+                ? t('agents.form.guardrails.ownerOnly')
+                : undefined
+            }
             onChange={(guardrails) =>
               setAgent({
                 ...agent,

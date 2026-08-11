@@ -15,6 +15,7 @@ class ScanContext:
         self,
         query: Optional[str] = None,
         retrieved_docs: Optional[list] = None,
+        docs_provider=None,
         tool_name: Optional[str] = None,
         action_name: Optional[str] = None,
         tool_args: Optional[Dict[str, Any]] = None,
@@ -23,13 +24,36 @@ class ScanContext:
         user: Optional[str] = None,
     ):
         self.query = query
-        self.retrieved_docs = retrieved_docs or []
+        # Retrieval can land after the engine is built, and an agent rebinds
+        # ``retrieved_docs`` rather than mutating it (tool collection, token
+        # shedding, redaction), so a snapshot taken here goes stale. Reading
+        # through a provider keeps every stage — including the streaming
+        # output guard, which does not go through ``_guardrail_stage`` — on
+        # this turn's actual documents.
+        self._docs_provider = docs_provider
+        self._retrieved_docs = retrieved_docs or []
         self.tool_name = tool_name
         self.action_name = action_name
         self.tool_args = tool_args or {}
         self.llm_factory = llm_factory
         self.agent_id = agent_id
         self.user = user
+
+    @property
+    def retrieved_docs(self) -> list:
+        if self._docs_provider is not None:
+            try:
+                return self._docs_provider() or []
+            except Exception:
+                return []
+        return self._retrieved_docs
+
+    @retrieved_docs.setter
+    def retrieved_docs(self, value: Optional[list]) -> None:
+        # An explicit assignment is authoritative: it replaces the provider so
+        # a caller that pins documents is not silently overridden by the agent.
+        self._docs_provider = None
+        self._retrieved_docs = value or []
 
 
 class GuardrailCheck(ABC):

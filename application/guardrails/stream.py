@@ -73,13 +73,21 @@ class StreamingOutputGuard:
         self._incremental = [c for c in controls if not self._complete_only(c)]
         self._deferred = [c for c in controls if self._complete_only(c)]
         self._has_remote = any(self._attr(c, "remote", False) for c in self._incremental)
+        # monitor_only degrades every action to FLAG, so no verdict reached
+        # here can change a byte of the answer. Withholding output to wait for
+        # one would buy nothing and cost the user a frozen stream — with a
+        # remote control, the whole answer when it is shorter than a segment.
+        # Pass the stream through untouched and scan the finished answer once,
+        # purely for the audit trail.
+        self._monitor_only = engine.config.mode != "scan_all"
         # The window must cover the longest match any active check can report,
         # or that check silently stops working the moment output is streamed.
         self.lookback = (
             max(0, lookback) if lookback is not None else self._required_window()
         )
-        # Complete-text checks need the finished answer, not the tail.
-        self._full = "" if self._deferred else None
+        # Complete-text checks need the finished answer, not the tail; so does
+        # the monitor_only end-of-stream scan.
+        self._full = "" if (self._deferred or self._monitor_only) else None
 
     @staticmethod
     def _attr(control, name: str, default):
@@ -127,6 +135,9 @@ class StreamingOutputGuard:
             return StreamChunk()
         if not self.active:
             return StreamChunk(emit=text)
+        if self._monitor_only:
+            self._full += text
+            return StreamChunk(emit=text)
 
         combined = self._held + text
         emit_end = self._release_point(combined)
@@ -145,6 +156,8 @@ class StreamingOutputGuard:
         if not self.active:
             tail, self._held = self._held, ""
             return StreamChunk(emit=tail)
+        if self._monitor_only:
+            return self._monitor_scan()
         step = (
             self._scan_and_split(self._held, force=True, final=True)
             if self._held
@@ -153,6 +166,20 @@ class StreamingOutputGuard:
         if step.blocked:
             return step
         return self._run_deferred(step)
+
+    def _monitor_scan(self) -> StreamChunk:
+        """Scan the finished answer once, for the journal only.
+
+        One scan of the whole answer rather than the per-chunk sweep the
+        enforcing path runs: the verdict cannot act, so the only thing that
+        matters is that it is recorded.
+        """
+        controls = self._incremental + self._deferred
+        if not controls or not self._full:
+            return StreamChunk()
+        decision = self.engine.evaluate(self._full, Stage.OUTPUT, controls=controls)
+        self.decisions.append(decision)
+        return StreamChunk(decisions=[decision])
 
     def _run_deferred(self, step: StreamChunk) -> StreamChunk:
         """Run complete-text checks over the finished answer.

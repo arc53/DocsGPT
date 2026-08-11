@@ -301,6 +301,23 @@ class BaseAnswerResource:
         # Intentional: a continuation round reserves no new WAL row, so on the
         # stateless ``/v1`` path the intermediate tool rounds aren't persisted
         # (only the first turn + the final answer turn are). Accepted as-is.
+        # Input controls have to run before the question is stored, not only
+        # inside ``gen``: this frame is what writes ``conversation_messages``
+        # and ``user_logs``, so a redaction that reached the model prompt alone
+        # would still leave the raw text — the PII the control exists to keep
+        # out of storage — in both. ``gen`` re-runs the stage against the
+        # original question and hits the agent's stage cache, so the scan is
+        # paid for once.
+        raw_question = question
+        guard_input = getattr(agent, "apply_input_guardrails", None)
+        if callable(guard_input) and not _continuation:
+            try:
+                question, _ = guard_input(question)
+            except Exception:
+                logger.exception(
+                    "Input guardrail scan failed; persisting the question unredacted"
+                )
+
         wal_eligible = should_persist and not _continuation
         if wal_eligible:
             try:
@@ -327,6 +344,16 @@ class BaseAnswerResource:
                 )
         elif _continuation and _continuation.get("reserved_message_id"):
             reserved_message_id = _continuation["reserved_message_id"]
+
+        # Bind the row now so an audit flush that happens before the ``finally``
+        # below — an input block returns from ``gen`` immediately and flushes
+        # there — still writes rows linked to their message instead of orphans.
+        bind_message_id = getattr(agent, "bind_guardrail_message_id", None)
+        if callable(bind_message_id):
+            try:
+                bind_message_id(reserved_message_id)
+            except Exception:
+                logger.exception("Could not bind guardrail audit to the message row")
 
         primary_llm = getattr(agent, "llm", None)
         if primary_llm is not None:
@@ -572,7 +599,11 @@ class BaseAnswerResource:
                     reasoning_content=_continuation.get("reasoning_content", ""),
                 )
             else:
-                gen_iter = agent.gen(query=question)
+                # The original text: ``gen`` runs the input stage itself and
+                # applies the redaction to what it sends the model. Handing it
+                # the already-redacted question would make that a second scan
+                # over different text, and a remote check would be paid twice.
+                gen_iter = agent.gen(query=raw_question)
 
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a

@@ -13,7 +13,7 @@ from application.agents.default_tools import (
 )
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
-from application.guardrails.types import Stage as GuardrailStage
+from application.guardrails.types import Stage as GuardrailStage, resolve_tool_result
 from application.security.encryption import decrypt_credentials
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
@@ -621,12 +621,7 @@ class ToolExecutor:
         except Exception:
             logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
             return result
-        if decision.blocked:
-            return (
-                "[Tool result withheld by a content policy. Tell the user the "
-                "result could not be used; do not speculate about its contents.]"
-            )
-        return decision.text if decision.redacted else result
+        return resolve_tool_result(result, decision)
 
     def check_pause(self, tools_dict: Dict, call, llm_class_name: str) -> Optional[Dict]:
         """Return a pending-action dict (approval / client / headless_denied) or None.

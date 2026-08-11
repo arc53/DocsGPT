@@ -24,7 +24,7 @@ from application.guardrails.runtime import (
     resolve_config as resolve_guardrails_config,
 )
 from application.guardrails.stream import StreamingOutputGuard
-from application.guardrails.types import Stage
+from application.guardrails.types import Action, Stage, resolve_tool_result
 from application.llm.handlers.handler_creator import LLMHandlerCreator
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
@@ -189,22 +189,21 @@ class BaseAgent(ABC):
         engine = self.guardrails
         if engine is None or not engine.has_stage(stage):
             return None
-        # _build_document_block runs once per document shed by the token
-        # budget, so an over-budget turn would otherwise pay for N identical
-        # scans and write N sets of duplicate audit rows.
-        cache_key = (stage, hash(text))
+        # The same text is scanned twice in two places: the route runs the
+        # input stage before it persists the question and ``gen`` runs it
+        # again, and the token-shed loop rebuilds the document block. Keyed on
+        # the text itself rather than its hash — a decision carries the
+        # redacted text, so serving one for a colliding key would substitute
+        # the wrong turn's output.
+        cache_key = (stage, text)
         cache = getattr(self, "_guardrail_cache", None)
         if cache is None:
             cache = self._guardrail_cache = {}
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
-        # Keep the scan context pointed at this turn's documents; retrieval can
-        # land after the engine was built.
-        engine.context.retrieved_docs = getattr(self, "retrieved_docs", None) or []
         decision = engine.evaluate(text, stage)
-        if stage is Stage.RETRIEVAL:
-            cache[cache_key] = decision
+        cache[cache_key] = decision
         return decision
 
     def bind_guardrail_log_context(self, log_context) -> None:
@@ -224,21 +223,41 @@ class BaseAgent(ABC):
         """Apply tool-result controls to a string, returning what may be used."""
         if not isinstance(text, str) or not text:
             return text
-        decision = self._guardrail_stage(text, Stage.TOOL_RESULT)
-        if decision is None:
-            return text
-        if decision.blocked:
-            return (
-                "[Tool result withheld by a content policy. Tell the user the "
-                "result could not be used; do not speculate about its contents.]"
-            )
-        return decision.text if decision.redacted else text
+        return resolve_tool_result(
+            text, self._guardrail_stage(text, Stage.TOOL_RESULT)
+        )
+
+    def bind_guardrail_message_id(self, message_id: Optional[str]) -> None:
+        """Tell the recorder which message its rows belong to.
+
+        Set as soon as the row is reserved, so a flush that happens before the
+        caller's own flush — an input block returns from ``gen`` immediately —
+        still lands linked instead of orphaned with a NULL ``message_id``.
+        """
+        if not message_id:
+            return
+        recorder = getattr(self.guardrails, "recorder", None)
+        if recorder is not None:
+            recorder.message_id = message_id
 
     def flush_guardrail_audit(self, message_id: Optional[str] = None) -> None:
         engine = self._guardrail_engine
         recorder = getattr(engine, "recorder", None) if engine else None
         if recorder is not None and hasattr(recorder, "flush"):
             recorder.flush(message_id)
+
+    def apply_input_guardrails(self, query: str):
+        """Run input controls once and return ``(query, decision)``.
+
+        The query comes back redacted when a redact control fired, so callers
+        that persist or log the question store what the control produced
+        rather than the raw text. ``gen`` and the route both call this; the
+        stage cache makes the second call free.
+        """
+        decision = self._guardrail_stage(query, Stage.INPUT)
+        if decision is not None and decision.redacted:
+            return decision.text, decision
+        return query, decision
 
     @staticmethod
     def _guardrail_block_event(decision, message: str) -> Dict:
@@ -263,16 +282,13 @@ class BaseAgent(ABC):
         self, query: str, log_context: LogContext = None
     ) -> Generator[Dict, None, None]:
         self.bind_guardrail_log_context(log_context)
-        decision = self._guardrail_stage(query, Stage.INPUT)
-        if decision is not None:
-            if decision.blocked:
-                yield self._guardrail_block_event(
-                    decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE
-                )
-                self.flush_guardrail_audit()
-                return
-            if decision.redacted:
-                query = decision.text
+        query, decision = self.apply_input_guardrails(query)
+        if decision is not None and decision.blocked:
+            yield self._guardrail_block_event(
+                decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE
+            )
+            self.flush_guardrail_audit()
+            return
         yield from self._gen_inner(query, log_context)
         yield from self._emit_responses_metadata()
 
@@ -762,6 +778,46 @@ class BaseAgent(ABC):
             formatted = decision.text
         return f"<documents>\n{formatted}\n</documents>\n{self.DOCUMENT_GUARD}"
 
+    def _guard_embedded_documents(self, system_prompt: str) -> str:
+        """Scan documents that a custom prompt interpolates itself.
+
+        ``_build_document_block`` returns early for these agents because the
+        rendered prompt already carries the documents, which left retrieval
+        controls scanning nothing at all — and text inside the system prompt
+        arrives with system authority, the worst place for unscanned,
+        attacker-influenceable material. The prompt was rendered before the
+        agent ran, so the verdict is applied by patching it here.
+        """
+        from application.api.answer.services.prompt_renderer import (
+            format_docs_for_prompt,
+        )
+
+        formatted = format_docs_for_prompt(getattr(self, "retrieved_docs", None))
+        if not formatted:
+            return system_prompt
+        decision = self._guardrail_stage(formatted, Stage.RETRIEVAL)
+        if decision is None or not (decision.blocked or decision.redacted):
+            return system_prompt
+        self._apply_retrieval_decision(decision)
+        if formatted in system_prompt:
+            replacement = (
+                self.RETRIEVAL_BLOCKED_NOTE if decision.blocked else decision.text
+            )
+            return system_prompt.replace(formatted, replacement)
+        # The template placed the documents somewhere this cannot reach. Fail
+        # the turn rather than send the model text a control just rejected.
+        if decision.blocked:
+            raise ValueError(
+                "Retrieved sources were withheld by a content policy and this "
+                "agent's prompt embeds them directly, so the request cannot be "
+                "completed."
+            )
+        logger.warning(
+            "Retrieval redaction could not be applied to an embedding prompt; "
+            "the sources shown to the user were scrubbed but the prompt was not"
+        )
+        return system_prompt
+
     def _apply_retrieval_decision(self, decision) -> None:
         """Mirror a retrieval verdict onto the documents the client will see."""
         docs = getattr(self, "retrieved_docs", None) or []
@@ -776,16 +832,68 @@ class BaseAgent(ABC):
         engine = self.guardrails
         if engine is None:
             return
+        # Only a redacting control can change a document, and a remote judge
+        # cannot redact at all — it reports no spans. Narrowing the per-document
+        # pass is what keeps an 8-chunk retrieval from turning one stage
+        # evaluation into nine, each with its own judge call.
+        redacting = [
+            control
+            for control in engine.config.controls_for(Stage.RETRIEVAL)
+            if control.action is Action.REDACT
+        ]
+        if not redacting:
+            return
         scrubbed = []
         for doc in docs:
             if not isinstance(doc, dict) or not doc.get("text"):
                 scrubbed.append(doc)
                 continue
-            per_doc = engine.evaluate(str(doc["text"]), Stage.RETRIEVAL)
+            per_doc = engine.evaluate(
+                str(doc["text"]), Stage.RETRIEVAL, controls=redacting
+            )
             scrubbed.append(
                 {**doc, "text": per_doc.text} if per_doc.redacted else doc
             )
         self.retrieved_docs = scrubbed
+
+    def _collect_internal_sources(self) -> None:
+        """Merge the cached InternalSearchTool's docs into ``retrieved_docs``,
+        deduped, preserving any pre-fetched docs so a mixed-exposure agent cites
+        both pre-fetched and tool-retrieved sources (not just the tool's)."""
+        from application.agents.tools.internal_search import INTERNAL_TOOL_ID
+
+        executor = getattr(self, "tool_executor", None)
+        loaded = getattr(executor, "_loaded_tools", None) or {}
+        tool = loaded.get(f"internal_search:{INTERNAL_TOOL_ID}:{self.user or ''}")
+        if not (tool and getattr(tool, "retrieved_docs", None)):
+            return
+
+        def _key(d):
+            if isinstance(d, dict):
+                return (d.get("source"), d.get("title"), d.get("text"))
+            return id(d)
+
+        merged = list(self.retrieved_docs or [])
+        seen = {_key(d) for d in merged}
+        for doc in tool.retrieved_docs:
+            k = _key(doc)
+            if k not in seen:
+                seen.add(k)
+                merged.append(doc)
+        self.retrieved_docs = merged
+
+    def _refresh_sources_before_output(self) -> None:
+        """Pull tool-retrieved documents in before output controls run.
+
+        ``internal_search`` results land when the tool loop finishes, which is
+        after the answer starts streaming. Groundedness judges the answer
+        against ``retrieved_docs``, so without this it sees an empty list and
+        reports every tool-retrieved answer as unsourced.
+        """
+        try:
+            self._collect_internal_sources()
+        except Exception:
+            logger.debug("Could not refresh sources before output guarding")
 
     def _compose_user_turn(self, document_block: str, query: str) -> str:
         """Combine the document block and the question into one user message."""
@@ -799,6 +907,12 @@ class BaseAgent(ABC):
         """Build messages using pre-rendered system prompt"""
         from application.core.model_utils import get_token_limit
         from application.utils import num_tokens_from_string
+
+        # Retrieval controls run inside _build_document_block for the usual
+        # path; a prompt that embeds the documents skips that block entirely,
+        # so its scan happens here instead.
+        if getattr(self, "prompt_embeds_documents", False):
+            system_prompt = self._guard_embedded_documents(system_prompt)
 
         if self.compressed_summary:
             compression_context = (
@@ -1128,9 +1242,13 @@ class BaseAgent(ABC):
         guarding = engine is not None and engine.has_stage(Stage.OUTPUT)
 
         if isinstance(response, str):
+            if guarding:
+                self._refresh_sources_before_output()
             yield from self._guarded_complete_answer(response, answer_event)
             return
         if hasattr(response, "message") and getattr(response.message, "content", None):
+            if guarding:
+                self._refresh_sources_before_output()
             yield from self._guarded_complete_answer(response.message.content, answer_event)
             return
 
@@ -1164,6 +1282,7 @@ class BaseAgent(ABC):
                     buffered.append(text)
                 elif isinstance(event, dict) and "type" in event:
                     yield event
+            self._refresh_sources_before_output()
             yield from self._guarded_complete_answer("".join(buffered), answer_event)
             return
 
@@ -1182,6 +1301,10 @@ class BaseAgent(ABC):
                     step.decisions[-1], step.block_message or GUARDRAIL_DEFAULT_MESSAGE
                 )
                 return
+        # The tool loop has finished by the time the generator is exhausted, so
+        # this is the last point at which the deferred checks in ``flush`` can
+        # still be given the documents the answer was actually built from.
+        self._refresh_sources_before_output()
         step = guard.flush()
         if step.emit:
             yield answer_event(step.emit)

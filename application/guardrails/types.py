@@ -157,6 +157,25 @@ class StageDecision:
         }
 
 
+TOOL_RESULT_BLOCKED_NOTE = (
+    "[Tool result withheld by a content policy. Tell the user the "
+    "result could not be used; do not speculate about its contents.]"
+)
+
+
+def resolve_tool_result(result: str, decision: Optional[StageDecision]) -> str:
+    """Reduce a tool-result verdict to the text the caller may use.
+
+    Shared by the executor path and the client-resume path so a result that
+    was blocked server-side and one blocked on resume read identically.
+    """
+    if decision is None:
+        return result
+    if decision.blocked:
+        return TOOL_RESULT_BLOCKED_NOTE
+    return decision.text if decision.redacted else result
+
+
 def apply_spans(text: str, spans: List[Span]) -> str:
     """Replace ``spans`` in ``text``, right-to-left so offsets stay valid.
 

@@ -253,7 +253,7 @@ def build_engine(agent, log_context=None) -> Optional[GuardrailEngine]:
         fail_open=config.fail_open,
     )
     context = ScanContext(
-        retrieved_docs=getattr(agent, "retrieved_docs", None),
+        docs_provider=lambda: getattr(agent, "retrieved_docs", None),
         llm_factory=_judge_factory(agent),
         agent_id=str(agent.agent_id) if getattr(agent, "agent_id", None) else None,
         user=getattr(agent, "user", None),

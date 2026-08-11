@@ -88,6 +88,8 @@ type Props = {
   onChange: (next: GuardrailsConfig) => void;
   token: string | null;
   disabled?: boolean;
+  /** Why the controls are read-only, shown in place of a silent lockout. */
+  disabledNotice?: string;
 };
 
 export default function GuardrailsSection({
@@ -95,6 +97,7 @@ export default function GuardrailsSection({
   onChange,
   token,
   disabled = false,
+  disabledNotice,
 }: Props) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = React.useState(false);
@@ -253,6 +256,15 @@ export default function GuardrailsSection({
         <div className="mt-3 pb-3">
           {loadError && (
             <p className="text-destructive mt-3 text-xs">{loadError}</p>
+          )}
+
+          {disabled && disabledNotice && (
+            <p
+              className="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+              data-testid="guardrails-read-only"
+            >
+              {disabledNotice}
+            </p>
           )}
 
           {instanceDisabled && (
