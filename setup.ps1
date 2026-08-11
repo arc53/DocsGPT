@@ -266,11 +266,10 @@ function Prompt-CloudAPIProviderOptions {
     Write-ColorText "3) Anthropic (Claude)" -ForegroundColor "Yellow"
     Write-ColorText "4) Groq" -ForegroundColor "Yellow"
     Write-ColorText "5) HuggingFace Inference API" -ForegroundColor "Yellow"
-    Write-ColorText "6) Azure OpenAI" -ForegroundColor "Yellow"
-    Write-ColorText "7) Novita" -ForegroundColor "Yellow"
+    Write-ColorText "6) Novita" -ForegroundColor "Yellow"
     Write-ColorText "b) Back to Main Menu" -ForegroundColor "Yellow"
     Write-Host ""
-    $script:provider_choice = Read-Host "Choose option (1-7, or b)"
+    $script:provider_choice = Read-Host "Choose option (1-6, or b)"
 }
 
 # Function to prompt for Ollama CPU/GPU options
@@ -974,20 +973,7 @@ function Connect-CloudAPIProvider {
                 Get-APIKey
                 break
             }
-            "6" {  # Azure OpenAI
-                $script:provider_name = "Azure OpenAI"
-                $script:llm_name = "azure_openai"
-                $script:model_name = "gpt-4o"
-                Get-APIKey
-                Write-Host ""
-                Write-ColorText "Azure OpenAI requires additional configuration:" -ForegroundColor "White" -Bold
-                $script:azure_api_base = Read-Host "Enter Azure OpenAI API base URL (e.g. https://your-resource.openai.azure.com/)"
-                $script:azure_api_version = Read-Host "Enter Azure OpenAI API version (e.g. 2024-02-15-preview)"
-                $script:azure_deployment = Read-Host "Enter Azure deployment name for chat"
-                $script:azure_emb_deployment = Read-Host "Enter Azure deployment name for embeddings (leave empty to skip)"
-                break
-            }
-            "7" {  # Novita
+            "6" {  # Novita
                 $script:provider_name = "Novita"
                 $script:llm_provider = "novita"
                 $script:model_name = "moonshotai/kimi-k2.5"
@@ -998,7 +984,7 @@ function Connect-CloudAPIProvider {
             "B" { Clear-Host; return }
             default {
                 Write-Host ""
-                Write-ColorText "Invalid choice. Please choose 1-7, or b." -ForegroundColor "Red"
+                Write-ColorText "Invalid choice. Please choose 1-6, or b." -ForegroundColor "Red"
                 Start-Sleep -Seconds 1
             }
         }
@@ -1016,14 +1002,6 @@ function Connect-CloudAPIProvider {
     "LLM_PROVIDER=$llm_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "LLM_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
-
-    # Azure OpenAI additional settings
-    if ($llm_name -eq "azure_openai") {
-        if ($azure_api_base) { "OPENAI_API_BASE=$azure_api_base" | Add-Content -Path $ENV_FILE -Encoding utf8 }
-        if ($azure_api_version) { "OPENAI_API_VERSION=$azure_api_version" | Add-Content -Path $ENV_FILE -Encoding utf8 }
-        if ($azure_deployment) { "AZURE_DEPLOYMENT_NAME=$azure_deployment" | Add-Content -Path $ENV_FILE -Encoding utf8 }
-        if ($azure_emb_deployment) { "AZURE_EMBEDDINGS_DEPLOYMENT_NAME=$azure_emb_deployment" | Add-Content -Path $ENV_FILE -Encoding utf8 }
-    }
 
     Write-ColorText ".env file configured for $provider_name." -ForegroundColor "Green"
 

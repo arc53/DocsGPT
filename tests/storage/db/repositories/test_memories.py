@@ -127,3 +127,96 @@ class TestUpdatePath:
         repo = _repo(pg_conn)
         tool_id = _make_tool(pg_conn)
         assert repo.update_path("u", tool_id, "/nope", "/new") is False
+
+
+class TestDefaultToolMemories:
+    """Synthetic-id memory writes work; real-tool delete still cascades via trigger."""
+
+    def test_synthetic_tool_id_memory_write_succeeds(self, pg_conn):
+        from application.agents.default_tools import default_tool_id
+
+        repo = _repo(pg_conn)
+        synthetic_id = default_tool_id("memory")
+        doc = repo.upsert("u-syn-mem", synthetic_id, "/note.txt", "built-in")
+        assert doc["content"] == "built-in"
+        got = repo.get_by_path("u-syn-mem", synthetic_id, "/note.txt")
+        assert got is not None and got["content"] == "built-in"
+
+    def test_built_in_and_explicit_memory_are_separate_stores(self, pg_conn):
+        from application.agents.default_tools import default_tool_id
+
+        repo = _repo(pg_conn)
+        synthetic_id = default_tool_id("memory")
+        explicit_id = _make_tool(pg_conn, user_id="u-two-mem", name="memory")
+        repo.upsert("u-two-mem", synthetic_id, "/x.txt", "from built-in")
+        repo.upsert("u-two-mem", explicit_id, "/x.txt", "from explicit")
+        assert (
+            repo.get_by_path("u-two-mem", synthetic_id, "/x.txt")["content"]
+            == "from built-in"
+        )
+        assert (
+            repo.get_by_path("u-two-mem", explicit_id, "/x.txt")["content"]
+            == "from explicit"
+        )
+
+    def test_deleting_real_tool_purges_its_memories(self, pg_conn):
+        from sqlalchemy import text
+
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn, user_id="u-del-mem", name="memory")
+        repo.upsert("u-del-mem", tool_id, "/keep.txt", "data")
+        pg_conn.execute(
+            text("DELETE FROM user_tools WHERE id = CAST(:id AS uuid)"),
+            {"id": tool_id},
+        )
+        assert repo.get_by_path("u-del-mem", tool_id, "/keep.txt") is None
+
+
+class TestDeleteOrphans:
+    """``delete_orphans`` sweeps the FK-to-trigger orphan window."""
+
+    def test_removes_orphan_with_no_user_tools_row(self, pg_conn):
+        import uuid
+
+        repo = _repo(pg_conn)
+        orphan_tool_id = str(uuid.uuid4())
+        repo.upsert("u-orphan", orphan_tool_id, "/x.txt", "stale")
+        deleted = repo.delete_orphans()
+        assert deleted == 1
+        assert repo.get_by_path("u-orphan", orphan_tool_id, "/x.txt") is None
+
+    def test_keeps_memory_of_a_live_tool(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn, user_id="u-live", name="memory")
+        repo.upsert("u-live", tool_id, "/keep.txt", "data")
+        assert repo.delete_orphans() == 0
+        assert repo.get_by_path("u-live", tool_id, "/keep.txt") is not None
+
+    def test_keeps_synthetic_default_tool_memory(self, pg_conn):
+        from application.agents.default_tools import default_tool_id
+
+        repo = _repo(pg_conn)
+        synthetic_id = default_tool_id("memory")
+        repo.upsert("u-syn", synthetic_id, "/note.txt", "built-in")
+        deleted = repo.delete_orphans(keep_tool_ids=[synthetic_id])
+        assert deleted == 0
+        assert repo.get_by_path("u-syn", synthetic_id, "/note.txt") is not None
+
+    def test_sweeps_orphan_but_spares_synthetic_and_live(self, pg_conn):
+        import uuid
+
+        from application.agents.default_tools import default_tool_id
+
+        repo = _repo(pg_conn)
+        synthetic_id = default_tool_id("memory")
+        live_id = _make_tool(pg_conn, user_id="u-mix", name="memory")
+        orphan_id = str(uuid.uuid4())
+        repo.upsert("u-mix", synthetic_id, "/syn.txt", "keep-syn")
+        repo.upsert("u-mix", live_id, "/live.txt", "keep-live")
+        repo.upsert("u-mix", orphan_id, "/orphan.txt", "drop")
+
+        deleted = repo.delete_orphans(keep_tool_ids=[synthetic_id])
+        assert deleted == 1
+        assert repo.get_by_path("u-mix", synthetic_id, "/syn.txt") is not None
+        assert repo.get_by_path("u-mix", live_id, "/live.txt") is not None
+        assert repo.get_by_path("u-mix", orphan_id, "/orphan.txt") is None

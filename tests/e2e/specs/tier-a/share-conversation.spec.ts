@@ -1,7 +1,7 @@
 /**
- * Phase 2 — P2-09 · Conversation share (non-promptable + promptable).
+ * P2-09 · Conversation share (non-promptable + promptable).
  *
- * Writes to the Tier-1 `shared_conversations` table on every share, and
+ * Writes to the `shared_conversations` table on every share, and
  * additionally writes an `agents` row keyed on (prompt_id, chunks, source,
  * retriever) for promptable shares. The promptable path links back to
  * `prompts.id` via `agents.prompt_id` — this is the Mongo-ObjectId ->

@@ -47,10 +47,15 @@ function SheetContent({
   children,
   side = 'right',
   showCloseButton = true,
+  title,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left';
   showCloseButton?: boolean;
+  // Accessible name for the dialog. Radix warns when a Dialog has no Title;
+  // pass this to render a visually-hidden one when the panel has no visible
+  // heading of its own (omit it if the children already render a SheetTitle).
+  title?: string;
 }) {
   return (
     <SheetPortal>
@@ -71,6 +76,7 @@ function SheetContent({
         )}
         {...props}
       >
+        {title ? <SheetTitle className="sr-only">{title}</SheetTitle> : null}
         {children}
         {showCloseButton && (
           <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">

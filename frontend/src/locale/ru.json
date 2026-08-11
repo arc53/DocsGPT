@@ -12,6 +12,18 @@
   "emailUs": "Напишите нам",
   "documentation": "Документация",
   "manageAgents": "Управление агентами",
+  "teamAccess": {
+    "editor": "Редактор",
+    "viewer": "Читатель"
+  },
+  "notifications": {
+    "memberAddedTitle": "Вы добавлены в команду",
+    "memberAddedBody": "Вас добавили в {{team}} с ролью {{role}}",
+    "sharedTitle": "Поделились с вами",
+    "sharedBody": "С вашей командой поделились: {{type}} «{{name}}» ({{access}})",
+    "sharedBodyNoName": "С вашей командой поделились: {{type}} ({{access}})",
+    "dismiss": "Закрыть"
+  },
   "demo": [
     {
       "header": "Узнайте о DocsGPT",
@@ -30,6 +42,15 @@
       "query": "Написать возможные вопросы для этого контента"
     }
   ],
+  "auth": {
+    "signInToContinue": "Войдите, чтобы продолжить работу с DocsGPT",
+    "signInWithSSO": "Войти через SSO",
+    "signInWith": "Войти через {{provider}}",
+    "notAuthorized": "У вашей учетной записи нет доступа к этому рабочему пространству. Войдите с другой учетной записью или обратитесь к администратору.",
+    "accountDisabled": "Ваша учетная запись отключена. Обратитесь к администратору.",
+    "signOut": "Выйти",
+    "account": "Аккаунт"
+  },
   "settings": {
     "label": "Настройки",
     "general": {
@@ -70,6 +91,9 @@
       "sync": "Синхронизация",
       "syncNow": "Синхронизировать сейчас",
       "syncing": "Синхронизация...",
+      "reingest": "Переиндексировать",
+      "ingestFailed": "Ошибка индексации",
+      "ingestProcessing": "Индексация...",
       "syncConfirmation": "Вы уверены, что хотите синхронизировать \"{{sourceName}}\"? Это обновит содержимое с вашим облачным хранилищем и может перезаписать любые изменения, внесенные вами в отдельные фрагменты.",
       "syncFrequency": {
         "never": "Никогда",
@@ -79,6 +103,119 @@
       },
       "actions": "Действия",
       "view": "Просмотр",
+      "wiki": {
+        "view": "Просмотр вики",
+        "empty": "В этой вики пока нет страниц.",
+        "selectPage": "Выберите страницу, чтобы просмотреть её содержимое.",
+        "edit": "Редактировать",
+        "save": "Сохранить",
+        "cancel": "Отмена",
+        "saving": "Сохранение…",
+        "saveFailed": "Не удалось сохранить страницу. Пожалуйста, попробуйте ещё раз.",
+        "forbidden": "У вас нет прав на редактирование этой страницы.",
+        "conflict": "Страница изменилась с момента открытия и была перезагружена. Ваши правки ниже — примените их заново и сохраните ещё раз.",
+        "editPlaceholder": "Напишите страницу в Markdown…",
+        "livingTitle": "Живая вики.",
+        "livingExplainer": "Источник, редактируемый агентами: страницы читаются и переписываются по мере работы агентов, и по умолчанию источник доступен агентам через инструмент агентного поиска.",
+        "livingExplainerEditable": "Любой агент, использующий этот источник, может его редактировать.",
+        "stamp": {
+          "editedBy": "Изменено: {{who}}",
+          "agent": "агент",
+          "human": "человек",
+          "you": "вы",
+          "unknown": "неизвестно",
+          "version": "v{{version}}"
+        },
+        "convert": {
+          "action": "Преобразовать в вики",
+          "title": "Преобразовать в живую вики",
+          "intro": "Преобразуйте «{{name}}» в живую вики из редактируемых страниц, которые агенты могут читать и переписывать.",
+          "introGeneric": "Преобразуйте этот источник в живую вики из редактируемых страниц, которые агенты могут читать и переписывать.",
+          "costReparse": "Файлы повторно разбираются в редактируемые страницы. Форматирование упрощается, особенно для PDF.",
+          "costSkipped": "Нетекстовые файлы (изображения, двоичные файлы) пропускаются.",
+          "costIrreversible": "Это действие необратимо — страницы вики становятся источником истины.",
+          "confirm": "Преобразовать в вики",
+          "inProgress": "Преобразование файлов в страницы вики…",
+          "summaryPages_one": "Создана {{count}} страница",
+          "summaryPages_other": "Создано страниц: {{count}}",
+          "summarySkipped_one": "Пропущен {{count}} файл",
+          "summarySkipped_other": "Пропущено файлов: {{count}}",
+          "skippedHeading": "Пропущенные файлы",
+          "done": "Готово",
+          "errors": {
+            "generic": "Не удалось выполнить преобразование. Пожалуйста, попробуйте ещё раз.",
+            "forbidden": "У вас нет прав на преобразование этого источника.",
+            "conflict": "Источник ещё индексируется. Дождитесь завершения, прежде чем преобразовывать."
+          }
+        }
+      },
+      "graphrag": {
+        "badge": "GraphRAG",
+        "building": "Построение графа…",
+        "buildingPct": "Построение графа… {{pct}}%",
+        "enable": {
+          "action": "Включить GraphRAG",
+          "title": "Включить GraphRAG",
+          "intro": "Постройте граф знаний по «{{name}}», чтобы агенты могли рассуждать о связанных сущностях и отношениях между ними.",
+          "introGeneric": "Постройте граф знаний по этому источнику, чтобы агенты могли рассуждать о связанных сущностях и отношениях между ними.",
+          "costExtraction": "Сущности и связи извлекаются путём запуска LLM по фрагментам этого источника.",
+          "costCost": "На каждый фрагмент выполняется один вызов LLM, поэтому это расходует токены и может занять время на больших источниках.",
+          "estimate": "~1 вызов LLM на фрагмент · всего ~{{lo}}–{{hi}} токенов (примерно поровну на вход и выход); объём вывода зависит от насыщенности документа сущностями.",
+          "confirm": "Включить GraphRAG",
+          "inProgress": "Построение графа…",
+          "inProgressPct": "Построение графа… {{pct}}%",
+          "summaryNodes_one": "{{count}} сущность",
+          "summaryNodes_other": "Сущностей: {{count}}",
+          "summaryEdges_one": "{{count}} связь",
+          "summaryEdges_other": "Связей: {{count}}",
+          "summaryChunks_one": "Обработан {{count}} фрагмент",
+          "summaryChunks_other": "Обработано фрагментов: {{count}}",
+          "done": "Готово",
+          "errors": {
+            "generic": "Не удалось включить GraphRAG. Пожалуйста, попробуйте ещё раз.",
+            "forbidden": "У вас нет прав на включение GraphRAG для этого источника.",
+            "conflict": "Источник ещё индексируется. Дождитесь завершения, прежде чем включать GraphRAG."
+          }
+        },
+        "view": {
+          "action": "Просмотр графа",
+          "title": "Граф знаний",
+          "explainer": "Узлы — это сущности, а рёбра — их связи. Нажмите на узел, чтобы увидеть его описание и фрагменты, из которых он был извлечён.",
+          "stats": "{{nodes}} сущностей · {{edges}} связей",
+          "empty": "Графа пока нет — извлечение, возможно, ещё выполняется.",
+          "selectNode": "Выберите узел, чтобы увидеть подробности.",
+          "linkedChunks": "Связанные фрагменты",
+          "noChunks": "Для этой сущности нет связанных фрагментов.",
+          "close": "Закрыть"
+        }
+      },
+      "testRetrieval": {
+        "action": "Тест извлечения",
+        "title": "Тест извлечения",
+        "subtitle": "Посмотрите, какие фрагменты запрос действительно извлекает из «{{name}}», используя реальный конвейер извлечения.",
+        "subtitleGeneric": "Посмотрите, какие фрагменты запрос действительно извлекает, используя реальный конвейер извлечения.",
+        "queryPlaceholder": "Спросите что-нибудь, на что этот источник должен ответить...",
+        "run": "Запустить",
+        "notSavedHint": "Эти настройки используются только для этого теста — они не сохраняются в источнике. Чтобы сделать их постоянными, измените их в настройках источника.",
+        "resultSummary": "Извлечено фрагментов: {{total}} · {{retriever}}",
+        "latency": "{{ms}} мс",
+        "empty": "По этому запросу фрагменты не извлечены.",
+        "emptyWithThreshold": "Ни один фрагмент не набрал оценку не ниже порога ({{threshold}}). Понизьте порог, чтобы увидеть близкие результаты.",
+        "showMore": "Показать фрагмент целиком",
+        "showLess": "Свернуть",
+        "noScore": "без оценки",
+        "noScoreHint": "Этот ретривер ранжирует фрагменты без сопоставимой оценки для каждого фрагмента.",
+        "scoreKinds": {
+          "cosine_similarity": "сходство",
+          "l2_distance": "расстояние",
+          "rrf": "RRF"
+        },
+        "errors": {
+          "failed": "Тест извлечения не удался. Пожалуйста, попробуйте ещё раз."
+        }
+      },
+      "editConfig": "Настройки источника",
+      "shareWithTeam": "Поделиться с командой",
       "deleteWarning": "Вы уверены, что хотите удалить \"{{name}}\"?",
       "confirmDelete": "Вы уверены, что хотите удалить этот файл? Это действие нельзя отменить.",
       "backToAll": "Вернуться ко всем источникам",
@@ -105,7 +242,84 @@
       "uploadingFilesTitle": "Загрузка файлов...",
       "deletingTitle": "Удаление...",
       "deleteDirectoryWarning": "Вы уверены, что хотите удалить каталог \"{{name}}\" и все его содержимое? Это действие нельзя отменить.",
-      "searchAlt": "Поиск"
+      "searchAlt": "Поиск",
+      "retrievalOptions": {
+        "title": "Расширенные настройки",
+        "retrieval": {
+          "title": "Извлечение",
+          "note": "Эти изменения вступают в силу сразу, переиндексация не требуется.",
+          "tag": "без переиндексации",
+          "chunks": "Извлекаемые фрагменты (top-k)",
+          "scoreThreshold": "Порог оценки",
+          "scoreThresholdPlaceholder": "Нет",
+          "scoreThresholdHint": "Возвращать только фрагменты с оценкой релевантности выше этого значения (0–1); чем выше, тем строже.",
+          "rephraseQuery": "Переформулировать запрос перед поиском",
+          "retriever": "Ретривер",
+          "retrievers": {
+            "classic": "Классический",
+            "hybrid": "Гибридный",
+            "graphrag": "GraphRAG"
+          },
+          "retrieverHint": "Гибридный сочетает поиск по ключевым словам и векторный поиск. GraphRAG строит граф знаний по этому источнику для многошаговых вопросов.",
+          "exposure": "Доступ для поиска",
+          "exposures": {
+            "prefetch": "Предзагрузка в контекст",
+            "agentic_tool": "Инструмент поиска по запросу"
+          },
+          "exposureHint": "Предзагружать этот источник в промпт или позволить агенту искать по нему по мере необходимости как по инструменту."
+        },
+        "prescreen": {
+          "enable": "Включить предварительный отбор LLM",
+          "warning": "Извлекается расширенный набор кандидатов, который затем фильтруется с помощью LLM. Это увеличивает задержку и стоимость запроса.",
+          "candidateK": "Кандидатов для выборки",
+          "maxKeep": "Макс. фрагментов в результате",
+          "batchSize": "Размер пакета",
+          "model": "Модель (необязательно)",
+          "modelPlaceholder": "По умолчанию — модель запроса"
+        },
+        "graph": {
+          "title": "Извлечение графа",
+          "tag": "требуется переиндексация",
+          "extractionModel": "Модель извлечения",
+          "extractionModelHint": "LLM, используемая для извлечения сущностей и связей из каждого фрагмента.",
+          "defaultModel": "Использовать модель по умолчанию",
+          "maxChunks": "Макс. фрагментов для извлечения",
+          "maxChunksHint": "Ограничьте число фрагментов, отправляемых на извлечение. Оставьте пустым, чтобы использовать значение по умолчанию для инстанса.",
+          "maxChunksPlaceholder": "По умолчанию"
+        },
+        "chunking": {
+          "title": "Разбиение на фрагменты",
+          "note": "Настройки этапа индексации. Их изменение требует переиндексации источника.",
+          "tag": "требуется переиндексация",
+          "strategy": "Стратегия разбиения",
+          "strategies": {
+            "classic_chunk": "Классическая",
+            "recursive": "Рекурсивная",
+            "markdown": "Markdown",
+            "parent_child": "Родитель / потомок",
+            "semantic": "Семантическая"
+          },
+          "maxTokens": "Макс. токенов на фрагмент",
+          "minTokens": "Мин. токенов на фрагмент",
+          "duplicateHeaders": "Дублировать заголовки между фрагментами"
+        }
+      },
+      "configModal": {
+        "title": "Настройки источника",
+        "subtitle": "Настройте, как «{{name}}» разбивается на фрагменты и извлекается.",
+        "subtitleGeneric": "Настройте, как этот источник разбивается на фрагменты и извлекается.",
+        "save": "Сохранить",
+        "saving": "Сохранение…",
+        "readOnly": "У вас доступ только для просмотра этого общего источника, вы не можете изменять его настройки.",
+        "chunkingChangeHint": "Вы изменили настройку разбиения на фрагменты. После сохранения потребуется переиндексация источника, чтобы изменения вступили в силу.",
+        "prescreenInvalidHint": "Проверьте значения предварительного отбора: число кандидатов должно быть не меньше числа фрагментов, а число оставляемых фрагментов не должно превышать число кандидатов.",
+        "reingestRequired": "Изменения сохранены. Изменённые настройки разбиения вступят в силу только после переиндексации. Переиндексировать сейчас?",
+        "reingestLater": "Позже",
+        "errors": {
+          "forbidden": "У вас нет прав на изменение настроек этого источника.",
+          "saveFailed": "Не удалось сохранить настройки. Пожалуйста, попробуйте ещё раз."
+        }
+      }
     },
     "apiKeys": {
       "label": "API ключи",
@@ -135,7 +349,30 @@
       "filterPlaceholder": "Фильтр",
       "none": "Нет",
       "positiveFeedback": "Положительная обратная связь",
-      "negativeFeedback": "Отрицательная обратная связь"
+      "negativeFeedback": "Отрицательная обратная связь",
+      "groupBy": "Группировать по",
+      "groupOptions": {
+        "total": "Всего",
+        "model": "По модели",
+        "agent": "По агенту",
+        "source": "По источнику"
+      },
+      "includeSideChannel": "Фоновые токены",
+      "promptTokens": "Токены промпта",
+      "generatedTokens": "Сгенерированные токены",
+      "scheduledRuns": "Запуски по расписанию",
+      "toolUsage": "Использование инструментов",
+      "completed": "Завершено",
+      "failed": "Не удалось",
+      "skipped": "Пропущено",
+      "successful": "Успешно",
+      "stats": {
+        "messages": "Сообщения",
+        "tokens": "Токены",
+        "toolCalls": "Вызовы инструментов",
+        "runSuccess": "Успешность запусков",
+        "feedback": "Обратная связь"
+      }
     },
     "logs": {
       "label": "Журналы",
@@ -143,7 +380,131 @@
       "filterByChatbot": "Фильтровать по чат-боту",
       "selectChatbot": "Выбрать чат-бота",
       "none": "Нет",
-      "tableHeader": "API сгенерировано / разговоры с чат-ботом"
+      "tableHeader": "API сгенерировано / разговоры с чат-ботом",
+      "searchPlaceholder": "Поиск в журналах...",
+      "noLogs": "Журналы не найдены",
+      "levels": {
+        "all": "Все уровни",
+        "info": "Информация",
+        "error": "Ошибка",
+        "warning": "Предупреждение"
+      },
+      "types": {
+        "all": "Все события",
+        "chat": "Чат",
+        "schedule": "По расписанию",
+        "webhook": "Вебхук",
+        "workflow": "Рабочий процесс",
+        "system": "Система"
+      },
+      "detail": {
+        "agent": "Агент",
+        "status": "Статус",
+        "trigger": "Триггер",
+        "errorType": "Тип ошибки",
+        "tokens": "Токены",
+        "duration": "Длительность",
+        "conversation": "Разговор",
+        "endpoint": "Эндпоинт",
+        "instruction": "Инструкция",
+        "response": "Ответ",
+        "output": "Вывод",
+        "error": "Ошибка",
+        "toolCalls": "Вызовы инструментов",
+        "sources": "Источники",
+        "workflow": "Рабочий процесс",
+        "activity": "Активность",
+        "steps": "Шаги",
+        "result": "Результат"
+      }
+    },
+    "teams": {
+      "label": "Команды",
+      "subtitle": "Управляйте командами, участниками и общими ресурсами.",
+      "newTeam": "Новая команда",
+      "backToTeams": "Назад к командам",
+      "createTeam": "Создать команду",
+      "createTeamDescription": "Дайте команде название. После создания вы сможете добавить участников и делиться ресурсами.",
+      "editTeam": "Редактировать",
+      "teamNamePlaceholder": "Название команды",
+      "descriptionLabel": "Описание",
+      "descriptionPlaceholder": "Для чего эта команда? (необязательно)",
+      "create": "Создать",
+      "save": "Сохранить",
+      "createTeamError": "Не удалось создать команду.",
+      "noTeams": "Команд пока нет.",
+      "noDescription": "Без описания",
+      "memberCountOne": "{{count}} участник",
+      "memberCountOther": "Участников: {{count}}",
+      "sharedCount": "Общих ресурсов: {{count}}",
+      "loadError": "Не удалось загрузить команды.",
+      "roleAdmin": "администратор",
+      "roleMember": "участник",
+      "sourceManual": "Добавлен вручную",
+      "sourceSso": "через SSO",
+      "sourceScim": "через SCIM",
+      "teamsHeading": "Ваши команды",
+      "selectTeamHint": "Выберите команду, чтобы управлять её участниками и общими ресурсами.",
+      "selectTeamTitle": "Команда не выбрана",
+      "teamSubtitle": "Управляйте участниками и ресурсами, которыми поделились с этой командой.",
+      "deleteTeam": "Удалить команду",
+      "deleteTeamConfirmation": "Вы уверены, что хотите удалить «{{name}}»? Это действие нельзя отменить.",
+      "members": "Участники",
+      "addMember": "Добавить участника",
+      "addMemberTitle": "Добавить участника",
+      "addMemberDescription": "Пригласите пользователя по email. Он должен был войти в систему хотя бы один раз.",
+      "teamActions": "Действия с командой",
+      "memberEmailLabel": "Email участника",
+      "memberEmailPlaceholder": "name@example.com",
+      "memberRoleLabel": "Роль",
+      "add": "Добавить",
+      "remove": "Удалить",
+      "removeMemberConfirmation": "Удалить этого участника из команды?",
+      "addMemberError": "Не удалось добавить участника (только для администраторов команды).",
+      "memberNotFound": "Пользователь с таким email не найден — он должен сначала войти в систему.",
+      "noMembers": "Участников пока нет. Используйте «Добавить участника», чтобы пригласить кого-нибудь по email.",
+      "roleChangeError": "Не удалось изменить роль (последний администратор защищён).",
+      "removeMemberError": "Не удалось удалить участника.",
+      "deleteTeamError": "Не удалось удалить команду.",
+      "updateFailed": "Не удалось обновить",
+      "openTeamError": "Не удалось загрузить данные команды.",
+      "sharedResources": "Общие ресурсы",
+      "sharedWithTeam": "Доступно этой команде ({{count}})",
+      "nothingShared": "Пока ничем не поделились. Поделитесь агентом, источником, промптом или инструментом из его меню.",
+      "unshare": "Отменить доступ",
+      "unshareError": "Не удалось отменить доступ к ресурсу.",
+      "resourceType": {
+        "agent": "Агент",
+        "source": "Источник",
+        "prompt": "Промпт",
+        "tool": "Инструмент"
+      },
+      "share": {
+        "titleNamed": "Поделиться «{{name}}»",
+        "titleGeneric": "Поделиться: {{type}}",
+        "subtitle": "Участники команды смогут использовать ресурс; редакторы также могут изменять его. Вы остаётесь владельцем.",
+        "noTeams": "Вы пока не состоите ни в одной команде. Создайте её в Настройки → Команды.",
+        "accessLevel": {
+          "viewer": "Читатель",
+          "editor": "Редактор"
+        },
+        "done": "Готово",
+        "loadError": "Не удалось загрузить текущие доступы.",
+        "shareError": "Не удалось поделиться с командой.",
+        "unshareError": "Не удалось отменить доступ для команды.",
+        "addPlaceholder": "Добавьте людей или команды…",
+        "searchPlaceholder": "Добавьте людей или команды…",
+        "noMatches": "Люди или команды не найдены.",
+        "peopleWithAccess": "Пользователи с доступом",
+        "you": "Вы",
+        "owner": "Владелец",
+        "teamsGroup": "Команды",
+        "peopleGroup": "Люди",
+        "teamLabel": "Команда",
+        "viaTeam": "через {{team}}",
+        "removeAccess": "Убрать доступ",
+        "access": "Доступ"
+      }
     },
     "tools": {
       "label": "Инструменты",
@@ -158,6 +519,14 @@
       "manageTools": "Перейти к инструментам",
       "edit": "Редактировать",
       "delete": "Удалить",
+      "reconnect": "Переподключить",
+      "shareWithTeam": "Поделиться с командой",
+      "builtIn": "Встроенный",
+      "authStatus": {
+        "connected": "Подключено",
+        "needsAuth": "Требуется авторизация",
+        "configured": "Настроено"
+      },
       "deleteWarning": "Вы уверены, что хотите удалить инструмент \"{{toolName}}\"?",
       "unsavedChanges": "У вас есть несохраненные изменения, которые будут потеряны, если вы уйдете без сохранения.",
       "leaveWithoutSaving": "Уйти без сохранения",
@@ -184,6 +553,8 @@
       "deleteActionWarning": "Вы уверены, что хотите удалить действие \"{{name}}\"?",
       "backToAllTools": "Вернуться ко всем инструментам",
       "save": "Сохранить",
+      "saving": "Сохранение...",
+      "saveFailed": "Не удалось сохранить настройки инструмента",
       "fieldName": "Имя поля",
       "fieldType": "Тип поля",
       "filledByLLM": "Заполняется LLM",
@@ -199,6 +570,8 @@
       "mcp": {
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
+        "reconnectServer": "Переподключить сервер",
+        "reenterCredentials": "Введите учетные данные ещё раз, чтобы проверить и обновить подключение.",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -211,6 +584,8 @@
         "noAuth": "No Authentication",
         "oauthInProgress": "Waiting for OAuth completion...",
         "oauthCompleted": "OAuth completed successfully",
+        "oauthPopupBlocked": "Браузер заблокировал всплывающее окно. Нажмите ниже для авторизации:",
+        "openAuthPage": "Открыть страницу авторизации",
         "authType": "Authentication Type",
         "defaultServerName": "My MCP Server",
         "authTypes": {
@@ -242,6 +617,60 @@
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
+      }
+    },
+    "devices": {
+      "label": "Устройства",
+      "subtitle": "Подключайте удалённые машины, которыми агенты могут управлять через shell-команды.",
+      "pair": "Подключить устройство",
+      "empty": "Нет подключённых устройств.",
+      "revoke": "Отозвать",
+      "edit": "Редактировать",
+      "revokeWarning": "Отозвать {{name}}? CLI будет отключён.",
+      "approvalMode": "Режим подтверждения",
+      "approvalAsk": "Спрашивать",
+      "approvalFull": "Полный доступ",
+      "online": "В сети",
+      "offline": "Не в сети",
+      "lastSeen": "Последняя активность: {{time}}",
+      "lastSeenLabel": "Последняя активность",
+      "seenAgo": "в сети {{time}} назад",
+      "nameLabel": "Название устройства",
+      "descriptionLabel": "Описание (видно агенту)",
+      "descriptionPlaceholder": "Для чего эта машина?",
+      "identity": "Идентификация",
+      "access": "Доступ",
+      "connection": "Подключение",
+      "hostLabel": "Хост",
+      "dangerZone": "Опасная зона",
+      "approvalAskDescription": "Подтверждать каждую команду перед запуском.",
+      "approvalFullDescription": "Выполняет каждую команду без запроса, кроме запрещённых из списка безопасности.",
+      "fullAccessWarning": "Полный доступ: агенты могут выполнять любые команды на этой машине без запроса. Список запрещённых команд по-прежнему действует.",
+      "deviceIdLabel": "ID устройства",
+      "offlineHint": "Нет подключения. Запустите `docsgpt-cli host` на машине, чтобы подключить её.",
+      "dangerZoneDescription": "Отзыв останавливает демон на устройстве и удаляет сопряжение.",
+      "auditTitle": "Недавняя активность",
+      "auditLoading": "Загрузка…",
+      "auditEmpty": "Активности пока нет.",
+      "auditDecision": "Решение",
+      "auditExit": "Код выхода",
+      "auditDuration": "Длительность",
+      "pairing": {
+        "title": "Подключение удалённой машины",
+        "subtitle": "Выполните команду ниже на удалённой машине и введите код по запросу.",
+        "formSubtitle": "Задайте название, описание и режим подтверждения для нового устройства.",
+        "nameLabel": "Название устройства (необязательно)",
+        "namePlaceholder": "напр. edge-server",
+        "descriptionLabel": "Описание (необязательно)",
+        "descriptionPlaceholder": "Видно агенту, чтобы он мог выбрать нужное устройство.",
+        "fullAccessWarning": "Полный доступ: агенты могут выполнять любые команды на этой машине без запроса. Список запрещённых команд по-прежнему действует.",
+        "stepOne": "1. Выполните это на удалённой машине:",
+        "installLink": "Нет docsgpt-cli? Установите его",
+        "stepTwo": "2. Введите этот код по запросу:",
+        "start": "Сгенерировать код",
+        "starting": "Выполнение…",
+        "waitingForCli": "Ожидание активации кода в CLI…",
+        "cancel": "Отмена"
       }
     },
     "customModels": {
@@ -291,6 +720,15 @@
       "capabilities": {
         "title": "Возможности",
         "contextWindowShort": "Контекстное окно",
+        "apiFlavor": "Протокол API",
+        "apiFlavors": {
+          "chatCompletions": "Chat Completions",
+          "responses": "Responses"
+        },
+        "reasoningEffort": "Уровень рассуждений",
+        "reasoningEfforts": {
+          "default": "По умолчанию у провайдера"
+        },
         "chips": {
           "tools": "Инструменты",
           "structuredOutput": "Структурированный вывод",
@@ -331,6 +769,7 @@
       "uploadedFiles": "Загруженные файлы",
       "cancel": "Отмена",
       "train": "Тренировка",
+      "create": "Создать",
       "link": "Ссылка",
       "urlLink": "URL ссылка",
       "repoUrl": "URL репозитория",
@@ -353,6 +792,8 @@
         "failed": "Ошибка загрузки",
         "wait": "Это может занять несколько минут",
         "preparing": "Подготовка загрузки",
+        "parsing": "Обработка файлов...",
+        "embedding": "Создание эмбеддингов...",
         "tokenLimit": "Превышен лимит токенов, рассмотрите возможность загрузки документа меньшего размера",
         "expandDetails": "Развернуть детали загрузки",
         "collapseDetails": "Свернуть детали загрузки",
@@ -398,6 +839,10 @@
         "confluence": {
           "label": "Confluence",
           "heading": "Загрузить из Confluence"
+        },
+        "wiki": {
+          "label": "Новая вики",
+          "heading": "Создать живую вики"
         }
       },
       "connectors": {
@@ -474,6 +919,11 @@
       "create": "Создать",
       "option": "Позволить пользователям делать дополнительные запросы."
     },
+    "searchConversations": {
+      "searchPlaceholder": "Поиск разговоров",
+      "noResults": "Результаты не найдены",
+      "loading": "Загрузка..."
+    },
     "configTool": {
       "title": "Настройка инструмента",
       "type": "Тип",
@@ -488,6 +938,11 @@
       "addDescription": "Добавьте свой собственный промпт и сохраните его в DocsGPT",
       "editPrompt": "Редактировать промпт",
       "editDescription": "Отредактируйте свой промпт и сохраните его в DocsGPT",
+      "viewPrompt": "Просмотр промпта",
+      "viewDescription": "Встроенные промпты нельзя редактировать. Дублируйте, чтобы создать свою редактируемую копию.",
+      "duplicate": "Дублировать",
+      "duplicatePrompt": "Дублировать промпт",
+      "duplicateDescription": "Вы редактируете копию «{{name}}» — сохраните её как свой промпт",
       "promptName": "Название промпта",
       "promptText": "Текст промпта",
       "save": "Сохранить",
@@ -511,7 +966,8 @@
         "systemTime": "Текущее время (ЧЧ:ММ:СС)",
         "systemTimestamp": "Отметка времени ISO 8601",
         "systemRequestId": "Уникальный идентификатор запроса",
-        "systemUserId": "Идентификатор текущего пользователя"
+        "systemUserId": "Идентификатор текущего пользователя",
+        "artifactsLookup": "Метаданные артефакта по идентификатору"
       },
       "learnAboutPrompts": "Узнать о промптах →",
       "publicPromptEditDisabled": "Публичные промпты нельзя редактировать",
@@ -545,7 +1001,9 @@
       "webhookUrl": "Webhook URL",
       "generate": "Generate",
       "test": "Test",
-      "learnMore": "Learn more"
+      "learnMore": "Learn more",
+      "resetKey": "Сбросить ключ",
+      "resetKeyConfirm": "Вы уверены, что хотите сбросить API-ключ? Текущий ключ немедленно перестанет работать, и это действие нельзя отменить."
     },
     "importSpec": {
       "title": "Импорт спецификации API",
@@ -562,6 +1020,35 @@
       "cancel": "Отмена",
       "parse": "Разобрать",
       "import": "Импорт ({{count}})"
+    },
+    "importAgent": {
+      "title": "Import agent from YAML",
+      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
+      "dropzoneText": "Click to upload or drag and drop a .yaml file",
+      "invalidFileType": "Only .yaml or .yml files are supported",
+      "readError": "Could not read this agent file",
+      "importError": "Import failed",
+      "willCreate": "Creates a new agent.",
+      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
+      "sources": "Sources",
+      "tools": "Tools",
+      "models": "Models",
+      "sourceMatched": "{{name}}: using your existing source",
+      "sourceMissing": "{{name}}: not found",
+      "leaveUnattached": "Leave unattached",
+      "toolBuiltin": "{{type}}: built-in",
+      "toolReuse": "{{name}}: reusing your existing tool",
+      "toolUnavailable": "{{type}}: not available on this instance, will be skipped",
+      "toolCreate": "{{name}}: will be created",
+      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
+      "modelCustom": "{{name}}: custom model",
+      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
+      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
+      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
+      "cancel": "Cancel",
+      "review": "Review",
+      "import": "Import",
+      "continueToAgent": "Continue to agent"
     }
   },
   "sharedConv": {
@@ -605,13 +1092,69 @@
       "remove": "Удалить вложение"
     },
     "retry": "Повторить",
-    "reasoning": "Рассуждение"
+    "reasoning": "Рассуждение",
+    "wikiWrite": {
+      "edited": "Вики отредактирована",
+      "create": "Создана страница вики",
+      "str_replace": "Отредактирована страница вики",
+      "insert": "Отредактирована страница вики",
+      "delete": "Удалена страница вики",
+      "rename": "Переименована страница вики",
+      "failed": "не удалось"
+    },
+    "streamingStatus": {
+      "thinking": "Думаю…",
+      "generating": "Генерирую…",
+      "searchingWeb": "Ищу в интернете «{{query}}»…",
+      "searchingWebGeneric": "Ищу в интернете…",
+      "searchingImages": "Ищу изображения «{{query}}»…",
+      "readingPage": "Читаю {{target}}…",
+      "searchingKnowledge": "Ищу в базе знаний…",
+      "accessingMemory": "Обращаюсь к памяти…",
+      "runningCode": "Выполняю код…",
+      "creatingArtifact": "Создаю артефакт…",
+      "usingTool": "Использую {{tool}}…"
+    },
+    "toolChip": {
+      "searchingWeb": "Поиск в интернете · «{{query}}»",
+      "searchedWebGeneric": "Выполнен поиск в интернете",
+      "searchingImages": "Поиск изображений · «{{query}}»",
+      "readingPage": "Прочитано {{target}}",
+      "searchingKnowledge": "Выполнен поиск в базе знаний",
+      "accessingMemory": "Обращение к памяти выполнено",
+      "runningCode": "Код выполнен",
+      "creatingArtifact": "Артефакт создан",
+      "usingTool": "Использован {{tool}}"
+    },
+    "inlineSteps": {
+      "arguments": "Аргументы",
+      "response": "Ответ",
+      "running": "Выполняется…",
+      "denied": "Отклонено пользователем",
+      "failed": "не удалось"
+    }
   },
   "agents": {
     "title": "Агенты",
+    "edit": "Редактировать",
     "description": "Откройте и создайте пользовательские версии DocsGPT, которые объединяют инструкции, дополнительные знания и любую комбинацию навыков",
     "newAgent": "Новый Агент",
+    "importAgent": "Import",
+    "exportAgent": "Export as YAML",
+    "shareWithTeam": "Поделиться с командой",
     "backToAll": "Вернуться ко всем агентам",
+    "pageHeader": {
+      "crumbs": {
+        "agents": "Агенты"
+      },
+      "tabs": {
+        "overview": "Обзор",
+        "logs": "Логи",
+        "schedules": "Расписания"
+      },
+      "fallbackName": "Агент без названия",
+      "subnavAriaLabel": "Навигация по разделам агента"
+    },
     "searchPlaceholder": "Поиск...",
     "noSearchResults": "Агенты не найдены",
     "tryDifferentSearch": "Попробуйте другой поисковый запрос",
@@ -619,7 +1162,12 @@
       "all": "Все",
       "byDocsGPT": "От DocsGPT",
       "byMe": "Мои",
+      "team": "Команда",
       "shared": "Поделились со мной"
+    },
+    "teamBadge": {
+      "editor": "Редактор",
+      "viewer": "Читатель"
     },
     "sections": {
       "template": {
@@ -631,6 +1179,11 @@
         "title": "Мои",
         "description": "Агенты, созданные или опубликованные вами",
         "emptyState": "У вас пока нет созданных агентов."
+      },
+      "team": {
+        "title": "Команда",
+        "description": "Агенты, которыми с вами поделились участники команды",
+        "emptyState": "С вашей командой пока не поделились агентами."
       },
       "shared": {
         "title": "Поделились со мной",
@@ -651,8 +1204,10 @@
         "cancel": "Отмена",
         "delete": "Удалить",
         "logs": "Логи",
+        "schedules": "Расписания",
         "accessDetails": "Детали Доступа",
-        "add": "Добавить"
+        "add": "Добавить",
+        "moreActions": "Другие действия"
       },
       "sections": {
         "meta": "Мета",
@@ -684,7 +1239,10 @@
       "toolsPopup": {
         "title": "Выберите Инструменты",
         "searchPlaceholder": "Поиск инструментов...",
-        "noOptionsMessage": "Нет доступных инструментов"
+        "noOptionsMessage": "Нет доступных инструментов",
+        "groupBuiltin": "Встроенные",
+        "groupDefault": "По умолчанию",
+        "groupCustom": "Пользовательские"
       },
       "modelsPopup": {
         "title": "Выберите Модели",
@@ -717,13 +1275,91 @@
       "preview": {
         "publishedPreview": "Опубликованные агенты можно просмотреть здесь"
       },
-      "externalKb": "Внешняя БЗ"
+      "dangerZone": {
+        "heading": "Опасная зона",
+        "description": "Удаление этого агента необратимо и удалит все его расписания и историю запусков.",
+        "deleteButton": "Удалить агента"
+      },
+      "externalKb": "Внешняя БЗ",
+      "errors": {
+        "publishFailed": "Не удалось опубликовать агента. Попробуйте ещё раз.",
+        "saveDraftFailed": "Не удалось сохранить черновик. Попробуйте ещё раз."
+      }
     },
     "logs": {
       "title": "Логи Агента",
       "lastUsedAt": "Последнее использование",
       "noUsageHistory": "Нет истории использования",
       "tableHeader": "Логи конечной точки агента"
+    },
+    "schedules": {
+      "title": "Расписания агента",
+      "heading": "Расписания",
+      "newRecurring": "Новое расписание",
+      "closeForm": "Закрыть форму",
+      "edit": "Редактировать",
+      "recurring": "Повторяющиеся",
+      "oneTime": "Разовые задачи",
+      "noRecurring": "Повторяющихся расписаний пока нет.",
+      "noOneTime": "Разовых задач пока нет.",
+      "pause": "Приостановить",
+      "resume": "Возобновить",
+      "runNow": "Запустить сейчас",
+      "delete": "Удалить",
+      "deleteConfirm": "Удалить это расписание? История его запусков также будет удалена. Это действие нельзя отменить.",
+      "cancel": "Отмена",
+      "showRuns": "Показать запуски",
+      "hideRuns": "Скрыть запуски",
+      "modal": {
+        "titleCreate": "Новое расписание",
+        "titleEdit": "Редактировать расписание",
+        "namePlaceholder": "Название задачи",
+        "frequency": {
+          "once": "Однократно",
+          "daily": "Ежедневно",
+          "weekly": "Еженедельно",
+          "monthly": "Ежемесячно",
+          "yearly": "Ежегодно"
+        },
+        "on": "День",
+        "at": "Время",
+        "pickDate": "Выберите дату",
+        "timezone": "Часовой пояс",
+        "timezonePlaceholder": "Выберите часовой пояс",
+        "timezoneSearchPlaceholder": "Поиск часового пояса…",
+        "timezoneEmpty": "Часовой пояс не найден.",
+        "instructionsLabel": "Инструкции",
+        "instructionsPlaceholder": "Введите промпт здесь.",
+        "create": "Создать задачу",
+        "save": "Сохранить изменения",
+        "errors": {
+          "instructionRequired": "Инструкции обязательны.",
+          "runAtInPast": "Выберите дату и время в будущем."
+        },
+        "days": {
+          "mon": "Пн",
+          "tue": "Вт",
+          "wed": "Ср",
+          "thu": "Чт",
+          "fri": "Пт",
+          "sat": "Сб",
+          "sun": "Вс"
+        },
+        "months": {
+          "jan": "Янв",
+          "feb": "Фев",
+          "mar": "Мар",
+          "apr": "Апр",
+          "may": "Май",
+          "jun": "Июн",
+          "jul": "Июл",
+          "aug": "Авг",
+          "sep": "Сен",
+          "oct": "Окт",
+          "nov": "Ноя",
+          "dec": "Дек"
+        }
+      }
     },
     "shared": {
       "notFound": "Агент не найден. Убедитесь, что агент является общим."
@@ -745,6 +1381,7 @@
       "move": "Переместить",
       "noFolder": "Без папки (корень)",
       "backToRoot": "Назад",
+      "currentFolder": "Эта папка",
       "noSubfolders": "Нет подпапок",
       "noFolders": "Пока нет папок"
     }
@@ -786,6 +1423,17 @@
   },
   "navigation": {
     "agents": "Агенты"
+  },
+  "teams": {
+    "switcher": {
+      "ariaLabel": "Сменить команду",
+      "personal": "Личный аккаунт",
+      "personalSubtitle": "Личное рабочее пространство",
+      "roleAdmin": "Администратор",
+      "roleMember": "Участник",
+      "manageTeam": "Управление командой",
+      "createTeam": "Создать команду"
+    }
   },
   "notification": {
     "ariaLabel": "Уведомление",

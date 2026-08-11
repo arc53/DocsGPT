@@ -51,6 +51,20 @@ class TestCreate:
             "context_window": 200_000,
         }
 
+    def test_responses_capabilities_are_persisted(self, pg_conn):
+        repo = _repo(pg_conn)
+        row = _make(
+            repo,
+            capabilities={
+                "api_flavor": "responses",
+                "reasoning_effort": "high",
+            },
+        )
+        assert row["capabilities"] == {
+            "api_flavor": "responses",
+            "reasoning_effort": "high",
+        }
+
 
 class TestGet:
     def test_get_by_id_returns_row(self, pg_conn):

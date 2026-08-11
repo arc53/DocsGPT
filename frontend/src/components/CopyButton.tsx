@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import CheckMark from '../assets/checkmark.svg?react';
 import CopyIcon from '../assets/copy.svg?react';
+import { Button } from './ui/button';
 
 type CopyButtonProps = {
   textToCopy: string;
@@ -47,8 +48,7 @@ export default function CopyButton({
   );
 
   const rootButtonClasses = clsx(
-    'flex items-center gap-2 group',
-    'focus:outline-hidden focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 rounded-full',
+    'group h-auto rounded-full bg-transparent p-0 hover:bg-transparent disabled:opacity-100',
     className,
   );
 
@@ -103,8 +103,9 @@ export default function CopyButton({
     };
   }, []);
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       onClick={handleCopy}
       className={rootButtonClasses}
       title={buttonTitle}
@@ -118,6 +119,6 @@ export default function CopyButton({
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {isCopied ? t('conversation.copied', 'Copied to clipboard') : ''}
       </span>
-    </button>
+    </Button>
   );
 }

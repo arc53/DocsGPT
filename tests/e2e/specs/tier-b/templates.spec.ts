@@ -1,12 +1,13 @@
 /**
- * Phase 3 Tier-B · agent template gallery + adopt
+ * Tier-B · agent template gallery + adopt
  *
  * Covers B12: `GET /api/template_agents` lists rows owned by
  * `user_id = '__system__'`, and `POST /api/adopt_agent?id=…` creates a
  * user-owned copy with the same shape but a fresh `id`/`user_id`/`key`.
  *
- * The e2e DB starts with zero template rows — Phase 0 only applies the
- * schema, not template seeding. We insert a `__system__`-owned row via
+ * The e2e DB starts with zero template rows — the bootstrap only
+ * applies the schema, not template seeding. We insert a
+ * `__system__`-owned row via
  * direct SQL to simulate a seeded template. This matches the brief's
  * explicit guidance ("if empty, INSERT a fake __system__ template agent
  * via SQL for the test") and avoids coupling to a future seed script

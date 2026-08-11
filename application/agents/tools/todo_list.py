@@ -71,12 +71,18 @@ class TodoListTool(Tool):
         """Execute an action by name.
 
         Args:
-            action_name: One of list, create, get, update, complete, delete.
+            action_name: One of todo_list, todo_create, todo_get, todo_update,
+                todo_complete, todo_delete (legacy unprefixed names are
+                accepted too).
             **kwargs: Parameters for the action.
 
         Returns:
             A human-readable string result.
         """
+        # Stripping the namespace prefix accepts both the published names
+        # (todo_create) and legacy unprefixed names from saved user_tools rows.
+        action_name = action_name.removeprefix("todo_")
+
         if not self.user_id:
             return "Error: TodoListTool requires a valid user_id."
 
@@ -115,13 +121,13 @@ class TodoListTool(Tool):
         """Return JSON metadata describing supported actions for tool schemas."""
         return [
             {
-                "name": "list",
-                "description": "List all todos for the user.",
+                "name": "todo_list",
+                "description": "List all of the user's todo items with their IDs and status.",
                 "parameters": {"type": "object", "properties": {}},
             },
             {
-                "name": "create",
-                "description": "Create a new todo item.",
+                "name": "todo_create",
+                "description": "Create a new todo item with the given title.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -134,8 +140,8 @@ class TodoListTool(Tool):
                 },
             },
             {
-                "name": "get",
-                "description": "Get a specific todo by ID.",
+                "name": "todo_get",
+                "description": "Get a single todo item by its ID.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -148,8 +154,8 @@ class TodoListTool(Tool):
                 },
             },
             {
-                "name": "update",
-                "description": "Update a todo's title by ID.",
+                "name": "todo_update",
+                "description": "Update a todo's title by its ID.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -166,8 +172,8 @@ class TodoListTool(Tool):
                 },
             },
             {
-                "name": "complete",
-                "description": "Mark a todo as completed.",
+                "name": "todo_complete",
+                "description": "Mark a todo as completed by its ID.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -180,8 +186,8 @@ class TodoListTool(Tool):
                 },
             },
             {
-                "name": "delete",
-                "description": "Delete a specific todo by ID.",
+                "name": "todo_delete",
+                "description": "Delete a todo by its ID.",
                 "parameters": {
                     "type": "object",
                     "properties": {

@@ -36,9 +36,11 @@ class TestChunkerInit:
         assert chunker.min_tokens == 50
         assert chunker.duplicate_headers is True
 
-    def test_invalid_strategy_raises(self):
-        with pytest.raises(ValueError, match="Unsupported chunking strategy"):
-            Chunker(chunking_strategy="unknown_strategy")
+    def test_unknown_strategy_construction_no_longer_raises(self):
+        # Strategy dispatch/whitelist moved to ChunkerCreator; the Chunker
+        # constructor itself no longer rejects an unknown strategy string.
+        chunker = Chunker(chunking_strategy="unknown_strategy")
+        assert chunker.chunking_strategy == "unknown_strategy"
 
 
 # =====================================================================
@@ -235,12 +237,14 @@ class TestChunkDispatcher:
         result = chunker.chunk([doc])
         assert len(result) == 1
 
-    def test_dispatch_unknown_raises(self):
+    def test_chunk_runs_classic_regardless_of_strategy_attr(self):
+        # Chunk() now always runs the classic implementation; strategy
+        # selection happens at the ChunkerCreator level, not here.
         chunker = Chunker()
         chunker.chunking_strategy = "nonexistent"
 
-        with pytest.raises(ValueError, match="Unsupported chunking strategy"):
-            chunker.chunk([Document(text="x", doc_id="d")])
+        result = chunker.chunk([Document(text="x", doc_id="d")])
+        assert len(result) == 1
 
 
 # =====================================================================

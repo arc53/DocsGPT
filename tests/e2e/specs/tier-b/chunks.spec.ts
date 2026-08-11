@@ -1,5 +1,5 @@
 /**
- * Phase 3 Tier-B · chunks (B3) — get / add / update / delete chunks.
+ * Tier-B · chunks (B3) — get / add / update / delete chunks.
  *
  * Exercises `application/api/user/sources/chunks.py`. All chunk endpoints go
  * through `get_vector_store(str(doc["id"]))` (application/api/user/base.py:

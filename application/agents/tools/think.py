@@ -49,9 +49,9 @@ class ThinkTool(Tool):
             {
                 "name": "reason",
                 "description": (
-                    "Use this tool to think through your reasoning step by step "
-                    "before deciding on your next action. Always reason before "
-                    "searching or answering."
+                    "Use this tool to think through a complex step — analyze "
+                    "tool results, weigh options, or plan multi-step work — "
+                    "before taking your next action."
                 ),
                 "parameters": {
                     "properties": {

@@ -1,4 +1,4 @@
-"""Tests for the continuation infrastructure (Phase 1).
+"""Tests for the continuation infrastructure.
 
 Covers ContinuationService, ToolExecutor.check_pause, handler pause
 signaling, BaseAgent.gen_continuation, and request validation.
@@ -409,6 +409,80 @@ class TestHandlerPauseSignaling:
         ]
         assert len(pause_events) == 1
 
+    def test_pause_propagates_device_id_for_remote_device(self):
+        """``pause_info['device_id']`` (set in tool_executor for the
+        remote_device tool) must be copied into the emitted ``tool_call``
+        event so the approval UI can render the "don't ask again" button."""
+        handler = ConcreteHandler()
+        agent = self._make_agent()
+        agent.tool_executor.check_pause = Mock(return_value={
+            "call_id": "c1",
+            "name": "run_command_0",
+            "tool_name": "remote_device",
+            "tool_id": "0",
+            "action_name": "run_command",
+            "arguments": {"command": "ls"},
+            "pause_type": "awaiting_approval",
+            "device_id": "dev_abc",
+            "thought_signature": None,
+        })
+
+        call = ToolCall(id="c1", name="run_command_0", arguments='{"command": "ls"}')
+        gen = handler.handle_tool_calls(
+            agent, [call], {"0": {"name": "remote_device"}}, []
+        )
+
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration:
+            pass
+
+        pause_events = [
+            e for e in events
+            if e.get("type") == "tool_call"
+            and e.get("data", {}).get("status") == "awaiting_approval"
+        ]
+        assert len(pause_events) == 1
+        assert pause_events[0]["data"].get("device_id") == "dev_abc"
+
+    def test_pause_omits_device_id_for_non_remote_tools(self):
+        """``device_id`` must NOT leak into pause events for tools that
+        don't ship one in ``pause_info``."""
+        handler = ConcreteHandler()
+        agent = self._make_agent()
+        agent.tool_executor.check_pause = Mock(return_value={
+            "call_id": "c1",
+            "name": "send_msg_0",
+            "tool_name": "telegram",
+            "tool_id": "0",
+            "action_name": "send_msg",
+            "arguments": {"text": "hello"},
+            "pause_type": "awaiting_approval",
+            "thought_signature": None,
+        })
+
+        call = ToolCall(id="c1", name="send_msg_0", arguments='{"text": "hello"}')
+        gen = handler.handle_tool_calls(
+            agent, [call], {"0": {"name": "telegram"}}, []
+        )
+
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration:
+            pass
+
+        pause_events = [
+            e for e in events
+            if e.get("type") == "tool_call"
+            and e.get("data", {}).get("status") == "awaiting_approval"
+        ]
+        assert len(pause_events) == 1
+        assert "device_id" not in pause_events[0]["data"]
+
     def test_mixed_execute_and_pause(self):
         """One tool executes, another needs approval."""
         handler = ConcreteHandler()
@@ -755,3 +829,430 @@ class TestValidateRequest:
         data = {"conversation_id": "conv-1"}
         result = base.validate_request(data)
         assert result is not None  # Error — missing question
+
+
+# ---------------------------------------------------------------------------
+# Resume durability: mark_resuming on resume, delete only on success
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestResumeMarkResuming:
+    """Resumed runs atomically claim state instead of deleting it eagerly."""
+
+    def test_resume_claims_state_once_and_does_not_delete(self, monkeypatch):
+        """``resume_from_tool_actions`` consumes one atomic claim."""
+        from application.api.answer.services import (
+            continuation_service as cont_mod,
+        )
+        from application.api.answer.services import stream_processor as sp_mod
+        from application.llm import llm_creator as llm_creator_mod
+        from application.llm.handlers import handler_creator as handler_mod
+
+        cont_service = MagicMock()
+        cont_service.claim_state.return_value = {
+            "messages": [],
+            "pending_tool_calls": [],
+            "tools_dict": {},
+            "tool_schemas": [],
+            "agent_config": {
+                "model_id": "m1",
+                "model_user_id": None,
+                "llm_name": "openai",
+                "api_key": "k",
+                "user_api_key": None,
+                "agent_id": None,
+                "agent_type": "ClassicAgent",
+                "prompt": "",
+                "json_schema": None,
+                "retriever_config": None,
+            },
+            "client_tools": None,
+        }
+        monkeypatch.setattr(
+            cont_mod, "ContinuationService", lambda: cont_service
+        )
+        monkeypatch.setattr(
+            llm_creator_mod.LLMCreator,
+            "create_llm",
+            lambda *a, **kw: MagicMock(),
+        )
+        monkeypatch.setattr(
+            handler_mod.LLMHandlerCreator,
+            "create_handler",
+            lambda *a, **kw: MagicMock(),
+        )
+        from application.agents import agent_creator as ac_mod
+        from application.agents import tool_executor as te_mod
+
+        monkeypatch.setattr(
+            te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None)
+        )
+        monkeypatch.setattr(
+            ac_mod.AgentCreator, "create_agent", lambda *a, **kw: MagicMock()
+        )
+
+        sp = sp_mod.StreamProcessor.__new__(sp_mod.StreamProcessor)
+        sp.data = {}
+        sp.decoded_token = {"sub": "alice"}
+        sp.initial_user_id = "alice"
+        sp.conversation_id = "00000000-0000-0000-0000-000000000001"
+        sp.agent_config = {}
+
+        sp.resume_from_tool_actions(
+            tool_actions=[],
+            conversation_id="00000000-0000-0000-0000-000000000001",
+        )
+
+        cont_service.claim_state.assert_called_once_with(
+            "00000000-0000-0000-0000-000000000001", "alice"
+        )
+        cont_service.delete_state.assert_not_called()
+
+    def test_resume_extracts_reserved_message_id_from_agent_config(
+        self, monkeypatch
+    ):
+        """The WAL placeholder id stashed in ``agent_config`` at pause time
+        must be hoisted onto the processor so the resumed ``complete_stream``
+        finalises the same row instead of stranding it."""
+        from application.api.answer.services import (
+            continuation_service as cont_mod,
+        )
+        from application.api.answer.services import stream_processor as sp_mod
+        from application.llm import llm_creator as llm_creator_mod
+        from application.llm.handlers import handler_creator as handler_mod
+
+        reserved_id = "22222222-2222-2222-2222-222222222222"
+
+        cont_service = MagicMock()
+        cont_service.claim_state.return_value = {
+            "messages": [],
+            "pending_tool_calls": [],
+            "tools_dict": {},
+            "tool_schemas": [],
+            "agent_config": {
+                "model_id": "m1",
+                "model_user_id": None,
+                "llm_name": "openai",
+                "api_key": "k",
+                "user_api_key": None,
+                "agent_id": None,
+                "agent_type": "ClassicAgent",
+                "prompt": "",
+                "json_schema": None,
+                "retriever_config": None,
+                "reserved_message_id": reserved_id,
+            },
+            "client_tools": None,
+        }
+        monkeypatch.setattr(cont_mod, "ContinuationService", lambda: cont_service)
+        monkeypatch.setattr(
+            llm_creator_mod.LLMCreator, "create_llm", lambda *a, **kw: MagicMock(),
+        )
+        monkeypatch.setattr(
+            handler_mod.LLMHandlerCreator, "create_handler",
+            lambda *a, **kw: MagicMock(),
+        )
+        from application.agents import agent_creator as ac_mod
+        from application.agents import tool_executor as te_mod
+
+        monkeypatch.setattr(
+            te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None)
+        )
+        monkeypatch.setattr(
+            ac_mod.AgentCreator, "create_agent", lambda *a, **kw: MagicMock()
+        )
+
+        sp = sp_mod.StreamProcessor.__new__(sp_mod.StreamProcessor)
+        sp.data = {}
+        sp.decoded_token = {"sub": "alice"}
+        sp.initial_user_id = "alice"
+        sp.conversation_id = "00000000-0000-0000-0000-000000000001"
+        sp.agent_config = {}
+        sp.reserved_message_id = None
+
+        sp.resume_from_tool_actions(
+            tool_actions=[],
+            conversation_id="00000000-0000-0000-0000-000000000001",
+        )
+
+        assert sp.reserved_message_id == reserved_id
+
+    def test_resume_resolves_owner_from_api_key_when_no_jwt(self, monkeypatch):
+        """api_key-authenticated resumes (no JWT) must resolve the agent owner
+        before loading state.
+
+        On the native /stream and /api/answer routes the agent key lives in the
+        request body, so ``request.decoded_token`` — and hence
+        ``initial_user_id`` — is None. The pending state was saved under the
+        owner's id during the first turn, so the resume has to resolve the owner
+        here or the lookup misses and the run 400s with "No pending tool state
+        found for this conversation".
+        """
+        from contextlib import contextmanager
+
+        from application.api.answer.services import (
+            continuation_service as cont_mod,
+        )
+        from application.api.answer.services import stream_processor as sp_mod
+        from application.llm import llm_creator as llm_creator_mod
+        from application.llm.handlers import handler_creator as handler_mod
+
+        cont_service = MagicMock()
+        cont_service.claim_state.return_value = {
+            "messages": [],
+            "pending_tool_calls": [],
+            "tools_dict": {},
+            "tool_schemas": [],
+            "agent_config": {
+                "model_id": "m1",
+                "model_user_id": None,
+                "llm_name": "openai",
+                "api_key": "k",
+                "user_api_key": None,
+                "agent_id": None,
+                "agent_type": "ClassicAgent",
+                "prompt": "",
+                "json_schema": None,
+                "retriever_config": None,
+            },
+            "client_tools": None,
+        }
+        monkeypatch.setattr(cont_mod, "ContinuationService", lambda: cont_service)
+        monkeypatch.setattr(
+            llm_creator_mod.LLMCreator, "create_llm", lambda *a, **kw: MagicMock(),
+        )
+        monkeypatch.setattr(
+            handler_mod.LLMHandlerCreator, "create_handler",
+            lambda *a, **kw: MagicMock(),
+        )
+        from application.agents import agent_creator as ac_mod
+        from application.agents import tool_executor as te_mod
+
+        monkeypatch.setattr(
+            te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None)
+        )
+        monkeypatch.setattr(
+            ac_mod.AgentCreator, "create_agent", lambda *a, **kw: MagicMock()
+        )
+
+        # The body api_key resolves to its owning user.
+        fake_repo = MagicMock()
+        fake_repo.find_by_key.return_value = {"user_id": "owner-1"}
+
+        @contextmanager
+        def _fake_db_readonly():
+            yield MagicMock()
+
+        monkeypatch.setattr(sp_mod, "db_readonly", _fake_db_readonly)
+        monkeypatch.setattr(sp_mod, "AgentsRepository", lambda conn: fake_repo)
+
+        conv_id = "00000000-0000-0000-0000-000000000009"
+        sp = sp_mod.StreamProcessor.__new__(sp_mod.StreamProcessor)
+        sp.data = {"api_key": "agent-key-1"}
+        sp.decoded_token = None
+        sp.initial_user_id = None
+        sp.conversation_id = conv_id
+        sp.agent_config = {}
+        sp.reserved_message_id = None
+
+        sp.resume_from_tool_actions(tool_actions=[], conversation_id=conv_id)
+
+        fake_repo.find_by_key.assert_called_once_with("agent-key-1")
+        # The lookup + claim now key on the owner id, not None.
+        cont_service.claim_state.assert_called_once_with(conv_id, "owner-1")
+        assert sp.initial_user_id == "owner-1"
+        assert sp.decoded_token == {"sub": "owner-1"}
+
+
+@pytest.mark.unit
+class TestContinuationServiceMarkResuming:
+    """``ContinuationService.mark_resuming`` is the thin wrapper used by
+    the resume path; it should flip the repository row in place."""
+
+    def test_mark_resuming_flips_pending_row(self, pg_engine, monkeypatch):
+        from contextlib import contextmanager
+
+        from application.api.answer.services import (
+            continuation_service as cont_mod,
+        )
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+        from application.storage.db.repositories.pending_tool_state import (
+            PendingToolStateRepository,
+        )
+
+        with pg_engine.begin() as conn:
+            conv = ConversationsRepository(conn).create("alice", "c")
+            PendingToolStateRepository(conn).save_state(
+                conv["id"],
+                "alice",
+                messages=[],
+                pending_tool_calls=[],
+                tools_dict={},
+                tool_schemas=[],
+                agent_config={},
+            )
+
+        @contextmanager
+        def _session():
+            with pg_engine.begin() as conn:
+                yield conn
+
+        @contextmanager
+        def _readonly():
+            with pg_engine.connect() as conn:
+                yield conn
+
+        monkeypatch.setattr(cont_mod, "db_session", _session)
+        monkeypatch.setattr(cont_mod, "db_readonly", _readonly)
+
+        svc = cont_mod.ContinuationService()
+        flipped = svc.mark_resuming(conv["id"], "alice")
+        assert flipped is True
+
+        with pg_engine.connect() as conn:
+            row = PendingToolStateRepository(conn).load_state_any(
+                conv["id"], "alice"
+            )
+        assert row["status"] == "resuming"
+        assert row["resumed_at"] is not None
+
+    def test_mark_resuming_returns_false_for_unknown_conv(
+        self, pg_engine, monkeypatch
+    ):
+        from contextlib import contextmanager
+
+        from application.api.answer.services import (
+            continuation_service as cont_mod,
+        )
+
+        @contextmanager
+        def _session():
+            with pg_engine.begin() as conn:
+                yield conn
+
+        @contextmanager
+        def _readonly():
+            with pg_engine.connect() as conn:
+                yield conn
+
+        monkeypatch.setattr(cont_mod, "db_session", _session)
+        monkeypatch.setattr(cont_mod, "db_readonly", _readonly)
+
+        svc = cont_mod.ContinuationService()
+        # Not a UUID and no legacy row exists.
+        assert svc.mark_resuming("not-a-uuid", "alice") is False
+
+
+# ---------------------------------------------------------------------------
+# Refresh during pause: per-call ``tool_call`` events must reconstruct
+# into ``tool_calls`` so the approval bar re-renders.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestReconstructPartialToolCallReplay:
+    """The pause path in ``llm/handlers/base.py`` emits a per-call
+    ``tool_call`` event (status ``awaiting_approval``) — not a bulk
+    ``tool_calls`` snapshot. ``reconstruct_partial`` must overlay these
+    so a conversation refresh while paused still shows the approval bar.
+    """
+
+    @staticmethod
+    def _seed_message(conn):
+        from sqlalchemy import text
+
+        user_id = f"user-{uuid.uuid4().hex[:8]}"
+        conv_id = uuid.uuid4()
+        msg_id = uuid.uuid4()
+        conn.execute(
+            text("INSERT INTO users (user_id) VALUES (:u)"),
+            {"u": user_id},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO conversations (id, user_id, name) "
+                "VALUES (:id, :u, 'test')"
+            ),
+            {"id": conv_id, "u": user_id},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO conversation_messages (id, conversation_id, user_id, position) "
+                "VALUES (:id, :c, :u, 0)"
+            ),
+            {"id": msg_id, "c": conv_id, "u": user_id},
+        )
+        return str(msg_id)
+
+    def test_paused_tool_call_event_lands_in_tool_calls(self, pg_conn):
+        from application.storage.db.repositories.message_events import (
+            MessageEventsRepository,
+        )
+
+        message_id = self._seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        # Mirror the exact shape emitted at base.py:941-950 on pause.
+        repo.record(
+            message_id,
+            0,
+            "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "call_remote_test_1",
+                    "action_name": "run_command",
+                    "arguments": {"command": "ls -la /tmp"},
+                    "status": "awaiting_approval",
+                    "device_id": "dev_abc",
+                },
+            },
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert len(partial["tool_calls"]) == 1
+        tc = partial["tool_calls"][0]
+        assert tc["status"] == "awaiting_approval"
+        assert tc["device_id"] == "dev_abc"
+        assert tc["call_id"] == "call_remote_test_1"
+
+    def test_completed_event_replaces_paused_event(self, pg_conn):
+        from application.storage.db.repositories.message_events import (
+            MessageEventsRepository,
+        )
+
+        message_id = self._seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(
+            message_id,
+            0,
+            "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "c1",
+                    "status": "awaiting_approval",
+                },
+            },
+        )
+        repo.record(
+            message_id,
+            1,
+            "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "c1",
+                    "status": "completed",
+                    "result": "/tmp listing here",
+                },
+            },
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert len(partial["tool_calls"]) == 1
+        assert partial["tool_calls"][0]["status"] == "completed"
+        assert partial["tool_calls"][0]["result"] == "/tmp listing here"

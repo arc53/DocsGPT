@@ -13,6 +13,33 @@ from application.agents.tools.internal_search import (
 
 
 @pytest.mark.unit
+class TestAddInternalSearchTool:
+    def test_stamps_id_so_executor_can_load(self):
+        # The executor resolves a tool by its row ``id``; the synthetic internal
+        # tool must carry the sentinel id or it is dropped (tool_missing_row_id).
+        config = {
+            "source": {"active_docs": ["s1"]},
+            "retriever_name": "classic",
+            "chunks": 2,
+        }
+        tools: dict = {}
+        with patch(
+            "application.agents.tools.internal_search."
+            "sources_have_directory_structure",
+            return_value=False,
+        ):
+            add_internal_search_tool(tools, config)
+        assert INTERNAL_TOOL_ID in tools
+        assert tools[INTERNAL_TOOL_ID]["id"] == INTERNAL_TOOL_ID
+        assert tools[INTERNAL_TOOL_ID]["name"] == "internal_search"
+
+    def test_no_active_docs_adds_nothing(self):
+        tools: dict = {}
+        add_internal_search_tool(tools, {"source": {}})
+        assert tools == {}
+
+
+@pytest.mark.unit
 class TestInternalSearchToolSearch:
 
     def _make_tool(self, **config_overrides):
@@ -254,14 +281,39 @@ class TestBuildHelpers:
 class TestInternalSearchToolGetRetriever:
     """Cover line 32: _get_retriever creates retriever lazily."""
 
-    def test_get_retriever_creates_retriever(self):
+    def test_get_retriever_creates_dispatcher(self):
+        # _get_retriever now builds the per-source Dispatcher (B1c) lazily and
+        # caches it; the Dispatcher creates per-group retrievers at search time.
+        from application.retriever.dispatcher import Dispatcher
+
+        tool = InternalSearchTool({
+            "source": {"active_docs": ["a"]},
+            "retriever_name": "classic",
+            "chunks": 2,
+            "sources": [],
+        })
+        assert tool._retriever is None
+
+        with patch(
+            "application.retriever.classic_rag.LLMCreator.create_llm",
+            return_value=Mock(),
+        ):
+            result = tool._get_retriever()
+
+        assert isinstance(result, Dispatcher)
+        assert tool._retriever is result
+
+    def test_get_retriever_kill_switch_falls_back_to_legacy(self, monkeypatch):
+        # PER_SOURCE_RETRIEVAL_ENABLED=False → legacy single RetrieverCreator.
+        monkeypatch.setattr(
+            "application.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
+            False,
+        )
         tool = InternalSearchTool({
             "source": {},
             "retriever_name": "classic",
             "chunks": 2,
         })
-        assert tool._retriever is None
-
         mock_retriever = Mock()
         with patch(
             "application.agents.tools.internal_search.RetrieverCreator"

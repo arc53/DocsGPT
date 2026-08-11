@@ -55,10 +55,13 @@ class TestRender:
         result = engine.render("{{ missing }}", {})
         assert result == ""
 
-    def test_autoescape_html(self, engine):
-        result = engine.render("{{ content }}", {"content": "<script>alert(1)</script>"})
-        assert "<script>" not in result
-        assert "&lt;script&gt;" in result
+    def test_no_autoescape_content_preserved(self, engine):
+        # Output is an LLM prompt, not HTML: injected values (e.g. document
+        # content with markup or code) must pass through verbatim.
+        result = engine.render(
+            "{{ content }}", {"content": "<code>a < b && c == 'd'</code>"}
+        )
+        assert result == "<code>a < b && c == 'd'</code>"
 
     def test_trim_blocks(self, engine):
         tpl = "{% if True %}\nyes\n{% endif %}"
@@ -184,3 +187,15 @@ class TestExtractToolUsages:
         result = engine.extract_tool_usages(tpl)
         assert "search" in result
         assert "results" in result["search"]
+
+    def test_full_chain_does_not_record_bare_tool(self, engine):
+        # The intermediate ``tools.memory`` node must not register as a
+        # bare-tool usage (None = "run all actions") when the template
+        # only references one specific action.
+        tpl = (
+            "{% if tools.memory.memory_view %}"
+            "{{ tools.memory.memory_view }}"
+            "{% endif %}"
+        )
+        result = engine.extract_tool_usages(tpl)
+        assert result == {"memory": {"memory_view"}}

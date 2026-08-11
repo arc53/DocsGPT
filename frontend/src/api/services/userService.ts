@@ -1,11 +1,20 @@
 import { getSessionToken } from '../../utils/providerUtils';
-import apiClient from '../client';
+import apiClient, { throttledApiClient } from '../client';
 import endpoints from '../endpoints';
 
 const userService = {
-  getConfig: (): Promise<any> => apiClient.get(endpoints.USER.CONFIG, null),
+  getConfig: (): Promise<any> =>
+    throttledApiClient.get(endpoints.USER.CONFIG, null),
+  getMe: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.ME, token),
   getNewToken: (): Promise<any> =>
-    apiClient.get(endpoints.USER.NEW_TOKEN, null),
+    throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
+  // Token deliberately null: a stale Authorization header must not be able
+  // to interfere with redeeming the one-time OIDC handoff code.
+  exchangeOidcCode: (code: string): Promise<any> =>
+    apiClient.post(endpoints.USER.OIDC_TOKEN, { code }, null),
+  refreshOidcSession: (token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.OIDC_REFRESH, {}, token),
   getDocs: (token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS}`, token),
   getDocsWithPagination: (query: string, token: string | null): Promise<any> =>
@@ -17,9 +26,9 @@ const userService = {
   deleteAPIKey: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.DELETE_API_KEY, data, token),
   getAgent: (id: string, token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.AGENT(id), token),
+    throttledApiClient.get(endpoints.USER.AGENT(id), token),
   getAgents: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.AGENTS, token),
+    throttledApiClient.get(endpoints.USER.AGENTS, token),
   createAgent: (data: any, token: string | null): Promise<any> =>
     apiClient.postFormData(endpoints.USER.CREATE_AGENT, data, token),
   updateAgent: (
@@ -30,24 +39,35 @@ const userService = {
     apiClient.putFormData(endpoints.USER.UPDATE_AGENT(agent_id), data, token),
   deleteAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.DELETE_AGENT(id), token),
+  exportAgent: (id: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.EXPORT_AGENT(id), token),
+  planImportAgent: (yaml: string, token: string | null): Promise<Response> =>
+    apiClient.post(endpoints.USER.IMPORT_AGENT_PLAN, { yaml }, token),
+  importAgent: (
+    payload: { yaml: string; resolution?: unknown },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.IMPORT_AGENT, payload, token),
   getPinnedAgents: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.PINNED_AGENTS, token),
+    throttledApiClient.get(endpoints.USER.PINNED_AGENTS, token),
   togglePinAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.TOGGLE_PIN_AGENT(id), {}, token),
   getSharedAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.SHARED_AGENT(id), token),
   getSharedAgents: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.SHARED_AGENTS, token),
+    throttledApiClient.get(endpoints.USER.SHARED_AGENTS, token),
   shareAgent: (data: any, token: string | null): Promise<any> =>
     apiClient.put(endpoints.USER.SHARE_AGENT, data, token),
   removeSharedAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.REMOVE_SHARED_AGENT(id), token),
   getTemplateAgents: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.TEMPLATE_AGENTS, token),
+    throttledApiClient.get(endpoints.USER.TEMPLATE_AGENTS, token),
   adoptAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.ADOPT_AGENT(id), {}, token),
   getAgentWebhook: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.AGENT_WEBHOOK(id), token),
+  regenerateAgentKey: (id: string, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.REGENERATE_AGENT_KEY(id), {}, token),
   getPrompts: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.PROMPTS, token),
   createPrompt: (data: any, token: string | null): Promise<any> =>
@@ -60,20 +80,76 @@ const userService = {
     apiClient.get(endpoints.USER.SINGLE_PROMPT(id), token),
   deletePath: (docPath: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.DELETE_PATH(docPath), token),
-  getTaskStatus: (task_id: string, token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.TASK_STATUS(task_id), token),
   getMessageAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data, token),
   getTokenAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.TOKEN_ANALYTICS, data, token),
   getFeedbackAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.FEEDBACK_ANALYTICS, data, token),
+  getToolAnalytics: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.TOOL_ANALYTICS, data, token),
+  getScheduleAnalytics: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.SCHEDULE_ANALYTICS, data, token),
   getLogs: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data, token),
   manageSync: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MANAGE_SYNC, data, token),
   syncSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.SYNC_SOURCE, data, token),
+  reingestSource: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.REINGEST_SOURCE, data, token),
+  updateSourceConfig: (
+    sourceId: string,
+    config: any,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.patch(endpoints.USER.SOURCE_CONFIG(sourceId), config, token),
+  testSourceRetrieval: (
+    sourceId: string,
+    data: { query: string; retrieval?: any },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.SOURCE_SEARCH(sourceId), data, token),
+  createWiki: (
+    data: { name: string; initial_content?: string },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.CREATE_WIKI, data, token),
+  convertToWiki: (sourceId: string, token: string | null): Promise<Response> =>
+    apiClient.post(endpoints.USER.CONVERT_TO_WIKI(sourceId), {}, token),
+  enableGraphRAG: (sourceId: string, token: string | null): Promise<Response> =>
+    apiClient.post(endpoints.USER.ENABLE_GRAPHRAG(sourceId), {}, token),
+  getSourceGraph: (
+    sourceId: string,
+    token: string | null,
+    limit?: number,
+  ): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.SOURCE_GRAPH(sourceId, limit), token),
+  getSourceGraphNode: (
+    sourceId: string,
+    nodeId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    throttledApiClient.get(
+      endpoints.USER.SOURCE_GRAPH_NODE(sourceId, nodeId),
+      token,
+    ),
+  getTaskStatus: (taskId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.TASK_STATUS(taskId), token),
+  getWikiPages: (sourceId: string, token: string | null): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.WIKI_PAGES(sourceId), token),
+  getWikiPage: (
+    sourceId: string,
+    path: string,
+    token: string | null,
+  ): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.WIKI_PAGE(sourceId, path), token),
+  updateWikiPage: (
+    sourceId: string,
+    data: { path: string; content: string; expected_version?: number },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.put(endpoints.USER.WIKI_PAGE(sourceId, data.path), data, token),
   getAvailableTools: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
   getUserTools: (token: string | null): Promise<any> =>
@@ -149,7 +225,7 @@ const userService = {
     path?: string,
     search?: string,
   ): Promise<any> =>
-    apiClient.get(
+    throttledApiClient.get(
       endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search),
       token,
     ),
@@ -164,17 +240,15 @@ const userService = {
   updateChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.put(endpoints.USER.UPDATE_CHUNK, data, token),
   getDirectoryStructure: (docId: string, token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
+    throttledApiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
   manageSourceFiles: (data: FormData, token: string | null): Promise<any> =>
     apiClient.postFormData(endpoints.USER.MANAGE_SOURCE_FILES, data, token),
   testMCPConnection: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MCP_TEST_CONNECTION, data, token),
   saveMCPServer: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
-  getMCPOAuthStatus: (task_id: string, token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.MCP_OAUTH_STATUS(task_id), token),
   getMCPAuthStatus: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
+    throttledApiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
   syncConnector: (
     docId: string,
     provider: string,
@@ -191,8 +265,50 @@ const userService = {
       token,
     );
   },
+  getConnectorAuthUrl: (provider: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.CONNECTOR_AUTH(provider), token),
+  getConnectorFiles: (
+    data: any,
+    token: string | null,
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    throttledApiClient.post(
+      endpoints.USER.CONNECTOR_FILES,
+      data,
+      token,
+      {},
+      signal,
+    ),
+  validateConnectorSession: (
+    provider: string,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(
+      endpoints.USER.CONNECTOR_VALIDATE_SESSION,
+      {
+        provider,
+        session_token: getSessionToken(provider),
+      },
+      token,
+    ),
+  disconnectConnector: (
+    provider: string,
+    sessionToken: string,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(
+      endpoints.USER.CONNECTOR_DISCONNECT,
+      { provider, session_token: sessionToken },
+      token,
+    ),
+  textToSpeech: (
+    text: string,
+    token: string | null,
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    apiClient.post(endpoints.USER.TTS, { text }, token, {}, signal),
   getAgentFolders: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.AGENT_FOLDERS, token),
+    throttledApiClient.get(endpoints.USER.AGENT_FOLDERS, token),
   createAgentFolder: (
     data: { name: string; parent_id?: string },
     token: string | null,
@@ -214,6 +330,43 @@ const userService = {
     apiClient.post(endpoints.USER.MOVE_AGENT_TO_FOLDER, data, token),
   getArtifact: (artifactId: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_ARTIFACT(artifactId), token),
+  getDocumentArtifact: (
+    artifactId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(endpoints.USER.GET_DOCUMENT_ARTIFACT(artifactId), token),
+  listWorkflowRunArtifacts: (
+    workflowRunId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(
+      endpoints.USER.LIST_WORKFLOW_RUN_ARTIFACTS(workflowRunId),
+      token,
+    ),
+  downloadArtifact: (
+    artifactId: string,
+    token: string | null,
+    version?: number,
+    disposition?: 'url',
+  ): Promise<Response> =>
+    apiClient.get(
+      endpoints.USER.DOWNLOAD_ARTIFACT(artifactId, version, disposition),
+      token,
+      // ?disposition=url asks the s3 strategy to return the presigned URL as
+      // JSON (for a top-level navigation) instead of a CORS-blocked 302; the
+      // Accept header is the same opt-in via content negotiation.
+      disposition === 'url' ? { Accept: 'application/json' } : {},
+    ),
+  restoreArtifactVersion: (
+    artifactId: string,
+    version: number,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(
+      endpoints.USER.RESTORE_ARTIFACT(artifactId),
+      { version },
+      token,
+    ),
   getWorkflow: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.WORKFLOW(id), token),
   createWorkflow: (data: any, token: string | null): Promise<any> =>

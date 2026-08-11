@@ -3,7 +3,7 @@ import 'reactflow/dist/style.css';
 import {
   AlertCircle,
   Bot,
-  ChartColumn,
+  Code2,
   Database,
   Flag,
   GitBranch,
@@ -12,9 +12,10 @@ import {
   Pencil,
   Play,
   Plus,
-  Settings2,
+  Redo2,
   StickyNote,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -33,11 +34,14 @@ import ReactFlow, {
   Node,
   NodeChange,
   NodeTypes,
+  Panel,
   ReactFlowProvider,
   useReactFlow,
 } from 'reactflow';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
 import {
   Select,
@@ -52,7 +56,6 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
-import ArrowLeft from '../../assets/arrow-left.svg';
 import { FileUpload } from '../../components/FileUpload';
 import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
@@ -62,12 +65,32 @@ import {
   selectToken,
 } from '../../preferences/preferenceSlice';
 import { getToolDisplayName } from '../../utils/toolUtils';
+import AgentPageHeader from '../AgentPageHeader';
 import { Agent } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
+import {
+  createDefaultCodeConfig,
+  normalizeCodeConfig,
+  parseCodeJsonSchemaDraft,
+  serializeCodeConfig,
+  validateCodeJsonSchema,
+} from './codeNodeConfig';
 import MobileBlocker from './components/MobileBlocker';
-import PromptTextArea from './components/PromptTextArea';
+import { buildSimpleCel, parseSimpleCel } from './simpleCel';
+import NodeDocumentsControl from './components/NodeDocumentsControl';
+import PromptTextArea, {
+  extractUpstreamVariables,
+} from './components/PromptTextArea';
+import {
+  FILE_PASSING_OPTIONS,
+  FilePassing,
+  normalizeFilePassing,
+  toDocumentVariableOptions,
+} from './documentConfig';
+import { useUndoRedo, WorkflowSnapshot } from './hooks/useUndoRedo';
 import {
   AgentNode,
+  CodeNode,
   ConditionNode,
   EndNode,
   NoteNode,
@@ -77,11 +100,12 @@ import {
 import WorkflowPreview from './WorkflowPreview';
 
 import type { Model } from '../../models/types';
+import { useOutsideAlerter } from '@/hooks';
 
 const PRIMARY_ACTION_SPINNER_DELAY_MS = 180;
 
 interface AgentNodeConfig {
-  agent_type: 'classic' | 'agentic' | 'research';
+  agent_type: 'classic' | 'research';
   llm_name?: string;
   model_id?: string;
   system_prompt: string;
@@ -93,6 +117,8 @@ interface AgentNodeConfig {
   chunks?: string;
   retriever?: string;
   json_schema?: Record<string, unknown>;
+  input_documents?: string[];
+  file_passing?: FilePassing;
 }
 
 interface UserTool {
@@ -100,6 +126,9 @@ interface UserTool {
   name: string;
   displayName: string;
   customName?: string;
+  // Workflow-only builtins (e.g. read_document) are kept here; the classic
+  // agent picker filters them out.
+  workflow_only?: boolean;
 }
 
 function validateJsonSchemaConfig(schema: unknown): string | null {
@@ -114,6 +143,13 @@ function validateJsonSchemaConfig(schema: unknown): string | null {
   }
 
   return null;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
 function createEmptyWorkflowAgent(): Agent {
@@ -145,79 +181,6 @@ function canReachEnd(
   return edges
     .filter((e) => e.source === nodeId)
     .some((e) => canReachEnd(e.target, edges, nodeIds, endIds, visited));
-}
-
-function parseSimpleCel(expression: string): {
-  variable: string;
-  operator: string;
-  value: string;
-} {
-  const trimmedExpression = expression.trim();
-
-  let match = trimmedExpression.match(
-    /^(\w+)\.(contains|startsWith)\(["'](.*)["']\)$/,
-  );
-  if (match) return { variable: match[1], operator: match[2], value: match[3] };
-
-  match = trimmedExpression.match(/^(\w+)\.(contains|startsWith)\((.*)\)$/);
-  if (match) {
-    const rawValue = match[3].trim();
-    const unquotedValue = rawValue.replace(/^["'](.*)["']$/, '$1');
-    return {
-      variable: match[1],
-      operator: match[2],
-      value: unquotedValue,
-    };
-  }
-
-  match = trimmedExpression.match(/^(contains|startsWith)\(["'](.*)["']\)$/);
-  if (match) return { variable: '', operator: match[1], value: match[2] };
-
-  match = trimmedExpression.match(/^(contains|startsWith)\((.*)\)$/);
-  if (match) {
-    const rawValue = match[2].trim();
-    const unquotedValue = rawValue.replace(/^["'](.*)["']$/, '$1');
-    return { variable: '', operator: match[1], value: unquotedValue };
-  }
-
-  match = trimmedExpression.match(/^(\w+)\s*(==|!=|>=|<=|>|<)\s*["'](.*)["']$/);
-  if (match) return { variable: match[1], operator: match[2], value: match[3] };
-
-  match = trimmedExpression.match(/^(==|!=|>=|<=|>|<)\s*["'](.*)["']$/);
-  if (match) return { variable: '', operator: match[1], value: match[2] };
-
-  match = trimmedExpression.match(/^(\w+)\s*(==|!=|>=|<=|>|<)\s*(.*)$/);
-  if (match) return { variable: match[1], operator: match[2], value: match[3] };
-
-  match = trimmedExpression.match(/^(==|!=|>=|<=|>|<)\s*(.*)$/);
-  if (match) return { variable: '', operator: match[1], value: match[2] };
-
-  return { variable: '', operator: '==', value: '' };
-}
-
-function buildSimpleCel(
-  variable: string,
-  operator: string,
-  value: string,
-): string {
-  const trimmedValue = value.trim();
-  const isNumeric = trimmedValue !== '' && !isNaN(Number(trimmedValue));
-  const isBool = trimmedValue === 'true' || trimmedValue === 'false';
-  const literalValue =
-    isNumeric || isBool ? trimmedValue : JSON.stringify(value);
-  const stringValue = JSON.stringify(value);
-  if (operator === 'contains') {
-    return variable
-      ? `${variable}.contains(${stringValue})`
-      : `contains(${stringValue})`;
-  }
-  if (operator === 'startsWith') {
-    return variable
-      ? `${variable}.startsWith(${stringValue})`
-      : `startsWith(${stringValue})`;
-  }
-  if (!variable) return `${operator} ${literalValue}`;
-  return `${variable} ${operator} ${literalValue}`;
 }
 
 function normalizeConditionCases(cases: ConditionCase[]): ConditionCase[] {
@@ -283,15 +246,18 @@ function createWorkflowPayload(
         | 'agent'
         | 'note'
         | 'state'
-        | 'condition',
+        | 'condition'
+        | 'code',
       title: node.data.title || node.data.label || node.type,
       position: node.position,
       data:
-        node.type === 'agent' ||
-        node.type === 'condition' ||
-        node.type === 'state'
-          ? node.data.config
-          : node.data,
+        node.type === 'code'
+          ? serializeCodeConfig(node.data.config)
+          : node.type === 'agent' ||
+              node.type === 'condition' ||
+              node.type === 'state'
+            ? node.data.config
+            : node.data,
     })),
     edges: workflowEdges.map((edge) => ({
       id: edge.id,
@@ -310,6 +276,7 @@ const NODE_TYPES: NodeTypes = {
   note: NoteNode,
   state: SetStateNode,
   condition: ConditionNode,
+  code: CodeNode,
 };
 
 function WorkflowBuilderInner() {
@@ -390,6 +357,36 @@ function WorkflowBuilderInner() {
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>([]);
 
+  const handleHistoryRestore = useCallback(
+    (snapshot: WorkflowSnapshot) => {
+      setAgentJsonSchemaDrafts({});
+      setAgentJsonSchemaErrors({});
+      if (!selectedNode) return;
+      const restoredNode = snapshot.nodes.find((n) => n.id === selectedNode.id);
+      if (restoredNode) {
+        setSelectedNode(restoredNode);
+      } else {
+        setSelectedNode(null);
+        setShowNodeConfig(false);
+      }
+    },
+    [selectedNode],
+  );
+
+  const { takeSnapshot, undo, redo, clearHistory, canUndo, canRedo } =
+    useUndoRedo({
+      nodes,
+      edges,
+      setNodes,
+      setEdges,
+      onRestore: handleHistoryRestore,
+    });
+
+  const snapshotBeforeCanvasChange = useCallback(
+    () => takeSnapshot(),
+    [takeSnapshot],
+  );
+
   const onNodesChange = useCallback(
     (changes: NodeChange[]) =>
       setNodes((nds) => applyNodeChanges(changes, nds)),
@@ -404,19 +401,21 @@ function WorkflowBuilderInner() {
 
   const onConnect = useCallback(
     (params: Connection) => {
+      const exists = edges.some(
+        (e) =>
+          e.source === params.source &&
+          e.sourceHandle === params.sourceHandle &&
+          e.target === params.target &&
+          e.targetHandle === params.targetHandle,
+      );
+      if (exists) return;
+
+      takeSnapshot();
+
+      const targetNode = nodes.find((n) => n.id === params.target);
+      const isEndNode = targetNode?.type === 'end';
+
       setEdges((eds) => {
-        const exists = eds.some(
-          (e) =>
-            e.source === params.source &&
-            e.sourceHandle === params.sourceHandle &&
-            e.target === params.target &&
-            e.targetHandle === params.targetHandle,
-        );
-        if (exists) return eds;
-
-        const targetNode = nodes.find((n) => n.id === params.target);
-        const isEndNode = targetNode?.type === 'end';
-
         const filtered = eds.filter(
           (e) =>
             !(
@@ -433,12 +432,16 @@ function WorkflowBuilderInner() {
         return addEdge(params, filtered);
       });
     },
-    [nodes],
+    [nodes, edges, takeSnapshot],
   );
 
-  const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
-    setEdges((eds) => eds.filter((e) => e.id !== edge.id));
-  }, []);
+  const onEdgeClick = useCallback(
+    (_event: React.MouseEvent, edge: Edge) => {
+      takeSnapshot();
+      setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+    },
+    [takeSnapshot],
+  );
 
   const handleNodeDragStart = useCallback(
     (e: React.DragEvent, nodeType: string) => {
@@ -473,6 +476,8 @@ function WorkflowBuilderInner() {
 
       const type = event.dataTransfer.getData('application/reactflow');
       if (!type) return;
+
+      takeSnapshot();
 
       const position = reactFlowInstance.screenToFlowPosition({
         x: event.clientX,
@@ -515,6 +520,10 @@ function WorkflowBuilderInner() {
           mode: 'simple',
           cases: [{ name: '', expression: '', sourceHandle: 'case_0' }],
         };
+      } else if (type === 'code') {
+        baseNode.data.title = 'Code';
+        baseNode.data.label = 'Code';
+        baseNode.data.config = createDefaultCodeConfig();
       } else if (type === 'note') {
         baseNode.data.title = 'Note';
         baseNode.data.label = 'Note';
@@ -522,7 +531,7 @@ function WorkflowBuilderInner() {
 
       setNodes((nds) => nds.concat(baseNode));
     },
-    [reactFlowInstance, availableModels, defaultAgentModelId],
+    [reactFlowInstance, availableModels, defaultAgentModelId, takeSnapshot],
   );
 
   const handleNodeClick = useCallback(
@@ -533,33 +542,57 @@ function WorkflowBuilderInner() {
     [],
   );
 
+  const deleteNodesAndEdges = useCallback(
+    (nodesToDelete: Node[], edgesToDelete: Edge[]) => {
+      const removableIds = new Set(
+        nodesToDelete.filter((n) => n.type !== 'start').map((n) => n.id),
+      );
+      const edgeIdsToDelete = new Set(edgesToDelete.map((e) => e.id));
+      if (removableIds.size === 0 && edgeIdsToDelete.size === 0) return;
+
+      takeSnapshot();
+      setNodes((nds) => nds.filter((n) => !removableIds.has(n.id)));
+      setEdges((eds) =>
+        eds.filter(
+          (e) =>
+            !edgeIdsToDelete.has(e.id) &&
+            !removableIds.has(e.source) &&
+            !removableIds.has(e.target),
+        ),
+      );
+      const dropRemoved = <T,>(prev: Record<string, T>): Record<string, T> => {
+        const next = { ...prev };
+        let changed = false;
+        removableIds.forEach((id) => {
+          if (id in next) {
+            delete next[id];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      };
+      setAgentJsonSchemaDrafts(dropRemoved);
+      setAgentJsonSchemaErrors(dropRemoved);
+      if (selectedNode && removableIds.has(selectedNode.id)) {
+        setSelectedNode(null);
+        setShowNodeConfig(false);
+      }
+    },
+    [selectedNode, takeSnapshot],
+  );
+
   const handleDeleteNode = useCallback(() => {
-    if (!selectedNode || selectedNode.type === 'start') return;
-    setNodes((nds) => nds.filter((n) => n.id !== selectedNode.id));
-    setEdges((eds) =>
-      eds.filter(
-        (e) => e.source !== selectedNode.id && e.target !== selectedNode.id,
-      ),
-    );
-    setAgentJsonSchemaDrafts((prev) => {
-      if (!(selectedNode.id in prev)) return prev;
-      const next = { ...prev };
-      delete next[selectedNode.id];
-      return next;
-    });
-    setAgentJsonSchemaErrors((prev) => {
-      if (!(selectedNode.id in prev)) return prev;
-      const next = { ...prev };
-      delete next[selectedNode.id];
-      return next;
-    });
-    setSelectedNode(null);
-    setShowNodeConfig(false);
-  }, [selectedNode]);
+    if (!selectedNode) return;
+    deleteNodesAndEdges([selectedNode], []);
+  }, [selectedNode, deleteNodesAndEdges]);
 
   const handleUpdateNodeData = useCallback(
-    (data: Record<string, unknown>) => {
+    (data: Record<string, unknown>, options?: { snapshot?: boolean }) => {
       if (!selectedNode) return;
+      if (options?.snapshot !== false) {
+        // Group per node so a burst of keystrokes becomes one undo step
+        takeSnapshot(`node-data:${selectedNode.id}`);
+      }
       setNodes((nds) =>
         nds.map((n) =>
           n.id === selectedNode.id ? { ...n, data: { ...n.data, ...data } } : n,
@@ -569,7 +602,7 @@ function WorkflowBuilderInner() {
         prev ? { ...prev, data: { ...prev.data, ...data } } : null,
       );
     },
-    [selectedNode],
+    [selectedNode, takeSnapshot],
   );
 
   const handleAgentJsonSchemaChange = useCallback(
@@ -610,6 +643,27 @@ function WorkflowBuilderInner() {
           ...prev,
           [nodeId]: 'must be valid JSON',
         }));
+      }
+    },
+    [handleUpdateNodeData, selectedNode],
+  );
+
+  const handleCodeJsonSchemaChange = useCallback(
+    (text: string) => {
+      if (!selectedNode || selectedNode.type !== 'code') return;
+
+      const nodeId = selectedNode.id;
+      setAgentJsonSchemaDrafts((prev) => ({ ...prev, [nodeId]: text }));
+
+      const { schema, error } = parseCodeJsonSchemaDraft(text);
+      setAgentJsonSchemaErrors((prev) => ({ ...prev, [nodeId]: error }));
+      if (!error) {
+        handleUpdateNodeData({
+          config: {
+            ...(selectedNode.data.config || {}),
+            json_schema: schema,
+          },
+        });
       }
     },
     [handleUpdateNodeData, selectedNode],
@@ -671,9 +725,38 @@ function WorkflowBuilderInner() {
   }, [isPublishing]);
 
   useEffect(() => {
+    // Shared guard for the canvas shortcuts (undo/redo, Delete/Backspace to
+    // remove the selection, Escape to close the config panel): ignore the
+    // keystroke while typing in a field, while the Preview Sheet is open (its
+    // own inputs own the keys — a stray Delete there must not delete the node
+    // behind it), or once another handler has already consumed the event. Kept
+    // in one place so the branches can't drift apart.
+    const shouldIgnoreShortcut = (e: KeyboardEvent): boolean =>
+      e.defaultPrevented || showPreview || isEditableTarget(e.target);
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' && selectedNode) {
-        handleDeleteNode();
+      if (shouldIgnoreShortcut(e)) return;
+
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) redo();
+          else undo();
+          return;
+        }
+        if (key === 'y') {
+          e.preventDefault();
+          redo();
+          return;
+        }
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        deleteNodesAndEdges(
+          nodes.filter((n) => n.selected || n.id === selectedNode?.id),
+          edges.filter((edge) => edge.selected),
+        );
       }
       if (e.key === 'Escape') {
         setShowNodeConfig(false);
@@ -682,28 +765,32 @@ function WorkflowBuilderInner() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode, handleDeleteNode]);
+  }, [
+    nodes,
+    edges,
+    selectedNode,
+    deleteNodesAndEdges,
+    undo,
+    redo,
+    showPreview,
+  ]);
 
-  const handlePanelBackdropClick = useCallback(() => {
+  const handlePaneClick = useCallback(() => {
     setShowNodeConfig(false);
     setSelectedNode(null);
+    setShowWorkflowSettings(false);
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        workflowSettingsRef.current &&
-        !workflowSettingsRef.current.contains(e.target as HTMLElement)
-      ) {
-        setShowWorkflowSettings(false);
-      }
-    };
-    if (showWorkflowSettings) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () =>
-        document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showWorkflowSettings]);
+  const handleCloseWorkflowSettings = useCallback(() => {
+    setShowWorkflowSettings(false);
+  }, []);
+
+  useOutsideAlerter(
+    workflowSettingsRef,
+    handleCloseWorkflowSettings,
+    [],
+    false,
+  );
 
   useEffect(() => {
     const loadModelsAndTools = async () => {
@@ -741,15 +828,18 @@ function WorkflowBuilderInner() {
     if (!defaultAgentModelId) return;
     if (selectedNode.data.config?.model_id) return;
 
-    handleUpdateNodeData({
-      config: {
-        ...(selectedNode.data.config || {}),
-        model_id: defaultAgentModelId,
-        llm_name:
-          availableModels.find((model) => model.id === defaultAgentModelId)
-            ?.provider || '',
+    handleUpdateNodeData(
+      {
+        config: {
+          ...(selectedNode.data.config || {}),
+          model_id: defaultAgentModelId,
+          llm_name:
+            availableModels.find((model) => model.id === defaultAgentModelId)
+              ?.provider || '',
+        },
       },
-    });
+      { snapshot: false },
+    );
   }, [
     selectedNode,
     defaultAgentModelId,
@@ -778,6 +868,29 @@ function WorkflowBuilderInner() {
     setAgentJsonSchemaErrors((prev) => {
       if (prev[nodeId] !== undefined) return prev;
       return { ...prev, [nodeId]: validateJsonSchemaConfig(rawSchema) };
+    });
+  }, [selectedNode]);
+
+  useEffect(() => {
+    if (!selectedNode || selectedNode.type !== 'code') return;
+    const nodeId = selectedNode.id;
+    const rawSchema = selectedNode.data.config?.json_schema;
+
+    setAgentJsonSchemaDrafts((prev) => {
+      if (prev[nodeId] !== undefined) return prev;
+      if (rawSchema === undefined || rawSchema === null) {
+        return { ...prev, [nodeId]: '' };
+      }
+      try {
+        return { ...prev, [nodeId]: JSON.stringify(rawSchema, null, 2) };
+      } catch {
+        return { ...prev, [nodeId]: String(rawSchema) };
+      }
+    });
+
+    setAgentJsonSchemaErrors((prev) => {
+      if (prev[nodeId] !== undefined) return prev;
+      return { ...prev, [nodeId]: validateCodeJsonSchema(rawSchema) };
     });
   }, [selectedNode]);
 
@@ -813,7 +926,11 @@ function WorkflowBuilderInner() {
         const response = await userService.getWorkflow(workflowId, token);
         if (!response.ok) throw new Error('Failed to fetch workflow');
         const responseData = await response.json();
-        const { workflow, nodes: apiNodes, edges: apiEdges } = responseData.data;
+        const {
+          workflow,
+          nodes: apiNodes,
+          edges: apiEdges,
+        } = responseData.data;
         const nextWorkflowName = workflow.name;
         const nextWorkflowDescription = workflow.description || '';
         const mappedNodes = apiNodes.map((n: WorkflowNode) => {
@@ -830,6 +947,10 @@ function WorkflowBuilderInner() {
             };
           } else if (n.type === 'state' && n.data) {
             nodeData.config = n.data;
+          } else if (n.type === 'code') {
+            nodeData.config = normalizeCodeConfig(
+              n.data as Record<string, unknown> | undefined,
+            );
           } else if (n.data) {
             Object.assign(nodeData, n.data);
           }
@@ -861,6 +982,7 @@ function WorkflowBuilderInner() {
         setAgentJsonSchemaErrors({});
         setNodes(mappedNodes);
         setEdges(mappedEdges);
+        clearHistory();
         setSavedWorkflowSignature(
           JSON.stringify(
             createWorkflowPayload(
@@ -883,7 +1005,7 @@ function WorkflowBuilderInner() {
       }
     };
     loadWorkflow();
-  }, [workflowId, reactFlowInstance, token]);
+  }, [workflowId, reactFlowInstance, token, clearHistory]);
 
   const validateWorkflow = useCallback((): string[] => {
     const errors: string[] = [];
@@ -1083,6 +1205,27 @@ function WorkflowBuilderInner() {
           );
         }
       });
+    });
+
+    const codeNodes = nodes.filter((n) => n.type === 'code');
+    codeNodes.forEach((node) => {
+      const codeTitle = node.data?.title || node.id;
+      const config = node.data?.config;
+      if (!(config?.code || '').trim()) {
+        errors.push(`Code node "${codeTitle}" must have code to run`);
+      }
+
+      const schemaValidationError = validateCodeJsonSchema(config?.json_schema);
+      const draftSchemaError = agentJsonSchemaErrors[node.id];
+      const effectiveSchemaError =
+        draftSchemaError !== undefined
+          ? draftSchemaError
+          : schemaValidationError;
+      if (effectiveSchemaError) {
+        errors.push(
+          `Code node "${codeTitle}" JSON schema ${effectiveSchemaError}`,
+        );
+      }
     });
 
     return errors;
@@ -1363,20 +1506,71 @@ function WorkflowBuilderInner() {
     return selectedModel.supports_structured_output;
   }, [selectedNode, availableModels]);
 
+  const selectedAgentDocumentOptions = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'agent') return [];
+    return toDocumentVariableOptions(
+      extractUpstreamVariables(nodes, edges, selectedNode.id),
+    );
+  }, [selectedNode, nodes, edges]);
+
+  const selectedCodeDocumentOptions = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'code') return [];
+    return toDocumentVariableOptions(
+      extractUpstreamVariables(nodes, edges, selectedNode.id),
+    );
+  }, [selectedNode, nodes, edges]);
+
+  const selectedCodeJsonSchemaText = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'code') return '';
+
+    const draft = agentJsonSchemaDrafts[selectedNode.id];
+    if (draft !== undefined) return draft;
+
+    const schema = selectedNode.data.config?.json_schema;
+    if (schema === undefined || schema === null) return '';
+
+    try {
+      return JSON.stringify(schema, null, 2);
+    } catch {
+      return String(schema);
+    }
+  }, [selectedNode, agentJsonSchemaDrafts]);
+
+  const selectedCodeJsonSchemaError = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'code') return null;
+
+    const cachedError = agentJsonSchemaErrors[selectedNode.id];
+    if (cachedError !== undefined) return cachedError;
+
+    return validateCodeJsonSchema(selectedNode.data.config?.json_schema);
+  }, [selectedNode, agentJsonSchemaErrors]);
+
   return (
     <>
       <MobileBlocker />
       <div className="bg-background fixed inset-0 z-50 hidden h-screen w-full flex-col md:flex">
         <div className="border-border bg-card dark:bg-background flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-4">
-            <button
-              onClick={navigateBackToAgents}
-              className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
-            >
-              <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-            </button>
-            <div className="group relative flex items-center gap-2">
-              <div>
+            {canManageAgent ? (
+              <AgentPageHeader
+                agentId={effectiveAgentId}
+                agentName={workflowName}
+                agentEditPath={`/agents/workflow/edit/${effectiveAgentId}`}
+                currentPage="overview"
+                inline
+              />
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={navigateBackToAgents}
+                className="text-muted-foreground rounded-full px-4 py-2 text-sm font-normal shadow-none"
+              >
+                {t('agents.backToAll')}
+              </Button>
+            )}
+            {!canManageAgent && (
+              <div className="min-w-0">
                 <div
                   className="max-w-xs truncate text-xl font-bold text-gray-900 dark:text-white"
                   title={workflowName || 'New Workflow'}
@@ -1385,19 +1579,30 @@ function WorkflowBuilderInner() {
                 </div>
                 {workflowDescription && (
                   <div
-                    className="max-w-xs truncate text-xs text-gray-500 dark:text-gray-400"
+                    className="text-muted-foreground max-w-xs truncate text-xs"
                     title={workflowDescription}
                   >
                     {workflowDescription}
                   </div>
                 )}
               </div>
-              <button
+            )}
+            <div className="relative flex items-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setShowWorkflowSettings(!showWorkflowSettings)}
-                className="text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 hover:text-gray-600 dark:hover:text-gray-200"
+                className="text-muted-foreground hover:bg-accent hover:text-foreground size-auto p-1"
+                aria-label="Workflow settings"
+                title={
+                  workflowDescription
+                    ? `${workflowName || 'New Workflow'} — ${workflowDescription}`
+                    : 'Edit workflow details'
+                }
               >
                 <Pencil size={14} />
-              </button>
+              </Button>
               {showWorkflowSettings && (
                 <div
                   ref={workflowSettingsRef}
@@ -1407,11 +1612,11 @@ function WorkflowBuilderInner() {
                     <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Workflow Name
                     </label>
-                    <input
+                    <Input
                       type="text"
                       value={workflowName}
                       onChange={(e) => setWorkflowName(e.target.value)}
-                      className="focus:ring-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 dark:text-white"
+                      className="bg-card h-auto rounded-lg px-3 py-2 text-sm shadow-none"
                       placeholder="Enter workflow name"
                     />
                   </div>
@@ -1422,7 +1627,7 @@ function WorkflowBuilderInner() {
                     <textarea
                       value={workflowDescription}
                       onChange={(e) => setWorkflowDescription(e.target.value)}
-                      className="focus:ring-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 dark:text-white"
+                      className="focus-visible:ring-ring/50 focus-visible:border-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2 dark:text-white"
                       rows={3}
                       placeholder="Describe what this workflow does"
                     />
@@ -1461,7 +1666,7 @@ function WorkflowBuilderInner() {
                       ]}
                       className="border-border rounded-lg border-2 border-dashed p-3 text-center transition-colors"
                     />
-                    <p className="text-muted-foreground mt-1 text-[11px]">
+                    <p className="text-muted-foreground mt-1 text-xs">
                       Image updates are included the next time you save.
                     </p>
                   </div>
@@ -1471,8 +1676,10 @@ function WorkflowBuilderInner() {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                           {t('agents.form.advanced.systemPromptOverride')}
                         </label>
-                        <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                          {t('agents.form.advanced.systemPromptOverrideDescription')}
+                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          {t(
+                            'agents.form.advanced.systemPromptOverrideDescription',
+                          )}
                         </p>
                       </div>
                       <button
@@ -1499,54 +1706,45 @@ function WorkflowBuilderInner() {
                       </button>
                     </div>
                   </div>
-                  <button
+                  <Button
+                    type="button"
                     onClick={handleWorkflowSettingsDone}
                     disabled={isPublishing}
-                    className="bg-primary hover:bg-primary/90 w-full rounded-lg px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="w-full rounded-lg text-white"
                   >
                     Done
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowWorkflowSettings((prev) => !prev)}
-              className="border-border bg-card hover:bg-accent flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-700 transition-colors dark:text-gray-200"
-            >
-              <Settings2 size={16} />
-              Details
-            </button>
             {canManageAgent && (
-              <button
-                onClick={() => navigate(`/agents/logs/${effectiveAgentId}`)}
-                className="border-border bg-card hover:bg-accent flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-700 transition-colors dark:text-gray-200"
-              >
-                <ChartColumn size={16} />
-                Logs
-              </button>
-            )}
-            {canManageAgent && (
-              <button
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => setAgentDetails('ACTIVE')}
-                className="border-border bg-card hover:bg-accent flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-700 transition-colors dark:text-gray-200"
+                className="rounded-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
               >
                 <Link size={16} />
                 Access Details
-              </button>
+              </Button>
             )}
             {canManageAgent && (
-              <button
+              <Button
+                type="button"
+                variant="destructive-outline"
                 onClick={() => setDeleteConfirmation('ACTIVE')}
                 disabled={isDeletingAgent}
-                className="bg-card flex items-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10"
+                className="bg-card rounded-full border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10 dark:hover:text-red-400"
               >
                 <Trash2 size={16} />
                 {isDeletingAgent ? 'Deleting...' : 'Delete'}
-              </button>
+              </Button>
             )}
-            <button
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => {
                 const validationErrors = validateWorkflow();
                 if (validationErrors.length > 0) {
@@ -1556,18 +1754,19 @@ function WorkflowBuilderInner() {
                 }
                 setShowPreview(true);
               }}
-              className="border-border bg-card hover:bg-accent flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-700 transition-colors dark:text-gray-200"
+              className="rounded-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
             >
               <Play size={16} />
               Preview
-            </button>
-            <button
+            </Button>
+            <Button
+              type="button"
               onClick={handlePrimaryAction}
               disabled={isPrimaryActionDisabled}
-              className={`relative inline-flex items-center justify-center rounded-full px-6 py-2 text-sm font-medium shadow-sm transition-colors disabled:cursor-not-allowed ${
+              className={`relative rounded-full px-6 py-2 text-sm font-medium shadow-sm ${
                 canManageAgent && !hasSavableChanges
-                  ? 'dark:bg-accent bg-gray-200 text-gray-500 dark:text-gray-400'
-                  : 'bg-primary hover:bg-primary/90 text-white disabled:opacity-50'
+                  ? 'dark:bg-accent bg-gray-200 text-gray-500 hover:bg-gray-200 dark:text-gray-400'
+                  : 'text-white'
               }`}
             >
               <span
@@ -1580,7 +1779,7 @@ function WorkflowBuilderInner() {
               {showPrimaryActionSpinner ? (
                 <Loader2 size={16} className="absolute animate-spin" />
               ) : null}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -1605,12 +1804,15 @@ function WorkflowBuilderInner() {
                   ))}
                 </ul>
               </AlertDescription>
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setPublishErrors([])}
-                className="absolute top-4 right-4 text-red-700 hover:text-red-900 dark:text-red-300 dark:hover:text-red-100"
+                className="absolute top-4 right-4 size-auto p-0 text-red-700 hover:bg-transparent hover:text-red-900 dark:text-red-300 dark:hover:bg-transparent dark:hover:text-red-100"
               >
                 <X size={16} />
-              </button>
+              </Button>
             </Alert>
           </div>
         )}
@@ -1627,7 +1829,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'agent')}
                 >
-                  <div className="text-primary group-hover:bg-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white">
+                  <div className="text-primary group-hover:bg-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white dark:bg-purple-900/40">
                     <Bot size={18} />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -1639,7 +1841,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'end')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white dark:bg-green-900/40 dark:text-green-300">
                     <Flag size={18} />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -1651,7 +1853,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'note')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white dark:bg-yellow-900/40 dark:text-yellow-300">
                     <StickyNote size={18} />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -1671,14 +1873,14 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'state')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white dark:bg-blue-900/40 dark:text-blue-300">
                     <Database size={18} />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-foreground text-sm font-medium">
                       Set State
                     </span>
-                    <span className="text-muted-foreground text-[10px]">
+                    <span className="text-muted-foreground text-xs">
                       Modify workflow variables
                     </span>
                   </div>
@@ -1688,15 +1890,32 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'condition')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white dark:bg-orange-900/40 dark:text-orange-300">
                     <GitBranch size={18} />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-foreground text-sm font-medium">
                       If / Else
                     </span>
-                    <span className="text-muted-foreground text-[10px]">
+                    <span className="text-muted-foreground text-xs">
                       Conditional branching
+                    </span>
+                  </div>
+                </div>
+                <div
+                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
+                  draggable
+                  onDragStart={(e) => handleNodeDragStart(e, 'code')}
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 transition-colors group-hover:bg-indigo-600 group-hover:text-white dark:bg-indigo-900/40 dark:text-indigo-300">
+                    <Code2 size={18} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-foreground text-sm font-medium">
+                      Code
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      Run code in a sandbox
                     </span>
                   </div>
                 </div>
@@ -1718,21 +1937,47 @@ function WorkflowBuilderInner() {
               onDrop={onDrop}
               onDragOver={onDragOver}
               onNodeClick={handleNodeClick}
+              onPaneClick={handlePaneClick}
+              onNodeDragStart={snapshotBeforeCanvasChange}
+              onSelectionDragStart={snapshotBeforeCanvasChange}
               nodeTypes={nodeTypes}
-              deleteKeyCode={['Backspace', 'Delete']}
+              nodeDragThreshold={1}
+              deleteKeyCode={null}
               fitView
             >
               <Background />
               <Controls />
+              <Panel position="top-left" className="flex gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={undo}
+                  disabled={!canUndo}
+                  title="Undo (Ctrl+Z)"
+                  aria-label="Undo"
+                  className="bg-card"
+                >
+                  <Undo2 size={16} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={redo}
+                  disabled={!canRedo}
+                  title="Redo (Ctrl+Shift+Z)"
+                  aria-label="Redo"
+                  className="bg-card"
+                >
+                  <Redo2 size={16} />
+                </Button>
+              </Panel>
             </ReactFlow>
 
             {showNodeConfig && selectedNode && (
               <>
-                <div
-                  className="absolute inset-0 z-10"
-                  onClick={handlePanelBackdropClick}
-                />
-                <div className="border-border bg-card absolute top-4 right-4 z-20 w-96 rounded-2xl border shadow-[0px_4px_40px_-3px_#0000001A]">
+                <div className="border-border bg-card shadow-modal absolute top-4 right-4 z-20 w-96 rounded-2xl border">
                   <div className="border-border flex items-center justify-between border-b p-4">
                     <h3 className="font-semibold text-gray-900 dark:text-white">
                       {selectedNode.type === 'start' && 'Start Node'}
@@ -1741,13 +1986,17 @@ function WorkflowBuilderInner() {
                       {selectedNode.type === 'note' && 'Note'}
                       {selectedNode.type === 'state' && 'Set global variables'}
                       {selectedNode.type === 'condition' && 'If / Else'}
+                      {selectedNode.type === 'code' && 'Code'}
                     </h3>
-                    <button
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
                       onClick={() => setShowNodeConfig(false)}
-                      className="text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-200"
+                      className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-gray-600 dark:hover:bg-transparent dark:hover:text-gray-200 [&_svg:not([class*='size-'])]:size-5"
                     >
                       <X size={20} />
-                    </button>
+                    </Button>
                   </div>
 
                   <div className="max-h-[calc(100vh-200px)] overflow-y-auto p-4">
@@ -1768,7 +2017,7 @@ function WorkflowBuilderInner() {
                               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                                 Title
                               </label>
-                              <input
+                              <Input
                                 type="text"
                                 value={
                                   selectedNode.data.title ||
@@ -1781,7 +2030,7 @@ function WorkflowBuilderInner() {
                                     label: e.target.value,
                                   })
                                 }
-                                className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                 placeholder="Enter node title"
                               />
                             </div>
@@ -1812,9 +2061,6 @@ function WorkflowBuilderInner() {
                                     <SelectContent>
                                       <SelectItem value="classic">
                                         Classic
-                                      </SelectItem>
-                                      <SelectItem value="agentic">
-                                        Agentic
                                       </SelectItem>
                                       <SelectItem value="research">
                                         Research
@@ -1917,7 +2163,7 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                     rows={3}
                                     placeholder="System prompt for the agent"
                                   />
@@ -1945,7 +2191,7 @@ function WorkflowBuilderInner() {
                                   <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Output Variable
                                   </label>
-                                  <input
+                                  <Input
                                     type="text"
                                     value={
                                       selectedNode.data.config
@@ -1960,7 +2206,7 @@ function WorkflowBuilderInner() {
                                         },
                                       });
                                     }}
-                                    className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                     placeholder="Variable name for output"
                                   />
                                 </div>
@@ -2036,6 +2282,60 @@ function WorkflowBuilderInner() {
                                     emptyText="No sources available"
                                   />
                                 </div>
+                                <NodeDocumentsControl
+                                  key={selectedNode.id}
+                                  value={
+                                    selectedNode.data.config?.input_documents ??
+                                    []
+                                  }
+                                  onChange={(nextInputDocuments) =>
+                                    handleUpdateNodeData({
+                                      config: {
+                                        ...(selectedNode.data.config || {}),
+                                        input_documents: nextInputDocuments,
+                                      },
+                                    })
+                                  }
+                                  options={selectedAgentDocumentOptions}
+                                  label="Documents"
+                                  helpText="Documents passed to this agent from uploads or upstream nodes."
+                                />
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    File passing
+                                  </label>
+                                  <Select
+                                    value={normalizeFilePassing(
+                                      selectedNode.data.config?.file_passing,
+                                    )}
+                                    onValueChange={(value) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          file_passing: value as FilePassing,
+                                        },
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {FILE_PASSING_OPTIONS.map((option) => (
+                                        <SelectItem
+                                          key={option.value}
+                                          value={option.value}
+                                        >
+                                          {option.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <p className="text-muted-foreground mt-1 text-xs">
+                                    Auto: send native when the model supports
+                                    it, otherwise extract text.
+                                  </p>
+                                </div>
                                 <div>
                                   <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Structured Output (JSON Schema)
@@ -2053,7 +2353,7 @@ function WorkflowBuilderInner() {
                                         e.target.value,
                                       )
                                     }
-                                    className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus:ring-2 dark:text-white"
+                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
                                     rows={8}
                                     placeholder={`{
   "type": "object",
@@ -2093,7 +2393,7 @@ function WorkflowBuilderInner() {
                                       content: e.target.value,
                                     })
                                   }
-                                  className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                  className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                   rows={4}
                                   placeholder="Enter note content"
                                 />
@@ -2128,7 +2428,10 @@ function WorkflowBuilderInner() {
                                           selectedNode.data.config
                                             ?.operations || []
                                         ).length > 1 && (
-                                          <button
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-sm"
                                             onClick={() => {
                                               const ops = [
                                                 ...(selectedNode.data.config
@@ -2143,10 +2446,10 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="text-gray-400 transition-colors hover:text-red-500"
+                                            className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-red-500 dark:hover:bg-transparent"
                                           >
                                             <Trash2 size={14} />
-                                          </button>
+                                          </Button>
                                         )}
                                       </div>
                                       <textarea
@@ -2168,13 +2471,15 @@ function WorkflowBuilderInner() {
                                             },
                                           });
                                         }}
-                                        className="border-border focus:ring-ring bg-card dark:bg-accent mb-1 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                        className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent mb-1 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                         rows={2}
-                                        placeholder="input.foo + 1"
+                                        placeholder="query"
                                       />
-                                      <p className="text-muted-foreground mb-3 text-[10px]">
+                                      <p className="text-muted-foreground mb-3 text-xs">
                                         Use Common Expression Language to create
-                                        a custom expression.{' '}
+                                        a custom expression. Reference state by
+                                        bare name (<code>query</code>), not{' '}
+                                        <code>{'{{query}}'}</code>.{' '}
                                         <a
                                           href="https://cel.dev/"
                                           target="_blank"
@@ -2188,7 +2493,7 @@ function WorkflowBuilderInner() {
                                         <span className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                                           To variable
                                         </span>
-                                        <input
+                                        <Input
                                           type="text"
                                           value={op.target_variable}
                                           onChange={(e) => {
@@ -2208,14 +2513,17 @@ function WorkflowBuilderInner() {
                                               },
                                             });
                                           }}
-                                          className="border-border focus:ring-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                          className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                           placeholder="variable_name"
                                         />
                                       </div>
                                     </div>
                                   ),
                                 )}
-                                <button
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
                                   onClick={() => {
                                     const ops = [
                                       ...(selectedNode.data.config
@@ -2229,11 +2537,11 @@ function WorkflowBuilderInner() {
                                       },
                                     });
                                   }}
-                                  className="hover:bg-accent flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 transition-colors dark:text-gray-400"
+                                  className="h-auto gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400"
                                 >
                                   <Plus size={14} />
                                   Add
-                                </button>
+                                </Button>
                               </>
                             )}
 
@@ -2243,7 +2551,9 @@ function WorkflowBuilderInner() {
                                   Create conditions to branch your workflow
                                 </p>
                                 <div className="border-border flex overflow-hidden rounded-lg border">
-                                  <button
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
                                     onClick={() =>
                                       handleUpdateNodeData({
                                         config: {
@@ -2252,16 +2562,18 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                                    className={`h-auto flex-1 rounded-none px-3 py-1.5 text-xs font-medium ${
                                       (selectedNode.data.config?.mode ||
                                         'simple') === 'simple'
-                                        ? 'bg-primary text-white'
-                                        : 'hover:bg-accent text-gray-600 dark:text-gray-400'
+                                        ? 'bg-primary hover:bg-primary text-white hover:text-white'
+                                        : 'text-gray-600 dark:text-gray-400'
                                     }`}
                                   >
                                     Simple
-                                  </button>
-                                  <button
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
                                     onClick={() =>
                                       handleUpdateNodeData({
                                         config: {
@@ -2270,15 +2582,15 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                                    className={`h-auto flex-1 rounded-none px-3 py-1.5 text-xs font-medium ${
                                       selectedNode.data.config?.mode ===
                                       'advanced'
-                                        ? 'bg-primary text-white'
-                                        : 'hover:bg-accent text-gray-600 dark:text-gray-400'
+                                        ? 'bg-primary hover:bg-primary text-white hover:text-white'
+                                        : 'text-gray-600 dark:text-gray-400'
                                     }`}
                                   >
                                     Advanced
-                                  </button>
+                                  </Button>
                                 </div>
 
                                 {(selectedNode.data.config?.cases || []).map(
@@ -2293,7 +2605,10 @@ function WorkflowBuilderInner() {
                                         </span>
                                         {(selectedNode.data.config?.cases || [])
                                           .length > 1 && (
-                                          <button
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-sm"
                                             onClick={() => {
                                               const cases =
                                                 normalizeConditionCases([
@@ -2324,13 +2639,13 @@ function WorkflowBuilderInner() {
                                                 );
                                               }
                                             }}
-                                            className="text-gray-400 transition-colors hover:text-red-500"
+                                            className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-red-500 dark:hover:bg-transparent"
                                           >
                                             <Trash2 size={14} />
-                                          </button>
+                                          </Button>
                                         )}
                                       </div>
-                                      <input
+                                      <Input
                                         type="text"
                                         value={c.name || ''}
                                         onChange={(e) => {
@@ -2350,13 +2665,13 @@ function WorkflowBuilderInner() {
                                             },
                                           });
                                         }}
-                                        className="border-border focus:ring-ring bg-card dark:bg-accent mb-2 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                        className="bg-card dark:bg-accent mb-2 h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                         placeholder="Case name (optional)"
                                       />
                                       {(selectedNode.data.config?.mode ||
                                         'simple') === 'simple' ? (
                                         <div className="flex items-center gap-2">
-                                          <input
+                                          <Input
                                             type="text"
                                             value={
                                               parseSimpleCel(c.expression)
@@ -2386,7 +2701,7 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="border-border focus:ring-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 dark:text-white"
+                                            className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                             placeholder="Variable"
                                           />
                                           <Select
@@ -2449,7 +2764,7 @@ function WorkflowBuilderInner() {
                                               </SelectItem>
                                             </SelectContent>
                                           </Select>
-                                          <input
+                                          <Input
                                             type="text"
                                             value={
                                               parseSimpleCel(c.expression).value
@@ -2478,7 +2793,7 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="border-border focus:ring-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 dark:text-white"
+                                            className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                             placeholder="Value"
                                           />
                                         </div>
@@ -2503,13 +2818,16 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="border-border focus:ring-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                            className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                             rows={2}
-                                            placeholder="Enter condition, e.g. input == 5"
+                                            placeholder='Enter condition, e.g. query.contains("refund")'
                                           />
-                                          <p className="text-muted-foreground mt-1 text-[10px]">
+                                          <p className="text-muted-foreground mt-1 text-xs">
                                             Use Common Expression Language to
-                                            create a custom expression.{' '}
+                                            create a custom expression.
+                                            Reference state by bare name (
+                                            <code>query</code>), not{' '}
+                                            <code>{'{{query}}'}</code>.{' '}
                                             <a
                                               href="https://cel.dev/"
                                               target="_blank"
@@ -2525,7 +2843,10 @@ function WorkflowBuilderInner() {
                                   ),
                                 )}
 
-                                <button
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
                                   onClick={() => {
                                     const cases = normalizeConditionCases([
                                       ...(selectedNode.data.config?.cases ||
@@ -2545,27 +2866,159 @@ function WorkflowBuilderInner() {
                                       },
                                     });
                                   }}
-                                  className="hover:bg-accent flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 transition-colors dark:text-gray-400"
+                                  className="h-auto gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400"
                                 >
                                   <Plus size={14} />
                                   Add
-                                </button>
+                                </Button>
+                              </>
+                            )}
+
+                            {selectedNode.type === 'code' && (
+                              <>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                  Run code in the workflow sandbox. Produced
+                                  files are saved as artifacts.
+                                </p>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Code
+                                  </label>
+                                  <textarea
+                                    value={selectedNode.data.config?.code ?? ''}
+                                    onChange={(e) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          code: e.target.value,
+                                        },
+                                      })
+                                    }
+                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                    rows={10}
+                                    spellCheck={false}
+                                    placeholder={'print("hello world")'}
+                                  />
+                                </div>
+                                <NodeDocumentsControl
+                                  key={selectedNode.id}
+                                  value={selectedNode.data.config?.inputs ?? []}
+                                  onChange={(nextInputs) =>
+                                    handleUpdateNodeData({
+                                      config: {
+                                        ...(selectedNode.data.config || {}),
+                                        inputs: nextInputs,
+                                      },
+                                    })
+                                  }
+                                  options={selectedCodeDocumentOptions}
+                                  label="Input files"
+                                  helpText="Artifacts/upstream refs staged as files in the sandbox (one becomes inputs/<name>)."
+                                />
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Output Variable
+                                  </label>
+                                  <Input
+                                    type="text"
+                                    value={
+                                      selectedNode.data.config
+                                        ?.output_variable || ''
+                                    }
+                                    onChange={(e) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          output_variable: e.target.value,
+                                        },
+                                      })
+                                    }
+                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
+                                    placeholder="Variable name for output"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Timeout (seconds)
+                                  </label>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    value={
+                                      selectedNode.data.config?.timeout ?? ''
+                                    }
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      const parsed =
+                                        raw.trim() === ''
+                                          ? undefined
+                                          : Number.parseInt(raw, 10);
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          timeout:
+                                            parsed !== undefined &&
+                                            Number.isFinite(parsed)
+                                              ? parsed
+                                              : undefined,
+                                        },
+                                      });
+                                    }}
+                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
+                                    placeholder="Optional"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Structured Output (JSON Schema)
+                                  </label>
+                                  <textarea
+                                    value={selectedCodeJsonSchemaText}
+                                    onChange={(e) =>
+                                      handleCodeJsonSchemaChange(e.target.value)
+                                    }
+                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                    rows={6}
+                                    placeholder={`{
+  "type": "object",
+  "properties": {
+    "result": { "type": "string" }
+  },
+  "required": ["result"]
+}`}
+                                  />
+                                  {selectedCodeJsonSchemaText.trim() !== '' && (
+                                    <p
+                                      className={`mt-2 text-xs ${
+                                        selectedCodeJsonSchemaError
+                                          ? 'text-red-600 dark:text-red-400'
+                                          : 'text-green-600 dark:text-green-400'
+                                      }`}
+                                    >
+                                      {selectedCodeJsonSchemaError
+                                        ? `Invalid JSON schema: ${selectedCodeJsonSchemaError}`
+                                        : 'Valid JSON schema'}
+                                    </p>
+                                  )}
+                                </div>
                               </>
                             )}
                           </>
                         )}
                     </div>
 
-                    <button
+                    <Button
+                      type="button"
+                      variant="destructive-outline"
                       onClick={handleDeleteNode}
                       disabled={selectedNode?.type === 'start'}
-                      className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10"
+                      className="w-full rounded-full border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10 dark:hover:text-red-400"
                     >
                       <Trash2 size={16} />
                       {selectedNode?.type === 'start'
                         ? 'Cannot Delete Start Node'
                         : 'Delete Node'}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </>
@@ -2576,10 +3029,11 @@ function WorkflowBuilderInner() {
         <Sheet open={showPreview} onOpenChange={setShowPreview}>
           <SheetContent
             side="right"
-            showCloseButton={false}
+            title="Workflow preview"
             className="bg-card w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
           >
             <WorkflowPreview
+              workflowId={workflowId}
               workflowData={{
                 name: workflowName,
                 description: workflowDescription,
@@ -2587,10 +3041,20 @@ function WorkflowBuilderInner() {
                   .filter((n) => n.type !== 'note')
                   .map((n) => ({
                     id: n.id,
-                    type: n.type as 'start' | 'end' | 'agent' | 'state',
+                    type: n.type as
+                      | 'start'
+                      | 'end'
+                      | 'agent'
+                      | 'state'
+                      | 'code',
                     title: n.data.title || n.data.label || n.type,
                     position: n.position,
-                    data: n.type === 'agent' ? n.data.config : n.data,
+                    data:
+                      n.type === 'code'
+                        ? serializeCodeConfig(n.data.config)
+                        : n.type === 'agent'
+                          ? n.data.config
+                          : n.data,
                   })),
                 edges: edges.map((e) => ({
                   id: e.id,
@@ -2618,6 +3082,9 @@ function WorkflowBuilderInner() {
             mode="edit"
             modalState={agentDetails}
             setModalState={setAgentDetails}
+            onKeyRegenerated={(key) =>
+              setCurrentAgent((prev) => ({ ...prev, key }))
+            }
           />
         )}
       </div>

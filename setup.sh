@@ -152,11 +152,10 @@ prompt_cloud_api_provider_options() {
     echo -e "${YELLOW}3) Anthropic (Claude)${NC}"
     echo -e "${YELLOW}4) Groq${NC}"
     echo -e "${YELLOW}5) HuggingFace Inference API${NC}"
-    echo -e "${YELLOW}6) Azure OpenAI${NC}"
-    echo -e "${YELLOW}7) Novita${NC}"
+    echo -e "${YELLOW}6) Novita${NC}"
     echo -e "${YELLOW}b) Back to Main Menu${NC}"
     echo
-    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-7, or b): ${NC}")" provider_choice
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-6, or b): ${NC}")" provider_choice
 }
 
 # Function to prompt for Ollama CPU/GPU options
@@ -700,25 +699,14 @@ connect_cloud_api_provider() {
                 model_name="meta-llama/Llama-3.1-8B-Instruct"
                 get_api_key
                 break ;;
-            6) # Azure OpenAI
-                provider_name="Azure OpenAI"
-                llm_provider="azure_openai"
-                model_name="gpt-4o"
-                get_api_key
-                echo -e "\n${DEFAULT_FG}${BOLD}Azure OpenAI requires additional configuration:${NC}"
-                read -p "$(echo -e "${DEFAULT_FG}Enter Azure OpenAI API base URL (e.g. https://your-resource.openai.azure.com/): ${NC}")" azure_api_base
-                read -p "$(echo -e "${DEFAULT_FG}Enter Azure OpenAI API version (e.g. 2024-02-15-preview): ${NC}")" azure_api_version
-                read -p "$(echo -e "${DEFAULT_FG}Enter Azure deployment name for chat: ${NC}")" azure_deployment
-                read -p "$(echo -e "${DEFAULT_FG}Enter Azure deployment name for embeddings (leave empty to skip): ${NC}")" azure_emb_deployment
-                break ;;
-            7) # Novita
+            6) # Novita
                 provider_name="Novita"
                 llm_provider="novita"
                 model_name="moonshotai/kimi-k2.5"
                 get_api_key
                 break ;;
             b|B) clear; return 1 ;; # Clear screen and Back to Main Menu
-            *) echo -e "\n${RED}Invalid choice. Please choose 1-7, or b.${NC}" ; sleep 1 ;;
+            *) echo -e "\n${RED}Invalid choice. Please choose 1-6, or b.${NC}" ; sleep 1 ;;
         esac
     done
 
@@ -727,14 +715,6 @@ connect_cloud_api_provider() {
     echo "LLM_PROVIDER=$llm_provider" >> "$ENV_FILE"
     echo "LLM_NAME=$model_name" >> "$ENV_FILE"
     echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
-
-    # Azure OpenAI additional settings
-    if [ "$llm_provider" = "azure_openai" ]; then
-        [ -n "$azure_api_base" ] && echo "OPENAI_API_BASE=$azure_api_base" >> "$ENV_FILE"
-        [ -n "$azure_api_version" ] && echo "OPENAI_API_VERSION=$azure_api_version" >> "$ENV_FILE"
-        [ -n "$azure_deployment" ] && echo "AZURE_DEPLOYMENT_NAME=$azure_deployment" >> "$ENV_FILE"
-        [ -n "$azure_emb_deployment" ] && echo "AZURE_EMBEDDINGS_DEPLOYMENT_NAME=$azure_emb_deployment" >> "$ENV_FILE"
-    fi
 
     echo -e "${GREEN}.env file configured for ${BOLD}${provider_name}${NC}${GREEN}.${NC}"
 

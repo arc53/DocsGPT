@@ -572,6 +572,7 @@ class TestSharedAgentResolvesOwnerBYOM:
             sp = StreamProcessor.__new__(StreamProcessor)
             sp.data = {}
             sp.initial_user_id = "caller"
+            sp._agent_data = {"_id": "shared-agent", "user": "owner"}
             sp.agent_config = {
                 "user_id": "owner",
                 "default_model_id": owner_model["id"],
@@ -790,7 +791,7 @@ class TestContinuationPreservesByomScope:
         )
 
         cont_service = MagicMock()
-        cont_service.load_state.return_value = {
+        cont_service.claim_state.return_value = {
             "messages": [],
             "pending_tool_calls": [],
             "tools_dict": {},
@@ -904,6 +905,9 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
         sp.conversation_id = None
         sp.compression_orchestrator = MagicMock()
         sp._agent_data = None
+        # __init__ sets this before _configure_retriever runs; this factory
+        # bypasses __init__, so supply it explicitly.
+        sp.all_sources = []
         return sp
 
     def test_configure_retriever_passes_model_user_id_to_doc_budget(

@@ -9,15 +9,22 @@ ephemeral ``pg_ctl``-managed cluster in a temp directory and tears it
 down at the end of the session, so CI only needs Postgres *binaries*
 installed, not a running service.
 
+Alembic migrations run ONCE per session (per xdist worker) into the
+cluster's template database via the ``load=`` hook on ``postgresql_proc``.
+Every per-test database handed out by the ``postgresql`` fixture is then
+cloned from that template (``CREATE DATABASE .. TEMPLATE ..`` — a cheap
+file-level copy), so each test still starts from a pristine schema at
+head without replaying the migration chain.
+
 Tests under ``tests/storage/db/`` intentionally override ``pg_conn`` in
 their own conftest to point at a real, long-running Postgres instance
 (DBngin locally, a service container in CI). Those are integration/e2e
 tests and are marked with ``@pytest.mark.integration``.
 
 No mongomock. The ``mock_mongo_db`` fixture that used to live here was
-removed as part of the Phase 4/5 Mongo→Postgres cutover. Tests that
-still reference it will fail with "fixture not found" until the
-corresponding route handler is migrated to a repository read.
+removed as part of the Mongo→Postgres cutover. Tests that still
+reference it will fail with "fixture not found" until the corresponding
+route handler is migrated to a repository read.
 """
 
 from __future__ import annotations
@@ -51,10 +58,31 @@ from sqlalchemy import create_engine
 # Postgres fixtures (ephemeral cluster via pytest-postgresql)
 # ---------------------------------------------------------------------------
 
-# ``postgresql_proc`` starts a fresh ``pg_ctl`` cluster once per session.
-# ``postgresql`` hands out a per-test DB on top of it. We layer our own
+_ALEMBIC_INI = Path(__file__).resolve().parent.parent / "application" / "alembic.ini"
+
+
+def _migrate_template_db(host, port, user, dbname, password) -> None:
+    """Run alembic ``upgrade head`` into the session's template database.
+
+    Called once per session by pytest-postgresql's ``load=`` hook (against
+    the template DB, before any test runs). Runs in a subprocess so the
+    parent process never imports application settings with this URI cached.
+    """
+    url = (
+        f"postgresql+psycopg://{user}:{password or ''}@{host}:{port}/{dbname}"
+    )
+    subprocess.check_call(
+        [sys.executable, "-m", "alembic", "-c", str(_ALEMBIC_INI), "upgrade", "head"],
+        timeout=120,
+        env={**os.environ, "POSTGRES_URI": url},
+    )
+
+
+# ``postgresql_proc`` starts a fresh ``pg_ctl`` cluster once per session and
+# migrates its template database (see ``_migrate_template_db``). ``postgresql``
+# hands out a per-test DB cloned from that template. We layer our own
 # SQLAlchemy engine + rolled-back transaction on top for test isolation.
-postgresql_proc = factories.postgresql_proc()
+postgresql_proc = factories.postgresql_proc(load=[_migrate_template_db])
 postgresql = factories.postgresql("postgresql_proc")
 
 
@@ -72,12 +100,13 @@ def _alembic_ini_path() -> Path:
 
 
 @pytest.fixture()
-def pg_engine(postgresql, _alembic_ini_path, monkeypatch):
+def pg_engine(postgresql, monkeypatch):
     """Per-test SQLAlchemy engine against a fresh ephemeral Postgres DB.
 
-    Alembic is run from scratch against the per-test database so the full
-    schema is present. ``POSTGRES_URI`` is patched in the environment for
-    the duration of the test so any code that reads it via
+    The database is a clone of the session's already-migrated template
+    (see ``_migrate_template_db``), so the full schema is present without
+    running alembic here. ``POSTGRES_URI`` is patched in the environment
+    for the duration of the test so any code that reads it via
     ``application.core.settings`` sees the ephemeral DB.
     """
     url = _sqlalchemy_url(postgresql.info)
@@ -88,12 +117,6 @@ def pg_engine(postgresql, _alembic_ini_path, monkeypatch):
     from application.core import settings as settings_module
 
     monkeypatch.setattr(settings_module.settings, "POSTGRES_URI", url, raising=False)
-
-    subprocess.check_call(
-        [sys.executable, "-m", "alembic", "-c", str(_alembic_ini_path), "upgrade", "head"],
-        timeout=60,
-        env={**__import__("os").environ, "POSTGRES_URI": url},
-    )
 
     engine = create_engine(url)
     yield engine
@@ -113,6 +136,29 @@ def pg_conn(pg_engine):
 # ---------------------------------------------------------------------------
 # Generic unit-test fixtures (no DB, no Mongo)
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _no_real_redis(monkeypatch):
+    """Force the Redis-absent baseline CI has.
+
+    CI runs without a Redis service, so ``get_redis_instance()`` /
+    ``get_pubsub_redis_instance()`` return None there. A dev machine with
+    a live localhost Redis diverges: code under test silently reads and
+    writes real keys, leaking state between tests and between runs (seen
+    with the ``openai_inline_file:*`` upload cache). Flipping the
+    creation-failed flags makes the real accessors return None everywhere
+    regardless of import style — consumers that did ``from
+    application.cache import get_redis_instance`` still hit these module
+    globals at call time. Tests that want Redis behavior keep injecting
+    fakes by patching the accessor at the consumer module, which bypasses
+    this guard. A test targeting the accessor's own construction path
+    must reset the two flags first.
+    """
+    monkeypatch.setattr("application.cache._redis_instance", None)
+    monkeypatch.setattr("application.cache._redis_creation_failed", True)
+    monkeypatch.setattr("application.cache._pubsub_redis_instance", None)
+    monkeypatch.setattr("application.cache._pubsub_redis_creation_failed", True)
 
 
 @pytest.fixture
@@ -224,6 +270,9 @@ def agent_base_params(decoded_token):
 def mock_tool():
     tool = Mock()
     tool.execute_action = Mock(return_value="Tool result")
+    # Skip artifact-id capture in default mock so the recorded JSONB matches
+    # what tests expect; per-tool tests can override.
+    tool.get_artifact_id = None
     tool.get_actions_metadata = Mock(
         return_value=[
             {

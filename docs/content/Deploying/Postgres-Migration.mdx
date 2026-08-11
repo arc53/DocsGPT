@@ -37,7 +37,7 @@ schema on first boot.
 
 ```bash
 export POSTGRES_URI="postgresql://user:pass@host/docsgpt?sslmode=require"
-flask --app application/app.py run --host=0.0.0.0 --port=7091
+uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091
 ```
 
 ### Bare-metal Postgres
@@ -47,7 +47,7 @@ First boot creates both the database and the schema.
 
 ```bash
 export POSTGRES_URI="postgresql://postgres@localhost/docsgpt"
-flask --app application/app.py run --host=0.0.0.0 --port=7091
+uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091
 ```
 
 Prefer a dedicated non-superuser role? Create it once as superuser — the

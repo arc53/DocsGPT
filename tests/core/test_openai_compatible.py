@@ -1,4 +1,4 @@
-"""Phase 2 tests for the openai_compatible provider.
+"""Tests for the openai_compatible provider.
 
 Covers YAML loading from a temp directory, multiple coexisting catalogs
 (Mistral + Together), env-var-based credential resolution, the legacy
@@ -16,6 +16,7 @@ import pytest
 
 from application.core.model_registry import ModelRegistry
 from application.core.model_settings import ModelProvider
+from application.core.model_yaml import BUILTIN_MODELS_DIR, load_model_yamls
 
 
 def _make_settings(**overrides):
@@ -74,7 +75,16 @@ def _write_together_yaml(directory: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry():
+def _reset_registry(monkeypatch):
+    # Builtin openai_compatible catalogs (e.g. deepseek.yaml) activate when
+    # their api_key_env is present in os.environ, which the openai_compatible
+    # provider reads directly, independent of the patched settings. Clear it
+    # so a key leaked by another test (or present in the dev .env) doesn't add
+    # extra models to the exact-match assertions below. Mirrors the delenv
+    # guard in test_model_registry_yaml.py.
+    for catalog in load_model_yamls([BUILTIN_MODELS_DIR]):
+        if catalog.api_key_env:
+            monkeypatch.delenv(catalog.api_key_env, raising=False)
     ModelRegistry.reset()
     yield
     ModelRegistry.reset()
@@ -203,6 +213,33 @@ class TestYAMLCompatibleProvider:
         assert "api_key" not in d
         for v in d.values():
             assert v != "sk"
+
+    def test_materialization_preserves_upstream_model_id(
+        self, tmp_path, monkeypatch
+    ):
+        path = _write_mistral_yaml(tmp_path)
+        path.write_text(
+            dedent("""
+                provider: openai_compatible
+                display_provider: mistral
+                api_key_env: MISTRAL_API_KEY
+                base_url: https://api.mistral.ai/v1
+                models:
+                  - id: mistral-large-high
+                    upstream_model_id: mistral-large-latest
+                    display_name: Mistral Large (High)
+            """)
+        )
+        monkeypatch.setenv("MISTRAL_API_KEY", "sk")
+
+        s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
+        with patch("application.core.settings.settings", s):
+            reg = ModelRegistry()
+
+        assert (
+            reg.get_model("mistral-large-high").upstream_model_id
+            == "mistral-large-latest"
+        )
 
 
 # ── Legacy OPENAI_BASE_URL fallback ──────────────────────────────────────

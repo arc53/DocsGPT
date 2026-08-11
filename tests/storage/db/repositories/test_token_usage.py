@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import text
 
 from application.storage.db.repositories.token_usage import TokenUsageRepository
 
@@ -33,6 +34,58 @@ class TestInsert:
             start=_now() - timedelta(minutes=1), end=_now() + timedelta(minutes=1), api_key="key-1"
         )
         assert total == 30
+
+
+class TestReassignApiKey:
+    def test_rewrites_and_preserves_rate_limit_window(self, pg_conn):
+        # Rotating an agent key must carry the running 24h usage window over
+        # to the new key so rotation cannot be used to reset the limit.
+        repo = _repo(pg_conn)
+        repo.insert(api_key="tu-old", prompt_tokens=20, generated_tokens=10)
+        repo.insert(api_key="tu-other", prompt_tokens=1, generated_tokens=1)
+
+        moved = repo.reassign_api_key(old_key="tu-old", new_key="tu-new")
+        assert moved == 1
+
+        window = dict(
+            start=_now() - timedelta(minutes=1), end=_now() + timedelta(minutes=1)
+        )
+        assert repo.sum_tokens_in_range(api_key="tu-old", **window) == 0
+        assert repo.sum_tokens_in_range(api_key="tu-new", **window) == 30
+        # Unrelated key untouched.
+        assert repo.sum_tokens_in_range(api_key="tu-other", **window) == 2
+
+    def test_noop_on_blank_keys(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.reassign_api_key(old_key="", new_key="x") == 0
+        assert repo.reassign_api_key(old_key="x", new_key="") == 0
+
+
+class TestModelId:
+    def _latest_model_id(self, conn, user_id):
+        return conn.execute(
+            text(
+                "SELECT model_id FROM token_usage "
+                "WHERE user_id = :u ORDER BY id DESC LIMIT 1"
+            ),
+            {"u": user_id},
+        ).scalar_one()
+
+    def test_persists_model_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.insert(user_id="u-model", prompt_tokens=1, generated_tokens=1, model_id="gpt-4o")
+        assert self._latest_model_id(pg_conn, "u-model") == "gpt-4o"
+
+    def test_persists_byom_uuid_model_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        uuid_id = "11111111-1111-1111-1111-111111111111"
+        repo.insert(user_id="u-byom", prompt_tokens=1, generated_tokens=1, model_id=uuid_id)
+        assert self._latest_model_id(pg_conn, "u-byom") == uuid_id
+
+    def test_model_id_defaults_to_null(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.insert(user_id="u-nomodel", prompt_tokens=1, generated_tokens=1)
+        assert self._latest_model_id(pg_conn, "u-nomodel") is None
 
 
 class TestSumTokensInRange:
@@ -83,6 +136,84 @@ class TestCountInRange:
             start=_now() - timedelta(minutes=1), end=_now() + timedelta(minutes=1), api_key="k1"
         )
         assert count == 1
+
+    def test_distinct_request_id_collapses_multi_call_stream(self, pg_conn):
+        """A multi-tool agent run produces N rows with the same
+        ``request_id`` but counts as one user request."""
+        repo = _repo(pg_conn)
+        rid = "req-multi-1"
+        # 4 LLM calls within a single user request.
+        for _ in range(4):
+            repo.insert(
+                user_id="u-multi",
+                prompt_tokens=10,
+                generated_tokens=20,
+                request_id=rid,
+            )
+        # And a separate request from the same user.
+        repo.insert(
+            user_id="u-multi",
+            prompt_tokens=5,
+            generated_tokens=5,
+            request_id="req-multi-2",
+        )
+        count = repo.count_in_range(
+            start=_now() - timedelta(minutes=1),
+            end=_now() + timedelta(minutes=1),
+            user_id="u-multi",
+        )
+        assert count == 2
+
+    def test_excludes_side_channel_sources(self, pg_conn):
+        """Title / compression / rag_condense / fallback rows don't tick
+        the request limit — only ``agent_stream`` rows count.
+        """
+        repo = _repo(pg_conn)
+        for src in ("title", "compression", "rag_condense", "fallback"):
+            repo.insert(
+                user_id="u-side",
+                prompt_tokens=5,
+                generated_tokens=5,
+                source=src,
+                request_id="req-side-x",
+            )
+        # One real user request.
+        repo.insert(
+            user_id="u-side",
+            prompt_tokens=5,
+            generated_tokens=5,
+            source="agent_stream",
+            request_id="req-side-x",
+        )
+        count = repo.count_in_range(
+            start=_now() - timedelta(minutes=1),
+            end=_now() + timedelta(minutes=1),
+            user_id="u-side",
+        )
+        assert count == 1
+
+    def test_mixes_legacy_null_and_new_request_id_rows(self, pg_conn):
+        """Pre-migration rows have ``request_id=NULL`` and are counted
+        one-per-row; new rows are DISTINCT'd. The two branches sum.
+        """
+        repo = _repo(pg_conn)
+        # Two legacy rows (NULL request_id) — count as 2.
+        repo.insert(user_id="u-mix", prompt_tokens=1, generated_tokens=1)
+        repo.insert(user_id="u-mix", prompt_tokens=1, generated_tokens=1)
+        # One new request with 3 rows under the same id — counts as 1.
+        for _ in range(3):
+            repo.insert(
+                user_id="u-mix",
+                prompt_tokens=1,
+                generated_tokens=1,
+                request_id="req-mix",
+            )
+        count = repo.count_in_range(
+            start=_now() - timedelta(minutes=1),
+            end=_now() + timedelta(minutes=1),
+            user_id="u-mix",
+        )
+        assert count == 3
 
 
 class TestBucketedTotals:

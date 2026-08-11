@@ -13,17 +13,28 @@ cd frontend
 npm run dev -- --host
 ```
 
-### Flask (Backend)
+### Backend (ASGI)
+
+Run the full app under uvicorn (serves `/mcp` and the async SSE reconnect
+routes, and matches production):
 
 ```bash
-flask --app application/app.py run --host=0.0.0.0 --port=7091
+uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
 ```
+
+`flask --app application/app.py run --host=0.0.0.0 --port=7091` is faster but
+serves only the WSGI Flask app — it omits `/mcp` and the reconnect reader
+`GET /api/messages/<id>/events`, so a dropped stream won't auto-resume.
 
 ### Celery (Task Queue)
 
 ```bash
-celery -A application.app.celery worker -l INFO
+celery -A application.app.celery worker -l INFO -Q docsgpt,parsing
 ```
+
+The `parsing` queue serves document parsing (the `read_document` tool / workflow
+native-file parse); without it those calls hang `DOCUMENT_PARSE_TIMEOUT` then
+error. A dedicated `-Q parsing` worker can be GPU-enabled for heavier parsers.
 
 ## Github Codespaces Instructions
 

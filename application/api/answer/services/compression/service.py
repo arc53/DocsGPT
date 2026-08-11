@@ -77,8 +77,11 @@ class CompressionService:
             # Get queries to compress
             queries_to_compress = queries[: compress_up_to_index + 1]
 
-            # Check if there are existing compressions
-            existing_compressions = conversation.get("compression_metadata", {}).get(
+            # Check if there are existing compressions. ``compression_metadata``
+            # is a nullable JSONB column, so a never-compressed conversation
+            # reads back as None; ``get(key, {})`` would return that None (the
+            # default only applies to absent keys), so coalesce with ``or {}``.
+            existing_compressions = (conversation.get("compression_metadata") or {}).get(
                 "compression_points", []
             )
 
@@ -127,6 +130,18 @@ class CompressionService:
             compression_ratio = (
                 original_tokens / compressed_tokens if compressed_tokens > 0 else 0
             )
+
+            # Port of the in-memory path's guard: a "successful" summary
+            # that isn't smaller than what it replaces must never become a
+            # compression point — it would make every later rebuild WORSE
+            # while reporting success (observed in prod: "successful"
+            # compressions with negative savings).
+            if compressed_tokens >= original_tokens:
+                raise ValueError(
+                    f"Compression did not reduce token count "
+                    f"({original_tokens} → {compressed_tokens}); "
+                    f"keeping original history"
+                )
 
             logger.info(
                 f"Compression complete: {original_tokens} → {compressed_tokens} tokens "
@@ -201,7 +216,9 @@ class CompressionService:
             (compressed_summary, recent_messages)
         """
         try:
-            compression_metadata = conversation.get("compression_metadata", {})
+            # ``or {}`` guards against a NULL ``compression_metadata`` column
+            # (reads back as None), which would crash the ``.get`` calls below.
+            compression_metadata = conversation.get("compression_metadata") or {}
 
             if not compression_metadata.get("is_compressed"):
                 logger.debug("No compression metadata found - using full history")
@@ -239,7 +256,7 @@ class CompressionService:
                 f"(messages {last_compressed_index + 1}-{total_queries - 1})"
             )
 
-            return compressed_summary, recent_queries
+            return compressed_summary, self._bound_recent_queries(recent_queries)
 
         except Exception as e:
             logger.error(
@@ -249,6 +266,90 @@ class CompressionService:
             if queries is None:
                 return None, []
             return None, queries
+
+    def _truncate_middle_tokens(self, text: str, max_tokens: int) -> str:
+        """Middle-truncate ``text`` to roughly ``max_tokens`` tokens."""
+        from application.utils import num_tokens_from_string
+
+        current = num_tokens_from_string(text)
+        if current <= max_tokens:
+            return text
+        chars_per_token = len(text) / current if current > 0 else 4
+        target_chars = int(max_tokens * chars_per_token * 0.95)
+        keep = int(target_chars * 0.4)
+        marker = "\n\n[... trimmed to fit context after compression ...]\n\n"
+        if keep <= 0:
+            # ``text[-0:]`` would return the WHOLE string, not nothing.
+            return marker.strip()
+        return text[:keep] + marker + text[-keep:]
+
+    def _bound_recent_queries(
+        self, queries: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Cap oversized verbatim fields in the post-compression-point tail.
+
+        Compression summarizes everything up to the compression point, but
+        the tail rides along verbatim — a single giant prompt / response /
+        tool result there can defeat the whole compression (measured in
+        prod: half of compressions produced no reduction in the next
+        call's prompt). Returns copies; the caller's conversation dict is
+        never mutated.
+        """
+        max_tokens = int(
+            getattr(settings, "COMPRESSION_RECENT_FIELD_MAX_TOKENS", 8000) or 0
+        )
+        if max_tokens <= 0:
+            return queries
+        from application.utils import num_tokens_from_string
+
+        bounded: List[Dict[str, Any]] = []
+        trimmed = 0
+        for query in queries:
+            if not isinstance(query, dict):
+                bounded.append(query)
+                continue
+            out = query
+            for field in ("prompt", "response"):
+                value = query.get(field)
+                if (
+                    isinstance(value, str)
+                    and num_tokens_from_string(value) > max_tokens
+                ):
+                    if out is query:
+                        out = dict(query)
+                    out[field] = self._truncate_middle_tokens(value, max_tokens)
+                    trimmed += 1
+            tool_calls = query.get("tool_calls")
+            if isinstance(tool_calls, list):
+                new_calls = None
+                for idx, tc in enumerate(tool_calls):
+                    if not isinstance(tc, dict):
+                        continue
+                    result = tc.get("result")
+                    if (
+                        isinstance(result, str)
+                        and num_tokens_from_string(result) > max_tokens
+                    ):
+                        if new_calls is None:
+                            new_calls = [
+                                dict(c) if isinstance(c, dict) else c
+                                for c in tool_calls
+                            ]
+                        new_calls[idx]["result"] = self._truncate_middle_tokens(
+                            result, max_tokens
+                        )
+                        trimmed += 1
+                if new_calls is not None:
+                    if out is query:
+                        out = dict(query)
+                    out["tool_calls"] = new_calls
+            bounded.append(out)
+        if trimmed:
+            logger.info(
+                f"Bounded {trimmed} oversized field(s) in recent "
+                f"uncompressed queries (cap: {max_tokens} tokens each)"
+            )
+        return bounded
 
     def _extract_summary(self, llm_response: str) -> str:
         """

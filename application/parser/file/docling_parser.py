@@ -8,12 +8,186 @@ images (PNG, JPEG, TIFF, BMP, WEBP), WebVTT, and specialized XML formats.
 """
 import importlib.util
 import logging
+import os
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from application.parser.file.base_parser import BaseParser
+from application.parser.file.base_parser import BaseParser, DocumentParseError
+from application.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
+
+
+# Per-stage batch size for docling's threaded pipeline; 1 holds the
+# concurrent working set to a single page (see _apply_pipeline_caps).
+_PIPELINE_BATCH_SIZE = 1
+
+
+def _apply_pipeline_caps(pipeline_options) -> None:
+    """Cap docling's threaded-pipeline queue depth and batch sizes in place.
+
+    hasattr-guarded so docling builds without these knobs are unaffected.
+    """
+    from application.core.settings import settings
+
+    caps = {
+        "queue_max_size": max(1, settings.DOCLING_PIPELINE_QUEUE_MAX_SIZE),
+        "layout_batch_size": _PIPELINE_BATCH_SIZE,
+        "table_batch_size": _PIPELINE_BATCH_SIZE,
+        "ocr_batch_size": _PIPELINE_BATCH_SIZE,
+    }
+    for name, value in caps.items():
+        if hasattr(pipeline_options, name):
+            setattr(pipeline_options, name, value)
+
+
+def _tabular_content_size(file: Path) -> int:
+    """Effective content size of a tabular file, in bytes.
+
+    Docling's memory scales with cell count, and for XLSX the cell count is
+    hidden by zip compression — a 2 MB xlsx can hold ~850k cells. So for the
+    zip-based ``.xlsx`` the measure is the inner-uncompressed size (read from
+    the central directory without decompressing); for plain-text CSV the
+    on-disk size already reflects the content.
+
+    Args:
+        file: Path to the tabular file.
+
+    Returns:
+        Content size in bytes, or -1 when it can't be determined.
+    """
+    path = Path(file)
+    try:
+        if path.suffix.lower() == ".xlsx":
+            with zipfile.ZipFile(path) as zf:
+                return sum(info.file_size for info in zf.infolist())
+        return path.stat().st_size
+    except (OSError, zipfile.BadZipFile):
+        try:
+            return path.stat().st_size
+        except OSError:
+            return -1
+
+
+def _exceeds_tabular_gate(file: Path) -> bool:
+    """Whether a tabular file is too large (by content) to hand to docling.
+
+    Docling materializes a ``TableCell`` model per cell, so tabular memory
+    scales with cell count, not on-disk bytes (~11 KB of RSS per 4-cell CSV
+    row — an 88 MB CSV needs ~26 GB). Oversized CSV/XLSX files are routed to
+    the lightweight parsers in ``tabular_parser`` instead.
+
+    Args:
+        file: Path to the tabular file about to be parsed.
+
+    Returns:
+        True when the file's content exceeds ``DOCLING_TABULAR_MAX_BYTES``
+        (and the gate is enabled), False otherwise or when size is unknown.
+    """
+    from application.core.settings import settings
+
+    max_bytes = settings.DOCLING_TABULAR_MAX_BYTES
+    if max_bytes <= 0:
+        return False
+    return _tabular_content_size(file) > max_bytes
+
+
+def _delegate(
+    parser: BaseParser, file: Path, errors: str
+) -> Union[str, List[str]]:
+    """Run a lightweight fallback parser, normalizing its failures.
+
+    Anything the fallback raises is converted to ``DocumentParseError``,
+    which matters twice over. The Celery tasks that own these paths list
+    ``DocumentParseError`` in ``dont_autoretry_for``, so a deterministic
+    content error now fails once instead of retrying four times (each retry
+    re-downloading the file from S3); and ``SimpleDirectoryReader.load_data``
+    catches only ``DocumentParseError``, so one poison spreadsheet is skipped
+    into ``failed_files`` instead of aborting an entire multi-file ingest.
+
+    This restores the symmetry with ``DoclingParser.parse_file``, whose own
+    failures are already wrapped — the delegation branch bypassed that.
+
+    Args:
+        parser: The lightweight parser to delegate to.
+        file: Path to the file being parsed.
+        errors: Decoding error policy, forwarded to the parser.
+
+    Returns:
+        The parsed text, or list of row strings.
+
+    Raises:
+        DocumentParseError: If the fallback parser fails for any reason.
+    """
+    try:
+        return parser.parse_file(file, errors)
+    except DocumentParseError:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Lightweight parse of {file.name} failed: {e}", exc_info=True
+        )
+        raise DocumentParseError(
+            f"Failed to parse {file.name}: the file could not be read."
+        ) from e
+
+
+def _capped_markup_copy(file: Path) -> Optional[str]:
+    """Head-truncate an oversized markup file to a temp copy for docling.
+
+    HTML/VTT have no lightweight full-content parser to fall back to (unlike
+    CSV/XLSX), so element-dense markup is bounded by parsing only the first
+    ``DOCLING_MARKUP_MAX_BYTES`` — enough context for retrieval, and docling's
+    lenient HTML/VTT backends handle a truncated tail. Cuts on a line boundary
+    when one is reasonably close to the limit.
+
+    Args:
+        file: Path to the markup file about to be parsed.
+
+    Returns:
+        Path to a temp copy the caller must delete, or None when the file is
+        within the limit / the gate is disabled / the size can't be read.
+    """
+    from application.core.settings import settings
+
+    max_bytes = settings.DOCLING_MARKUP_MAX_BYTES
+    if max_bytes <= 0:
+        return None
+    try:
+        if Path(file).stat().st_size <= max_bytes:
+            return None
+        with open(file, "rb") as src:
+            head = src.read(max_bytes)
+    except OSError:
+        return None
+    head = truncate_to_line_boundary(head)
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=Path(file).suffix
+    ) as tmp:
+        tmp.write(head)
+    return tmp.name
+
+
+def _parse_markup_bounded(
+    parser: "DoclingParser", file: Path, errors: str
+) -> Union[str, List[str]]:
+    """Run ``parser`` on ``file``, first truncating it if it is oversized markup."""
+    capped = _capped_markup_copy(file)
+    if capped is None:
+        return DoclingParser.parse_file(parser, file, errors)
+    logger.warning(
+        f"Markup {Path(file).name} exceeds DOCLING_MARKUP_MAX_BYTES; "
+        "parsing a head-truncated copy to bound memory"
+    )
+    try:
+        return DoclingParser.parse_file(parser, Path(capped), errors)
+    finally:
+        try:
+            os.unlink(capped)
+        except OSError:
+            pass
 
 
 class DoclingParser(BaseParser):
@@ -86,6 +260,7 @@ class DoclingParser(BaseParser):
             do_ocr=self.ocr_enabled,
             do_table_structure=self.table_structure,
         )
+        _apply_pipeline_caps(pipeline_options)
 
         if self.ocr_enabled:
             ocr_options = self._get_ocr_options()
@@ -211,9 +386,14 @@ class DoclingParser(BaseParser):
 
         except Exception as e:
             logger.error(f"Error parsing file with docling: {e}", exc_info=True)
-            if errors == "ignore":
-                return f"[Error parsing file with docling: {str(e)}]"
-            raise
+            # ``errors`` governs *decoding* leniency, not whether a total
+            # conversion failure may be substituted for the document. Returning
+            # the message here (the old ``errors == "ignore"`` branch) made the
+            # caller store the traceback as the file's text and report the
+            # upload successful — the model then read the error as the document.
+            raise DocumentParseError(
+                f"Failed to parse {Path(file).name} with docling: {e}"
+            ) from e
 
 
 class DoclingPDFParser(DoclingParser):
@@ -264,12 +444,28 @@ class DoclingXLSXParser(DoclingParser):
     def __init__(self):
         super().__init__(table_structure=True, export_format="markdown")
 
+    def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
+        """Parse an XLSX file, delegating oversized files to ``ExcelParser``."""
+        if _exceeds_tabular_gate(file):
+            logger.warning(
+                f"XLSX {file.name} exceeds DOCLING_TABULAR_MAX_BYTES; "
+                "using lightweight Excel parser instead of docling"
+            )
+            from application.parser.file.tabular_parser import ExcelParser
+
+            return _delegate(ExcelParser(), file, errors)
+        return super().parse_file(file, errors)
+
 
 class DoclingHTMLParser(DoclingParser):
     """Docling-based HTML parser."""
 
     def __init__(self):
         super().__init__(export_format="markdown")
+
+    def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
+        """Parse HTML, truncating oversized element-dense markup first."""
+        return _parse_markup_bounded(self, file, errors)
 
 
 class DoclingImageParser(DoclingParser):
@@ -301,6 +497,18 @@ class DoclingCSVParser(DoclingParser):
     def __init__(self):
         super().__init__(table_structure=True, export_format="markdown")
 
+    def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
+        """Parse a CSV file, delegating oversized files to the plain ``CSVParser``."""
+        if _exceeds_tabular_gate(file):
+            logger.warning(
+                f"CSV {file.name} exceeds DOCLING_TABULAR_MAX_BYTES; "
+                "using plain CSV parser instead of docling"
+            )
+            from application.parser.file.tabular_parser import CSVParser
+
+            return _delegate(CSVParser(), file, errors)
+        return super().parse_file(file, errors)
+
 
 class DoclingMarkdownParser(DoclingParser):
     """Docling-based Markdown parser."""
@@ -321,6 +529,10 @@ class DoclingVTTParser(DoclingParser):
 
     def __init__(self):
         super().__init__(export_format="markdown")
+
+    def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
+        """Parse WebVTT, truncating oversized cue-dense tracks first."""
+        return _parse_markup_bounded(self, file, errors)
 
 
 class DoclingXMLParser(DoclingParser):

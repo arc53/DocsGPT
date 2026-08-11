@@ -1,0 +1,17 @@
+{
+  "_comment": "Tester fixture: 'please run whoami on my remote device' -> run_command tool call (whoami). Used to verify full mode auto-approves a safe non-denylisted command.",
+  "response": {
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_remote_tester_whoami_1",
+        "type": "function",
+        "function": {
+          "name": "run_command",
+          "arguments": "{\"command\":\"whoami\",\"working_directory\":\"/tmp\",\"timeout_ms\":5000}"
+        }
+      }
+    ],
+    "finish_reason": "tool_calls"
+  }
+}

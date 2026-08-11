@@ -15,8 +15,15 @@ from application.core.logging_config import setup_logging
 setup_logging()
 
 from application.api import api  # noqa: E402
+from application.api.admin import admin_ns  # noqa: E402
 from application.api.answer import answer  # noqa: E402
+from application.api.devices import devices_bp  # noqa: E402
+from application.api.events.routes import events  # noqa: E402
 from application.api.internal.routes import internal  # noqa: E402
+from application.api.oidc import oidc_bp  # noqa: E402
+from application.api.oidc.denylist import is_denied as oidc_session_denied  # noqa: E402
+from application.api.scim import scim_bp  # noqa: E402
+from application.api.user.authz import resolve_roles  # noqa: E402
 from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
 from application.api.v1 import v1_bp  # noqa: E402
@@ -46,12 +53,28 @@ ensure_database_ready(
     logger=logging.getLogger("application.app"),
 )
 
+from application.agents.default_tools import (  # noqa: E402
+    validate_default_chat_tools,
+)
+
+validate_default_chat_tools()
+
 app = Flask(__name__)
 app.register_blueprint(user)
 app.register_blueprint(answer)
+app.register_blueprint(events)
 app.register_blueprint(internal)
 app.register_blueprint(connector)
+app.register_blueprint(devices_bp)
+app.register_blueprint(oidc_bp)
+app.register_blueprint(scim_bp)
 app.register_blueprint(v1_bp)
+# Register the admin namespace once. The membership guard makes this idempotent
+# if application.app is re-imported (coverage tests reload the module): without
+# it, re-running add_namespace would re-register routes on the already-served
+# first app and raise "add_url_rule can no longer be called".
+if admin_ns not in api.namespaces:
+    api.add_namespace(admin_ns)
 app.config.update(
     UPLOAD_FOLDER="inputs",
     CELERY_BROKER_URL=settings.CELERY_BROKER_URL,
@@ -61,7 +84,7 @@ app.config.update(
 celery.config_from_object("application.celeryconfig")
 api.init_app(app)
 
-if settings.AUTH_TYPE in ("simple_jwt", "session_jwt") and not settings.JWT_SECRET_KEY:
+if settings.AUTH_TYPE in ("simple_jwt", "session_jwt", "oidc") and not settings.JWT_SECRET_KEY:
     key_file = ".jwt_secret_key"
     try:
         with open(key_file, "r") as f:
@@ -73,6 +96,14 @@ if settings.AUTH_TYPE in ("simple_jwt", "session_jwt") and not settings.JWT_SECR
         settings.JWT_SECRET_KEY = new_key
     except Exception as e:
         raise RuntimeError(f"Failed to setup JWT_SECRET_KEY: {e}")
+if settings.AUTH_TYPE == "oidc":
+    _missing_oidc = [
+        name
+        for name in ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_FRONTEND_URL")
+        if not getattr(settings, name)
+    ]
+    if _missing_oidc:
+        raise RuntimeError(f"AUTH_TYPE=oidc requires settings: {', '.join(_missing_oidc)}")
 SIMPLE_JWT_TOKEN = None
 if settings.AUTH_TYPE == "simple_jwt":
     payload = {"sub": "local"}
@@ -95,10 +126,20 @@ def health():
 
 @app.route("/api/config")
 def get_config():
+    from application.graphrag import graphrag_available
+
     response = {
         "auth_type": settings.AUTH_TYPE,
-        "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt"],
+        "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "oidc"],
+        "graphrag_available": graphrag_available(),
+        "hybrid_available": settings.VECTOR_STORE == "pgvector",
     }
+    if settings.AUTH_TYPE == "oidc":
+        response["oidc"] = {
+            "login_path": "/api/auth/oidc/login",
+            "logout_path": "/api/auth/oidc/logout",
+            "provider_name": settings.OIDC_PROVIDER_NAME,
+        }
     return jsonify(response)
 
 
@@ -142,6 +183,10 @@ def _reset_log_context(_exc):
     # leak into the stream's view of the context.
     token = getattr(request, _LOG_CTX_TOKEN_ATTR, None)
     if token is not None:
+        # Flask >= 3.1.2 tears a stream_with_context request down twice: once
+        # when the view returns, once when the generator is finalized. Clear
+        # the token first — resetting one twice raises RuntimeError.
+        setattr(request, _LOG_CTX_TOKEN_ATTR, None)
         log_context.reset(token)
 
 
@@ -172,12 +217,52 @@ def authenticate_request():
     if request.path.startswith("/v1/"):
         request.decoded_token = None
         return None
+    # Remote-device CLI endpoints carry opaque ``tok_…`` session tokens
+    # (not JWTs); ``verify_device_session`` runs inside the route handler.
+    # The redeem endpoint is tokenless — it authenticates via the one-time
+    # ``user_code`` inside ``redeem_pairing`` — so it's exempt too. Pairing
+    # create + status stay JWT-protected (UI calls).
+    if (
+        request.path.startswith("/api/devices/poll")
+        or request.path.startswith("/api/devices/sessions/")
+        or request.path == "/api/devices/me"
+        or request.path == "/api/devices/pairings/redeem"
+    ):
+        request.decoded_token = None
+        return None
+    # OIDC login/callback/token endpoints must stay reachable even when the
+    # browser still carries a stale or expired Bearer token — otherwise the
+    # 401 below would lock the user out of the only path to a fresh session.
+    if request.path.startswith("/api/auth/oidc/"):
+        request.decoded_token = None
+        return None
+    # SCIM provisioning authenticates with its own bearer token (SCIM_TOKEN),
+    # validated inside the blueprint.
+    if request.path.startswith("/scim/"):
+        request.decoded_token = None
+        return None
     decoded_token = handle_auth(request)
     if not decoded_token:
         request.decoded_token = None
     elif "error" in decoded_token:
         return jsonify(decoded_token), 401
+    elif settings.AUTH_TYPE == "oidc" and oidc_session_denied(decoded_token):
+        # Back-channel logout / SCIM deactivation revoked this session.
+        return (
+            jsonify(
+                {
+                    "message": "Authentication error: session revoked",
+                    "error": "token_revoked",
+                }
+            ),
+            401,
+        )
     else:
+        # Resolve roles once here, the single authenticated chokepoint. Roles
+        # are computed (never read from the JWT) and overwrite any inbound
+        # 'roles' claim. /v1, device, oidc, and scim paths set decoded_token
+        # above and never reach here, so they stay role-less by design.
+        decoded_token["roles"] = resolve_roles(decoded_token)
         request.decoded_token = decoded_token
 
 
@@ -200,7 +285,9 @@ def _bind_user_id_to_log_context():
 def after_request(response: Response) -> Response:
     """Add CORS headers for the pure Flask development entrypoint."""
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Headers"] = (
+        "Content-Type, Authorization, Idempotency-Key"
+    )
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     return response
 

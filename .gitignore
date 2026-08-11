@@ -107,6 +107,14 @@ celerybeat.pid
 
 # Environments
 .env
+.env.local
+.env.*.local
+# Backups of env files (e.g. .env.local.bak, .env.bak.1781108407)
+*.env.bak
+*.env.bak.*
+.env.bak
+.env.bak.*
+.env.local.bak
 .venv
 # Machine-specific Claude Code guidance (see CLAUDE.md preamble)
 CLAUDE.md
@@ -194,3 +202,5 @@ tests/e2e/node_modules/
 tests/e2e/playwright-report/
 tests/e2e/test-results/
 tests/e2e/.e2e-last-run.json
+application/core/models/foundry_test_internal.yaml
+bench/

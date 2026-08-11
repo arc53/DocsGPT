@@ -24,7 +24,13 @@ class EmbeddingsWrapper:
                 raise ValueError(
                     f"SentenceTransformer model failed to load properly for: {model_name}"
                 )
-            self.dimension = self.model.get_sentence_embedding_dimension()
+            # Renamed in sentence-transformers 5.4; keep the old name as a fallback.
+            get_dimension = getattr(
+                self.model,
+                "get_embedding_dimension",
+                getattr(self.model, "get_sentence_embedding_dimension", None),
+            )
+            self.dimension = get_dimension()
             logging.info(f"Successfully loaded model with dimension: {self.dimension}")
         except Exception as e:
             logging.error(

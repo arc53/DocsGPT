@@ -3,25 +3,58 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any, Optional
 
-from sqlalchemy import Connection, func, select, text
+from sqlalchemy import case, Connection, func, or_, select, text
 
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
-from application.storage.db.models import sources_table
+from application.storage.db.models import ingest_chunk_progress_table, sources_table
+from application.storage.db.source_config import SourceConfig
 
 
 _SCALAR_COLUMNS = {
     "name", "type", "retriever", "sync_frequency", "tokens", "file_path",
     "language", "model", "date",
 }
-_JSONB_COLUMNS = {"metadata", "remote_data", "directory_structure", "file_name_map"}
+_JSONB_COLUMNS = {"metadata", "remote_data", "directory_structure", "file_name_map", "config"}
 _ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS
 
 # Whitelist for sort columns exposed via ``list_for_user``. Anything not in
 # this set falls back to ``date`` so user-supplied sort params can't be
 # interpolated into SQL unchecked.
 _SORTABLE_COLUMNS = {"date", "name", "tokens", "type", "created_at", "updated_at"}
+
+
+def _coerce_uuid_ids(extra_ids: Optional[list]) -> list:
+    """Coerce id strings to ``uuid.UUID`` for binding against UUID columns.
+
+    Non-UUID-looking ids (e.g. legacy/synthetic) are dropped — they can never
+    match a ``sources.id`` value. Used to OR team-shared source ids into the
+    owner-scoped queries.
+    """
+    if not extra_ids:
+        return []
+    out: list = []
+    for raw in extra_ids:
+        s = str(raw)
+        if looks_like_uuid(s):
+            out.append(uuid.UUID(s))
+    return out
+
+
+def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list]):
+    """WHERE predicate matching the owner's rows plus any ``extra_ids``.
+
+    Lets the paginated/count queries include team-shared sources (passed by id)
+    alongside owned ones in a single query, so count/sort/search/pagination
+    stay correct across the union.
+    """
+    scope = sources_table.c.user_id == user_id
+    ids = _coerce_uuid_ids(extra_ids)
+    if ids:
+        scope = or_(scope, sources_table.c.id.in_(ids))
+    return scope
 
 
 def _escape_like(pattern: str) -> str:
@@ -61,6 +94,35 @@ def _coerce_jsonb(value: Any) -> Any:
     return value
 
 
+def _normalize_config(config: Any) -> dict:
+    """Strict-validate the write-path ``config`` and return a plain dict.
+
+    ``None`` becomes ``{}`` (classic defaults). A dict is validated through
+    ``SourceConfig`` (raises on bad input, D7 strict-on-write) and dumped
+    back to a normalized dict for JSONB storage.
+    """
+    if config is None:
+        return {}
+    if not isinstance(config, dict):
+        raise ValueError("config must be a dict")
+    return SourceConfig.model_validate(config).model_dump()
+
+
+def _ingest_status_case():
+    """Derive a user-facing ingest status from the joined progress row.
+
+    ``failed`` — reconciler-escalated stall. ``processing`` — embed in
+    flight. ``None`` — no progress row, or the embed completed.
+    """
+    icp = ingest_chunk_progress_table
+    return case(
+        (icp.c.source_id.is_(None), None),
+        (icp.c.status == "stalled", "failed"),
+        (icp.c.embedded_chunks < icp.c.total_chunks, "processing"),
+        else_=None,
+    ).label("ingest_status")
+
+
 class SourcesRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -73,6 +135,7 @@ class SourcesRepository:
         user_id: str,
         type: Optional[str] = None,
         metadata: Optional[dict] = None,
+        config: Optional[dict] = None,
         retriever: Optional[str] = None,
         sync_frequency: Optional[str] = None,
         tokens: Optional[str] = None,
@@ -89,7 +152,7 @@ class SourcesRepository:
             text(
                 """
                 INSERT INTO sources (
-                    id, user_id, name, type, metadata,
+                    id, user_id, name, type, metadata, config,
                     retriever, sync_frequency, tokens, file_path,
                     remote_data, directory_structure, file_name_map,
                     language, model, date, legacy_mongo_id
@@ -97,6 +160,7 @@ class SourcesRepository:
                 VALUES (
                     COALESCE(CAST(:source_id AS uuid), gen_random_uuid()),
                     :user_id, :name, :type, CAST(:metadata AS jsonb),
+                    CAST(:config AS jsonb),
                     :retriever, :sync_frequency, :tokens, :file_path,
                     CAST(:remote_data AS jsonb),
                     CAST(:directory_structure AS jsonb),
@@ -114,6 +178,7 @@ class SourcesRepository:
                 "name": name,
                 "type": type,
                 "metadata": json.dumps(metadata or {}),
+                "config": json.dumps(_normalize_config(config)),
                 "retriever": retriever,
                 "sync_frequency": sync_frequency,
                 "tokens": tokens,
@@ -159,6 +224,51 @@ class SourcesRepository:
                 return row
         return self.get_by_legacy_id(source_id, user_id)
 
+    def get_by_id(self, source_id: str) -> Optional[dict]:
+        """Fetch a source by id with NO ownership scoping.
+
+        Used ONLY after a team-grant authorization check (team sharing). Never
+        call on a raw user-supplied id without that check.
+        """
+        if not looks_like_uuid(source_id):
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM sources WHERE id = CAST(:id AS uuid)"),
+            {"id": source_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def list_by_ids(self, source_ids) -> list[dict]:
+        """Fetch sources whose id is in ``source_ids`` (team-shared listing path)."""
+        ids = [str(s) for s in source_ids if looks_like_uuid(str(s))]
+        if not ids:
+            return []
+        result = self._conn.execute(
+            text("SELECT * FROM sources WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at DESC"),
+            {"ids": ids},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
+    def find_by_name(self, user_id: str, name: str) -> Optional[dict]:
+        """Return a user's source whose name matches ``name`` (case-insensitive).
+
+        Used by agent YAML import to map a portable source name back to a
+        concrete source id. Returns the oldest match when names collide.
+        """
+        if not name:
+            return None
+        result = self._conn.execute(
+            text(
+                "SELECT * FROM sources "
+                "WHERE user_id = :user_id AND lower(name) = lower(:name) "
+                "ORDER BY created_at LIMIT 1"
+            ),
+            {"user_id": user_id, "name": name},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
     def list_for_user(
         self,
         user_id: str,
@@ -168,6 +278,7 @@ class SourcesRepository:
         search_term: Optional[str] = None,
         sort_field: str = "created_at",
         sort_order: str = "desc",
+        extra_ids: Optional[list] = None,
     ) -> list[dict]:
         """Return sources owned by ``user_id``, paginated and optionally filtered.
 
@@ -192,13 +303,25 @@ class SourcesRepository:
                 as ``"desc"``.
 
         Returns:
-            A list of source rows as plain dicts (via ``row_to_dict``).
+            A list of source rows as plain dicts (via ``row_to_dict``),
+            each carrying a derived ``ingest_status`` (``failed`` /
+            ``processing`` / ``None``) from the joined progress row.
         """
         column_name = sort_field if sort_field in _SORTABLE_COLUMNS else "date"
         sort_column = sources_table.c[column_name]
         ascending = sort_order.lower() == "asc"
 
-        stmt = select(sources_table).where(sources_table.c.user_id == user_id)
+        stmt = (
+            select(sources_table, _ingest_status_case())
+            .select_from(
+                sources_table.outerjoin(
+                    ingest_chunk_progress_table,
+                    ingest_chunk_progress_table.c.source_id
+                    == sources_table.c.id,
+                )
+            )
+            .where(_owned_or_shared_scope(user_id, extra_ids))
+        )
         if search_term:
             stmt = stmt.where(
                 sources_table.c.name.ilike(
@@ -226,6 +349,7 @@ class SourcesRepository:
         user_id: str,
         *,
         search_term: Optional[str] = None,
+        extra_ids: Optional[list] = None,
     ) -> int:
         """Return the count of rows that ``list_for_user`` would produce.
 
@@ -243,7 +367,7 @@ class SourcesRepository:
         stmt = (
             select(func.count())
             .select_from(sources_table)
-            .where(sources_table.c.user_id == user_id)
+            .where(_owned_or_shared_scope(user_id, extra_ids))
         )
         if search_term:
             stmt = stmt.where(

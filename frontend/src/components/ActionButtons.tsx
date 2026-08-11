@@ -1,7 +1,6 @@
+import { ExternalLink, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import newChatIcon from '../assets/openNewChat.svg';
-import ShareIcon from '../assets/share.svg';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useState } from 'react';
 import { selectConversationId } from '../preferences/preferenceSlice';
@@ -11,6 +10,8 @@ import {
   setConversation,
   updateConversationId,
 } from '../conversation/conversationSlice';
+import { Button } from './ui/button';
+import ProfileButton from './ProfileButton';
 
 interface ActionButtonsProps {
   className?: string;
@@ -40,7 +41,7 @@ export default function ActionButtons({
         query: { conversationId: null },
       }),
     );
-    navigate('/');
+    navigate('/c/new');
   };
   return (
     <div
@@ -50,36 +51,34 @@ export default function ActionButtons({
     >
       <div className={`flex items-center gap-2 sm:gap-4 ${className}`}>
         {showNewChat && (
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
             title={t('actionButtons.openNewChat')}
             onClick={newChat}
-            className="hover:bg-accent dark:hover:bg-accent flex items-center gap-1 rounded-full p-2 lg:hidden"
+            className="text-muted-foreground hover:text-foreground rounded-full lg:hidden"
           >
-            <img
-              className="filter dark:invert"
-              alt="NewChat"
-              width={21}
-              height={21}
-              src={newChatIcon}
-            />
-          </button>
+            <Plus className="size-5" strokeWidth={1.75} aria-label="NewChat" />
+          </Button>
         )}
 
         {showShare && conversationId && (
           <>
-            <button
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               title={t('actionButtons.share')}
               onClick={() => setShareModalState(true)}
-              className="hover:bg-accent dark:hover:bg-accent rounded-full p-2"
+              className="text-muted-foreground hover:text-foreground rounded-full"
             >
-              <img
-                className="filter dark:invert"
-                alt="share"
-                width={16}
-                height={16}
-                src={ShareIcon}
+              <ExternalLink
+                className="size-5"
+                strokeWidth={1.75}
+                aria-label="share"
               />
-            </button>
+            </Button>
             {isShareModalOpen && (
               <ShareConversationModal
                 close={() => setShareModalState(false)}
@@ -88,7 +87,7 @@ export default function ActionButtons({
             )}
           </>
         )}
-        <div>{/* <UserButton  /> */}</div>
+        <ProfileButton />
       </div>
     </div>
   );

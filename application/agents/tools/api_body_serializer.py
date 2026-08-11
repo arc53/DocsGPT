@@ -115,12 +115,12 @@ class RequestBodySerializer:
             )
 
             if isinstance(serialized_value, list):
-                for sv in serialized_value:
-                    params.append((key, sv))
+                params.extend(serialized_value)
             else:
                 params.append((key, serialized_value))
 
-        # Use standard urlencode (replaces space with +)
+        # Values are raw here; urlencode does the single percent-encoding
+        # pass (space becomes +), matching what servers decode once.
         serialized = urlencode(params, safe="")
         headers = {"Content-Type": ContentType.FORM_URLENCODED.value}
         return serialized, headers
@@ -128,8 +128,12 @@ class RequestBodySerializer:
     @staticmethod
     def _serialize_form_value(
         value: Any, style: str, explode: bool, content_type: str, key: str
-    ) -> Union[str, list]:
-        """Serialize individual form value with encoding rules."""
+    ) -> Union[str, list[tuple[str, str]]]:
+        """Serialize individual form value with encoding rules.
+
+        Returns a raw (unencoded) string, or a list of raw (name, value)
+        pairs for exploded dicts/lists; the caller percent-encodes once.
+        """
         if isinstance(value, dict):
             if content_type == "application/json":
                 return json.dumps(value, separators=(",", ":"))
@@ -137,31 +141,20 @@ class RequestBodySerializer:
                 return RequestBodySerializer._dict_to_xml(value)
             else:
                 if style == "deepObject" and explode:
-                    return [
-                        f"{RequestBodySerializer._percent_encode(str(v))}"
-                        for v in value.values()
-                    ]
+                    return [(f"{key}[{k}]", str(v)) for k, v in value.items()]
                 elif explode:
-                    return [
-                        f"{RequestBodySerializer._percent_encode(str(v))}"
-                        for v in value.values()
-                    ]
+                    return [(str(k), str(v)) for k, v in value.items()]
                 else:
-                    pairs = [f"{k},{v}" for k, v in value.items()]
-                    return RequestBodySerializer._percent_encode(",".join(pairs))
+                    return ",".join(f"{k},{v}" for k, v in value.items())
 
         elif isinstance(value, (list, tuple)):
             if explode:
-                return [
-                    RequestBodySerializer._percent_encode(str(item)) for item in value
-                ]
+                return [(key, str(item)) for item in value]
             else:
-                return RequestBodySerializer._percent_encode(
-                    ",".join(str(v) for v in value)
-                )
+                return ",".join(str(v) for v in value)
 
         else:
-            return RequestBodySerializer._percent_encode(str(value))
+            return str(value)
 
     @staticmethod
     def _serialize_multipart_form_data(
@@ -206,9 +199,15 @@ class RequestBodySerializer:
         name: str, value: Any, content_type: str, headers_rule: Dict[str, Any]
     ) -> str:
         """Create a single multipart/form-data part."""
-        headers = [
-            f'Content-Disposition: form-data; name="{RequestBodySerializer._percent_encode(name)}"'
-        ]
+        # RFC 7578: field names go in a quoted string, not percent-encoded;
+        # only CR/LF (header injection) and the quoting chars need escaping.
+        safe_name = (
+            name.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\r", "%0D")
+            .replace("\n", "%0A")
+        )
+        headers = [f'Content-Disposition: form-data; name="{safe_name}"']
 
         if isinstance(value, bytes):
             if content_type == "application/octet-stream":

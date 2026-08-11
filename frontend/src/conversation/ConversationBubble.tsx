@@ -2,19 +2,10 @@ import 'katex/dist/katex.min.css';
 
 import { forwardRef, Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import {
-  oneLight,
-  vscDarkPlus,
-} from 'react-syntax-highlighter/dist/cjs/styles/prism';
-import rehypeKatex from 'rehype-katex';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 
+import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
 import ChevronDown from '../assets/chevron-down.svg';
-import Cloud from '../assets/cloud.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
@@ -24,23 +15,28 @@ import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
 import UserIcon from '../assets/user.svg';
-import Accordion from '../components/Accordion';
-import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
-import MermaidRenderer from '../components/MermaidRenderer';
-import Sidebar from '../components/Sidebar';
-import Spinner from '../components/Spinner';
+
+import { Avatar } from '../components/ui/avatar';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Sheet, SheetContent } from '../components/ui/sheet';
 import SpeakButton from '../components/TextToSpeechButton';
 import { useDarkTheme, useOutsideAlerter } from '../hooks';
 import {
   selectChunks,
   selectSelectedDocs,
+  selectToken,
 } from '../preferences/preferenceSlice';
-import classes from './ConversationBubble.module.css';
+import AnswerFlow from './AnswerFlow';
+import { AnswerSegment } from './answerSegments';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
+import MarkdownAnswer from './MarkdownAnswer';
 import ResearchProgress from './ResearchProgress';
+import StreamingStatusLine from './StreamingStatusLine';
 import { ToolCallsType } from './types';
 import { getEnv } from '@/utils/envUtils';
+import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
 const DisableSourceFE = getEnv('VITE_DISABLE_SOURCE_FE') || false;
 
@@ -55,6 +51,11 @@ const ConversationBubble = forwardRef<
     thought?: string;
     sources?: { title: string; text: string; link: string }[];
     toolCalls?: ToolCallsType[];
+    /** Arrival order of the answer's parts; drives inline rendering. */
+    segments?: AnswerSegment[];
+    /** Set when this answer came from a workflow agent run; renders the
+     * run's produced artifacts as click-through chips/previews. */
+    workflowRunId?: string;
     research?: ResearchState;
     retryBtn?: React.ReactElement;
     questionNumber?: number;
@@ -71,6 +72,8 @@ const ConversationBubble = forwardRef<
       decision: 'approved' | 'denied',
       comment?: string,
     ) => void;
+    /** Active agent id; refreshes the Schedules tab from SchedulerToolCallCard. */
+    agentId?: string;
   }
 >(function ConversationBubble(
   {
@@ -82,6 +85,8 @@ const ConversationBubble = forwardRef<
     thought,
     sources,
     toolCalls,
+    segments,
+    workflowRunId,
     research,
     retryBtn,
     questionNumber,
@@ -90,6 +95,7 @@ const ConversationBubble = forwardRef<
     filesAttached,
     onOpenArtifact,
     onToolAction,
+    agentId,
   },
   ref,
 ) {
@@ -108,20 +114,44 @@ const ConversationBubble = forwardRef<
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
-  const completedArtifactCalls = (toolCalls ?? []).filter(
-    (toolCall) => toolCall.artifact_id && toolCall.status === 'completed',
-  );
-  const primaryArtifactCall =
-    completedArtifactCalls[completedArtifactCalls.length - 1] ?? null;
-  const artifactCount = completedArtifactCalls.length;
+  // These already shimmer in place above; the status line would say it twice.
+  const hasLiveInlineStep =
+    (toolCalls ?? []).some((call) => call.status === 'pending') ||
+    Boolean(thought && !message);
 
   const formatToolName = (toolName: string | undefined): string => {
     if (!toolName) return '';
+    // Display-name overrides for tools whose label differs from the formatted key.
+    const overrides: Record<string, string> = {
+      artifact_generator: 'Artifact',
+    };
+    if (overrides[toolName]) return overrides[toolName];
     return toolName
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
   };
+
+  // One entry per artifact, not per tool call: a single call (``run_code``)
+  // can write several files, and only the first was reachable before.
+  const completedArtifacts = (toolCalls ?? [])
+    .filter((toolCall) => toolCall.status === 'completed')
+    .flatMap((toolCall) => {
+      const produced = toolCall.artifacts?.length
+        ? toolCall.artifacts
+        : toolCall.artifact_id
+          ? [{ id: toolCall.artifact_id, filename: undefined }]
+          : [];
+      return produced.map((artifact) => ({
+        id: artifact.id,
+        // The file's own name is what the user recognises; the tool that made
+        // it ("Code Executor") tells them nothing about which file this is.
+        label:
+          artifact.filename || formatToolName(toolCall.tool_name) || 'Artifact',
+        toolName: toolCall.tool_name,
+        callId: toolCall.call_id,
+      }));
+    });
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
@@ -133,6 +163,8 @@ const ConversationBubble = forwardRef<
   }, [message]);
 
   const handleEditClick = () => {
+    if (!editInputBox.trim() || editInputBox.trim() === (message ?? '').trim())
+      return;
     setIsEditClicked(false);
     handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
   };
@@ -147,16 +179,16 @@ const ConversationBubble = forwardRef<
                 <div
                   key={index}
                   title={file.fileName}
-                  className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-[14px]"
+                  className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-sm"
                 >
                   <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
                     <img
                       src={DocumentationDark}
                       alt="Attachment"
-                      className="h-[15px] w-[15px] object-fill"
+                      className="h-3.75 w-3.75 object-fill"
                     />
                   </div>
-                  <span className="max-w-[150px] truncate font-normal">
+                  <span className="max-w-37.5 truncate font-normal">
                     {file.fileName}
                   </span>
                 </div>
@@ -167,30 +199,29 @@ const ConversationBubble = forwardRef<
             ref={ref}
             className={`flex flex-row-reverse justify-items-start`}
           >
-            <Avatar
-              size="SMALL"
-              className="mt-2 shrink-0 text-2xl"
-              avatar={
-                <img className="mr-1 rounded-full" width={30} src={UserIcon} />
-              }
-            />
+            <Avatar className="mt-2 shrink-0 text-2xl">
+              <img className="mr-1 rounded-full" width={30} src={UserIcon} />
+            </Avatar>
             {!isEditClicked && (
               <>
-                <div className="relative mr-2 flex w-full flex-col">
-                  <div className="from-medium-purple to-slate-blue mr-2 ml-2 flex max-w-full items-start gap-2 rounded-[28px] bg-linear-to-b px-5 py-4 text-sm leading-normal wrap-break-word whitespace-pre-wrap text-white sm:text-base">
+                <div className="relative mr-2 flex w-full min-w-0 flex-col">
+                  <div className="mr-2 ml-2 flex max-w-full min-w-0 items-start gap-2 rounded-3xl bg-linear-to-b from-violet-500 to-violet-600 px-5 py-4 text-sm leading-normal wrap-anywhere whitespace-pre-wrap text-white sm:text-base">
                     <div
                       ref={messageRef}
-                      className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full`}
+                      className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full min-w-0`}
                     >
                       {message}
                     </div>
                     {shouldShowToggle && (
-                      <button
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           setIsQuestionCollapsed(!isQuestionCollapsed);
                         }}
-                        className="ml-1 rounded-full p-2 hover:bg-[#D9D9D933]"
+                        className="ml-1 h-auto w-auto rounded-full bg-transparent p-2 hover:bg-[#D9D9D933]"
                       >
                         <img
                           src={ChevronDown}
@@ -199,19 +230,22 @@ const ConversationBubble = forwardRef<
                           height={24}
                           className={`transform invert transition-transform duration-200 ${isQuestionCollapsed ? '' : 'rotate-180'}`}
                         />
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => {
                     setIsEditClicked(true);
                     setEditInputBox(message ?? '');
                   }}
-                  className={`hover:bg-accent dark:hover:bg-accent mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 ${isEditClicked ? 'visible' : 'invisible group-hover:visible'}`}
+                  className="invisible mt-3 h-fit w-auto shrink-0 cursor-pointer rounded-full p-2 pt-1.5 pl-1.5 group-hover:visible"
                 >
                   <img src={Edit} alt="Edit" className="cursor-pointer" />
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -233,21 +267,28 @@ const ConversationBubble = forwardRef<
                 }}
                 rows={5}
                 value={editInputBox}
-                className="border-border text-carbon dark:border-philippine-grey dark:text-foreground w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden"
+                className="border-border text-foreground dark:border-border dark:text-foreground focus-visible:ring-ring/50 focus-visible:border-ring w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden focus-visible:ring-[3px]"
               />
               <div className="flex items-center justify-end gap-2">
-                <button
-                  className="text-primary hover:bg-muted hover:text-foreground dark:hover:bg-accent dark:hover:text-foreground rounded-full px-4 py-2 text-sm font-semibold transition-colors"
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-primary hover:bg-muted hover:text-foreground dark:hover:bg-accent dark:hover:text-foreground h-auto rounded-full px-4 py-2 text-sm font-semibold"
                   onClick={() => setIsEditClicked(false)}
                 >
                   {t('conversation.edit.cancel')}
-                </button>
-                <button
-                  className="bg-primary hover:bg-primary/90 dark:hover:bg-primary/90 rounded-full px-4 py-2 text-sm font-medium text-white transition-colors"
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-primary not-disabled:hover:bg-primary/90 not-disabled:dark:hover:bg-primary/90 disabled:bg-primary/30 h-auto rounded-full px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-100"
                   onClick={handleEditClick}
+                  disabled={
+                    !editInputBox.trim() ||
+                    editInputBox.trim() === (message ?? '').trim()
+                  }
                 >
                   {t('conversation.edit.update')}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -323,20 +364,16 @@ const ConversationBubble = forwardRef<
               <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
                 <div className="my-2 flex flex-row items-center justify-center gap-3">
                   <Avatar
-                    className="h-[26px] w-[30px] text-xl"
-                    avatar={
-                      <img
-                        src={Sources}
-                        alt={t('conversation.sources.title')}
-                        className="h-full w-full object-fill"
-                      />
-                    }
+                    src={Sources}
+                    alt={t('conversation.sources.title')}
+                    className="h-6.5 w-7.5 text-xl"
+                    imgClassName="h-full w-full object-fill"
                   />
                   <p className="text-base font-semibold">
                     {t('conversation.sources.title')}
                   </p>
                 </div>
-                <div className="fade-in mr-5 ml-3 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
+                <div className="fade-in mr-5 ml-3 w-full">
                   <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     {sources?.slice(0, 3)?.map((source, index) => (
                       <div
@@ -371,7 +408,7 @@ const ConversationBubble = forwardRef<
                             <img
                               src={Document}
                               alt="Document"
-                              className="h-[17px] w-[17px] object-fill"
+                              className="h-4.25 w-4.25 object-fill"
                             />
                             <p
                               className="mt-0.5 truncate text-xs"
@@ -389,11 +426,11 @@ const ConversationBubble = forwardRef<
                         </div>
                         {activeTooltip === index && (
                           <div
-                            className={`dark:bg-card dark:text-foreground absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl sm:w-56`}
+                            className={`dark:bg-card dark:text-foreground absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-0.75 rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl sm:w-56`}
                             onMouseOver={() => setActiveTooltip(index)}
                             onMouseOut={() => setActiveTooltip(null)}
                           >
-                            <p className="line-clamp-6 max-h-[164px] overflow-hidden rounded-md text-sm wrap-break-word text-ellipsis">
+                            <p className="line-clamp-6 max-h-41 overflow-hidden rounded-md text-sm wrap-break-word text-ellipsis">
                               {source.text}
                             </p>
                           </div>
@@ -417,313 +454,169 @@ const ConversationBubble = forwardRef<
               </div>
             )}
         {research && <ResearchProgress research={research} />}
-        {toolCalls && toolCalls.length > 0 && (
-          <ToolCalls toolCalls={toolCalls} onToolAction={onToolAction} />
-        )}
-        {!message && primaryArtifactCall?.artifact_id && onOpenArtifact && (
-          <div className="my-2 ml-2 flex justify-start">
-            <button
-              type="button"
-              onClick={() =>
-                onOpenArtifact({
-                  id: primaryArtifactCall.artifact_id!,
-                  toolName: primaryArtifactCall.tool_name,
-                })
-              }
-              className="flex items-center gap-2 rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                />
-              </svg>
-              {primaryArtifactCall.tool_name
-                ? formatToolName(primaryArtifactCall.tool_name)
-                : artifactCount > 1
-                  ? `View artifacts (${artifactCount})`
-                  : 'View artifact'}
-            </button>
-          </div>
-        )}
-        {thought && (
-          <Thought thought={thought} preprocessLaTeX={preprocessLaTeX} />
-        )}
-        {message && (
-          <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-            <div className="my-2 flex flex-row items-center justify-center gap-3">
-              <Avatar
-                className="h-[34px] w-[34px] text-2xl"
-                avatar={
-                  <img
-                    src={DocsGPT3}
-                    alt={t('conversation.answer')}
-                    className="h-full w-full object-cover"
-                  />
+        {!message && onOpenArtifact && completedArtifacts.length > 0 && (
+          <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
+            {completedArtifacts.map((artifact, artifactIndex) => (
+              <Button
+                key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
+                type="button"
+                onClick={() =>
+                  onOpenArtifact({
+                    id: artifact.id,
+                    toolName: artifact.toolName,
+                  })
                 }
-              />
-              <p className="text-base font-semibold">
-                {t('conversation.answer')}
-              </p>
-            </div>
-            <div
-              className={`fade-in-bubble bg-answer-bubble mr-5 flex max-w-full rounded-[18px] px-6 py-4.5 ${
-                type === 'ERROR'
-                  ? 'text-destructive/80 dark:border-destructive dark:bg-destructive/15 relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:text-white'
-                  : 'flex-col rounded-3xl'
-              }`}
-            >
-              {(() => {
-                const contentSegments = processMarkdownContent(message);
-                return (
-                  <>
-                    {contentSegments.map((segment, index) => (
-                      <Fragment key={index}>
-                        {segment.type === 'text' ? (
-                          <ReactMarkdown
-                            className="fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap"
-                            remarkPlugins={[remarkGfm, remarkMath]}
-                            rehypePlugins={[rehypeKatex]}
-                            components={{
-                              a({ href, children }) {
-                                if (href?.startsWith('#cite-')) {
-                                  const num = href.replace('#cite-', '');
-                                  const sourceIdx = parseInt(num, 10) - 1;
-                                  return (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const el = document.getElementById(
-                                          `source-${sourceIdx}`,
-                                        );
-                                        if (el) {
-                                          el.scrollIntoView({
-                                            behavior: 'smooth',
-                                            block: 'center',
-                                          });
-                                          el.classList.add(
-                                            'ring-2',
-                                            'ring-purple-500',
-                                          );
-                                          setTimeout(
-                                            () =>
-                                              el.classList.remove(
-                                                'ring-2',
-                                                'ring-purple-500',
-                                              ),
-                                            2000,
-                                          );
-                                        }
-                                      }}
-                                      className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-purple-100 px-1.5 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
-                                      title={`Jump to source ${num}`}
-                                    >
-                                      {num}
-                                    </button>
-                                  );
-                                }
-                                return (
-                                  <a
-                                    href={href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    {children}
-                                  </a>
-                                );
-                              },
-                              code(props) {
-                                const {
-                                  children,
-                                  className,
-                                  node,
-                                  ref,
-                                  ...rest
-                                } = props;
-                                const match = /language-(\w+)/.exec(
-                                  className || '',
-                                );
-                                const language = match ? match[1] : '';
-
-                                return match ? (
-                                  <div className="group border-border relative overflow-hidden rounded-[14px] border">
-                                    <div className="bg-platinum dark:bg-muted flex items-center justify-between px-2 py-1">
-                                      <span className="text-foreground dark:text-foreground text-xs font-medium">
-                                        {language}
-                                      </span>
-                                      <CopyButton
-                                        textToCopy={String(children).replace(
-                                          /\n$/,
-                                          '',
-                                        )}
-                                      />
-                                    </div>
-                                    <SyntaxHighlighter
-                                      {...rest}
-                                      PreTag="div"
-                                      language={language}
-                                      style={
-                                        isDarkTheme ? vscDarkPlus : oneLight
-                                      }
-                                      className="mt-0!"
-                                      customStyle={{
-                                        margin: 0,
-                                        borderRadius: 0,
-                                      }}
-                                    >
-                                      {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
-                                  </div>
-                                ) : (
-                                  <code className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
-                                    {children}
-                                  </code>
-                                );
-                              },
-                              ul({ children }) {
-                                return (
-                                  <ul
-                                    className={`list-inside list-disc pl-4 whitespace-normal ${classes.list}`}
-                                  >
-                                    {children}
-                                  </ul>
-                                );
-                              },
-                              ol({ children }) {
-                                return (
-                                  <ol
-                                    className={`list-inside list-decimal pl-4 whitespace-normal ${classes.list}`}
-                                  >
-                                    {children}
-                                  </ol>
-                                );
-                              },
-                              table({ children }) {
-                                return (
-                                  <div className="border-border relative overflow-x-auto rounded-lg border">
-                                    <table className="dark:text-foreground w-full text-left text-gray-700">
-                                      {children}
-                                    </table>
-                                  </div>
-                                );
-                              },
-                              thead({ children }) {
-                                return (
-                                  <thead className="bg-muted text-foreground text-xs uppercase">
-                                    {children}
-                                  </thead>
-                                );
-                              },
-                              tr({ children }) {
-                                return (
-                                  <tr className="border-border odd:bg-card even:bg-muted border-b">
-                                    {children}
-                                  </tr>
-                                );
-                              },
-                              th({ children }) {
-                                return (
-                                  <th className="px-6 py-3">{children}</th>
-                                );
-                              },
-                              td({ children }) {
-                                return (
-                                  <td className="px-6 py-3">{children}</td>
-                                );
-                              },
-                            }}
-                          >
-                            {segment.content}
-                          </ReactMarkdown>
-                        ) : (
-                          <div
-                            className="my-4 w-full"
-                            style={{ minWidth: '100%' }}
-                          >
-                            <MermaidRenderer
-                              code={segment.content}
-                              isLoading={isStreaming}
-                            />
-                          </div>
-                        )}
-                      </Fragment>
-                    ))}
-                  </>
-                );
-              })()}
-            </div>
+                className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                  />
+                </svg>
+                <span className="max-w-50 truncate" title={artifact.label}>
+                  {artifact.label}
+                </span>
+              </Button>
+            ))}
           </div>
         )}
+        {workflowRunId && (
+          <div className="my-2 mr-5 ml-2">
+            <WorkflowRunArtifacts
+              workflowRunId={workflowRunId}
+              inProgress={isStreaming}
+            />
+          </div>
+        )}
+        {type === 'ERROR' ? (
+          message && (
+            <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+              <div className="my-2 flex flex-row items-center justify-center gap-3">
+                <Avatar
+                  src={DocsGPT3}
+                  alt={t('conversation.answer')}
+                  className="h-8.5 w-8.5 text-2xl"
+                  imgClassName="h-full w-full object-cover"
+                />
+                <p className="text-base font-semibold">
+                  {t('conversation.answer')}
+                </p>
+              </div>
+              <div className="fade-in-bubble text-destructive/80 dark:border-destructive dark:bg-destructive/15 relative mr-5 flex max-w-full flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 px-6 py-5 text-sm font-normal dark:text-white">
+                <MarkdownAnswer content={message} isStreaming={isStreaming} />
+              </div>
+            </div>
+          )
+        ) : (
+          <AnswerFlow
+            message={message}
+            thought={thought}
+            toolCalls={toolCalls}
+            segments={segments}
+            isStreaming={isStreaming}
+            agentId={agentId}
+            renderApproval={(toolCall: ToolCallsType) => (
+              <div className="fade-in mt-4 w-full">
+                <ToolCallApprovalBar
+                  toolCall={toolCall}
+                  onToolAction={onToolAction}
+                />
+              </div>
+            )}
+            renderWikiWrite={(toolCall: ToolCallsType) => (
+              <div className="fade-in mt-4 w-full">
+                <WikiWriteToolCallCard toolCall={toolCall} />
+              </div>
+            )}
+          />
+        )}
+        {/* Only when nothing inline is already showing the activity: a live
+            reasoning or tool segment carries its own shimmer, so this would be
+            a second indicator away from the point of action. */}
+        {isStreaming && !hasLiveInlineStep && (
+          <StreamingStatusLine
+            hasAnswerText={Boolean(message)}
+            className="my-2 ml-3"
+          />
+        )}
         {message && (
-          <div className="my-2 ml-2 flex justify-start">
+          <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
             {type === 'ERROR' ? (
-              <div className="relative mr-2 block items-center justify-center">
+              <div className="relative block items-center justify-center">
                 <div>{retryBtn}</div>
               </div>
             ) : (
               <>
-                {primaryArtifactCall?.artifact_id && onOpenArtifact && (
-                  <div className="relative mr-2 flex items-center justify-center">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onOpenArtifact({
-                          id: primaryArtifactCall.artifact_id!,
-                          toolName: primaryArtifactCall.tool_name,
-                        })
-                      }
-                      className="flex items-center gap-2 rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
-                      aria-label="View artifacts"
+                {onOpenArtifact &&
+                  completedArtifacts.map((artifact, artifactIndex) => (
+                    <div
+                      key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
+                      className="relative flex items-center justify-center"
                     >
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
+                      <Button
+                        type="button"
+                        onClick={() =>
+                          onOpenArtifact({
+                            id: artifact.id,
+                            toolName: artifact.toolName,
+                          })
+                        }
+                        className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                        aria-label="View artifact"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
-                      </svg>
-                      {primaryArtifactCall.tool_name
-                        ? formatToolName(primaryArtifactCall.tool_name)
-                        : artifactCount > 1
-                          ? `Artifacts (${artifactCount})`
-                          : 'Artifact'}
-                    </button>
-                  </div>
-                )}
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                          />
+                        </svg>
+                        <span
+                          className="max-w-50 truncate"
+                          title={artifact.label}
+                        >
+                          {artifact.label}
+                        </span>
+                      </Button>
+                    </div>
+                  ))}
                 {!isStreaming && (
                   <>
-                    <div className="relative mr-2 block items-center justify-center">
+                    <div className="relative block items-center justify-center">
                       <CopyButton textToCopy={message} />
                     </div>
                     {research && message && (
-                      <div className="relative mr-2 block items-center justify-center">
-                        <button
+                      <div className="relative block items-center justify-center">
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon-sm"
                           onClick={() => {
                             const blob = new Blob([message], {
                               type: 'text/markdown',
@@ -735,7 +628,7 @@ const ConversationBubble = forwardRef<
                             link.click();
                             URL.revokeObjectURL(url);
                           }}
-                          className="bg-card dark:hover:bg-accent hover:bg-muted flex cursor-pointer items-center justify-center rounded-full p-2 dark:bg-transparent"
+                          className="bg-card hover:bg-muted dark:hover:bg-accent h-auto w-auto cursor-pointer rounded-full p-2 dark:bg-transparent"
                           aria-label="Export as Markdown"
                           title="Export as Markdown"
                         >
@@ -751,18 +644,20 @@ const ConversationBubble = forwardRef<
                               d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
                             />
                           </svg>
-                        </button>
+                        </Button>
                       </div>
                     )}
-                    <div className="relative mr-2 block items-center justify-center">
+                    <div className="relative block items-center justify-center">
                       <SpeakButton text={message} />
                     </div>
                     {handleFeedback && (
                       <>
-                        <div className="relative mr-2 flex items-center justify-center">
-                          <button
+                        <div className="relative flex items-center justify-center">
+                          <Button
                             type="button"
-                            className="hover:bg-accent flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="h-auto w-auto cursor-pointer rounded-full bg-transparent p-2"
                             onClick={() => {
                               if (feedback === 'LIKE') {
                                 handleFeedback?.(null);
@@ -777,13 +672,15 @@ const ConversationBubble = forwardRef<
                             <Like
                               className={`${feedback === 'LIKE' ? 'stroke-primary fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
                             ></Like>
-                          </button>
+                          </Button>
                         </div>
 
-                        <div className="relative mr-2 flex items-center justify-center">
-                          <button
+                        <div className="relative flex items-center justify-center">
+                          <Button
                             type="button"
-                            className="hover:bg-accent flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="h-auto w-auto cursor-pointer rounded-full bg-transparent p-2"
                             onClick={() => {
                               if (feedback === 'DISLIKE') {
                                 handleFeedback?.(null);
@@ -800,7 +697,7 @@ const ConversationBubble = forwardRef<
                             <Dislike
                               className={`${feedback === 'DISLIKE' ? 'stroke-destructive fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
                             ></Dislike>
-                          </button>
+                          </Button>
                         </div>
                       </>
                     )}
@@ -811,14 +708,17 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         {sources && (
-          <Sidebar
-            isOpen={isSidebarOpen}
-            toggleState={(state: boolean) => {
-              setIsSidebarOpen(state);
-            }}
-          >
-            <AllSources sources={sources} />
-          </Sidebar>
+          <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
+            <SheetContent
+              side="right"
+              title="Sources"
+              className="bg-card w-64 border-l border-[#9ca3af]/10 sm:w-80 sm:max-w-none"
+            >
+              <div className="flex h-full flex-col items-center gap-2 px-6 py-4 text-center">
+                <AllSources sources={sources} />
+              </div>
+            </SheetContent>
+          </Sheet>
         )}
       </div>
     );
@@ -861,9 +761,7 @@ function AllSources(sources: AllSourcesProps) {
               <p
                 title={source.title}
                 className={`ellipsis-text text-left text-sm font-semibold wrap-break-word ${
-                  isExternalSource
-                    ? 'group-hover/card:text-primary dark:group-hover/card:text-[#8C67D7]'
-                    : ''
+                  isExternalSource ? 'group-hover/card:text-primary' : ''
                 }`}
               >
                 {`${index + 1}. ${source.title}`}
@@ -904,6 +802,7 @@ function ToolCallApprovalBar({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState('');
+  const token = useSelector(selectToken);
   const actionLabel = toolCall.action_name.substring(
     0,
     toolCall.action_name.lastIndexOf('_'),
@@ -911,6 +810,29 @@ function ToolCallApprovalBar({
   const argPreview = JSON.stringify(toolCall.arguments);
   const truncated =
     argPreview.length > 60 ? argPreview.slice(0, 57) + '...' : argPreview;
+
+  const isRemoteDevice =
+    toolCall.tool_name === 'remote_device' && toolCall.device_id;
+  const handleApproveSticky = async () => {
+    if (!isRemoteDevice || !toolCall.device_id) return;
+    const command =
+      (toolCall.arguments && (toolCall.arguments.command as string)) || '';
+    if (command) {
+      try {
+        const { default: devicesService } = await import(
+          '../api/services/devicesService'
+        );
+        await devicesService.addAutoApprovePattern(
+          toolCall.device_id,
+          command,
+          token,
+        );
+      } catch (err) {
+        console.error('auto-approve register failed', err);
+      }
+    }
+    onToolAction?.(toolCall.call_id, 'approved');
+  };
 
   return (
     <div className="border-border bg-muted dark:bg-card mb-2 w-full overflow-hidden rounded-2xl border">
@@ -928,10 +850,11 @@ function ToolCallApprovalBar({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className={`rounded-full px-4 py-1 text-xs font-medium transition-colors ${
+          <Button
+            type="button"
+            className={`h-auto rounded-full px-4 py-1 text-xs font-medium ${
               comment
-                ? 'bg-muted text-muted-foreground cursor-default opacity-50'
+                ? 'bg-muted text-muted-foreground hover:bg-muted cursor-default opacity-50'
                 : 'bg-primary hover:bg-primary/90 text-white'
             }`}
             onClick={() => {
@@ -939,12 +862,27 @@ function ToolCallApprovalBar({
             }}
           >
             Approve
-          </button>
-          <button
-            className={`rounded-full border px-4 py-1 text-xs font-medium transition-colors ${
+          </Button>
+          {isRemoteDevice && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-auto rounded-full border bg-transparent px-4 py-1 text-xs font-medium shadow-none"
+              onClick={() => {
+                void handleApproveSticky();
+              }}
+              title="Approve and don't ask again for this command shape"
+            >
+              Approve, don&apos;t ask again
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            className={`h-auto rounded-full border bg-transparent px-4 py-1 text-xs font-medium shadow-none ${
               comment
-                ? 'border-destructive bg-destructive/10 text-destructive font-semibold'
-                : 'hover:bg-accent text-muted-foreground'
+                ? 'border-destructive bg-destructive/10 text-destructive hover:bg-destructive/10 font-semibold'
+                : 'hover:bg-accent text-muted-foreground dark:bg-transparent'
             }`}
             onClick={() => {
               if (expanded && comment) {
@@ -957,9 +895,12 @@ function ToolCallApprovalBar({
             }}
           >
             Deny
-          </button>
-          <button
-            className="text-muted-foreground hover:text-foreground flex h-6 w-6 items-center justify-center rounded-full transition-colors"
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground hover:text-foreground h-6 w-6 rounded-full"
             onClick={() => setExpanded(!expanded)}
             title="Details"
           >
@@ -968,7 +909,7 @@ function ToolCallApprovalBar({
               alt="expand"
               className={`h-3.5 w-3.5 transition-transform duration-200 dark:invert ${expanded ? 'rotate-180' : ''}`}
             />
-          </button>
+          </Button>
         </div>
       </div>
       {expanded && (
@@ -979,10 +920,10 @@ function ToolCallApprovalBar({
           <pre className="bg-background dark:bg-background/50 mb-2 max-h-40 overflow-auto rounded-lg p-2 font-mono text-xs">
             {JSON.stringify(toolCall.arguments, null, 2)}
           </pre>
-          <input
+          <Input
             type="text"
             placeholder="Optional reason for denying..."
-            className="border-border bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
+            className="bg-background h-8 rounded-lg px-3 py-1.5 text-sm md:text-sm"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             onKeyDown={(e) => {
@@ -997,291 +938,41 @@ function ToolCallApprovalBar({
   );
 }
 
-function ToolCalls({
-  toolCalls,
-  onToolAction,
+export function WikiWriteToolCallCard({
+  toolCall,
 }: {
-  toolCalls: ToolCallsType[];
-  onToolAction?: (
-    callId: string,
-    decision: 'approved' | 'denied',
-    comment?: string,
-  ) => void;
-}) {
-  const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
-
-  const awaitingCalls = toolCalls.filter(
-    (tc) => tc.status === 'awaiting_approval',
-  );
-  const resolvedCalls = toolCalls.filter(
-    (tc) => tc.status !== 'awaiting_approval',
-  );
-
-  return (
-    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-      {/* Approval bars — always visible, compact inline */}
-      {awaitingCalls.length > 0 && (
-        <div className="fade-in mt-4 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
-          {awaitingCalls.map((tc) => (
-            <ToolCallApprovalBar
-              key={`approval-${tc.call_id}`}
-              toolCall={tc}
-              onToolAction={onToolAction}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Regular tool calls accordion */}
-      {resolvedCalls.length > 0 && (
-        <>
-          <div className="my-2 flex flex-row items-center justify-center gap-3">
-            <Avatar
-              className="h-[26px] w-[30px] text-xl"
-              avatar={
-                <img
-                  src={Sources}
-                  alt={'ToolCalls'}
-                  className="h-full w-full object-fill"
-                />
-              }
-            />
-            <button
-              className="flex flex-row items-center gap-2"
-              onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
-            >
-              <p className="text-base font-semibold">Tool Calls</p>
-              <img
-                src={ChevronDown}
-                alt="ChevronDown"
-                className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
-              />
-            </button>
-          </div>
-          {isToolCallsOpen && (
-            <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
-              <div className="grid grid-cols-1 gap-2">
-                {resolvedCalls.map((toolCall, index) => (
-                  <Accordion
-                    key={`tool-call-${index}`}
-                    title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
-                    className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
-                    titleClassName="px-6 py-2 text-sm font-semibold"
-                  >
-                    <div className="flex flex-col gap-1">
-                      <div className="border-border flex flex-col rounded-2xl border">
-                        <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                          <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                            Arguments
-                          </span>{' '}
-                          <CopyButton
-                            textToCopy={JSON.stringify(
-                              toolCall.arguments,
-                              null,
-                              2,
-                            )}
-                          />
-                        </p>
-                        <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                          <span
-                            className="dark:text-muted-foreground leading-[23px] text-black"
-                            style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                          >
-                            {JSON.stringify(toolCall.arguments, null, 2)}
-                          </span>
-                        </p>
-                      </div>
-                      <div className="border-border flex flex-col rounded-2xl border">
-                        <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                          <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                            Response
-                          </span>{' '}
-                          <CopyButton
-                            textToCopy={
-                              toolCall.status === 'error'
-                                ? toolCall.error || 'Unknown error'
-                                : JSON.stringify(toolCall.result, null, 2)
-                            }
-                          />
-                        </p>
-                        {toolCall.status === 'pending' && (
-                          <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
-                            <Spinner size="small" />
-                          </span>
-                        )}
-                        {toolCall.status === 'completed' && (
-                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span
-                              className="dark:text-muted-foreground leading-[23px] text-black"
-                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                            >
-                              {JSON.stringify(toolCall.result, null, 2)}
-                            </span>
-                          </p>
-                        )}
-                        {toolCall.status === 'error' && (
-                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span
-                              className="text-destructive leading-[23px]"
-                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                            >
-                              {toolCall.error}
-                            </span>
-                          </p>
-                        )}
-                        {toolCall.status === 'denied' && (
-                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span
-                              className="text-muted-foreground leading-[23px]"
-                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                            >
-                              Denied by user
-                            </span>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </Accordion>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function Thought({
-  thought,
-  preprocessLaTeX,
-}: {
-  thought: string;
-  preprocessLaTeX: (content: string) => string;
+  toolCall: ToolCallsType;
 }) {
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
-  const [isThoughtOpen, setIsThoughtOpen] = useState(false);
+  const path = wikiWritePath(toolCall);
+  const actionKey = wikiWriteActionKey(toolCall.action_name);
+  const isError = toolCall.status === 'error';
 
   return (
-    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-      <div className="my-2 flex flex-row items-center justify-center gap-3">
-        <Avatar
-          className="h-[26px] w-[30px] text-xl"
-          avatar={
-            <img
-              src={Cloud}
-              alt={'Thought'}
-              className="h-full w-full object-fill"
-            />
-          }
-        />
-        <button
-          className="flex flex-row items-center gap-2"
-          onClick={() => setIsThoughtOpen(!isThoughtOpen)}
-        >
-          <p className="text-base font-semibold">
-            {t('conversation.reasoning')}
-          </p>
-          <img
-            src={ChevronDown}
-            alt="ChevronDown"
-            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isThoughtOpen ? 'rotate-180' : ''}`}
-          />
-        </button>
-      </div>
-      {isThoughtOpen && (
-        <div className="fade-in mr-5 ml-2 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
-          <div className="bg-muted dark:bg-answer-bubble rounded-[28px] px-7 py-[18px]">
-            <ReactMarkdown
-              className="fade-in leading-normal wrap-break-word whitespace-pre-wrap"
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-              components={{
-                code(props) {
-                  const { children, className, node, ref, ...rest } = props;
-                  const match = /language-(\w+)/.exec(className || '');
-                  const language = match ? match[1] : '';
-
-                  return match ? (
-                    <div className="group border-border relative overflow-hidden rounded-[14px] border">
-                      <div className="bg-platinum dark:bg-muted flex items-center justify-between px-2 py-1">
-                        <span className="text-foreground dark:text-foreground text-xs font-medium">
-                          {language}
-                        </span>
-                        <CopyButton
-                          textToCopy={String(children).replace(/\n$/, '')}
-                        />
-                      </div>
-                      <SyntaxHighlighter
-                        {...rest}
-                        PreTag="div"
-                        language={language}
-                        style={isDarkTheme ? vscDarkPlus : oneLight}
-                        className="mt-0!"
-                        customStyle={{
-                          margin: 0,
-                          borderRadius: 0,
-                        }}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    </div>
-                  ) : (
-                    <code className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
-                      {children}
-                    </code>
-                  );
-                },
-                ul({ children }) {
-                  return (
-                    <ul className="list-inside list-disc pl-4 whitespace-normal">
-                      {children}
-                    </ul>
-                  );
-                },
-                ol({ children }) {
-                  return (
-                    <ol className="list-inside list-decimal pl-4 whitespace-normal">
-                      {children}
-                    </ol>
-                  );
-                },
-                table({ children }) {
-                  return (
-                    <div className="border-border relative overflow-x-auto rounded-lg border">
-                      <table className="dark:text-foreground w-full text-left text-gray-700">
-                        {children}
-                      </table>
-                    </div>
-                  );
-                },
-                thead({ children }) {
-                  return (
-                    <thead className="bg-muted text-foreground text-xs uppercase">
-                      {children}
-                    </thead>
-                  );
-                },
-                tr({ children }) {
-                  return (
-                    <tr className="border-border odd:bg-card even:bg-muted border-b">
-                      {children}
-                    </tr>
-                  );
-                },
-                th({ children }) {
-                  return <th className="px-6 py-3">{children}</th>;
-                },
-                td({ children }) {
-                  return <td className="px-6 py-3">{children}</td>;
-                },
-              }}
-            >
-              {preprocessLaTeX(thought ?? '')}
-            </ReactMarkdown>
-          </div>
-        </div>
+    <div
+      className={`flex items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-sm ${
+        isError
+          ? 'border-destructive/40 bg-destructive/5'
+          : 'border-primary/30 bg-primary/5 dark:bg-primary/10'
+      }`}
+    >
+      <span aria-hidden="true" className="text-base leading-none">
+        ✏️
+      </span>
+      <span className="text-foreground font-medium">
+        {t(`conversation.wikiWrite.${actionKey}`, {
+          defaultValue: t('conversation.wikiWrite.edited'),
+        })}
+      </span>
+      {path && (
+        <code className="dark:bg-card min-w-0 truncate rounded-md bg-black/10 px-1.5 py-0.5 font-mono text-xs">
+          {path}
+        </code>
+      )}
+      {isError && (
+        <span className="text-destructive text-xs">
+          {t('conversation.wikiWrite.failed')}
+        </span>
       )}
     </div>
   );

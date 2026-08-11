@@ -1,7 +1,8 @@
 """FastMCP server exposing DocsGPT retrieval over streamable HTTP.
 
 Mounted at ``/mcp`` by ``application/asgi.py``. Bearer tokens are the
-existing DocsGPT agent API keys — no new credential surface.
+existing DocsGPT agent API keys — no new credential surface. The
+``search_docs`` tool searches the caller's knowledge base.
 
 The tool reads the ``Authorization`` header directly via
 ``get_http_headers(include={"authorization"})``. The ``include`` kwarg
@@ -27,8 +28,6 @@ from application.services.search_service import (
 
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("docsgpt")
-
 
 def _extract_bearer_token() -> str | None:
     auth = get_http_headers(include={"authorization"}).get("authorization", "")
@@ -36,6 +35,9 @@ def _extract_bearer_token() -> str | None:
     if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1]:
         return None
     return parts[1]
+
+
+mcp = FastMCP("docsgpt")
 
 
 @mcp.tool

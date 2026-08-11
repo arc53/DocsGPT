@@ -10,6 +10,8 @@ from flask_restx import fields, Namespace, Resource
 from application.api import api
 from application.api.user.base import (
     handle_image_upload,
+    resolve_prompt_name,
+    resolve_source_details,
     resolve_tool_details,
     storage,
 )
@@ -19,8 +21,19 @@ from application.core.json_schema_utils import (
 )
 from application.core.settings import settings
 from application.storage.db.base_repository import looks_like_uuid
+from application.api.user.team_sharing import (
+    can_access,
+    team_access_for,
+    visible_with_access,
+)
 from application.storage.db.repositories.agent_folders import AgentFoldersRepository
 from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.shared_conversations import (
+    SharedConversationsRepository,
+)
+from application.storage.db.repositories.stack_logs import StackLogsRepository
+from application.storage.db.repositories.token_usage import TokenUsageRepository
 from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
 from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
@@ -46,7 +59,9 @@ AGENT_TYPE_SCHEMAS = {
             "prompt_id",
         ],
         "required_draft": ["name"],
-        "validate_published": ["name", "description", "prompt_id"],
+        # ``prompt_id`` intentionally omitted — the "default" sentinel
+        # is acceptable and maps to NULL downstream.
+        "validate_published": ["name", "description"],
         "validate_draft": [],
         "require_source": True,
         "fields": [
@@ -163,13 +178,49 @@ def _resolve_folder_id(conn, folder_id, user):
     return str(folder["id"]), None
 
 
-def _format_agent_output(agent: dict, *, pinned: bool = False, include_key_masked: bool = True) -> dict:
+def _reject(message: str, user: str, field: str = "-"):
+    """Log a request-validation rejection at WARN and return its 400 response.
+
+    Every validation branch in the agent write paths used to ``make_response``
+    a 400 without logging anything, so a rejected update left no server-side
+    trace — the only evidence was the request span's status code. The client
+    compounded it by discarding the response body, which made an entirely
+    deterministic failure undiagnosable from any telemetry we keep. Route all
+    400s through here so the field and user always reach the logs.
+
+    Args:
+        message: User-facing reason, returned verbatim in the response body.
+        user: Subject claim of the caller, for correlating with client reports.
+        field: Name of the offending field, or ``"-"`` when not field-specific.
+
+    Returns:
+        A Flask 400 response carrying ``{"success": False, "message": ...}``.
+    """
+    current_app.logger.warning(
+        "Agent update rejected: %s (field=%s, user=%s)", message, field, user
+    )
+    return make_response(jsonify({"success": False, "message": message}), 400)
+
+
+def _format_agent_output(
+    agent: dict,
+    *,
+    pinned: bool = False,
+    include_key_masked: bool = True,
+    ownership: str = "user",
+    team_access: str | None = None,
+    resolve_names: bool = False,
+) -> dict:
     """Shape a PG agent row into the outward API response dict.
 
     Translates PG snake_case columns to the camelCase/frontend keys that
     the React client expects, preserving ``source``/``sources`` naming on
     the response even though storage uses ``source_id`` /
     ``extra_source_ids``.
+
+    ``ownership`` is ``"user"`` for the caller's own agents or ``"team"`` for
+    ones shared with a team they're in; ``team_access`` (``viewer``/``editor``)
+    is set on team-shared agents so the UI can gate edit controls.
     """
     source_id = agent.get("source_id")
     extra_source_ids = agent.get("extra_source_ids") or []
@@ -179,6 +230,7 @@ def _format_agent_output(agent: dict, *, pinned: bool = False, include_key_maske
     out = {
         "id": str(agent["id"]),
         "name": agent.get("name", ""),
+        "slug": agent.get("slug", "") or "",
         "description": agent.get("description", "") or "",
         "image": (
             generate_image_url(agent["image"]) if agent.get("image") else ""
@@ -211,7 +263,23 @@ def _format_agent_output(agent: dict, *, pinned: bool = False, include_key_maske
         "allow_system_prompt_override": bool(
             agent.get("allow_system_prompt_override", False)
         ),
+        "ownership": ownership,
+        "team_access": team_access,
     }
+    # Resolve prompt/source NAMES by id (owner-agnostic) so a team member
+    # viewing a shared agent sees the owner's prompt + source names instead of
+    # a blank prompt / "External KB" (the client otherwise resolves these from
+    # the caller's own lists, which don't contain the owner's resources).
+    if resolve_names:
+        out["prompt_name"] = resolve_prompt_name(agent.get("prompt_id"))
+        out["source_details"] = resolve_source_details(
+            ([source_id] if source_id else []) + list(extra_source_ids)
+        )
+    # Never expose the owner's share/API secrets to a team grantee — the
+    # public ``shared_token`` and the (masked) agent ``key`` are owner-only.
+    if ownership == "team":
+        out["shared_token"] = ""
+        return out
     if include_key_masked:
         key_val = agent.get("key") or ""
         out["key"] = (
@@ -300,11 +368,24 @@ class GetAgent(Resource):
             return {"success": False, "message": "ID required"}, 400
         try:
             user = decoded_token["sub"]
+            ownership, team_access = "user", None
             with db_readonly() as conn:
-                agent = AgentsRepository(conn).get_any(agent_id, user)
+                repo = AgentsRepository(conn)
+                agent = repo.get_any(agent_id, user)
+                if not agent:
+                    # Team fallback: only after a grant check, fetch ownerless.
+                    team_access = team_access_for(conn, user, "agent", agent_id)
+                    if team_access:
+                        agent = repo.get_by_id(agent_id)
+                        ownership = "team"
             if not agent:
                 return {"status": "Not found"}, 404
-            data = _format_agent_output(agent)
+            data = _format_agent_output(
+                agent,
+                ownership=ownership,
+                team_access=team_access,
+                resolve_names=True,
+            )
             return make_response(jsonify(data), 200)
         except Exception as e:
             current_app.logger.error(f"Agent fetch error: {e}", exc_info=True)
@@ -327,16 +408,35 @@ class GetAgents(Resource):
                     if isinstance(user_doc.get("agent_preferences"), dict)
                     else []
                 )
-                agents = AgentsRepository(conn).list_for_user(user)
-            list_agents = [
-                _format_agent_output(
-                    agent, pinned=str(agent["id"]) in pinned_ids,
+                agents_repo = AgentsRepository(conn)
+                agents = agents_repo.list_for_user(user)
+                owned_ids = {str(a["id"]) for a in agents}
+                # Append agents shared with the caller's teams (dedup vs owned).
+                team_shared = visible_with_access(conn, user, "agent")
+                shared_ids = [aid for aid in team_shared if aid not in owned_ids]
+                shared_agents = agents_repo.list_by_ids(shared_ids)
+
+            def _is_runnable(agent: dict) -> bool:
+                return bool(
+                    agent.get("source_id")
+                    or (agent.get("extra_source_ids") or [])
+                    or agent.get("retriever")
+                    or agent.get("agent_type") == "workflow"
                 )
+
+            list_agents = [
+                _format_agent_output(agent, pinned=str(agent["id"]) in pinned_ids)
                 for agent in agents
-                if agent.get("source_id")
-                or (agent.get("extra_source_ids") or [])
-                or agent.get("retriever")
-                or agent.get("agent_type") == "workflow"
+                if _is_runnable(agent)
+            ]
+            list_agents += [
+                _format_agent_output(
+                    agent,
+                    ownership="team",
+                    team_access=team_shared.get(str(agent["id"])),
+                )
+                for agent in shared_agents
+                if _is_runnable(agent)
             ]
         except Exception as err:
             current_app.logger.error(f"Error retrieving agents: {err}", exc_info=True)
@@ -547,6 +647,27 @@ class CreateAgent(Resource):
                     if source_value and source_value != "default" and looks_like_uuid(source_value):
                         source_id_resolved = source_value
 
+                # Team-sharing write gate: you may reference sources/prompts you
+                # own or that a team has shared with you directly. (Transitive
+                # access through a shared agent is a separate run-time concept,
+                # intentionally not gated here.)
+                referenced_sources = (
+                    [source_id_resolved] if source_id_resolved else []
+                ) + extra_source_ids
+                for sid in referenced_sources:
+                    if not can_access(conn, "source", sid, user):
+                        return make_response(
+                            jsonify({"success": False, "message": "Source not accessible"}),
+                            403,
+                        )
+                prompt_ref = data.get("prompt_id")
+                if prompt_ref and prompt_ref != "default" and looks_like_uuid(prompt_ref):
+                    if not can_access(conn, "prompt", prompt_ref, user):
+                        return make_response(
+                            jsonify({"success": False, "message": "Prompt not accessible"}),
+                            403,
+                        )
+
                 build_data = dict(data)
                 build_data["folder_id"] = pg_folder_id
                 build_data["workflow_id"] = pg_workflow_id
@@ -674,14 +795,10 @@ class UpdateAgent(Resource):
                         try:
                             data[field] = json.loads(data[field])
                         except json.JSONDecodeError:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Invalid JSON format for field: {field}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                f"Invalid JSON format for field: {field}",
+                                user,
+                                field,
                             )
                 if data.get("json_schema") == "":
                     data["json_schema"] = None
@@ -696,7 +813,23 @@ class UpdateAgent(Resource):
         try:
             with db_session() as conn:
                 agents_repo = AgentsRepository(conn)
+                is_team_editor = False
                 existing_agent = agents_repo.get_any(agent_id, user)
+                if not existing_agent:
+                    # Team write path: only an 'editor' grant may modify a
+                    # team-shared agent; a 'viewer' is read-only. Fetch the
+                    # ownerless row only AFTER confirming editor access.
+                    access = team_access_for(conn, user, "agent", agent_id)
+                    if access == "editor":
+                        existing_agent = agents_repo.get_by_id(agent_id)
+                        is_team_editor = True
+                    elif access == "viewer":
+                        return make_response(
+                            jsonify(
+                                {"success": False, "message": "Read-only: editor access required"}
+                            ),
+                            403,
+                        )
                 if not existing_agent:
                     return make_response(
                         jsonify(
@@ -742,14 +875,10 @@ class UpdateAgent(Resource):
                     if field == "status":
                         new_status = data.get("status")
                         if new_status not in ["draft", "published"]:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Invalid status value. Must be 'draft' or 'published'",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Invalid status value. Must be 'draft' or 'published'",
+                                user,
+                                field,
                             )
                         update_fields["status"] = new_status
                     elif field == "source":
@@ -759,14 +888,8 @@ class UpdateAgent(Resource):
                         elif looks_like_uuid(source_id):
                             update_fields["source_id"] = source_id
                         else:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Invalid source ID format: {source_id}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                f"Invalid source ID format: {source_id}", user, field
                             )
                     elif field == "sources":
                         sources_list = data.get("sources", []) or []
@@ -780,14 +903,8 @@ class UpdateAgent(Resource):
                             if looks_like_uuid(src):
                                 valid.append(src)
                             else:
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": f"Invalid source ID in list: {src}",
-                                        }
-                                    ),
-                                    400,
+                                return _reject(
+                                    f"Invalid source ID in list: {src}", user, field
                                 )
                         update_fields["extra_source_ids"] = valid
                     elif field == "chunks":
@@ -798,33 +915,20 @@ class UpdateAgent(Resource):
                             try:
                                 chunks_int = int(chunks_value)
                                 if chunks_int < 0:
-                                    return make_response(
-                                        jsonify(
-                                            {
-                                                "success": False,
-                                                "message": "Chunks value must be a non-negative integer",
-                                            }
-                                        ),
-                                        400,
+                                    return _reject(
+                                        "Chunks value must be a non-negative integer",
+                                        user,
+                                        field,
                                     )
                                 update_fields["chunks"] = chunks_int
                             except (ValueError, TypeError):
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": f"Invalid chunks value: {chunks_value}",
-                                        }
-                                    ),
-                                    400,
+                                return _reject(
+                                    f"Invalid chunks value: {chunks_value}", user, field
                                 )
                     elif field == "tools":
                         tools_list = data.get("tools", [])
                         if not isinstance(tools_list, list):
-                            return make_response(
-                                jsonify({"success": False, "message": "Tools must be a list"}),
-                                400,
-                            )
+                            return _reject("Tools must be a list", user, field)
                         update_fields["tools"] = tools_list
                     elif field == "json_schema":
                         json_schema = data.get("json_schema")
@@ -834,10 +938,7 @@ class UpdateAgent(Resource):
                                     json_schema
                                 )
                             except JsonSchemaValidationError:
-                                return make_response(
-                                    jsonify({"success": False, "message": "Invalid JSON schema"}),
-                                    400,
-                                )
+                                return _reject("Invalid JSON schema", user, field)
                         else:
                             update_fields["json_schema"] = None
                     elif field == "limited_token_mode":
@@ -849,14 +950,10 @@ class UpdateAgent(Resource):
                         )
                         update_fields["limited_token_mode"] = bool_value
                         if bool_value and data.get("token_limit") is None:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Token limit must be provided when limited token mode is enabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Token limit must be provided when limited token mode is enabled",
+                                user,
+                                field,
                             )
                     elif field == "limited_request_mode":
                         raw_value = data.get("limited_request_mode", False)
@@ -867,40 +964,34 @@ class UpdateAgent(Resource):
                         )
                         update_fields["limited_request_mode"] = bool_value
                         if bool_value and data.get("request_limit") is None:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Request limit must be provided when limited request mode is enabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Request limit must be provided when limited request mode is enabled",
+                                user,
+                                field,
                             )
                     elif field == "token_limit":
                         token_limit = data.get("token_limit")
                         update_fields["token_limit"] = int(token_limit) if token_limit else 0
+                        # NOTE: unreachable from a multipart/form submit. ``data``
+                        # then comes from ``request.form.to_dict()``, so this is
+                        # the *string* "False" and ``not "False"`` is False. Left
+                        # as-is deliberately: tightening it here would start
+                        # rejecting form payloads that currently succeed.
                         if update_fields["token_limit"] > 0 and not data.get("limited_token_mode"):
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Token limit cannot be set when limited token mode is disabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Token limit cannot be set when limited token mode is disabled",
+                                user,
+                                field,
                             )
                     elif field == "request_limit":
                         request_limit = data.get("request_limit")
                         update_fields["request_limit"] = int(request_limit) if request_limit else 0
+                        # Same string-truthiness caveat as ``token_limit`` above.
                         if update_fields["request_limit"] > 0 and not data.get("limited_request_mode"):
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Request limit cannot be set when limited request mode is disabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Request limit cannot be set when limited request mode is disabled",
+                                user,
+                                field,
                             )
                     elif field == "folder_id":
                         folder_input = data.get("folder_id")
@@ -923,10 +1014,7 @@ class UpdateAgent(Resource):
                         normalized = normalize_workflow_reference(workflow_input)
                         if not normalized:
                             if workflow_required:
-                                return make_response(
-                                    jsonify({"success": False, "message": "Workflow is required"}),
-                                    400,
-                                )
+                                return _reject("Workflow is required", user, field)
                             update_fields["workflow_id"] = None
                         else:
                             pg_workflow_id, wf_err = _resolve_workflow_for_user(
@@ -942,12 +1030,7 @@ class UpdateAgent(Resource):
                         elif looks_like_uuid(value):
                             update_fields["prompt_id"] = value
                         else:
-                            return make_response(
-                                jsonify(
-                                    {"success": False, "message": f"Invalid prompt_id: {value}"}
-                                ),
-                                400,
-                            )
+                            return _reject(f"Invalid prompt_id: {value}", user, field)
                     elif field == "allow_system_prompt_override":
                         raw_value = data.get("allow_system_prompt_override", False)
                         update_fields["allow_system_prompt_override"] = (
@@ -959,28 +1042,14 @@ class UpdateAgent(Resource):
                         value = data[field]
                         if field in ["name", "description", "agent_type"]:
                             if not value or not str(value).strip():
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": f"Field '{field}' cannot be empty",
-                                        }
-                                    ),
-                                    400,
+                                return _reject(
+                                    f"Field '{field}' cannot be empty", user, field
                                 )
                         update_fields[field] = value
                 if image_url:
                     update_fields["image"] = image_url
                 if not update_fields:
-                    return make_response(
-                        jsonify(
-                            {
-                                "success": False,
-                                "message": "No valid update data provided",
-                            }
-                        ),
-                        400,
-                    )
+                    return _reject("No valid update data provided", user)
 
                 newly_generated_key = None
                 final_status = update_fields.get("status", existing_agent.get("status"))
@@ -999,22 +1068,23 @@ class UpdateAgent(Resource):
                         if not workflow_final:
                             missing_published_fields.append("Workflow")
                         if missing_published_fields:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Cannot publish workflow agent. Missing required fields: {', '.join(missing_published_fields)}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Cannot publish workflow agent. Missing required "
+                                f"fields: {', '.join(missing_published_fields)}",
+                                user,
+                                ",".join(missing_published_fields),
                             )
                     else:
+                        # ``prompt_id`` is intentionally omitted: the
+                        # frontend's "default" choice maps to NULL here
+                        # (see the prompt_id branch above), and NULL
+                        # means "use the built-in default prompt" which
+                        # is a valid published-agent state.
                         missing_published_fields = []
                         for req_field, field_label in (
                             ("name", "Agent name"),
                             ("description", "Agent description"),
                             ("chunks", "Chunks count"),
-                            ("prompt_id", "Prompt"),
                             ("agent_type", "Agent type"),
                         ):
                             final_value = update_fields.get(
@@ -1028,24 +1098,128 @@ class UpdateAgent(Resource):
                         extra_final = update_fields.get(
                             "extra_source_ids", existing_agent.get("extra_source_ids") or [],
                         )
-                        if not source_final and not extra_final:
-                            missing_published_fields.append("Source")
+                        # ``retriever`` carries the runtime identity for
+                        # agents that publish against the synthetic
+                        # "Default" source (frontend's auto-selected
+                        # ``{name: "Default", retriever: "classic"}``
+                        # entry has no ``id``, so ``source_id`` ends up
+                        # NULL even though the user picked something).
+                        # Without this fallback the most common new-agent
+                        # publish flow gets a 400.
+                        retriever_final = update_fields.get(
+                            "retriever", existing_agent.get("retriever"),
+                        )
+                        if (
+                            not source_final
+                            and not extra_final
+                            and not retriever_final
+                        ):
+                            missing_published_fields.append("Source or retriever")
                         if missing_published_fields:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Cannot publish agent. Missing or invalid required fields: {', '.join(missing_published_fields)}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Cannot publish agent. Missing or invalid required "
+                                f"fields: {', '.join(missing_published_fields)}",
+                                user,
+                                ",".join(missing_published_fields),
                             )
                     if not existing_agent.get("key"):
                         newly_generated_key = str(uuid.uuid4())
                         update_fields["key"] = newly_generated_key
 
-                # Apply update.
-                updated = agents_repo.update(pg_agent_id, user, update_fields)
+                # Re-validate referenced sources/prompt on write — a team editor
+                # must not ATTACH a source/prompt they can't access. References
+                # already on the agent (set by the owner) are exempt: an editor
+                # may keep them even when they aren't independently shared, so a
+                # plain save of an owner-configured agent isn't rejected — only
+                # NEWLY added refs need a grant. Owners pass can_access for their
+                # own resources regardless, so this carve-out is a no-op for them
+                # and the gate stays effective against an editor adding new refs.
+                # Mirrors the unchanged-tool carve-out below.
+                existing_source_refs = {
+                    str(s)
+                    for s in (
+                        [existing_agent.get("source_id")]
+                        + list(existing_agent.get("extra_source_ids") or [])
+                    )
+                    if s
+                }
+                referenced_sources = (
+                    ([update_fields["source_id"]] if update_fields.get("source_id") else [])
+                    + (update_fields.get("extra_source_ids") or [])
+                )
+                for sid in referenced_sources:
+                    if str(sid) in existing_source_refs:
+                        continue
+                    if not can_access(conn, "source", sid, user):
+                        return make_response(
+                            jsonify({"success": False, "message": "Source not accessible"}), 403
+                        )
+                new_prompt_id = update_fields.get("prompt_id")
+                if (
+                    new_prompt_id
+                    and str(new_prompt_id) != str(existing_agent.get("prompt_id") or "")
+                    and not can_access(conn, "prompt", new_prompt_id, user)
+                ):
+                    return make_response(
+                        jsonify({"success": False, "message": "Prompt not accessible"}), 403
+                    )
+                # A team editor must not attach tools they can't access onto a
+                # shared agent: at run time the agent-key path resolves+decrypts
+                # tools as the OWNER, so an unchecked tool here would let an
+                # editor invoke arbitrary owner credentials. Owners are
+                # unrestricted (they own their tools). Default/builtin synthetic
+                # tool ids belong to no one and are always allowed.
+                if is_team_editor and "tools" in update_fields:
+                    from application.agents.default_tools import is_synthesized_tool_id
+
+                    existing_tools = {
+                        str(t) for t in (existing_agent.get("tools") or [])
+                    }
+                    for tid in update_fields["tools"] or []:
+                        tid_s = str(tid)
+                        if tid_s in existing_tools or is_synthesized_tool_id(tid_s):
+                            continue
+                        if not can_access(conn, "tool", tid_s, user):
+                            return make_response(
+                                jsonify(
+                                    {"success": False, "message": "Tool not accessible"}
+                                ),
+                                403,
+                            )
+
+                # Per-agent quota lives on the row and is pooled across all
+                # members; only the owner may resize that shared pool, so a
+                # team editor's quota changes are dropped.
+                if is_team_editor:
+                    for _q in (
+                        "token_limit", "request_limit",
+                        "limited_token_mode", "limited_request_mode",
+                    ):
+                        update_fields.pop(_q, None)
+
+                # Apply update. Owner writes use the dual-key guard; team-editor
+                # writes go by-id (already authorized) with an optimistic-lock
+                # check when the client supplies the row's expected updated_at.
+                if is_team_editor:
+                    result = agents_repo.update_by_id(
+                        pg_agent_id,
+                        update_fields,
+                        expected_updated_at=data.get("expected_updated_at"),
+                    )
+                    if result is None:
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "Agent was modified by someone else",
+                                    "code": "stale_write",
+                                }
+                            ),
+                            409,
+                        )
+                    updated = bool(result)
+                else:
+                    updated = agents_repo.update(pg_agent_id, user, update_fields)
                 if not updated:
                     return make_response(
                         jsonify(
@@ -1073,6 +1247,106 @@ class UpdateAgent(Resource):
         if newly_generated_key:
             response_data["key"] = newly_generated_key
         return make_response(jsonify(response_data), 200)
+
+
+@agents_ns.route("/regenerate_agent_key/<string:agent_id>")
+class RegenerateAgentKey(Resource):
+    @api.doc(
+        params={"agent_id": "ID of the agent"},
+        description=(
+            "Rotate an agent's API key. The previous key is invalidated "
+            "immediately and a fresh key is returned once. Historical logging "
+            "and usage records are re-pointed to the new key so analytics stay "
+            "intact. Owner only."
+        ),
+    )
+    def post(self, agent_id):
+        if not (decoded_token := request.decoded_token):
+            return make_response(
+                jsonify({"success": False, "message": "Unauthorized"}), 401
+            )
+        user = decoded_token.get("sub")
+
+        try:
+            with db_session() as conn:
+                agents_repo = AgentsRepository(conn)
+                # Owner-only: rotating a credential is destructive to live
+                # integrations, so this is intentionally stricter than
+                # update_agent (which also allows team editors).
+                existing_agent = agents_repo.get_any(agent_id, user)
+                if not existing_agent:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Agent not found or not authorized",
+                            }
+                        ),
+                        404,
+                    )
+
+                pg_agent_id = str(existing_agent["id"])
+                old_key = existing_agent.get("key")
+                if not old_key:
+                    # Draft agents have no key; the first key is minted on
+                    # publish. Nothing to rotate.
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Publish the agent before resetting its key",
+                            }
+                        ),
+                        400,
+                    )
+
+                new_key = str(uuid.uuid4())
+                updated = agents_repo.update(pg_agent_id, user, {"key": new_key})
+                if not updated:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Failed to regenerate key",
+                            }
+                        ),
+                        500,
+                    )
+
+                # Re-point every api_key reference to the new key so rotation
+                # doesn't break history or live links. token_usage/stack_logs
+                # (0026) carry agent_id, but rows can still be api_key-only:
+                # conversations set api_key without an agent_id unless the caller
+                # passes one, stack_logs rows may have a NULL agent_id, and the
+                # 24h rate-limit window is keyed by api_key only (token_usage).
+                # shared_conversations is functional, not just analytics: the
+                # public share endpoint hands its stored api_key to the widget,
+                # so a stale key would break promptable shared links.
+                # All rewrites run in the same transaction as the key swap.
+                StackLogsRepository(conn).reassign_api_key(
+                    old_key=old_key, new_key=new_key
+                )
+                TokenUsageRepository(conn).reassign_api_key(
+                    old_key=old_key, new_key=new_key
+                )
+                ConversationsRepository(conn).reassign_api_key(
+                    old_key=old_key, new_key=new_key
+                )
+                SharedConversationsRepository(conn).reassign_api_key(
+                    old_key=old_key, new_key=new_key
+                )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error regenerating agent key: {err}", exc_info=True
+            )
+            return make_response(
+                jsonify(
+                    {"success": False, "message": "Error regenerating agent key"}
+                ),
+                500,
+            )
+
+        return make_response(jsonify({"success": True, "key": new_key}), 200)
 
 
 @agents_ns.route("/delete_agent")
@@ -1276,6 +1550,10 @@ class AdoptAgent(Resource):
 
                 now = datetime.datetime.now(datetime.timezone.utc)
                 new_key = str(uuid.uuid4())
+                # Copy content columns only. Identity / idempotency columns
+                # (key, slug, shared_token, incoming_webhook_token) are
+                # deliberately NOT copied — the adopted agent is a fresh copy
+                # and must get its own values (slug stays NULL until exported).
                 create_kwargs: dict = {}
                 for col in (
                     "description", "agent_type", "image", "retriever",

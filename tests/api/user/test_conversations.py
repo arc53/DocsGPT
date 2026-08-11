@@ -419,6 +419,148 @@ class TestGetSingleConversationHappy:
         assert response.status_code == 400
 
 
+@pytest.mark.unit
+class TestGetMessageTail:
+    """Tail-poll endpoint (``GET /api/messages/<id>/tail``) used by the
+    frontend to recover a placeholder/streaming row after a refresh.
+    """
+
+    def _seed_in_flight_message(self, pg_conn, owner_user_id):
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        conv_id = _seed_conversation(pg_conn, owner_user_id, name="streaming chat")
+        repo = ConversationsRepository(pg_conn)
+        msg = repo.reserve_message(
+            conv_id,
+            prompt="what's happening?",
+            placeholder_response=(
+                "Response was terminated prior to completion, try regenerating."
+            ),
+            request_id=str(uuid.uuid4()),
+            status="streaming",
+        )
+        return conv_id, str(msg["id"])
+
+    def test_owner_can_tail(self, app, pg_conn):
+        from application.api.user.conversations.routes import GetMessageTail
+
+        owner = "user-owner"
+        _, msg_id = self._seed_in_flight_message(pg_conn, owner)
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/messages/{msg_id}/tail"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": owner}
+            response = GetMessageTail().get(msg_id)
+
+        assert response.status_code == 200
+        assert response.json["status"] == "streaming"
+        assert response.json["message_id"] == msg_id
+
+    def test_shared_user_can_tail(self, app, pg_conn):
+        """A user in ``conversations.shared_with`` must be able to tail
+        an in-flight placeholder. Without the shared-with predicate
+        here, ``get_single_conversation`` lets them load the row but
+        the tail-poll silently 404s and the in-flight bubble never
+        resolves on the shared user's side.
+        """
+        from application.api.user.conversations.routes import GetMessageTail
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        owner = "user-owner-shared"
+        shared_user = "user-shared"
+        conv_id, msg_id = self._seed_in_flight_message(pg_conn, owner)
+        ConversationsRepository(pg_conn).add_shared_user(conv_id, shared_user)
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/messages/{msg_id}/tail"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": shared_user}
+            response = GetMessageTail().get(msg_id)
+
+        assert response.status_code == 200
+        assert response.json["message_id"] == msg_id
+
+    def test_non_member_gets_404(self, app, pg_conn):
+        from application.api.user.conversations.routes import GetMessageTail
+
+        owner = "user-owner-private"
+        intruder = "user-intruder"
+        _, msg_id = self._seed_in_flight_message(pg_conn, owner)
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/messages/{msg_id}/tail"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": intruder}
+            response = GetMessageTail().get(msg_id)
+
+        assert response.status_code == 404
+
+    def test_streaming_row_returns_partial_from_journal(self, app, pg_conn):
+        """Mid-stream rows must rebuild from message_events, not return the placeholder."""
+        from application.api.user.conversations.routes import GetMessageTail
+        from application.storage.db.repositories.message_events import (
+            MessageEventsRepository,
+        )
+
+        owner = "user-tail-partial"
+        _, msg_id = self._seed_in_flight_message(pg_conn, owner)
+        events_repo = MessageEventsRepository(pg_conn)
+        events_repo.record(msg_id, 0, "message_id", {"type": "message_id"})
+        events_repo.record(msg_id, 1, "answer", {"type": "answer", "answer": "Hello"})
+        events_repo.record(msg_id, 2, "answer", {"type": "answer", "answer": ", world"})
+        events_repo.record(
+            msg_id, 3, "source", {"type": "source", "source": [{"id": "s1"}]}
+        )
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/messages/{msg_id}/tail"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": owner}
+            response = GetMessageTail().get(msg_id)
+
+        assert response.status_code == 200
+        assert response.json["status"] == "streaming"
+        assert response.json["response"] == "Hello, world"
+        assert response.json["sources"] == [{"id": "s1"}]
+        assert "terminated prior to completion" not in (
+            response.json["response"] or ""
+        )
+
+    def test_streaming_row_with_empty_journal_returns_empty_response(
+        self, app, pg_conn
+    ):
+        """Empty journal returns empty response, not the placeholder."""
+        from application.api.user.conversations.routes import GetMessageTail
+
+        owner = "user-tail-empty"
+        _, msg_id = self._seed_in_flight_message(pg_conn, owner)
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/messages/{msg_id}/tail"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": owner}
+            response = GetMessageTail().get(msg_id)
+
+        assert response.status_code == 200
+        assert response.json["status"] == "streaming"
+        assert response.json["response"] == ""
+
+
 class TestUpdateConversationNameHappy:
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.conversations.routes import (

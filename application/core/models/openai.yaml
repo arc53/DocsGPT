@@ -10,6 +10,8 @@ models:
     display_name: GPT-5.5
     description: Flagship frontier model for complex reasoning, coding, and agentic work with a 1M-token context window
     context_window: 1050000
+    api_flavor: responses
+    reasoning_effort: medium
   - id: gpt-5.4-mini
     display_name: GPT-5.4 Mini
     description: Cost-efficient GPT-5.4-class model for high-volume coding, computer use, and subagent workloads

@@ -1,4 +1,4 @@
-import { useEffect, RefObject, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, RefObject } from 'react';
 
 export function useOutsideAlerter<T extends HTMLElement>(
   ref: RefObject<T | null>,
@@ -65,6 +65,36 @@ export function useMediaQuery() {
   return { isMobile, isTablet, isDesktop };
 }
 
+/**
+ * Reveals ``text`` gradually while ``enabled``, catching up faster the further
+ * the display falls behind (lag stays bounded at roughly half a second).
+ * When ``enabled`` is false the full text is returned immediately.
+ */
+export function usePacedText(text: string, enabled: boolean): string {
+  const textRef = useRef(text);
+  textRef.current = text;
+  const [visibleLength, setVisibleLength] = useState(() =>
+    enabled ? 0 : text.length,
+  );
+
+  useEffect(() => {
+    if (!enabled) {
+      setVisibleLength(textRef.current.length);
+      return;
+    }
+    const id = window.setInterval(() => {
+      setVisibleLength((len) => {
+        const backlog = textRef.current.length - len;
+        if (backlog <= 0) return len;
+        return len + Math.max(2, Math.ceil(backlog * 0.08));
+      });
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [enabled]);
+
+  return enabled ? text.slice(0, Math.min(visibleLength, text.length)) : text;
+}
+
 export function useDarkTheme() {
   const getSystemThemePreference = () => {
     return (
@@ -98,11 +128,18 @@ export function useDarkTheme() {
 
   useEffect(() => {
     localStorage.setItem('selectedTheme', isDarkTheme ? 'Dark' : 'Light');
-    if (isDarkTheme) {
-      document.body?.classList.add('dark');
-    } else {
-      document.body?.classList.remove('dark');
-    }
+    const action = isDarkTheme ? 'add' : 'remove';
+    document.body?.classList[action]('dark');
+    document.documentElement.classList[action]('dark');
+
+    const color = isDarkTheme ? '#161616' : '#fbfbfb';
+    document.head
+      .querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
+      .forEach((m) => {
+        m.removeAttribute('media');
+        m.setAttribute('content', color);
+      });
+
     setComponentMounted(true);
   }, [isDarkTheme]);
 
@@ -111,6 +148,51 @@ export function useDarkTheme() {
   };
 
   return [isDarkTheme, toggleTheme, componentMounted] as const;
+}
+
+export function useDebouncedValue<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState<T>(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debounced;
+}
+
+export function useDebouncedCallback<A extends unknown[]>(
+  callback: (...args: A) => void,
+  delay = 300,
+): ((...args: A) => void) & { cancel: () => void } {
+  const callbackRef = useRef(callback);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
+  const cancel = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => cancel, [cancel]);
+
+  const debounced = useCallback(
+    (...args: A) => {
+      cancel();
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        callbackRef.current(...args);
+      }, delay);
+    },
+    [delay, cancel],
+  );
+
+  return Object.assign(debounced, { cancel });
 }
 
 export function useLoaderState(

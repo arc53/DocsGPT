@@ -5,13 +5,27 @@ import { useSelector } from 'react-redux';
 
 import customModelsService from '../api/services/customModelsService';
 import Spinner from '../components/Spinner';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import WrapperComponent from './WrapperModal';
+import { Modal } from '../components/ui/modal';
 
-import type { CreateCustomModelPayload, CustomModel } from '../models/types';
+import type {
+  CreateCustomModelPayload,
+  CustomModel,
+  CustomModelCapabilities,
+  ModelApiFlavor,
+  ReasoningEffort,
+} from '../models/types';
 
 interface CustomModelModalProps {
   modalState: ActiveState;
@@ -30,6 +44,8 @@ interface FormState {
   supports_structured_output: boolean;
   supports_images: boolean;
   context_window: number | '';
+  api_flavor: ModelApiFlavor;
+  reasoning_effort: ReasoningEffort | 'default';
   enabled: boolean;
 }
 
@@ -49,6 +65,8 @@ const buildInitialFormState = (model?: CustomModel | null): FormState => {
       supports_structured_output: true,
       supports_images: false,
       context_window: DEFAULT_CONTEXT_WINDOW,
+      api_flavor: 'chat_completions',
+      reasoning_effort: 'default',
       enabled: true,
     };
   }
@@ -67,6 +85,8 @@ const buildInitialFormState = (model?: CustomModel | null): FormState => {
     supports_images: attachments.includes('image'),
     context_window:
       model.capabilities?.context_window ?? DEFAULT_CONTEXT_WINDOW,
+    api_flavor: model.capabilities?.api_flavor ?? 'chat_completions',
+    reasoning_effort: model.capabilities?.reasoning_effort ?? 'default',
     enabled: model.enabled ?? true,
   };
 };
@@ -171,17 +191,22 @@ export default function CustomModelModal({
       formData.context_window === ''
         ? DEFAULT_CONTEXT_WINDOW
         : Number(formData.context_window);
+    const capabilities: CustomModelCapabilities = {
+      supports_tools: formData.supports_tools,
+      supports_structured_output: formData.supports_structured_output,
+      attachments: formData.supports_images ? ['image'] : [],
+      context_window: ctxValue,
+      api_flavor: formData.api_flavor,
+    };
+    if (formData.reasoning_effort !== 'default') {
+      capabilities.reasoning_effort = formData.reasoning_effort;
+    }
     const payload: CreateCustomModelPayload = {
       upstream_model_id: formData.upstream_model_id.trim(),
       display_name: formData.display_name.trim(),
       description: formData.description.trim(),
       base_url: formData.base_url.trim(),
-      capabilities: {
-        supports_tools: formData.supports_tools,
-        supports_structured_output: formData.supports_structured_output,
-        attachments: formData.supports_images ? ['image'] : [],
-        context_window: ctxValue,
-      },
+      capabilities,
       enabled: formData.enabled,
     };
     if (formData.api_key.trim()) {
@@ -245,18 +270,23 @@ export default function CustomModelModal({
     setTesting(true);
     setTestResult(null);
     try {
+      const capabilities = {
+        api_flavor: formData.api_flavor,
+      };
       const result =
         isEditMode && model?.id
           ? await customModelsService.testCustomModel(model.id, token, {
               base_url: trimmedBaseUrl,
               api_key: trimmedApiKey,
               upstream_model_id: trimmedUpstreamId,
+              capabilities,
             })
           : await customModelsService.testCustomModelPayload(
               {
                 base_url: trimmedBaseUrl,
                 api_key: trimmedApiKey,
                 upstream_model_id: trimmedUpstreamId,
+                capabilities,
               },
               token,
             );
@@ -285,12 +315,18 @@ export default function CustomModelModal({
     }
   };
 
-  if (modalState !== 'ACTIVE') return null;
-
   return (
-    <WrapperComponent
-      close={closeModal}
-      isPerformingTask={saving}
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => !o && closeModal()}
+      hideTitle
+      title={
+        isEditMode
+          ? t('settings.customModels.editTitle')
+          : t('settings.customModels.addTitle')
+      }
+      size="lg"
+      mobileVariant="sheet"
       className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
     >
       <div className="flex h-full flex-col">
@@ -365,6 +401,10 @@ export default function CustomModelModal({
                 <Input
                   id="cm-base-url"
                   type="url"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={formData.base_url}
                   onChange={(e) => handleChange('base_url', e.target.value)}
                   placeholder={t('settings.customModels.placeholders.baseUrl')}
@@ -390,8 +430,11 @@ export default function CustomModelModal({
                 </Label>
                 <Input
                   id="cm-api-key"
-                  type="password"
-                  autoComplete="new-password"
+                  type="text"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={formData.api_key}
                   onChange={(e) => handleChange('api_key', e.target.value)}
                   placeholder={
@@ -433,6 +476,80 @@ export default function CustomModelModal({
             {/* Row 4: Capabilities — flat (no border), chips + inline ctx */}
             <div className="flex flex-col gap-2">
               <Label>{t('settings.customModels.capabilities.title')}</Label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label
+                    htmlFor="cm-api-flavor"
+                    className="text-muted-foreground text-xs"
+                  >
+                    {t('settings.customModels.capabilities.apiFlavor')}
+                  </Label>
+                  <Select
+                    value={formData.api_flavor}
+                    onValueChange={(value) =>
+                      handleChange('api_flavor', value as ModelApiFlavor)
+                    }
+                  >
+                    <SelectTrigger id="cm-api-flavor" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="chat_completions">
+                        {t(
+                          'settings.customModels.capabilities.apiFlavors.chatCompletions',
+                        )}
+                      </SelectItem>
+                      <SelectItem value="responses">
+                        {t(
+                          'settings.customModels.capabilities.apiFlavors.responses',
+                        )}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label
+                    htmlFor="cm-reasoning-effort"
+                    className="text-muted-foreground text-xs"
+                  >
+                    {t('settings.customModels.capabilities.reasoningEffort')}
+                  </Label>
+                  <Select
+                    value={formData.reasoning_effort}
+                    onValueChange={(value) =>
+                      handleChange(
+                        'reasoning_effort',
+                        value as ReasoningEffort | 'default',
+                      )
+                    }
+                  >
+                    <SelectTrigger id="cm-reasoning-effort" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">
+                        {t(
+                          'settings.customModels.capabilities.reasoningEfforts.default',
+                        )}
+                      </SelectItem>
+                      {(
+                        [
+                          'none',
+                          'minimal',
+                          'low',
+                          'medium',
+                          'high',
+                          'xhigh',
+                        ] as ReasoningEffort[]
+                      ).map((effort) => (
+                        <SelectItem key={effort} value={effort}>
+                          {effort}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <CapabilityChip
                   label={t('settings.customModels.capabilities.chips.tools')}
@@ -519,12 +636,13 @@ export default function CustomModelModal({
 
         <div className="px-2 py-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={handleTest}
               disabled={!canTest || testing || saving}
               title={testDisabledHint}
-              className="border-border dark:border-border dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full rounded-3xl border px-6 py-2 text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              className="w-full rounded-3xl px-6 disabled:cursor-not-allowed sm:w-auto"
             >
               {testing ? (
                 <div className="flex items-center justify-center">
@@ -536,21 +654,22 @@ export default function CustomModelModal({
               ) : (
                 t('settings.customModels.testConnection')
               )}
-            </button>
+            </Button>
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-3">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={closeModal}
                 disabled={saving}
-                className="dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full cursor-pointer rounded-3xl px-6 py-2 text-sm font-medium disabled:opacity-50 sm:w-auto"
+                className="w-full rounded-3xl px-6 sm:w-auto"
               >
                 {t('cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-primary hover:bg-primary/90 w-full rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 sm:w-auto"
+                className="w-full rounded-3xl px-6 sm:w-auto"
               >
                 {saving ? (
                   <div className="flex items-center justify-center">
@@ -562,12 +681,12 @@ export default function CustomModelModal({
                 ) : (
                   t('settings.customModels.save')
                 )}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       </div>
-    </WrapperComponent>
+    </Modal>
   );
 }
 
@@ -579,19 +698,20 @@ interface CapabilityChipProps {
 
 function CapabilityChip({ label, active, onClick }: CapabilityChipProps) {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       role="switch"
       aria-checked={active}
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+      className={`h-auto rounded-full border px-3 py-1.5 shadow-none ${
         active
-          ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/10 dark:text-emerald-300'
-          : 'border-border text-muted-foreground hover:bg-accent dark:hover:bg-muted/40'
+          ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/10 dark:text-emerald-300 dark:hover:bg-emerald-400/10 dark:hover:text-emerald-300'
+          : 'text-muted-foreground'
       }`}
     >
       {active && <Check size={14} strokeWidth={2.5} />}
       {label}
-    </button>
+    </Button>
   );
 }

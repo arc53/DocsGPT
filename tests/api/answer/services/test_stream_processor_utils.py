@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 import pytest
 
+import application.api.answer.services.stream_processor as sp_mod
+
 
 @contextmanager
 def _patch_db(conn):
@@ -350,6 +352,23 @@ class TestGetAgentKey:
         with _patch_db(pg_conn), pytest.raises(Exception):
             sp._get_agent_key(str(agent["id"]), "not-owner")
 
+def _stub_db_readonly(monkeypatch, sp_mod):
+    """``_load_request_sources`` opens a connection to run the access check.
+
+    Patch the name bound in ``stream_processor`` — it is imported at module
+    load, so rebinding the source module has no effect. Without this these
+    pass only where a database happens to be reachable.
+    """
+    import contextlib
+    from unittest.mock import MagicMock
+
+    @contextlib.contextmanager
+    def _conn():
+        yield MagicMock()
+
+    monkeypatch.setattr(sp_mod, "db_readonly", _conn)
+
+
 
 class TestConfigureSource:
     def test_agent_data_with_sources_list(self):
@@ -384,13 +403,50 @@ class TestConfigureSource:
         sp._configure_source()
         assert sp.source == {}
 
-    def test_request_active_docs_used(self):
-        from application.api.answer.services.stream_processor import (
-            StreamProcessor,
-        )
+    def test_request_active_docs_used(self, monkeypatch):
+        StreamProcessor = sp_mod.StreamProcessor
+
+        _stub_db_readonly(monkeypatch, sp_mod)
+        monkeypatch.setattr(sp_mod, "can_access", lambda *a, **k: True)
         sp = StreamProcessor({"active_docs": "abc"}, {"sub": "u"})
         sp._configure_source()
         assert sp.source == {"active_docs": "abc"}
+
+    def test_request_active_docs_the_caller_cannot_read_is_dropped(self, monkeypatch):
+        """``active_docs`` is client input; the retriever has no owner predicate.
+
+        An unchecked id read another tenant's documents straight into the
+        answer, while /api/sources/<id>/search correctly refused the same id.
+        """
+        StreamProcessor = sp_mod.StreamProcessor
+
+        monkeypatch.setattr(sp_mod, "can_access", lambda *a, **k: False)
+        sp = StreamProcessor({"active_docs": "someone-elses-id"}, {"sub": "u"})
+        sp._configure_source()
+        assert sp.source == {}
+        assert sp.all_sources == []
+
+    def test_mixed_access_keeps_only_the_readable_ids(self, monkeypatch):
+        StreamProcessor = sp_mod.StreamProcessor
+
+        _stub_db_readonly(monkeypatch, sp_mod)
+        monkeypatch.setattr(
+            sp_mod, "can_access", lambda conn, kind, sid, user: sid == "mine"
+        )
+        sp = StreamProcessor({"active_docs": ["mine", "theirs"]}, {"sub": "u"})
+        sp._configure_source()
+        assert sp.source == {"active_docs": ["mine"]}
+
+    def test_access_check_failure_fails_closed(self, monkeypatch):
+        StreamProcessor = sp_mod.StreamProcessor
+
+        def _boom(*a, **k):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(sp_mod, "can_access", _boom)
+        sp = StreamProcessor({"active_docs": "abc"}, {"sub": "u"})
+        sp._configure_source()
+        assert sp.source == {}
 
     def test_request_active_docs_default(self):
         from application.api.answer.services.stream_processor import (
@@ -429,7 +485,7 @@ class TestConfigureRetriever:
         assert sp.retriever_config["retriever_name"] == "hybrid_search"
         assert sp.retriever_config["chunks"] == 5
 
-    def test_request_overrides_agent(self):
+    def test_agent_wins_over_request_on_agent_bound(self):
         from application.api.answer.services.stream_processor import (
             StreamProcessor,
         )
@@ -438,8 +494,32 @@ class TestConfigureRetriever:
         )
         sp._agent_data = {"retriever": "hybrid_search", "chunks": 5}
         sp._configure_retriever()
+        assert sp.retriever_config["retriever_name"] == "hybrid_search"
+        assert sp.retriever_config["chunks"] == 5
+
+    def test_body_wins_on_agentless(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor(
+            {"retriever": "duckdb", "chunks": 7}, {"sub": "u"},
+        )
+        sp._configure_retriever()
         assert sp.retriever_config["retriever_name"] == "duckdb"
         assert sp.retriever_config["chunks"] == 7
+
+    def test_agent_bound_drops_body_chunks_and_retriever(self):
+        # Missing agent values fall back to system defaults, not body's.
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor(
+            {"retriever": "duckdb", "chunks": 7}, {"sub": "u"},
+        )
+        sp._agent_data = {}
+        sp._configure_retriever()
+        assert sp.retriever_config["retriever_name"] == "classic"
+        assert sp.retriever_config["chunks"] == 2
 
     def test_invalid_agent_chunks_falls_back(self):
         from application.api.answer.services.stream_processor import (
@@ -485,7 +565,31 @@ class TestGetPromptContent:
 
         with _patch_db(pg_conn):
             content = sp._get_prompt_content()
-        assert content == "My prompt content"
+        # A plain-text custom prompt is staged as a persona value inside the
+        # composed skeleton so it keeps Boundaries/platform/memory rather than
+        # replacing them wholesale.
+        assert sp._persona == "My prompt content"
+        assert "## Boundaries" in content
+        assert "{{ system.persona }}" in content
+
+    def test_templated_custom_prompt_is_left_alone(self, pg_conn):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        from application.storage.db.repositories.prompts import (
+            PromptsRepository,
+        )
+
+        prompt = PromptsRepository(pg_conn).create(
+            "u", "p2", "Answer as of {{ system.date }}.",
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": str(prompt["id"])}
+
+        with _patch_db(pg_conn):
+            content = sp._get_prompt_content()
+        assert content == "Answer as of {{ system.date }}."
+        assert sp._persona is None
 
     def test_returns_none_on_missing(self, pg_conn):
         from application.api.answer.services.stream_processor import (
@@ -508,6 +612,61 @@ class TestGetPromptContent:
         sp._prompt_content = "cached"
         # Even with no agent_config, cached value returned
         assert sp._get_prompt_content() == "cached"
+
+    def test_agentic_agent_gets_agentic_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": "default", "agent_type": "agentic"}
+        content = sp._get_prompt_content()
+        assert "`search` tool" in content
+        assert "source.summaries" not in content
+
+    def test_research_agent_gets_agentic_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": "strict", "agent_type": "research"}
+        content = sp._get_prompt_content()
+        assert "`search` tool" in content
+
+    def test_classic_agent_gets_classic_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": "default", "agent_type": "classic"}
+        content = sp._get_prompt_content()
+        # Classic presets ground on documents supplied with the question;
+        # agentic ones instruct the model to call the search tool.
+        assert "documents are provided with the question" in content
+
+    def test_null_prompt_id_agentic_agent_gets_agentic_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        # PG ``agents.prompt_id`` is NULL for agents that never chose a
+        # prompt — the agentic swap must still apply.
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": None, "agent_type": "agentic"}
+        content = sp._get_prompt_content()
+        assert content is not None
+        assert "`search` tool" in content
+        assert "source.summaries" not in content
+
+    def test_null_prompt_id_classic_agent_gets_default_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": None}
+        content = sp._get_prompt_content()
+        assert content is not None
+        # Classic presets ground on documents supplied with the question;
+        # agentic ones instruct the model to call the search tool.
+        assert "documents are provided with the question" in content
 
 
 class TestPreFetchDocs:
@@ -569,14 +728,424 @@ class TestPreFetchTools:
             got = sp.pre_fetch_tools()
         assert got is None
 
-    def test_no_user_tools_returns_none(self, pg_conn):
+    def test_no_template_skips_default_tool_prefetch(self, pg_conn):
         from application.api.answer.services.stream_processor import (
             StreamProcessor,
         )
+
         sp = StreamProcessor({}, {"sub": "no-tools-user"})
+        sp._prompt_content = "No template syntax here"
         with _patch_db(pg_conn), patch(
             "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             True,
         ):
             got = sp.pre_fetch_tools()
         assert got is None
+
+    def test_unresolvable_prompt_prefetches_only_explicit_rows(self, pg_conn):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        UserToolsRepository(pg_conn).create(
+            user_id="u-explicit-prefetch", name="read_webpage", status=True
+        )
+        sp = StreamProcessor({}, {"sub": "u-explicit-prefetch"})
+        # A broken custom prompt id disables action filtering; explicit
+        # rows still prefetch, defaults stay skipped.
+        sp.agent_config = {
+            "prompt_id": "00000000-0000-0000-0000-000000000000"
+        }
+        fetched = []
+
+        def _fake_fetch(tool_doc, required_actions):
+            fetched.append(tool_doc)
+            return {"ok": True}
+
+        with _patch_db(pg_conn), patch(
+            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            True,
+        ), patch.object(sp, "_fetch_tool_data", _fake_fetch):
+            got = sp.pre_fetch_tools()
+        assert got is not None
+        assert "read_webpage" in got
+        assert all(not d.get("default") for d in fetched)
+        assert any(d.get("name") == "read_webpage" for d in fetched)
+
+    def test_default_tool_prefetched_when_template_references_it(
+        self, pg_conn
+    ):
+        from application.agents.default_tools import default_tool_id
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        sp = StreamProcessor({}, {"sub": "u-tpl-default"})
+        sp._required_tool_actions = {"read_webpage": {None}}
+        fetched = []
+
+        def _fake_fetch(tool_doc, required_actions):
+            fetched.append(tool_doc)
+            return {"ok": True}
+
+        with _patch_db(pg_conn), patch(
+            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            True,
+        ), patch.object(sp, "_fetch_tool_data", _fake_fetch):
+            got = sp.pre_fetch_tools()
+        assert got is not None
+        assert any(
+            d.get("name") == "read_webpage" and d.get("default")
+            for d in fetched
+        )
+        assert default_tool_id("read_webpage") in got
+        # No explicit row of the same name exists, so the default also
+        # claims the name key (what preset templates reference).
+        assert got.get("read_webpage") == {"ok": True}
+
+    def test_explicit_row_keeps_name_key_over_default(self, pg_conn):
+        from application.agents.default_tools import default_tool_id
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        UserToolsRepository(pg_conn).create(
+            user_id="u-shadow-default", name="read_webpage", status=True
+        )
+        sp = StreamProcessor({}, {"sub": "u-shadow-default"})
+        sp._required_tool_actions = {"read_webpage": {None}}
+
+        def _fake_fetch(tool_doc, required_actions):
+            return {"is_default": bool(tool_doc.get("default"))}
+
+        with _patch_db(pg_conn), patch(
+            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            True,
+        ), patch.object(sp, "_fetch_tool_data", _fake_fetch):
+            got = sp.pre_fetch_tools()
+        assert got is not None
+        # The explicit row owns the name key; the default stays reachable
+        # by its synthetic id.
+        assert got["read_webpage"] == {"is_default": False}
+        assert got[default_tool_id("read_webpage")] == {"is_default": True}
+
+    def test_fetch_tool_data_executes_referenced_memory_view(self, pg_conn):
+        from unittest.mock import MagicMock
+
+        from application.agents.default_tools import synthesize_default_tool
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        sp = StreamProcessor({}, {"sub": "u-mem-prefetch"})
+        tool_doc = synthesize_default_tool("memory")
+
+        mock_tool = MagicMock()
+        mock_tool.get_actions_metadata.return_value = tool_doc["actions"]
+        mock_tool.execute_action.return_value = "Directory: /\n(empty)"
+        mock_manager = MagicMock()
+        mock_manager.load_tool.return_value = mock_tool
+
+        with patch(
+            "application.agents.tools.tool_manager.ToolManager",
+            return_value=mock_manager,
+        ):
+            got = sp._fetch_tool_data(tool_doc, {"memory_view"})
+
+        # Only the referenced action ran, with no path kwarg — the tool's
+        # own "/" default applies.
+        assert got == {"memory_view": "Directory: /\n(empty)"}
+        mock_tool.execute_action.assert_called_once_with("memory_view")
+
+    def test_agent_bound_invocation_omits_default_tool_prefetch(self, pg_conn):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        sp = StreamProcessor({"agent_id": "agent-xyz"}, {"sub": "u-ag"})
+        sp._required_tool_actions = {"read_webpage": {None}}
+        with _patch_db(pg_conn), patch(
+            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            True,
+        ):
+            got = sp.pre_fetch_tools()
+        assert got is None
+
+    def test_template_name_key_favors_explicit_over_default(self, pg_conn):
+        """An explicit row and the synthesized default of the same name
+        coexist: name key stays on the explicit, default reachable by
+        synthetic id only."""
+        from application.agents.default_tools import default_tool_id
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        user = "u-collision"
+        explicit = UserToolsRepository(pg_conn).create(
+            user_id=user, name="read_webpage", status=True,
+        )
+        explicit_id = str(explicit["id"])
+        default_id = default_tool_id("read_webpage")
+
+        sp = StreamProcessor({}, {"sub": user})
+        sp._required_tool_actions = {"read_webpage": {None}}
+
+        def _fake_fetch(tool_doc, required_actions):
+            return {
+                "is_default": bool(tool_doc.get("default")),
+                "id": str(tool_doc.get("_id") or tool_doc.get("id")),
+            }
+
+        with _patch_db(pg_conn), patch(
+            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            True,
+        ), patch.object(sp, "_fetch_tool_data", _fake_fetch):
+            got = sp.pre_fetch_tools()
+        assert got is not None
+        assert got["read_webpage"]["is_default"] is False
+        assert got["read_webpage"]["id"] == explicit_id
+        assert got[explicit_id]["is_default"] is False
+        assert got[default_id]["is_default"] is True
+
+
+class TestValidateAndSetModelAgentAuthority:
+    """Agent-bound chats: agent's ``default_model_id`` is authoritative."""
+
+    def test_agent_bound_ignores_body_model_id(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({"model_id": "body-model"}, {"sub": "caller"})
+        sp._agent_data = {"user": "owner"}
+        sp.agent_config = {
+            "default_model_id": "agent-model",
+            "user_id": "owner",
+        }
+        captured: list = []
+
+        def _fake_validate(model_id, user_id=None):
+            captured.append((model_id, user_id))
+            return True
+
+        with patch(
+            "application.api.answer.services.stream_processor.validate_model_id",
+            side_effect=_fake_validate,
+        ), patch(
+            "application.api.answer.services.stream_processor.get_default_model_id",
+            return_value="global-default",
+        ):
+            sp._validate_and_set_model()
+        assert sp.model_id == "agent-model"
+        # Resolved under the agent owner, not the caller.
+        assert sp.model_user_id == "owner"
+        assert ("agent-model", "owner") in captured
+
+    def test_agent_bound_no_default_falls_back_to_system(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({"model_id": "body-model"}, {"sub": "u"})
+        sp._agent_data = {"user": "u"}
+        sp.agent_config = {"default_model_id": "", "user_id": "u"}
+        with patch(
+            "application.api.answer.services.stream_processor.validate_model_id",
+            return_value=False,
+        ), patch(
+            "application.api.answer.services.stream_processor.get_default_model_id",
+            return_value="global-default",
+        ):
+            sp._validate_and_set_model()
+        assert sp.model_id == "global-default"
+        assert sp.model_user_id is None
+
+    def test_agentless_body_model_still_wins(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({"model_id": "body-model"}, {"sub": "u"})
+        sp._agent_data = None
+        with patch(
+            "application.api.answer.services.stream_processor.validate_model_id",
+            return_value=True,
+        ):
+            sp._validate_and_set_model()
+        assert sp.model_id == "body-model"
+        assert sp.model_user_id == "u"
+
+
+class TestGetDataFromApiKeySourceUnion:
+    """`_get_data_from_api_key`: primary ∪ extras, deduplicated, primary first."""
+
+    def _make_sp(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        return StreamProcessor({}, {"sub": "u"})
+
+    def test_union_primary_and_extras(self, pg_conn):
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        owner = "u-merge-both"
+        sources_repo = SourcesRepository(pg_conn)
+        primary = sources_repo.create(name="primary", user_id=owner)
+        extra1 = sources_repo.create(name="extra1", user_id=owner)
+        extra2 = sources_repo.create(name="extra2", user_id=owner)
+
+        agent = AgentsRepository(pg_conn).create(
+            owner, "agent-merge", "published",
+            key="merge-key",
+            source_id=str(primary["id"]),
+            extra_source_ids=[str(extra1["id"]), str(extra2["id"])],
+            retriever="hybrid",
+            chunks=5,
+        )
+        assert agent is not None
+
+        sp = self._make_sp()
+        with _patch_db(pg_conn):
+            data = sp._get_data_from_api_key("merge-key")
+        ids = [s["id"] for s in data["sources"]]
+        assert ids == [
+            str(primary["id"]),
+            str(extra1["id"]),
+            str(extra2["id"]),
+        ]
+        assert data["source"] == str(primary["id"])
+
+    def test_only_primary(self, pg_conn):
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        owner = "u-merge-primary-only"
+        primary = SourcesRepository(pg_conn).create(
+            name="primary", user_id=owner,
+        )
+
+        AgentsRepository(pg_conn).create(
+            owner, "primary-only", "published",
+            key="primary-only-key",
+            source_id=str(primary["id"]),
+            extra_source_ids=[],
+        )
+
+        sp = self._make_sp()
+        with _patch_db(pg_conn):
+            data = sp._get_data_from_api_key("primary-only-key")
+        assert [s["id"] for s in data["sources"]] == [str(primary["id"])]
+        assert data["source"] == str(primary["id"])
+
+    def test_only_extras(self, pg_conn):
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        owner = "u-merge-extras-only"
+        e1 = SourcesRepository(pg_conn).create(name="e1", user_id=owner)
+        e2 = SourcesRepository(pg_conn).create(name="e2", user_id=owner)
+
+        AgentsRepository(pg_conn).create(
+            owner, "extras-only", "published",
+            key="extras-only-key",
+            extra_source_ids=[str(e1["id"]), str(e2["id"])],
+        )
+
+        sp = self._make_sp()
+        with _patch_db(pg_conn):
+            data = sp._get_data_from_api_key("extras-only-key")
+        assert [s["id"] for s in data["sources"]] == [
+            str(e1["id"]), str(e2["id"]),
+        ]
+        assert data["source"] is None
+
+    def test_dedupe_primary_repeated_in_extras(self, pg_conn):
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        owner = "u-merge-dedupe"
+        primary = SourcesRepository(pg_conn).create(
+            name="dup-primary", user_id=owner,
+        )
+        extra = SourcesRepository(pg_conn).create(
+            name="dup-extra", user_id=owner,
+        )
+
+        AgentsRepository(pg_conn).create(
+            owner, "dedupe", "published",
+            key="dedupe-key",
+            source_id=str(primary["id"]),
+            extra_source_ids=[str(primary["id"]), str(extra["id"])],
+        )
+
+        sp = self._make_sp()
+        with _patch_db(pg_conn):
+            data = sp._get_data_from_api_key("dedupe-key")
+        ids = [s["id"] for s in data["sources"]]
+        assert ids == [str(primary["id"]), str(extra["id"])]
+
+
+class TestAgentBoundFieldsAuthoritative:
+    """End-to-end regression: agent's source/model/chunks/retriever win."""
+
+    def test_agent_values_win_over_body(self, pg_conn):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        owner = "u-regr-agent-authority"
+        primary = SourcesRepository(pg_conn).create(
+            name="primary", user_id=owner,
+        )
+        extra = SourcesRepository(pg_conn).create(
+            name="extra", user_id=owner,
+        )
+        AgentsRepository(pg_conn).create(
+            owner, "authoritative", "published",
+            key="auth-key",
+            source_id=str(primary["id"]),
+            extra_source_ids=[str(extra["id"])],
+            default_model_id="model-A",
+            retriever="hybrid",
+            chunks=5,
+        )
+
+        # Body sends different values for every field; all must be ignored.
+        body = {
+            "api_key": "auth-key",
+            "model_id": "body-model-Z",
+            "retriever": "duckdb",
+            "chunks": 99,
+            "active_docs": "body-source-id",
+        }
+        sp = StreamProcessor(body, {"sub": owner})
+
+        with _patch_db(pg_conn), patch(
+            "application.api.answer.services.stream_processor.validate_model_id",
+            return_value=True,
+        ), patch(
+            "application.api.answer.services.stream_processor.get_default_model_id",
+            return_value="system-default",
+        ):
+            sp._configure_agent()
+            sp._validate_and_set_model()
+            sp._configure_source()
+            sp._configure_retriever()
+
+        assert sp.model_id == "model-A"
+        assert sp.model_user_id == owner
+        assert sp.agent_config["default_model_id"] == "model-A"
+        assert sp.retriever_config["chunks"] == 5
+        assert sp.retriever_config["retriever_name"] == "hybrid"
+        assert sp.source == {
+            "active_docs": [str(primary["id"]), str(extra["id"])],
+        }

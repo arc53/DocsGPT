@@ -65,6 +65,36 @@ class TestMongoDBVectorStoreSearch:
         assert len(results) == 1
         assert str(results[0]) == "hello world"
 
+    def test_score_threshold_adds_match_stage(self):
+        store, mock_collection, _ = _make_mongodb_store()
+        mock_collection.aggregate.return_value = iter([])
+
+        store.search("query", k=3, score_threshold=0.6)
+
+        pipeline = mock_collection.aggregate.call_args[0][0]
+        # $addFields surfaces the vectorSearchScore, $match enforces the floor.
+        assert any("$addFields" in stage for stage in pipeline)
+        match_stages = [s for s in pipeline if "$match" in s]
+        assert match_stages[0]["$match"]["_score"]["$gte"] == 0.6
+
+    def test_no_score_threshold_omits_match_stage(self):
+        store, mock_collection, _ = _make_mongodb_store()
+        mock_collection.aggregate.return_value = iter([])
+
+        store.search("query", k=3)
+
+        pipeline = mock_collection.aggregate.call_args[0][0]
+        assert not any("$match" in stage for stage in pipeline)
+
+    def test_score_field_stripped_from_metadata(self):
+        store, mock_collection, _ = _make_mongodb_store()
+        doc = {"_id": "i", "text": "t", "embedding": [0.1], "_score": 0.9, "k": "v"}
+        mock_collection.aggregate.return_value = iter([doc])
+
+        results = store.search("q", k=1, score_threshold=0.5)
+        assert "_score" not in results[0].metadata
+        assert results[0].metadata["k"] == "v"
+
     def test_search_removes_id_text_embedding_from_metadata(self):
         store, mock_collection, _ = _make_mongodb_store()
 
@@ -257,3 +287,40 @@ class TestMongoDBVectorStoreDeleteChunk:
 
         result = store.delete_chunk("bad_id")
         assert result is False
+
+
+@pytest.mark.unit
+class TestMongoDBSearchWithScores:
+    def test_reports_vector_search_score(self):
+        store, mock_collection, _ = _make_mongodb_store()
+        mock_collection.aggregate.return_value = iter(
+            [
+                {
+                    "_id": "id1",
+                    "text": "hello",
+                    "embedding": [0.1],
+                    "source": "a",
+                    "_score": 0.83,
+                }
+            ]
+        )
+
+        results = store.search_with_scores("query", k=1)
+
+        assert store.score_kind == "cosine_similarity"
+        assert results[0][0].page_content == "hello"
+        assert results[0][1] == pytest.approx(0.83)
+        # The score must not leak into metadata — it rides alongside the doc.
+        assert "_score" not in results[0][0].metadata
+
+    def test_score_is_added_even_without_a_threshold(self):
+        """The $addFields stage is unconditional, so an unfiltered search still
+        carries a score (the whole point of the retrieval tester)."""
+        store, mock_collection, _ = _make_mongodb_store()
+        mock_collection.aggregate.return_value = iter([])
+
+        store.search_with_scores("query", k=1)
+
+        pipeline = mock_collection.aggregate.call_args[0][0]
+        assert any("$addFields" in stage for stage in pipeline)
+        assert not any("$match" in stage for stage in pipeline)

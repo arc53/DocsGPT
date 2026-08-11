@@ -79,6 +79,12 @@ class UnsafeUserUrlError(ValueError):
     """
 
 
+class ResponseTooLargeError(Exception):
+    """Raised by :func:`pinned_fetch_bytes` when a response body exceeds
+    the caller's byte ceiling (declared via ``Content-Length`` or found
+    during the bounded read)."""
+
+
 def _strip_ipv6_brackets(host: str) -> str:
     """Return ``host`` with surrounding ``[`` / ``]`` removed if present."""
 
@@ -291,6 +297,147 @@ def _ip_to_url_host(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
     return str(ip)
 
 
+def _url_userinfo_prefix(netloc: str) -> str:
+    """Return the exact ``userinfo@`` prefix from a URL netloc, if present."""
+
+    if "@" not in netloc:
+        return ""
+    return f"{netloc.rsplit('@', 1)[0]}@"
+
+
+def _pinned_session(
+    url: str, headers: dict[str, str] | None
+) -> tuple[requests.Session, str, dict[str, str]]:
+    """Run the SSRF guard once and build a session pinned to the chosen IP.
+
+    Single home for the pinning preamble (validate/pick IP, netloc rewrite,
+    ``Host`` header, HTTPS adapter mount) shared by :func:`pinned_request`
+    and :func:`pinned_fetch_bytes`, so the guard cannot drift between them.
+
+    Returns:
+        Tuple of the session (caller must close it), the IP-literal URL,
+        and the request headers carrying the original ``Host``.
+
+    Raises:
+        UnsafeUserUrlError: If the URL fails the SSRF guard.
+    """
+
+    host, ip, parts = _validate_and_pick_ip(url)
+
+    netloc = f"{_url_userinfo_prefix(parts.netloc)}{_ip_to_url_host(ip)}"
+    if parts.port is not None:
+        netloc = f"{netloc}:{parts.port}"
+    pinned_url = urlunsplit(
+        (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+    )
+
+    request_headers = dict(headers or {})
+    host_header = host if parts.port is None else f"{host}:{parts.port}"
+    request_headers["Host"] = host_header
+
+    session = requests.Session()
+    if parts.scheme == "https":
+        session.mount("https://", _PinnedHostAdapter(host))
+    return session, pinned_url, request_headers
+
+
+def pinned_request(
+    method: str,
+    url: str,
+    *,
+    data: Any = None,
+    json: Any = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = 90.0,
+    allow_redirects: bool = False,
+) -> requests.Response:
+    """Send an HTTP request with the connection pinned to a validated IP,
+    closing the DNS-rebinding TOCTOU window left by the naive
+    validate-then-``requests`` pattern.
+
+    Raises:
+        UnsafeUserUrlError: If the URL fails the SSRF guard.
+        requests.RequestException: For network-level failures.
+    """
+
+    session, pinned_url, request_headers = _pinned_session(url, headers)
+    try:
+        return session.request(
+            method=method.upper(),
+            url=pinned_url,
+            data=data,
+            json=json,
+            headers=request_headers,
+            timeout=timeout,
+            allow_redirects=allow_redirects,
+        )
+    finally:
+        session.close()
+
+
+def pinned_fetch_bytes(
+    url: str,
+    *,
+    max_bytes: int,
+    headers: dict[str, str] | None = None,
+    timeout: float = 10.0,
+    allow_redirects: bool = False,
+) -> tuple[bytes, requests.Response]:
+    """GET ``url`` with SSRF pinning, streaming at most ``max_bytes`` of body.
+
+    The size limit is enforced twice: a declared ``Content-Length`` above
+    the ceiling is rejected before any body is read, and the streamed
+    read itself stops the moment the ceiling is crossed — a server that
+    lies about (or omits) ``Content-Length`` cannot bypass the cap.
+
+    Returns:
+        Tuple of the body bytes and the (already-closed) ``Response``,
+        kept for its status code and headers.
+
+    Raises:
+        UnsafeUserUrlError: If the URL fails the SSRF guard.
+        ResponseTooLargeError: If the body exceeds ``max_bytes``.
+        requests.RequestException: For network-level failures.
+    """
+
+    session, pinned_url, request_headers = _pinned_session(url, headers)
+    try:
+        response = session.request(
+            method="GET",
+            url=pinned_url,
+            headers=request_headers,
+            timeout=timeout,
+            allow_redirects=allow_redirects,
+            stream=True,
+        )
+        try:
+            # An error response's body is never used (callers
+            # raise_for_status) — skip the transfer and let the caller
+            # surface the more informative HTTP-status error.
+            if response.status_code >= 400:
+                return b"", response
+            declared = response.headers.get("Content-Length")
+            if declared and declared.isdigit() and int(declared) > max_bytes:
+                raise ResponseTooLargeError(
+                    f"response declares {declared} bytes, over the "
+                    f"{max_bytes}-byte limit"
+                )
+            chunks: list[bytes] = []
+            received = 0
+            for chunk in response.iter_content(chunk_size=65536):
+                received += len(chunk)
+                if received > max_bytes:
+                    raise ResponseTooLargeError(
+                        f"response body exceeds the {max_bytes}-byte limit"
+                    )
+                chunks.append(chunk)
+            return b"".join(chunks), response
+        finally:
+            response.close()
+    finally:
+        session.close()
+
+
 def pinned_post(
     url: str,
     *,
@@ -328,32 +475,14 @@ def pinned_post(
         requests.RequestException: For network-level failures.
     """
 
-    host, ip, parts = _validate_and_pick_ip(url)
-
-    netloc = _ip_to_url_host(ip)
-    if parts.port is not None:
-        netloc = f"{netloc}:{parts.port}"
-    pinned_url = urlunsplit(
-        (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+    return pinned_request(
+        "POST",
+        url,
+        json=json,
+        headers=headers,
+        timeout=timeout,
+        allow_redirects=allow_redirects,
     )
-
-    request_headers = dict(headers or {})
-    host_header = host if parts.port is None else f"{host}:{parts.port}"
-    request_headers["Host"] = host_header
-
-    session = requests.Session()
-    if parts.scheme == "https":
-        session.mount("https://", _PinnedHostAdapter(host))
-    try:
-        return session.post(
-            pinned_url,
-            json=json,
-            headers=request_headers,
-            timeout=timeout,
-            allow_redirects=allow_redirects,
-        )
-    finally:
-        session.close()
 
 
 class _PinnedHTTPSTransport(httpx.HTTPTransport):

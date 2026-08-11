@@ -78,6 +78,12 @@ class TestNotesActionsMetadata:
         got = tool.get_actions_metadata()
         assert isinstance(got, list)
         names = {a["name"] for a in got}
-        assert names >= {"view", "overwrite", "str_replace", "insert", "delete"}
+        assert names >= {
+            "note_view",
+            "note_overwrite",
+            "note_str_replace",
+            "note_insert",
+            "note_delete",
+        }
 
 

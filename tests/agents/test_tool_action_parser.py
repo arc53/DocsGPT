@@ -137,6 +137,39 @@ class TestToolActionParser:
         assert action_name is None
         assert call_args is None
 
+    def test_parse_google_llm_string_arguments_from_resume(self):
+        # Resume path stringifies dict args for the assistant message format
+        # before re-invoking _execute_tool_action. The Google parser must
+        # decode the JSON string back to a dict so the executor's
+        # ``call_args.items()`` loop doesn't AttributeError.
+        parser = ToolActionParser("GoogleLLM")
+
+        call = Mock()
+        call.name = "search_docs_42"
+        call.arguments = '{"query": "workflows", "limit": 5}'
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+
+        assert tool_id == "42"
+        assert action_name == "search_docs"
+        assert call_args == {"query": "workflows", "limit": 5}
+
+    def test_parse_google_llm_non_json_string_arguments_fall_back_to_empty_dict(self):
+        # Malformed string args fall back to ``{}`` so the executor's
+        # ``call_args.items()`` walk doesn't crash. The executor still
+        # journals the malformed call via its own type guard.
+        parser = ToolActionParser("GoogleLLM")
+
+        call = Mock()
+        call.name = "act_7"
+        call.arguments = "not json"
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+
+        assert tool_id == "7"
+        assert action_name == "act"
+        assert call_args == {}
+
     def test_parse_unknown_llm_type_defaults_to_openai(self):
         parser = ToolActionParser("UnknownLLM")
 

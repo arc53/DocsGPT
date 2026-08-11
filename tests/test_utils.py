@@ -20,6 +20,7 @@ from application.utils import (
     num_tokens_from_object_or_list,
     num_tokens_from_string,
     safe_filename,
+    truncate_to_line_boundary,
     validate_function_name,
     validate_required_fields,
 )
@@ -320,9 +321,30 @@ class TestGenerateImageUrl:
         with patch("application.utils.settings") as s:
             s.URL_STRATEGY = "s3"
             s.S3_BUCKET_NAME = "my-bucket"
-            s.SAGEMAKER_REGION = "us-west-2"
+            s.S3_ENDPOINT_URL = None
+            s.S3_REGION = "us-west-2"
             result = generate_image_url("path/to/img.png")
-            assert "my-bucket.s3.us-west-2" in result
+            assert result == "https://my-bucket.s3.us-west-2.amazonaws.com/path/to/img.png"
+
+    @pytest.mark.unit
+    def test_s3_strategy_custom_endpoint_path_style(self):
+        with patch("application.utils.settings") as s:
+            s.URL_STRATEGY = "s3"
+            s.S3_BUCKET_NAME = "my-bucket"
+            s.S3_ENDPOINT_URL = "https://account.r2.cloudflarestorage.com"
+            s.S3_PATH_STYLE = True
+            result = generate_image_url("path/to/img.png")
+            assert result == "https://account.r2.cloudflarestorage.com/my-bucket/path/to/img.png"
+
+    @pytest.mark.unit
+    def test_s3_strategy_custom_endpoint_virtual_host(self):
+        with patch("application.utils.settings") as s:
+            s.URL_STRATEGY = "s3"
+            s.S3_BUCKET_NAME = "my-bucket"
+            s.S3_ENDPOINT_URL = "https://minio.example.com"
+            s.S3_PATH_STYLE = False
+            result = generate_image_url("path/to/img.png")
+            assert result == "https://my-bucket.minio.example.com/path/to/img.png"
 
     @pytest.mark.unit
     def test_backend_strategy(self):
@@ -643,6 +665,53 @@ class TestGetHashEdgeCases:
     def test_unicode_string(self):
         h = get_hash("\u4f60\u597d\u4e16\u754c")
         assert len(h) == 32
+
+
+class TestTruncateToLineBoundary:
+    """Trimming a head window back to its last line boundary.
+
+    Shared by the attachment size gate and the docling markup gate. The trim
+    is skipped whenever it would cost more than half the window: a partial
+    final line is always better than losing the content.
+    """
+
+    @pytest.mark.unit
+    def test_trims_to_last_newline(self):
+        data = b"aaaa\nbbbb\ncccc"
+        assert truncate_to_line_boundary(data) == b"aaaa\nbbbb\n"
+
+    @pytest.mark.unit
+    def test_already_line_terminated_is_unchanged(self):
+        data = b"aaaa\nbbbb\n"
+        assert truncate_to_line_boundary(data) == data
+
+    @pytest.mark.unit
+    def test_no_newline_falls_back_to_the_hard_cut(self):
+        data = b"x" * 500
+        assert truncate_to_line_boundary(data) == data
+
+    @pytest.mark.unit
+    def test_leading_newline_only_keeps_the_content(self):
+        # rfind returns 0 here; trimming would collapse the window to a single
+        # byte, so the partial line is kept instead.
+        data = b"\n" + b"x" * 499
+        assert truncate_to_line_boundary(data) == data
+
+    @pytest.mark.unit
+    def test_early_newline_keeps_the_content(self):
+        # A short first line followed by one huge line: cutting at byte 10
+        # would discard ~98% of the window.
+        data = b"header\n" + b"x" * 493
+        assert truncate_to_line_boundary(data) == data
+
+    @pytest.mark.unit
+    def test_newline_past_the_halfway_mark_is_used(self):
+        data = b"x" * 300 + b"\n" + b"y" * 199
+        assert truncate_to_line_boundary(data) == b"x" * 300 + b"\n"
+
+    @pytest.mark.unit
+    def test_empty_input(self):
+        assert truncate_to_line_boundary(b"") == b""
 
 
 class TestValidateFunctionNameEdgeCases:

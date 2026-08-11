@@ -1,4 +1,12 @@
 export type ModelSource = 'builtin' | 'user';
+export type ModelApiFlavor = 'chat_completions' | 'responses';
+export type ReasoningEffort =
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh';
 
 export interface AvailableModel {
   id: string;
@@ -33,6 +41,8 @@ export interface CustomModelCapabilities {
   supports_structured_output: boolean;
   attachments: string[];
   context_window: number;
+  api_flavor?: ModelApiFlavor;
+  reasoning_effort?: ReasoningEffort;
 }
 
 export interface CustomModel {

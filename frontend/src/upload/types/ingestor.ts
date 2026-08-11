@@ -8,6 +8,7 @@ import S3Icon from '../../assets/s3.svg';
 import SharePoint from '../../assets/sharepoint.svg';
 import ConfluenceIcon from '../../assets/confluence.svg';
 import { getEnv } from '@/utils/envUtils';
+import BookIcon from '../../assets/book-mono.svg';
 
 export type IngestorType =
   | 'confluence'
@@ -18,7 +19,8 @@ export type IngestorType =
   | 'google_drive'
   | 'local_file'
   | 's3'
-  | 'share_point';
+  | 'share_point'
+  | 'wiki';
 
 export interface IngestorConfig {
   type: IngestorType | null;
@@ -38,6 +40,7 @@ export type FieldType =
   | 'number'
   | 'enum'
   | 'boolean'
+  | 'textarea'
   | 'local_file_picker'
   | 'remote_file_picker'
   | 'google_drive_picker'
@@ -236,6 +239,20 @@ export const IngestorFormSchemas: IngestorSchema[] = [
       },
     ],
   },
+  {
+    key: 'wiki',
+    label: 'New wiki',
+    icon: BookIcon,
+    heading: 'Create a living wiki',
+    fields: [
+      {
+        name: 'initial_content',
+        label: 'Initial content (optional)',
+        type: 'textarea',
+        required: false,
+      },
+    ],
+  },
 ];
 
 export const IngestorDefaultConfigs: Record<
@@ -288,6 +305,12 @@ export const IngestorDefaultConfigs: Record<
     config: {
       file_ids: '',
       folder_ids: '',
+    },
+  },
+  wiki: {
+    name: '',
+    config: {
+      initial_content: '',
     },
   },
 };

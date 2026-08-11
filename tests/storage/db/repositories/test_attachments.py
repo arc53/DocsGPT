@@ -58,6 +58,20 @@ class TestCreate:
         )
         assert doc["legacy_mongo_id"] == "507f1f77bcf86cd799439011"
 
+    def test_create_strips_null_bytes_from_content_and_metadata(self, pg_conn):
+        # A parsed document with embedded NULs (mislabeled binary) must
+        # not kill the INSERT — Postgres rejects \x00 in text and jsonb.
+        repo = _repo(pg_conn)
+        doc = repo.create(
+            "u",
+            "weird.pdf",
+            "/uploads/weird.pdf",
+            content="parsed\x00text\x00here",
+            metadata={"transcript_lang\x00": "en\x00"},
+        )
+        assert doc["content"] == "parsedtexthere"
+        assert doc["metadata"] == {"transcript_lang": "en"}
+
 
 class TestGet:
     def test_get_existing(self, pg_conn):

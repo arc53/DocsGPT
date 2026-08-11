@@ -6,9 +6,10 @@ written once after workflow execution completes and never updated.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from application.storage.db.base_repository import row_to_dict
@@ -25,6 +26,7 @@ class WorkflowRunsRepository:
         user_id: str,
         status: str,
         *,
+        run_id: str | None = None,
         inputs: dict | None = None,
         result: dict | None = None,
         steps: list | None = None,
@@ -37,6 +39,10 @@ class WorkflowRunsRepository:
             "user_id": user_id,
             "status": status,
         }
+        # An explicit id lets the engine bind run-scoped artifacts to this row
+        # before the run is persisted, so artifact authz can resolve the parent.
+        if run_id is not None:
+            values["id"] = run_id
         if inputs is not None:
             values["inputs"] = inputs
         if result is not None:
@@ -53,6 +59,60 @@ class WorkflowRunsRepository:
         stmt = pg_insert(workflow_runs_table).values(**values).returning(workflow_runs_table)
         res = self._conn.execute(stmt)
         return row_to_dict(res.fetchone())
+
+    def finalize(
+        self,
+        run_id: str,
+        user_id: str,
+        status: str,
+        *,
+        result: dict | None = None,
+        steps: list | None = None,
+        ended_at: Optional[datetime] = None,
+    ) -> bool:
+        """Update a pre-created run row with its terminal status/result; owner-scoped."""
+        values: dict = {"status": status}
+        if result is not None:
+            values["result"] = result
+        if steps is not None:
+            values["steps"] = steps
+        if ended_at is not None:
+            values["ended_at"] = ended_at
+        stmt = (
+            workflow_runs_table.update()
+            .where(workflow_runs_table.c.id == run_id)
+            .where(workflow_runs_table.c.user_id == user_id)
+            .values(**values)
+        )
+        res = self._conn.execute(stmt)
+        return res.rowcount > 0
+
+    def mark_stale_running_failed(self, older_than: datetime) -> int:
+        """Fail runs left in ``running`` (no ``ended_at``) since before ``older_than``.
+
+        The run row is pre-created as ``running`` and finalized when its generator
+        finishes; a client disconnect or a worker crash can strand it in ``running``
+        forever, since nothing else finalizes it. This closes those rows out so they
+        don't linger. Returns the number of rows updated.
+        """
+        stmt = (
+            workflow_runs_table.update()
+            .where(workflow_runs_table.c.status == "running")
+            .where(workflow_runs_table.c.ended_at.is_(None))
+            .where(workflow_runs_table.c.started_at < older_than)
+            .values(
+                status="failed",
+                ended_at=func.now(),
+                # failed_reason marks the reap so readers know ended_at is the
+                # reap time, not when the run actually died (duration is bogus).
+                result={
+                    "error": "Run did not complete (timed out or the client disconnected).",
+                    "failed_reason": "stale_reaper",
+                },
+            )
+        )
+        res = self._conn.execute(stmt)
+        return res.rowcount
 
     def get(self, run_id: str) -> Optional[dict]:
         res = self._conn.execute(

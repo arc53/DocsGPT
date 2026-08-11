@@ -1,9 +1,9 @@
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 import logging
 import uuid
 
 from .base import Tool
+from .path_utils import validate_tool_path
 from application.storage.db.repositories.memories import MemoriesRepository
 from application.storage.db.session import db_readonly, db_session
 
@@ -76,12 +76,18 @@ class MemoryTool(Tool):
         """Execute an action by name.
 
         Args:
-            action_name: One of view, create, str_replace, insert, delete, rename.
+            action_name: One of memory_view, memory_create, memory_str_replace,
+                memory_insert, memory_delete, memory_rename (legacy unprefixed
+                names are accepted too).
             **kwargs: Parameters for the action.
 
         Returns:
             A human-readable string result.
         """
+        # Stripping the namespace prefix accepts both the published names
+        # (memory_view) and legacy unprefixed names from saved user_tools rows.
+        action_name = action_name.removeprefix("memory_")
+
         if not self.user_id:
             return "Error: MemoryTool requires a valid user_id."
 
@@ -132,8 +138,12 @@ class MemoryTool(Tool):
         """Return JSON metadata describing supported actions for tool schemas."""
         return [
             {
-                "name": "view",
-                "description": "Shows directory contents or file contents with optional line ranges.",
+                "name": "memory_view",
+                "description": (
+                    "View the memory directory listing or a memory file's contents, "
+                    "with an optional line range. Check memory before answering "
+                    "questions that may rely on previously saved context."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -151,8 +161,12 @@ class MemoryTool(Tool):
                 },
             },
             {
-                "name": "create",
-                "description": "Create or overwrite a file.",
+                "name": "memory_create",
+                "description": (
+                    "Create or overwrite a memory file. Use it to save durable "
+                    "facts, preferences, and project context worth remembering "
+                    "across conversations."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -169,8 +183,8 @@ class MemoryTool(Tool):
                 },
             },
             {
-                "name": "str_replace",
-                "description": "Replace text in a file.",
+                "name": "memory_str_replace",
+                "description": "Replace a string in a memory file with a new string.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -191,8 +205,8 @@ class MemoryTool(Tool):
                 },
             },
             {
-                "name": "insert",
-                "description": "Insert text at a specific line in a file.",
+                "name": "memory_insert",
+                "description": "Insert text at a specific line in a memory file (1-indexed).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -213,8 +227,8 @@ class MemoryTool(Tool):
                 },
             },
             {
-                "name": "delete",
-                "description": "Delete a file or directory.",
+                "name": "memory_delete",
+                "description": "Delete a memory file or directory.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -227,8 +241,8 @@ class MemoryTool(Tool):
                 },
             },
             {
-                "name": "rename",
-                "description": "Rename or move a file/directory.",
+                "name": "memory_rename",
+                "description": "Rename or move a memory file or directory.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -254,47 +268,8 @@ class MemoryTool(Tool):
     # Path validation
     # -----------------------------
     def _validate_path(self, path: str) -> Optional[str]:
-        """Validate and normalize path.
-
-        Args:
-            path: User-provided path.
-
-        Returns:
-            Normalized path or None if invalid.
-        """
-        if not path:
-            return None
-
-        # Remove any leading/trailing whitespace
-        path = path.strip()
-
-        # Preserve whether path ends with / (indicates directory)
-        is_directory = path.endswith("/")
-
-        # Ensure path starts with / for consistency
-        if not path.startswith("/"):
-            path = "/" + path
-
-        # Check for directory traversal patterns
-        if ".." in path or path.count("//") > 0:
-            return None
-
-        # Normalize the path
-        try:
-            # Convert to Path object and resolve to canonical form
-            normalized = str(Path(path).as_posix())
-
-            # Ensure it still starts with /
-            if not normalized.startswith("/"):
-                return None
-
-            # Preserve trailing slash for directories
-            if is_directory and not normalized.endswith("/") and normalized != "/":
-                normalized = normalized + "/"
-
-            return normalized
-        except Exception:
-            return None
+        """Validate and normalize path (delegates to the shared util)."""
+        return validate_tool_path(path)
 
     # -----------------------------
     # Internal helpers

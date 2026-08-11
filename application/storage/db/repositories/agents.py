@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import Connection, func, text
+from sqlalchemy import Connection, cast, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
@@ -27,7 +27,7 @@ class AgentsRepository:
     @staticmethod
     def _normalize_unique_text(col: str, val):
         """Coerce blank strings for nullable unique text columns to NULL."""
-        if col == "key" and val == "":
+        if col in ("key", "slug") and val == "":
             return None
         return val
 
@@ -35,7 +35,7 @@ class AgentsRepository:
         values: dict = {"user_id": user_id, "name": name, "status": status}
 
         _ALLOWED = {
-            "description", "agent_type", "key", "retriever",
+            "description", "agent_type", "key", "slug", "retriever",
             "default_model_id", "incoming_webhook_token",
             "source_id", "prompt_id", "folder_id", "workflow_id",
             "extra_source_ids", "image",
@@ -142,6 +142,17 @@ class AgentsRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def find_by_slug(self, user_id: str, slug: str) -> Optional[dict]:
+        """Resolve one of a user's agents by its stable export/import slug."""
+        if not slug:
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM agents WHERE user_id = :user_id AND slug = :slug"),
+            {"user_id": user_id, "slug": slug},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(
             text("SELECT * FROM agents WHERE user_id = :user_id ORDER BY created_at DESC"),
@@ -149,15 +160,106 @@ class AgentsRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
-    def list_templates(self) -> list[dict]:
+    def get_by_id(self, agent_id: str) -> Optional[dict]:
+        """Fetch an agent by id with NO ownership scoping.
+
+        Used ONLY after a team-grant authorization check has already confirmed
+        the caller may see this agent (see team sharing). Never call this on a
+        raw user-supplied id without that check — it bypasses the dual-key guard.
+        """
+        if not looks_like_uuid(agent_id):
+            return None
         result = self._conn.execute(
-            text("SELECT * FROM agents WHERE user_id = 'system' ORDER BY name"),
+            text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"),
+            {"id": agent_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def list_by_ids(self, agent_ids) -> list[dict]:
+        """Fetch agents whose id is in ``agent_ids`` (team-shared listing path)."""
+        ids = [str(a) for a in agent_ids if looks_like_uuid(str(a))]
+        if not ids:
+            return []
+        result = self._conn.execute(
+            text("SELECT * FROM agents WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at DESC"),
+            {"ids": ids},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
+    def update_by_id(
+        self, agent_id: str, fields: dict, expected_updated_at=None
+    ) -> Optional[bool]:
+        """Update an agent by id WITHOUT user scoping (team ``editor`` write path).
+
+        The caller MUST have verified the principal holds an ``editor`` grant
+        before calling. When ``expected_updated_at`` is given, the update is
+        applied only if the row's ``updated_at`` still matches (optimistic lock);
+        returns None on a version mismatch so the route can answer 409.
+        """
+        # Reuse the owner-path column allowlist + coercion by delegating, but
+        # against the id-only predicate. We rebuild the same filtered values.
+        allowed = {
+            "name", "description", "agent_type", "status", "key", "slug", "source_id",
+            "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
+            "default_model_id", "folder_id", "workflow_id",
+            "extra_source_ids", "image",
+            "limited_token_mode", "token_limit",
+            "limited_request_mode", "request_limit",
+            "allow_system_prompt_override",
+            "shared", "shared_token", "shared_metadata",
+            "incoming_webhook_token", "last_used_at",
+        }
+        filtered = {k: v for k, v in fields.items() if k in allowed}
+        if not filtered:
+            return False
+        values: dict = {}
+        for col, val in filtered.items():
+            if col in ("tools", "json_schema", "models", "shared_metadata"):
+                values[col] = val
+            elif col in ("source_id", "prompt_id", "folder_id", "workflow_id"):
+                values[col] = str(val) if val else None
+            elif col == "extra_source_ids":
+                values[col] = [str(x) for x in val] if val else []
+            elif col in (
+                "limited_token_mode", "limited_request_mode",
+                "shared", "allow_system_prompt_override",
+            ):
+                values[col] = bool(val)
+            else:
+                values[col] = self._normalize_unique_text(col, val)
+        values["updated_at"] = func.now()
+
+        t = agents_table
+        stmt = t.update().where(t.c.id == agent_id)
+        if expected_updated_at is not None:
+            # Cast the (string/datetime) bind to timestamptz so PG compares the
+            # optimistic-lock token against the column type, not text.
+            stmt = stmt.where(t.c.updated_at == cast(expected_updated_at, t.c.updated_at.type))
+        stmt = stmt.values(**values)
+        result = self._conn.execute(stmt)
+        if result.rowcount > 0:
+            return True
+        # Distinguish a stale optimistic-lock write (row exists) from a missing row.
+        if expected_updated_at is not None and self.get_by_id(str(agent_id)) is not None:
+            return None
+        return False
+
+    def list_templates(self) -> list[dict]:
+        # Template/system agents are seeded under ``__system__`` (migration
+        # 0001 + the seeder); the legacy ``'system'`` value is kept in the
+        # match so older rows still surface.
+        result = self._conn.execute(
+            text(
+                "SELECT * FROM agents WHERE user_id IN ('system', '__system__') "
+                "ORDER BY name"
+            ),
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
     def update(self, agent_id: str, user_id: str, fields: dict) -> bool:
         allowed = {
-            "name", "description", "agent_type", "status", "key", "source_id",
+            "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
             "default_model_id", "folder_id", "workflow_id",
             "extra_source_ids", "image",

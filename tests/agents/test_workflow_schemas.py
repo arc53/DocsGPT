@@ -38,6 +38,7 @@ class TestNodeType:
         assert NodeType.NOTE == "note"
         assert NodeType.STATE == "state"
         assert NodeType.CONDITION == "condition"
+        assert NodeType.CODE == "code"
 
     @pytest.mark.unit
     def test_all_members(self):
@@ -48,6 +49,7 @@ class TestNodeType:
             NodeType.NOTE,
             NodeType.STATE,
             NodeType.CONDITION,
+            NodeType.CODE,
         }
 
 
@@ -466,7 +468,7 @@ class TestNodeExecutionLog:
         assert log.node_id == "n1"
         assert log.completed_at is None
         assert log.error is None
-        assert log.state_snapshot == {}
+        assert log.state_delta == {}
 
     @pytest.mark.unit
     def test_full_log(self):
@@ -479,10 +481,10 @@ class TestNodeExecutionLog:
             started_at=started,
             completed_at=completed,
             error=None,
-            state_snapshot={"key": "value"},
+            state_delta={"key": "value"},
         )
         assert log.completed_at == completed
-        assert log.state_snapshot == {"key": "value"}
+        assert log.state_delta == {"key": "value"}
 
     @pytest.mark.unit
     def test_extra_forbidden(self):

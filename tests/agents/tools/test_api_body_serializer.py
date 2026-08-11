@@ -6,6 +6,7 @@ helper methods (_percent_encode, _escape_xml, _dict_to_xml).
 """
 
 import json
+from urllib.parse import parse_qs
 
 import pytest
 
@@ -157,6 +158,46 @@ class TestSerializeFormUrlencoded:
             encoding_rules={"data": {"contentType": "application/xml"}},
         )
         assert "data" in body
+
+    def test_special_chars_encoded_once(self):
+        """Values must survive exactly one server-side decode (no %25 double-encoding)."""
+        original = "hello world & stuff=yes 100%"
+        body, _ = RequestBodySerializer.serialize(
+            {"msg": original, "email": "a+b@example.com"},
+            ContentType.FORM_URLENCODED,
+        )
+        assert "%2520" not in body and "%2525" not in body
+        decoded = parse_qs(body)
+        assert decoded["msg"] == [original]
+        assert decoded["email"] == ["a+b@example.com"]
+
+    def test_list_values_with_special_chars_round_trip(self):
+        body, _ = RequestBodySerializer.serialize(
+            {"tags": ["a b", "c&d"]},
+            ContentType.FORM_URLENCODED,
+            encoding_rules={"tags": {"style": "form", "explode": True}},
+        )
+        assert parse_qs(body)["tags"] == ["a b", "c&d"]
+
+    def test_deep_object_keeps_subkeys(self):
+        body, _ = RequestBodySerializer.serialize(
+            {"filter": {"color": "red", "size": "L"}},
+            ContentType.FORM_URLENCODED,
+            encoding_rules={"filter": {"style": "deepObject", "explode": True}},
+        )
+        decoded = parse_qs(body)
+        assert decoded["filter[color]"] == ["red"]
+        assert decoded["filter[size]"] == ["L"]
+
+    def test_exploded_dict_uses_subkeys_as_param_names(self):
+        body, _ = RequestBodySerializer.serialize(
+            {"obj": {"color": "red", "size": "L"}},
+            ContentType.FORM_URLENCODED,
+            encoding_rules={"obj": {"style": "form", "explode": True}},
+        )
+        decoded = parse_qs(body)
+        assert decoded["color"] == ["red"]
+        assert decoded["size"] == ["L"]
 
     def test_dict_value_deep_object_explode(self):
         body, headers = RequestBodySerializer.serialize(
@@ -517,6 +558,34 @@ class TestSerializeFormValueGaps:
 
 @pytest.mark.unit
 class TestApiBodySerializerMultipartParts:
+
+    def test_multipart_field_name_not_percent_encoded(self):
+        """RFC 7578: names are a quoted string, so 'file name' stays literal."""
+        from application.agents.tools.api_body_serializer import (
+            RequestBodySerializer,
+        )
+
+        result = RequestBodySerializer._create_multipart_part(
+            name="file name",
+            value="contents",
+            content_type="text/plain",
+            headers_rule={},
+        )
+        assert 'name="file name"' in result
+        assert "file%20name" not in result
+
+    def test_multipart_field_name_escapes_quotes_and_newlines(self):
+        from application.agents.tools.api_body_serializer import (
+            RequestBodySerializer,
+        )
+
+        result = RequestBodySerializer._create_multipart_part(
+            name='a"b\r\nc',
+            value="v",
+            content_type="text/plain",
+            headers_rule={},
+        )
+        assert 'name="a\\"b%0D%0Ac"' in result
 
     def test_multipart_dict_unknown_content_type(self):
         """Cover line 226: dict with unknown content type uses str()."""

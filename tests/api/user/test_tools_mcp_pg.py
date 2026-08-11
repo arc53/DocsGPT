@@ -363,47 +363,6 @@ class TestMCPServerSave:
         assert response.status_code in (200, 201)
 
 
-class TestMCPOAuthStatus:
-    def test_returns_pending_when_no_data(self, app):
-        from application.api.user.tools.mcp import MCPOAuthStatus
-
-        fake_redis = MagicMock()
-        fake_redis.get.return_value = None
-
-        with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
-            return_value=fake_redis,
-        ), app.test_request_context("/api/mcp_oauth_status/t1"):
-            response = MCPOAuthStatus().get("t1")
-        assert response.status_code == 200
-        assert response.json["status"] == "pending"
-
-    def test_returns_status_from_redis(self, app):
-        from application.api.user.tools.mcp import MCPOAuthStatus
-
-        fake_redis = MagicMock()
-        fake_redis.get.return_value = '{"status": "completed", "tools": [{"name": "t1", "description": "d"}]}'
-
-        with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
-            return_value=fake_redis,
-        ), app.test_request_context("/api/mcp_oauth_status/t1"):
-            response = MCPOAuthStatus().get("t1")
-        assert response.status_code == 200
-        assert response.json["status"] == "completed"
-        assert response.json["tools"][0]["name"] == "t1"
-
-    def test_redis_error_returns_500(self, app):
-        from application.api.user.tools.mcp import MCPOAuthStatus
-
-        with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
-            side_effect=RuntimeError("boom"),
-        ), app.test_request_context("/api/mcp_oauth_status/t1"):
-            response = MCPOAuthStatus().get("t1")
-        assert response.status_code == 500
-
-
 class TestMCPOAuthCallback:
     def test_error_param_redirects_error(self, app):
         from application.api.user.tools.mcp import MCPOAuthCallback

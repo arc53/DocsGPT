@@ -7,6 +7,22 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#fbfbfb" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#161616" media="(prefers-color-scheme: dark)" />
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem('selectedTheme');
+        var isDark = stored === 'Dark' ||
+          (stored == null && window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (isDark) document.documentElement.classList.add('dark');
+        var color = isDark ? '#161616' : '#fbfbfb';
+        document.head.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
+          m.removeAttribute('media');
+          m.setAttribute('content', color);
+        });
+      } catch (e) { }
+    })();
+  </script>
   <title>DocsGPT</title>
   <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
 </head>

@@ -1,14 +1,16 @@
 import logging
-import requests
-import re  # Import regular expression library
+import re
+
 import defusedxml.ElementTree as ET
+from bs4 import BeautifulSoup
+
 from application.parser.remote.base import BaseRemote
+from application.parser.schema.base import Document
 from application.core.url_validation import validate_url, SSRFError
+from application.security.safe_url import UnsafeUserUrlError, pinned_request
 
 class SitemapLoader(BaseRemote):
     def __init__(self, limit=20):
-        from langchain_community.document_loaders import WebBaseLoader
-        self.loader = WebBaseLoader
         self.limit = limit  # Adding limit to control the number of URLs to process
 
     def load_data(self, inputs):
@@ -42,8 +44,15 @@ class SitemapLoader(BaseRemote):
                 logging.error(f"URL validation failed for sitemap entry {url}: {e}")
                 continue
             try:
-                loader = self.loader([url])
-                documents.extend(loader.load())
+                response = pinned_request("GET", url, timeout=30)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, "html.parser")
+                documents.append(
+                    Document(
+                        soup.get_text(separator="\n", strip=True),
+                        extra_info={"source": url},
+                    )
+                )
                 processed_urls += 1  # Increment the counter after processing each URL
             except Exception as e:
                 logging.error(f"Error processing URL {url}: {e}", exc_info=True)
@@ -53,14 +62,12 @@ class SitemapLoader(BaseRemote):
 
     def _extract_urls(self, sitemap_url):
         try:
-            # Validate URL before fetching to prevent SSRF
-            validate_url(sitemap_url)
-            response = requests.get(sitemap_url, timeout=30)
-            response.raise_for_status()  # Raise an exception for HTTP errors
-        except SSRFError as e:
+            response = pinned_request("GET", sitemap_url, timeout=30)
+            response.raise_for_status()
+        except UnsafeUserUrlError as e:
             print(f"URL validation failed for sitemap: {sitemap_url}. Error: {e}")
             return []
-        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+        except Exception as e:
             print(f"Failed to fetch sitemap: {sitemap_url}. Error: {e}")
             return []
 
@@ -90,19 +97,14 @@ class SitemapLoader(BaseRemote):
 
         urls = []
         for loc in root.findall('.//url/loc'):
+            if not loc.text:
+                continue
             urls.append(loc.text)
 
         # Check for nested sitemaps
         for sitemap in root.findall('.//sitemap/loc'):
             nested_sitemap_url = sitemap.text
             if not nested_sitemap_url:
-                continue
-            try:
-                nested_sitemap_url = validate_url(nested_sitemap_url)
-            except SSRFError as e:
-                logging.error(
-                    f"URL validation failed for nested sitemap {nested_sitemap_url}: {e}"
-                )
                 continue
             urls.extend(self._extract_urls(nested_sitemap_url))
 

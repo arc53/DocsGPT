@@ -175,7 +175,8 @@ class GoogleDriveLoader(BaseConnectorLoader):
         try:
             file_metadata = self.service.files().get(
                 fileId=file_id,
-                fields='id,name,mimeType,size,createdTime,modifiedTime,parents'
+                fields='id,name,mimeType,size,createdTime,modifiedTime,parents',
+                supportsAllDrives=True
             ).execute()
 
             return self._process_file(file_metadata, load_content=load_content)
@@ -228,7 +229,9 @@ class GoogleDriveLoader(BaseConnectorLoader):
                     fields='nextPageToken,files(id,name,mimeType,size,createdTime,modifiedTime,parents)',
                     pageToken=page_token,
                     pageSize=page_size,
-                    orderBy='name'
+                    orderBy='name',
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
                 ).execute()
 
                 items = results.get('files', [])
@@ -308,7 +311,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
                     mimeType=export_mime_type
                 )
             else:
-                request = self.service.files().get_media(fileId=file_id)
+                request = self.service.files().get_media(fileId=file_id, supportsAllDrives=True)
 
             file_io = io.BytesIO()
             downloader = MediaIoBaseDownload(file_io, request)
@@ -378,7 +381,8 @@ class GoogleDriveLoader(BaseConnectorLoader):
     def _download_single_file(self, file_id: str, local_dir: str) -> bool:
         file_metadata = self.service.files().get(
             fileId=file_id,
-            fields='name,mimeType'
+            fields='name,mimeType',
+            supportsAllDrives=True
         ).execute()
 
         file_name = file_metadata['name']
@@ -400,7 +404,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
             if not full_path.endswith(extension):
                 full_path += extension
         else:
-            request = self.service.files().get_media(fileId=file_id)
+            request = self.service.files().get_media(fileId=file_id, supportsAllDrives=True)
 
         with open(full_path, 'wb') as f:
             downloader = MediaIoBaseDownload(f, request)
@@ -423,7 +427,9 @@ class GoogleDriveLoader(BaseConnectorLoader):
                     q=query,
                     fields='nextPageToken, files(id, name, mimeType)',
                     pageToken=page_token,
-                    pageSize=1000
+                    pageSize=1000,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
                 ).execute()
 
                 items = results.get('files', [])
@@ -516,7 +522,8 @@ class GoogleDriveLoader(BaseConnectorLoader):
                     try:
                         folder_metadata = self.service.files().get(
                             fileId=folder_id,
-                            fields='name'
+                            fields='name',
+                            supportsAllDrives=True
                         ).execute()
                         folder_name = folder_metadata.get('name', '')
                         folder_path = os.path.join(local_dir, folder_name)

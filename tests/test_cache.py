@@ -127,6 +127,84 @@ def test_stream_cache_miss(mock_make_redis):
     mock_redis_instance.set.assert_called_once()
 
 
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_stream_cache_preserves_json_chunk_types(mock_make_redis):
+    mock_redis_instance = MagicMock()
+    mock_make_redis.return_value = mock_redis_instance
+    mock_redis_instance.get.return_value = json.dumps({
+        "version": 1,
+        "chunks": ["text", {"type": "thought", "thought": "reasoning"}],
+    }).encode("utf-8")
+
+    @stream_cache
+    def mock_function(self, model, messages, stream, tools):
+        yield "new_chunk"
+
+    result = list(mock_function(
+        None,
+        "model",
+        [{"role": "user", "content": "test"}],
+        stream=True,
+        tools=None,
+    ))
+
+    assert result == ["text", {"type": "thought", "thought": "reasoning"}]
+    mock_redis_instance.set.assert_not_called()
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_stream_cache_does_not_stringify_protocol_objects(mock_make_redis):
+    mock_redis_instance = MagicMock()
+    mock_make_redis.return_value = mock_redis_instance
+    mock_redis_instance.get.return_value = None
+    terminal_chunk = MagicMock(name="responses_terminal_choice")
+
+    @stream_cache
+    def mock_function(self, model, messages, stream, tools):
+        yield "partial"
+        yield terminal_chunk
+
+    result = list(mock_function(
+        None,
+        "model",
+        [{"role": "user", "content": "test"}],
+        stream=True,
+        tools=None,
+    ))
+
+    assert result[0] == "partial"
+    assert result[1] is terminal_chunk
+    mock_redis_instance.set.assert_not_called()
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_stream_cache_rejects_legacy_protocol_object_repr(mock_make_redis):
+    mock_redis_instance = MagicMock()
+    mock_make_redis.return_value = mock_redis_instance
+    mock_redis_instance.get.return_value = json.dumps([
+        "partial",
+        "<application.llm.openai._RespChoice object at 0x123>",
+    ]).encode("utf-8")
+
+    @stream_cache
+    def mock_function(self, model, messages, stream, tools):
+        yield "fresh"
+
+    result = list(mock_function(
+        None,
+        "model",
+        [{"role": "user", "content": "test"}],
+        stream=True,
+        tools=None,
+    ))
+
+    assert result == ["fresh"]
+    mock_redis_instance.delete.assert_called_once()
+
+
 # ── get_redis_instance ──────────────────────────────────────────────────────
 
 
@@ -157,7 +235,9 @@ class TestGetRedisInstance:
 
         assert result is mock_instance
         mock_from_url.assert_called_once_with(
-            "redis://localhost:6379/0", socket_connect_timeout=2
+            "redis://localhost:6379/0",
+            socket_connect_timeout=2,
+            health_check_interval=10,
         )
 
     @patch("application.cache.redis.Redis.from_url")
@@ -364,6 +444,55 @@ def test_stream_cache_bypasses_when_tools_provided(mock_make_redis):
 
     assert result == ["direct_chunk"]
     mock_redis_instance.get.assert_not_called()
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_stream_cache_skips_write_when_no_content_deltas(mock_make_redis):
+    """A stream that emits only reasoning ("thought") dicts and a
+    finish chunk — i.e. reasoning-only-stop, the silent-loss bug's
+    signature — must NOT be cached. Otherwise the empty stream is
+    replayed for the TTL on every identical request, poisoning the
+    cache and denying the reasoning-only recovery any chance to hit
+    a fresh provider call.
+    """
+    mock_redis_instance = MagicMock()
+    mock_make_redis.return_value = mock_redis_instance
+    mock_redis_instance.get.return_value = None
+
+    @stream_cache
+    def mock_function(self, model, messages, stream, tools):
+        yield {"type": "thought", "thought": "thinking hard"}
+        yield {"type": "thought", "thought": " and harder"}
+        yield {"type": "stop"}
+
+    messages = [{"role": "user", "content": "test"}]
+    result = list(mock_function(None, "model", messages, stream=True, tools=None))
+
+    assert len(result) == 3
+    mock_redis_instance.set.assert_not_called()
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_stream_cache_writes_when_any_content_chunk_seen(mock_make_redis):
+    """The mirror case: a stream with even one str content delta is
+    cached normally (the poison guard is minimal — only reasoning-only
+    streams are dropped)."""
+    mock_redis_instance = MagicMock()
+    mock_make_redis.return_value = mock_redis_instance
+    mock_redis_instance.get.return_value = None
+
+    @stream_cache
+    def mock_function(self, model, messages, stream, tools):
+        yield {"type": "thought", "thought": "brief thought"}
+        yield "the answer"
+
+    messages = [{"role": "user", "content": "test"}]
+    result = list(mock_function(None, "model", messages, stream=True, tools=None))
+
+    assert result == [{"type": "thought", "thought": "brief thought"}, "the answer"]
+    mock_redis_instance.set.assert_called_once()
 
 
 @pytest.mark.unit

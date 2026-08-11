@@ -1,5 +1,5 @@
 /**
- * Phase 3 Tier-B · upload (B1) — core upload happy paths.
+ * Tier-B · upload (B1) — core upload happy paths.
  *
  * Exercises the two ingest entry points the UI drives from
  * `frontend/src/upload/Upload.tsx`:

@@ -4,7 +4,6 @@ import pytest
 
 from application.parser.remote.crawler_loader import CrawlerLoader
 from application.parser.schema.base import Document
-from langchain_core.documents import Document as LCDocument
 
 
 class DummyResponse:
@@ -24,8 +23,8 @@ def _mock_validate_url(url):
 
 
 @patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("application.parser.remote.crawler_loader.requests.get")
-def test_load_data_crawls_same_domain_links(mock_requests_get, mock_validate_url):
+@patch("application.parser.remote.crawler_loader.pinned_request")
+def test_load_data_crawls_same_domain_links(mock_pinned_request, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
             """
@@ -40,37 +39,14 @@ def test_load_data_crawls_same_domain_links(mock_requests_get, mock_validate_url
         "http://example.com/about": DummyResponse("<html><body>About page</body></html>"),
     }
 
-    def response_side_effect(url: str, timeout=30):
+    def response_side_effect(_method: str, url: str, timeout=30):
         if url not in responses:
             raise AssertionError(f"Unexpected request for URL: {url}")
         return responses[url]
 
-    mock_requests_get.side_effect = response_side_effect
-
-    root_doc = MagicMock(spec=LCDocument)
-    root_doc.page_content = "Root content"
-    root_doc.metadata = {"source": "http://example.com"}
-
-    about_doc = MagicMock(spec=LCDocument)
-    about_doc.page_content = "About content"
-    about_doc.metadata = {"source": "http://example.com/about"}
-
-    loader_instances = {
-        "http://example.com": MagicMock(),
-        "http://example.com/about": MagicMock(),
-    }
-    loader_instances["http://example.com"].load.return_value = [root_doc]
-    loader_instances["http://example.com/about"].load.return_value = [about_doc]
-
-    loader_call_order = []
-
-    def loader_factory(url_list):
-        url = url_list[0]
-        loader_call_order.append(url)
-        return loader_instances[url]
+    mock_pinned_request.side_effect = response_side_effect
 
     crawler = CrawlerLoader(limit=5)
-    crawler.loader = MagicMock(side_effect=loader_factory)
 
     result = crawler.load_data("http://example.com")
 
@@ -84,34 +60,23 @@ def test_load_data_crawls_same_domain_links(mock_requests_get, mock_validate_url
     assert paths == {"index.md", "about.md"}
 
     texts = {doc.text for doc in result}
-    assert texts == {"Root content", "About content"}
+    assert texts == {"About\nExternal", "About page"}
 
-    assert mock_requests_get.call_count == 2
-    assert loader_call_order == ["http://example.com", "http://example.com/about"]
+    assert mock_pinned_request.call_count == 2
 
 
 @patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("application.parser.remote.crawler_loader.requests.get")
-def test_load_data_accepts_list_input_and_adds_scheme(mock_requests_get, mock_validate_url):
-    mock_requests_get.return_value = DummyResponse("<html><body>No links here</body></html>")
-
-    doc = MagicMock(spec=LCDocument)
-    doc.page_content = "Homepage"
-    doc.metadata = {"source": "http://example.com"}
-
-    loader_instance = MagicMock()
-    loader_instance.load.return_value = [doc]
-
+@patch("application.parser.remote.crawler_loader.pinned_request")
+def test_load_data_accepts_list_input_and_adds_scheme(mock_pinned_request, mock_validate_url):
+    mock_pinned_request.return_value = DummyResponse("<html><body>No links here</body></html>")
     crawler = CrawlerLoader()
-    crawler.loader = MagicMock(return_value=loader_instance)
 
     result = crawler.load_data(["example.com", "unused.com"])
 
-    mock_requests_get.assert_called_once_with("http://example.com", timeout=30)
-    crawler.loader.assert_called_once_with(["http://example.com"])
+    mock_pinned_request.assert_called_once_with("GET", "http://example.com", timeout=30)
 
     assert len(result) == 1
-    assert result[0].text == "Homepage"
+    assert result[0].text == "No links here"
     assert result[0].extra_info == {
         "source": "http://example.com",
         "file_path": "index.md",
@@ -119,8 +84,8 @@ def test_load_data_accepts_list_input_and_adds_scheme(mock_requests_get, mock_va
 
 
 @patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("application.parser.remote.crawler_loader.requests.get")
-def test_load_data_respects_limit(mock_requests_get, mock_validate_url):
+@patch("application.parser.remote.crawler_loader.pinned_request")
+def test_load_data_respects_limit(mock_pinned_request, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
             """
@@ -134,51 +99,28 @@ def test_load_data_respects_limit(mock_requests_get, mock_validate_url):
         "http://example.com/about": DummyResponse("<html><body>About</body></html>"),
     }
 
-    mock_requests_get.side_effect = lambda url, timeout=30: responses[url]
-
-    root_doc = MagicMock(spec=LCDocument)
-    root_doc.page_content = "Root content"
-    root_doc.metadata = {"source": "http://example.com"}
-
-    about_doc = MagicMock(spec=LCDocument)
-    about_doc.page_content = "About content"
-    about_doc.metadata = {"source": "http://example.com/about"}
-
-    loader_instances = {
-        "http://example.com": MagicMock(),
-        "http://example.com/about": MagicMock(),
-    }
-    loader_instances["http://example.com"].load.return_value = [root_doc]
-    loader_instances["http://example.com/about"].load.return_value = [about_doc]
+    mock_pinned_request.side_effect = lambda _method, url, timeout=30: responses[url]
 
     crawler = CrawlerLoader(limit=1)
-    crawler.loader = MagicMock(side_effect=lambda url_list: loader_instances[url_list[0]])
 
     result = crawler.load_data("http://example.com")
 
     assert len(result) == 1
-    assert result[0].text == "Root content"
-    assert mock_requests_get.call_count == 1
-    assert crawler.loader.call_count == 1
+    assert result[0].text == "About"
+    assert mock_pinned_request.call_count == 1
 
 
 @patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
 @patch("application.parser.remote.crawler_loader.logging")
-@patch("application.parser.remote.crawler_loader.requests.get")
-def test_load_data_logs_and_skips_on_loader_error(mock_requests_get, mock_logging, mock_validate_url):
-    mock_requests_get.return_value = DummyResponse("<html><body>Error route</body></html>")
-
-    failing_loader_instance = MagicMock()
-    failing_loader_instance.load.side_effect = Exception("load failure")
-
+@patch("application.parser.remote.crawler_loader.pinned_request")
+def test_load_data_logs_and_skips_on_request_error(mock_pinned_request, mock_logging, mock_validate_url):
+    mock_pinned_request.side_effect = Exception("load failure")
     crawler = CrawlerLoader()
-    crawler.loader = MagicMock(return_value=failing_loader_instance)
 
     result = crawler.load_data("http://example.com")
 
     assert result == []
-    mock_requests_get.assert_called_once_with("http://example.com", timeout=30)
-    failing_loader_instance.load.assert_called_once()
+    mock_pinned_request.assert_called_once_with("GET", "http://example.com", timeout=30)
 
     mock_logging.error.assert_called_once()
     message, = mock_logging.error.call_args.args
@@ -221,34 +163,23 @@ def test_url_to_virtual_path_variants():
 
 @pytest.mark.unit
 class TestCrawlerLoaderGaps:
-    def test_ssrf_validation_skips_invalid_url(self):
-        """Cover lines 41-43: SSRF validation failure skips URL."""
+    def test_pinned_fetch_builds_document_without_webbase_loader(self):
+        """The crawler should index the response body it already fetched."""
         from application.parser.remote.crawler_loader import CrawlerLoader
-        from application.core.url_validation import SSRFError
 
         loader = CrawlerLoader(limit=5)
         with patch(
             "application.parser.remote.crawler_loader.validate_url",
-            side_effect=[
-                "https://example.com",
-                SSRFError("blocked"),
-            ],
+            return_value="https://example.com",
         ):
             with patch(
-                "application.parser.remote.crawler_loader.requests.get"
-            ) as mock_get:
-                # First URL succeeds validation but response has no links
+                "application.parser.remote.crawler_loader.pinned_request"
+            ) as mock_pinned_request:
                 mock_response = MagicMock()
                 mock_response.status_code = 200
                 mock_response.text = "<html><body>test</body></html>"
                 mock_response.raise_for_status.return_value = None
-                mock_get.return_value = mock_response
+                mock_pinned_request.return_value = mock_response
 
-                with patch.object(loader, "loader") as mock_loader_cls:
-                    mock_doc = MagicMock()
-                    mock_doc.page_content = "test content"
-                    mock_doc.metadata = {}
-                    mock_loader_cls.return_value.load.return_value = [mock_doc]
-
-                    result = loader.load_data("https://example.com")
-                    assert isinstance(result, list)
+                result = loader.load_data("https://example.com")
+                assert result[0].text == "test"

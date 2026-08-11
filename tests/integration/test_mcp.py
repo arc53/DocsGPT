@@ -4,9 +4,12 @@ Integration tests for DocsGPT MCP (Model Context Protocol) server endpoints.
 
 Endpoints tested:
 - /api/mcp_server/callback (GET) - OAuth callback
-- /api/mcp_server/oauth_status/{task_id} (GET) - OAuth status
 - /api/mcp_server/save (POST) - Save MCP server config
 - /api/mcp_server/test (POST) - Test MCP server connection
+
+OAuth status (previously polled via /api/mcp_server/oauth_status/<task_id>)
+is now delivered exclusively through the per-user SSE pipe at
+/api/events; see docs/runbooks/sse-notifications.md.
 
 Usage:
     python tests/integration/test_mcp.py
@@ -56,75 +59,6 @@ class MCPTests(DocsGPTTestBase):
             self.print_error(f"Unexpected status: {response.status_code}")
             self.record_result(test_name, False, f"Status: {response.status_code}")
             return False
-
-        except Exception as e:
-            self.print_error(f"Exception: {e}")
-            self.record_result(test_name, False, str(e))
-            return False
-
-    # -------------------------------------------------------------------------
-    # OAuth Status Tests
-    # -------------------------------------------------------------------------
-
-    def test_mcp_oauth_status(self) -> bool:
-        """Test getting MCP OAuth status."""
-        test_name = "MCP OAuth status"
-        self.print_header(test_name)
-
-        if not self.require_auth(test_name):
-            return True
-
-        try:
-            response = self.get(
-                "/api/mcp_server/oauth_status/test-task-id-123",
-                timeout=10,
-            )
-
-            if response.status_code in [200, 404]:
-                self.print_success(f"OAuth status check: {response.status_code}")
-                if response.status_code == 200:
-                    result = response.json()
-                    self.print_info(f"Status: {result.get('status', 'N/A')}")
-                self.record_result(test_name, True, f"Status: {response.status_code}")
-                return True
-
-            self.print_error(f"Unexpected status: {response.status_code}")
-            self.record_result(test_name, False, f"Status: {response.status_code}")
-            return False
-
-        except Exception as e:
-            self.print_error(f"Exception: {e}")
-            self.record_result(test_name, False, str(e))
-            return False
-
-    def test_mcp_oauth_status_invalid_task(self) -> bool:
-        """Test OAuth status for invalid task ID."""
-        test_name = "MCP OAuth status invalid"
-        self.print_header(test_name)
-
-        if not self.require_auth(test_name):
-            return True
-
-        try:
-            response = self.get(
-                "/api/mcp_server/oauth_status/nonexistent-task-xyz",
-                timeout=10,
-            )
-
-            if response.status_code in [404, 400]:
-                self.print_success(f"Correctly returned: {response.status_code}")
-                self.record_result(test_name, True, "Invalid task handled")
-                return True
-            elif response.status_code == 200:
-                result = response.json()
-                if result.get("status") in ["not_found", "unknown", None]:
-                    self.print_success("Invalid task handled (status: not_found)")
-                    self.record_result(test_name, True, "Invalid task handled")
-                    return True
-
-            self.print_warning(f"Status: {response.status_code}")
-            self.record_result(test_name, True, f"Status: {response.status_code}")
-            return True
 
         except Exception as e:
             self.print_error(f"Exception: {e}")
@@ -310,10 +244,6 @@ class MCPTests(DocsGPTTestBase):
 
         # Callback tests
         self.test_mcp_callback()
-
-        # OAuth status tests
-        self.test_mcp_oauth_status()
-        self.test_mcp_oauth_status_invalid_task()
 
         # Save tests
         self.test_mcp_save()

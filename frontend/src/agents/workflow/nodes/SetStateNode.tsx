@@ -31,7 +31,7 @@ const SetStateNode = ({ data, selected }: NodeProps<SetStateNodeData>) => {
       <div className="flex flex-col gap-1">
         {operations.length > 0 ? (
           <div
-            className="truncate text-[10px] text-gray-500"
+            className="truncate text-xs text-gray-500"
             title={`${operations.length} operation(s)`}
           >
             {operations.length} variable{operations.length !== 1 ? 's' : ''}
@@ -39,7 +39,7 @@ const SetStateNode = ({ data, selected }: NodeProps<SetStateNodeData>) => {
         ) : hasLegacy ? (
           <>
             <div
-              className="truncate text-[10px] text-gray-500 uppercase"
+              className="truncate text-xs text-gray-500 uppercase"
               title={`Variable: ${data.variable}`}
             >
               {data.variable}

@@ -18,7 +18,7 @@ class GoogleDriveAuth(BaseConnectorAuth):
     """
     
     SCOPES = [
-        'https://www.googleapis.com/auth/drive.file'
+        'https://www.googleapis.com/auth/drive.readonly'
     ]
     
     def __init__(self):
@@ -43,23 +43,27 @@ class GoogleDriveAuth(BaseConnectorAuth):
                         "redirect_uris": [self.redirect_uri]
                     }
                 },
-                scopes=self.SCOPES
+                scopes=self.SCOPES,
+                # Flow is rebuilt at exchange time, so an auto-generated
+                # code_verifier wouldn't survive; confidential client doesn't
+                # need PKCE anyway.
+                autogenerate_code_verifier=False,
             )
             flow.redirect_uri = self.redirect_uri
-            
+
             authorization_url, _ = flow.authorization_url(
                 access_type='offline',
                 prompt='consent',
                 include_granted_scopes='false',
                 state=state
             )
-            
+
             return authorization_url
-            
+
         except Exception as e:
             logging.error(f"Error generating authorization URL: {e}")
             raise
-    
+
     def exchange_code_for_tokens(self, authorization_code: str) -> Dict[str, Any]:
         try:
             if not authorization_code:
@@ -75,7 +79,8 @@ class GoogleDriveAuth(BaseConnectorAuth):
                         "redirect_uris": [self.redirect_uri]
                     }
                 },
-                scopes=self.SCOPES
+                scopes=self.SCOPES,
+                autogenerate_code_verifier=False,
             )
             flow.redirect_uri = self.redirect_uri
 

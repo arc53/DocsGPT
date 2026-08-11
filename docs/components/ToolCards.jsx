@@ -4,12 +4,18 @@ import Image from 'next/image';
 
 const iconMap = {
     'API Tool': '/toolIcons/tool_api_tool.svg',
-    'Brave Search Tool': '/toolIcons/tool_brave.svg',
-    'Cryptoprice Tool': '/toolIcons/tool_cryptoprice.svg',
-    'Ntfy Tool': '/toolIcons/tool_ntfy.svg',
-    'PostgreSQL Tool': '/toolIcons/tool_postgres.svg',
-    'Read Webpage Tool': '/toolIcons/tool_read_webpage.svg',
-    'Telegram Tool': '/toolIcons/tool_telegram.svg'
+    'Brave Search': '/toolIcons/tool_brave.svg',
+    'DuckDuckGo Search': '/toolIcons/tool_duckduckgo.svg',
+    'CryptoPrice': '/toolIcons/tool_cryptoprice.svg',
+    'Ntfy': '/toolIcons/tool_ntfy.svg',
+    'Telegram Bot': '/toolIcons/tool_telegram.svg',
+    'PostgreSQL Database': '/toolIcons/tool_postgres.svg',
+    'Read Webpage (browser)': '/toolIcons/tool_read_webpage.svg',
+    'Remote Device': '/toolIcons/tool_remote_device.svg',
+    'MCP Tool': '/toolIcons/tool_mcp_tool.svg',
+    'Memory': '/toolIcons/tool_memory.svg',
+    'Notepad': '/toolIcons/tool_notes.svg',
+    'Todo List': '/toolIcons/tool_todo_list.svg'
 };
 
 
@@ -19,7 +25,7 @@ export function ToolCards({ items }) {
             <div className="tool-cards">
                 {items.map(({ title, link, description }) => {
                     const isExternal = link.startsWith('https://');
-                    const iconSrc = iconMap[title] || '/default-icon.png'; // Default icon if not found
+                    const iconSrc = iconMap[title]; // No icon rendered when the tool has none
 
                     return (
                         <div

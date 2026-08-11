@@ -6,6 +6,7 @@ import os
 import re
 import uuid
 from typing import List
+from urllib.parse import urlparse
 
 import tiktoken
 from flask import jsonify, make_response
@@ -52,6 +53,52 @@ def safe_filename(filename):
     if not safe_name or safe_name == extension.lstrip("."):
         return f"{str(uuid.uuid4())}{extension}"
     return safe_name
+
+
+def strip_null_bytes(value):
+    """Recursively strip ``\\x00`` from string keys/values in ``value``.
+
+    Postgres rejects NUL in both text and jsonb; one NUL-laden payload
+    (e.g. a binary response mis-decoded to text) would otherwise raise
+    ``DataError`` and lose the whole row. Shared by the message journal,
+    conversation finalize, activity log, tool_call_attempts, and
+    attachments write lanes.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "") if "\x00" in value else value
+    if isinstance(value, dict):
+        return {
+            (k.replace("\x00", "") if isinstance(k, str) and "\x00" in k else k):
+            strip_null_bytes(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [strip_null_bytes(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(strip_null_bytes(item) for item in value)
+    return value
+
+
+def truncate_to_line_boundary(data: bytes) -> bytes:
+    """Trim a head-truncated byte window back to its last line boundary.
+
+    The trim is skipped when it would discard more than half the window — a
+    file whose only newline sits near the start (or at byte 0) would otherwise
+    collapse to a few bytes, which is far worse than a partial final line.
+    Callers pass a window already read at their size cap, so the cut never
+    grows the result.
+
+    Args:
+        data: The head window read from an oversized file.
+
+    Returns:
+        ``data`` up to and including its last newline, or ``data`` unchanged
+        when no newline is far enough in to be worth cutting at.
+    """
+    cut = data.rfind(b"\n")
+    if cut > len(data) // 2:
+        return data[: cut + 1]
+    return data
 
 
 def num_tokens_from_string(string: str) -> int:
@@ -197,8 +244,20 @@ def generate_image_url(image_path):
         return image_path
     strategy = getattr(settings, "URL_STRATEGY", "backend")
     if strategy == "s3":
-        bucket_name = getattr(settings, "S3_BUCKET_NAME", "docsgpt-test-bucket")
-        region_name = getattr(settings, "SAGEMAKER_REGION", "eu-central-1")
+        bucket_name = settings.S3_BUCKET_NAME
+        endpoint_url = settings.S3_ENDPOINT_URL
+        if endpoint_url:
+            # S3-compatible service (MinIO, R2, B2, Spaces, ...).
+            base = endpoint_url.rstrip("/")
+            if settings.S3_PATH_STYLE:
+                return f"{base}/{bucket_name}/{image_path}"
+            parsed = urlparse(base)
+            return f"{parsed.scheme}://{bucket_name}.{parsed.netloc}/{image_path}"
+        region_name = (
+            settings.S3_REGION
+            or getattr(settings, "SAGEMAKER_REGION", None)
+            or "eu-central-1"
+        )
         return f"https://{bucket_name}.s3.{region_name}.amazonaws.com/{image_path}"
     else:
         base_url = getattr(settings, "API_URL", "http://localhost:7091")

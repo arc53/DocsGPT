@@ -1,3 +1,4 @@
+import { MessageSquare } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -113,13 +114,24 @@ export default function AgentPreview() {
   return (
     <div className="relative h-full w-full">
       <div className="scrollbar-overlay absolute inset-0 bottom-[180px] overflow-hidden px-4 pt-4 [&>div>div]:w-full! [&>div>div]:max-w-none!">
-        <ConversationMessages
-          handleQuestion={handleQuestion}
-          handleQuestionSubmission={handleQuestionSubmission}
-          queries={queries}
-          status={status}
-          showHeroOnEmpty={false}
-        />
+        {queries.length === 0 ? (
+          <section className="flex h-full flex-col items-center justify-center">
+            <div className="bg-muted mb-2 flex size-14 shrink-0 items-center justify-center rounded-xl">
+              <MessageSquare className="text-muted-foreground size-6" />
+            </div>
+            <p className="text-foreground text-sm font-medium">
+              Test your agent
+            </p>
+          </section>
+        ) : (
+          <ConversationMessages
+            handleQuestion={handleQuestion}
+            handleQuestionSubmission={handleQuestionSubmission}
+            queries={queries}
+            status={status}
+            showHeroOnEmpty={false}
+          />
+        )}
       </div>
       <div className="absolute right-0 bottom-0 left-0 flex w-full flex-col gap-4 pb-2">
         <div className="w-full px-4">

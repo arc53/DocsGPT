@@ -11,6 +11,8 @@ import re
 from typing import Any, Mapping
 from uuid import UUID
 
+from application.storage.db.serialization import coerce_pg_native
+
 
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -34,12 +36,17 @@ def looks_like_uuid(value: Any) -> bool:
 
 
 def row_to_dict(row: Any) -> dict:
-    """Convert a SQLAlchemy ``Row`` to a plain dict with Mongo-compatible ids.
+    """Convert a SQLAlchemy ``Row`` to a plain JSON-safe dict.
 
-    During the migration window, API responses and downstream code still
-    expect a string ``_id`` field (matching the Mongo shape). This helper
-    normalizes UUID columns to strings and emits both ``id`` and ``_id`` so
-    existing serializers keep working unchanged.
+    Normalises PG-native types at the SELECT boundary: UUID, datetime,
+    date, Decimal, and bytes are coerced to JSON-safe forms via
+    :func:`coerce_pg_native`. Downstream serialisation (SSE events,
+    JSONB writes, API responses) becomes safe by default — repository
+    consumers no longer need to know that PG returns a different type
+    set than Mongo did.
+
+    Also emits ``_id`` alongside ``id`` for the duration of the Mongo→PG
+    cutover so legacy serializers expecting Mongo's shape keep working.
 
     Args:
         row: A SQLAlchemy ``Row`` object, or ``None``.
@@ -52,10 +59,9 @@ def row_to_dict(row: Any) -> dict:
 
     # Row has a ``._mapping`` attribute exposing a MappingProxy view.
     mapping: Mapping[str, Any] = row._mapping  # type: ignore[attr-defined]
-    out = dict(mapping)
+    out = coerce_pg_native(dict(mapping))
 
     if "id" in out and out["id"] is not None:
-        out["id"] = str(out["id"]) if isinstance(out["id"], UUID) else out["id"]
         out["_id"] = out["id"]
 
     return out

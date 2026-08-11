@@ -80,7 +80,9 @@ class TestCreateConnectorFields:
         repo = _repo(pg_conn)
         when = datetime.datetime(2025, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
         doc = repo.create("src", user_id="u", date=when)
-        assert doc["date"] == when
+        # ``row_to_dict`` coerces datetimes to ISO strings at the SELECT
+        # boundary; round-trip via ``fromisoformat`` to compare values.
+        assert datetime.datetime.fromisoformat(doc["date"]) == when
 
     def test_persists_legacy_mongo_id(self, pg_conn):
         repo = _repo(pg_conn)
@@ -98,6 +100,30 @@ class TestCreateConnectorFields:
         )
         assert doc["directory_structure"] == dir_struct
         assert doc["file_name_map"] == name_map
+
+
+class TestCreateConfig:
+    def test_default_config_is_empty_when_omitted(self, pg_conn):
+        # Empty config == today's behavior: server default + None param → {}.
+        doc = _repo(pg_conn).create("s", user_id="u")
+        assert doc["config"] == {}
+
+    def test_explicit_config_is_validated_and_persisted(self, pg_conn):
+        # Strict-on-write normalizes through SourceConfig, filling defaults.
+        doc = _repo(pg_conn).create(
+            "s", user_id="u", config={"retrieval": {"chunks": 5}},
+        )
+        assert doc["config"]["retrieval"]["chunks"] == 5
+        assert doc["config"]["chunking"]["max_tokens"] == 1250
+        assert doc["config"]["kind"] == "classic"
+
+    def test_invalid_config_rejected_on_create(self, pg_conn):
+        import pytest as _pytest
+
+        with _pytest.raises(Exception):
+            _repo(pg_conn).create(
+                "s", user_id="u", config={"retrieval": {"chunks": "lots"}},
+            )
 
 
 class TestGet:

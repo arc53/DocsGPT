@@ -1,4 +1,4 @@
-"""Tests for the Postgres dual-write path inside WorkflowAgent._save_workflow_run.
+"""Tests for the Postgres write path inside WorkflowAgent._finalize_workflow_run.
 
 Specifically verifies the inner ``_pg_write`` closure that:
 1. Calls WorkflowsRepository.get_by_legacy_id() to resolve the Mongo workflow id.
@@ -64,7 +64,7 @@ def _stub_mongo(agent, insert_id=None):
 
 
 # ---------------------------------------------------------------------------
-# _save_workflow_run — PG dual-write logic
+# _finalize_workflow_run — PG write logic
 # ---------------------------------------------------------------------------
 
 

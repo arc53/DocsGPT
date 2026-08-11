@@ -15,8 +15,10 @@ import pytest
 import requests
 
 from application.security.safe_url import (
+    ResponseTooLargeError,
     UnsafeUserUrlError,
     _PinnedHTTPSTransport,
+    pinned_fetch_bytes,
     pinned_httpx_client,
     pinned_post,
     validate_user_base_url,
@@ -352,6 +354,23 @@ def test_pinned_post_preserves_explicit_port(monkeypatch):
     # Host header keeps the original :port — proxies and vhost routers
     # rely on this, and SNI conventionally carries the bare hostname.
     assert captured["prepared"].headers["Host"] == "api.example.com:8443"
+
+
+@pytest.mark.unit
+def test_pinned_post_preserves_url_userinfo(monkeypatch):
+    captured = _capture_send(monkeypatch)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        pinned_post(
+            "https://user:pass@api.example.com:8443/v1/test",
+            json={},
+            headers={},
+            timeout=5,
+            allow_redirects=False,
+        )
+    prepared = captured["prepared"]
+    assert prepared.url == "https://user:pass@93.184.216.34:8443/v1/test"
+    assert prepared.headers["Host"] == "api.example.com:8443"
+    assert prepared.headers["Authorization"] == "Basic dXNlcjpwYXNz"
 
 
 @pytest.mark.unit
@@ -708,3 +727,130 @@ def test_pinned_httpx_transport_refuses_unexpected_host(monkeypatch):
         pass
     finally:
         client.close()
+
+
+# pinned_fetch_bytes: streamed, size-bounded GET
+
+
+class _StreamStubResponse:
+    """Streamed drop-in for ``requests.Response`` (``iter_content``-based)."""
+
+    def __init__(self, body: bytes = b"", status_code: int = 200, headers=None):
+        self._body = body
+        self.status_code = status_code
+        self.headers = headers if headers is not None else {}
+        self.closed = False
+
+    def iter_content(self, chunk_size=1):
+        for i in range(0, len(self._body), chunk_size):
+            yield self._body[i:i + chunk_size]
+
+    def close(self):
+        self.closed = True
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.exceptions.HTTPError(str(self.status_code))
+
+
+def _capture_stream_send(monkeypatch, response: _StreamStubResponse):
+    """Replace ``Session.send`` with a stub returning ``response``."""
+
+    captured: dict = {}
+
+    def _send(self, prepared, **kwargs):
+        captured["prepared"] = prepared
+        captured["send_kwargs"] = kwargs
+        return response
+
+    monkeypatch.setattr(requests.Session, "send", _send)
+    return captured
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_returns_body_and_response(monkeypatch):
+    body = b"<html><body>hello</body></html>"
+    stub = _StreamStubResponse(body, headers={"Content-Type": "text/html"})
+    captured = _capture_stream_send(monkeypatch, stub)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        content, response = pinned_fetch_bytes(
+            "http://example.com/page", max_bytes=1024,
+        )
+    assert content == body
+    assert response.headers["Content-Type"] == "text/html"
+    # The request must stream (no full-body buffering by requests) and
+    # still carry the pinned-IP URL rewrite + original Host header.
+    assert captured["send_kwargs"].get("stream") is True
+    assert captured["prepared"].url == "http://93.184.216.34/page"
+    assert captured["prepared"].headers["Host"] == "example.com"
+    # Response closed before the session is torn down.
+    assert stub.closed is True
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_rejects_declared_content_length_over_limit(monkeypatch):
+    stub = _StreamStubResponse(
+        b"x" * 100, headers={"Content-Length": "100"},
+    )
+    _capture_stream_send(monkeypatch, stub)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        with pytest.raises(ResponseTooLargeError):
+            pinned_fetch_bytes("http://example.com/big", max_bytes=10)
+    assert stub.closed is True
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_rejects_oversized_body_without_content_length(monkeypatch):
+    # No Content-Length header — the limit must be enforced during the
+    # bounded read, not just from the declared size.
+    stub = _StreamStubResponse(b"x" * 100)
+    _capture_stream_send(monkeypatch, stub)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        with pytest.raises(ResponseTooLargeError):
+            pinned_fetch_bytes("http://example.com/big", max_bytes=10)
+    assert stub.closed is True
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_body_exactly_at_limit_passes(monkeypatch):
+    stub = _StreamStubResponse(b"x" * 10, headers={"Content-Length": "10"})
+    _capture_stream_send(monkeypatch, stub)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        content, _ = pinned_fetch_bytes("http://example.com/ok", max_bytes=10)
+    assert content == b"x" * 10
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_rejects_unsafe_url():
+    with pytest.raises(UnsafeUserUrlError):
+        pinned_fetch_bytes("http://127.0.0.1/latest/meta-data", max_bytes=10)
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_skips_body_read_on_error_status(monkeypatch):
+    # An error response's body is dead weight — don't spend up to
+    # max_bytes of transfer on it, and don't let its size trump the
+    # more informative HTTP-status error in the caller.
+    stub = _StreamStubResponse(
+        b"x" * 100, status_code=404, headers={"Content-Length": "100"},
+    )
+    _capture_stream_send(monkeypatch, stub)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        content, response = pinned_fetch_bytes(
+            "http://example.com/missing", max_bytes=10,
+        )
+    assert content == b""
+    assert response.status_code == 404
+    assert stub.closed is True
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_passes_headers(monkeypatch):
+    stub = _StreamStubResponse(b"ok")
+    captured = _capture_stream_send(monkeypatch, stub)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        pinned_fetch_bytes(
+            "http://example.com/", max_bytes=10,
+            headers={"User-Agent": "DocsGPT-Agent/1.0"},
+        )
+    assert captured["prepared"].headers["User-Agent"] == "DocsGPT-Agent/1.0"

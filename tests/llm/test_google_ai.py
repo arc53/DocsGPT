@@ -72,12 +72,17 @@ class FakeTypesModule:
     Content = _FakeContent
 
     class GenerateContentConfig:
-        def __init__(self):
+        def __init__(self, thinking_config=None, **_kw):
             self.system_instruction = None
             self.tools = None
-            self.thinking_config = None
+            self.thinking_config = thinking_config
             self.response_schema = None
             self.response_mime_type = None
+
+    class ThinkingConfig:
+        def __init__(self, include_thoughts=False, thinking_level=None):
+            self.include_thoughts = include_thoughts
+            self.thinking_level = thinking_level
 
     class Tool:
         def __init__(self, function_declarations=None):

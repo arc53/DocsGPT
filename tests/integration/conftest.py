@@ -76,9 +76,11 @@ def pg_clean_users(pg_conn):
     The outer transaction rollback handles cleanup, but if a previous
     interrupted run left rows committed, this fixture removes them
     inside the transaction scope so they are invisible to the test.
-    ``DELETE`` rather than ``TRUNCATE`` because ``TRUNCATE`` in Postgres
-    cannot be rolled back within a nested transaction the way
-    ``DELETE`` can.
+    ``TRUNCATE CASCADE`` cascades through every FK to ``users`` (18
+    tables and counting — agents, conversations, sources, user_logs,
+    etc.) so the test view is clean regardless of which dependent rows
+    a prior run left behind. PostgreSQL ``TRUNCATE`` is transactional,
+    so the outer rollback still restores everything.
     """
-    pg_conn.execute(text("DELETE FROM users"))
+    pg_conn.execute(text("TRUNCATE TABLE users CASCADE"))
     return pg_conn

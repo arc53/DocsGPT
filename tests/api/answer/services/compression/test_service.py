@@ -421,3 +421,128 @@ class TestLogToolCallStats:
             }
         ]
         svc._log_tool_call_stats(queries)
+
+
+@pytest.mark.unit
+class TestNegativeSavingsGuard:
+    """A summary that isn't smaller than the original must never be saved
+    as a compression point."""
+
+    def test_growing_compression_raises(self, mock_llm, sample_conversation):
+        mock_llm.gen.return_value = (
+            "<summary>" + ("padding words that inflate the summary " * 200) + "</summary>"
+        )
+        service = CompressionService(llm=mock_llm, model_id="m")
+        with pytest.raises(ValueError, match="did not reduce"):
+            service.compress_conversation(sample_conversation, 2)
+
+    def test_growing_compression_never_saved(
+        self, mock_llm, mock_conversation_service, sample_conversation
+    ):
+        mock_llm.gen.return_value = (
+            "<summary>" + ("padding words that inflate the summary " * 200) + "</summary>"
+        )
+        service = CompressionService(
+            llm=mock_llm,
+            model_id="m",
+            conversation_service=mock_conversation_service,
+        )
+        with pytest.raises(ValueError, match="did not reduce"):
+            service.compress_and_save("conv-1", sample_conversation, 2)
+        mock_conversation_service.update_compression_metadata.assert_not_called()
+
+    def test_shrinking_compression_still_succeeds(self, mock_llm, sample_conversation):
+        # Default fixture summary is tiny relative to the conversation.
+        service = CompressionService(llm=mock_llm, model_id="m")
+        metadata = service.compress_conversation(sample_conversation, 2)
+        assert metadata.compressed_token_count < metadata.original_token_count
+
+
+@pytest.mark.unit
+class TestBoundRecentQueries:
+    """Oversized verbatim fields in the post-compression tail are capped."""
+
+    def _compressed_conversation(self, recent_query):
+        return {
+            "queries": [
+                {"prompt": "old", "response": "old answer"},
+                recent_query,
+            ],
+            "compression_metadata": {
+                "is_compressed": True,
+                "compression_points": [
+                    {
+                        "compressed_summary": "summary",
+                        "query_index": 0,
+                        "compressed_token_count": 10,
+                        "original_token_count": 100,
+                    }
+                ],
+            },
+        }
+
+    def test_oversized_response_is_trimmed_without_mutating_original(
+        self, mock_llm, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "application.api.answer.services.compression.service.settings.COMPRESSION_RECENT_FIELD_MAX_TOKENS",
+            50,
+            raising=False,
+        )
+        big = "word " * 2000
+        recent = {"prompt": "q", "response": big}
+        conversation = self._compressed_conversation(recent)
+        service = CompressionService(llm=mock_llm, model_id="m")
+
+        summary, queries = service.get_compressed_context(conversation)
+
+        assert summary == "summary"
+        assert len(queries) == 1
+        assert "trimmed to fit context" in queries[0]["response"]
+        assert len(queries[0]["response"]) < len(big)
+        # Original conversation dict untouched.
+        assert recent["response"] == big
+
+    def test_oversized_tool_result_is_trimmed(self, mock_llm, monkeypatch):
+        monkeypatch.setattr(
+            "application.api.answer.services.compression.service.settings.COMPRESSION_RECENT_FIELD_MAX_TOKENS",
+            50,
+            raising=False,
+        )
+        big = "data " * 2000
+        recent = {
+            "prompt": "q",
+            "response": "short",
+            "tool_calls": [{"tool_name": "t", "result": big}],
+        }
+        conversation = self._compressed_conversation(recent)
+        service = CompressionService(llm=mock_llm, model_id="m")
+
+        _summary, queries = service.get_compressed_context(conversation)
+
+        assert "trimmed to fit context" in queries[0]["tool_calls"][0]["result"]
+        assert recent["tool_calls"][0]["result"] == big
+
+    def test_small_fields_pass_through_unchanged(self, mock_llm):
+        recent = {"prompt": "q", "response": "short answer"}
+        conversation = self._compressed_conversation(recent)
+        service = CompressionService(llm=mock_llm, model_id="m")
+
+        _summary, queries = service.get_compressed_context(conversation)
+
+        assert queries[0] is recent
+
+    def test_zero_cap_disables_bounding(self, mock_llm, monkeypatch):
+        monkeypatch.setattr(
+            "application.api.answer.services.compression.service.settings.COMPRESSION_RECENT_FIELD_MAX_TOKENS",
+            0,
+            raising=False,
+        )
+        big = "word " * 2000
+        recent = {"prompt": "q", "response": big}
+        conversation = self._compressed_conversation(recent)
+        service = CompressionService(llm=mock_llm, model_id="m")
+
+        _summary, queries = service.get_compressed_context(conversation)
+
+        assert queries[0] is recent

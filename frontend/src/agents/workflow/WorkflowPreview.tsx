@@ -2,7 +2,9 @@ import {
   Bot,
   CheckCircle2,
   Circle,
+  Code2,
   Database,
+  FileBox,
   Flag,
   GitBranch,
   Loader2,
@@ -12,9 +14,18 @@ import {
   Workflow,
   XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { Button } from '@/components/ui/button';
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from '@/components/ui/message-scroller';
 import { cn } from '@/lib/utils';
 
 import ChevronDownIcon from '../../assets/chevron-down.svg';
@@ -22,14 +33,18 @@ import MessageInput from '../../components/MessageInput';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
 import { AppDispatch } from '../../store';
+import { selectCompletedAttachments } from '../../upload/uploadSlice';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
+import WorkflowRunArtifacts from './WorkflowRunArtifacts';
 import {
   addQuery,
   fetchWorkflowPreviewAnswer,
   handleWorkflowPreviewAbort,
+  previewSendBlockReason,
   resendQuery,
   resetWorkflowPreview,
   selectActiveNodeId,
+  setPreviewOpen,
   selectWorkflowExecutionSteps,
   selectWorkflowPreviewQueries,
   selectWorkflowPreviewStatus,
@@ -46,6 +61,9 @@ interface WorkflowData {
 
 interface WorkflowPreviewProps {
   workflowData: WorkflowData;
+  // Saved workflow id (when the draft has been persisted); enables run-artifact
+  // listing by persisting a ``workflow_runs`` row for the preview run.
+  workflowId?: string | null;
 }
 
 const NODE_ICONS: Record<string, React.ReactNode> = {
@@ -55,6 +73,7 @@ const NODE_ICONS: Record<string, React.ReactNode> = {
   note: <StickyNote className="h-3 w-3" />,
   state: <Database className="h-3 w-3" />,
   condition: <GitBranch className="h-3 w-3" />,
+  code: <Code2 className="h-3 w-3" />,
 };
 
 const NODE_COLORS: Record<string, string> = {
@@ -64,6 +83,7 @@ const NODE_COLORS: Record<string, string> = {
   note: 'text-yellow-600 dark:text-yellow-400',
   state: 'text-blue-600 dark:text-blue-400',
   condition: 'text-orange-600 dark:text-orange-400',
+  code: 'text-indigo-600 dark:text-indigo-400',
 };
 
 function ExecutionDetails({
@@ -98,7 +118,12 @@ function ExecutionDetails({
         <div className="flex h-[26px] w-[30px] items-center justify-center">
           <Workflow className="h-5 w-5 text-gray-600 dark:text-gray-400" />
         </div>
-        <button className="flex flex-row items-center gap-2" onClick={onToggle}>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onToggle}
+          className="h-auto gap-2 px-0 py-0 hover:bg-transparent"
+        >
           <p className="text-base font-semibold">
             Execution Details
             <span className="ml-1.5 text-sm font-normal text-gray-500 dark:text-gray-400">
@@ -114,7 +139,7 @@ function ExecutionDetails({
               isOpen ? 'rotate-180' : '',
             )}
           />
-        </button>
+        </Button>
       </div>
       <div
         className={cn(
@@ -128,8 +153,8 @@ function ExecutionDetails({
               const node = nodes.find((n) => n.id === step.nodeId);
               const displayName =
                 node?.title || node?.data?.title || step.nodeTitle;
-              const stateVars = step.stateSnapshot
-                ? Object.entries(step.stateSnapshot).filter(
+              const stateVars = step.stateDelta
+                ? Object.entries(step.stateDelta).filter(
                     ([key]) => !['query', 'chat_history'].includes(key),
                   )
                 : [];
@@ -232,6 +257,61 @@ function ExecutionDetails({
   );
 }
 
+function RunArtifactsSection({
+  workflowRunId,
+  isOpen,
+  onToggle,
+  runInProgress = false,
+}: {
+  workflowRunId: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  runInProgress?: boolean;
+}) {
+  return (
+    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+      <div className="my-2 flex flex-row items-center justify-center gap-3">
+        <div className="flex h-[26px] w-[30px] items-center justify-center">
+          <FileBox className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onToggle}
+          className="h-auto gap-2 px-0 py-0 hover:bg-transparent"
+        >
+          <p className="text-base font-semibold">Artifacts</p>
+          <img
+            src={ChevronDownIcon}
+            alt="ChevronDown"
+            className={cn(
+              'h-4 w-4 transform transition-transform duration-200 dark:invert',
+              isOpen ? 'rotate-180' : '',
+            )}
+          />
+        </Button>
+      </div>
+      <div
+        className={cn(
+          'ml-3 grid w-full transition-all duration-300 ease-in-out',
+          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="max-h-[480px] overflow-y-auto pr-2">
+            {isOpen && (
+              <WorkflowRunArtifacts
+                workflowRunId={workflowRunId}
+                inProgress={runInProgress}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WorkflowMiniMap({
   nodes,
   activeNodeId,
@@ -318,13 +398,15 @@ function WorkflowMiniMap({
             <div className="absolute top-12 left-4 h-3 w-0.5 bg-gray-200 dark:bg-gray-700" />
           )}
 
-          <button
+          <Button
+            type="button"
+            variant="outline"
             onClick={() => hasStepData(node.id) && onNodeClick?.(node.id)}
             disabled={!hasStepData(node.id)}
             className={cn(
-              'flex h-12 w-full items-center gap-2 rounded-lg border px-3 text-xs transition-all',
+              'h-12 w-full justify-start gap-2 px-3 text-xs disabled:opacity-100',
               getStatusColor(node.id),
-              hasStepData(node.id) && 'cursor-pointer hover:opacity-80',
+              hasStepData(node.id) && 'hover:opacity-80',
             )}
           >
             <div
@@ -340,7 +422,7 @@ function WorkflowMiniMap({
                 {getNodeDisplayName(node)}
               </div>
               {getNodeSubtitle(node) && (
-                <div className="truncate text-[10px] text-gray-500 dark:text-gray-400">
+                <div className="truncate text-xs text-gray-500 dark:text-gray-400">
                   {getNodeSubtitle(node)}
                 </div>
               )}
@@ -356,7 +438,7 @@ function WorkflowMiniMap({
                 <XCircle className="h-3 w-3 text-red-500" />
               )}
             </div>
-          </button>
+          </Button>
         </div>
       ))}
     </div>
@@ -365,6 +447,7 @@ function WorkflowMiniMap({
 
 export default function WorkflowPreview({
   workflowData,
+  workflowId,
 }: WorkflowPreviewProps) {
   const dispatch = useDispatch<AppDispatch>();
 
@@ -372,13 +455,20 @@ export default function WorkflowPreview({
   const status = useSelector(selectWorkflowPreviewStatus);
   const executionSteps = useSelector(selectWorkflowExecutionSteps);
   const activeNodeId = useSelector(selectActiveNodeId);
+  const completedAttachments = useSelector(selectCompletedAttachments);
+  const hasCompletedAttachment = completedAttachments.length > 0;
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
+  const [sendBlockedMessage, setSendBlockedMessage] = useState<string | null>(
+    null,
+  );
   const [openDetailsIndex, setOpenDetailsIndex] = useState<number | null>(null);
+  const [openArtifactsIndex, setOpenArtifactsIndex] = useState<number | null>(
+    null,
+  );
 
   const fetchStream = useRef<{ abort: () => void } | null>(null);
   const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToStep = useCallback(
     (nodeId: string) => {
@@ -403,11 +493,12 @@ export default function WorkflowPreview({
           question,
           workflowData,
           indx: index,
+          workflowId,
         }),
       );
       fetchStream.current = promise;
     },
-    [dispatch, workflowData],
+    [dispatch, workflowData, workflowId],
   );
 
   const handleQuestion = useCallback(
@@ -420,8 +511,24 @@ export default function WorkflowPreview({
       isRetry?: boolean;
       index?: number;
     }) => {
+      // An unsaved draft can't bridge uploaded documents into the run (no
+      // persisted workflow_id), so block the send rather than run with the docs
+      // silently dropped. The uploads are kept (not cleared) for a retry after
+      // the workflow is saved.
+      const blockReason = previewSendBlockReason(
+        workflowId,
+        hasCompletedAttachment,
+      );
+      if (blockReason) {
+        setSendBlockedMessage(blockReason);
+        return;
+      }
+      setSendBlockedMessage(null);
+
       const trimmedQuestion = question.trim();
-      if (trimmedQuestion === '') return;
+      // Doc-driven nodes read ``input_documents`` rather than the query, so an
+      // attachment-only run is allowed to proceed with an empty question.
+      if (trimmedQuestion === '' && !hasCompletedAttachment) return;
 
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
@@ -434,8 +541,14 @@ export default function WorkflowPreview({
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer],
+    [dispatch, handleFetchAnswer, hasCompletedAttachment, workflowId],
   );
+
+  // Clear the block message once it no longer applies (the workflow was saved,
+  // or the attachments were removed) so a stale warning doesn't linger.
+  useEffect(() => {
+    if (workflowId || !hasCompletedAttachment) setSendBlockedMessage(null);
+  }, [workflowId, hasCompletedAttachment]);
 
   const handleQuestionSubmission = (
     question?: string,
@@ -448,8 +561,8 @@ export default function WorkflowPreview({
         index: indx,
         isRetry: false,
       });
-    } else if (question && status !== 'loading') {
-      const currentInput = question.trim();
+    } else if ((question || hasCompletedAttachment) && status !== 'loading') {
+      const currentInput = (question ?? '').trim();
       if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
@@ -469,10 +582,12 @@ export default function WorkflowPreview({
 
   useEffect(() => {
     dispatch(resetWorkflowPreview());
+    dispatch(setPreviewOpen(true));
     return () => {
       if (fetchStream.current) fetchStream.current.abort();
       handleWorkflowPreviewAbort();
       dispatch(resetWorkflowPreview());
+      dispatch(setPreviewOpen(false));
     };
   }, [dispatch]);
 
@@ -518,7 +633,7 @@ export default function WorkflowPreview({
               Workflow
             </h3>
           </div>
-          <div className="scrollbar-thin flex-1 overflow-y-auto p-3">
+          <div className="flex-1 scrollbar-thin overflow-y-auto p-3">
             <WorkflowMiniMap
               nodes={workflowData.nodes}
               activeNodeId={activeNodeId}
@@ -530,13 +645,10 @@ export default function WorkflowPreview({
           </div>
         </div>
 
-        <div className="relative flex min-w-0 flex-1 flex-col">
-          <div
-            ref={chatContainerRef}
-            className="scrollbar-thin absolute inset-0 bottom-[100px] overflow-y-auto px-4 pt-4"
-          >
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="relative min-h-0 flex-1">
             {queries.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center">
+              <div className="flex h-full flex-col items-center justify-center px-4">
                 <div className="bg-muted mb-2 flex size-14 shrink-0 items-center justify-center rounded-xl">
                   <MessageSquare className="size-6 text-gray-600 dark:text-gray-300" />
                 </div>
@@ -545,86 +657,136 @@ export default function WorkflowPreview({
                 </p>
               </div>
             ) : (
-              <div className="w-full">
-                {queries.map((query, index) => {
-                  const querySteps = query.executionSteps || [];
-                  const hasResponse = !!(query.response || query.error);
-                  const isLastQuery = index === queries.length - 1;
-                  const isStreamingLastQuery =
-                    status === 'loading' && isLastQuery;
-                  const shouldShowThought =
-                    !isStreamingLastQuery && Boolean(query.thought);
-                  const isOpen =
-                    openDetailsIndex === index ||
-                    (!hasResponse && isLastQuery && querySteps.length > 0);
+              <MessageScrollerProvider autoScroll>
+                <MessageScroller>
+                  <MessageScrollerViewport className="scrollbar-thin px-4 pt-4">
+                    <MessageScrollerContent className="w-full">
+                      {queries.map((query, index) => {
+                        const querySteps = query.executionSteps || [];
+                        const hasResponse = !!(query.response || query.error);
+                        const isLastQuery = index === queries.length - 1;
+                        const isStreamingLastQuery =
+                          status === 'loading' && isLastQuery;
+                        const shouldShowThought =
+                          !isStreamingLastQuery && Boolean(query.thought);
+                        const isOpen =
+                          openDetailsIndex === index ||
+                          (!hasResponse &&
+                            isLastQuery &&
+                            querySteps.length > 0);
+                        const hasAnswerBubble =
+                          !!query.response ||
+                          shouldShowThought ||
+                          !!query.tool_calls;
+                        const hasResponseItem =
+                          querySteps.length > 0 ||
+                          !!query.workflowRunId ||
+                          hasAnswerBubble ||
+                          !!query.error;
 
-                  return (
-                    <div key={index}>
-                      {/* Query bubble */}
-                      <ConversationBubble
-                        className={index === 0 ? 'mt-5' : ''}
-                        message={query.prompt}
-                        type="QUESTION"
-                        handleUpdatedQuestionSubmission={
-                          handleQuestionSubmission
-                        }
-                        questionNumber={index}
-                      />
+                        return (
+                          <Fragment key={index}>
+                            <MessageScrollerItem
+                              messageId={`q-${index}`}
+                              scrollAnchor
+                            >
+                              <ConversationBubble
+                                className={index === 0 ? 'mt-5' : ''}
+                                message={query.prompt}
+                                type="QUESTION"
+                                handleUpdatedQuestionSubmission={
+                                  handleQuestionSubmission
+                                }
+                                questionNumber={index}
+                              />
+                            </MessageScrollerItem>
 
-                      {/* Execution Details */}
-                      {querySteps.length > 0 && (
-                        <ExecutionDetails
-                          steps={querySteps}
-                          nodes={workflowData.nodes}
-                          isOpen={isOpen}
-                          onToggle={() =>
-                            setOpenDetailsIndex(
-                              openDetailsIndex === index ? null : index,
-                            )
-                          }
-                          stepRefs={isLastQuery ? stepRefs : undefined}
-                        />
-                      )}
+                            {hasResponseItem && (
+                              <MessageScrollerItem messageId={`a-${index}`}>
+                                {/* Execution Details */}
+                                {querySteps.length > 0 && (
+                                  <ExecutionDetails
+                                    steps={querySteps}
+                                    nodes={workflowData.nodes}
+                                    isOpen={isOpen}
+                                    onToggle={() =>
+                                      setOpenDetailsIndex(
+                                        openDetailsIndex === index
+                                          ? null
+                                          : index,
+                                      )
+                                    }
+                                    stepRefs={
+                                      isLastQuery ? stepRefs : undefined
+                                    }
+                                  />
+                                )}
+                                {query.workflowRunId && (
+                                  <RunArtifactsSection
+                                    workflowRunId={query.workflowRunId}
+                                    isOpen={openArtifactsIndex === index}
+                                    onToggle={() =>
+                                      setOpenArtifactsIndex(
+                                        openArtifactsIndex === index
+                                          ? null
+                                          : index,
+                                      )
+                                    }
+                                    runInProgress={isStreamingLastQuery}
+                                  />
+                                )}
 
-                      {/* Response bubble */}
-                      {(query.response ||
-                        shouldShowThought ||
-                        query.tool_calls) && (
-                        <ConversationBubble
-                          className={isLastQuery ? 'mb-32' : 'mb-7'}
-                          message={query.response}
-                          type="ANSWER"
-                          thought={
-                            shouldShowThought ? query.thought : undefined
-                          }
-                          sources={query.sources}
-                          toolCalls={query.tool_calls}
-                          feedback={query.feedback}
-                          isStreaming={isStreamingLastQuery}
-                        />
-                      )}
+                                {/* Response bubble */}
+                                {hasAnswerBubble && (
+                                  <ConversationBubble
+                                    className="mb-7"
+                                    message={query.response}
+                                    type="ANSWER"
+                                    thought={
+                                      shouldShowThought
+                                        ? query.thought
+                                        : undefined
+                                    }
+                                    sources={query.sources}
+                                    toolCalls={query.tool_calls}
+                                    feedback={query.feedback}
+                                    isStreaming={isStreamingLastQuery}
+                                  />
+                                )}
 
-                      {/* Error bubble */}
-                      {query.error && (
-                        <ConversationBubble
-                          className={isLastQuery ? 'mb-32' : 'mb-7'}
-                          message={query.error}
-                          type="ERROR"
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                                {/* Error bubble */}
+                                {query.error && (
+                                  <ConversationBubble
+                                    className="mb-7"
+                                    message={query.error}
+                                    type="ERROR"
+                                  />
+                                )}
+                              </MessageScrollerItem>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </MessageScrollerContent>
+                  </MessageScrollerViewport>
+                  <MessageScrollerButton />
+                </MessageScroller>
+              </MessageScrollerProvider>
             )}
           </div>
-          <div className="bg-card absolute right-0 bottom-0 left-0 flex w-full flex-col gap-2 px-4 pt-2 pb-4">
+          <div className="bg-card flex w-full flex-col gap-2 px-4 pt-2 pb-4">
+            {sendBlockedMessage && (
+              <p className="text-xs text-red-500" role="alert">
+                {sendBlockedMessage}
+              </p>
+            )}
             <MessageInput
               onSubmit={(text) => handleQuestionSubmission(text)}
               loading={status === 'loading'}
               showSourceButton={false}
               showToolButton={false}
               autoFocus={true}
+              allowSendWithoutText={true}
             />
           </div>
         </div>

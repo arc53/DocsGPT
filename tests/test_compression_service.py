@@ -210,6 +210,17 @@ class TestCompressionService:
         """
         compression_service.llm.gen.return_value = mock_summary
 
+        # Real compressions run near a context-window threshold, so the
+        # original is always far larger than the summary. Pad the fixture
+        # accordingly — a summary bigger than the original is rejected by
+        # the negative-savings guard.
+        sample_conversation["queries"][0]["response"] = (
+            "Python is a high-level programming language. " * 40
+        )
+        sample_conversation["queries"][1]["response"] = (
+            "You can install Python from python.org. " * 40
+        )
+
         # Compress first 2 queries
         result = compression_service.compress_conversation(
             conversation=sample_conversation, compress_up_to_index=1
@@ -640,6 +651,45 @@ class TestCompressionService:
         assert recent == []
         # Should log the error
         assert mock_logger.error.called
+
+    def test_compress_conversation_with_null_compression_metadata(
+        self, compression_service, sample_conversation
+    ):
+        """A never-compressed conversation stores ``compression_metadata`` as
+        SQL NULL, which reads back as ``None``. ``dict.get(key, {})`` returns
+        that ``None`` (the default only applies to *absent* keys), so the
+        chained ``.get("compression_points", [])`` raised ``AttributeError:
+        'NoneType' object has no attribute 'get'`` and aborted compression.
+        It must compress normally instead.
+        """
+        sample_conversation["compression_metadata"] = None
+        compression_service.llm.gen.return_value = "<summary>ok</summary>"
+
+        result = compression_service.compress_conversation(
+            conversation=sample_conversation, compress_up_to_index=1
+        )
+
+        assert result.query_index == 1
+        assert "ok" in result.compressed_summary
+
+    @patch("application.api.answer.services.compression.service.logger")
+    def test_get_compressed_context_with_null_compression_metadata(
+        self, mock_logger, compression_service, sample_conversation
+    ):
+        """The same ``None`` value must not crash ``get_compressed_context``.
+        Before the guard it raised, got swallowed by the except, and logged a
+        spurious error while falling back to full history. It should now take
+        the clean no-compression path: full history, no error logged.
+        """
+        sample_conversation["compression_metadata"] = None
+
+        summary, recent = compression_service.get_compressed_context(
+            sample_conversation
+        )
+
+        assert summary is None
+        assert len(recent) == len(sample_conversation["queries"])
+        assert not mock_logger.error.called
 
 
     def test_compression_points_array_limiting(self, compression_service):

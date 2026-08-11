@@ -1,4 +1,4 @@
-"""0001 initial schema — consolidated Phase-1..3 baseline.
+"""0001 initial schema — consolidated baseline for user-data tables.
 
 Revision ID: 0001_initial
 Revises:

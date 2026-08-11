@@ -534,6 +534,56 @@ class TestUpdateAgent:
             response = UpdateAgent().put(str(agent["id"]))
         assert response.status_code == 400
 
+    @pytest.mark.parametrize(
+        "payload,field",
+        [
+            ({"status": "bogus"}, "status"),
+            ({"source": "not-a-uuid"}, "source"),
+            ({"sources": ["not-uuid"]}, "sources"),
+            ({"chunks": -1}, "chunks"),
+            ({"chunks": "not-an-int"}, "chunks"),
+            ({"tools": "not-a-list"}, "tools"),
+            ({"prompt_id": "not-a-uuid"}, "prompt_id"),
+            ({"description": "   "}, "description"),
+        ],
+    )
+    def test_validation_rejection_is_logged(
+        self, app, pg_conn, caplog, payload, field
+    ):
+        """Every 400 must leave a WARN naming the field and the user.
+
+        Regression test for the silent-publish-failure bug: the route used to
+        ``make_response(..., 400)`` without logging, so a rejected publish left
+        no server-side trace at all — the only evidence it happened was the
+        OTel span's status code. Combined with the frontend discarding the
+        response body, that made a deterministic validation failure impossible
+        to diagnose from any telemetry we keep.
+        """
+        import logging
+
+        from application.api.user.agents.routes import UpdateAgent
+
+        user = f"u-log-{field}"
+        agent = _seed_agent(pg_conn, user=user)
+        body = {"name": "n", "description": "d", "status": "draft", **payload}
+
+        with caplog.at_level(logging.WARNING), _patch_db(
+            pg_conn
+        ), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT", json=body,
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+
+        assert response.status_code == 400
+        warnings = [
+            r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING
+        ]
+        assert any(
+            field in msg and user in msg for msg in warnings
+        ), f"no WARN naming field={field!r} and user={user!r}; got {warnings!r}"
+
     def test_invalid_chunks_returns_400(self, app, pg_conn):
         from application.api.user.agents.routes import UpdateAgent
 
@@ -709,6 +759,91 @@ class TestUpdateAgent:
             request.decoded_token = {"sub": user}
             response = UpdateAgent().put(str(agent["id"]))
         assert response.status_code == 400
+
+    def test_publish_with_default_source_succeeds(self, app, pg_conn):
+        """The frontend's auto-selected "Default" source has no UUID — it
+        sends ``source: ''`` and ``sources: []`` with ``retriever: 'classic'``.
+        Pre-fix, the publish gate rejected this with
+        ``Missing or invalid required fields: Source``. The retriever
+        carries the runtime identity, so the gate now accepts it.
+        """
+        from application.api.user.agents.routes import UpdateAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.prompts import PromptsRepository
+
+        user = "u-publish-default"
+        # Draft agent with retriever='classic', no source_id, prompt + chunks set.
+        agent = _seed_agent(
+            pg_conn, user=user, status="draft",
+            with_source=False, retriever="classic",
+        )
+        prompt = PromptsRepository(pg_conn).create(user, "p", "c")
+        AgentsRepository(pg_conn).update(
+            str(agent["id"]), user,
+            {
+                "prompt_id": str(prompt["id"]),
+                "chunks": 2,
+                "agent_type": "classic",
+            },
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={
+                "name": "n",
+                "description": "d",
+                "status": "published",
+                "source": "",
+                "sources": [],
+                "retriever": "classic",
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 200, (
+            f"unexpected error: {response.json}"
+        )
+
+    def test_publish_without_source_or_retriever_returns_400(
+        self, app, pg_conn,
+    ):
+        """If neither a source nor a retriever is configured, the gate
+        still trips — the agent has no way to retrieve anything."""
+        from application.api.user.agents.routes import UpdateAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.prompts import PromptsRepository
+
+        user = "u-publish-no-retriever"
+        agent = _seed_agent(
+            pg_conn, user=user, status="draft",
+            with_source=False, retriever="",
+        )
+        prompt = PromptsRepository(pg_conn).create(user, "p", "c")
+        AgentsRepository(pg_conn).update(
+            str(agent["id"]), user,
+            {
+                "prompt_id": str(prompt["id"]),
+                "chunks": 2,
+                "agent_type": "classic",
+            },
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={
+                "name": "n",
+                "description": "d",
+                "status": "published",
+                "source": "",
+                "sources": [],
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 400
+        assert "Source or retriever" in response.json.get("message", "")
 
     def test_publishing_generates_api_key(self, app, pg_conn):
         from application.api.user.agents.routes import UpdateAgent
@@ -1164,6 +1299,187 @@ class TestPinAgentMore:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = PinAgent().post()
+        assert response.status_code == 500
+
+
+class TestRegenerateAgentKey:
+    def _seed_published_with_key(self, pg_conn, user, key):
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent = _seed_agent(pg_conn, user=user, status="published")
+        AgentsRepository(pg_conn).update(str(agent["id"]), user, {"key": key})
+        return agent
+
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.agents.routes import RegenerateAgentKey
+
+        with app.test_request_context(
+            "/api/regenerate_agent_key/abc", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = RegenerateAgentKey().post("abc")
+        status = (
+            response[1] if isinstance(response, tuple) else response.status_code
+        )
+        assert status == 401
+
+    def test_returns_404_when_missing(self, app, pg_conn):
+        from application.api.user.agents.routes import RegenerateAgentKey
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/regenerate_agent_key/00000000-0000-0000-0000-000000000000",
+            method="POST",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = RegenerateAgentKey().post(
+                "00000000-0000-0000-0000-000000000000"
+            )
+        assert response.status_code == 404
+
+    def test_returns_404_for_non_owner(self, app, pg_conn):
+        """Owner-only: another user cannot rotate someone else's key."""
+        from application.api.user.agents.routes import RegenerateAgentKey
+
+        owner = "u-owner-key"
+        agent = self._seed_published_with_key(pg_conn, owner, "owner-old-key")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/regenerate_agent_key/{agent['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-intruder"}
+            response = RegenerateAgentKey().post(str(agent["id"]))
+        assert response.status_code == 404
+
+    def test_returns_400_for_draft_without_key(self, app, pg_conn):
+        from application.api.user.agents.routes import RegenerateAgentKey
+
+        user = "u-draft-key"
+        agent = _seed_agent(pg_conn, user=user, status="draft")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/regenerate_agent_key/{agent['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = RegenerateAgentKey().post(str(agent["id"]))
+        assert response.status_code == 400
+
+    def test_regenerates_key_and_invalidates_old(self, app, pg_conn):
+        from application.api.user.agents.routes import RegenerateAgentKey
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-regen"
+        old_key = "regen-old-key"
+        agent = self._seed_published_with_key(pg_conn, user, old_key)
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/regenerate_agent_key/{agent['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = RegenerateAgentKey().post(str(agent["id"]))
+
+        assert response.status_code == 200
+        new_key = response.json["key"]
+        assert new_key and new_key != old_key
+
+        repo = AgentsRepository(pg_conn)
+        # Persisted key is the new one; the old key no longer resolves.
+        assert repo.get(str(agent["id"]), user)["key"] == new_key
+        assert repo.find_by_key(old_key) is None
+        assert repo.find_by_key(new_key)["id"] == agent["id"]
+
+    def test_migrates_historical_logs_and_usage(self, app, pg_conn):
+        """stack_logs + token_usage + conversations + shared_conversations rows
+        follow the key so analytics, the rate-limit window, and promptable shared
+        links are not orphaned/broken. The stack_logs row is stamped with a
+        *different* user_id (a caller, not the owner) to prove the migration is
+        not owner-scoped, and the conversation is created with api_key set but
+        agent_id NULL to prove the api_key-only path is covered.
+        """
+        from application.api.user.agents.routes import RegenerateAgentKey
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+        from application.storage.db.repositories.shared_conversations import (
+            SharedConversationsRepository,
+        )
+        from application.storage.db.repositories.stack_logs import (
+            StackLogsRepository,
+        )
+        from application.storage.db.repositories.token_usage import (
+            TokenUsageRepository,
+        )
+
+        user = "u-regen-hist"
+        old_key = "regen-hist-old-key"
+        agent = self._seed_published_with_key(pg_conn, user, old_key)
+
+        StackLogsRepository(pg_conn).insert(
+            activity_id="regen-act-1",
+            endpoint="webhook",
+            level="info",
+            user_id="external-caller",
+            api_key=old_key,
+        )
+        TokenUsageRepository(pg_conn).insert(
+            api_key=old_key, prompt_tokens=7, generated_tokens=3,
+        )
+        # api_key set, agent_id intentionally omitted (NULL) — the orphan case.
+        conv = ConversationsRepository(pg_conn).create(
+            user, "conv", api_key=old_key,
+        )
+        # A promptable shared link stores the agent key; rotation must not
+        # leave it pointing at an invalidated key.
+        SharedConversationsRepository(pg_conn).create(
+            conv["id"], user, is_promptable=True, api_key=old_key,
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/regenerate_agent_key/{agent['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = RegenerateAgentKey().post(str(agent["id"]))
+        assert response.status_code == 200
+        new_key = response.json["key"]
+
+        from sqlalchemy import text
+
+        def _count(table, key):
+            return pg_conn.execute(
+                text(f"SELECT COUNT(*) FROM {table} WHERE api_key = :k"),
+                {"k": key},
+            ).scalar()
+
+        assert _count("stack_logs", old_key) == 0
+        assert _count("stack_logs", new_key) == 1
+        assert _count("token_usage", old_key) == 0
+        assert _count("token_usage", new_key) == 1
+        assert _count("conversations", old_key) == 0
+        assert _count("conversations", new_key) == 1
+        assert _count("shared_conversations", old_key) == 0
+        assert _count("shared_conversations", new_key) == 1
+
+    def test_db_error_returns_500(self, app):
+        from application.api.user.agents.routes import RegenerateAgentKey
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.agents.routes.db_session", _broken
+        ), app.test_request_context(
+            "/api/regenerate_agent_key/abc", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = RegenerateAgentKey().post("abc")
         assert response.status_code == 500
 
 

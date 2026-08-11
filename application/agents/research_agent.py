@@ -10,6 +10,7 @@ from application.agents.tools.internal_search import (
     INTERNAL_TOOL_ID,
     add_internal_search_tool,
 )
+from application.agents.tools.wiki import add_wiki_tool
 from application.agents.tools.think import THINK_TOOL_ENTRY, THINK_TOOL_ID
 from application.logging import LogContext
 
@@ -110,6 +111,7 @@ class ResearchAgent(BaseAgent):
     def __init__(
         self,
         retriever_config: Optional[Dict] = None,
+        wiki_config: Optional[Dict] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
         max_sub_iterations: int = DEFAULT_MAX_SUB_ITERATIONS,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
@@ -120,6 +122,7 @@ class ResearchAgent(BaseAgent):
     ):
         super().__init__(*args, **kwargs)
         self.retriever_config = retriever_config or {}
+        self.wiki_config = wiki_config or {}
         self.max_steps = max_steps
         self.max_sub_iterations = max_sub_iterations
         self.timeout_seconds = timeout_seconds
@@ -274,6 +277,8 @@ class ResearchAgent(BaseAgent):
         tools_dict = self.tool_executor.get_tools()
 
         add_internal_search_tool(tools_dict, self.retriever_config)
+        if self.wiki_config:
+            add_wiki_tool(tools_dict, self.wiki_config)
 
         think_entry = dict(THINK_TOOL_ENTRY)
         think_entry["config"] = {}

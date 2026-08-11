@@ -43,11 +43,73 @@ class TestConfigRoute:
 
     @pytest.mark.unit
     def test_returns_auth_config(self, client):
-        response = client.get("/api/config")
+        # Pin AUTH_TYPE so the assertion doesn't depend on the dev .env.
+        with patch("application.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            response = client.get("/api/config")
         assert response.status_code == 200
         data = json.loads(response.data)
         assert "auth_type" in data
         assert "requires_auth" in data
+        assert "oidc" not in data
+
+    @pytest.mark.unit
+    def test_exposes_graphrag_available(self, client):
+        with patch("application.app.settings") as mock_settings, patch(
+            "application.graphrag.graphrag_available", return_value=True
+        ):
+            mock_settings.AUTH_TYPE = None
+            response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["graphrag_available"] is True
+
+    @pytest.mark.unit
+    def test_graphrag_unavailable_when_flag_off(self, client):
+        with patch("application.app.settings") as mock_settings, patch(
+            "application.graphrag.graphrag_available", return_value=False
+        ):
+            mock_settings.AUTH_TYPE = None
+            response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["graphrag_available"] is False
+
+    @pytest.mark.unit
+    def test_hybrid_available_when_pgvector(self, client):
+        with patch("application.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            mock_settings.VECTOR_STORE = "pgvector"
+            response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["hybrid_available"] is True
+
+    @pytest.mark.unit
+    def test_hybrid_unavailable_when_not_pgvector(self, client):
+        with patch("application.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            mock_settings.VECTOR_STORE = "faiss"
+            response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["hybrid_available"] is False
+
+    @pytest.mark.unit
+    def test_oidc_config_exposes_login_paths(self, client):
+        with patch("application.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = "oidc"
+            mock_settings.OIDC_PROVIDER_NAME = "Test SSO"
+            response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["auth_type"] == "oidc"
+        assert data["requires_auth"] is True
+        assert data["oidc"] == {
+            "login_path": "/api/auth/oidc/login",
+            "logout_path": "/api/auth/oidc/logout",
+            "provider_name": "Test SSO",
+        }
 
 
 class TestGenerateTokenRoute:
@@ -104,6 +166,23 @@ class TestAuthenticateRequest:
             response = client.get("/api/health")
             assert response.status_code == 200
 
+    @pytest.mark.unit
+    def test_oidc_auth_paths_exempt_from_jwt_check(self, client, app):
+        # A stale/expired Bearer header must never 401 the oidc login
+        # endpoints — they are the only path back to a fresh session. The oidc
+        # routes are only live under AUTH_TYPE=oidc, so pin it here.
+        from application.core.settings import settings as _settings
+
+        with patch(
+            "application.app.handle_auth", return_value={"error": "invalid_token"}
+        ), patch(
+            "application.api.oidc.routes.get_redis_instance", return_value=None
+        ), patch.object(_settings, "AUTH_TYPE", "oidc"):
+            response = client.get(
+                "/api/auth/oidc/login", headers={"Authorization": "Bearer garbage"}
+            )
+        assert response.status_code == 503  # redis guard, not a 401
+
 
 class TestFlaskCors:
 
@@ -111,7 +190,9 @@ class TestFlaskCors:
     def test_cors_headers_on_flask_route(self, client):
         response = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
         assert response.headers["Access-Control-Allow-Origin"] == "*"
-        assert response.headers["Access-Control-Allow-Headers"] == "Content-Type, Authorization"
+        assert response.headers["Access-Control-Allow-Headers"] == (
+            "Content-Type, Authorization, Idempotency-Key"
+        )
         assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 
     @pytest.mark.unit
@@ -126,5 +207,7 @@ class TestFlaskCors:
         )
         assert response.status_code == 200
         assert response.headers["Access-Control-Allow-Origin"] == "*"
-        assert response.headers["Access-Control-Allow-Headers"] == "Content-Type, Authorization"
+        assert response.headers["Access-Control-Allow-Headers"] == (
+            "Content-Type, Authorization, Idempotency-Key"
+        )
         assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, PATCH, DELETE, OPTIONS"

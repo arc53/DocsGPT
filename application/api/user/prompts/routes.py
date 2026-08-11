@@ -1,13 +1,13 @@
 """Prompt management routes."""
 
-import os
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
-from application.api.user.base import current_dir
+from application.api.user.team_sharing import team_access_for, visible_with_access
 from application.storage.db.repositories.prompts import PromptsRepository
+from application.prompts.composer import compose_preset, is_composed_preset
 from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
@@ -60,7 +60,12 @@ class GetPrompts(Resource):
         user = decoded_token.get("sub")
         try:
             with db_readonly() as conn:
-                prompts = PromptsRepository(conn).list_for_user(user)
+                repo = PromptsRepository(conn)
+                prompts = repo.list_for_user(user)
+                owned_ids = {str(p["id"]) for p in prompts}
+                team_shared = visible_with_access(conn, user, "prompt")
+                shared_ids = [pid for pid in team_shared if pid not in owned_ids]
+                shared_prompts = repo.list_by_ids(shared_ids)
             list_prompts = [
                 {"id": "default", "name": "default", "type": "public"},
                 {"id": "creative", "name": "creative", "type": "public"},
@@ -72,6 +77,15 @@ class GetPrompts(Resource):
                         "id": str(prompt["id"]),
                         "name": prompt["name"],
                         "type": "private",
+                    }
+                )
+            for prompt in shared_prompts:
+                list_prompts.append(
+                    {
+                        "id": str(prompt["id"]),
+                        "name": prompt["name"],
+                        "type": "team",
+                        "team_access": team_shared.get(str(prompt["id"])),
                     }
                 )
         except Exception as err:
@@ -94,28 +108,16 @@ class GetSinglePrompt(Resource):
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
         try:
-            if prompt_id == "default":
-                with open(
-                    os.path.join(current_dir, "prompts", "chat_combine_default.txt"),
-                    "r",
-                ) as f:
-                    chat_combine_template = f.read()
-                return make_response(jsonify({"content": chat_combine_template}), 200)
-            elif prompt_id == "creative":
-                with open(
-                    os.path.join(current_dir, "prompts", "chat_combine_creative.txt"),
-                    "r",
-                ) as f:
-                    chat_reduce_creative = f.read()
-                return make_response(jsonify({"content": chat_reduce_creative}), 200)
-            elif prompt_id == "strict":
-                with open(
-                    os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r"
-                ) as f:
-                    chat_reduce_strict = f.read()
-                return make_response(jsonify({"content": chat_reduce_strict}), 200)
+            if is_composed_preset(prompt_id):
+                return make_response(
+                    jsonify({"content": compose_preset(prompt_id)}), 200
+                )
             with db_readonly() as conn:
-                prompt = PromptsRepository(conn).get_any(prompt_id, user)
+                repo = PromptsRepository(conn)
+                prompt = repo.get_any(prompt_id, user)
+                if not prompt and team_access_for(conn, user, "prompt", prompt_id):
+                    # Team fallback: ownerless fetch only after a grant check.
+                    prompt = repo.get_for_rendering(prompt_id)
             if not prompt:
                 return make_response(
                     jsonify({"success": False, "message": "Prompt not found"}), 404
@@ -190,12 +192,41 @@ class UpdatePrompt(Resource):
             with db_session() as conn:
                 repo = PromptsRepository(conn)
                 prompt = repo.get_any(data["id"], user)
-                if not prompt:
-                    return make_response(
-                        jsonify({"success": False, "message": "Prompt not found"}),
-                        404,
-                    )
-                repo.update(str(prompt["id"]), user, data["name"], data["content"])
+                if prompt:
+                    repo.update(str(prompt["id"]), user, data["name"], data["content"])
+                else:
+                    # Team editor write path (viewer is read-only).
+                    access = team_access_for(conn, user, "prompt", data["id"])
+                    if access == "editor":
+                        result = repo.update_by_id(
+                            data["id"],
+                            data["name"],
+                            data["content"],
+                            expected_updated_at=data.get("expected_updated_at"),
+                        )
+                        if result is None:
+                            return make_response(
+                                jsonify(
+                                    {
+                                        "success": False,
+                                        "message": "Prompt was modified by someone else",
+                                        "code": "stale_write",
+                                    }
+                                ),
+                                409,
+                            )
+                    elif access == "viewer":
+                        return make_response(
+                            jsonify(
+                                {"success": False, "message": "Read-only: editor access required"}
+                            ),
+                            403,
+                        )
+                    else:
+                        return make_response(
+                            jsonify({"success": False, "message": "Prompt not found"}),
+                            404,
+                        )
         except Exception as err:
             current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

@@ -1,6 +1,6 @@
-// Phase 3 Tier-B · streaming UX (SSE delivery, research progress, tool approval resume)
+// Tier-B · streaming UX (SSE delivery, research progress, tool approval resume)
 /**
- * Phase 3 — B7 · streaming UX + tool-state plumbing.
+ * B7 · streaming UX + tool-state plumbing.
  *
  * Focus: the `/stream` SSE surface that `frontend/src/conversation/Conversation.tsx`
  * consumes. Unlike the migration-critical chat-turn spec (P2-07), these tests
@@ -103,11 +103,19 @@ test.describe('tier-b · streaming UX', () => {
         isNoneDoc: true,
       });
       expect(status).toBe(200);
-      // Every non-empty line in the body must be `data: ...` framed.
+      // Every non-empty line in the body must be a valid SSE field —
+      // ``data:`` for payload, ``id:`` for the per-chunk replay cursor
+      // added by the snapshot-tail branch, or ``event:`` for typed
+      // events. Anything else (e.g. a raw JSON line) is a wire-format
+      // bug.
       for (const line of text.split('\n')) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        expect(trimmed.startsWith('data:')).toBe(true);
+        expect(
+          trimmed.startsWith('data:') ||
+            trimmed.startsWith('id:') ||
+            trimmed.startsWith('event:'),
+        ).toBe(true);
       }
       // At least one answer delta landed and the stream ended cleanly.
       expect(frames.length).toBeGreaterThan(1);
@@ -160,14 +168,20 @@ test.describe('tier-b · streaming UX', () => {
     }
   });
 
-  test('pending_tool_state round-trip: SQL-inserted row is cleared by a tool_actions resume /stream', async ({
+  test('pending_tool_state round-trip: SQL-inserted row is claimed (resuming) or cleared by a tool_actions resume /stream', async ({
     browser,
   }) => {
     // We model the tool-approval flow at the table level — the contract is
     // that the route path with `tool_actions` + `conversation_id` calls
-    // `StreamProcessor.resume_from_tool_actions`, which loads from PG and
-    // DELETEs the row after success (stream_processor.py:978-979). No real
-    // agent wiring is needed to test that contract.
+    // `StreamProcessor.resume_from_tool_actions`, which loads from PG, then
+    // `mark_resuming` flips status `pending`→`resuming` so the row cannot
+    // be re-claimed (see continuation_service.py + repositories/pending_tool_state.py).
+    // On clean completion the route layer DELETEs the row
+    // (routes/base.py: `delete_state` after stream success); on a crash the
+    // row stays in `resuming` for the janitor to revert after the grace
+    // window. Either outcome proves the replay footgun is closed — what
+    // must not happen is the row remaining in `pending` status.
+    // No real agent wiring is needed to test that contract.
     const { sub, token } = await newUserContext(browser);
     const api = await authedRequest(playwright, token);
     try {
@@ -248,9 +262,9 @@ test.describe('tier-b · streaming UX', () => {
         }),
       ).toBe(1);
 
-      // 3. Fire the resume request. Even if the agent crashes partway, the
-      // state must be deleted — the route layer guarantees that by calling
-      // delete_state *before* invoking gen_continuation.
+      // 3. Fire the resume request. The route layer claims the row via
+      // `mark_resuming` before invoking gen_continuation, so even if the
+      // agent crashes mid-stream the row's status flips off `pending`.
       const resume = await api.post('/stream', {
         data: {
           conversation_id: convId,
@@ -264,15 +278,15 @@ test.describe('tier-b · streaming UX', () => {
       expect(resume.status()).toBe(200);
       await resume.text();
 
-      // 4. Row must be gone. Proves delete_state ran during the resume
-      // code path. If this fails, the resume is replayable — a footgun
-      // that was a Mongo-era bug #2088.
-      expect(
-        await countRows('pending_tool_state', {
-          sql: 'user_id = $1 AND conversation_id = CAST($2 AS uuid)',
-          params: [sub, convId],
-        }),
-      ).toBe(0);
+      // 4. Row must be either deleted (clean completion) or marked
+      // `resuming` (crash partway). What must not happen is the row
+      // remaining in `pending` — that would mean the resume is
+      // re-fireable, a footgun mirroring Mongo-era bug #2088.
+      const pendingCount = await countRows('pending_tool_state', {
+        sql: "user_id = $1 AND conversation_id = CAST($2 AS uuid) AND status = 'pending'",
+        params: [sub, convId],
+      });
+      expect(pendingCount).toBe(0);
     } finally {
       await api.dispose();
     }

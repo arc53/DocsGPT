@@ -7,10 +7,13 @@ import userService from '../api/services/userService';
 import ExternalLinkIcon from '../assets/external-link.svg';
 import CopyButton from '../components/CopyButton';
 import Spinner from '../components/Spinner';
+import { Button } from '../components/ui/button';
+import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import WrapperModal from './WrapperModal';
 import { getEnv } from '@/utils/envUtils';
+import ConfirmationModal from './ConfirmationModal';
+
 
 const baseURL = getEnv('VITE_BASE_URL');
 
@@ -19,6 +22,7 @@ type AgentDetailsModalProps = {
   mode: 'new' | 'edit' | 'draft';
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
+  onKeyRegenerated?: (key: string) => void;
 };
 
 export default function AgentDetailsModal({
@@ -26,6 +30,7 @@ export default function AgentDetailsModal({
   mode,
   modalState,
   setModalState,
+  onKeyRegenerated,
 }: AgentDetailsModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -35,6 +40,8 @@ export default function AgentDetailsModal({
   );
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
+  const [resetKeyConfirmState, setResetKeyConfirmState] =
+    useState<ActiveState>('INACTIVE');
   const [loadingStates, setLoadingStates] = useState({
     publicLink: false,
     apiKey: false,
@@ -75,23 +82,36 @@ export default function AgentDetailsModal({
     setLoading('webhook', false);
   };
 
+  const handleRegenerateKey = async () => {
+    setLoading('apiKey', true);
+    try {
+      const response = await userService.regenerateAgentKey(
+        agent.id ?? '',
+        token,
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+      setApiKey(data.key);
+      onKeyRegenerated?.(data.key);
+    } finally {
+      setLoading('apiKey', false);
+    }
+  };
+
   useEffect(() => {
     setSharedToken(agent.shared_token ?? null);
     setApiKey(agent.key ?? null);
   }, [agent]);
 
-  if (modalState !== 'ACTIVE') return null;
   return (
-    <WrapperModal
-      className="sm:w-lg"
-      close={() => {
-        setModalState('INACTIVE');
-      }}
+    <>
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => !o && setModalState('INACTIVE')}
+      title={t('modals.agentDetails.title')}
+      size="md"
     >
       <div>
-        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-          {t('modals.agentDetails.title')}
-        </h2>
         <div className="mt-8 flex flex-col gap-6">
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
@@ -101,7 +121,7 @@ export default function AgentDetailsModal({
             </div>
             {sharedToken ? (
               <div className="flex flex-col gap-2">
-                <p className="font-roboto dark:text-foreground inline text-[14px] leading-normal font-medium break-all text-gray-700">
+                <p className="font-roboto dark:text-foreground inline text-sm leading-normal font-medium break-all text-gray-700">
                   <a
                     href={`${baseURL}/shared/agent/${sharedToken}`}
                     target="_blank"
@@ -132,16 +152,18 @@ export default function AgentDetailsModal({
                 </a>
               </div>
             ) : (
-              <button
-                className="border-primary text-primary hover:bg-primary/90 flex w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+              <Button
+                type="button"
+                variant="outline"
                 onClick={handleGeneratePublicLink}
+                className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
               >
                 {loadingStates.publicLink ? (
-                  <Spinner size="small" color="#976af3" />
+                  <Spinner size="small" />
                 ) : (
                   t('modals.agentDetails.generate')
                 )}
-              </button>
+              </Button>
             )}
           </div>
           <div className="flex flex-col gap-3">
@@ -151,7 +173,7 @@ export default function AgentDetailsModal({
             {apiKey ? (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <div className="font-roboto dark:text-foreground text-[14px] leading-normal font-medium break-all text-gray-700">
+                  <div className="font-roboto dark:text-foreground text-sm leading-normal font-medium break-all text-gray-700">
                     {apiKey}
                     {!apiKey.includes('...') && (
                       <CopyButton
@@ -164,7 +186,7 @@ export default function AgentDetailsModal({
                   {!apiKey.includes('...') && (
                     <a
                       href={`https://widget.docsgpt.cloud/?api-key=${apiKey}`}
-                      className="group border-primary text-primary hover:bg-primary/90 ml-8 flex w-[101px] items-center justify-center gap-1 rounded-[62px] border py-1.5 text-sm font-medium transition-colors hover:text-white"
+                      className="group border-primary text-primary hover:bg-primary/90 ml-8 flex w-[101px] items-center justify-center gap-1 rounded-full border py-1.5 text-sm font-medium transition-colors hover:text-white"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -176,12 +198,30 @@ export default function AgentDetailsModal({
                       />
                     </a>
                   )}
+                  {apiKey.includes('...') && (
+                    <button
+                      type="button"
+                      onClick={() => setResetKeyConfirmState('ACTIVE')}
+                      disabled={loadingStates.apiKey}
+                      className="border-primary text-primary hover:bg-primary/90 ml-8 flex items-center justify-center gap-1 rounded-full border px-5 py-1.5 text-sm font-medium transition-colors hover:text-white disabled:opacity-60"
+                    >
+                      {loadingStates.apiKey ? (
+                        <Spinner size="small" />
+                      ) : (
+                        t('modals.agentDetails.resetKey')
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
-              <button className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
+              >
                 {t('modals.agentDetails.generate')}
-              </button>
+              </Button>
             )}
           </div>
           <div className="flex flex-col gap-3">
@@ -192,7 +232,7 @@ export default function AgentDetailsModal({
             </div>
             {webhookUrl ? (
               <div className="flex flex-col gap-2">
-                <p className="font-roboto dark:text-foreground text-[14px] leading-normal font-medium break-all text-gray-700">
+                <p className="font-roboto dark:text-foreground text-sm leading-normal font-medium break-all text-gray-700">
                   <a href={webhookUrl} target="_blank" rel="noreferrer">
                     {webhookUrl}
                   </a>
@@ -219,20 +259,31 @@ export default function AgentDetailsModal({
                 </a>
               </div>
             ) : (
-              <button
-                className="border-primary text-primary hover:bg-primary/90 flex w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+              <Button
+                type="button"
+                variant="outline"
                 onClick={handleGenerateWebhook}
+                className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
               >
                 {loadingStates.webhook ? (
-                  <Spinner size="small" color="#976af3" />
+                  <Spinner size="small" />
                 ) : (
                   t('modals.agentDetails.generate')
                 )}
-              </button>
+              </Button>
             )}
           </div>
         </div>
       </div>
-    </WrapperModal>
+    </Modal>
+    <ConfirmationModal
+      message={t('modals.agentDetails.resetKeyConfirm')}
+      modalState={resetKeyConfirmState}
+      setModalState={setResetKeyConfirmState}
+      submitLabel={t('modals.agentDetails.resetKey')}
+      handleSubmit={handleRegenerateKey}
+      variant="danger"
+    />
+    </>
   );
 }

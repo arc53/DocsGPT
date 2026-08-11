@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -9,11 +10,14 @@ import {
 import remarkGfm from 'remark-gfm';
 
 import userService from '../api/services/userService';
-import Exit from '../assets/exit.svg';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import { isDocumentArtifact, type DocumentArtifact } from './artifactViewUtils';
 import CopyButton from './CopyButton';
+import DocumentArtifactView from './DocumentArtifactView';
 import Spinner from './Spinner';
+import { Button } from './ui/button';
+import { Sheet, SheetContent } from './ui/sheet';
 
 type TodoItem = {
   todo_id: number;
@@ -179,8 +183,8 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                 const language = match ? match[1] : '';
 
                 return match ? (
-                  <div className="group border-border relative my-2 overflow-hidden rounded-[14px] border">
-                    <div className="bg-platinum flex items-center justify-between px-2 py-1">
+                  <div className="group border-border relative my-2 overflow-hidden rounded-xl border">
+                    <div className="bg-muted flex items-center justify-between px-2 py-1">
                       <span className="text-foreground dark:text-foreground text-xs font-medium">
                         {language}
                       </span>
@@ -204,7 +208,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                   </div>
                 ) : (
                   <code
-                    className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal"
+                    className="dark:bg-accent dark:text-foreground rounded-md bg-gray-200 px-2 py-1 text-xs font-normal"
                     {...rest}
                   >
                     {children}
@@ -276,18 +280,20 @@ export default function ArtifactSidebar({
   conversationId,
   variant = 'overlay',
 }: ArtifactSidebarProps) {
-  const sidebarRef = React.useRef<HTMLDivElement>(null);
   const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
   const currentFetchIdRef = React.useRef<string | null>(null);
   const token = useSelector(selectToken);
   const [artifact, setArtifact] = useState<ArtifactData | null>(null);
+  const [documentArtifact, setDocumentArtifact] =
+    useState<DocumentArtifact | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [effectiveArtifactId, setEffectiveArtifactId] = useState<string | null>(
     artifactId,
   );
 
-  const title = getArtifactTitle(artifact, toolName);
+  const title = documentArtifact?.title || getArtifactTitle(artifact, toolName);
 
   // Reset last successful todo artifact ID when conversation changes
   useEffect(() => {
@@ -307,6 +313,7 @@ export default function ArtifactSidebar({
   useEffect(() => {
     if (!isOpen || !effectiveArtifactId) {
       setArtifact(null);
+      setDocumentArtifact(null);
       setError(null);
       setLoading(false);
       currentFetchIdRef.current = null;
@@ -314,92 +321,118 @@ export default function ArtifactSidebar({
     }
 
     // Generate a unique ID for this fetch
-    const fetchId = `${effectiveArtifactId}-${Date.now()}`;
+    const artifactIdToFetch = effectiveArtifactId;
+    const fetchId = `${artifactIdToFetch}-${Date.now()}`;
     currentFetchIdRef.current = fetchId;
 
     setLoading(true);
     setError(null);
 
-    // Note: For todo artifacts, the endpoint always returns all todos for the tool; will be coversation scoped later
+    // Document/file artifacts live behind the generalized /api/artifacts/<id>
+    // endpoint; notes/todos behind the legacy /api/artifact/<id>. Try the
+    // document path first and fall back to the legacy flow on a non-document
+    // shape so a single id resolves cleanly either way.
     userService
-      .getArtifact(effectiveArtifactId, token)
-      .then(async (res: any) => {
-        // Ignore if this is not the current fetch
-        if (currentFetchIdRef.current !== fetchId) return;
-
-        const isResponseLike = res && typeof res.json === 'function';
-        const status = isResponseLike ? res.status : undefined;
-        const ok = isResponseLike ? Boolean(res.ok) : true;
-
-        let data: any = res;
-        if (isResponseLike) {
-          try {
-            data = await res.json();
-          } catch {
-            data = null;
-          }
+      .getDocumentArtifact(artifactIdToFetch, token)
+      .then(async (res: Response) => {
+        if (currentFetchIdRef.current !== fetchId) return true;
+        if (!res.ok) return false;
+        let data: any = null;
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
         }
-
-        // Check again after async operation
-        if (currentFetchIdRef.current !== fetchId) return;
-
-        if (ok && data?.success && data?.artifact) {
-          setArtifact(data.artifact);
-          // Remember the last successful todo artifact id so we can fallback if a newer id 404s.
-          if (data.artifact?.artifact_type === 'todo_list') {
-            lastSuccessfulTodoArtifactIdRef.current = effectiveArtifactId;
-          }
+        if (currentFetchIdRef.current !== fetchId) return true;
+        if (data?.success && isDocumentArtifact(data.artifact)) {
+          setDocumentArtifact(data.artifact);
+          setArtifact(null);
           setLoading(false);
-          return;
+          return true;
         }
-
-        const isTodoTool = (toolName ?? '').toLowerCase().includes('todo');
-
-        // If the latest todo artifact id is missing (404), fall back to the last known good one
-        // so the backend can still resolve `tool_id` for the todo list.
-        if (
-          status === 404 &&
-          isTodoTool &&
-          lastSuccessfulTodoArtifactIdRef.current &&
-          lastSuccessfulTodoArtifactIdRef.current !== effectiveArtifactId
-        ) {
-          // Update effectiveArtifactId to trigger a new fetch with the fallback id
-          setEffectiveArtifactId(lastSuccessfulTodoArtifactIdRef.current);
-          setLoading(false);
-          return;
-        }
-
-        // Ensure we show a visible error state instead of rendering nothing.
-        const message =
-          data?.message ||
-          (status === 404 ? 'Artifact not found' : null) ||
-          'Failed to load artifact';
-        setError(message);
-        setLoading(false);
+        return false;
       })
-      .catch((err) => {
-        // Ignore if this is not the current fetch
+      .catch(() => false)
+      .then((handled) => {
+        if (handled) return;
         if (currentFetchIdRef.current !== fetchId) return;
-        setError('Failed to fetch artifact');
-        setLoading(false);
+        setDocumentArtifact(null);
+        fetchLegacyArtifact(fetchId);
       });
-  }, [isOpen, effectiveArtifactId, token, toolName, conversationId]);
 
-  const handleClickOutside = (event: MouseEvent) => {
-    if (
-      sidebarRef.current &&
-      !sidebarRef.current.contains(event.target as Node)
-    ) {
-      onClose();
-    }
-  };
+    // Legacy notes/todo fetch (unchanged behavior).
+    function fetchLegacyArtifact(fetchId: string) {
+      userService
+        .getArtifact(artifactIdToFetch, token)
+        .then(async (res: any) => {
+          // Ignore if this is not the current fetch
+          if (currentFetchIdRef.current !== fetchId) return;
 
-  useEffect(() => {
-    if (variant === 'overlay' && isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+          const isResponseLike = res && typeof res.json === 'function';
+          const status = isResponseLike ? res.status : undefined;
+          const ok = isResponseLike ? Boolean(res.ok) : true;
+
+          let data: any = res;
+          if (isResponseLike) {
+            try {
+              data = await res.json();
+            } catch {
+              data = null;
+            }
+          }
+
+          // Check again after async operation
+          if (currentFetchIdRef.current !== fetchId) return;
+
+          if (ok && data?.success && data?.artifact) {
+            setArtifact(data.artifact);
+            // Remember the last successful todo artifact id so we can fallback if a newer id 404s.
+            if (data.artifact?.artifact_type === 'todo_list') {
+              lastSuccessfulTodoArtifactIdRef.current = effectiveArtifactId;
+            }
+            setLoading(false);
+            return;
+          }
+
+          const isTodoTool = (toolName ?? '').toLowerCase().includes('todo');
+
+          // If the latest todo artifact id is missing (404), fall back to the last known good one
+          // so the backend can still resolve `tool_id` for the todo list.
+          if (
+            status === 404 &&
+            isTodoTool &&
+            lastSuccessfulTodoArtifactIdRef.current &&
+            lastSuccessfulTodoArtifactIdRef.current !== effectiveArtifactId
+          ) {
+            // Update effectiveArtifactId to trigger a new fetch with the fallback id
+            setEffectiveArtifactId(lastSuccessfulTodoArtifactIdRef.current);
+            setLoading(false);
+            return;
+          }
+
+          // Ensure we show a visible error state instead of rendering nothing.
+          const message =
+            data?.message ||
+            (status === 404 ? 'Artifact not found' : null) ||
+            'Failed to load artifact';
+          setError(message);
+          setLoading(false);
+        })
+        .catch(() => {
+          // Ignore if this is not the current fetch
+          if (currentFetchIdRef.current !== fetchId) return;
+          setError('Failed to fetch artifact');
+          setLoading(false);
+        });
     }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, variant]);
+  }, [
+    isOpen,
+    effectiveArtifactId,
+    token,
+    toolName,
+    conversationId,
+    refreshNonce,
+  ]);
 
   const renderContent = () => {
     if (loading) {
@@ -414,6 +447,14 @@ export default function ArtifactSidebar({
         <div className="flex h-full items-center justify-center">
           <p className="text-sm text-red-500">{error}</p>
         </div>
+      );
+    }
+    if (documentArtifact) {
+      return (
+        <DocumentArtifactView
+          artifact={documentArtifact}
+          onRefresh={() => setRefreshNonce((n) => n + 1)}
+        />
       );
     }
     // Avoid rendering an empty panel if the artifact couldn't be loaded for any reason.
@@ -453,16 +494,16 @@ export default function ArtifactSidebar({
             <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
               {title}
             </span>
-            <button
-              className="hover:bg-accent dark:hover:bg-accent rounded-full p-1"
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="rounded-full"
               onClick={onClose}
+              aria-label="Close"
             >
-              <img
-                className="h-3 w-3 filter dark:invert"
-                src={Exit}
-                alt="Close"
-              />
-            </button>
+              <X className="h-3 w-3" />
+            </Button>
           </div>
           <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
         </div>
@@ -471,29 +512,35 @@ export default function ArtifactSidebar({
   }
 
   return (
-    <div ref={sidebarRef} className="h-vh relative">
-      <div
-        className={`dark:bg-card bg-card fixed top-0 right-0 z-50 flex h-full w-80 transform flex-col shadow-xl transition-all duration-300 sm:w-96 ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        } border-l border-[#9ca3af]/10`}
+    <Sheet
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        title={title || 'Artifact preview'}
+        className="dark:bg-card bg-card flex h-full w-80 flex-col gap-0 border-l border-[#9ca3af]/10 p-0 sm:w-96 sm:max-w-none"
       >
         <div className="flex w-full items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
             {title}
           </span>
-          <button
-            className="hover:bg-accent rounded-full p-2"
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
             onClick={onClose}
+            aria-label="Close"
           >
-            <img
-              className="h-4 w-4 filter dark:invert"
-              src={Exit}
-              alt="Close"
-            />
-          </button>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
         <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }

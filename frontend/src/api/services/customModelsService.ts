@@ -4,6 +4,7 @@ import endpoints from '../endpoints';
 import type {
   CreateCustomModelPayload,
   CustomModel,
+  CustomModelCapabilities,
   CustomModelTestResult,
 } from '../../models/types';
 
@@ -84,6 +85,7 @@ const customModelsService = {
       base_url: string;
       api_key: string;
       upstream_model_id: string;
+      capabilities?: Pick<CustomModelCapabilities, 'api_flavor'>;
     },
     token: string | null,
   ): Promise<CustomModelTestResult> => {
@@ -122,14 +124,17 @@ const customModelsService = {
       base_url?: string;
       api_key?: string;
       upstream_model_id?: string;
+      capabilities?: Pick<CustomModelCapabilities, 'api_flavor'>;
     } = {},
   ): Promise<CustomModelTestResult> => {
     // Send only non-empty overrides; server falls back to stored values.
-    const requestBody: Record<string, string> = {};
+    const requestBody: Record<string, unknown> = {};
     if (overrides.base_url) requestBody.base_url = overrides.base_url;
     if (overrides.api_key) requestBody.api_key = overrides.api_key;
     if (overrides.upstream_model_id)
       requestBody.upstream_model_id = overrides.upstream_model_id;
+    if (overrides.capabilities)
+      requestBody.capabilities = overrides.capabilities;
     const response = await apiClient.post(
       endpoints.USER.CUSTOM_MODEL_TEST(id),
       requestBody,

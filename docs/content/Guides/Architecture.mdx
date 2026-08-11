@@ -68,6 +68,16 @@ flowchart LR
     *   Provides storage and indexing of high-dimensional vector embeddings.
     *   Enables editing and updating of vector indexes including specific chunks.
 
+### 4a. Retrieval Layer (Part of backend)
+
+*   **Responsibility:** Sits between the API and the vector stores and decides *how* context is fetched for each question. Rather than a single similarity search, a **retriever dispatcher** groups the question's sources by their configured retriever and runs each under a shared token budget, then applies post-retrieval stages before answering.
+*   **Key Features:**
+    *   Multiple retrievers: `classic` (vector similarity), `hybrid` (vector + full-text keyword fusion), and `graphrag` (knowledge-graph / Personalized PageRank).
+    *   Optional query rephrasing before retrieval.
+    *   Optional post-retrieval stages such as LLM pre-screening (map-reduce relevance filtering).
+    *   Per-source behavior via the [per-source configuration](/Sources/Per-source-configuration) contract, so different sources can be chunked and retrieved differently.
+    *   See [GraphRAG](/Sources/GraphRAG) for the knowledge-graph retrieval path.
+
 ### 5. Parser Integration Layer (Part of backend)
 
 *   **Technology:** Supports multiple formats for file processing and remote source uploading.
@@ -101,14 +111,17 @@ sequenceDiagram
     participant User
     participant Frontend
     participant BackendAPI
+    participant RetrievalLayer
     participant LLMIntegrationLayer
     participant VectorStores
     participant InferenceEngine
 
     User->>Frontend: User asks a question
     Frontend->>BackendAPI: API Request (Question)
-    BackendAPI->>VectorStores: Fetch relevant document chunks (Similarity Search)
-    VectorStores-->>BackendAPI: Return document chunks
+    BackendAPI->>RetrievalLayer: Dispatch retrieval (per-source: classic / hybrid / graphrag)
+    RetrievalLayer->>VectorStores: Fetch candidates (vector / keyword / graph)
+    VectorStores-->>RetrievalLayer: Return candidates
+    RetrievalLayer-->>BackendAPI: Ranked, optionally pre-screened chunks
     BackendAPI->>LLMIntegrationLayer: Send question and document chunks
     LLMIntegrationLayer->>InferenceEngine: LLM API Request (Prompt + Context)
     InferenceEngine-->>LLMIntegrationLayer: LLM API Response (Answer)

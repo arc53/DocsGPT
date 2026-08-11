@@ -29,6 +29,10 @@ export default {
     "title": "OCR",
     "href": "/Guides/ocr"
   },
+  "Benchmarking-Agents": {
+    "title": "📊 Benchmarking Agents",
+    "href": "/Guides/Benchmarking-Agents"
+  },
 "Integrations": {
     "title": "🔗 Integrations"
   }

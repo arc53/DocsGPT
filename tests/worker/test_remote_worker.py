@@ -14,6 +14,7 @@ assert one seeded row is discovered and forwarded.
 from __future__ import annotations
 
 import os
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
@@ -41,7 +42,7 @@ def _mock_remote_pipeline(monkeypatch):
     monkeypatch.setattr(
         worker,
         "embed_and_store_documents",
-        lambda docs, full_path, source_id, task: None,
+        lambda docs, full_path, source_id, task, **kw: None,
     )
     monkeypatch.setattr(
         worker, "upload_index", lambda full_path, file_data: None
@@ -90,7 +91,9 @@ class TestRemoteWorkerSyncUpdatesDate:
 
         refreshed = SourcesRepository(pg_conn).get(source_id, "bob")
         assert refreshed is not None
-        assert refreshed["date"] > old_date, (
+        # row_to_dict coerces datetimes to ISO 8601 strings; UTC
+        # timezone-aware ISO strings sort chronologically.
+        assert refreshed["date"] > old_date.isoformat(), (
             "remote_worker(sync) should push sources.date forward"
         )
 
@@ -144,6 +147,130 @@ class TestSyncWorker:
         assert captured[0]["user"] == "carol"
         assert captured[0]["loader"] == "url"
         assert captured[0]["doc_id"] == str(src["id"])
+
+    def test_connector_sources_are_skipped(
+        self,
+        pg_conn,
+        patch_worker_db,
+        task_self,
+        monkeypatch,
+    ):
+        """connector:* sources have no RemoteCreator loader — sync_worker
+        must skip them, not dispatch them into sync()."""
+        from application import worker
+
+        SourcesRepository(pg_conn).create(
+            "drive-folder",
+            user_id="dave",
+            type="connector:file",
+            retriever="classic",
+            sync_frequency="daily",
+            remote_data={
+                "provider": "google_drive",
+                "file_ids": ["f1"],
+                "folder_ids": [],
+                "recursive": False,
+            },
+        )
+
+        def _must_not_run(*args, **kwargs):
+            raise AssertionError("sync() must not run for connector sources")
+
+        monkeypatch.setattr(worker, "sync", _must_not_run)
+
+        result = worker.sync_worker(task_self, "daily")
+
+        assert result["total_sync_count"] == 1
+        assert result["sync_skipped"] == 1
+        assert result["sync_success"] == 0
+        assert result["sync_failure"] == 0
+
+    def test_dict_remote_data_is_normalized_before_loader(
+        self,
+        pg_conn,
+        patch_worker_db,
+        task_self,
+        monkeypatch,
+    ):
+        """Regression: remote_data reads back as a dict; sync_worker must
+        hand the loader the URL string, not the raw dict."""
+        from application import worker
+
+        SourcesRepository(pg_conn).create(
+            "docs-crawl",
+            user_id="erin",
+            type="crawler",
+            retriever="classic",
+            sync_frequency="weekly",
+            remote_data={"url": "https://example.com", "provider": "crawler"},
+        )
+
+        received: list = []
+        fake_loader = MagicMock(name="remote_loader")
+
+        def _capture(source_data):
+            received.append(source_data)
+            return [
+                Document(
+                    text="page body",
+                    extra_info={"file_path": "index.md", "title": "home"},
+                    doc_id="d1",
+                )
+            ]
+
+        fake_loader.load_data.side_effect = _capture
+        monkeypatch.setattr(
+            worker.RemoteCreator, "create_loader", lambda loader: fake_loader
+        )
+        monkeypatch.setattr(
+            worker,
+            "embed_and_store_documents",
+            lambda docs, full_path, source_id, task, **kw: None,
+        )
+        monkeypatch.setattr(
+            worker, "upload_index", lambda full_path, file_data: None
+        )
+
+        result = worker.sync_worker(task_self, "weekly")
+
+        assert result["total_sync_count"] == 1
+        assert result["sync_success"] == 1
+        assert result["sync_failure"] == 0
+        assert received == ["https://example.com"], (
+            "loader must receive the URL string, not the remote_data dict"
+        )
+
+    def test_unsyncable_remote_data_is_skipped(
+        self,
+        pg_conn,
+        patch_worker_db,
+        task_self,
+        monkeypatch,
+    ):
+        """A URL source whose remote_data dict has no URL key normalizes
+        to None — sync_worker must skip it, not dispatch a doomed sync()."""
+        from application import worker
+
+        SourcesRepository(pg_conn).create(
+            "broken-feed",
+            user_id="frank",
+            type="url",
+            retriever="classic",
+            sync_frequency="monthly",
+            remote_data={"provider": "url"},
+        )
+
+        def _must_not_run(*args, **kwargs):
+            raise AssertionError("sync() must not run for unsyncable sources")
+
+        monkeypatch.setattr(worker, "sync", _must_not_run)
+
+        result = worker.sync_worker(task_self, "monthly")
+
+        assert result["total_sync_count"] == 1
+        assert result["sync_skipped"] == 1
+        assert result["sync_failure"] == 0
+        assert result["sync_success"] == 0
 
 
 @pytest.mark.unit
@@ -210,3 +337,69 @@ class TestRemoteWorkerPathTraversal:
             f"rmtree target {rmtree_targets[0]} escaped {user_root}"
         )
         assert malicious_name not in "".join(created_paths + deleted_paths)
+
+
+@pytest.mark.unit
+class TestRemoteWorkerDeterministicSourceId:
+    """Upload-mode ``remote_worker`` derives a stable ``source_id`` from the key."""
+
+    def test_uses_uuid5_when_idempotency_key_present(
+        self,
+        tmp_path,
+        task_self,
+        monkeypatch,
+        _mock_remote_pipeline,
+    ):
+        from application import worker
+
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            worker, "upload_index",
+            lambda full_path, file_data: captured.append(file_data),
+        )
+
+        for _ in range(2):
+            worker.remote_worker(
+                task_self,
+                {"urls": ["http://example.com"]},
+                "feed",
+                "bob",
+                "crawler",
+                directory=str(tmp_path / "temp"),
+                operation_mode="upload",
+                idempotency_key="abc",
+            )
+
+        expected = str(uuid.uuid5(worker.DOCSGPT_INGEST_NAMESPACE, "abc"))
+        assert len(captured) == 2
+        assert captured[0]["id"] == expected
+        assert captured[1]["id"] == expected
+
+    def test_falls_back_to_uuid4_without_key(
+        self,
+        tmp_path,
+        task_self,
+        monkeypatch,
+        _mock_remote_pipeline,
+    ):
+        from application import worker
+
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            worker, "upload_index",
+            lambda full_path, file_data: captured.append(file_data),
+        )
+
+        for _ in range(2):
+            worker.remote_worker(
+                task_self,
+                {"urls": ["http://example.com"]},
+                "feed",
+                "bob",
+                "crawler",
+                directory=str(tmp_path / "temp"),
+                operation_mode="upload",
+            )
+
+        assert len(captured) == 2
+        assert captured[0]["id"] != captured[1]["id"]

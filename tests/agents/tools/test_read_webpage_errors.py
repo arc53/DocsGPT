@@ -11,10 +11,7 @@ class TestReadWebpageErrors:
 
         tool = ReadWebpageTool(config={})
         with patch(
-            "application.agents.tools.read_webpage.validate_url",
-            return_value=None,
-        ), patch(
-            "application.agents.tools.read_webpage.requests.get",
+            "application.agents.tools.read_webpage.pinned_fetch_bytes",
             side_effect=requests.exceptions.RequestException("bad url"),
         ):
             got = tool.execute_action(
@@ -23,24 +20,25 @@ class TestReadWebpageErrors:
         assert "Error fetching URL" in got
 
     def test_generic_exception_returns_error_string(self):
+        from unittest.mock import MagicMock
+
         from application.agents.tools.read_webpage import ReadWebpageTool
 
         tool = ReadWebpageTool(config={})
+        response = MagicMock()
+        response.headers = {"Content-Type": "text/html"}
+        response.raise_for_status.return_value = None
         with patch(
-            "application.agents.tools.read_webpage.validate_url",
-            return_value=None,
-        ), patch(
             "application.agents.tools.read_webpage.markdownify",
             side_effect=RuntimeError("boom"),
         ), patch(
-            "application.agents.tools.read_webpage.requests.get",
-        ) as mock_get:
-            mock_get.return_value.text = "<h1>hi</h1>"
-            mock_get.return_value.raise_for_status.return_value = None
+            "application.agents.tools.read_webpage.pinned_fetch_bytes",
+            return_value=(b"<h1>hi</h1>", response),
+        ):
             got = tool.execute_action(
                 "read_webpage", url="https://example.com/",
             )
-        assert "Error processing URL" in got
+        assert "Error fetching URL" in got
 
 
 class TestBaseAgentMinorBranches:

@@ -129,9 +129,9 @@ class TestToolABC:
 # application/parser/file/base.py  (lines 18-19)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-class TestBaseReaderLoadLangchain:
-    def test_load_langchain_documents(self):
-        """Cover lines 18-19: BaseReader.load_langchain_documents."""
+class TestBaseReaderLoadVectorDocuments:
+    def test_load_vector_documents(self):
+        """Cover lines 18-19: BaseReader.load_vector_documents."""
         from application.parser.file.base import BaseReader
         from application.parser.schema.base import Document
 
@@ -143,7 +143,7 @@ class TestBaseReaderLoadLangchain:
                 ]
 
         reader = ConcreteReader()
-        lc_docs = reader.load_langchain_documents()
+        lc_docs = reader.load_vector_documents()
         assert len(lc_docs) == 2
         assert lc_docs[0].page_content == "hello"
         assert lc_docs[0].metadata == {"k": "v"}
@@ -372,26 +372,39 @@ class TestPromptRendererGap:
 
 
 # ---------------------------------------------------------------------------
-# application/llm/anthropic.py  (line 45)
+# application/llm/anthropic.py
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-class TestAnthropicLLMStreamBranch:
-    def test_raw_gen_stream_path(self):
-        """Cover line 45: _raw_gen calls gen_stream when stream=True."""
-        with patch("application.llm.anthropic.Anthropic"):
+class TestAnthropicLLMRawGen:
+    def test_raw_gen_does_not_reenter_the_streaming_orchestrator(self):
+        """``_raw_gen`` used to delegate to ``gen_stream`` when ``stream``
+        was truthy, handing it a flattened prompt STRING where a message
+        list belongs. It now always makes one Messages API call."""
+        import types as _types
+
+        with patch("application.llm.anthropic.Anthropic") as MockAnthropic:
             with patch("application.llm.anthropic.StorageCreator") as MockStorage:
                 MockStorage.get_storage.return_value = MagicMock()
                 from application.llm.anthropic import AnthropicLLM
 
+                client = MockAnthropic.return_value
+                client.messages.create.return_value = _types.SimpleNamespace(
+                    content=[_types.SimpleNamespace(type="text", text="answer")],
+                    stop_reason="end_turn",
+                    usage=None,
+                )
+
                 llm = AnthropicLLM(api_key="test_key")
-                llm.gen_stream = MagicMock(return_value="streamed")
+                llm.gen_stream = MagicMock()
                 messages = [
                     {"role": "system", "content": "context"},
                     {"role": "user", "content": "question"},
                 ]
-                result = llm._raw_gen(None, "claude-2", messages, stream=True)
-                llm.gen_stream.assert_called_once()
-                assert result == "streamed"
+                result = llm._raw_gen(None, "claude-x", messages, stream=True)
+
+                llm.gen_stream.assert_not_called()
+                client.messages.create.assert_called_once()
+                assert result == "answer"
 
 
 # ---------------------------------------------------------------------------
@@ -498,24 +511,6 @@ class TestMarkdownParserEmptyHeader:
 
 
 # ---------------------------------------------------------------------------
-# application/llm/sagemaker.py  (line 52)
-# ---------------------------------------------------------------------------
-@pytest.mark.unit
-class TestSagemakerLineIteratorStopIteration:
-    def test_stop_iteration_with_newline_data(self):
-        """Cover line 52: chunk with newline yields a line."""
-        from application.llm.sagemaker import LineIterator
-
-        # Chunk with newline so it yields
-        chunks = [
-            {"PayloadPart": {"Bytes": b'{"outputs": [" partial"]}\n'}},
-        ]
-        it = LineIterator(iter(chunks))
-        lines = list(it)
-        assert len(lines) == 1
-
-
-# ---------------------------------------------------------------------------
 # application/core/url_validation.py  (lines 89-90)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
@@ -540,7 +535,7 @@ class TestWebhookEmptyPayloadWarning:
         from flask import Flask
 
         app = Flask(__name__)
-        with app.app_context():
+        with app.test_request_context():
             from application.api.user.agents.webhooks import AgentWebhookListener
 
             resource = AgentWebhookListener()
@@ -581,11 +576,13 @@ class TestReadWebpageErrors:
         from application.agents.tools.read_webpage import ReadWebpageTool
 
         tool = ReadWebpageTool({})
-        with patch("application.agents.tools.read_webpage.requests.get") as mock_get:
+        with patch(
+            "application.agents.tools.read_webpage.pinned_fetch_bytes"
+        ) as mock_fetch:
             mock_response = MagicMock()
             mock_response.raise_for_status.return_value = None
-            mock_response.text = "<html><body>test</body></html>"
-            mock_get.return_value = mock_response
+            mock_response.headers = {"Content-Type": "text/html"}
+            mock_fetch.return_value = (b"<html><body>test</body></html>", mock_response)
             with patch(
                 "application.agents.tools.read_webpage.markdownify",
                 side_effect=Exception("parse error"),
@@ -868,7 +865,7 @@ class TestEmbeddingPipelineGaps:
         """Cover line 69: raises ValueError when docs is empty."""
         from application.parser.embedding_pipeline import embed_and_store_documents
 
-        with pytest.raises(ValueError, match="No documents to embed"):
+        with pytest.raises(ValueError, match="No text could be extracted"):
             embed_and_store_documents([], "/tmp/test", "source_id", MagicMock())
 
 
@@ -1048,23 +1045,35 @@ class TestEmbeddingPipelineCoverage:
         """Cover line 69: empty docs raises ValueError."""
         from application.parser.embedding_pipeline import embed_and_store_documents
 
-        with pytest.raises(ValueError, match="No documents to embed"):
+        with pytest.raises(ValueError, match="No text could be extracted"):
             embed_and_store_documents([], str(tmp_path / "test"), "src-1", None)
 
     def test_embed_and_store_creates_folder(self, tmp_path):
-        """Cover line 65: folder creation."""
+        """Cover line 65: the folder is created before the vector store is built.
+
+        The failure is forced through ``VectorCreator`` rather than left to
+        whatever the store happens to reject — this previously relied on
+        langchain's ``from_documents`` reading a ``.id`` the stub lacks, so it
+        stopped failing the moment the FAISS store stopped going via langchain.
+        """
+        import os
+
         from application.parser.embedding_pipeline import embed_and_store_documents
 
         folder = str(tmp_path / "new_dir")
-        with pytest.raises(Exception):
-            # Will fail at VectorCreator but folder should be created
-            embed_and_store_documents(
-                [type("Doc", (), {"page_content": "text", "metadata": {}})()],
-                folder,
-                "src-1",
-                None,
+        with patch(
+            "application.parser.embedding_pipeline.VectorCreator"
+        ) as mock_vc:
+            mock_vc.create_vectorstore.side_effect = RuntimeError(
+                "vector store unavailable"
             )
-        import os
+            with pytest.raises(RuntimeError, match="vector store unavailable"):
+                embed_and_store_documents(
+                    [type("Doc", (), {"page_content": "text", "metadata": {}})()],
+                    folder,
+                    "src-1",
+                    None,
+                )
         assert os.path.exists(folder)
 
 
@@ -1218,3 +1227,24 @@ class TestEmbeddingPipelineAddDocWithRetry:
 
         with pytest.raises(RuntimeError, match="fail"):
             add_text_to_store_with_retry(mock_store, doc, "src-1")
+
+
+@pytest.mark.unit
+class TestBlankDocumentsAreRejected:
+    """A file that parses to nothing must fail, not ingest as a healthy source.
+
+    An empty or whitespace-only upload reached the pipeline as a one-element
+    list of "" and stored a real embedding of the empty string, which then
+    scored against unrelated queries.
+    """
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\n\t  \n"])
+    def test_whitespace_only_document_is_rejected(self, blank, tmp_path):
+        from application.parser.embedding_pipeline import embed_and_store_documents
+
+        class _Doc:
+            def __init__(self, text):
+                self.text = text
+
+        with pytest.raises(ValueError, match="No text could be extracted"):
+            embed_and_store_documents([_Doc(blank)], str(tmp_path), "src-1", None)

@@ -12,7 +12,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
-    "types": ["vite-plugin-svgr/client"],
+    "types": ["vite-plugin-svgr/client", "vitest/globals"],
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",

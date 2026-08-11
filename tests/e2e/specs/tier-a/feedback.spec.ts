@@ -1,14 +1,14 @@
 /**
- * Phase 2 — P2-05 · Message feedback.
+ * P2-05 · Message feedback.
  *
- * Writes to the JSONB `conversation_messages.feedback` column. The separate
- * `feedback` table planned in early Phase 1 was dropped during Phase 3
- * hardening — see migration-postgres.md §2.2:
- *     "A dedicated `feedback` table was originally planned for this tier
- *      (and built in early Phase 1) but dropped during Phase 3 hardening:
- *      per-message feedback lives on `conversation_messages.feedback` (JSONB)
- *      via `ConversationsRepository.set_feedback`, and the standalone table
- *      was never populated or read."
+ * Writes to the JSONB `conversation_messages.feedback` column. A
+ * separate `feedback` table was considered earlier in the migration
+ * but dropped — see migration-postgres.md §2.2:
+ *     "A dedicated `feedback` table was originally planned for this
+ *      tier (and briefly built) but dropped during hardening:
+ *      per-message feedback lives on `conversation_messages.feedback`
+ *      (JSONB) via `ConversationsRepository.set_feedback`, and the
+ *      standalone table was never populated or read."
  *
  * // Silent-break covered: feedback on index 0 lands on first message, not second
  *

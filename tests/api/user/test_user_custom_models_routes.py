@@ -227,6 +227,72 @@ class TestCreate:
                     resp = UserModelsCollectionResource().post()
         assert resp.status_code == 201
 
+    def test_create_accepts_responses_capabilities(self, app, pg_conn):
+        from application.api.user.models.routes import (
+            UserModelsCollectionResource,
+        )
+
+        with patch("application.security.safe_url.socket.getaddrinfo") as gai:
+            gai.return_value = [(None, None, None, None, ("104.18.0.1", 0))]
+            with app.test_request_context(
+                "/api/user/models",
+                method="POST",
+                json={
+                    "upstream_model_id": "gpt-custom",
+                    "display_name": "Responses model",
+                    "base_url": "https://example.openai.azure.com/openai/v1",
+                    "api_key": "k",
+                    "capabilities": {
+                        "api_flavor": "responses",
+                        "reasoning_effort": "high",
+                    },
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user-1"}
+                with _patch_db(pg_conn):
+                    resp = UserModelsCollectionResource().post()
+
+        assert resp.status_code == 201
+        assert resp.get_json()["capabilities"] == {
+            "api_flavor": "responses",
+            "reasoning_effort": "high",
+        }
+
+    @pytest.mark.parametrize(
+        ("capability", "value"),
+        [("api_flavor", "grpc"), ("reasoning_effort", "extreme")],
+    )
+    def test_create_rejects_invalid_responses_capabilities(
+        self, app, pg_conn, capability, value
+    ):
+        from application.api.user.models.routes import (
+            UserModelsCollectionResource,
+        )
+
+        with patch("application.security.safe_url.socket.getaddrinfo") as gai:
+            gai.return_value = [(None, None, None, None, ("104.18.0.1", 0))]
+            with app.test_request_context(
+                "/api/user/models",
+                method="POST",
+                json={
+                    "upstream_model_id": "gpt-custom",
+                    "display_name": "Bad model",
+                    "base_url": "https://example.openai.azure.com/openai/v1",
+                    "api_key": "k",
+                    "capabilities": {capability: value},
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user-1"}
+                with _patch_db(pg_conn):
+                    resp = UserModelsCollectionResource().post()
+
+        assert resp.status_code == 400
+        assert capability in resp.get_json()["error"]
+
     def test_create_rejects_private_ip_dns(self, app, pg_conn):
         from application.api.user.models.routes import (
             UserModelsCollectionResource,
@@ -528,6 +594,44 @@ class TestPayloadConnectionTest:
         call_args = rp.call_args
         assert call_args.kwargs["headers"]["Authorization"] == "Bearer sk-mistral-test"
         assert call_args.kwargs["json"]["model"] == "mistral-large-latest"
+
+    def test_payload_test_uses_responses_protocol(self, app, pg_conn):
+        from application.api.user.models.routes import (
+            UserModelTestPayloadResource,
+        )
+
+        with patch("application.api.user.models.routes.pinned_post") as rp:
+            rp.return_value = MagicMock(
+                status_code=200,
+                headers={"Content-Type": "application/json"},
+                text='{"ok": true}',
+            )
+            with app.test_request_context(
+                "/api/user/models/test",
+                method="POST",
+                json={
+                    "base_url": "https://example.openai.azure.com/openai/v1",
+                    "api_key": "foundry-key",
+                    "upstream_model_id": "gpt-custom",
+                    "capabilities": {"api_flavor": "responses"},
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user-1"}
+                with _patch_db(pg_conn):
+                    resp = UserModelTestPayloadResource().post()
+
+        assert resp.status_code == 200
+        call_args = rp.call_args
+        assert call_args.args[0].endswith("/responses")
+        assert call_args.kwargs["json"] == {
+            "model": "gpt-custom",
+            "input": "hi",
+            "max_output_tokens": 16,
+            "stream": False,
+            "store": False,
+        }
 
     def test_payload_test_unauthenticated_returns_401(self, app, pg_conn):
         from application.api.user.models.routes import (

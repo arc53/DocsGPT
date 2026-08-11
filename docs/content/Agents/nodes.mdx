@@ -5,9 +5,29 @@ DocsGPT workflows are composed of **Nodes** that are connected to form a process
 ## The Shared State
 
 Every workflow run maintains a state object (a JSON-like dictionary).
-- **Initial State**: Contains the user's input query (`{{query}}`) and chat history (`{{chat_history}}`).
-- **Accessing Variables**: You can access any variable in the state using the double-curly braces syntax: `{{variable_name}}`.
+- **Initial State**: Contains the user's input query (`query`) and chat history (`chat_history`).
 - **Modifying State**: Nodes read from this state and write their outputs back to it.
+- **Node Outputs**: Each node writes its result to `node_<node_id>_output`.
+
+### Two ways to reference state
+
+Which syntax a field takes depends on the field, so check this table before
+typing `{{ }}` anywhere:
+
+| Field | Node | Syntax |
+| --- | --- | --- |
+| Prompt Template | AI Agent | Template — `{{variable_name}}` |
+| Output Template | End | Template — `{{variable_name}}` |
+| Expression | Set State | [CEL](https://cel.dev/) — bare `variable_name` |
+| Expression | Condition | [CEL](https://cel.dev/) — bare `variable_name` |
+
+**Template fields** substitute `{{variable_name}}` into surrounding text, so
+`Analysis: {{analysis_result}}` produces a string.
+
+**Expression fields** are evaluated as [Common Expression
+Language](https://cel.dev/), where a bare name *is* the variable. Write
+`query`, not `{{query}}` — the braces are a syntax error there, and saving a
+workflow that contains one is rejected with the correction.
 
 ---
 
@@ -35,6 +55,16 @@ When the agent completes its task, it stores the result in the shared state.
   - *Custom*: You can set this to something meaningful, like `summary` or `translated_text`.
 - **Streaming**: If "Stream to user" is enabled, the output is sent to the user in real-time as it is generated, in addition to being saved to the state.
 
+### Documents
+
+An agent node can receive documents as inputs. Choose which documents the node sees:
+
+- **All**: every document attached to the run.
+- **None**: no documents.
+- **Choose**: a specific set that you select.
+
+For how a chosen document reaches the model, the node can pass it natively (send the file to a model that accepts files) or extract it to text first. The default picks automatically based on the model and the file type.
+
 ---
 
 ## Set State Node
@@ -43,23 +73,74 @@ The **Set State Node** allows you to manipulate variables within the shared stat
 
 ### Operations
 
-You can define multiple operations in a single node. Each operation targets a specific **Key** (variable name).
+You can define multiple operations in a single node. Each operation has two
+parts:
 
-1.  **Set**: Assigns a specific value to a variable.
-    - *Value*: Can be a static string or a template using variables.
-    - *Example*: Set `current_step` to `1`.
-    - *Example*: Set `formatted_response` to `Analysis: {{analysis_result}}`.
+- **Target Variable**: the state key to write to.
+- **Expression**: a [CEL](https://cel.dev/) expression evaluated against the
+  current state. Its result becomes the variable's value.
 
-2.  **Increment**: Increases the value of a numeric variable.
-    - *Value*: The amount to add (default is 1).
-    - *Example*: Increment `retry_count` by `1`.
+Reference state variables by bare name. `{{ }}` is template syntax and does
+**not** work here — an operation must supply both parts, or it is rejected
+when you save.
 
-3.  **Append**: Adds a value to a list variable.
-    - *Value*: The item to add to the list.
-    - *Example*: Append `{{last_result}}` to `history_list`.
+| Goal | Target Variable | Expression |
+| --- | --- | --- |
+| Initialize a counter | `retry_count` | `0` |
+| Increment a counter | `retry_count` | `retry_count + 1` |
+| Copy a node's output to a stable name | `context` | `node_search_1_output` |
+| Build a string | `formatted_response` | `"Analysis: " + analysis_result` |
+| Append to a list | `history_list` | `history_list + [last_result]` |
+| Derive a boolean | `needs_review` | `size(context) < 100` |
+
+CEL supports arithmetic, string concatenation with `+`, comparisons,
+`&&`/`||`, ternaries (`cond ? a : b`), and built-ins such as `size()`,
+`startsWith()`, and `contains()`.
 
 ### Usage Examples
 
-- **Loop Counters**: Use a *Set State* node to initialize a counter (`i = 0`) before a loop, and another to increment it inside the loop.
-- **Accumulators**: Use *Append* to collect results from multiple parallel branches into a single list.
-- **Renaming**: Copy the output of a previous node to a more generic name (e.g., set `context` to `{{search_results}}`) so subsequent nodes can use a standard variable name.
+- **Loop Counters**: Initialize `retry_count` to `0` before a loop, then set it
+  to `retry_count + 1` inside the loop.
+- **Accumulators**: Collect results across branches with
+  `history_list + [last_result]`.
+- **Renaming**: Copy a previous node's output to a generic name (target
+  `context`, expression `node_search_1_output`) so later nodes can use one
+  standard variable.
+
+---
+
+## Condition Node
+
+The **Condition Node** branches the workflow. Each case pairs a
+[CEL](https://cel.dev/) **Expression** with an outgoing branch; the first case
+whose expression is true wins, and execution follows that branch.
+
+- Expressions use the same syntax as the Set State node: reference state by
+  bare name, not `{{ }}`.
+- Every condition node needs an **else** branch, which is taken when no case
+  matches.
+- Each case with an expression must have an outgoing edge, and every branch
+  must eventually reach an end node.
+
+| Goal | Expression |
+| --- | --- |
+| Route on a previous answer | `node_classify_1_output == "refund"` |
+| Guard on retrieved context | `size(context) > 0` |
+| Combine checks | `needs_review && retry_count < 3` |
+| Match text | `query.contains("invoice")` |
+
+A case whose expression fails to evaluate at run time is skipped and the next
+case is tried, so a workflow that always lands on **else** usually means an
+expression is referencing a variable that no earlier node writes.
+
+---
+
+## Code Node
+
+The **Code Node** runs a script in a sandboxed session bound to the workflow run. Use it to transform data, parse files, cross-check documents, or build a report that later nodes consume.
+
+- **Code**: the script to run. The workflow state is available to the script as data, so it can read variables, compute, and write results back.
+- **Inputs**: documents or artifacts to place in the workspace before the script runs. Each input accepts a produced artifact reference, a full artifact id, or an attached file.
+- **Outputs**: any files the script writes are captured as artifacts and surfaced in the run view. Write a small JSON value back to the state to pass a decision or summary to later nodes.
+
+Runs are sandboxed and have a fixed time limit, so keep each step focused. See [Artifacts and Code Execution](/Tools/artifacts-and-code-execution) for the sandbox backends and configuration.

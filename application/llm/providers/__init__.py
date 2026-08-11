@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Dict, List
 
 from application.llm.providers.anthropic import AnthropicProvider
-from application.llm.providers.azure_openai import AzureOpenAIProvider
 from application.llm.providers.base import Provider
 from application.llm.providers.docsgpt import DocsGPTProvider
 from application.llm.providers.google import GoogleProvider
@@ -22,8 +21,6 @@ from application.llm.providers.novita import NovitaProvider
 from application.llm.providers.openai import OpenAIProvider
 from application.llm.providers.openai_compatible import OpenAICompatibleProvider
 from application.llm.providers.openrouter import OpenRouterProvider
-from application.llm.providers.premai import PremAIProvider
-from application.llm.providers.sagemaker import SagemakerProvider
 
 # Order here is the order the registry iterates providers (and therefore
 # the order ``/api/models`` reports them). Match the historical order
@@ -34,7 +31,6 @@ ALL_PROVIDERS: List[Provider] = [
     DocsGPTProvider(),
     OpenAIProvider(),
     OpenAICompatibleProvider(),
-    AzureOpenAIProvider(),
     AnthropicProvider(),
     GoogleProvider(),
     GroqProvider(),
@@ -42,8 +38,6 @@ ALL_PROVIDERS: List[Provider] = [
     NovitaProvider(),
     HuggingFaceProvider(),
     LlamaCppProvider(),
-    PremAIProvider(),
-    SagemakerProvider(),
 ]
 
 PROVIDERS_BY_NAME: Dict[str, Provider] = {p.name: p for p in ALL_PROVIDERS}

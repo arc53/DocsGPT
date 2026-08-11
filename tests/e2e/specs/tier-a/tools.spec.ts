@@ -1,7 +1,7 @@
 /**
- * Phase 2 — P2-03 · Tools CRUD + encrypted secrets.
+ * P2-03 · Tools CRUD + encrypted secrets.
  *
- * Writes to the Tier-1 `user_tools` table via the `/api/create_tool`,
+ * Writes to the `user_tools` table via the `/api/create_tool`,
  * `/api/update_tool`, `/api/update_tool_status`, and `/api/delete_tool`
  * endpoints (the same calls the UI issues from `frontend/src/settings/Tools.tsx`
  * + `ToolConfig.tsx` + `AddToolModal.tsx` + `ConfigToolModal.tsx`). Each test

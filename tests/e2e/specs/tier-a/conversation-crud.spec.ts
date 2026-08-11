@@ -1,5 +1,5 @@
 /**
- * Phase 2 — P2-08 · Conversation CRUD (Tier-A migration-critical).
+ * P2-08 · Conversation CRUD (Tier-A migration-critical).
  *
  * Covers e2e-plan.md §P2 row P2-08: writes/deletes against `conversations`
  * and the cascading child tables (`conversation_messages`,
@@ -88,6 +88,7 @@ test.describe('tier-a · conversations CRUD', () => {
         const id = await streamOnce(api, {
           question: `${STREAM_QUESTION} (${i})`,
           save_conversation: true,
+          visibility: 'listed',
         });
         expect(id).toBeTruthy();
         ids.push(id);
@@ -130,6 +131,7 @@ test.describe('tier-a · conversations CRUD', () => {
       const convId = await streamOnce(api, {
         question: STREAM_QUESTION,
         save_conversation: true,
+        visibility: 'listed',
       });
 
       page = await context.newPage();
@@ -198,10 +200,12 @@ test.describe('tier-a · conversations CRUD', () => {
       const keepId = await streamOnce(api, {
         question: STREAM_QUESTION + ' keep',
         save_conversation: true,
+        visibility: 'listed',
       });
       const dropId = await streamOnce(api, {
         question: STREAM_QUESTION + ' drop',
         save_conversation: true,
+        visibility: 'listed',
       });
       expect(keepId).not.toBe(dropId);
       expect(

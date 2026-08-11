@@ -2,7 +2,7 @@
 // mock LLM, Postgres reset) is handled by `scripts/e2e/up.sh` and
 // `scripts/e2e/down.sh`. Playwright's built-in `webServer` can only manage one
 // process and would fight with the four-service native setup this suite needs.
-// See `e2e-plan.md` → "Phase 0 — Foundation" → P0-A for the orchestration
+// See `e2e-plan.md` → "Foundation" → P0-A for the orchestration
 // contract.
 
 import { defineConfig, devices } from '@playwright/test';

@@ -12,6 +12,18 @@
   "emailUs": "給我們發電郵",
   "documentation": "文件",
   "manageAgents": "管理代理",
+  "teamAccess": {
+    "editor": "編輯者",
+    "viewer": "檢視者"
+  },
+  "notifications": {
+    "memberAddedTitle": "已加入團隊",
+    "memberAddedBody": "您已被加入 {{team}}，角色為 {{role}}",
+    "sharedTitle": "已與您分享",
+    "sharedBody": "已與您的團隊分享{{type}}：{{name}}（{{access}}）",
+    "sharedBodyNoName": "已與您的團隊分享一個{{type}}（{{access}}）",
+    "dismiss": "關閉"
+  },
   "demo": [
     {
       "header": "了解 DocsGPT",
@@ -30,6 +42,15 @@
       "query": "為此內容撰寫可能的問題"
     }
   ],
+  "auth": {
+    "signInToContinue": "登入以繼續使用 DocsGPT",
+    "signInWithSSO": "使用 SSO 登入",
+    "signInWith": "使用 {{provider}} 登入",
+    "notAuthorized": "您的帳戶未獲授權存取此工作區。請改用其他帳戶登入，或聯絡您的管理員。",
+    "accountDisabled": "您的帳戶已被停用。請聯絡您的管理員。",
+    "signOut": "登出",
+    "account": "帳戶"
+  },
   "settings": {
     "label": "設定",
     "general": {
@@ -70,6 +91,9 @@
       "sync": "同步",
       "syncNow": "立即同步",
       "syncing": "同步中...",
+      "reingest": "重新索引",
+      "ingestFailed": "索引失敗",
+      "ingestProcessing": "索引中...",
       "syncConfirmation": "您確定要同步 \"{{sourceName}}\" 嗎？這將使用您的雲端儲存更新內容，並可能覆蓋您對個別文本塊所做的任何編輯。",
       "syncFrequency": {
         "never": "從不",
@@ -79,6 +103,119 @@
       },
       "actions": "操作",
       "view": "查看",
+      "wiki": {
+        "view": "查看 Wiki",
+        "empty": "此 Wiki 尚無頁面。",
+        "selectPage": "選擇頁面以查看其內容。",
+        "edit": "編輯",
+        "save": "儲存",
+        "cancel": "取消",
+        "saving": "儲存中…",
+        "saveFailed": "無法儲存頁面。請再試一次。",
+        "forbidden": "您沒有編輯此頁面的權限。",
+        "conflict": "此頁面在您開啟後已變更，並已重新載入。您的編輯內容如下——請重新套用後再次儲存。",
+        "editPlaceholder": "以 Markdown 撰寫頁面…",
+        "livingTitle": "動態 Wiki。",
+        "livingExplainer": "可由代理編輯的來源：代理工作時會讀取並改寫頁面，且預設透過代理搜尋工具向代理開放。",
+        "livingExplainerEditable": "任何使用此來源的代理都可以編輯它。",
+        "stamp": {
+          "editedBy": "由 {{who}} 編輯",
+          "agent": "代理",
+          "human": "人工",
+          "you": "您",
+          "unknown": "未知",
+          "version": "v{{version}}"
+        },
+        "convert": {
+          "action": "轉換為 Wiki",
+          "title": "轉換為動態 Wiki",
+          "intro": "將「{{name}}」轉換為由可編輯頁面組成的動態 Wiki，供代理讀取與改寫。",
+          "introGeneric": "將此來源轉換為由可編輯頁面組成的動態 Wiki，供代理讀取與改寫。",
+          "costReparse": "檔案會重新解析為可編輯頁面。格式會被簡化，PDF 尤其明顯。",
+          "costSkipped": "非文字檔案（圖片、二進位檔）將被略過。",
+          "costIrreversible": "此操作無法復原——Wiki 頁面將成為資料的唯一來源。",
+          "confirm": "轉換為 Wiki",
+          "inProgress": "正在將檔案轉換為 Wiki 頁面…",
+          "summaryPages_one": "已建立 {{count}} 個頁面",
+          "summaryPages_other": "已建立 {{count}} 個頁面",
+          "summarySkipped_one": "已略過 {{count}} 個檔案",
+          "summarySkipped_other": "已略過 {{count}} 個檔案",
+          "skippedHeading": "已略過的檔案",
+          "done": "完成",
+          "errors": {
+            "generic": "轉換失敗。請再試一次。",
+            "forbidden": "您沒有轉換此來源的權限。",
+            "conflict": "此來源仍在索引中。請等候完成後再轉換。"
+          }
+        }
+      },
+      "graphrag": {
+        "badge": "GraphRAG",
+        "building": "正在建立圖譜…",
+        "buildingPct": "正在建立圖譜… {{pct}}%",
+        "enable": {
+          "action": "啟用 GraphRAG",
+          "title": "啟用 GraphRAG",
+          "intro": "為「{{name}}」建立知識圖譜，讓代理能跨關聯的實體與關係進行推理。",
+          "introGeneric": "為此來源建立知識圖譜，讓代理能跨關聯的實體與關係進行推理。",
+          "costExtraction": "系統會對此來源的區塊執行 LLM，以擷取實體與關係。",
+          "costCost": "每個區塊會呼叫一次 LLM，因此會消耗 Token，來源較大時可能需要較長時間。",
+          "estimate": "每個區塊約 1 次 LLM 呼叫 · 總計約 {{lo}}–{{hi}} 個 Token（輸入與輸出約各半）；輸出量依文件中實體的密集程度而異。",
+          "confirm": "啟用 GraphRAG",
+          "inProgress": "正在建立圖譜…",
+          "inProgressPct": "正在建立圖譜… {{pct}}%",
+          "summaryNodes_one": "{{count}} 個實體",
+          "summaryNodes_other": "{{count}} 個實體",
+          "summaryEdges_one": "{{count}} 個關係",
+          "summaryEdges_other": "{{count}} 個關係",
+          "summaryChunks_one": "已處理 {{count}} 個區塊",
+          "summaryChunks_other": "已處理 {{count}} 個區塊",
+          "done": "完成",
+          "errors": {
+            "generic": "啟用 GraphRAG 失敗。請再試一次。",
+            "forbidden": "您沒有為此來源啟用 GraphRAG 的權限。",
+            "conflict": "此來源仍在索引中。請等候完成後再啟用 GraphRAG。"
+          }
+        },
+        "view": {
+          "action": "查看圖譜",
+          "title": "知識圖譜",
+          "explainer": "節點代表實體，邊代表它們之間的關係。點擊節點可查看其描述及擷取來源的區塊。",
+          "stats": "{{nodes}} 個實體 · {{edges}} 個關係",
+          "empty": "尚無圖譜——擷取可能仍在進行中。",
+          "selectNode": "選擇節點以查看其詳細資訊。",
+          "linkedChunks": "關聯區塊",
+          "noChunks": "此實體沒有關聯的區塊。",
+          "close": "關閉"
+        }
+      },
+      "testRetrieval": {
+        "action": "測試檢索",
+        "title": "測試檢索",
+        "subtitle": "使用實際的檢索管線，查看查詢實際從「{{name}}」檢索到的區塊。",
+        "subtitleGeneric": "使用實際的檢索管線，查看查詢實際檢索到的區塊。",
+        "queryPlaceholder": "輸入此來源應能回答的問題...",
+        "run": "執行",
+        "notSavedHint": "這些設定僅用於此次測試，不會儲存到來源。若要永久生效，請至來源設定中修改。",
+        "resultSummary": "檢索到 {{total}} 個區塊 · {{retriever}}",
+        "latency": "{{ms}} ms",
+        "empty": "此查詢未檢索到任何區塊。",
+        "emptyWithThreshold": "沒有區塊的分數達到分數門檻（{{threshold}}）。調低門檻可查看接近的結果。",
+        "showMore": "顯示完整區塊",
+        "showLess": "收合",
+        "noScore": "無分數",
+        "noScoreHint": "此檢索器對區塊排序時，不會產生可比較的個別區塊分數。",
+        "scoreKinds": {
+          "cosine_similarity": "相似度",
+          "l2_distance": "距離",
+          "rrf": "RRF"
+        },
+        "errors": {
+          "failed": "檢索測試失敗。請再試一次。"
+        }
+      },
+      "editConfig": "來源設定",
+      "shareWithTeam": "與團隊分享",
       "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？",
       "confirmDelete": "您確定要刪除此檔案嗎？此操作無法復原。",
       "backToAll": "返回所有來源",
@@ -105,7 +242,84 @@
       "uploadingFilesTitle": "正在上傳檔案...",
       "deletingTitle": "正在刪除...",
       "deleteDirectoryWarning": "您確定要刪除目錄 \"{{name}}\" 及其所有內容嗎？此操作無法復原。",
-      "searchAlt": "搜尋"
+      "searchAlt": "搜尋",
+      "retrievalOptions": {
+        "title": "進階設定",
+        "retrieval": {
+          "title": "檢索",
+          "note": "這些變更立即生效，無需重新索引。",
+          "tag": "無需重新索引",
+          "chunks": "檢索區塊數（top-k）",
+          "scoreThreshold": "分數門檻",
+          "scoreThresholdPlaceholder": "無",
+          "scoreThresholdHint": "僅回傳相關性分數高於此值（0–1）的區塊；數值越高越嚴格。",
+          "rephraseQuery": "搜尋前改寫查詢",
+          "retriever": "檢索器",
+          "retrievers": {
+            "classic": "經典",
+            "hybrid": "混合",
+            "graphrag": "GraphRAG"
+          },
+          "retrieverHint": "混合檢索結合關鍵字與向量搜尋。GraphRAG 會為此來源建立知識圖譜，適合需要多步推理的問題。",
+          "exposure": "搜尋提供方式",
+          "exposures": {
+            "prefetch": "預先載入至脈絡",
+            "agentic_tool": "隨選搜尋工具"
+          },
+          "exposureHint": "將此來源預先載入提示中，或讓代理以工具形式隨選搜尋。"
+        },
+        "prescreen": {
+          "enable": "啟用 LLM 預篩選",
+          "warning": "會擷取較大的候選集合並使用 LLM 篩選。這將增加查詢延遲與成本。",
+          "candidateK": "擷取候選數",
+          "maxKeep": "保留區塊上限",
+          "batchSize": "批次大小",
+          "model": "模型（選填）",
+          "modelPlaceholder": "預設使用請求模型"
+        },
+        "graph": {
+          "title": "圖譜擷取",
+          "tag": "重新索引後生效",
+          "extractionModel": "擷取模型",
+          "extractionModelHint": "用於從每個區塊擷取實體與關係的 LLM。",
+          "defaultModel": "使用預設模型",
+          "maxChunks": "擷取區塊上限",
+          "maxChunksHint": "限制送交擷取的區塊數量。留空則使用執行個體預設值。",
+          "maxChunksPlaceholder": "預設"
+        },
+        "chunking": {
+          "title": "分塊",
+          "note": "索引時設定。變更後需重新索引來源。",
+          "tag": "重新索引後生效",
+          "strategy": "分塊策略",
+          "strategies": {
+            "classic_chunk": "經典",
+            "recursive": "遞迴",
+            "markdown": "Markdown",
+            "parent_child": "父／子",
+            "semantic": "語意"
+          },
+          "maxTokens": "每區塊最大 Token 數",
+          "minTokens": "每區塊最小 Token 數",
+          "duplicateHeaders": "在各區塊間重複標頭"
+        }
+      },
+      "configModal": {
+        "title": "來源設定",
+        "subtitle": "設定「{{name}}」的分塊與檢索方式。",
+        "subtitleGeneric": "設定此來源的分塊與檢索方式。",
+        "save": "儲存",
+        "saving": "儲存中…",
+        "readOnly": "您對此共享來源僅有檢視權限，無法變更其設定。",
+        "chunkingChangeHint": "您變更了分塊設定。儲存後需重新索引此來源才會生效。",
+        "prescreenInvalidHint": "請檢查預篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
+        "reingestRequired": "變更已儲存。您變更的分塊設定需重新索引後才會生效。要立即重新索引嗎？",
+        "reingestLater": "稍後",
+        "errors": {
+          "forbidden": "您沒有編輯此來源設定的權限。",
+          "saveFailed": "儲存設定失敗。請再試一次。"
+        }
+      }
     },
     "apiKeys": {
       "label": "聊天機器人",
@@ -135,7 +349,30 @@
       "filterPlaceholder": "篩選",
       "none": "無",
       "positiveFeedback": "正向回饋",
-      "negativeFeedback": "負向回饋"
+      "negativeFeedback": "負向回饋",
+      "groupBy": "分組方式",
+      "groupOptions": {
+        "total": "總計",
+        "model": "依模型",
+        "agent": "依代理",
+        "source": "依來源"
+      },
+      "includeSideChannel": "背景 Token",
+      "promptTokens": "提示 Token",
+      "generatedTokens": "生成 Token",
+      "scheduledRuns": "排程執行",
+      "toolUsage": "工具使用量",
+      "completed": "已完成",
+      "failed": "失敗",
+      "skipped": "已略過",
+      "successful": "成功",
+      "stats": {
+        "messages": "訊息",
+        "tokens": "Token",
+        "toolCalls": "工具呼叫",
+        "runSuccess": "執行成功率",
+        "feedback": "回饋"
+      }
     },
     "logs": {
       "label": "日誌",
@@ -143,7 +380,131 @@
       "filterByChatbot": "按聊天機器人篩選",
       "selectChatbot": "選擇聊天機器人",
       "none": "無",
-      "tableHeader": "API 生成 / 聊天機器人會話"
+      "tableHeader": "API 生成 / 聊天機器人會話",
+      "searchPlaceholder": "搜尋日誌...",
+      "noLogs": "找不到日誌",
+      "levels": {
+        "all": "所有層級",
+        "info": "資訊",
+        "error": "錯誤",
+        "warning": "警告"
+      },
+      "types": {
+        "all": "所有事件",
+        "chat": "對話",
+        "schedule": "排程",
+        "webhook": "Webhook",
+        "workflow": "工作流程",
+        "system": "系統"
+      },
+      "detail": {
+        "agent": "代理",
+        "status": "狀態",
+        "trigger": "觸發方式",
+        "errorType": "錯誤類型",
+        "tokens": "Token",
+        "duration": "持續時間",
+        "conversation": "對話",
+        "endpoint": "端點",
+        "instruction": "指令",
+        "response": "回應",
+        "output": "輸出",
+        "error": "錯誤",
+        "toolCalls": "工具呼叫",
+        "sources": "來源",
+        "workflow": "工作流程",
+        "activity": "活動",
+        "steps": "步驟",
+        "result": "結果"
+      }
+    },
+    "teams": {
+      "label": "團隊",
+      "subtitle": "管理您的團隊、成員與共享資源。",
+      "newTeam": "新增團隊",
+      "backToTeams": "返回團隊列表",
+      "createTeam": "建立團隊",
+      "createTeamDescription": "為您的團隊命名。建立後即可新增成員並分享資源。",
+      "editTeam": "編輯",
+      "teamNamePlaceholder": "團隊名稱",
+      "descriptionLabel": "描述",
+      "descriptionPlaceholder": "這個團隊的用途是什麼？（選填）",
+      "create": "建立",
+      "save": "儲存",
+      "createTeamError": "無法建立團隊。",
+      "noTeams": "尚無團隊。",
+      "noDescription": "無描述",
+      "memberCountOne": "{{count}} 位成員",
+      "memberCountOther": "{{count}} 位成員",
+      "sharedCount": "已分享 {{count}} 項",
+      "loadError": "載入團隊失敗。",
+      "roleAdmin": "管理員",
+      "roleMember": "成員",
+      "sourceManual": "手動加入",
+      "sourceSso": "透過 SSO",
+      "sourceScim": "透過 SCIM",
+      "teamsHeading": "您的團隊",
+      "selectTeamHint": "選擇團隊以管理其成員與共享資源。",
+      "selectTeamTitle": "未選擇團隊",
+      "teamSubtitle": "管理成員以及與此團隊分享的資源。",
+      "deleteTeam": "刪除團隊",
+      "deleteTeamConfirmation": "您確定要刪除「{{name}}」嗎？此操作無法復原。",
+      "members": "成員",
+      "addMember": "新增成員",
+      "addMemberTitle": "新增成員",
+      "addMemberDescription": "透過電子郵件邀請成員。對方必須至少登入過一次。",
+      "teamActions": "團隊操作",
+      "memberEmailLabel": "成員電子郵件",
+      "memberEmailPlaceholder": "name@example.com",
+      "memberRoleLabel": "角色",
+      "add": "新增",
+      "remove": "移除",
+      "removeMemberConfirmation": "要將此成員從團隊中移除嗎？",
+      "addMemberError": "新增成員失敗（僅限團隊管理員）。",
+      "memberNotFound": "找不到使用該電子郵件的使用者——對方必須先登入一次。",
+      "noMembers": "尚無成員。使用「新增成員」以電子郵件邀請。",
+      "roleChangeError": "無法變更角色（最後一位管理員受保護）。",
+      "removeMemberError": "無法移除成員。",
+      "deleteTeamError": "無法刪除團隊。",
+      "updateFailed": "更新失敗",
+      "openTeamError": "無法載入團隊詳細資訊。",
+      "sharedResources": "共享資源",
+      "sharedWithTeam": "已與此團隊分享（{{count}}）",
+      "nothingShared": "尚未分享任何內容。可從代理、來源、提示或工具的選單進行分享。",
+      "unshare": "取消分享",
+      "unshareError": "無法取消分享資源。",
+      "resourceType": {
+        "agent": "代理",
+        "source": "來源",
+        "prompt": "提示",
+        "tool": "工具"
+      },
+      "share": {
+        "titleNamed": "分享「{{name}}」",
+        "titleGeneric": "分享此{{type}}",
+        "subtitle": "團隊成員可以使用；編輯者也可以修改。您仍是擁有者。",
+        "noTeams": "您尚未加入任何團隊。請至「設定 → 團隊」建立。",
+        "accessLevel": {
+          "viewer": "檢視者",
+          "editor": "編輯者"
+        },
+        "done": "完成",
+        "loadError": "無法載入目前的分享設定。",
+        "shareError": "無法與團隊分享。",
+        "unshareError": "無法取消與團隊的分享。",
+        "addPlaceholder": "新增人員或團隊…",
+        "searchPlaceholder": "新增人員或團隊…",
+        "noMatches": "找不到人員或團隊。",
+        "peopleWithAccess": "具有存取權的人員",
+        "you": "您",
+        "owner": "擁有者",
+        "teamsGroup": "團隊",
+        "peopleGroup": "人員",
+        "teamLabel": "團隊",
+        "viaTeam": "透過 {{team}}",
+        "removeAccess": "移除存取權",
+        "access": "存取權"
+      }
     },
     "tools": {
       "label": "工具",
@@ -158,6 +519,14 @@
       "manageTools": "前往工具",
       "edit": "編輯",
       "delete": "刪除",
+      "reconnect": "重新連線",
+      "shareWithTeam": "與團隊分享",
+      "builtIn": "內建",
+      "authStatus": {
+        "connected": "已連線",
+        "needsAuth": "需要驗證",
+        "configured": "已設定"
+      },
       "deleteWarning": "您確定要刪除工具 \"{{toolName}}\" 嗎？",
       "unsavedChanges": "您有未儲存的變更，如果不儲存就離開將會遺失。",
       "leaveWithoutSaving": "不儲存離開",
@@ -184,6 +553,8 @@
       "deleteActionWarning": "您確定要刪除操作 \"{{name}}\" 嗎？",
       "backToAllTools": "返回所有工具",
       "save": "儲存",
+      "saving": "儲存中...",
+      "saveFailed": "儲存工具設定失敗",
       "fieldName": "欄位名稱",
       "fieldType": "欄位類型",
       "filledByLLM": "由LLM填入",
@@ -199,6 +570,8 @@
       "mcp": {
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
+        "reconnectServer": "重新連線伺服器",
+        "reenterCredentials": "重新輸入您的憑證以測試並更新連線。",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -211,6 +584,8 @@
         "noAuth": "No Authentication",
         "oauthInProgress": "Waiting for OAuth completion...",
         "oauthCompleted": "OAuth completed successfully",
+        "oauthPopupBlocked": "彈出視窗被瀏覽器封鎖。點擊下方進行授權：",
+        "openAuthPage": "開啟授權頁面",
         "authType": "Authentication Type",
         "defaultServerName": "My MCP Server",
         "authTypes": {
@@ -242,6 +617,60 @@
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
+      }
+    },
+    "devices": {
+      "label": "裝置",
+      "subtitle": "配對遠端機器，讓代理能透過 shell 指令操作。",
+      "pair": "配對裝置",
+      "empty": "沒有已配對的裝置。",
+      "revoke": "撤銷",
+      "edit": "編輯",
+      "revokeWarning": "要撤銷 {{name}} 嗎？CLI 將會中斷連線。",
+      "approvalMode": "核准模式",
+      "approvalAsk": "詢問",
+      "approvalFull": "完整存取",
+      "online": "線上",
+      "offline": "離線",
+      "lastSeen": "上次上線：{{time}}",
+      "lastSeenLabel": "上次上線",
+      "seenAgo": "{{time}}前上線",
+      "nameLabel": "裝置名稱",
+      "descriptionLabel": "描述（代理可見）",
+      "descriptionPlaceholder": "這台機器的用途是什麼？",
+      "identity": "識別資訊",
+      "access": "存取權",
+      "connection": "連線",
+      "hostLabel": "主機",
+      "dangerZone": "危險區域",
+      "approvalAskDescription": "每個指令執行前都需核准。",
+      "approvalFullDescription": "執行所有指令而不詢問，安全拒絕清單除外。",
+      "fullAccessWarning": "完整存取：代理可在此機器上執行任何指令而不需詢問。安全拒絕清單仍然適用。",
+      "deviceIdLabel": "裝置 ID",
+      "offlineHint": "未連線。請在該機器上執行 `docsgpt-cli host` 使其上線。",
+      "dangerZoneDescription": "撤銷會停止裝置上的常駐程式並移除配對。",
+      "auditTitle": "近期活動",
+      "auditLoading": "載入中…",
+      "auditEmpty": "尚無活動。",
+      "auditDecision": "決策",
+      "auditExit": "結束代碼",
+      "auditDuration": "持續時間",
+      "pairing": {
+        "title": "配對遠端機器",
+        "subtitle": "在遠端機器上執行下方指令，並在提示時輸入配對碼。",
+        "formSubtitle": "為新裝置設定名稱、描述與核准模式。",
+        "nameLabel": "裝置名稱（選填）",
+        "namePlaceholder": "例如 edge-server",
+        "descriptionLabel": "描述（選填）",
+        "descriptionPlaceholder": "代理可見，以便選擇正確的裝置。",
+        "fullAccessWarning": "完整存取：代理可在此機器上執行任何指令而不需詢問。安全拒絕清單仍然適用。",
+        "stepOne": "1. 在您的遠端機器上執行：",
+        "installLink": "還沒有 docsgpt-cli？安裝它",
+        "stepTwo": "2. 在提示時輸入此配對碼：",
+        "start": "產生配對碼",
+        "starting": "處理中…",
+        "waitingForCli": "等待 CLI 兌換配對碼…",
+        "cancel": "取消"
       }
     },
     "customModels": {
@@ -291,6 +720,15 @@
       "capabilities": {
         "title": "功能",
         "contextWindowShort": "脈絡視窗",
+        "apiFlavor": "API 協定",
+        "apiFlavors": {
+          "chatCompletions": "Chat Completions",
+          "responses": "Responses"
+        },
+        "reasoningEffort": "推理強度",
+        "reasoningEfforts": {
+          "default": "供應商預設"
+        },
         "chips": {
           "tools": "工具",
           "structuredOutput": "結構化輸出",
@@ -321,9 +759,9 @@
       "selectedFiles": "已選擇的檔案",
       "noFilesSelected": "未選擇檔案",
       "file": "從檔案",
-      "remote": "遠端",
       "back": "返回",
       "wait": "請稍候...",
+      "remote": "遠端",
       "start": "開始對話",
       "name": "名稱",
       "choose": "選擇檔案",
@@ -331,6 +769,7 @@
       "uploadedFiles": "已上傳檔案",
       "cancel": "取消",
       "train": "訓練",
+      "create": "建立",
       "link": "連結",
       "urlLink": "URL 連結",
       "repoUrl": "儲存庫 URL",
@@ -353,6 +792,8 @@
         "failed": "上傳失敗",
         "wait": "這可能需要幾分鐘",
         "preparing": "準備上傳",
+        "parsing": "正在解析檔案...",
+        "embedding": "正在生成嵌入...",
         "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔",
         "expandDetails": "展開上傳詳情",
         "collapseDetails": "摺疊上傳詳情",
@@ -398,6 +839,10 @@
         "confluence": {
           "label": "Confluence",
           "heading": "從Confluence上傳"
+        },
+        "wiki": {
+          "label": "新 Wiki",
+          "heading": "建立動態 Wiki"
         }
       },
       "connectors": {
@@ -474,6 +919,11 @@
       "create": "建立",
       "option": "允許使用者進行更多查詢"
     },
+    "searchConversations": {
+      "searchPlaceholder": "搜尋對話",
+      "noResults": "未找到結果",
+      "loading": "載入中..."
+    },
     "configTool": {
       "title": "工具設定",
       "type": "類型",
@@ -488,6 +938,11 @@
       "addDescription": "新增自定義提示並儲存到 DocsGPT",
       "editPrompt": "編輯提示",
       "editDescription": "編輯自定義提示並儲存到 DocsGPT",
+      "viewPrompt": "檢視提示",
+      "viewDescription": "內建提示無法編輯。建立副本後即可自行編輯。",
+      "duplicate": "建立副本",
+      "duplicatePrompt": "建立提示副本",
+      "duplicateDescription": "正在編輯「{{name}}」的副本，儲存後即為您自己的提示",
       "promptName": "提示名稱",
       "promptText": "提示文字",
       "save": "儲存",
@@ -511,7 +966,8 @@
         "systemTime": "目前時間 (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 時間戳記",
         "systemRequestId": "唯一請求識別碼",
-        "systemUserId": "目前使用者 ID"
+        "systemUserId": "目前使用者 ID",
+        "artifactsLookup": "依 ID 查詢 Artifact 中繼資料"
       },
       "learnAboutPrompts": "了解提示 →",
       "publicPromptEditDisabled": "公共提示無法編輯",
@@ -545,7 +1001,9 @@
       "webhookUrl": "Webhook URL",
       "generate": "Generate",
       "test": "Test",
-      "learnMore": "Learn more"
+      "learnMore": "Learn more",
+      "resetKey": "重設金鑰",
+      "resetKeyConfirm": "確定要重設 API 金鑰嗎？目前的金鑰將立即停止運作，此操作無法復原。"
     },
     "importSpec": {
       "title": "匯入 API 規格",
@@ -562,6 +1020,35 @@
       "cancel": "取消",
       "parse": "解析",
       "import": "匯入 ({{count}})"
+    },
+    "importAgent": {
+      "title": "Import agent from YAML",
+      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
+      "dropzoneText": "Click to upload or drag and drop a .yaml file",
+      "invalidFileType": "Only .yaml or .yml files are supported",
+      "readError": "Could not read this agent file",
+      "importError": "Import failed",
+      "willCreate": "Creates a new agent.",
+      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
+      "sources": "Sources",
+      "tools": "Tools",
+      "models": "Models",
+      "sourceMatched": "{{name}}: using your existing source",
+      "sourceMissing": "{{name}}: not found",
+      "leaveUnattached": "Leave unattached",
+      "toolBuiltin": "{{type}}: built-in",
+      "toolReuse": "{{name}}: reusing your existing tool",
+      "toolUnavailable": "{{type}}: not available on this instance, will be skipped",
+      "toolCreate": "{{name}}: will be created",
+      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
+      "modelCustom": "{{name}}: custom model",
+      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
+      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
+      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
+      "cancel": "Cancel",
+      "review": "Review",
+      "import": "Import",
+      "continueToAgent": "Continue to agent"
     }
   },
   "sharedConv": {
@@ -605,13 +1092,69 @@
       "remove": "刪除附件"
     },
     "retry": "重試",
-    "reasoning": "推理"
+    "reasoning": "推理",
+    "wikiWrite": {
+      "edited": "已編輯 Wiki",
+      "create": "已建立 Wiki 頁面",
+      "str_replace": "已編輯 Wiki 頁面",
+      "insert": "已編輯 Wiki 頁面",
+      "delete": "已刪除 Wiki 頁面",
+      "rename": "已重新命名 Wiki 頁面",
+      "failed": "失敗"
+    },
+    "streamingStatus": {
+      "thinking": "思考中…",
+      "generating": "生成中…",
+      "searchingWeb": "正在網路搜尋「{{query}}」…",
+      "searchingWebGeneric": "正在搜尋網路…",
+      "searchingImages": "正在搜尋「{{query}}」的圖片…",
+      "readingPage": "正在閱讀 {{target}}…",
+      "searchingKnowledge": "正在搜尋知識庫…",
+      "accessingMemory": "正在存取記憶…",
+      "runningCode": "正在執行程式碼…",
+      "creatingArtifact": "正在建立 Artifact…",
+      "usingTool": "正在使用 {{tool}}…"
+    },
+    "toolChip": {
+      "searchingWeb": "已搜尋網路 · 「{{query}}」",
+      "searchedWebGeneric": "已搜尋網路",
+      "searchingImages": "已搜尋圖片 · 「{{query}}」",
+      "readingPage": "已閱讀 {{target}}",
+      "searchingKnowledge": "已搜尋知識庫",
+      "accessingMemory": "已存取記憶",
+      "runningCode": "已執行程式碼",
+      "creatingArtifact": "已建立 Artifact",
+      "usingTool": "已使用 {{tool}}"
+    },
+    "inlineSteps": {
+      "arguments": "參數",
+      "response": "回應",
+      "running": "執行中…",
+      "denied": "已被使用者拒絕",
+      "failed": "失敗"
+    }
   },
   "agents": {
     "title": "代理",
+    "edit": "編輯",
     "description": "探索並創建結合指令、額外知識和任意技能組合的DocsGPT自訂版本",
     "newAgent": "新建代理",
+    "importAgent": "Import",
+    "exportAgent": "Export as YAML",
+    "shareWithTeam": "與團隊分享",
     "backToAll": "返回所有代理",
+    "pageHeader": {
+      "crumbs": {
+        "agents": "代理"
+      },
+      "tabs": {
+        "overview": "總覽",
+        "logs": "日誌",
+        "schedules": "排程"
+      },
+      "fallbackName": "未命名代理",
+      "subnavAriaLabel": "代理子導覽"
+    },
     "searchPlaceholder": "搜尋...",
     "noSearchResults": "未找到代理",
     "tryDifferentSearch": "請嘗試不同的搜尋詞",
@@ -619,7 +1162,12 @@
       "all": "全部",
       "byDocsGPT": "由DocsGPT提供",
       "byMe": "我的",
+      "team": "團隊",
       "shared": "與我共享"
+    },
+    "teamBadge": {
+      "editor": "編輯者",
+      "viewer": "檢視者"
     },
     "sections": {
       "template": {
@@ -631,6 +1179,11 @@
         "title": "我的代理",
         "description": "您創建或發佈的代理",
         "emptyState": "您還沒有創建任何代理。"
+      },
+      "team": {
+        "title": "團隊",
+        "description": "團隊成員與您分享的代理",
+        "emptyState": "尚未有代理與您的團隊分享。"
       },
       "shared": {
         "title": "與我共享",
@@ -651,8 +1204,10 @@
         "cancel": "取消",
         "delete": "刪除",
         "logs": "日誌",
+        "schedules": "排程",
         "accessDetails": "存取詳情",
-        "add": "新增"
+        "add": "新增",
+        "moreActions": "更多操作"
       },
       "sections": {
         "meta": "中繼資料",
@@ -684,7 +1239,10 @@
       "toolsPopup": {
         "title": "選擇工具",
         "searchPlaceholder": "搜尋工具...",
-        "noOptionsMessage": "沒有可用的工具"
+        "noOptionsMessage": "沒有可用的工具",
+        "groupBuiltin": "內建",
+        "groupDefault": "預設",
+        "groupCustom": "自訂"
       },
       "modelsPopup": {
         "title": "選擇模型",
@@ -717,13 +1275,91 @@
       "preview": {
         "publishedPreview": "已發佈的代理可以在此處預覽"
       },
-      "externalKb": "外部知識庫"
+      "dangerZone": {
+        "heading": "危險區域",
+        "description": "刪除此代理將無法復原，並會移除其所有排程和執行歷史。",
+        "deleteButton": "刪除代理"
+      },
+      "externalKb": "外部知識庫",
+      "errors": {
+        "publishFailed": "無法發布該助理，請重試。",
+        "saveDraftFailed": "無法儲存草稿，請重試。"
+      }
     },
     "logs": {
       "title": "代理日誌",
       "lastUsedAt": "最後使用時間",
       "noUsageHistory": "無使用歷史",
       "tableHeader": "代理端點日誌"
+    },
+    "schedules": {
+      "title": "代理排程",
+      "heading": "排程",
+      "newRecurring": "新增排程",
+      "closeForm": "關閉表單",
+      "edit": "編輯",
+      "recurring": "週期性",
+      "oneTime": "一次性任務",
+      "noRecurring": "尚無週期性排程。",
+      "noOneTime": "尚無一次性任務。",
+      "pause": "暫停",
+      "resume": "繼續",
+      "runNow": "立即執行",
+      "delete": "刪除",
+      "deleteConfirm": "要刪除此排程嗎？其執行歷史也會一併刪除。此操作無法復原。",
+      "cancel": "取消",
+      "showRuns": "顯示執行記錄",
+      "hideRuns": "隱藏執行記錄",
+      "modal": {
+        "titleCreate": "新增排程",
+        "titleEdit": "編輯排程",
+        "namePlaceholder": "任務名稱",
+        "frequency": {
+          "once": "一次",
+          "daily": "每天",
+          "weekly": "每週",
+          "monthly": "每月",
+          "yearly": "每年"
+        },
+        "on": "日期",
+        "at": "時間",
+        "pickDate": "選擇日期",
+        "timezone": "時區",
+        "timezonePlaceholder": "選擇時區",
+        "timezoneSearchPlaceholder": "搜尋時區…",
+        "timezoneEmpty": "找不到時區。",
+        "instructionsLabel": "指令",
+        "instructionsPlaceholder": "在此輸入提示。",
+        "create": "建立任務",
+        "save": "儲存變更",
+        "errors": {
+          "instructionRequired": "指令為必填。",
+          "runAtInPast": "請選擇未來的日期／時間。"
+        },
+        "days": {
+          "mon": "週一",
+          "tue": "週二",
+          "wed": "週三",
+          "thu": "週四",
+          "fri": "週五",
+          "sat": "週六",
+          "sun": "週日"
+        },
+        "months": {
+          "jan": "1月",
+          "feb": "2月",
+          "mar": "3月",
+          "apr": "4月",
+          "may": "5月",
+          "jun": "6月",
+          "jul": "7月",
+          "aug": "8月",
+          "sep": "9月",
+          "oct": "10月",
+          "nov": "11月",
+          "dec": "12月"
+        }
+      }
     },
     "shared": {
       "notFound": "未找到代理。請確保代理已共享。"
@@ -745,6 +1381,7 @@
       "move": "移動",
       "noFolder": "無資料夾 (根目錄)",
       "backToRoot": "返回",
+      "currentFolder": "此資料夾",
       "noSubfolders": "沒有子資料夾",
       "noFolders": "暫無資料夾"
     }
@@ -786,6 +1423,17 @@
   },
   "navigation": {
     "agents": "代理"
+  },
+  "teams": {
+    "switcher": {
+      "ariaLabel": "切換團隊",
+      "personal": "個人帳戶",
+      "personalSubtitle": "個人工作區",
+      "roleAdmin": "管理員",
+      "roleMember": "成員",
+      "manageTeam": "管理團隊",
+      "createTeam": "建立團隊"
+    }
   },
   "notification": {
     "ariaLabel": "通知",

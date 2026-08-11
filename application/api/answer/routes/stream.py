@@ -8,7 +8,9 @@ from application.api import api
 
 from application.api.answer.routes.base import answer_ns, BaseAnswerResource
 
+from application.api.answer.services.persistence_policy import resolve_persistence
 from application.api.answer.services.stream_processor import StreamProcessor
+from application.streaming.sse_keepalive import with_sse_keepalive
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +56,18 @@ class StreamResource(Resource, BaseAnswerResource):
             ),
             "save_conversation": fields.Boolean(
                 required=False,
-                default=True,
-                description="Whether to save the conversation",
+                description=(
+                    "Deprecated, no effect: conversations always persist. "
+                    "Use `visibility` to control sidebar listing."
+                ),
+            ),
+            "visibility": fields.String(
+                required=False,
+                default="hidden",
+                description=(
+                    "'listed' shows the conversation in the owner's sidebar; "
+                    "any other value (or omitting it) persists it hidden."
+                ),
             ),
             "model_id": fields.String(
                 required=False,
@@ -89,6 +101,7 @@ class StreamResource(Resource, BaseAnswerResource):
                     tools_dict,
                     pending_tool_calls,
                     tool_actions,
+                    reasoning_content,
                 ) = processor.resume_from_tool_actions(
                     data["tool_actions"], data["conversation_id"]
                 )
@@ -101,21 +114,26 @@ class StreamResource(Resource, BaseAnswerResource):
                 if error := self.check_usage(processor.agent_config):
                     return error
                 return Response(
-                    self.complete_stream(
-                        question="",
-                        agent=agent,
-                        conversation_id=processor.conversation_id,
-                        user_api_key=processor.agent_config.get("user_api_key"),
-                        decoded_token=processor.decoded_token,
-                        agent_id=processor.agent_id,
-                        model_id=processor.model_id,
-                        model_user_id=processor.model_user_id,
-                        _continuation={
-                            "messages": messages,
-                            "tools_dict": tools_dict,
-                            "pending_tool_calls": pending_tool_calls,
-                            "tool_actions": tool_actions,
-                        },
+                    with_sse_keepalive(
+                        self.complete_stream(
+                            question="",
+                            agent=agent,
+                            conversation_id=processor.conversation_id,
+                            user_api_key=processor.agent_config.get("user_api_key"),
+                            decoded_token=processor.decoded_token,
+                            agent_id=processor.agent_id,
+                            model_id=processor.model_id,
+                            model_user_id=processor.model_user_id,
+                            _continuation={
+                                "messages": messages,
+                                "tools_dict": tools_dict,
+                                "pending_tool_calls": pending_tool_calls,
+                                "tool_actions": tool_actions,
+                                "reserved_message_id": processor.reserved_message_id,
+                                "request_id": processor.request_id,
+                                "reasoning_content": reasoning_content,
+                            },
+                        ),
                     ),
                     mimetype="text/event-stream",
                 )
@@ -131,22 +149,29 @@ class StreamResource(Resource, BaseAnswerResource):
 
             if error := self.check_usage(processor.agent_config):
                 return error
+            should_persist, visibility = resolve_persistence(
+                visibility_flag=data.get("visibility"),
+                persist_flag=data.get("persist"),
+            )
             return Response(
-                self.complete_stream(
-                    question=data["question"],
-                    agent=agent,
-                    conversation_id=processor.conversation_id,
-                    user_api_key=processor.agent_config.get("user_api_key"),
-                    decoded_token=processor.decoded_token,
-                    isNoneDoc=data.get("isNoneDoc"),
-                    index=data.get("index"),
-                    should_save_conversation=data.get("save_conversation", True),
-                    attachment_ids=data.get("attachments", []),
-                    agent_id=processor.agent_id,
-                    is_shared_usage=processor.is_shared_usage,
-                    shared_token=processor.shared_token,
-                    model_id=processor.model_id,
-                    model_user_id=processor.model_user_id,
+                with_sse_keepalive(
+                    self.complete_stream(
+                        question=data["question"],
+                        agent=agent,
+                        conversation_id=processor.conversation_id,
+                        user_api_key=processor.agent_config.get("user_api_key"),
+                        decoded_token=processor.decoded_token,
+                        isNoneDoc=data.get("isNoneDoc"),
+                        index=data.get("index"),
+                        should_persist=should_persist,
+                        visibility=visibility,
+                        attachment_ids=data.get("attachments", []),
+                        agent_id=processor.agent_id,
+                        is_shared_usage=processor.is_shared_usage,
+                        shared_token=processor.shared_token,
+                        model_id=processor.model_id,
+                        model_user_id=processor.model_user_id,
+                    ),
                 ),
                 mimetype="text/event-stream",
             )

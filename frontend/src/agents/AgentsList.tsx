@@ -1,15 +1,18 @@
+import { Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import Search from '../assets/search.svg';
 import Spinner from '../components/Spinner';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import {
   setConversation,
   updateConversationId,
 } from '../conversation/conversationSlice';
+import ImportAgentModal from '../modals/ImportAgentModal';
 import {
   selectAgentFolders,
   selectSelectedAgent,
@@ -29,6 +32,7 @@ const FILTER_TABS: { id: AgentFilterTab; labelKey: string }[] = [
   { id: 'all', labelKey: 'agents.filters.all' },
   { id: 'template', labelKey: 'agents.filters.byDocsGPT' },
   { id: 'user', labelKey: 'agents.filters.byMe' },
+  { id: 'team', labelKey: 'agents.filters.team' },
   { id: 'shared', labelKey: 'agents.filters.shared' },
 ];
 
@@ -159,42 +163,46 @@ export default function AgentsList() {
 
   return (
     <div className="p-4 md:p-12">
-      <h1 className="text-foreground mb-0 text-[32px] font-bold lg:text-[40px]">
+      <h1 className="text-foreground mb-0 text-3xl font-bold lg:text-4xl">
         {t('agents.title')}
       </h1>
-      <p className="text-muted-foreground mt-5 text-[15px] leading-6">
+      <p className="text-muted-foreground mt-5 text-sm leading-6">
         {t('agents.description')}
       </p>
 
       <div className="mt-6 flex flex-col gap-4 pb-4">
-        <div className="relative w-full max-w-md">
-          <img
-            src={Search}
-            alt=""
-            className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40"
-          />
-          <input
+        <div className="w-full max-w-md">
+          <Input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('agents.searchPlaceholder')}
-            className="border-border bg-card text-foreground placeholder:text-muted-foreground h-11 w-full rounded-full border py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
+            label={t('agents.searchPlaceholder')}
+            labelBgClassName="bg-background"
+            className="rounded-full"
+            leftIcon={
+              <Search
+                className="text-muted-foreground size-4"
+                strokeWidth={1.75}
+              />
+            }
           />
         </div>
 
         <div className="flex flex-wrap gap-2">
           {FILTER_TABS.map((tab) => (
-            <button
+            <Button
               key={tab.id}
+              type="button"
+              variant="ghost"
               onClick={() => setActiveFilter(tab.id)}
-              className={`rounded-full px-4 py-2 text-sm transition-colors ${
+              className={`rounded-full ${
                 activeFilter === tab.id
                   ? 'bg-border text-foreground dark:bg-accent dark:text-white'
-                  : 'dark:text-gray text-muted-foreground hover:bg-accent/50 bg-transparent'
+                  : 'dark:text-gray text-muted-foreground hover:bg-accent/50'
               }`}
             >
               {t(tab.labelKey)}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -278,6 +286,7 @@ function AgentSection({
   const allAgents = useSelector(config.selectData);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [showImportModal, setShowImportModal] = useState(false);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
 
   const currentFolderId =
@@ -411,15 +420,16 @@ function AgentSection({
       <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-3">
         <p>{t(`agents.sections.${config.id}.emptyState`)}</p>
         {config.showNewAgentButton && (
-          <button
-            className="bg-primary hover:bg-primary/90 rounded-full px-4 py-2 text-sm text-white"
+          <Button
+            type="button"
+            className="rounded-full text-white"
             onClick={() => {
               setModalFolderId(null);
               setShowAgentTypeModal(true);
             }}
           >
             {t('agents.newAgent')}
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -456,27 +466,31 @@ function AgentSection({
     <div className="mt-8 flex flex-col gap-4">
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
-          <h2 className="text-foreground flex flex-wrap items-center gap-2 text-[18px] font-semibold">
+          <h2 className="text-foreground flex flex-wrap items-center gap-2 text-lg font-semibold">
             {config.id === 'user' && folderPath.length > 0 ? (
               <>
-                <button
+                <Button
+                  type="button"
+                  variant="link"
                   onClick={() => handleNavigateToPath(-1)}
-                  className="text-muted-foreground hover:text-foreground dark:hover:text-white"
+                  className="text-muted-foreground hover:text-foreground h-auto p-0 text-lg font-semibold no-underline hover:no-underline dark:hover:text-white"
                 >
                   {t(`agents.sections.${config.id}.title`)}
-                </button>
+                </Button>
                 {breadcrumbItems.map((item, index) => (
                   <span key={item.id} className="flex items-center gap-2">
                     <ChevronIcon />
                     {index === breadcrumbItems.length - 1 ? (
                       <span>{item.name}</span>
                     ) : (
-                      <button
+                      <Button
+                        type="button"
+                        variant="link"
                         onClick={() => handleNavigateToPath(index)}
-                        className="text-muted-foreground hover:text-foreground dark:hover:text-white"
+                        className="text-muted-foreground hover:text-foreground h-auto p-0 text-lg font-semibold no-underline hover:no-underline dark:hover:text-white"
                       >
                         {item.name}
-                      </button>
+                      </Button>
                     )}
                   </span>
                 ))}
@@ -485,14 +499,14 @@ function AgentSection({
               t(`agents.sections.${config.id}.title`)
             )}
           </h2>
-          <p className="text-muted-foreground text-[13px]">
+          <p className="text-muted-foreground text-sm">
             {t(`agents.sections.${config.id}.description`)}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {config.id === 'user' &&
             (isCreatingFolder ? (
-              <input
+              <Input
                 ref={newFolderInputRef}
                 type="text"
                 value={newFolderName}
@@ -513,33 +527,50 @@ function AgentSection({
                   }
                 }}
                 placeholder={t('agents.folders.newFolder')}
-                className="border-border bg-card text-foreground placeholder:text-muted-foreground w-28 rounded-full border px-4 py-2 text-sm outline-none sm:w-auto"
+                className="w-28 sm:w-auto"
                 autoFocus
               />
             ) : (
-              <button
-                className="border-border bg-card text-foreground hover:bg-accent shrink-0 rounded-full border px-4 py-2 text-sm whitespace-nowrap"
+              <Button
+                type="button"
+                variant="outline"
+                className="bg-card shrink-0 rounded-full whitespace-nowrap"
                 onClick={() => {
                   setIsCreatingFolder(true);
                   setTimeout(() => newFolderInputRef.current?.focus(), 0);
                 }}
               >
                 {t('agents.folders.newFolder')}
-              </button>
+              </Button>
             ))}
+          {config.id === 'user' && (
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-card shrink-0 rounded-full whitespace-nowrap"
+              onClick={() => setShowImportModal(true)}
+            >
+              {t('agents.importAgent')}
+            </Button>
+          )}
           {config.showNewAgentButton && (
-            <button
-              className="bg-primary hover:bg-primary/90 shrink-0 rounded-full px-4 py-2 text-sm whitespace-nowrap text-white"
+            <Button
+              type="button"
+              className="shrink-0 rounded-full whitespace-nowrap text-white"
               onClick={() => {
                 setModalFolderId(currentFolderId);
                 setShowAgentTypeModal(true);
               }}
             >
               {t('agents.newAgent')}
-            </button>
+            </Button>
           )}
         </div>
       </div>
+      <ImportAgentModal
+        modalState={showImportModal ? 'ACTIVE' : 'INACTIVE'}
+        setModalState={(state) => setShowImportModal(state === 'ACTIVE')}
+      />
 
       <div className="flex flex-col gap-4">
         {isLoading ? (
@@ -586,15 +617,16 @@ function AgentSection({
                     : t(`agents.sections.${config.id}.emptyState`)}
                 </p>
                 {config.showNewAgentButton && !currentFolderId && (
-                  <button
-                    className="bg-primary hover:bg-primary/90 ml-2 rounded-full px-4 py-2 text-sm text-white"
+                  <Button
+                    type="button"
+                    className="ml-2 rounded-full text-white"
                     onClick={() => {
                       setModalFolderId(currentFolderId);
                       setShowAgentTypeModal(true);
                     }}
                   >
                     {t('agents.newAgent')}
-                  </button>
+                  </Button>
                 )}
               </div>
             ) : null}

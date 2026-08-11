@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Integration tests for the /v1/ chat completions API (Phase 4).
+Integration tests for the /v1/ chat completions API.
 
 Endpoints tested:
 - /v1/chat/completions (POST) - Standard chat completions (streaming & non-streaming)

@@ -1,4 +1,4 @@
-"""Tests for tool approval (Phase 3).
+"""Tests for tool approval.
 
 Covers require_approval flag, check_pause for approval, the handler
 pause/resume flow, and gen_continuation with approved/denied actions.

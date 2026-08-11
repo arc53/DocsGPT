@@ -1,4 +1,4 @@
-"""Phase 1 regression tests for the YAML-driven ModelRegistry.
+"""Regression tests for the YAML-driven ModelRegistry.
 
 These tests encode the contract that persisted agent / workflow /
 conversation references depend on: every model id and core capability
@@ -38,8 +38,8 @@ EXPECTED_IDS = {
     },
     "google": {
         "gemini-3.1-pro-preview",
-        "gemini-3-flash-preview",
-        "gemini-3.1-flash-lite-preview",
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
     },
     "groq": {
         "openai/gpt-oss-120b",
@@ -56,10 +56,9 @@ EXPECTED_IDS = {
         "moonshotai/kimi-k2.6",
         "zai-org/glm-5",
     },
-    "azure_openai": {
-        "azure-gpt-5.5",
-        "azure-gpt-5.4-mini",
-        "azure-gpt-5.4-nano",
+    "openai_compatible": {
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
     },
     "docsgpt": {"docsgpt-local"},
     "huggingface": {"huggingface-local"},
@@ -88,8 +87,14 @@ def _make_settings(**overrides):
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry():
+def _reset_registry(monkeypatch):
     ModelRegistry.reset()
+    # openai_compatible catalogs read their key directly from os.environ,
+    # so clear every built-in/operator catalog key to keep these tests
+    # deterministic even when a developer has an ignored ``*_internal.yaml``.
+    for catalog in load_model_yamls([BUILTIN_MODELS_DIR]):
+        if catalog.api_key_env:
+            monkeypatch.delenv(catalog.api_key_env, raising=False)
     yield
     ModelRegistry.reset()
 
@@ -116,7 +121,17 @@ class TestYAMLLoader:
     def test_each_provider_has_expected_ids(self):
         grouped = _by_provider(load_model_yamls([BUILTIN_MODELS_DIR]))
         for provider, expected in EXPECTED_IDS.items():
-            actual = {m.id for c in grouped[provider] for m in c.models}
+            # Local ``*_internal.yaml`` files are intentionally gitignored
+            # operator extensions, not part of the canonical catalog snapshot.
+            canonical = [
+                c
+                for c in grouped[provider]
+                if not (
+                    c.source_path
+                    and c.source_path.stem.endswith("_internal")
+                )
+            ]
+            actual = {m.id for c in canonical for m in c.models}
             assert actual == expected, f"{provider}: expected {expected}, got {actual}"
 
     def test_attachment_alias_image_expands_to_five_mime_types(self):
@@ -234,21 +249,8 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["docsgpt"]
 
-    def test_azure_via_provider(self):
-        s = _make_settings(LLM_PROVIDER="azure_openai", API_KEY="key")
-        with patch("application.core.settings.settings", s):
-            reg = ModelRegistry()
-        ids = {m.id for m in reg.get_all_models()}
-        assert "azure-gpt-5.5" in ids
-
-    def test_azure_via_api_base(self):
-        s = _make_settings(OPENAI_API_BASE="https://x.openai.azure.com")
-        with patch("application.core.settings.settings", s):
-            reg = ModelRegistry()
-        ids = {m.id for m in reg.get_all_models()}
-        assert "azure-gpt-5.5" in ids
-
-    def test_everything_set(self):
+    def test_everything_set(self, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
         s = _make_settings(
             OPENAI_API_KEY="x",
             ANTHROPIC_API_KEY="x",

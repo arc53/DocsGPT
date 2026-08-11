@@ -145,5 +145,7 @@ class OpenAICompatibleProvider(Provider):
             enabled=model.enabled,
             base_url=model.base_url or base_url,
             display_provider=model.display_provider,
+            upstream_model_id=model.upstream_model_id,
+            source=model.source,
             api_key=api_key,
         )

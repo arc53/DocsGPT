@@ -14,7 +14,7 @@ The primary method for configuring your LLM provider in DocsGPT is through the `
 To connect to a cloud LLM provider, you will typically need to configure the following basic settings in your `.env` file:
 
 *   **`LLM_PROVIDER`**:  This setting is essential and identifies the specific cloud provider you wish to use (e.g., `openai`, `google`, `anthropic`).
-*   **`LLM_NAME`**:  Specifies the exact model you want to utilize from your chosen provider (e.g., `gpt-5.1`, `gemini-flash-latest`, `claude-3-5-sonnet-20241022`).  Refer to your provider's documentation for a list of available models.
+*   **`LLM_NAME`**:  Specifies the exact model you want to utilize from your chosen provider (e.g., `gpt-5.1`, `gemini-3.5-flash`, `claude-3-5-sonnet-20241022`).  Refer to your provider's documentation for a list of available models.
 *   **`API_KEY`**:  Almost all cloud LLM providers require an API key for authentication. Obtain your API key from your chosen provider's platform and securely store it in your `.env` file.
 
 ## Explicitly Supported Cloud Providers
@@ -25,14 +25,15 @@ DocsGPT offers direct, streamlined support for the following cloud LLM providers
 | :--------------------------- | :------------- | :-------------------------- |
 | DocsGPT Public API           | `docsgpt`      | `None`                      |
 | OpenAI                       | `openai`       | `gpt-5.1`                   |
-| Google (Vertex AI, Gemini)   | `google`       | `gemini-flash-latest`       |
+| OpenAI-compatible (BYOM)     | `openai_compatible` | (any; with per-model `base_url`/`api_key`) |
+| Google (Vertex AI, Gemini)   | `google`       | `gemini-3.5-flash`          |
 | Anthropic (Claude)           | `anthropic`    | `claude-3-5-sonnet-20241022`|
 | Groq                         | `groq`         | `llama-3.3-70b-versatile`   |
-| HuggingFace Inference API    | `huggingface`  | `meta-llama/Llama-3.1-8B-Instruct` |
-| Azure OpenAI                 | `azure_openai` | `azure-gpt-4`               |
-| Prem AI                      | `premai`       | (See Prem AI docs)          |
-| AWS SageMaker                | `sagemaker`    | (See SageMaker docs)        |
+| OpenRouter                   | `openrouter`   | (See OpenRouter docs)       |
 | Novita AI                    | `novita`       | (See Novita docs)           |
+| HuggingFace Inference API    | `huggingface`  | `meta-llama/Llama-3.1-8B-Instruct` |
+
+DocsGPT also ships a **model catalog** (`application/core/models/*.yaml`) that the in-app model picker reads, so common models from these providers — including DeepSeek — appear ready to select once the matching API key is set.
 
 ## Connecting to OpenAI-Compatible Cloud APIs
 
@@ -52,6 +53,22 @@ OPENAI_BASE_URL=https://api.deepseek.com/v1 # DeepSeek's OpenAI API URL
 ```
 
 Remember to consult the documentation of your chosen OpenAI-compatible cloud provider for their specific API endpoint, required model names, and authentication methods.
+
+### Dedicated `openai_compatible` provider (bring-your-own-model)
+
+Beyond the global `OPENAI_BASE_URL`, DocsGPT has a first-class `openai_compatible` provider. It lets a model carry its **own** `base_url` and `api_key`, which is how per-user "bring your own model" (BYOM) endpoints work — each model can point at a different OpenAI-compatible server without changing instance-wide settings. Outbound requests use an SSRF-pinned HTTP client for safety.
+
+This is the mechanism behind catalog entries like DeepSeek, which declare their own `base_url` and API key environment variable rather than relying on `OPENAI_BASE_URL`.
+
+## OpenAI Responses API and reasoning
+
+For OpenAI models that support it, DocsGPT can call the newer **Responses API** (`/v1/responses`) instead of Chat Completions. This is selected per model in the catalog via an `api_flavor: responses` capability and enables features like server-side reasoning. Related settings:
+
+- `reasoning_effort` — per-model reasoning effort hint (for example `medium`) declared in the model catalog.
+- `OPENAI_RESPONSES_STORE` (default `false`) — when `true`, lets OpenAI persist Responses API state server-side and chains calls with `previous_response_id`. When `false`, DocsGPT requests encrypted reasoning items and persists those ciphertext items itself so reasoning survives tool calls and later conversation turns without OpenAI retaining the response.
+- `V1_SESSION_TTL_SECONDS` (default `86400`) — lifetime of the hashed Redis mapping used to associate OpenAI-compatible client session headers with hidden DocsGPT conversations. Explicit DocsGPT conversation IDs always take precedence.
+
+See [App Configuration](/Deploying/DocsGPT-Settings) for the full settings reference.
 
 ## Adding Support for Other Cloud Providers
 

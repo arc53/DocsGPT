@@ -56,6 +56,8 @@ def _user_id_or_401():
 def _normalize_capabilities(raw) -> dict:
     """Coerce + bound the user-supplied capabilities payload."""
     raw = raw or {}
+    if not isinstance(raw, dict):
+        raise ValueError("'capabilities' must be an object")
     out = {}
     if "supports_tools" in raw:
         out["supports_tools"] = bool(raw["supports_tools"])
@@ -97,6 +99,26 @@ def _normalize_capabilities(raw) -> dict:
                 f"{_CONTEXT_WINDOW_MIN} and {_CONTEXT_WINDOW_MAX}"
             )
         out["context_window"] = cw
+    if "api_flavor" in raw:
+        from application.core.model_yaml import VALID_API_FLAVORS
+
+        api_flavor = raw["api_flavor"]
+        if api_flavor not in VALID_API_FLAVORS:
+            valid = ", ".join(sorted(VALID_API_FLAVORS))
+            raise ValueError(
+                f"'capabilities.api_flavor' must be one of [{valid}]"
+            )
+        out["api_flavor"] = api_flavor
+    if "reasoning_effort" in raw and raw["reasoning_effort"] is not None:
+        from application.core.model_yaml import VALID_REASONING_EFFORTS
+
+        reasoning_effort = raw["reasoning_effort"]
+        if reasoning_effort not in VALID_REASONING_EFFORTS:
+            valid = ", ".join(sorted(VALID_REASONING_EFFORTS))
+            raise ValueError(
+                f"'capabilities.reasoning_effort' must be one of [{valid}]"
+            )
+        out["reasoning_effort"] = reasoning_effort
     return out
 
 
@@ -360,21 +382,34 @@ class UserModelResource(Resource):
 
 
 def _run_connection_test(
-    base_url: str, api_key: str, upstream_model_id: str
+    base_url: str,
+    api_key: str,
+    upstream_model_id: str,
+    api_flavor: str = "chat_completions",
 ):
-    """Send a 1-token chat-completion to verify a BYOM endpoint.
+    """Send a minimal generation request to verify a BYOM endpoint.
 
     Returns ``(body, http_status)``. Upstream errors return 200 with
     ``ok=False`` so the UI can render inline errors; only local SSRF
     rejection returns 400.
     """
-    url = base_url.rstrip("/") + "/chat/completions"
-    payload = {
-        "model": upstream_model_id,
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 1,
-        "stream": False,
-    }
+    if api_flavor == "responses":
+        url = base_url.rstrip("/") + "/responses"
+        payload = {
+            "model": upstream_model_id,
+            "input": "hi",
+            "max_output_tokens": 16,
+            "stream": False,
+            "store": False,
+        }
+    else:
+        url = base_url.rstrip("/") + "/chat/completions"
+        payload = {
+            "model": upstream_model_id,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+            "stream": False,
+        }
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -427,8 +462,8 @@ class UserModelTestPayloadResource(Resource):
             "Test an arbitrary BYOM payload (display_name / model id / "
             "base_url / api_key) without saving. Used by the UI's 'Test "
             "connection' button so the user can validate before they "
-            "Save. Same SSRF guard, same 1-token request, same 5s "
-            "timeout as the by-id variant."
+            "Save. Uses the selected API protocol with the same SSRF guard "
+            "and 5s timeout as the by-id variant."
         )
     )
     def post(self):
@@ -443,8 +478,15 @@ class UserModelTestPayloadResource(Resource):
         if missing:
             return missing
 
+        try:
+            capabilities = _normalize_capabilities(data.get("capabilities"))
+        except ValueError as e:
+            return make_response(jsonify({"ok": False, "error": str(e)}), 400)
         body, status = _run_connection_test(
-            data["base_url"], data["api_key"], data["upstream_model_id"]
+            data["base_url"],
+            data["api_key"],
+            data["upstream_model_id"],
+            capabilities.get("api_flavor", "chat_completions"),
         )
         return make_response(jsonify(body), status)
 
@@ -515,7 +557,18 @@ class UserModelTestResource(Resource):
         upstream_model_id = (
             override_upstream_model_id or row["upstream_model_id"]
         )
+        try:
+            capabilities = (
+                _normalize_capabilities(data["capabilities"])
+                if "capabilities" in data
+                else (row.get("capabilities") or {})
+            )
+        except ValueError as e:
+            return make_response(jsonify({"ok": False, "error": str(e)}), 400)
         body, status = _run_connection_test(
-            base_url, api_key, upstream_model_id
+            base_url,
+            api_key,
+            upstream_model_id,
+            capabilities.get("api_flavor", "chat_completions"),
         )
         return make_response(jsonify(body), status)

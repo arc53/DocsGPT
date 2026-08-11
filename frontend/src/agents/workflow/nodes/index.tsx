@@ -2,6 +2,7 @@ import { Bot, Flag, Play, StickyNote } from 'lucide-react';
 import { memo } from 'react';
 
 import { BaseNode } from './BaseNode';
+import CodeNode from './CodeNode';
 import ConditionNode from './ConditionNode';
 import SetStateNode from './SetStateNode';
 
@@ -69,7 +70,7 @@ export const AgentNode = memo(function AgentNode({
       <div className="flex flex-col gap-1">
         {config.agent_type && (
           <div
-            className="truncate text-[10px] text-gray-500 uppercase"
+            className="truncate text-xs text-gray-500 uppercase"
             title={config.agent_type}
           >
             {config.agent_type}
@@ -145,3 +146,4 @@ export const NoteNode = memo(function NoteNode({
 
 export { SetStateNode };
 export { ConditionNode };
+export { CodeNode };

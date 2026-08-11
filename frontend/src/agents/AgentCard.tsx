@@ -1,9 +1,12 @@
-import { SyntheticEvent, useRef, useState } from 'react';
+import { SyntheticEvent, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Users } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 import userService from '../api/services/userService';
+import Download from '../assets/download.svg';
 import Duplicate from '../assets/duplicate.svg';
 import Edit from '../assets/edit.svg';
 import FolderIcon from '../assets/folder.svg';
@@ -13,11 +16,26 @@ import Pin from '../assets/pin.svg';
 import Trash from '../assets/red-trash.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import UnPin from '../assets/unpin.svg';
-import AgentImage from '../components/AgentImage';
-import ContextMenu, { MenuOption } from '../components/ContextMenu';
+import { Avatar } from '../components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MoveToFolderModal from '../modals/MoveToFolderModal';
 import { ActiveState } from '../models/misc';
+import ShareToTeamModal from '../teams/ShareToTeamModal';
+
+type AgentMenuOption = {
+  icon: string | LucideIcon;
+  label: string;
+  onClick: (event: SyntheticEvent) => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+};
 import {
   selectAgents,
   selectToken,
@@ -45,14 +63,12 @@ export default function AgentCard({
   const token = useSelector(selectToken);
   const userAgents = useSelector(selectAgents);
 
-  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [moveModalState, setMoveModalState] = useState<ActiveState>('INACTIVE');
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  const menuOptionsConfig: Record<string, MenuOption[]> = {
+  const menuOptionsConfig: Record<string, AgentMenuOption[]> = {
     template: [
       {
         icon: Duplicate,
@@ -61,7 +77,7 @@ export default function AgentCard({
           e.stopPropagation();
           handleDuplicate();
         },
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 18,
         iconHeight: 18,
       },
@@ -74,7 +90,7 @@ export default function AgentCard({
           e.stopPropagation();
           navigate(`/agents/logs/${agent.id}`);
         },
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 14,
         iconHeight: 14,
       },
@@ -89,7 +105,93 @@ export default function AgentCard({
             navigate(`/agents/edit/${agent.id}`);
           }
         },
-        variant: 'primary',
+        variant: 'default',
+        iconWidth: 14,
+        iconHeight: 14,
+      },
+      {
+        icon: Download,
+        label: t('agents.exportAgent'),
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          handleExport();
+        },
+        variant: 'default',
+        iconWidth: 14,
+        iconHeight: 14,
+      },
+      // Sharing is an owner-only action: only show it for agents the user
+      // owns ('user'), not agents shared into their workspace by a team.
+      ...(agent.ownership === 'user'
+        ? [
+            {
+              icon: Users,
+              label: t('agents.shareWithTeam'),
+              onClick: (e: SyntheticEvent) => {
+                e.stopPropagation();
+                setShareModalOpen(true);
+              },
+              variant: 'default' as const,
+              iconWidth: 14,
+              iconHeight: 14,
+            },
+          ]
+        : []),
+      ...(agent.status === 'published'
+        ? [
+            {
+              icon: agent.pinned ? UnPin : Pin,
+              label: agent.pinned ? 'Unpin' : 'Pin agent',
+              onClick: (e: SyntheticEvent) => {
+                e.stopPropagation();
+                togglePin();
+              },
+              variant: 'default' as const,
+              iconWidth: 18,
+              iconHeight: 18,
+            },
+          ]
+        : []),
+      {
+        icon: FolderIcon,
+        label: t('agents.folders.moveToFolder'),
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          setMoveModalState('ACTIVE');
+        },
+        variant: 'default',
+        iconWidth: 16,
+        iconHeight: 15,
+      },
+      {
+        icon: Trash,
+        label: 'Delete',
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          setDeleteConfirmation('ACTIVE');
+        },
+        variant: 'destructive',
+        iconWidth: 13,
+        iconHeight: 13,
+      },
+    ],
+    // Agents shared with the user via a team. They don't own it, so only
+    // non-destructive, non-owner actions are offered: open the config
+    // (editors can save, viewers see it read-only) and pin for quick access.
+    // Logs / Export / Share / Move-to-folder / Delete stay owner-only.
+    team: [
+      {
+        icon: Edit,
+        label: 'Edit',
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          if (agent.agent_type === 'workflow') {
+            navigate(`/agents/workflow/edit/${agent.id}`);
+          } else {
+            navigate(`/agents/edit/${agent.id}`);
+          }
+        },
+        variant: 'default',
         iconWidth: 14,
         iconHeight: 14,
       },
@@ -102,35 +204,12 @@ export default function AgentCard({
                 e.stopPropagation();
                 togglePin();
               },
-              variant: 'primary' as const,
+              variant: 'default' as const,
               iconWidth: 18,
               iconHeight: 18,
             },
           ]
         : []),
-      {
-        icon: FolderIcon,
-        label: t('agents.folders.moveToFolder'),
-        onClick: (e: SyntheticEvent) => {
-          e.stopPropagation();
-          setMoveModalState('ACTIVE');
-          setIsMenuOpen(false);
-        },
-        variant: 'primary',
-        iconWidth: 16,
-        iconHeight: 15,
-      },
-      {
-        icon: Trash,
-        label: 'Delete',
-        onClick: (e: SyntheticEvent) => {
-          e.stopPropagation();
-          setDeleteConfirmation('ACTIVE');
-        },
-        variant: 'danger',
-        iconWidth: 13,
-        iconHeight: 13,
-      },
     ],
     shared: [
       {
@@ -140,7 +219,7 @@ export default function AgentCard({
           e.stopPropagation();
           navigate(`/agents/shared/${agent.shared_token}`);
         },
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 12,
         iconHeight: 12,
       },
@@ -151,7 +230,7 @@ export default function AgentCard({
           e.stopPropagation();
           togglePin();
         },
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 18,
         iconHeight: 18,
       },
@@ -162,7 +241,7 @@ export default function AgentCard({
           e.stopPropagation();
           handleHideSharedAgent();
         },
-        variant: 'danger',
+        variant: 'destructive',
         iconWidth: 13,
         iconHeight: 13,
       },
@@ -171,10 +250,12 @@ export default function AgentCard({
   const menuOptions = menuOptionsConfig[section] || [];
 
   const handleClick = () => {
-    if (section === 'user') {
+    // Team-shared agents open/run exactly like the user's own published
+    // agents (the run + GetAgent routes authorize team grantees server-side).
+    if (section === 'user' || section === 'team') {
       if (agent.status === 'published') {
         dispatch(setSelectedAgent(agent));
-        navigate(`/`);
+        navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
       }
     }
     if (section === 'shared') {
@@ -208,6 +289,25 @@ export default function AgentCard({
         (prevAgent) => prevAgent.id !== agent.id,
       );
       updateAgents?.(updatedAgents);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const response = await userService.exportAgent(agent.id ?? '', token);
+      if (!response.ok) throw new Error('Failed to export agent');
+      const yamlText = await response.text();
+      const blob = new Blob([yamlText], { type: 'application/x-yaml' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${agent.slug || agent.name || 'agent'}.agent.yaml`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error:', error);
     }
@@ -251,36 +351,87 @@ export default function AgentCard({
   };
   return (
     <div
-      className={`bg-muted hover:bg-accent relative flex h-44 flex-col justify-between rounded-[1.2rem] px-4 py-5 sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
+      role={agent.status === 'published' ? 'button' : undefined}
+      tabIndex={agent.status === 'published' ? 0 : undefined}
+      aria-label={agent.status === 'published' ? agent.name : undefined}
+      className={`bg-muted hover:bg-accent focus-visible:ring-ring/50 focus-visible:border-ring relative flex h-44 flex-col justify-between rounded-2xl px-4 py-5 outline-none focus-visible:ring-[3px] sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
       onClick={(e) => {
         e.stopPropagation();
         handleClick();
       }}
+      onKeyDown={(e) => {
+        if (
+          agent.status === 'published' &&
+          (e.key === 'Enter' || e.key === ' ')
+        ) {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
     >
-      <div
-        ref={menuRef}
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsMenuOpen(true);
-        }}
-        className="absolute top-4 right-4 z-10 cursor-pointer"
-      >
-        <img src={ThreeDots} alt={'use-agent'} className="h-[19px] w-[19px]" />
-        <ContextMenu
-          isOpen={isMenuOpen}
-          setIsOpen={setIsMenuOpen}
-          options={menuOptions}
-          anchorRef={menuRef}
-          position="bottom-right"
-          offset={{ x: 0, y: 0 }}
-        />
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-4 right-4 z-10 cursor-pointer"
+            aria-label="agent-actions"
+          >
+            <img
+              src={ThreeDots}
+              alt={'use-agent'}
+              className="h-[19px] w-[19px]"
+            />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[144px]">
+          {menuOptions.map((option, index) => (
+            <DropdownMenuItem
+              key={index}
+              variant={option.variant}
+              onClick={(e) => e.stopPropagation()}
+              onSelect={(event) => {
+                option.onClick(event as unknown as SyntheticEvent);
+              }}
+            >
+              {typeof option.icon === 'string' ? (
+                <img
+                  src={option.icon}
+                  alt=""
+                  width={option.iconWidth ?? 16}
+                  height={option.iconHeight ?? 16}
+                />
+              ) : (
+                <option.icon
+                  size={Math.max(
+                    option.iconWidth ?? 16,
+                    option.iconHeight ?? 16,
+                  )}
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                />
+              )}
+              <span>{option.label}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {/* Team access badge — pinned to the top row, left of the ⋯ menu
+          (right-11 clears the 19px trigger at right-4) so the two align. */}
+      {agent.ownership === 'team' && (
+        <span className="bg-muted dark:bg-accent text-muted-foreground absolute top-4 right-11 z-10 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium">
+          <Users size={11} strokeWidth={2} aria-hidden="true" />
+          {agent.team_access === 'editor'
+            ? t('agents.teamBadge.editor')
+            : t('agents.teamBadge.viewer')}
+        </span>
+      )}
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
-          <AgentImage
+          <Avatar
             src={agent.image}
             alt={`${agent.name}`}
-            className="h-7 w-7 rounded-full object-contain"
+            imgClassName="h-7 w-7 rounded-full object-contain"
           />
           {agent.status === 'draft' && (
             <p className="text-foreground text-xs opacity-50">{`(Draft)`}</p>
@@ -289,11 +440,11 @@ export default function AgentCard({
         <div className="mt-2">
           <p
             title={agent.name}
-            className="text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
+            className="text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
           >
             {agent.name}
           </p>
-          <p className="dark:text-muted-foreground text-muted-foreground mt-1 h-20 overflow-auto px-1 text-[12px] leading-relaxed">
+          <p className="dark:text-muted-foreground text-muted-foreground mt-1 h-20 overflow-auto px-1 text-xs leading-relaxed">
             {agent.description}
           </p>
         </div>
@@ -318,6 +469,14 @@ export default function AgentCard({
         currentFolderId={agent.folder_id}
         onMoveSuccess={handleMoveSuccess}
       />
+      {shareModalOpen && agent.id && (
+        <ShareToTeamModal
+          resourceType="agent"
+          resourceId={agent.id}
+          resourceName={agent.name}
+          onClose={() => setShareModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -219,6 +219,14 @@ class TestViewAction:
         result = memory_tool.execute_action("view", path="/hello.txt")
         assert "Hello World" in result
 
+    def test_prefixed_action_names(self, memory_tool):
+        # New namespaced names work alongside the legacy aliases above.
+        memory_tool.execute_action(
+            "memory_create", path="/hello.txt", file_text="Hello World"
+        )
+        result = memory_tool.execute_action("memory_view", path="/hello.txt")
+        assert "Hello World" in result
+
     def test_view_nonexistent_file(self, memory_tool):
         result = memory_tool.execute_action("view", path="/missing.txt")
         assert "Error" in result
@@ -503,12 +511,12 @@ class TestMemoryToolMetadata:
     def test_actions_metadata(self, memory_tool):
         meta = memory_tool.get_actions_metadata()
         action_names = [a["name"] for a in meta]
-        assert "view" in action_names
-        assert "create" in action_names
-        assert "str_replace" in action_names
-        assert "insert" in action_names
-        assert "delete" in action_names
-        assert "rename" in action_names
+        assert "memory_view" in action_names
+        assert "memory_create" in action_names
+        assert "memory_str_replace" in action_names
+        assert "memory_insert" in action_names
+        assert "memory_delete" in action_names
+        assert "memory_rename" in action_names
         assert len(meta) == 6
 
     def test_config_requirements(self, memory_tool):

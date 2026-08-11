@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 
 from application.agents.tools.base import Tool
 from application.core.settings import settings
+from application.retriever.dispatcher import build_dispatcher
 from application.retriever.retriever_creator import RetrieverCreator
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,7 @@ class InternalSearchTool(Tool):
 
     def _get_retriever(self):
         if self._retriever is None:
-            self._retriever = RetrieverCreator.create_retriever(
-                self.config.get("retriever_name", "classic"),
+            retriever_kwargs = dict(
                 source=self.config.get("source", {}),
                 chat_history=[],
                 prompt="",
@@ -45,6 +45,21 @@ class InternalSearchTool(Tool):
                 llm_name=self.config.get("llm_name", settings.LLM_PROVIDER),
                 api_key=self.config.get("api_key", settings.API_KEY),
                 decoded_token=self.config.get("decoded_token"),
+                request_id=self.config.get("request_id"),
+            )
+
+            def _legacy_classic():
+                return RetrieverCreator.create_retriever(
+                    self.config.get("retriever_name", "classic"),
+                    **retriever_kwargs,
+                )
+
+            # Dispatch per-source so on-demand agentic search honours the same
+            # per-source config as pre-fetch; kill-switch falls back to legacy.
+            self._retriever = build_dispatcher(
+                _legacy_classic,
+                sources=self.config.get("sources") or [],
+                **retriever_kwargs,
             )
         return self._retriever
 
@@ -72,7 +87,17 @@ class InternalSearchTool(Tool):
                 active_docs = [active_docs]
 
             decoded_token = self.config.get("decoded_token") or {}
-            user_id = decoded_token.get("sub") if decoded_token else None
+            # Resolve the agent's sources as their OWNER: for a team-shared
+            # agent run by a member, the sources belong to the owner, so using
+            # the member's sub would 404. ``source_owner_id`` is the agent owner
+            # (set at config-build time); fall back to the BYOM model_user_id,
+            # then the invoker. Running the agent already authorized these
+            # sources.
+            user_id = (
+                self.config.get("source_owner_id")
+                or self.config.get("model_user_id")
+                or (decoded_token.get("sub") if decoded_token else None)
+            )
 
             merged_structure = {}
             with db_readonly() as conn:
@@ -233,8 +258,10 @@ class InternalSearchTool(Tool):
                 "name": "search",
                 "description": (
                     "Search the user's uploaded documents and knowledge base. "
-                    "Use this to find relevant information before answering questions. "
-                    "You can call this multiple times with different queries."
+                    "Use this before answering questions about their content. "
+                    "Results include each document's source title — cite those "
+                    "titles in your answer. You can call this multiple times "
+                    "with different phrasings to improve coverage."
                 ),
                 "parameters": {
                     "properties": {
@@ -423,6 +450,10 @@ def add_internal_search_tool(tools_dict: Dict, retriever_config: Dict) -> None:
 
     has_dir = sources_have_directory_structure(source)
     internal_entry = build_internal_tool_entry(has_directory_structure=has_dir)
+    # The executor resolves a tool row by ``id``; the internal tool is synthetic
+    # (no DB row), so stamp its sentinel id or _get_or_load_tool drops it with
+    # ``tool_missing_row_id``.
+    internal_entry["id"] = INTERNAL_TOOL_ID
     internal_entry["config"] = build_internal_tool_config(
         **retriever_config,
         has_directory_structure=has_dir,
@@ -435,13 +466,16 @@ def build_internal_tool_config(
     retriever_name: str = "classic",
     chunks: int = 2,
     doc_token_limit: int = 50000,
+    sources: Optional[List[Dict]] = None,
     model_id: str = "docsgpt-local",
     model_user_id: Optional[str] = None,
+    source_owner_id: Optional[str] = None,
     user_api_key: Optional[str] = None,
     agent_id: Optional[str] = None,
     llm_name: str = None,
     api_key: str = None,
     decoded_token: Optional[Dict] = None,
+    request_id: Optional[str] = None,
     has_directory_structure: bool = False,
 ) -> Dict:
     """Build the config dict for InternalSearchTool."""
@@ -450,12 +484,19 @@ def build_internal_tool_config(
         "retriever_name": retriever_name,
         "chunks": chunks,
         "doc_token_limit": doc_token_limit,
+        # Per-source list threaded through to the Dispatcher in _get_retriever.
+        "sources": sources or [],
         "model_id": model_id,
         "model_user_id": model_user_id,
+        # The agent owner — the sources belong to them, so directory-structure
+        # resolution uses this (a team member running a shared agent has a
+        # different sub). Independent of the BYOM ``model_user_id``.
+        "source_owner_id": source_owner_id,
         "user_api_key": user_api_key,
         "agent_id": agent_id,
         "llm_name": llm_name or settings.LLM_PROVIDER,
         "api_key": api_key or settings.API_KEY,
         "decoded_token": decoded_token,
+        "request_id": request_id,
         "has_directory_structure": has_directory_structure,
     }

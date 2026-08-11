@@ -1,6 +1,6 @@
 import uuid
 from contextlib import contextmanager
-from unittest.mock import mock_open, patch
+from unittest.mock import patch
 
 import pytest
 from flask import Flask
@@ -85,41 +85,44 @@ class TestGetSinglePrompt:
     def test_returns_default_prompt(self, app):
         from application.api.user.prompts.routes import GetSinglePrompt
 
-        with patch("builtins.open", mock_open(read_data="Default prompt content")):
-            with app.test_request_context("/api/get_single_prompt?id=default"):
-                from flask import request
+        from application.prompts.composer import compose_preset
 
-                request.decoded_token = {"sub": "user1"}
-                response = GetSinglePrompt().get()
+        with app.test_request_context("/api/get_single_prompt?id=default"):
+            from flask import request
+
+            request.decoded_token = {"sub": "user1"}
+            response = GetSinglePrompt().get()
 
         assert response.status_code == 200
-        assert response.json["content"] == "Default prompt content"
+        assert response.json["content"] == compose_preset("default")
 
     def test_returns_creative_prompt(self, app):
         from application.api.user.prompts.routes import GetSinglePrompt
 
-        with patch("builtins.open", mock_open(read_data="Creative content")):
-            with app.test_request_context("/api/get_single_prompt?id=creative"):
-                from flask import request
+        from application.prompts.composer import compose_preset
 
-                request.decoded_token = {"sub": "user1"}
-                response = GetSinglePrompt().get()
+        with app.test_request_context("/api/get_single_prompt?id=creative"):
+            from flask import request
+
+            request.decoded_token = {"sub": "user1"}
+            response = GetSinglePrompt().get()
 
         assert response.status_code == 200
-        assert response.json["content"] == "Creative content"
+        assert response.json["content"] == compose_preset("creative")
 
     def test_returns_strict_prompt(self, app):
         from application.api.user.prompts.routes import GetSinglePrompt
 
-        with patch("builtins.open", mock_open(read_data="Strict content")):
-            with app.test_request_context("/api/get_single_prompt?id=strict"):
-                from flask import request
+        from application.prompts.composer import compose_preset
 
-                request.decoded_token = {"sub": "user1"}
-                response = GetSinglePrompt().get()
+        with app.test_request_context("/api/get_single_prompt?id=strict"):
+            from flask import request
+
+            request.decoded_token = {"sub": "user1"}
+            response = GetSinglePrompt().get()
 
         assert response.status_code == 200
-        assert response.json["content"] == "Strict content"
+        assert response.json["content"] == compose_preset("strict")
 
 
     def test_returns_400_missing_id(self, app):
@@ -315,8 +318,12 @@ class TestGetSinglePromptHappyPath:
     def test_file_read_exception_returns_400(self, app):
         from application.api.user.prompts.routes import GetSinglePrompt
 
-        with patch("builtins.open", side_effect=OSError("boom")), \
-             app.test_request_context("/api/get_single_prompt?id=default"):
+        # Presets are composed in-process now, so the failure this covers is a
+        # repository error on the custom-prompt path.
+        with patch(
+            "application.api.user.prompts.routes.PromptsRepository",
+            side_effect=OSError("boom"),
+        ), app.test_request_context("/api/get_single_prompt?id=some-custom-id"):
             from flask import request
 
             request.decoded_token = {"sub": "u1"}

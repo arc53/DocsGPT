@@ -2,16 +2,24 @@ import { Braces, Plus, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Edge, Node } from 'reactflow';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-interface WorkflowVariable {
+export interface WorkflowVariable {
   label: string;
   templatePath: string;
   section: string;
+  // True when the variable resolves to artifact reference(s) at run time
+  // (uploaded input_documents, code-node outputs) rather than plain LLM/state
+  // TEXT. Only artifact-bearing variables may be picked as node Documents;
+  // selecting a text output there makes the engine append the literal variable
+  // name and the node hard-fails. Heuristic keyed on the producing node type.
+  producesArtifact?: boolean;
 }
 
 const GLOBAL_CONTEXT_VARIABLES: WorkflowVariable[] = [
@@ -60,6 +68,11 @@ const GLOBAL_CONTEXT_VARIABLES: WorkflowVariable[] = [
     templatePath: 'system.user_id',
     section: 'Global context',
   },
+  {
+    label: 'artifacts.artifact(id)',
+    templatePath: 'artifacts.artifact(id)',
+    section: 'Global context',
+  },
 ];
 
 function toAgentTemplatePath(variableName: string): string {
@@ -91,7 +104,7 @@ function getUpstreamNodeIds(nodeId: string, edges: Edge[]): Set<string> {
   return upstream;
 }
 
-function extractUpstreamVariables(
+export function extractUpstreamVariables(
   nodes: Node[],
   edges: Edge[],
   selectedNodeId: string,
@@ -107,40 +120,58 @@ function extractUpstreamVariables(
       templatePath: 'agent.chat_history',
       section: 'Workflow input',
     },
+    {
+      label: 'agent.input_documents',
+      templatePath: 'agent.input_documents',
+      section: 'Workflow input',
+      // Uploaded documents are artifact references.
+      producesArtifact: true,
+    },
     ...GLOBAL_CONTEXT_VARIABLES,
   ];
   const seen = new Set(variables.map((variable) => variable.templatePath));
   const upstreamIds = getUpstreamNodeIds(selectedNodeId, edges);
 
+  const pushNodeOutput = (
+    node: Node,
+    outputName: string,
+    sectionFallback: string,
+    producesArtifact: boolean,
+  ) => {
+    const templatePath = toAgentTemplatePath(outputName);
+    if (seen.has(templatePath)) return;
+    seen.add(templatePath);
+    variables.push({
+      label: templatePath,
+      templatePath,
+      section: node.data.title || node.data.label || sectionFallback,
+      producesArtifact,
+    });
+  };
+
   for (const node of nodes) {
     if (!upstreamIds.has(node.id)) continue;
 
-    if (node.type === 'agent') {
-      const defaultOutputTemplatePath = toAgentTemplatePath(
+    if (node.type === 'agent' || node.type === 'code') {
+      // Agent and code nodes both expose `node_<id>_output` and an optional
+      // `output_variable`, but only code-node outputs resolve to artifact
+      // references in the engine — agent outputs are LLM TEXT. So both feed the
+      // prompt-variable popover, while only code outputs are offered as
+      // Documents (see toDocumentVariableOptions / producesArtifact).
+      const producesArtifact = node.type === 'code';
+      const sectionFallback = node.type === 'code' ? 'Code' : 'Agent';
+      pushNodeOutput(
+        node,
         `node_${node.id}_output`,
+        sectionFallback,
+        producesArtifact,
       );
-      if (!seen.has(defaultOutputTemplatePath)) {
-        seen.add(defaultOutputTemplatePath);
-        variables.push({
-          label: defaultOutputTemplatePath,
-          templatePath: defaultOutputTemplatePath,
-          section: node.data.title || node.data.label || 'Agent',
-        });
-      }
 
       const outputVariable = String(
         node.data?.config?.output_variable || '',
       ).trim();
       if (outputVariable) {
-        const templatePath = toAgentTemplatePath(outputVariable);
-        if (!seen.has(templatePath)) {
-          seen.add(templatePath);
-          variables.push({
-            label: templatePath,
-            templatePath,
-            section: node.data.title || node.data.label || 'Agent',
-          });
-        }
+        pushNodeOutput(node, outputVariable, sectionFallback, producesArtifact);
       }
     }
 
@@ -224,12 +255,12 @@ function VariableListWithSearch({
     <div className="flex w-full flex-col overflow-hidden">
       <div className="border-border flex items-center gap-2 border-b px-3 py-2">
         <Search className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-        <input
+        <Input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search variables..."
-          className="placeholder:text-muted-foreground w-full bg-transparent text-sm text-gray-800 outline-none dark:text-gray-200"
+          className="h-auto rounded-none border-0 px-0 py-0 text-sm text-gray-800 shadow-none focus-visible:ring-0 md:text-sm dark:border-0 dark:text-gray-200"
         />
       </div>
 
@@ -241,24 +272,26 @@ function VariableListWithSearch({
         ) : (
           Array.from(grouped.entries()).map(([section, vars]) => (
             <div key={section}>
-              <div className="text-muted-foreground truncate px-3 pt-2.5 pb-1 text-[10px] font-semibold tracking-wider uppercase">
+              <div className="text-muted-foreground truncate px-3 pt-2.5 pb-1 text-xs font-semibold tracking-wider uppercase">
                 {section}
               </div>
               {vars.map((v) => (
-                <button
+                <Button
                   key={`${section}-${v.templatePath}`}
+                  type="button"
+                  variant="ghost"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     onSelect(v.templatePath);
                   }}
-                  className="hover:bg-accent flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors"
+                  className="h-auto w-full justify-start gap-2 rounded-none px-3 py-1.5 text-left text-sm font-normal"
                 >
                   <Braces className="text-primary h-3.5 w-3.5 shrink-0" />
                   <span className="truncate font-medium text-gray-800 dark:text-gray-200">
                     {v.label}
                   </span>
-                </button>
+                </Button>
               ))}
             </div>
           ))
@@ -448,7 +481,7 @@ export default function PromptTextArea({
               overlayRef.current.scrollTop = textareaRef.current.scrollTop;
             }
           }}
-          className="relative w-full rounded-xl bg-transparent px-3 pt-2 pb-8 text-sm caret-black outline-none dark:caret-white"
+          className="focus-visible:ring-ring/50 focus-visible:border-ring relative w-full rounded-xl bg-transparent px-3 pt-2 pb-8 text-sm caret-black outline-none focus-visible:ring-[3px] dark:caret-white"
           style={{
             color: 'transparent',
             WebkitTextFillColor: 'transparent',
@@ -461,13 +494,14 @@ export default function PromptTextArea({
         <div className="absolute right-4 bottom-1.5 z-10">
           <Popover open={contextOpen} onOpenChange={setContextOpen}>
             <PopoverTrigger asChild>
-              <button
+              <Button
                 type="button"
-                className="text-primary hover:bg-primary/10 flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors"
+                variant="ghost"
+                className="text-primary hover:bg-primary/10 h-auto gap-1 px-2 py-1 text-xs font-medium"
               >
                 <Plus className="h-3 w-3" />
                 Add context
-              </button>
+              </Button>
             </PopoverTrigger>
             <PopoverContent
               align="end"

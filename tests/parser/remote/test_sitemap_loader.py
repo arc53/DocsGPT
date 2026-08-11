@@ -10,6 +10,7 @@ import pytest
 import requests
 
 from application.parser.remote.sitemap_loader import SitemapLoader
+from application.parser.schema.base import Document
 
 
 # =====================================================================
@@ -30,7 +31,7 @@ class TestSitemapLoaderInit:
 
     def test_has_loader_class(self):
         loader = SitemapLoader()
-        assert loader.loader is not None
+        assert not hasattr(loader, "loader")
 
 
 # =====================================================================
@@ -136,6 +137,19 @@ class TestParseSitemap:
         urls = loader._parse_sitemap(sitemap_xml)
         assert urls == []
 
+    def test_parse_skips_empty_loc_entries(self):
+        """Empty or self-closing <loc> tags must not yield None URLs."""
+        loader = SitemapLoader()
+        sitemap_xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc></loc></url>
+            <url><loc>https://example.com/p</loc></url>
+            <url><loc/></url>
+        </urlset>"""
+
+        urls = loader._parse_sitemap(sitemap_xml)
+        assert urls == ["https://example.com/p"]
+
 
 # =====================================================================
 # _extract_urls
@@ -145,9 +159,8 @@ class TestParseSitemap:
 @pytest.mark.unit
 class TestExtractUrls:
 
-    @patch("application.parser.remote.sitemap_loader.validate_url")
-    @patch("application.parser.remote.sitemap_loader.requests.get")
-    def test_extract_urls_from_sitemap(self, mock_get, mock_validate):
+    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    def test_extract_urls_from_sitemap(self, mock_pinned_request):
         loader = SitemapLoader()
 
         response = MagicMock()
@@ -158,51 +171,50 @@ class TestExtractUrls:
         <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
             <url><loc>https://example.com/p</loc></url>
         </urlset>"""
-        mock_get.return_value = response
+        response.raise_for_status.return_value = None
+        mock_pinned_request.return_value = response
 
         urls = loader._extract_urls("https://example.com/sitemap.xml")
         assert "https://example.com/p" in urls
 
-    @patch("application.parser.remote.sitemap_loader.validate_url")
-    @patch("application.parser.remote.sitemap_loader.requests.get")
-    def test_extract_urls_not_sitemap(self, mock_get, mock_validate):
+    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    def test_extract_urls_not_sitemap(self, mock_pinned_request):
         loader = SitemapLoader()
 
         response = MagicMock()
         response.headers = {"Content-Type": "text/html"}
         response.url = "https://example.com/page"
         response.text = "<html>Normal page</html>"
-        mock_get.return_value = response
+        response.raise_for_status.return_value = None
+        mock_pinned_request.return_value = response
 
         urls = loader._extract_urls("https://example.com/page")
         assert urls == ["https://example.com/page"]
 
-    @patch("application.parser.remote.sitemap_loader.validate_url")
-    @patch("application.parser.remote.sitemap_loader.requests.get")
-    def test_extract_urls_http_error(self, mock_get, mock_validate):
+    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    def test_extract_urls_http_error(self, mock_pinned_request):
         loader = SitemapLoader()
-        mock_get.side_effect = requests.exceptions.HTTPError("404")
+        mock_pinned_request.side_effect = requests.exceptions.HTTPError("404")
 
         urls = loader._extract_urls("https://example.com/missing")
         assert urls == []
 
-    @patch("application.parser.remote.sitemap_loader.validate_url")
-    @patch("application.parser.remote.sitemap_loader.requests.get")
-    def test_extract_urls_connection_error(self, mock_get, mock_validate):
+    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    def test_extract_urls_connection_error(self, mock_pinned_request):
         loader = SitemapLoader()
-        mock_get.side_effect = requests.exceptions.ConnectionError()
+        mock_pinned_request.side_effect = requests.exceptions.ConnectionError()
 
         urls = loader._extract_urls("https://example.com/bad")
         assert urls == []
 
     def test_extract_urls_ssrf_blocked(self):
-        from application.core.url_validation import SSRFError
+        from application.security.safe_url import UnsafeUserUrlError
 
         loader = SitemapLoader()
 
         with patch(
-            "application.parser.remote.sitemap_loader.validate_url",
-            side_effect=SSRFError("blocked"),
+            "application.parser.remote.sitemap_loader.pinned_request",
+            side_effect=UnsafeUserUrlError("blocked"),
         ):
             urls = loader._extract_urls("http://169.254.169.254/")
             assert urls == []
@@ -217,13 +229,14 @@ class TestExtractUrls:
 class TestSitemapLoaderLoadData:
 
     @patch("application.parser.remote.sitemap_loader.validate_url")
-    def test_load_data_success(self, mock_validate):
+    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    def test_load_data_success(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader(limit=10)
-
-        mock_doc = MagicMock()
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.return_value = [mock_doc]
-        loader.loader = MagicMock(return_value=mock_loader_instance)
+        mock_validate.side_effect = lambda url: url
+        response = MagicMock()
+        response.text = "Page body"
+        response.raise_for_status.return_value = None
+        mock_pinned_request.return_value = response
 
         with patch.object(
             loader, "_extract_urls",
@@ -231,6 +244,9 @@ class TestSitemapLoaderLoadData:
         ):
             docs = loader.load_data("https://example.com/sitemap.xml")
             assert len(docs) == 1
+            assert isinstance(docs[0], Document)
+            assert docs[0].text == "Page body"
+            assert docs[0].extra_info == {"source": "https://example.com/page1"}
 
     @patch("application.parser.remote.sitemap_loader.validate_url")
     def test_load_data_no_urls(self, mock_validate):
@@ -241,12 +257,14 @@ class TestSitemapLoaderLoadData:
             assert docs == []
 
     @patch("application.parser.remote.sitemap_loader.validate_url")
-    def test_load_data_list_input(self, mock_validate):
+    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    def test_load_data_list_input(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader()
-
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.return_value = [MagicMock()]
-        loader.loader = MagicMock(return_value=mock_loader_instance)
+        mock_validate.side_effect = lambda url: url
+        response = MagicMock()
+        response.text = "List body"
+        response.raise_for_status.return_value = None
+        mock_pinned_request.return_value = response
 
         with patch.object(
             loader, "_extract_urls",
@@ -254,24 +272,30 @@ class TestSitemapLoaderLoadData:
         ):
             docs = loader.load_data(["https://example.com/sitemap.xml"])
             assert len(docs) == 1
+            assert docs[0].text == "List body"
 
     @patch("application.parser.remote.sitemap_loader.validate_url")
-    def test_load_data_respects_limit(self, mock_validate):
+    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    def test_load_data_respects_limit(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader(limit=2)
-
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.return_value = [MagicMock()]
-        loader.loader = MagicMock(return_value=mock_loader_instance)
+        mock_validate.side_effect = lambda url: url
+        response = MagicMock()
+        response.text = "Limited body"
+        response.raise_for_status.return_value = None
+        mock_pinned_request.return_value = response
 
         urls = [f"https://example.com/page{i}" for i in range(10)]
         with patch.object(loader, "_extract_urls", return_value=urls):
             docs = loader.load_data("https://example.com/sitemap.xml")
             assert len(docs) == 2
+            assert mock_pinned_request.call_count == 2
 
     @patch("application.parser.remote.sitemap_loader.validate_url")
-    def test_load_data_handles_url_error(self, mock_validate):
+    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    def test_load_data_handles_url_error(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader()
-        loader.loader = MagicMock(side_effect=Exception("Load failed"))
+        mock_validate.side_effect = lambda url: url
+        mock_pinned_request.side_effect = Exception("Load failed")
 
         with patch.object(
             loader, "_extract_urls",
@@ -293,12 +317,14 @@ class TestSitemapLoaderLoadData:
             assert docs == []
 
     @patch("application.parser.remote.sitemap_loader.validate_url")
-    def test_load_data_no_limit(self, mock_validate):
+    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    def test_load_data_no_limit(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader(limit=None)
-
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.return_value = [MagicMock()]
-        loader.loader = MagicMock(return_value=mock_loader_instance)
+        mock_validate.side_effect = lambda url: url
+        response = MagicMock()
+        response.text = "No limit body"
+        response.raise_for_status.return_value = None
+        mock_pinned_request.return_value = response
 
         urls = [f"https://example.com/page{i}" for i in range(5)]
         with patch.object(loader, "_extract_urls", return_value=urls):

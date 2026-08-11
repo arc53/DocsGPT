@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate, useParams } from 'react-router-dom';
 
+import userService from '../api/services/userService';
 import SharedAgentCard from '../agents/SharedAgentCard';
+import { Agent } from '../agents/types';
 import ArtifactSidebar from '../components/ArtifactSidebar';
 import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
@@ -10,6 +13,7 @@ import {
   selectConversationId,
   selectSelectedAgent,
   selectToken,
+  setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { handleSendFeedback } from './conversationHandlers';
@@ -19,7 +23,9 @@ import { ToolCallsType } from './types';
 import {
   addQuery,
   fetchAnswer,
+  loadConversation,
   resendQuery,
+  resetConversation,
   selectQueries,
   selectStatus,
   submitToolActions,
@@ -31,6 +37,16 @@ export default function Conversation() {
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
   const dispatch = useDispatch<AppDispatch>();
+  const navigate = useNavigate();
+  const params = useParams<{
+    conversationId?: string;
+    agentId?: string;
+  }>();
+  const urlConversationId = params.conversationId;
+  const urlAgentId = params.agentId;
+  // ``new`` is treated as empty-chat intent, not a real id to fetch.
+  const isNewChatRoute =
+    urlConversationId === undefined || urlConversationId === 'new';
 
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
@@ -41,6 +57,65 @@ export default function Conversation() {
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
+
+  // URL → state. Thunk short-circuits when Redux already matches.
+  useEffect(() => {
+    if (isNewChatRoute) {
+      // Skip when nothing to reset; avoids wiping the in-flight stream
+      // during the null → assigned-id replace below.
+      if (conversationId !== null) {
+        dispatch(resetConversation());
+      }
+      return;
+    }
+    if (urlConversationId && urlConversationId !== conversationId) {
+      dispatch(loadConversation({ id: urlConversationId }))
+        .unwrap()
+        .then((result) => {
+          if (result.stale) return;
+          if (result.data === null) {
+            navigate('/c/new', { replace: true });
+          }
+        })
+        .catch(() => navigate('/c/new', { replace: true }));
+    }
+  }, [urlConversationId, isNewChatRoute]);
+
+  // Agent context follows the URL. ``cancelled`` covers two races:
+  // the user switches agents before the fetch resolves, or leaves the
+  // agent route entirely; either way the late dispatch must be dropped.
+  useEffect(() => {
+    let cancelled = false;
+    if (urlAgentId) {
+      if (selectedAgent?.id !== urlAgentId) {
+        userService
+          .getAgent(urlAgentId, token)
+          .then((response) => (response.ok ? response.json() : null))
+          .then((agent: Agent | null) => {
+            if (cancelled) return;
+            if (agent) dispatch(setSelectedAgent(agent));
+          })
+          .catch((err) => {
+            if (!cancelled) console.error('Failed to load agent:', err);
+          });
+      }
+    } else if (selectedAgent !== null) {
+      dispatch(setSelectedAgent(null));
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [urlAgentId, token]);
+
+  // State → URL. ``replace`` so Back doesn't return to /c/new and
+  // reset the just-streamed chat.
+  useEffect(() => {
+    if (!isNewChatRoute || !conversationId) return;
+    const target = urlAgentId
+      ? `/agents/${urlAgentId}/c/${conversationId}`
+      : `/c/${conversationId}`;
+    navigate(target, { replace: true });
+  }, [conversationId, isNewChatRoute, urlAgentId]);
 
   const handleToolAction = useCallback(
     (callId: string, decision: 'approved' | 'denied', comment?: string) => {
@@ -61,6 +136,19 @@ export default function Conversation() {
     id: string;
     toolName: string;
   } | null>(null);
+
+  const [conversationMountKey, setConversationMountKey] = useState(0);
+  const [prevMountConversationId, setPrevMountConversationId] = useState<
+    string | null
+  >(conversationId);
+  if (prevMountConversationId !== conversationId) {
+    const isServerAssignedId =
+      prevMountConversationId === null &&
+      conversationId !== null &&
+      isNewChatRoute;
+    setPrevMountConversationId(conversationId);
+    if (!isServerAssignedId) setConversationMountKey((k) => k + 1);
+  }
 
   useEffect(() => {
     const prevId = prevConversationId.current;
@@ -101,7 +189,13 @@ export default function Conversation() {
         .map((a) => ({ id: a.id as string, fileName: a.fileName }));
 
       if (index !== undefined) {
-        dispatch(resendQuery({ index, prompt: trimmedQuestion }));
+        dispatch(
+          resendQuery({
+            index,
+            prompt: trimmedQuestion,
+            keepIdempotencyKey: isRetry,
+          }),
+        );
         handleFetchAnswer({ question: trimmedQuestion, index });
       } else {
         if (!isRetry)
@@ -151,17 +245,22 @@ export default function Conversation() {
     } else if (question && status !== 'loading') {
       if (lastQueryReturnedErr && queries.length > 0) {
         const retryIndex = queries.length - 1;
-        dispatch(
-          updateQuery({
-            index: retryIndex,
-            query: {
-              prompt: question,
-            },
-          }),
-        );
+        // Different prompt = new logical action, fresh idempotency key.
+        const prevPrompt = queries[retryIndex].prompt;
+        const isSamePrompt = prevPrompt === question;
+        if (!isSamePrompt) {
+          dispatch(
+            updateQuery({
+              index: retryIndex,
+              query: {
+                prompt: question,
+              },
+            }),
+          );
+        }
         handleQuestion({
           question,
-          isRetry: true,
+          isRetry: isSamePrompt,
           index: retryIndex,
         });
       } else {
@@ -236,8 +335,9 @@ export default function Conversation() {
           isSplitArtifactOpen ? 'w-[60%] px-6' : 'w-full'
         }`}
       >
-        <div className="relative min-h-0 flex-1 ">
+        <div className="relative min-h-0 flex-1">
           <ConversationMessages
+            key={conversationMountKey}
             handleQuestion={handleQuestion}
             handleQuestionSubmission={handleQuestionSubmission}
             handleFeedback={handleFeedback}
@@ -247,27 +347,46 @@ export default function Conversation() {
             onOpenArtifact={handleOpenArtifact}
             onToolAction={handleToolAction}
             isSplitView={isSplitArtifactOpen}
+            agentId={selectedAgent?.id}
             headerContent={
               selectedAgent ? (
                 <div className="flex w-full items-center justify-center py-4">
-                  <SharedAgentCard agent={selectedAgent} />
+                  <SharedAgentCard
+                    agent={selectedAgent}
+                    onEdit={
+                      selectedAgent.id
+                        ? () =>
+                            navigate(
+                              selectedAgent.agent_type === 'workflow'
+                                ? `/agents/workflow/edit/${selectedAgent.id}`
+                                : `/agents/edit/${selectedAgent.id}`,
+                            )
+                        : undefined
+                    }
+                  />
                 </div>
               ) : undefined
             }
           />
-          <div className="from-background pointer-events-none absolute right-1.5 bottom-0 left-0 h-6 rounded-t-2xl bg-linear-to-t to-transparent" />
+          <div
+            className={`from-background pointer-events-none absolute bottom-0 left-1/2 h-6 w-full -translate-x-1/2 rounded-t-2xl bg-linear-to-t to-transparent bg-clip-content px-2 ${
+              isSplitArtifactOpen
+                ? 'max-w-325'
+                : 'max-w-325 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12'
+            }`}
+          />
         </div>
 
         <div
           className={`bg-opacity-0 z-3 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1 ${
             isSplitArtifactOpen
-              ? 'max-w-[1300px]'
-              : 'max-w-[1300px] md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
+              ? 'max-w-325'
+              : 'max-w-325 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12'
           }`}
         >
-          <div className="flex w-full items-center rounded-[40px] px-2">
+          <div className="flex w-full items-center rounded-full px-2">
             <MessageInput
-              key={conversationId || 'new'}
+              key={conversationMountKey}
               onSubmit={(text) => {
                 handleQuestionSubmission(text);
               }}

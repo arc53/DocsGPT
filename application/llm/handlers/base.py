@@ -10,6 +10,56 @@ from application.logging import build_stack_data
 logger = logging.getLogger(__name__)
 
 
+# Cap the agent tool-call loop. Without this an LLM that keeps
+# requesting more tool calls (preview models, sparse tool results,
+# under-specified prompts) can chain searches indefinitely and the
+# stream never finalises. 25 mirrors Dify's default.
+MAX_TOOL_ITERATIONS = 25
+_FINALIZE_INSTRUCTION = (
+    f"You have made {MAX_TOOL_ITERATIONS} tool calls. Provide a final "
+    "response to the user based on what you have, without making any "
+    "additional tool calls."
+)
+
+
+def _bound_tool_response_for_llm(tool_response: Any) -> Any:
+    """Cap a single tool result before it enters the LLM message array.
+
+    One uncapped web page / API response has produced multi-hundred-KB tool
+    results that get re-sent in every subsequent round of the tool loop —
+    blowing conversations past every model's context window (observed in
+    prod up to a 14M-token estimated prompt). The durability journal and
+    the persisted conversation keep the FULL result (bounded separately at
+    persistence); only the copy handed to the model is truncated here.
+    """
+    from application.core.settings import settings
+    from application.utils import num_tokens_from_string
+
+    max_tokens = int(getattr(settings, "TOOL_RESULT_MAX_TOKENS", 20000) or 0)
+    if max_tokens <= 0:
+        return tool_response
+    text = tool_response if isinstance(tool_response, str) else str(tool_response)
+    tokens = num_tokens_from_string(text)
+    if tokens <= max_tokens:
+        return tool_response
+    chars_per_token = len(text) / tokens if tokens > 0 else 4
+    target_chars = int(max_tokens * chars_per_token * 0.95)
+    keep = int(target_chars * 0.4)
+    marker = (
+        f"\n\n[... tool result truncated: {tokens:,} tokens exceeded the "
+        f"{max_tokens:,}-token per-result limit ...]\n\n"
+    )
+    if keep <= 0:
+        # ``text[-0:]`` would return the WHOLE string, not nothing.
+        return marker.strip()
+    logger.warning(
+        "Tool result truncated from %s to ~%s tokens before LLM handoff",
+        tokens,
+        max_tokens,
+    )
+    return text[:keep] + marker + text[-keep:]
+
+
 @dataclass
 class ToolCall:
     """Represents a tool/function call from the LLM."""
@@ -39,6 +89,7 @@ class LLMResponse:
     tool_calls: List[ToolCall]
     finish_reason: str
     raw_response: Any
+    reasoning_content: str = ""
 
     @property
     def requires_tool_call(self) -> bool:
@@ -52,11 +103,52 @@ class LLMHandler(ABC):
     def __init__(self):
         self.llm_calls = []
         self.tool_calls = []
+        # Cache of provider-name -> handler used by ``_parse_for_response``
+        # to parse chunks from a model that a cross-provider fallback
+        # swapped in underneath this handler.
+        self._parser_by_provider = {}
 
     @abstractmethod
     def parse_response(self, response: Any) -> LLMResponse:
         """Parse raw LLM response into standardized format."""
         pass
+
+    def _parse_for_response(self, agent, response: Any) -> "LLMResponse":
+        """Parse ``response`` with the handler matching the model that
+        actually produced it.
+
+        ``BaseLLM`` runs model fallback *below* the agent (see
+        ``BaseLLM._stream_with_fallback``): a Google-primary agent that is
+        rate-limited can fail over to an OpenAI-compatible backup inside the
+        same ``gen_stream`` call. This handler was built for the primary
+        provider, so its ``parse_response`` cannot read the backup's chunk
+        shape and silently drops tool calls — the agent then stops after the
+        first text instead of running the tool loop.
+
+        ``parse_response`` is the only provider-specific step that matters
+        here: both providers' ``_iterate_stream`` and ``create_tool_message``
+        are identical, so only this call is routed. The orchestration state
+        (buffers, ``tool_calls``, ``llm_calls``) stays on ``self``.
+        """
+        provider = getattr(getattr(agent, "llm", None), "_responding_provider", None)
+        if not isinstance(provider, str):
+            return self.parse_response(response)
+        return self._handler_for_provider(provider).parse_response(response)
+
+    def _handler_for_provider(self, provider: str) -> "LLMHandler":
+        """Resolve (and cache) the handler for ``provider``. Reuses ``self``
+        when it already matches that provider, so the common no-fallback path
+        is unchanged."""
+        cached = self._parser_by_provider.get(provider)
+        if cached is not None:
+            return cached
+        from application.llm.handlers.handler_creator import LLMHandlerCreator
+
+        handler = LLMHandlerCreator.create_handler(provider)
+        if type(handler) is type(self):
+            handler = self
+        self._parser_by_provider[provider] = handler
+        return handler
 
     @abstractmethod
     def create_tool_message(self, tool_call: ToolCall, result: Any) -> Dict:
@@ -624,6 +716,10 @@ class LLMHandler(ABC):
                 agent_id=getattr(agent, "agent_id", None),
                 model_user_id=compression_user_id,
             )
+            # Side-channel LLM tag — see ``orchestrator.py`` for rationale.
+            compression_llm._token_usage_source = "compression"
+            compression_llm._request_id = getattr(agent, "_request_id", None) \
+                or getattr(getattr(agent, "llm", None), "_request_id", None)
 
             # Create service without DB persistence capability
             compression_service = CompressionService(
@@ -639,13 +735,20 @@ class LLMHandler(ABC):
                 logger.warning("Not enough queries to compress in-memory context")
                 return False, None
 
-            metadata = compression_service.compress_conversation(
-                conversation,
-                compress_up_to_index=compress_up_to,
-            )
+            try:
+                metadata = compression_service.compress_conversation(
+                    conversation,
+                    compress_up_to_index=compress_up_to,
+                )
+            except ValueError:
+                # compress_conversation raises when the summary is not
+                # smaller than the original (negative-savings guard). For
+                # the in-memory path that is not fatal — fall back to
+                # minimal pruning and keep the tool loop running.
+                metadata = None
 
             # If compression doesn't reduce tokens, fall back to minimal pruning
-            if (
+            if metadata is None or (
                 metadata.compressed_token_count
                 >= metadata.original_token_count
             ):
@@ -698,7 +801,12 @@ class LLMHandler(ABC):
             return False, None
 
     def handle_tool_calls(
-        self, agent, tool_calls: List[ToolCall], tools_dict: Dict, messages: List[Dict]
+        self,
+        agent,
+        tool_calls: List[ToolCall],
+        tools_dict: Dict,
+        messages: List[Dict],
+        reasoning_content: str = "",
     ) -> Generator:
         """
         Execute tool calls and update conversation history.
@@ -715,6 +823,11 @@ class LLMHandler(ABC):
             tool_calls: List of tool calls to execute
             tools_dict: Available tools dictionary
             messages: Current conversation history
+            reasoning_content: Reasoning text emitted by the model
+                before these tool calls. Attached to the recorded
+                assistant message so providers that require reasoning
+                to round-trip (DeepSeek thinking mode) accept the
+                follow-up request.
 
         Returns:
             Tuple of (updated_messages, pending_actions).
@@ -722,6 +835,35 @@ class LLMHandler(ABC):
         """
         updated_messages = messages.copy()
         pending_actions: List[Dict] = []
+
+        # One assistant message carries the WHOLE parallel batch, followed by
+        # one tool message per call — the layout every provider expects, and
+        # the one the resume (``BaseAgent._resume_*``) and history-replay
+        # (``BaseAgent._build_messages``) paths already emit.
+        #
+        # Emitting a separate assistant message per call breaks chained
+        # Responses requests: ``_trim_for_previous_response`` re-sends only
+        # what follows the LAST assistant message, so every output except the
+        # final one was dropped and the provider rejected the request with
+        # "No tool output found for function call <first unpaired call>".
+        batch_assistant: Optional[Dict[str, Any]] = None
+
+        def _declare_call(tool_call_obj: Dict[str, Any]) -> None:
+            """Add ``tool_call_obj`` to the batch's assistant message,
+            creating (and appending) that message on first use."""
+            nonlocal batch_assistant
+            if batch_assistant is None:
+                batch_assistant = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [],
+                }
+                # Reasoning rides once on the batch message; DeepSeek thinking
+                # mode rejects an active-turn assistant message without it.
+                if reasoning_content:
+                    batch_assistant["reasoning_content"] = reasoning_content
+                updated_messages.append(batch_assistant)
+            batch_assistant["tool_calls"].append(tool_call_obj)
 
         for i, call in enumerate(tool_calls):
             # Check context limit before executing tool call
@@ -752,6 +894,12 @@ class LLMHandler(ABC):
                         if compression_successful and rebuilt_messages is not None:
                             # Update the messages list with rebuilt compressed version
                             updated_messages = rebuilt_messages
+                            # The rebuilt list no longer contains the batch
+                            # message we were appending to, so mutating it
+                            # would be a silent no-op. Start a fresh one for
+                            # the remaining calls; each assistant message
+                            # still owns exactly the results that follow it.
+                            batch_assistant = None
 
                             # Yield compression success message
                             yield {
@@ -834,22 +982,102 @@ class LLMHandler(ABC):
                 tools_dict, call, llm_class
             )
             if pause_info:
+                # Headless (scheduled / webhook): synthesize a denial tool message
+                # so the LLM finishes gracefully instead of stalling on a pause
+                # nobody will resolve, then journal so the reconciler sees it.
+                if pause_info.get("pause_type") == "headless_denied":
+                    deny_reason = pause_info.get(
+                        "deny_reason", "Tool blocked in headless mode."
+                    )
+                    args_str = (
+                        json.dumps(call.arguments)
+                        if isinstance(call.arguments, dict)
+                        else (call.arguments or "{}")
+                    )
+                    tool_call_obj = {
+                        "id": pause_info["call_id"],
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": args_str,
+                        },
+                    }
+                    if getattr(call, "thought_signature", None):
+                        tool_call_obj["thought_signature"] = call.thought_signature
+                    _declare_call(tool_call_obj)
+                    denial_call = ToolCall(
+                        id=pause_info["call_id"],
+                        name=call.name,
+                        arguments=call.arguments,
+                    )
+                    updated_messages.append(
+                        self.create_tool_message(
+                            denial_call,
+                            f"Tool denied (headless): {deny_reason}",
+                        )
+                    )
+                    if hasattr(agent.tool_executor, "headless_denials"):
+                        agent.tool_executor.headless_denials.append(pause_info)
+                    from application.agents.tool_executor import (
+                        _mark_failed,
+                        _record_proposed,
+                    )
+
+                    if _record_proposed(
+                        pause_info["call_id"],
+                        pause_info["tool_name"],
+                        pause_info["action_name"],
+                        pause_info.get("arguments") or {},
+                        tool_id=pause_info.get("tool_id"),
+                        message_id=agent.tool_executor.message_id,
+                        user_id=agent.tool_executor.user,
+                        agent_id=agent.tool_executor.agent_id,
+                    ):
+                        _mark_failed(
+                            pause_info["call_id"],
+                            f"headless: {deny_reason}",
+                            message_id=agent.tool_executor.message_id,
+                            user_id=agent.tool_executor.user,
+                        )
+                    yield {
+                        "type": "tool_call",
+                        "data": {
+                            "tool_name": pause_info["tool_name"],
+                            "call_id": pause_info["call_id"],
+                            "action_name": pause_info.get(
+                                "llm_name", pause_info["name"]
+                            ),
+                            "arguments": pause_info["arguments"],
+                            "status": "denied",
+                            "error": deny_reason,
+                            "error_type": pause_info.get(
+                                "error_type", "tool_not_allowed"
+                            ),
+                        },
+                    }
+                    continue
                 # Yield pause event so the client knows this tool is waiting
-                yield {
-                    "type": "tool_call",
-                    "data": {
-                        "tool_name": pause_info["tool_name"],
-                        "call_id": pause_info["call_id"],
-                        "action_name": pause_info.get("llm_name", pause_info["name"]),
-                        "arguments": pause_info["arguments"],
-                        "status": pause_info["pause_type"],
-                    },
+                pause_data = {
+                    "tool_name": pause_info["tool_name"],
+                    "call_id": pause_info["call_id"],
+                    "action_name": pause_info.get("llm_name", pause_info["name"]),
+                    "arguments": pause_info["arguments"],
+                    "status": pause_info["pause_type"],
                 }
+                # Surface device_id for remote_device pauses so the approval UI
+                # can wire the sticky "don't ask again" button.
+                if pause_info.get("device_id"):
+                    pause_data["device_id"] = pause_info["device_id"]
+                yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)
                 # Do NOT add messages for pending tools here.
                 # They will be added on resume to keep call/result pairs together.
                 continue
 
+            # One assistant(tool_calls) message per call: track whether the
+            # success path already appended it so the except below doesn't
+            # add a second one when create_tool_message fails post-append.
+            assistant_appended = False
             try:
                 self.tool_calls.append(call)
                 tool_executor_gen = agent._execute_tool_action(tools_dict, call)
@@ -859,6 +1087,9 @@ class LLMHandler(ABC):
                     except StopIteration as e:
                         tool_response, call_id = e.value
                         break
+                # The journal / persisted conversation received the full
+                # result inside the executor; the model gets a bounded copy.
+                tool_response = _bound_tool_response_for_llm(tool_response)
 
                 # Standard internal format: assistant message with tool_calls array
                 args_str = (
@@ -878,19 +1109,57 @@ class LLMHandler(ABC):
                 if call.thought_signature:
                     tool_call_obj["thought_signature"] = call.thought_signature
 
-                updated_messages.append({
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [tool_call_obj],
-                })
+                _declare_call(tool_call_obj)
+                assistant_appended = True
 
-                updated_messages.append(self.create_tool_message(call, tool_response))
+                # The tool result's tool_call_id must match the id put on the
+                # assistant tool_call above (``call_id`` — a synthesized UUID
+                # when the provider omitted an id), not the raw ``call.id`` which
+                # may be empty. A mismatch orphans the tool message and 400s the
+                # next completion ("'tool' must be a response to a preceding
+                # message with 'tool_calls'").
+                resolved_call = ToolCall(
+                    id=call_id, name=call.name, arguments=call.arguments
+                )
+                updated_messages.append(
+                    self.create_tool_message(resolved_call, tool_response)
+                )
             except Exception as e:
                 logger.error(f"Error executing tool: {str(e)}", exc_info=True)
+                # The error tool message's tool_call_id must match the
+                # tool_call id declared on the batch assistant message. When
+                # the success path already declared this call that id is the
+                # executor-returned ``call_id``; otherwise the except declares
+                # it below from ``call.id``.
+                error_id = call_id if assistant_appended else call.id
                 error_call = ToolCall(
-                    id=call.id, name=call.name, arguments=call.arguments
+                    id=error_id, name=call.name, arguments=call.arguments
                 )
                 error_response = f"Error executing tool: {str(e)}"
+                # Mirror the success path: every tool message must answer a
+                # call declared on the batch assistant message, or the next
+                # provider completion 400s. Skip re-declaring when the success
+                # path already did it for this call — a create_tool_message
+                # failure after that point would otherwise declare the call
+                # twice and 400 the same way an orphan tool message does.
+                if not assistant_appended:
+                    args_str = (
+                        json.dumps(call.arguments)
+                        if isinstance(call.arguments, dict)
+                        else call.arguments
+                    )
+                    tool_call_obj = {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": args_str,
+                        },
+                    }
+                    if call.thought_signature:
+                        tool_call_obj["thought_signature"] = call.thought_signature
+                    _declare_call(tool_call_obj)
+
                 error_message = self.create_tool_message(error_call, error_response)
                 updated_messages.append(error_message)
 
@@ -931,12 +1200,19 @@ class LLMHandler(ABC):
         Returns:
             Final response after processing all tool calls
         """
-        parsed = self.parse_response(response)
+        parsed = self._parse_for_response(agent, response)
         self.llm_calls.append(build_stack_data(agent.llm))
 
+        iteration = 0
         while parsed.requires_tool_call:
+            iteration += 1
+            reasoning_for_round = parsed.reasoning_content or ""
             tool_handler_gen = self.handle_tool_calls(
-                agent, parsed.tool_calls, tools_dict, messages
+                agent,
+                parsed.tool_calls,
+                tools_dict,
+                messages,
+                reasoning_content=reasoning_for_round,
             )
             while True:
                 try:
@@ -951,12 +1227,32 @@ class LLMHandler(ABC):
                     "messages": messages,
                     "pending_tool_calls": pending_actions,
                     "tools_dict": tools_dict,
+                    "reasoning_content": reasoning_for_round,
                 }
                 yield {
                     "type": "tool_calls_pending",
                     "data": {"pending_tool_calls": pending_actions},
                 }
                 return ""
+
+            # Cap reached: force one final tool-less call so the stream
+            # always ends with content rather than cutting off.
+            if iteration >= MAX_TOOL_ITERATIONS:
+                logger.warning(
+                    "agent tool loop hit cap (%d); forcing finalize",
+                    MAX_TOOL_ITERATIONS,
+                )
+                messages.append(
+                    {"role": "system", "content": _FINALIZE_INSTRUCTION},
+                )
+                response = agent.llm.gen(
+                    model=getattr(agent.llm, "model_id", None) or agent.model_id,
+                    messages=messages,
+                    tools=None,
+                )
+                parsed = self._parse_for_response(agent, response)
+                self.llm_calls.append(build_stack_data(agent.llm))
+                break
 
             # ``agent.model_id`` is the registry id (a UUID for BYOM
             # records). Use the LLM's own model_id, which LLMCreator
@@ -968,12 +1264,18 @@ class LLMHandler(ABC):
                 messages=messages,
                 tools=agent.tools,
             )
-            parsed = self.parse_response(response)
+            parsed = self._parse_for_response(agent, response)
             self.llm_calls.append(build_stack_data(agent.llm))
         return parsed.content
 
     def handle_streaming(
-        self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
+        self,
+        agent,
+        response: Any,
+        tools_dict: Dict,
+        messages: List[Dict],
+        _iteration: int = 0,
+        _answer_recovered: bool = False,
     ) -> Generator:
         """
         Handle streaming response flow.
@@ -983,24 +1285,94 @@ class LLMHandler(ABC):
             response: Current LLM response
             tools_dict: Available tools dictionary
             messages: Conversation history
+            _answer_recovered: Set by the recovery branch to bound the
+                empty-answer rescue to one attempt per stream — a recovery
+                that itself ends reasoning-only must not recurse.
 
         Yields:
             Streaming response chunks
         """
         buffer = ""
         tool_calls = {}
+        reasoning_buffer = ""
+        finish_reason = None
+        # Tracks whether any visible content reached the caller this
+        # round. Distinct from ``buffer``/``finish_reason``: providers
+        # emit content as bare strings (yielded straight through) and
+        # also as ``parsed.content`` on choice objects; either counts.
+        answered = False
 
-        for chunk in self._iterate_stream(response):
+        # Consume the provider stream to exhaustion before acting on its
+        # finish reason. Acting mid-iteration (as this loop used to) left
+        # every tool round's generator abandoned until request teardown,
+        # where all their usage-decorator ``finally`` blocks fired at once
+        # and mis-billed each round with the shared ``_last_usage`` of the
+        # final round (duplicate token_usage rows). Exhausting the stream
+        # also delivers the terminal usage-only chunk (Chat Completions
+        # ``stream_options.include_usage``), which arrives *after* the
+        # finish_reason chunk — so provider-exact counts land before the
+        # decorator persists this round's row.
+        stream_iter = self._iterate_stream(response)
+        while True:
+            try:
+                chunk = next(stream_iter)
+            except StopIteration:
+                break
+            except Exception:
+                # A failure in the trailing frames (usage chunk, [DONE])
+                # after the round already finished must not fail — or
+                # fallback-restream — an answer the user has fully
+                # received. GeneratorExit/KeyboardInterrupt are
+                # BaseException and still propagate.
+                #
+                # The handler-local ``finish_reason`` only ever sees
+                # tool-call finishes (providers don't surface a parseable
+                # "stop" chunk — content arrives as bare strings), so the
+                # final answer round is covered by the LLM-level
+                # ``_stream_reached_finish`` flag instead — checked on the
+                # primary AND its fallback (whichever actually served the
+                # stream).
+                llm = getattr(agent, "llm", None)
+                provider_finished = bool(
+                    getattr(llm, "_stream_reached_finish", False)
+                    or getattr(
+                        getattr(llm, "_fallback_llm", None),
+                        "_stream_reached_finish",
+                        False,
+                    )
+                )
+                if finish_reason is not None or provider_finished:
+                    logger.warning(
+                        "Provider stream failed after finish "
+                        "(finish_reason=%s, provider_finished=%s); "
+                        "ignoring trailing-frame failure",
+                        finish_reason,
+                        provider_finished,
+                        exc_info=True,
+                    )
+                    break
+                raise
             if isinstance(chunk, dict) and chunk.get("type") == "thought":
+                reasoning_buffer += chunk.get("thought") or ""
                 yield chunk
                 continue
             if isinstance(chunk, str):
+                answered = True
                 yield chunk
                 continue
-            parsed = self.parse_response(chunk)
+            parsed = self._parse_for_response(agent, chunk)
+            if parsed.reasoning_content:
+                reasoning_buffer += parsed.reasoning_content
 
             if parsed.tool_calls:
                 for call in parsed.tool_calls:
+                    if call.index is None:
+                        # Providers like Google emit each parallel call as
+                        # a COMPLETE, index-less ToolCall per chunk. They
+                        # must never be merged into one another (dict
+                        # arguments would even raise on ``+=``).
+                        tool_calls[("complete", len(tool_calls))] = call
+                        continue
                     if call.index not in tool_calls:
                         tool_calls[call.index] = call
                     else:
@@ -1012,62 +1384,168 @@ class LLMHandler(ABC):
                         if call.arguments:
                             if existing.arguments is None:
                                 existing.arguments = call.arguments
-                            else:
+                            elif isinstance(existing.arguments, str) and isinstance(
+                                call.arguments, str
+                            ):
                                 existing.arguments += call.arguments
+                            else:
+                                # Complete (non-delta) payloads: latest wins.
+                                existing.arguments = call.arguments
                         # Preserve thought_signature for Google Gemini 3 models
                         if call.thought_signature:
                             existing.thought_signature = call.thought_signature
             if parsed.finish_reason == "tool_calls":
-                tool_handler_gen = self.handle_tool_calls(
-                    agent, list(tool_calls.values()), tools_dict, messages
-                )
-                while True:
-                    try:
-                        yield next(tool_handler_gen)
-                    except StopIteration as e:
-                        messages, pending_actions = e.value
-                        break
-                tool_calls = {}
-
-                # If tools need approval or client execution, pause the loop
-                if pending_actions:
-                    agent._pending_continuation = {
-                        "messages": messages,
-                        "pending_tool_calls": pending_actions,
-                        "tools_dict": tools_dict,
-                    }
-                    yield {
-                        "type": "tool_calls_pending",
-                        "data": {"pending_tool_calls": pending_actions},
-                    }
-                    return
-
-                # Check if context limit was reached during tool execution
-                if hasattr(agent, 'context_limit_reached') and agent.context_limit_reached:
-                    # Add system message warning about context limit
-                    messages.append({
-                        "role": "system",
-                        "content": (
-                            "WARNING: Context window limit has been reached. "
-                            "Please provide a final response to the user without making additional tool calls. "
-                            "Summarize the work completed so far."
-                        )
-                    })
-                    logger.info("Context limit reached - instructing agent to wrap up")
-
-                # See note above on agent.model_id vs llm.model_id.
-                response = agent.llm.gen_stream(
-                    model=getattr(agent.llm, "model_id", None) or agent.model_id,
-                    messages=messages,
-                    tools=agent.tools if not agent.context_limit_reached else None,
-                )
-                self.llm_calls.append(build_stack_data(agent.llm))
-
-                yield from self.handle_streaming(agent, response, tools_dict, messages)
-                return
+                finish_reason = "tool_calls"
+                continue
             if parsed.content:
                 buffer += parsed.content
+                answered = True
                 yield buffer
                 buffer = ""
-            if parsed.finish_reason == "stop":
-                return
+            if parsed.finish_reason == "stop" and finish_reason is None:
+                finish_reason = "stop"
+
+        if finish_reason != "tool_calls":
+            # Silent-loss recovery: the stream ended cleanly (finish=stop
+            # or plain exhaustion) but never yielded a visible answer,
+            # and the model actually did work (thoughts non-empty).
+            structured_output = (
+                getattr(agent, "json_schema", None)
+                or getattr(agent, "json_object", False)
+            )
+            if (
+                not answered
+                and reasoning_buffer
+                and not _answer_recovered
+                and not structured_output
+            ):
+                logger.warning(
+                    "Stream ended reasoning-only (%d chars of thought, "
+                    "0 answer bytes); re-sending once.",
+                    len(reasoning_buffer),
+                )
+                enforce = getattr(agent, "_enforce_context_window", None)
+                if callable(enforce):
+                    messages = enforce(messages)
+                # Mirror the finalize-round contract at the bottom of
+                # this method: when the cap or context limit already
+                # forced ``tools=None`` (with an accompanying "no more
+                # tools" system message), the recovery must not reopen
+                # tools, or the model could run one extra tool call past
+                # the cap. ``_iteration >= MAX_TOOL_ITERATIONS`` catches
+                # the finalize round.
+                recovery_tools = (
+                    None
+                    if _iteration >= MAX_TOOL_ITERATIONS
+                    or getattr(agent, "context_limit_reached", False)
+                    else agent.tools
+                )
+                recovery_kwargs = {
+                    "model": getattr(agent.llm, "model_id", None) or agent.model_id,
+                    "messages": messages,
+                    "tools": recovery_tools,
+                }
+                # Forward the sampling params the primary got
+                # (temperature, max_tokens, top_p, …). ``response_format``
+                # / ``response_schema`` are intentionally NOT forwarded
+                # — the structured_output gate above bails before we get
+                # here. ``previous_response_id`` is Responses-chain state
+                # and belongs to the failed turn, not a fresh recovery.
+                llm_params = getattr(agent, "llm_params", None)
+                if llm_params:
+                    recovery_kwargs.update(llm_params)
+                recovery_response = agent.llm.gen_stream(**recovery_kwargs)
+                self.llm_calls.append(build_stack_data(agent.llm))
+                yield from self.handle_streaming(
+                    agent,
+                    recovery_response,
+                    tools_dict,
+                    messages,
+                    _iteration=_iteration,
+                    _answer_recovered=True,
+                )
+            return
+
+        tool_handler_gen = self.handle_tool_calls(
+            agent,
+            list(tool_calls.values()),
+            tools_dict,
+            messages,
+            reasoning_content=reasoning_buffer,
+        )
+        while True:
+            try:
+                yield next(tool_handler_gen)
+            except StopIteration as e:
+                messages, pending_actions = e.value
+                break
+        pause_reasoning = reasoning_buffer
+
+        # If tools need approval or client execution, pause the loop
+        if pending_actions:
+            agent._pending_continuation = {
+                "messages": messages,
+                "pending_tool_calls": pending_actions,
+                "tools_dict": tools_dict,
+                "reasoning_content": pause_reasoning,
+            }
+            yield {
+                "type": "tool_calls_pending",
+                "data": {"pending_tool_calls": pending_actions},
+            }
+            return
+
+        next_iteration = _iteration + 1
+        cap_reached = next_iteration >= MAX_TOOL_ITERATIONS
+
+        # Check if context limit was reached during tool execution
+        if hasattr(agent, 'context_limit_reached') and agent.context_limit_reached:
+            # Add system message warning about context limit
+            messages.append({
+                "role": "system",
+                "content": (
+                    "WARNING: Context window limit has been reached. "
+                    "Please provide a final response to the user without making additional tool calls. "
+                    "Summarize the work completed so far."
+                )
+            })
+            logger.info("Context limit reached - instructing agent to wrap up")
+        elif cap_reached:
+            logger.warning(
+                "agent tool loop hit cap (%d); forcing finalize",
+                MAX_TOOL_ITERATIONS,
+            )
+            messages.append(
+                {"role": "system", "content": _FINALIZE_INSTRUCTION},
+            )
+
+        # Hard pre-send gate: tool results appended this round may have
+        # pushed the payload past the model's window — shrink or refuse
+        # BEFORE the usage decorators run (a rejected dispatch would still
+        # bill its full estimated prompt).
+        enforce = getattr(agent, "_enforce_context_window", None)
+        if callable(enforce):
+            messages = enforce(messages)
+
+        # See note above on agent.model_id vs llm.model_id.
+        response = agent.llm.gen_stream(
+            model=getattr(agent.llm, "model_id", None) or agent.model_id,
+            messages=messages,
+            tools=(
+                None
+                if cap_reached
+                or getattr(agent, "context_limit_reached", False)
+                else agent.tools
+            ),
+        )
+        self.llm_calls.append(build_stack_data(agent.llm))
+
+        yield from self.handle_streaming(
+            agent, response, tools_dict, messages,
+            _iteration=next_iteration,
+            # Carry the recovery guard through tool-loop recursion so a
+            # re-send that emitted tool_calls and then reasons-only-stops
+            # doesn't trigger a second re-send — the bound is per outer
+            # stream, not per tool round.
+            _answer_recovered=_answer_recovered,
+        )

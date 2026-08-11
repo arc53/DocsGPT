@@ -1,5 +1,4 @@
 /**
- * Phase 1 helper — see e2e-plan.md §P1-B.
  * Pre-authenticated Playwright APIRequestContext pointed at the e2e Flask.
  */
 

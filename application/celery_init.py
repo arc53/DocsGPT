@@ -1,5 +1,8 @@
+import ctypes
+import gc
 import inspect
 import logging
+import sys
 import threading
 
 from celery import Celery
@@ -96,6 +99,34 @@ def _unbind_task_log_context(task_id, **_):
         logging.getLogger(__name__).debug(
             "log_context reset skipped for task %s", task_id
         )
+
+
+def _trim_native_heap() -> None:
+    """Return freed glibc heap pages to the OS (Linux only; no-op elsewhere)."""
+    # docling/torch parsing makes large transient allocations; glibc keeps the
+    # freed pages in per-thread malloc arenas rather than returning them, so a
+    # long-lived worker child's RSS only ever climbs. malloc_trim hands them
+    # back. The symbol is glibc-only — absent in macOS libc.
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
+@task_postrun.connect
+def _reclaim_memory_after_task(*args, **kwargs):
+    """Drop per-task allocations so the prefork child's RSS doesn't ratchet."""
+    gc.collect()
+    torch = sys.modules.get("torch")
+    if torch is not None:
+        try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+    _trim_native_heap()
 
 
 @worker_ready.connect

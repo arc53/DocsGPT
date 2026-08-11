@@ -48,14 +48,13 @@ Here are some of the most fundamental settings you'll likely want to configure:
     - `anthropic`: Use Anthropic's Claude models.
     - `groq`: Use Groq's models.
     - `huggingface`: Use HuggingFace Inference API.
-    - `azure_openai`: Use Azure OpenAI Service.
     - `openai` (when using local inference engines like Ollama, Llama.cpp, TGI, etc.): This signals DocsGPT to use an OpenAI-compatible API format, even if the actual LLM is running locally.
 
 - **`LLM_NAME`**: Specifies the specific model to use from the chosen LLM provider. The available models depend on the `LLM_PROVIDER` you've selected.
 
   - **Examples:**
     - For `LLM_PROVIDER=openai`: `gpt-4o`
-    - For `LLM_PROVIDER=google`: `gemini-2.0-flash`
+    - For `LLM_PROVIDER=google`: `gemini-3.5-flash`
     - For local models (e.g., Ollama): `llama3.2:1b` (or any model name available in your setup).
 
 - **`EMBEDDINGS_NAME`**: This setting defines which embedding model DocsGPT will use to generate vector embeddings for your documents. Embeddings are numerical representations of text that allow DocsGPT to understand the semantic meaning of your documents for efficient search and retrieval.
@@ -103,7 +102,7 @@ In this case, even though you are using Ollama locally, `LLM_PROVIDER` is set to
 
 DocsGPT ships with a built-in catalog of models for the providers it
 supports out of the box (OpenAI, Anthropic, Google, Groq, OpenRouter,
-Novita, Azure OpenAI, Hugging Face, DocsGPT). To add **your own
+Novita, Hugging Face, DocsGPT). To add **your own
 models** without forking the repo — for example, a Mistral or Together
 account, a self-hosted vLLM endpoint, or any other OpenAI-compatible
 API — point `MODELS_CONFIG_DIR` at a directory of YAML files.
@@ -231,6 +230,7 @@ The `AUTH_TYPE` setting in your `.env` file or `settings.py` determines the auth
 | `None`        | No authentication is used. Anyone can access the app.                                       |
 | `simple_jwt`  | A single, long-lived JWT token is generated at startup. All requests use this shared token. |
 | `session_jwt` | Unique JWT tokens are generated for each session/user.                                      |
+| `oidc`        | Users sign in through an external OpenID Connect provider (Authentik, Keycloak, Okta, ...). See [SSO with OIDC](/Deploying/OIDC-SSO). |
 
 #### How to Configure
 
@@ -246,6 +246,13 @@ JWT_SECRET_KEY=your_secret_key_here
 
 # OR: Session JWT (per-user/session tokens)
 AUTH_TYPE=session_jwt
+JWT_SECRET_KEY=your_secret_key_here
+
+# OR: SSO via an OpenID Connect provider (Authentik, Keycloak, Okta, ...)
+AUTH_TYPE=oidc
+OIDC_ISSUER=https://auth.example.com/application/o/docsgpt/
+OIDC_CLIENT_ID=your_client_id
+OIDC_FRONTEND_URL=https://docsgpt.example.com
 JWT_SECRET_KEY=your_secret_key_here
 ```
 
@@ -266,6 +273,11 @@ JWT_SECRET_KEY=your_secret_key_here
   - Clients can request a new token from `/api/generate_token`.
   - Use the received token in the `Authorization` header for subsequent requests.
   - Each user/session gets a unique token.
+- **oidc**:
+  - The frontend redirects users to your identity provider to sign in (OAuth2 Authorization Code + PKCE).
+  - After a successful sign-in, DocsGPT issues its own session JWT; API requests carry it in the `Authorization` header like the other modes.
+  - Stable per-user identities come from the provider — see the full setup guide: [SSO with OIDC](/Deploying/OIDC-SSO).
+  - The same guide covers the optional access controls: group allowlists, silent session renewal, back-channel logout, SCIM provisioning, and login auditing.
 
 #### Security Notes
 
@@ -294,28 +306,46 @@ If you have configured `AUTH_TYPE=simple_jwt`, the DocsGPT frontend will prompt 
 
 ## S3 Storage Backend
 
-By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 instead.
+By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 — or any S3-compatible service (MinIO, Cloudflare R2, Backblaze B2, DigitalOcean Spaces, …) — instead.
 
 | Setting | Description | Default |
 | --- | --- | --- |
 | `STORAGE_TYPE` | `local` or `s3` | `local` |
-| `S3_BUCKET_NAME` | S3 bucket name | `docsgpt-test-bucket` |
-| `SAGEMAKER_ACCESS_KEY` | AWS access key ID | — |
-| `SAGEMAKER_SECRET_KEY` | AWS secret access key | — |
-| `SAGEMAKER_REGION` | AWS region | — |
-| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct S3 URLs) | `backend` |
+| `S3_BUCKET_NAME` | Bucket name | `docsgpt-test-bucket` |
+| `S3_ACCESS_KEY_ID` | Access key ID | — |
+| `S3_SECRET_ACCESS_KEY` | Secret access key | — |
+| `S3_REGION` | Region (use `auto` for Cloudflare R2) | — |
+| `S3_ENDPOINT_URL` | Custom endpoint for S3-compatible services; leave unset for AWS S3 | — |
+| `S3_PATH_STYLE` | Use path-style addressing (required by most non-AWS services) | `false` |
+| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct object URLs) | `backend` |
 
-The S3 credentials use `SAGEMAKER_*` variable names because they are shared with the SageMaker integration.
+### AWS S3
 
 ```env
 STORAGE_TYPE=s3
 S3_BUCKET_NAME=your-bucket-name
-SAGEMAKER_ACCESS_KEY=your-aws-access-key-id
-SAGEMAKER_SECRET_KEY=your-aws-secret-access-key
-SAGEMAKER_REGION=us-east-1
+S3_ACCESS_KEY_ID=your-access-key-id
+S3_SECRET_ACCESS_KEY=your-secret-access-key
+S3_REGION=us-east-1
 ```
 
-Your IAM user needs these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+### S3-compatible services (MinIO, Cloudflare R2, …)
+
+Set `S3_ENDPOINT_URL` and usually `S3_PATH_STYLE=true`:
+
+```env
+STORAGE_TYPE=s3
+S3_BUCKET_NAME=your-bucket-name
+S3_ACCESS_KEY_ID=your-access-key-id
+S3_SECRET_ACCESS_KEY=your-secret-access-key
+S3_REGION=auto
+S3_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com
+S3_PATH_STYLE=true
+```
+
+Your credentials need these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+
+> **Deprecated:** earlier versions reused the `SAGEMAKER_ACCESS_KEY`, `SAGEMAKER_SECRET_KEY`, and `SAGEMAKER_REGION` variables for S3 credentials. These are still honored as a fallback (with a deprecation warning) but you should migrate to the `S3_*` variables above.
 
 ## User-Data Storage (Postgres)
 
@@ -357,6 +387,87 @@ gated by CI/CD).
   [PostgreSQL for User Data](/Deploying/Postgres-Migration) for the
   migration path.
 </Callout>
+
+## Retrieval & RAG Settings
+
+These control how sources are retrieved and whether the advanced RAG features are available. See [Per-Source Configuration](/Sources/Per-source-configuration) and [GraphRAG](/Sources/GraphRAG) for details.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `RETRIEVERS_ENABLED` | `["classic", "default"]` | Allow-list of retrievers usable instance-wide. Valid keys: `classic`, `default`, `hybrid`, `graphrag`. A per-source `retriever` must be within this list. |
+| `PER_SOURCE_RETRIEVAL_ENABLED` | `true` | Master switch for per-source retrieval config. When `false`, all sources fall back to the classic retriever regardless of their stored config. |
+| `GRAPHRAG_ENABLED` | `false` | Enable [GraphRAG](/Sources/GraphRAG). Requires `VECTOR_STORE=pgvector`. |
+| `GRAPHRAG_EXTRACTION_MODEL` | unset | Model used for ingest-time graph extraction. Unset reuses the instance default model. |
+| `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on chunks extracted per source (cost control). |
+
+## Embeddings Settings
+
+See [Embeddings](/Models/embeddings) for full guidance.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `EMBEDDINGS_NAME` | `huggingface_sentence-transformers/all-mpnet-base-v2` | The embedding model. |
+| `EMBEDDINGS_BASE_URL` | unset | Base URL of a remote OpenAI-compatible embeddings server. Setting it routes all embedding calls there. |
+| `EMBEDDINGS_KEY` | unset | Optional bearer token for the remote embeddings server. |
+| `EMBEDDINGS_MAX_INPUT_TOKENS` | unset | Truncate each remote embedding input to N tokens (guards servers that reject oversized inputs). |
+
+## Tools Settings
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `DEFAULT_CHAT_TOOLS` | `["memory", "read_webpage", "scheduler"]` | Tools enabled automatically in regular (agentless) chats. See [Tools Basics](/Tools/basics#default-chat-tools). |
+
+## Admin & Access Settings
+
+See [Access Control, Roles & Teams](/Deploying/Access-Control) for the full model.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `OIDC_ADMIN_GROUPS` | unset | Comma-separated IdP groups granted the global `admin` role (OIDC only). |
+| `LOCAL_MODE_ADMIN` | `false` | Grants admin in no-auth mode (`AUTH_TYPE=None`) only. **Never enable on a networked deployment.** |
+
+## LLM Provider Settings
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `OPENAI_RESPONSES_STORE` | `false` | When `true`, allows OpenAI to persist [Responses API](/Models/cloud-providers#openai-responses-api-and-reasoning) state server-side. |
+| `V1_SESSION_TTL_SECONDS` | `86400` | Redis correlation lifetime, in seconds, for OpenAI-compatible client sessions. Raw external session IDs are hashed and never stored. |
+| `TITLE_MODEL_ID` | unset | Optional model ID used for asynchronous first-party conversation titles. When unset, the answer model is used. Hidden API conversations never invoke title generation. |
+
+## Realtime Events Settings
+
+The realtime notifications channel has its own settings — see [Realtime Events & Notifications](/Agents/notifications) (`ENABLE_SSE_PUSH`, `EVENTS_STREAM_MAXLEN`, `SSE_MAX_CONCURRENT_PER_USER`, and related).
+
+## Vector indexes on pgvector
+
+DocsGPT does **not** create a vector index on the `documents` table, and for
+most deployments it should not have one. Exact search is correct and fast well
+past the size most corpora reach, and searches are filtered to a single source
+(`WHERE source_id = ...`) — a filter an approximate index applies only *after*
+picking its candidates.
+
+That combination is what makes a badly-sized index dangerous rather than merely
+slow: the index picks candidates from the whole table, the source filter
+discards them, and the query returns **too few rows or none at all**, silently.
+The model then answers as if the source were empty.
+
+If you have an existing `documents_embedding_idx` from an older version and
+your corpus is small (roughly under 50k vectors), drop it:
+
+```sql
+DROP INDEX IF EXISTS documents_embedding_idx;
+```
+
+DocsGPT still works with one in place — it raises `ivfflat.probes` to
+`sqrt(lists)` automatically and falls back to an exact search whenever an
+indexed search returns fewer rows than the source actually holds. You can pin
+probes explicitly with `PGVECTOR_IVFFLAT_PROBES`.
+
+Only add an index once a corpus is genuinely large, size it to the data you
+actually have (IVFFlat's `lists` guidance is roughly `rows / 1000`), and build
+it **after** the data is loaded — IVFFlat computes its cluster centroids at
+build time, so an index built on an empty table gets random centroids and never
+recovers.
 
 ## Exploring More Settings
 

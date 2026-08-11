@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "/opt/docsgpt/kernel-launch.sh",
+    "-f",
+    "{connection_file}"
+  ],
+  "display_name": "Python 3 (docsgpt-sandbox, scrubbed env)",
+  "language": "python",
+  "metadata": {
+    "debugger": true
+  }
+}

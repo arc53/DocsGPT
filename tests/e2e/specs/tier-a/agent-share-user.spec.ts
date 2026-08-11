@@ -1,5 +1,5 @@
 /**
- * Phase 2 — P2-12 · Cross-user agent share.
+ * P2-12 · Cross-user agent share.
  *
  * Writes to `users.agent_preferences.shared_with_me` (JSONB) and
  * `agents.shared_token` (CITEXT UNIQUE). Exercises the full cross-user

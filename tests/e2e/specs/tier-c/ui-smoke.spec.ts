@@ -1,7 +1,7 @@
 import * as playwright from '@playwright/test';
-// Phase 4 Tier-C · UI smoke (surface coverage, no DB assertions)
+// Tier-C · UI smoke (surface coverage, no DB assertions)
 /**
- * Phase 4 — P4 · Tier-C UI smoke.
+ * P4 · Tier-C UI smoke.
  *
  * Cheap surface coverage for UI-only behaviors. One combined spec, many
  * small tests. Scope:
@@ -292,8 +292,10 @@ test.describe('tier-c · UI smoke', () => {
       const newChat = page.getByRole('link', { name: /new chat/i }).first();
       await expect(newChat).toBeVisible();
       await newChat.click();
-      // Clicking "New Chat" must not navigate us off the root route.
-      await expect(page).toHaveURL(/127\.0\.0\.1:5179\/?$/);
+      // Clicking "New Chat" lands on the empty-conversation sentinel
+      // route. Root or /c/new are both acceptable — the SSE branch made
+      // /c/new the canonical fresh-chat URL.
+      await expect(page).toHaveURL(/127\.0\.0\.1:5179\/(c\/new)?$/);
     } finally {
       await context.close();
     }
@@ -305,7 +307,7 @@ test.describe('tier-c · UI smoke', () => {
     // them set (see scripts/e2e/env.sh), so App.tsx's `<Notification>` is
     // never rendered and there is nothing observable to assert.
     //
-    // If/when we add a prod-bundle opt-in (Phase 5-C), revive this test with
+    // If/when we add a prod-bundle opt-in, revive this test with
     // those env vars set and check the banner + localStorage-dismiss flow.
   });
 

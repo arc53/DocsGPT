@@ -322,6 +322,10 @@ class ModelRegistry:
                         context_window=int(
                             caps_raw.get("context_window") or 128000
                         ),
+                        reasoning_effort=caps_raw.get("reasoning_effort"),
+                        api_flavor=caps_raw.get(
+                            "api_flavor", "chat_completions"
+                        ),
                     )
                     model_id = str(row["id"])
                     layer[model_id] = AvailableModel(

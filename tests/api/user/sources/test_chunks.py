@@ -210,7 +210,9 @@ class TestAddChunk:
             response = AddChunk().post()
         assert response.status_code == 400
 
-    def test_returns_404_source_not_found(self, app, pg_conn):
+    def test_returns_403_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team editor grant resolves to None, which the
+        # owner-or-editor gate answers as 403 "Source not accessible".
         from application.api.user.sources.chunks import AddChunk
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -223,7 +225,7 @@ class TestAddChunk:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = AddChunk().post()
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     def test_adds_chunk(self, app, pg_conn):
         from application.api.user.sources.chunks import AddChunk
@@ -282,7 +284,9 @@ class TestDeleteChunk:
             response = DeleteChunk().delete()
         assert response.status_code == 401
 
-    def test_returns_404_source_not_found(self, app, pg_conn):
+    def test_returns_403_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team editor grant resolves to None, which the
+        # owner-or-editor gate answers as 403 "Source not accessible".
         from application.api.user.sources.chunks import DeleteChunk
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -292,7 +296,7 @@ class TestDeleteChunk:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = DeleteChunk().delete()
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     def test_deletes_chunk(self, app, pg_conn):
         from application.api.user.sources.chunks import DeleteChunk
@@ -359,7 +363,9 @@ class TestUpdateChunk:
             response = UpdateChunk().put()
         assert response.status_code == 400
 
-    def test_returns_404_source_not_found(self, app, pg_conn):
+    def test_returns_403_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team editor grant resolves to None, which the
+        # owner-or-editor gate answers as 403 "Source not accessible".
         from application.api.user.sources.chunks import UpdateChunk
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -372,7 +378,7 @@ class TestUpdateChunk:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = UpdateChunk().put()
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     def test_returns_404_chunk_not_found(self, app, pg_conn):
         from application.api.user.sources.chunks import UpdateChunk

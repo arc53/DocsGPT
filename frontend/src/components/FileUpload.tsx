@@ -163,7 +163,7 @@ export const FileUpload = ({
           e.stopPropagation();
           handleRemove();
         }}
-        className="absolute -top-2 -right-2 rounded-full bg-[#7D54D1] p-1 transition-colors hover:bg-[#714cbc]"
+        className="bg-primary hover:bg-primary/90 absolute -top-2 -right-2 rounded-full p-1 transition-colors"
       >
         <img src={Cross} alt="remove" className="h-3 w-3" />
       </button>

@@ -45,15 +45,14 @@ class TestAPIToolInit:
 
 @pytest.mark.unit
 class TestMakeApiCall:
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.get")
-    def test_successful_get(self, mock_get, mock_validate, tool):
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_successful_get(self, mock_pinned, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = {"result": "ok"}
         mock_resp.content = b'{"result":"ok"}'
-        mock_get.return_value = mock_resp
+        mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("any_action")
 
@@ -61,54 +60,50 @@ class TestMakeApiCall:
         assert result["data"] == {"result": "ok"}
         assert result["message"] == "API call successful."
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.post")
-    def test_successful_post(self, mock_post, mock_validate, post_tool):
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_successful_post(self, mock_pinned, post_tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 201
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = {"id": 1}
         mock_resp.content = b'{"id":1}'
-        mock_post.return_value = mock_resp
+        mock_pinned.return_value = mock_resp
 
         result = post_tool.execute_action("create", name="test")
 
         assert result["status_code"] == 201
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    def test_ssrf_blocked(self, mock_validate, tool):
-        from application.core.url_validation import SSRFError
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_ssrf_blocked(self, mock_pinned, tool):
+        from application.security.safe_url import UnsafeUserUrlError
 
-        mock_validate.side_effect = SSRFError("blocked")
+        mock_pinned.side_effect = UnsafeUserUrlError("blocked")
 
         result = tool.execute_action("any")
 
         assert result["status_code"] is None
         assert "URL validation error" in result["message"]
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.get")
-    def test_timeout_error(self, mock_get, mock_validate, tool):
-        mock_get.side_effect = requests.exceptions.Timeout()
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_timeout_error(self, mock_pinned, tool):
+        mock_pinned.side_effect = requests.exceptions.Timeout()
 
         result = tool.execute_action("any")
 
         assert result["status_code"] is None
         assert "timeout" in result["message"].lower()
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.get")
-    def test_connection_error(self, mock_get, mock_validate, tool):
-        mock_get.side_effect = requests.exceptions.ConnectionError("refused")
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_connection_error(self, mock_pinned, tool):
+        mock_pinned.side_effect = requests.exceptions.ConnectionError("refused")
 
         result = tool.execute_action("any")
 
         assert result["status_code"] is None
         assert "Connection error" in result["message"]
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.get")
-    def test_http_error(self, mock_get, mock_validate, tool):
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_http_error(self, mock_pinned, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 404
         mock_resp.text = "Not Found"
@@ -116,15 +111,14 @@ class TestMakeApiCall:
         mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError(
             response=mock_resp
         )
-        mock_get.return_value = mock_resp
+        mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("any")
 
         assert result["status_code"] == 404
         assert "HTTP Error" in result["message"]
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    def test_unsupported_method(self, mock_validate):
+    def test_unsupported_method(self):
         tool = APITool(
             config={"url": "https://example.com", "method": "CUSTOM"}
         )
@@ -132,69 +126,64 @@ class TestMakeApiCall:
         assert result["status_code"] is None
         assert "Unsupported" in result["message"]
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.put")
-    def test_put_method(self, mock_put, mock_validate):
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_put_method(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com/item/1", "method": "PUT"})
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = {}
         mock_resp.content = b'{}'
-        mock_put.return_value = mock_resp
+        mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("update", name="new")
         assert result["status_code"] == 200
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.delete")
-    def test_delete_method(self, mock_delete, mock_validate):
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_delete_method(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com/item/1", "method": "DELETE"})
         mock_resp = MagicMock()
         mock_resp.status_code = 204
         mock_resp.headers = {"Content-Type": "text/plain"}
         mock_resp.content = b''
-        mock_delete.return_value = mock_resp
+        mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("delete")
         assert result["status_code"] == 204
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.patch")
-    def test_patch_method(self, mock_patch, mock_validate):
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_patch_method(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com/item/1", "method": "PATCH"})
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = {"patched": True}
         mock_resp.content = b'{"patched":true}'
-        mock_patch.return_value = mock_resp
+        mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("patch", field="val")
         assert result["status_code"] == 200
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.head")
-    def test_head_method(self, mock_head, mock_validate):
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_head_method(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com", "method": "HEAD"})
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "text/html"}
         mock_resp.content = b''
-        mock_head.return_value = mock_resp
+        mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("check")
         assert result["status_code"] == 200
 
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.options")
-    def test_options_method(self, mock_options, mock_validate):
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_options_method(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com", "method": "OPTIONS"})
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"Content-Type": "text/plain"}
         mock_resp.content = b''
-        mock_options.return_value = mock_resp
+        mock_pinned.return_value = mock_resp
 
         result = tool.execute_action("options")
         assert result["status_code"] == 200
@@ -202,9 +191,8 @@ class TestMakeApiCall:
 
 @pytest.mark.unit
 class TestPathParamSubstitution:
-    @patch("application.agents.tools.api_tool.validate_url")
-    @patch("application.agents.tools.api_tool.requests.get")
-    def test_path_params_substituted(self, mock_get, mock_validate):
+    @patch("application.agents.tools.api_tool.pinned_request")
+    def test_path_params_substituted(self, mock_pinned):
         tool = APITool(
             config={
                 "url": "https://api.example.com/users/{user_id}/posts/{post_id}",
@@ -217,11 +205,11 @@ class TestPathParamSubstitution:
         mock_resp.headers = {"Content-Type": "application/json"}
         mock_resp.json.return_value = []
         mock_resp.content = b'[]'
-        mock_get.return_value = mock_resp
+        mock_pinned.return_value = mock_resp
 
         tool.execute_action("get")
 
-        called_url = mock_get.call_args[0][0]
+        called_url = mock_pinned.call_args[0][1]
         assert "/users/42/posts/7" in called_url
         assert "{user_id}" not in called_url
 

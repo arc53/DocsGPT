@@ -1,0 +1,167 @@
+---
+title: Benchmarking Agents
+description: Run repeatable benchmarks and evals against your DocsGPT agents from the terminal with docsgpt-cli bench.
+---
+
+import { Callout } from 'nextra/components'
+
+# Benchmarking Agents with docsgpt-cli
+
+[docsgpt-cli](https://github.com/arc53/DocsGPT-cli) ships a `bench` command that runs a
+directory of benchmark cases against your agents and asserts on the answers — a quick
+"is everything still good?" check you can run after changing a prompt, swapping a model,
+or re-ingesting sources. It works against DocsGPT Cloud and self-hosted deployments.
+
+```bash
+docsgpt-cli bench                # run the suite in ./bench
+docsgpt-cli bench ./my-suite     # or any directory
+docsgpt-cli bench init my-suite  # scaffold a new suite
+```
+
+Exit codes are CI-friendly: `0` all cases passed, `1` failures, `2` configuration error.
+
+## Suite layout
+
+A suite is a directory with an optional `bench.yaml` (defaults) and one directory per
+case, each holding a `case.yaml` plus any attachment files:
+
+```
+bench/
+  bench.yaml
+  01-basic-answer/
+    case.yaml
+  02-with-attachment/
+    case.yaml
+    report.pdf
+```
+
+```yaml filename="bench.yaml"
+agent: my-agent          # key name from `docsgpt-cli keys`, or a literal API key
+target: v1               # v1 | stream | webhook
+# base_url: https://gptcloud.arc53.com
+# webhook_url: https://your-docsgpt/api/webhooks/agents/<token>   # for target: webhook
+# judge:
+#   agent: judge-agent   # agent used for LLM-as-judge grading
+concurrency: 2
+timeout: 120s
+# repeat: 3              # run each case N times…
+# min_pass: 2            # …and require at least this many passes
+```
+
+## Targets
+
+The same case can be exercised through three wire protocols:
+
+| Target | Protocol | Attachments | Token usage |
+|---|---|---|---|
+| `v1` (default) | `POST /v1/chat/completions`, Bearer key | ✅ | ✅ reported |
+| `stream` | `POST /stream`, SSE events | ✅ | — |
+| `webhook` | Agent incoming webhook + `/api/task_status` polling | — | — |
+
+<Callout type="info">
+  The webhook target is asynchronous: the CLI posts `{"question": "..."}` to the agent's
+  webhook URL and polls the task until it completes. Approval-gated tools are auto-denied
+  on webhook runs, and attachments are not supported. Mint the URL from your agent's
+  settings or `GET /api/agent_webhook?id=<agent_id>`.
+</Callout>
+
+## Writing cases
+
+```yaml filename="01-refund-policy/case.yaml"
+description: "Support agent quotes the refund window"
+tags: [smoke, support]
+# target, agent, timeout, repeat… override bench.yaml per case
+
+attachments: [policy.pdf]        # uploaded first, passed with the question
+question: "How many days do customers have to request a refund?"
+
+expect:
+  answer:
+    contains: ["30 days"]        # case-insensitive substrings
+    not_contains: ["I don't know"]
+    regex: ['\b30\s*days?\b']
+  json:                          # parse the answer as JSON, assert per field
+    status: ok                   # bare scalar = equality (gjson paths)
+    "checks.refund": { one_of: [PASS, WARN] }
+    items: { length: 3 }
+    notes: { not_none: true }
+  sources: { min: 1 }            # retrieval sources returned
+  tools:
+    called: [lookup_policy]      # tool names the agent must / must not use
+  judge:                         # LLM-as-judge via the configured judge agent
+    rubric: "Must state the 30-day window and cite the policy document."
+    min_score: 0.7
+  limits:
+    max_seconds: 60
+    max_total_tokens: 8000       # v1 target only
+  golden: false                  # compare against a recorded golden.json
+
+repeat: 3                        # tolerate LLM flakiness
+min_pass: 2
+```
+
+Every `expect` section is optional — omitted sections are simply not checked. JSON
+matchers: `equals`, `contains`, `not_contains`, `regex`, `not_none`, `is_none`,
+`starts_with`, `not_starts_with`, `one_of`, `gt/gte/lt/lte`, `length`,
+`min_length`/`max_length`. Fenced answers (```json … ```) are unwrapped automatically.
+
+## Keeping secrets out of committed suites
+
+Any value in `bench.yaml` or a `case.yaml` can reference an environment
+variable as `${VAR}`, so the suite is safe to commit while keys stay in the
+environment:
+
+```yaml filename="bench.yaml"
+agent: ${DOCSGPT_BENCH_KEY}
+webhook_url: ${DOCSGPT_WEBHOOK_URL}
+judge:
+  agent: ${DOCSGPT_JUDGE_KEY}
+```
+
+Resolution order: your shell environment, then the suite directory's `.env`,
+then `./.env` (a simple `KEY=value` dotenv file — keep it gitignored). An unset
+variable fails the load with a clear error rather than benchmarking with an
+empty key. Only the braced `${VAR}` form is expanded (`$5` prose is safe);
+`$$` escapes a literal dollar, and YAML comment lines are never expanded.
+
+Alternatives: `agent: my-agent` referencing a key *name* from `docsgpt-cli
+keys` (each machine resolves it locally), the `--key` flag (accepts a literal
+key — handy for CI secrets), and `--webhook-url` to supply the webhook token
+without touching YAML at all.
+
+## Everyday workflow
+
+```bash
+docsgpt-cli bench -k refund              # filter by name/description
+docsgpt-cli bench --tags smoke           # filter by tags
+docsgpt-cli bench --repeat 3 --concurrency 4
+docsgpt-cli bench --verbose              # print answers and judge reasoning
+```
+
+**Golden snapshots.** `docsgpt-cli bench record` runs the cases and saves each answer to
+`golden.json` in the case directory; set `expect: {golden: true}` to compare future runs
+against it (`--update` refreshes the snapshots).
+
+**Run history and regressions.** Each run is saved under `~/.docsgpt/bench/<suite>/`.
+`docsgpt-cli bench --baseline last` diffs the current run against the previous one and
+flags regressions (pass → fail), fixes, and latency/token drift.
+
+**A/B agents.** `docsgpt-cli bench --key prompt-v1 --vs prompt-v2` runs the suite once
+per agent and prints a side-by-side comparison — the fastest way to iterate on prompts.
+
+## CI
+
+```bash
+docsgpt-cli bench --json > run.json      # machine-readable results
+docsgpt-cli bench --junit report.xml     # JUnit XML for CI test reporting
+```
+
+```yaml filename=".github/workflows/bench.yml"
+- name: Agent benchmarks
+  # --key accepts a key name from ~/.docsgpt/config.json or a literal API key,
+  # so CI can pass the secret directly.
+  run: docsgpt-cli bench --key "$DOCSGPT_API_KEY" --junit bench.xml
+  env:
+    DOCSGPT_API_KEY: ${{ secrets.DOCSGPT_API_KEY }}
+    DOCSGPT_NO_UPDATE_CHECK: "1"
+```

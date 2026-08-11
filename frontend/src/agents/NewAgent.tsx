@@ -1,18 +1,41 @@
 import isEqual from 'lodash/isEqual';
+import { MoreHorizontal } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+
+import devicesService from '../api/services/devicesService';
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import SourceIcon from '../assets/source.svg';
-import Dropdown from '../components/Dropdown';
 import { FileUpload } from '../components/FileUpload';
-import MultiSelectPopup, { OptionType } from '../components/MultiSelectPopup';
+import {
+  MultiSelectPopover,
+  type MultiSelectPopoverItem,
+} from '../components/MultiSelectPopover';
 import Spinner from '../components/Spinner';
+import ToolIcon from '../components/ToolIcon';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
+import ShareToTeamModal from '../teams/ShareToTeamModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import {
@@ -28,12 +51,39 @@ import {
 import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
-import { getToolDisplayName } from '../utils/toolUtils';
+import {
+  getToolDisplayName,
+  isClassicAgentToolVisible,
+} from '../utils/toolUtils';
+import AgentPageHeader from './AgentPageHeader';
 import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
+
+/**
+ * Pull the backend's own explanation out of a failed response.
+ *
+ * The agent write endpoints answer a rejected save with
+ * `{"success": false, "message": "<why>"}` — e.g. "Invalid chunks value: …"
+ * or "Field 'description' cannot be empty". Callers used to test only
+ * `response.ok` and throw a fixed string, so the one piece of information
+ * that could tell the user what to change was dropped on the floor.
+ */
+const extractApiError = async (
+  response: Response,
+  fallback: string,
+): Promise<string> => {
+  try {
+    const body = await response.json();
+    if (typeof body?.message === 'string' && body.message.trim())
+      return body.message;
+  } catch {
+    // Non-JSON body (proxy HTML error page, empty 502) — use the fallback.
+  }
+  return fallback;
+};
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t } = useTranslation();
@@ -78,14 +128,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     default_model_id: '',
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [userTools, setUserTools] = useState<OptionType[]>([]);
+  const [userTools, setUserTools] = useState<MultiSelectPopoverItem[]>([]);
+  const [rawUserTools, setRawUserTools] = useState<UserToolType[]>([]);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
-  const [selectedSourceIds, setSelectedSourceIds] = useState<
-    Set<string | number>
-  >(new Set());
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
@@ -93,10 +144,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
   const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
   const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] =
@@ -113,7 +166,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.publish'),
       showDelete: false,
       showSaveDraft: true,
-      showLogs: false,
       showAccessDetails: false,
       trackChanges: false,
     },
@@ -122,7 +174,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.save'),
       showDelete: true,
       showSaveDraft: false,
-      showLogs: true,
       showAccessDetails: true,
       trackChanges: true,
     },
@@ -131,15 +182,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.publish'),
       showDelete: true,
       showSaveDraft: true,
-      showLogs: false,
       showAccessDetails: false,
       trackChanges: false,
     },
   };
-  const chunks = ['0', '2', '4', '6', '8', '10'];
   const agentTypes = [
     { label: t('agents.form.agentTypes.classic'), value: 'classic' },
-    { label: 'Agentic', value: 'agentic' },
     { label: 'Research', value: 'research' },
   ];
 
@@ -154,6 +202,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const isJsonSchemaInvalid = () => {
     return jsonSchemaText.trim() !== '' && !jsonSchemaValid;
+  };
+
+  // Resolve a selected source id to its display name. Prefer the caller's own
+  // source list; fall back to the owner-resolved name embedded in the agent
+  // payload (source_details) so a team member viewing a shared agent sees the
+  // source name instead of "External KB"; only then show the generic label.
+  const resolveSourceLabel = (id: string): string => {
+    const matchedDoc = sourceDocs?.find(
+      (source) =>
+        source.id === id || source.name === id || source.retriever === id,
+    );
+    if (matchedDoc?.name) return matchedDoc.name;
+    const detail = agent.source_details?.find((d) => d.id === id);
+    if (detail?.name) return detail.name;
+    return t('agents.form.externalKb');
   };
 
   const handleUpload = useCallback((files: File[]) => {
@@ -273,11 +336,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
     try {
       setDraftLoading(true);
+      setSubmitError(null);
       const response =
         effectiveMode === 'new'
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
-      if (!response.ok) throw new Error('Failed to create agent draft');
+      if (!response.ok) {
+        setSubmitError(
+          await extractApiError(
+            response,
+            t('agents.form.errors.saveDraftFailed'),
+          ),
+        );
+        return;
+      }
       const data = await response.json();
 
       const updatedAgent = {
@@ -290,7 +362,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       if (effectiveMode === 'new') setEffectiveMode('draft');
     } catch (error) {
       console.error('Error saving draft:', error);
-      throw new Error('Failed to save draft');
+      setSubmitError(t('agents.form.errors.saveDraftFailed'));
     } finally {
       setDraftLoading(false);
     }
@@ -388,11 +460,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
     try {
       setPublishLoading(true);
+      setSubmitError(null);
       const response =
         effectiveMode === 'new'
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
-      if (!response.ok) throw new Error('Failed to publish agent');
+      if (!response.ok) {
+        setSubmitError(
+          await extractApiError(
+            response,
+            t('agents.form.errors.publishFailed'),
+          ),
+        );
+        return;
+      }
       const data = await response.json();
 
       const updatedAgent = {
@@ -412,7 +493,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       setImageFile(null);
     } catch (error) {
       console.error('Error publishing agent:', error);
-      throw new Error('Failed to publish agent');
+      setSubmitError(t('agents.form.errors.publishFailed'));
     } finally {
       setPublishLoading(false);
     }
@@ -436,16 +517,77 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   useEffect(() => {
     const getTools = async () => {
-      const response = await userService.getUserTools(token);
-      if (!response.ok) throw new Error('Failed to fetch tools');
-      const data = await response.json();
-      const tools: OptionType[] = data.tools.map((tool: UserToolType) => ({
-        id: tool.id,
-        label: getToolDisplayName(tool),
-        icon: `/toolIcons/tool_${tool.name}.svg`,
-        name: tool.name,
-      }));
+      const [toolsResponse, devicesResult] = await Promise.all([
+        userService.getUserTools(token),
+        // Tolerate failures here: the picker should still render the
+        // tool list even if /api/devices returns an error or 401.
+        devicesService.list(token).catch(() => ({ devices: [] })),
+      ]);
+      if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
+      const data = await toolsResponse.json();
+      // Hide workflow-only builtins (e.g. read_document) from the classic
+      // agent picker; they belong to the workflow-node picker only.
+      const visibleTools = (data.tools as UserToolType[]).filter(
+        isClassicAgentToolVisible,
+      );
+      const devicesById = new Map<
+        string,
+        { online: boolean; last_seen_at: string | null | undefined }
+      >();
+      const onlineWindowMs = 30_000;
+      (devicesResult.devices || []).forEach((d) => {
+        const seen = d.last_seen_at ? Date.parse(d.last_seen_at) : NaN;
+        const online =
+          !Number.isNaN(seen) && Date.now() - seen < onlineWindowMs;
+        devicesById.set(d.id, { online, last_seen_at: d.last_seen_at });
+      });
+      // Group ordering: builtins -> defaults -> user tools (sorted via the
+      // MultiSelectPopover first-appearance grouping).
+      const groupFor = (tool: UserToolType): string => {
+        if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
+        if (tool.default) return t('agents.form.toolsPopup.groupDefault');
+        return t('agents.form.toolsPopup.groupCustom');
+      };
+      const tools: MultiSelectPopoverItem[] = visibleTools.map(
+        (tool: UserToolType) => {
+          const base: MultiSelectPopoverItem = {
+            id: tool.id,
+            label: getToolDisplayName(tool),
+            icon: <ToolIcon name={tool.name} className="h-5 w-5" />,
+            group: groupFor(tool),
+          };
+          if (tool.name === 'remote_device') {
+            const deviceId = (tool.config?.device_id as string) || '';
+            const meta = devicesById.get(deviceId);
+            const online = meta?.online ?? false;
+            base.descriptionNode = (
+              <span
+                className={`mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  online
+                    ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300'
+                    : 'bg-gray-200 text-gray-700 dark:bg-gray-700/40 dark:text-gray-300'
+                }`}
+              >
+                {online
+                  ? t('settings.devices.online')
+                  : t('settings.devices.offline')}
+              </span>
+            );
+          }
+          return base;
+        },
+      );
+      const groupOrder = [
+        t('agents.form.toolsPopup.groupBuiltin'),
+        t('agents.form.toolsPopup.groupDefault'),
+        t('agents.form.toolsPopup.groupCustom'),
+      ];
+      tools.sort(
+        (a, b) =>
+          groupOrder.indexOf(a.group || '') - groupOrder.indexOf(b.group || ''),
+      );
       setUserTools(tools);
+      setRawUserTools(visibleTools);
     };
     const getModels = async () => {
       const response = await modelService.getModels(token);
@@ -506,19 +648,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   useEffect(() => {
     if (sourceDocs && sourceDocs.length > 0 && selectedSourceIds.size === 0) {
       const defaultSource = sourceDocs.find((s) => s.name === 'Default');
-      if (defaultSource) {
-        setSelectedSourceIds(
-          new Set([
-            defaultSource.id || defaultSource.retriever || defaultSource.name,
-          ]),
-        );
-      } else {
-        setSelectedSourceIds(
-          new Set([
-            sourceDocs[0].id || sourceDocs[0].retriever || sourceDocs[0].name,
-          ]),
-        );
-      }
+      const fallback = defaultSource || sourceDocs[0];
+      setSelectedSourceIds(
+        new Set([String(fallback.id || fallback.retriever || fallback.name)]),
+      );
     }
   }, [sourceDocs, selectedSourceIds.size]);
 
@@ -565,8 +698,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           setJsonSchemaText(jsonText);
           setJsonSchemaValid(true);
         }
-        setAgent(data);
-        initialAgentRef.current = data;
+        // Backfill required fields so older agents (created before
+        // agent_type / prompt_id / models existed) don't fail
+        // ``isPublishable()`` and leave Save permanently disabled.
+        const normalized = {
+          ...data,
+          agent_type: data.agent_type || 'classic',
+          prompt_id: data.prompt_id || 'default',
+          retriever: data.retriever || 'classic',
+          chunks: data.chunks || '2',
+          tools: data.tools || [],
+          sources: data.sources || [],
+          models: data.models || [],
+          default_model_id: data.default_model_id || '',
+        };
+        setAgent(normalized);
+        initialAgentRef.current = normalized;
       };
       getAgent();
     }
@@ -684,108 +831,124 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       jsonSchemaText !== initialJsonSchemaText;
     setHasChanges(isChanged);
   }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
+  // Only show the agent sub-nav once the agent has an id (i.e. not the bare
+  // ``new`` mode). The sub-nav links to Logs/Schedules which require an id.
+  const showAgentNav = effectiveMode === 'edit' && Boolean(agent.id);
+
   return (
-    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-12 md:pb-3">
-      <div className="flex items-center gap-3 px-4">
-        <button
-          className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
-          onClick={handleCancel}
-        >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-        </button>
-        <p className="text-foreground dark:text-foreground mt-px text-sm font-semibold">
-          {t('agents.backToAll')}
-        </p>
-      </div>
-      <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="text-foreground m-0 text-[32px] font-bold lg:text-[40px] dark:text-white">
-          {modeConfig[effectiveMode].heading}
-        </h1>
-        {agent.agent_type === 'workflow' && (
-          <div className="mt-4 w-full">
-            <WorkflowBuilder />
-          </div>
+    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-4 md:pb-3">
+      {agent.agent_type === 'workflow' && (
+        <div className="mt-4 w-full">
+          <WorkflowBuilder />
+        </div>
+      )}
+      <div className="flex w-full flex-wrap items-center justify-between gap-2 px-4">
+        {showAgentNav ? (
+          <AgentPageHeader
+            agentId={agent.id}
+            agentName={agent.name}
+            agentEditPath={`/agents/edit/${agent.id}`}
+            currentPage="overview"
+          />
+        ) : (
+          <span aria-hidden />
         )}
-        <div className="flex flex-wrap items-center gap-1">
-          <button
-            className="text-primary dark:text-foreground mr-4 rounded-3xl py-2 text-sm font-medium"
-            onClick={handleCancel}
-          >
-            {t('agents.form.buttons.cancel')}
-          </button>
-          {modeConfig[effectiveMode].showDelete && agent.id && (
-            <button
-              className="group border-destructive text-destructive hover:bg-destructive flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
-              onClick={() => setDeleteConfirmation('ACTIVE')}
+        <div className="flex flex-wrap items-center gap-2">
+          {submitError && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400"
             >
-              <span className="block h-4 w-4 bg-[url('/src/assets/red-trash.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/white-trash.svg')]" />
-              {t('agents.form.buttons.delete')}
-            </button>
+              <span className="h-4 w-4 shrink-0 bg-[url('/src/assets/circle-x.svg')] bg-contain bg-center bg-no-repeat" />
+              {submitError}
+            </div>
+          )}
+          {hasChanges && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleCancel}
+              className="text-primary dark:text-foreground rounded-3xl px-2 hover:bg-transparent"
+            >
+              {t('agents.form.buttons.cancel')}
+            </Button>
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
-            <button
+            <Button
+              type="button"
               disabled={isJsonSchemaInvalid()}
-              className={`border-primary text-primary hover:bg-primary/90 flex min-w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-white ${
-                isJsonSchemaInvalid() ? 'cursor-not-allowed opacity-30' : ''
-              }`}
               onClick={handleSaveDraft}
+              className={`border-primary text-primary hover:bg-primary/90 min-w-28 rounded-3xl border border-solid bg-transparent px-5 whitespace-nowrap hover:text-white ${
+                isJsonSchemaInvalid() ? 'disabled:opacity-30' : ''
+              }`}
             >
               <span className="flex items-center justify-center transition-all duration-200">
                 {draftLoading ? (
-                  <Spinner size="small" color="#976af3" />
+                  <Spinner size="small" />
                 ) : (
                   t('agents.form.buttons.saveDraft')
                 )}
               </span>
-            </button>
+            </Button>
           )}
-          {modeConfig[effectiveMode].showAccessDetails && (
-            <button
-              className="group border-primary text-primary hover:bg-primary/90 flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
-              onClick={() => navigate(`/agents/logs/${agent.id}`)}
-            >
-              <span className="block h-5 w-5 bg-[url('/src/assets/monitoring-purple.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/monitoring-white.svg')]" />
-              {t('agents.form.buttons.logs')}
-            </button>
-          )}
-          {modeConfig[effectiveMode].showAccessDetails && (
-            <button
-              className="border-primary text-primary hover:bg-primary/90 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
-              onClick={() => setAgentDetails('ACTIVE')}
-            >
-              {t('agents.form.buttons.accessDetails')}
-            </button>
-          )}
-          <button
+          <Button
+            type="button"
             disabled={!isPublishable() || !hasChanges}
-            className={`${!isPublishable() || !hasChanges ? 'cursor-not-allowed opacity-30' : ''} bg-primary hover:bg-primary/90 flex min-w-28 items-center justify-center rounded-3xl px-5 py-2 text-sm font-medium whitespace-nowrap text-white`}
             onClick={handlePublish}
+            className={`${!isPublishable() || !hasChanges ? 'disabled:opacity-30' : ''} min-w-28 rounded-3xl px-5 whitespace-nowrap text-white`}
           >
             <span className="flex items-center justify-center transition-all duration-200">
               {publishLoading ? (
-                <Spinner size="small" color="white" />
+                <Spinner size="small" />
               ) : (
                 modeConfig[effectiveMode].buttonText
               )}
             </span>
-          </button>
+          </Button>
+          {modeConfig[effectiveMode].showAccessDetails && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('agents.form.buttons.moreActions')}
+                  title={t('agents.form.buttons.moreActions')}
+                >
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setAgentDetails('ACTIVE')}>
+                  {t('agents.form.buttons.accessDetails')}
+                </DropdownMenuItem>
+                {/* Sharing is owner-only — hidden for agents shared into the
+                    workspace by a team (ownership === 'team'). */}
+                {agent.ownership !== 'team' && agent.id && (
+                  <DropdownMenuItem onSelect={() => setShareModalOpen(true)}>
+                    {t('agents.shareWithTeam')}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
-      <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
+      <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-2xl p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
         <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.meta')}
             </h2>
-            <input
-              className="border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-3 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400"
+            <Input
+              className="bg-card mt-3 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm"
               type="text"
               value={agent.name}
               placeholder={t('agents.form.placeholders.agentName')}
               onChange={(e) => setAgent({ ...agent, name: e.target.value })}
             />
             <textarea
-              className="border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-3 h-32 w-full rounded-xl border px-5 py-4 text-sm outline-hidden placeholder:text-gray-400"
+              className="border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring mt-3 h-32 w-full rounded-xl border px-5 py-4 text-sm outline-hidden placeholder:text-gray-400 focus-visible:ring-[3px]"
               placeholder={t('agents.form.placeholders.describeAgent')}
               value={agent.description}
               onChange={(e) =>
@@ -801,7 +964,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 uploadText={[
                   {
                     text: t('agents.form.upload.clickToUpload'),
-                    colorClass: 'text-[#7D54D1]',
+                    colorClass: 'text-primary',
                   },
                   {
                     text: t('agents.form.upload.dragAndDrop'),
@@ -811,112 +974,93 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.source')}
             </h2>
             <div className="mt-3">
               <div className="flex flex-wrap items-center gap-1">
-                <button
-                  ref={sourceAnchorButtonRef}
-                  onClick={() => setIsSourcePopupOpen(!isSourcePopupOpen)}
-                  className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
-                    selectedSourceIds.size > 0
-                      ? 'text-foreground dark:text-foreground'
-                      : 'dark:text-muted-foreground text-gray-400'
-                  }`}
-                >
-                  {selectedSourceIds.size > 0
-                    ? Array.from(selectedSourceIds)
-                        .map((id) => {
-                          const matchedDoc = sourceDocs?.find(
-                            (source) =>
-                              source.id === id ||
-                              source.name === id ||
-                              source.retriever === id,
-                          );
-                          return (
-                            matchedDoc?.name || t('agents.form.externalKb')
-                          );
-                        })
-                        .filter(Boolean)
-                        .join(', ')
-                    : t('agents.form.placeholders.selectSources')}
-                </button>
-                <MultiSelectPopup
-                  isOpen={isSourcePopupOpen}
-                  onClose={() => setIsSourcePopupOpen(false)}
-                  anchorRef={sourceAnchorButtonRef}
-                  options={
+                <MultiSelectPopover
+                  open={isSourcePopupOpen}
+                  onOpenChange={setIsSourcePopupOpen}
+                  title={t('agents.form.sourcePopup.title')}
+                  items={
                     sourceDocs?.map((doc: Doc) => ({
-                      id: doc.id || doc.retriever || doc.name,
+                      id: String(doc.id || doc.retriever || doc.name),
                       label: doc.name,
                       icon: <img src={SourceIcon} alt="" />,
                     })) || []
                   }
-                  selectedIds={selectedSourceIds}
-                  onSelectionChange={(newSelectedIds: Set<string | number>) => {
+                  selectedIds={Array.from(selectedSourceIds)}
+                  onToggle={(id) => {
+                    const next = new Set(selectedSourceIds);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
                     if (
-                      newSelectedIds.size === 0 &&
+                      next.size === 0 &&
                       sourceDocs &&
                       sourceDocs.length > 0
                     ) {
                       const defaultSource = sourceDocs.find(
                         (s) => s.name === 'Default',
                       );
-                      if (defaultSource) {
-                        setSelectedSourceIds(
-                          new Set([
-                            defaultSource.id ||
-                              defaultSource.retriever ||
-                              defaultSource.name,
-                          ]),
-                        );
-                      } else {
-                        setSelectedSourceIds(
-                          new Set([
-                            sourceDocs[0].id ||
-                              sourceDocs[0].retriever ||
-                              sourceDocs[0].name,
-                          ]),
-                        );
-                      }
+                      const fallback = defaultSource || sourceDocs[0];
+                      setSelectedSourceIds(
+                        new Set([
+                          String(
+                            fallback.id || fallback.retriever || fallback.name,
+                          ),
+                        ]),
+                      );
                     } else {
-                      setSelectedSourceIds(newSelectedIds);
+                      setSelectedSourceIds(next);
                     }
                   }}
-                  title={t('agents.form.sourcePopup.title')}
                   searchPlaceholder={t(
                     'agents.form.sourcePopup.searchPlaceholder',
                   )}
-                  noOptionsMessage={t(
-                    'agents.form.sourcePopup.noOptionsMessage',
-                  )}
-                />
-              </div>
-              <div className="mt-3">
-                <Dropdown
-                  options={chunks}
-                  selectedValue={agent.chunks ? agent.chunks : null}
-                  onSelect={(value: string) =>
-                    setAgent({ ...agent, chunks: value })
+                  emptyMessage={t('agents.form.sourcePopup.noOptionsMessage')}
+                  trigger={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      ref={sourceAnchorButtonRef}
+                      className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
+                        selectedSourceIds.size > 0
+                          ? 'text-foreground dark:text-foreground'
+                          : 'dark:text-muted-foreground text-gray-400'
+                      }`}
+                    >
+                      {selectedSourceIds.size > 0
+                        ? Array.from(selectedSourceIds)
+                            .map((id) => resolveSourceLabel(id))
+                            .filter(Boolean)
+                            .join(', ')
+                        : t('agents.form.placeholders.selectSources')}
+                    </Button>
                   }
-                  size="w-full"
-                  rounded="3xl"
-                  placeholder={t('agents.form.placeholders.chunksPerQuery')}
-                  contentSize="text-sm"
                 />
               </div>
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <div className="flex flex-wrap items-end gap-1">
               <div className="min-w-20 grow basis-full sm:basis-0">
                 <Prompts
                   prompts={prompts}
                   selectedPrompt={
                     prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    prompts[0] || {
+                    // Owner-resolved name from the agent payload: lets a team
+                    // member see the owner's prompt name (which isn't in their
+                    // own prompts list). 'public' hides owner-only edit/share
+                    // affordances on a prompt the viewer doesn't own.
+                    (agent.prompt_name
+                      ? {
+                          name: agent.prompt_name,
+                          id: agent.prompt_id || 'default',
+                          type: 'public',
+                        }
+                      : prompts[0]) || {
                       name: 'default',
                       id: 'default',
                       type: 'public',
@@ -929,127 +1073,120 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   title={t('agents.form.sections.prompt')}
                   titleClassName="text-lg font-semibold"
                   showAddButton={false}
-                  dropdownProps={{
-                    size: 'w-full',
-                    rounded: '3xl',
-                    contentSize: 'text-sm',
-                  }}
+                  dropdownProps={{ className: 'w-full' }}
                 />
               </div>
-              <button
-                className="border-primary text-primary hover:bg-primary/90 min-w-20 shrink-0 basis-full rounded-3xl border border-solid px-5 py-3 text-sm whitespace-nowrap transition-colors hover:text-white sm:basis-auto"
+              <Button
+                type="button"
                 onClick={() => setAddPromptModal('ACTIVE')}
+                className="border-primary text-primary hover:bg-primary/90 h-auto min-w-20 shrink-0 basis-full rounded-3xl border border-solid bg-transparent px-5 py-3 whitespace-nowrap hover:text-white sm:basis-auto"
               >
                 {t('agents.form.buttons.add')}
-              </button>
+              </Button>
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.tools')}
             </h2>
             <div className="mt-3 flex flex-wrap items-center gap-1">
-              <button
-                ref={toolAnchorButtonRef}
-                onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
-                className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
-                  selectedTools.length > 0
-                    ? 'text-foreground dark:text-foreground'
-                    : 'dark:text-muted-foreground text-gray-400'
-                }`}
-              >
-                {selectedTools.length > 0
-                  ? selectedTools
-                      .map((tool) => getToolDisplayName(tool))
-                      .filter(Boolean)
-                      .join(', ')
-                  : t('agents.form.placeholders.selectTools')}
-              </button>
-              <MultiSelectPopup
-                isOpen={isToolsPopupOpen}
-                onClose={() => setIsToolsPopupOpen(false)}
-                anchorRef={toolAnchorButtonRef}
-                options={userTools}
-                selectedIds={new Set(selectedTools.map((tool) => tool.id))}
-                onSelectionChange={(newSelectedIds: Set<string | number>) =>
-                  setSelectedTools(
-                    userTools
-                      .filter((tool) => newSelectedIds.has(tool.id))
-                      .map((tool) => ({
-                        id: String(tool.id),
-                        name:
-                          typeof tool.name === 'string'
-                            ? tool.name
-                            : tool.label,
-                        display_name: tool.label,
-                      })),
-                  )
-                }
+              <MultiSelectPopover
+                open={isToolsPopupOpen}
+                onOpenChange={setIsToolsPopupOpen}
                 title={t('agents.form.toolsPopup.title')}
+                items={userTools}
+                selectedIds={selectedTools.map((tool) => tool.id)}
+                onToggle={(id) => {
+                  const exists = selectedTools.find((t) => t.id === id);
+                  if (exists) {
+                    setSelectedTools(selectedTools.filter((t) => t.id !== id));
+                    return;
+                  }
+                  const item = userTools.find((t) => t.id === id);
+                  const raw = rawUserTools.find((t) => t.id === id);
+                  if (!item) return;
+                  setSelectedTools([
+                    ...selectedTools,
+                    {
+                      id: item.id,
+                      name: raw?.name || item.label,
+                      display_name: item.label,
+                    },
+                  ]);
+                }}
                 searchPlaceholder={t(
                   'agents.form.toolsPopup.searchPlaceholder',
                 )}
-                noOptionsMessage={t('agents.form.toolsPopup.noOptionsMessage')}
+                emptyMessage={t('agents.form.toolsPopup.noOptionsMessage')}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    ref={toolAnchorButtonRef}
+                    className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
+                      selectedTools.length > 0
+                        ? 'text-foreground dark:text-foreground'
+                        : 'dark:text-muted-foreground text-gray-400'
+                    }`}
+                  >
+                    {selectedTools.length > 0
+                      ? selectedTools
+                          .map((tool) => getToolDisplayName(tool))
+                          .filter(Boolean)
+                          .join(', ')
+                      : t('agents.form.placeholders.selectTools')}
+                  </Button>
+                }
               />
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.agentType')}
             </h2>
             <div className="mt-3">
-              <Dropdown
-                options={agentTypes}
-                selectedValue={
-                  agent.agent_type
-                    ? agentTypes.find((type) => type.value === agent.agent_type)
-                        ?.label || null
-                    : null
+              <Select
+                value={agent.agent_type || undefined}
+                onValueChange={(value) =>
+                  setAgent({ ...agent, agent_type: value })
                 }
-                onSelect={(option: { label: string; value: string }) =>
-                  setAgent({ ...agent, agent_type: option.value })
-                }
-                size="w-full"
-                rounded="3xl"
-                placeholder={t('agents.form.placeholders.selectType')}
-                contentSize="text-sm"
-              />
+              >
+                <SelectTrigger
+                  className="w-full rounded-3xl px-5 py-3 text-sm"
+                  size="lg"
+                >
+                  <SelectValue
+                    placeholder={t('agents.form.placeholders.selectType')}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {agentTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.models')}
             </h2>
             <div className="mt-3 flex flex-col gap-3">
-              <button
-                ref={modelAnchorButtonRef}
-                onClick={() => setIsModelsPopupOpen(!isModelsPopupOpen)}
-                className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
-                  selectedModelIds.size > 0
-                    ? 'text-foreground dark:text-foreground'
-                    : 'dark:text-muted-foreground text-gray-400'
-                }`}
-              >
-                {selectedModelIds.size > 0
-                  ? availableModels
-                      .filter((m) => selectedModelIds.has(m.id))
-                      .map((m) => m.display_name)
-                      .join(', ')
-                  : t('agents.form.placeholders.selectModels')}
-              </button>
-              <MultiSelectPopup
-                isOpen={isModelsPopupOpen}
-                onClose={() => setIsModelsPopupOpen(false)}
-                anchorRef={modelAnchorButtonRef}
-                options={(() => {
+              <MultiSelectPopover
+                open={isModelsPopupOpen}
+                onOpenChange={setIsModelsPopupOpen}
+                title={t('agents.form.modelsPopup.title')}
+                items={(() => {
                   const builtinLabel = t(
                     'settings.customModels.modelsGroup.builtin',
                   );
                   const userLabel = t('settings.customModels.modelsGroup.user');
-                  const builtin: OptionType[] = [];
-                  const user: OptionType[] = [];
+                  const builtin: MultiSelectPopoverItem[] = [];
+                  const user: MultiSelectPopoverItem[] = [];
                   availableModels.forEach((model) => {
-                    const opt: OptionType = {
+                    const opt: MultiSelectPopoverItem = {
                       id: model.id,
                       label: model.display_name,
                       group: model.source === 'user' ? userLabel : builtinLabel,
@@ -1059,55 +1196,80 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   });
                   return [...builtin, ...user];
                 })()}
-                selectedIds={selectedModelIds}
-                onSelectionChange={(newSelectedIds: Set<string | number>) =>
-                  setSelectedModelIds(
-                    new Set(Array.from(newSelectedIds).map(String)),
-                  )
-                }
-                title={t('agents.form.modelsPopup.title')}
+                selectedIds={Array.from(selectedModelIds)}
+                onToggle={(id) => {
+                  const next = new Set(selectedModelIds);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  setSelectedModelIds(next);
+                }}
                 searchPlaceholder={t(
                   'agents.form.modelsPopup.searchPlaceholder',
                 )}
-                noOptionsMessage={t('agents.form.modelsPopup.noOptionsMessage')}
+                emptyMessage={t('agents.form.modelsPopup.noOptionsMessage')}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    ref={modelAnchorButtonRef}
+                    className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
+                      selectedModelIds.size > 0
+                        ? 'text-foreground dark:text-foreground'
+                        : 'dark:text-muted-foreground text-gray-400'
+                    }`}
+                  >
+                    {selectedModelIds.size > 0
+                      ? availableModels
+                          .filter((m) => selectedModelIds.has(m.id))
+                          .map((m) => m.display_name)
+                          .join(', ')
+                      : t('agents.form.placeholders.selectModels')}
+                  </Button>
+                }
               />
               {selectedModelIds.size > 0 && (
                 <div>
                   <label className="mb-2 block text-sm font-medium">
                     {t('agents.form.labels.defaultModel')}
                   </label>
-                  <Dropdown
-                    options={availableModels
-                      .filter((m) => selectedModelIds.has(m.id))
-                      .map((m) => ({
-                        label: m.display_name,
-                        value: m.id,
-                      }))}
-                    selectedValue={
-                      availableModels.find(
-                        (m) => m.id === agent.default_model_id,
-                      )?.display_name || null
+                  <Select
+                    value={agent.default_model_id || undefined}
+                    onValueChange={(value) =>
+                      setAgent({ ...agent, default_model_id: value })
                     }
-                    onSelect={(option: { label: string; value: string }) =>
-                      setAgent({ ...agent, default_model_id: option.value })
-                    }
-                    size="w-full"
-                    rounded="3xl"
-                    placeholder={t(
-                      'agents.form.placeholders.selectDefaultModel',
-                    )}
-                    contentSize="text-sm"
-                  />
+                  >
+                    <SelectTrigger
+                      className="w-full rounded-3xl px-5 py-3 text-sm"
+                      size="lg"
+                    >
+                      <SelectValue
+                        placeholder={t(
+                          'agents.form.placeholders.selectDefaultModel',
+                        )}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableModels
+                        .filter((m) => selectedModelIds.has(m.id))
+                        .map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.display_name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
-            <button
+          <div className="bg-card rounded-2xl px-6 py-3">
+            <Button
+              type="button"
+              variant="ghost"
               onClick={() =>
                 setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
               }
-              className="flex w-full items-center justify-between text-left focus:outline-none"
+              className="h-auto w-full justify-between px-0 py-0 text-left hover:bg-transparent"
             >
               <div>
                 <h2 className="text-lg font-semibold">
@@ -1116,7 +1278,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </div>
               <div className="ml-4 flex items-center">
                 <svg
-                  className={`h-5 w-5 transform transition-transform duration-200 ${
+                  className={`size-5 transform transition-transform duration-200 ${
                     isAdvancedSectionExpanded ? 'rotate-180' : ''
                   }`}
                   fill="none"
@@ -1131,7 +1293,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   />
                 </svg>
               </div>
-            </button>
+            </Button>
             {isAdvancedSectionExpanded && (
               <div className="mt-3">
                 <div>
@@ -1155,7 +1317,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   "additionalProperties": false
 }`}
                   rows={9}
-                  className={`border-border text-foreground dark:text-foreground bg-card dark:border-border mt-2 w-full rounded-2xl border px-4 py-3 font-mono text-sm outline-hidden`}
+                  className={`border-border text-foreground dark:text-foreground bg-card dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring mt-2 w-full rounded-2xl border px-4 py-3 font-mono text-sm outline-hidden focus-visible:ring-[3px]`}
                 />
                 {jsonSchemaText.trim() !== '' && (
                   <div
@@ -1188,31 +1350,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         {t('agents.form.advanced.tokenLimitingDescription')}
                       </p>
                     </div>
-                    <button
-                      onClick={() => {
-                        const newTokenMode = !agent.limited_token_mode;
+                    <Switch
+                      checked={agent.limited_token_mode}
+                      onCheckedChange={(checked) => {
                         setAgent({
                           ...agent,
-                          limited_token_mode: newTokenMode,
-                          limited_request_mode: newTokenMode
+                          limited_token_mode: checked,
+                          limited_request_mode: checked
                             ? false
                             : agent.limited_request_mode,
                         });
                       }}
-                      className={`relative h-6 w-11 rounded-full transition-colors ${
-                        agent.limited_token_mode
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.limited_token_mode ? '' : '-translate-x-5'
-                        }`}
-                      />
-                    </button>
+                    />
                   </div>
-                  <input
+                  <Input
                     type="number"
                     min="0"
                     value={agent.token_limit || ''}
@@ -1226,7 +1377,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     }
                     disabled={!agent.limited_token_mode}
                     placeholder={t('agents.form.placeholders.enterTokenLimit')}
-                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
+                    className={`bg-card mt-2 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm ${
                       !agent.limited_token_mode
                         ? 'cursor-not-allowed opacity-50'
                         : ''
@@ -1244,31 +1395,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         {t('agents.form.advanced.requestLimitingDescription')}
                       </p>
                     </div>
-                    <button
-                      onClick={() => {
-                        const newRequestMode = !agent.limited_request_mode;
+                    <Switch
+                      checked={agent.limited_request_mode}
+                      onCheckedChange={(checked) => {
                         setAgent({
                           ...agent,
-                          limited_request_mode: newRequestMode,
-                          limited_token_mode: newRequestMode
+                          limited_request_mode: checked,
+                          limited_token_mode: checked
                             ? false
                             : agent.limited_token_mode,
                         });
                       }}
-                      className={`relative h-6 w-11 rounded-full transition-colors ${
-                        agent.limited_request_mode
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.limited_request_mode ? '' : '-translate-x-5'
-                        }`}
-                      />
-                    </button>
+                    />
                   </div>
-                  <input
+                  <Input
                     type="number"
                     min="0"
                     value={agent.request_limit || ''}
@@ -1284,7 +1424,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     placeholder={t(
                       'agents.form.placeholders.enterRequestLimit',
                     )}
-                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
+                    className={`bg-card mt-2 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm ${
                       !agent.limited_request_mode
                         ? 'cursor-not-allowed opacity-50'
                         : ''
@@ -1304,38 +1444,46 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         )}
                       </p>
                     </div>
-                    <button
-                      onClick={() =>
+                    <Switch
+                      className="shrink-0"
+                      checked={agent.allow_system_prompt_override}
+                      onCheckedChange={(checked) =>
                         setAgent({
                           ...agent,
-                          allow_system_prompt_override:
-                            !agent.allow_system_prompt_override,
+                          allow_system_prompt_override: checked,
                         })
                       }
-                      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                        agent.allow_system_prompt_override
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.allow_system_prompt_override
-                            ? ''
-                            : '-translate-x-5'
-                        }`}
-                      />
-                    </button>
+                    />
                   </div>
                 </div>
               </div>
             )}
           </div>
+          {modeConfig[effectiveMode].showDelete && agent.id && (
+            <div className="border-destructive/40 bg-destructive/5 rounded-2xl border px-6 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-destructive text-lg font-semibold">
+                    {t('agents.form.dangerZone.heading')}
+                  </h2>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {t('agents.form.dangerZone.description')}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive-outline"
+                  size="sm"
+                  onClick={() => setDeleteConfirmation('ACTIVE')}
+                  className="shrink-0"
+                >
+                  {t('agents.form.dangerZone.deleteButton')}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2">
-          <h2 className="text-lg font-semibold">
-            {t('agents.form.sections.preview')}
-          </h2>
           <div className="flex-1 max-[1179px]:overflow-visible min-[1180px]:min-h-0 min-[1180px]:overflow-hidden">
             <AgentPreviewArea />
           </div>
@@ -1358,7 +1506,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         mode={effectiveMode}
         modalState={agentDetails}
         setModalState={setAgentDetails}
+        onKeyRegenerated={(key) => setAgent((prev) => ({ ...prev, key }))}
       />
+      {shareModalOpen && agent.id && (
+        <ShareToTeamModal
+          resourceType="agent"
+          resourceId={agent.id}
+          resourceName={agent.name}
+          onClose={() => setShareModalOpen(false)}
+        />
+      )}
       <AddPromptModal
         prompts={prompts}
         isOpen={addPromptModal}
@@ -1375,9 +1532,9 @@ function AgentPreviewArea() {
   const { t } = useTranslation();
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="bg-card border-border w-full rounded-[30px] border max-[1179px]:h-[600px] min-[1180px]:h-full">
+    <div className="bg-card border-border w-full rounded-2xl border max-[1179px]:h-[600px] min-[1180px]:h-full">
       {selectedAgent?.status === 'published' ? (
-        <div className="flex h-full w-full flex-col overflow-hidden rounded-[30px]">
+        <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl">
           <AgentPreview />
         </div>
       ) : (
@@ -1432,7 +1589,7 @@ function AddPromptModal({
       onClose();
       setNewPromptName('');
       setNewPromptContent('');
-      onSelect?.(newPromptName, newPrompt.id, newPromptContent);
+      onSelect?.(newPromptName, newPrompt.id, 'private');
     } catch (error) {
       console.error('Error adding prompt:', error);
     }

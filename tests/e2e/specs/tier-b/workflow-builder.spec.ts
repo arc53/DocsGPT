@@ -1,5 +1,5 @@
 /**
- * Phase 3 Tier-B · workflow builder (nodes / edges / versioning)
+ * Tier-B · workflow builder (nodes / edges / versioning)
  *
  * Covers B13: `POST /api/workflows`, `GET /api/workflows/:id`,
  * `PUT /api/workflows/:id`, `DELETE /api/workflows/:id`, and the

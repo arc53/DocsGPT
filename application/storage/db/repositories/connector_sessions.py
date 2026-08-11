@@ -25,6 +25,7 @@ from typing import Any, Optional
 from sqlalchemy import Connection, text
 
 from application.storage.db.base_repository import row_to_dict
+from application.storage.db.serialization import PGNativeJSONEncoder
 
 
 _UPDATABLE_SCALARS = {
@@ -36,7 +37,7 @@ _UPDATABLE_JSONB = {"session_data", "token_info"}
 def _jsonb(value: Any) -> Any:
     if value is None:
         return None
-    return json.dumps(value, default=str)
+    return json.dumps(value, cls=PGNativeJSONEncoder)
 
 
 class ConnectorSessionsRepository:

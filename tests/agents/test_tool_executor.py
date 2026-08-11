@@ -13,16 +13,21 @@ class TestToolExecutorInit:
         executor = ToolExecutor()
         assert executor.user_api_key is None
         assert executor.user is None
+        assert executor.agent_id is None
         assert executor.tool_calls == []
         assert executor._loaded_tools == {}
         assert executor.conversation_id is None
 
     def test_init_with_params(self):
         executor = ToolExecutor(
-            user_api_key="key", user="alice", decoded_token={"sub": "alice"}
+            user_api_key="key",
+            user="alice",
+            decoded_token={"sub": "alice"},
+            agent_id="agent-1",
         )
         assert executor.user_api_key == "key"
         assert executor.user == "alice"
+        assert executor.agent_id == "agent-1"
 
 
 @pytest.mark.unit
@@ -61,7 +66,35 @@ class TestToolExecutorGetTools:
         assert str(tool["id"]) in tools
         assert tools[str(tool["id"])]["id"] == tool["id"]
 
-    def test_get_tools_uses_user_when_no_api_key(self, pg_conn, monkeypatch):
+    def test_api_key_agent_never_resolves_workflow_only_builtins(self, pg_conn, monkeypatch):
+        """read_document is workflow-only: a chat/scheduled agent carrying its
+        builtin id must not get it; workflow nodes get it via allowed_tool_ids."""
+        from application.agents.default_tools import default_tool_id
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        read_doc_id = default_tool_id("read_document")
+        artifact_id = default_tool_id("artifact_generator")
+        AgentsRepository(pg_conn).create(
+            user_id="alice",
+            name="a",
+            status="active",
+            key="wf_only_key",
+            tools=[read_doc_id, artifact_id],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        chat_tools = ToolExecutor(user_api_key="wf_only_key", user="alice").get_tools()
+        chat_names = {t["name"] for t in chat_tools.values()}
+        assert "artifact_generator" in chat_names
+        assert "read_document" not in chat_names
+
+        scoped = ToolExecutor(user="alice")
+        scoped.allowed_tool_ids = [read_doc_id]
+        node_names = {t["name"] for t in scoped.get_tools().values()}
+        assert node_names == {"read_document"}
+
+    def test_agentless_chat_synthesizes_defaults(self, pg_conn, monkeypatch):
+        from application.agents.default_tools import loaded_default_tools
         from application.storage.db.repositories.user_tools import UserToolsRepository
 
         UserToolsRepository(pg_conn).create(
@@ -72,15 +105,148 @@ class TestToolExecutorGetTools:
         executor = ToolExecutor(user="alice")
         tools = executor.get_tools()
         assert isinstance(tools, dict)
-        assert len(tools) == 1
+        assert len(tools) == 1 + len(loaded_default_tools())
+        names = {t["name"] for t in tools.values()}
+        assert "tool1" in names
+        assert "memory" in names
+
+    def test_agent_bound_chat_via_user_path_excludes_defaults(
+        self, pg_conn, monkeypatch
+    ):
+        """``agent_id`` forces ``agents.tools``-only; no defaults synthesized."""
+        from application.agents.default_tools import loaded_default_tools
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        UserToolsRepository(pg_conn).create(
+            user_id="alice", name="tool1", status=True
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(user="alice", agent_id="agent-x")
+        tools = executor.get_tools()
+        names = {t["name"] for t in tools.values()}
+        assert "tool1" in names
+        assert not (set(loaded_default_tools()) & names)
 
     def test_get_tools_defaults_to_local(self, pg_conn, monkeypatch):
+        from application.agents.default_tools import loaded_default_tools
+
         self._patch_conn(monkeypatch, pg_conn)
 
         executor = ToolExecutor()
         tools = executor.get_tools()
         assert isinstance(tools, dict)
-        assert tools == {}
+        assert len(tools) == len(loaded_default_tools())
+        assert {t["name"] for t in tools.values()} == set(loaded_default_tools())
+
+    def test_api_key_path_excludes_defaults(self, pg_conn, monkeypatch):
+        """Agent-bound resolution returns exactly ``agents.tools``."""
+        from application.agents.default_tools import loaded_default_tools
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        tool = UserToolsRepository(pg_conn).create(user_id="alice", name="tool1")
+        AgentsRepository(pg_conn).create(
+            user_id="alice",
+            name="a",
+            status="active",
+            key="key-agentbound",
+            tools=[str(tool["id"])],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(user_api_key="key-agentbound", user="alice")
+        tools = executor.get_tools()
+        names = {t["name"] for t in tools.values()}
+        assert names == {"tool1"}
+        assert not (set(loaded_default_tools()) & names)
+
+    def test_api_key_path_empty_agent_tools_gets_nothing(
+        self, pg_conn, monkeypatch
+    ):
+        """Empty ``agents.tools`` invoked via API key yields no tools."""
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        AgentsRepository(pg_conn).create(
+            user_id="bob",
+            name="a",
+            status="active",
+            key="key-empty",
+            tools=[],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(user_api_key="key-empty", user="bob")
+        assert executor.get_tools() == {}
+
+    def test_api_key_path_only_synthesizes_author_added_defaults(
+        self, pg_conn, monkeypatch
+    ):
+        """Only ``read_webpage`` in ``agents.tools`` -> exactly that; no other defaults bolted on."""
+        from application.agents.default_tools import default_tool_id
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        read_webpage_id = default_tool_id("read_webpage")
+        memory_id = default_tool_id("memory")
+        AgentsRepository(pg_conn).create(
+            user_id="erin",
+            name="a",
+            status="active",
+            key="key-only-read",
+            tools=[read_webpage_id],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(
+            user_api_key="key-only-read", user="erin", agent_id="erin-agent"
+        )
+        tools = executor.get_tools()
+        assert set(tools) == {read_webpage_id}
+        assert tools[read_webpage_id]["name"] == "read_webpage"
+        assert memory_id not in tools
+        assert "memory" not in {t["name"] for t in tools.values()}
+
+    def test_explicit_default_on_agent_resolves(
+        self, pg_conn, monkeypatch
+    ):
+        """A default tool added explicitly to ``agents.tools`` resolves for every caller."""
+        from application.agents.default_tools import default_tool_id
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        memory_id = default_tool_id("memory")
+        AgentsRepository(pg_conn).create(
+            user_id="erin",
+            name="a",
+            status="active",
+            key="key-explicit-default",
+            tools=[memory_id],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(
+            user_api_key="key-explicit-default", user="erin"
+        )
+        tools = executor.get_tools()
+        assert set(tools) == {memory_id}
+        assert tools[memory_id]["name"] == "memory"
+
+    def test_no_dedup_between_explicit_and_default_memory(
+        self, pg_conn, monkeypatch
+    ):
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        # Explicit ``memory`` row and the default ``memory`` coexist (separate stores).
+        UserToolsRepository(pg_conn).create(
+            user_id="dave", name="memory", status=True
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(user="dave")
+        tools = executor.get_tools()
+        memory_entries = [t for t in tools.values() if t["name"] == "memory"]
+        assert len(memory_entries) == 2
+        ids = {t["id"] for t in memory_entries}
+        assert len(ids) == 2
 
 
 @pytest.mark.unit
@@ -152,7 +318,7 @@ class TestToolExecutorPrepare:
         assert executor._name_to_tool["do_thing"] == ("t1", "do_thing")
         assert executor._tool_to_name[("t1", "do_thing")] == "do_thing"
 
-    def test_prepare_tools_duplicate_names_get_numbered_suffixes(self):
+    def test_prepare_tools_duplicate_names_get_tool_prefixes(self):
         executor = ToolExecutor()
         tools_dict = {
             "t1": {
@@ -170,10 +336,34 @@ class TestToolExecutorPrepare:
         }
         result = executor.prepare_tools_for_llm(tools_dict)
         names = [r["function"]["name"] for r in result]
-        assert "search_1" in names
-        assert "search_2" in names
-        assert executor._name_to_tool["search_1"][1] == "search"
-        assert executor._name_to_tool["search_2"][1] == "search"
+        assert "tool_a_search" in names
+        assert "tool_b_search" in names
+        assert executor._name_to_tool["tool_a_search"] == ("t1", "search")
+        assert executor._name_to_tool["tool_b_search"] == ("t2", "search")
+
+    def test_prepare_tools_same_named_tools_fall_back_to_numbers(self):
+        """Two tools with the same name (e.g. two MCP rows) still get unique names."""
+        executor = ToolExecutor()
+        tools_dict = {
+            "t1": {
+                "name": "mcp",
+                "actions": [
+                    {"name": "search", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+            "t2": {
+                "name": "mcp",
+                "actions": [
+                    {"name": "search", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+        }
+        result = executor.prepare_tools_for_llm(tools_dict)
+        names = [r["function"]["name"] for r in result]
+        assert "mcp_search" in names
+        assert "mcp_search_1" in names
+        assert executor._name_to_tool["mcp_search"][1] == "search"
+        assert executor._name_to_tool["mcp_search_1"][1] == "search"
 
     def test_prepare_tools_unique_name_no_suffix(self):
         executor = ToolExecutor()
@@ -196,8 +386,54 @@ class TestToolExecutorPrepare:
         assert "get_weather" in names
         assert "send_email" in names
 
-    def test_prepare_tools_suffix_skips_collision_with_unique_name(self):
-        """If action 'foo_1' exists as unique and 'foo' is duplicated, skip '_1'."""
+    def test_prepare_tools_prefixed_names_clamped_to_64_chars(self):
+        """Prefixed names must fit the 64-char provider function-name limit."""
+        executor = ToolExecutor()
+        name_a = "server_" + "x" * 60
+        name_b = "server_" + "x" * 60 + "_b"  # same first 64 chars as name_a
+        tools_dict = {
+            "t1": {
+                "name": name_a,
+                "actions": [
+                    {"name": "search_documents_in_collection", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+            "t2": {
+                "name": name_b,
+                "actions": [
+                    {"name": "search_documents_in_collection", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+        }
+        result = executor.prepare_tools_for_llm(tools_dict)
+        names = [r["function"]["name"] for r in result]
+        assert all(len(n) <= 64 for n in names)
+        assert len(set(names)) == 2
+        # Routing still resolves each clamped name to its original action.
+        assert {executor._name_to_tool[n] for n in names} == {
+            ("t1", "search_documents_in_collection"),
+            ("t2", "search_documents_in_collection"),
+        }
+
+    def test_prepare_tools_long_unique_name_clamped(self):
+        """A unique action name over the limit is truncated, not passed through."""
+        executor = ToolExecutor()
+        long_action = "fetch_" + "y" * 70
+        tools_dict = {
+            "t1": {
+                "name": "tool_a",
+                "actions": [
+                    {"name": long_action, "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+        }
+        result = executor.prepare_tools_for_llm(tools_dict)
+        names = [r["function"]["name"] for r in result]
+        assert names == [long_action[:64]]
+        assert executor._name_to_tool[long_action[:64]] == ("t1", long_action)
+
+    def test_prepare_tools_prefix_skips_collision_with_unique_name(self):
+        """A prefixed candidate must not steal another action's unique name."""
         executor = ToolExecutor()
         tools_dict = {
             "t1": {
@@ -215,17 +451,19 @@ class TestToolExecutorPrepare:
             "t3": {
                 "name": "tool_c",
                 "actions": [
-                    {"name": "foo_1", "description": "D", "active": True, "parameters": {"properties": {}}},
+                    {"name": "tool_a_foo", "description": "D", "active": True, "parameters": {"properties": {}}},
                 ],
             },
         }
         result = executor.prepare_tools_for_llm(tools_dict)
         names = [r["function"]["name"] for r in result]
-        # foo_1 is taken by the unique action, so duplicates skip to _2 and _3
-        assert "foo_1" in names  # The unique action
-        assert "foo_2" in names
-        assert "foo_3" in names
-        assert executor._name_to_tool["foo_1"] == ("t3", "foo_1")
+        # tool_a_foo is taken by the unique action, so t1's duplicate
+        # falls back to a numbered variant of its prefixed name.
+        assert "tool_a_foo" in names  # The unique action
+        assert "tool_a_foo_1" in names
+        assert "tool_b_foo" in names
+        assert executor._name_to_tool["tool_a_foo"] == ("t3", "tool_a_foo")
+        assert executor._name_to_tool["tool_a_foo_1"] == ("t1", "foo")
 
     def test_build_tool_parameters_filters_non_llm_fields(self):
         executor = ToolExecutor()
@@ -316,6 +554,346 @@ class TestCheckPause:
         assert result["name"] == "delete_all"
         assert result["llm_name"] == "delete_all"
         assert result["action_name"] == "delete_all"
+
+
+@pytest.mark.unit
+class TestCheckPauseRemoteDevice:
+    """The gate must consult the live ``RemoteDeviceTool`` decision for
+    ``remote_device`` so ``approval_mode`` changes after pair time and
+    per-command heuristics (denylist, sticky) are respected.
+    """
+
+    def _make_call(self, name="run_command", call_id="c1", command="ls -la /tmp"):
+        import json
+
+        call = Mock()
+        call.name = name
+        call.id = call_id
+        call.arguments = json.dumps({"command": command})
+        call.thought_signature = None
+        return call
+
+    def _tools_dict(self, *, device_id="dev_abc"):
+        return {
+            "rd0": {
+                "id": "rd0",
+                "name": "remote_device",
+                "config": {"device_id": device_id},
+                "actions": [
+                    {
+                        "name": "run_command",
+                        "description": "Execute on device",
+                        "active": True,
+                        "require_approval": False,
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "filled_by_llm": True,
+                                    "value": "",
+                                },
+                            },
+                            "required": ["command"],
+                        },
+                    }
+                ],
+            }
+        }
+
+    def _patch_device(self, monkeypatch, device):
+        """Stub ``RemoteDeviceTool._load_device`` to return ``device``."""
+        from application.agents.tools import remote_device
+
+        monkeypatch.setattr(
+            remote_device.RemoteDeviceTool,
+            "_load_device",
+            lambda self: device,
+        )
+
+    def _patch_sticky(self, monkeypatch, patterns):
+        """Stub the sticky lookup to match any normalized pattern in ``patterns``."""
+        from application.agents.tools import remote_device
+
+        monkeypatch.setattr(
+            remote_device,
+            "normalize_command",
+            lambda cmd: cmd.split()[0] + " *" if cmd else "",
+        )
+        captured = {"patterns": set(patterns)}
+
+        class _StubRepo:
+            def __init__(self, conn):
+                pass
+
+            def has_pattern(self, device_id, user_id, pattern):
+                return pattern in captured["patterns"]
+
+        monkeypatch.setattr(
+            remote_device,
+            "DeviceAutoApprovePatternsRepository",
+            _StubRepo,
+        )
+
+        class _StubConn:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        monkeypatch.setattr(remote_device, "db_readonly", lambda: _StubConn())
+
+    def test_full_non_deny_no_pause(self, monkeypatch):
+        """``full`` + a non-denylisted command auto-approves."""
+        executor = ToolExecutor(user="alice")
+        self._patch_device(
+            monkeypatch,
+            {
+                "id": "dev_abc",
+                "approval_mode": "full",
+                "status": "active",
+            },
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="whoami")
+        assert executor.check_pause(tools_dict, call, "OpenAILLM") is None
+
+    def test_full_writing_command_no_pause(self, monkeypatch):
+        """``full`` auto-approves writes too (only the denylist stops it)."""
+        executor = ToolExecutor(user="alice")
+        self._patch_device(
+            monkeypatch,
+            {
+                "id": "dev_abc",
+                "approval_mode": "full",
+                "status": "active",
+            },
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="rm /tmp/foo")
+        assert executor.check_pause(tools_dict, call, "OpenAILLM") is None
+
+    def test_full_denylist_forces_pause(self, monkeypatch):
+        """``full`` + a denylisted command still pauses (forced prompt)."""
+        executor = ToolExecutor(user="alice")
+        self._patch_device(
+            monkeypatch,
+            {
+                "id": "dev_abc",
+                "approval_mode": "full",
+                "status": "active",
+            },
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="rm -rf /")
+        result = executor.check_pause(tools_dict, call, "OpenAILLM")
+        assert result is not None
+        assert result["pause_type"] == "awaiting_approval"
+
+    def test_ask_mode_pauses(self, monkeypatch):
+        """``ask`` + any command pauses by default."""
+        executor = ToolExecutor(user="alice")
+        self._patch_device(
+            monkeypatch,
+            {
+                "id": "dev_abc",
+                "approval_mode": "ask",
+                "status": "active",
+            },
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="ls -la /tmp")
+        result = executor.check_pause(tools_dict, call, "OpenAILLM")
+        assert result is not None
+        assert result["pause_type"] == "awaiting_approval"
+
+    def test_ask_mode_sticky_match_no_pause(self, monkeypatch):
+        """``ask`` + a command matching a stored sticky pattern auto-approves."""
+        executor = ToolExecutor(user="alice")
+        self._patch_device(
+            monkeypatch,
+            {
+                "id": "dev_abc",
+                "approval_mode": "ask",
+                "status": "active",
+            },
+        )
+        # The stub normalizer turns ``ls -la /tmp`` into ``ls *``.
+        self._patch_sticky(monkeypatch, {"ls *"})
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="ls -la /tmp")
+        assert executor.check_pause(tools_dict, call, "OpenAILLM") is None
+
+
+@pytest.mark.unit
+class TestCheckPauseRemoteDeviceHeadless:
+    """Headless gating for ``remote_device``.
+
+    A denylist-forced prompt must NOT be bypassed by the run's
+    ``tool_allowlist`` — otherwise a scheduled/headless run with the device
+    allowlisted would auto-execute even a denylisted command. Normal
+    (non-forced) approvals keep the allowlist bypass.
+    """
+
+    def _make_call(self, name="run_command", call_id="c1", command="whoami"):
+        import json
+
+        call = Mock()
+        call.name = name
+        call.id = call_id
+        call.arguments = json.dumps({"command": command})
+        call.thought_signature = None
+        return call
+
+    def _tools_dict(self, *, device_id="dev_abc"):
+        return {
+            "rd0": {
+                "id": "rd0",
+                "name": "remote_device",
+                "config": {"device_id": device_id},
+                "actions": [
+                    {
+                        "name": "run_command",
+                        "description": "Execute on device",
+                        "active": True,
+                        "require_approval": False,
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "filled_by_llm": True,
+                                    "value": "",
+                                },
+                            },
+                            "required": ["command"],
+                        },
+                    }
+                ],
+            }
+        }
+
+    def _patch_device(self, monkeypatch, device):
+        from application.agents.tools import remote_device
+
+        monkeypatch.setattr(
+            remote_device.RemoteDeviceTool,
+            "_load_device",
+            lambda self: device,
+        )
+
+    def _patch_sticky(self, monkeypatch, patterns):
+        from application.agents.tools import remote_device
+
+        monkeypatch.setattr(
+            remote_device,
+            "normalize_command",
+            lambda cmd: cmd.split()[0] + " *" if cmd else "",
+        )
+        captured = {"patterns": set(patterns)}
+
+        class _StubRepo:
+            def __init__(self, conn):
+                pass
+
+            def has_pattern(self, device_id, user_id, pattern):
+                return pattern in captured["patterns"]
+
+        monkeypatch.setattr(
+            remote_device, "DeviceAutoApprovePatternsRepository", _StubRepo
+        )
+
+        class _StubConn:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        monkeypatch.setattr(remote_device, "db_readonly", lambda: _StubConn())
+
+    def test_headless_allowlisted_denylisted_command_denied(self, monkeypatch):
+        """Device allowlisted, but ``rm -rf /`` is a forced prompt -> denied."""
+        executor = ToolExecutor(
+            user="alice", headless=True, tool_allowlist={"rd0"}
+        )
+        self._patch_device(
+            monkeypatch,
+            {"id": "dev_abc", "approval_mode": "full", "status": "active"},
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="rm -rf /")
+        result = executor.check_pause(tools_dict, call, "OpenAILLM")
+        assert result is not None
+        assert result["pause_type"] == "headless_denied"
+        assert result["error_type"] == "tool_not_allowed"
+
+    def test_headless_allowlisted_normal_command_executes(self, monkeypatch):
+        """Device allowlisted + a normal command in ``full`` -> executes."""
+        executor = ToolExecutor(
+            user="alice", headless=True, tool_allowlist={"rd0"}
+        )
+        self._patch_device(
+            monkeypatch,
+            {"id": "dev_abc", "approval_mode": "full", "status": "active"},
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="whoami")
+        assert executor.check_pause(tools_dict, call, "OpenAILLM") is None
+
+    def test_headless_not_allowlisted_denied(self, monkeypatch):
+        """Without the allowlist, an ask-mode command is denied headless."""
+        executor = ToolExecutor(user="alice", headless=True, tool_allowlist=set())
+        self._patch_device(
+            monkeypatch,
+            {"id": "dev_abc", "approval_mode": "ask", "status": "active"},
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="ls -la /tmp")
+        result = executor.check_pause(tools_dict, call, "OpenAILLM")
+        assert result is not None
+        assert result["pause_type"] == "headless_denied"
+
+    def test_headless_allowlisted_ask_mode_normal_executes(self, monkeypatch):
+        """ask-mode + allowlisted + non-denylisted -> bypass allowed."""
+        executor = ToolExecutor(
+            user="alice", headless=True, tool_allowlist={"rd0"}
+        )
+        self._patch_device(
+            monkeypatch,
+            {"id": "dev_abc", "approval_mode": "ask", "status": "active"},
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="ls -la /tmp")
+        # Not denylist-forced, so the allowlist bypass applies.
+        assert executor.check_pause(tools_dict, call, "OpenAILLM") is None
 
 
 @pytest.mark.unit
@@ -414,6 +992,8 @@ class TestToolExecutorExecute:
         assert "completed" in statuses
 
     def test_get_truncated_tool_calls(self):
+        from application.agents.tool_executor import PERSISTED_RESULT_MAX_LEN
+
         executor = ToolExecutor()
         executor.tool_calls = [
             {
@@ -422,13 +1002,49 @@ class TestToolExecutorExecute:
                 "action_name": "act",
                 "arguments": {},
                 "result": "A" * 100,
+            },
+            {
+                "tool_name": "test",
+                "call_id": "2",
+                "action_name": "act",
+                "arguments": {},
+                "result": "B" * (PERSISTED_RESULT_MAX_LEN + 100),
+            },
+        ]
+
+        truncated = executor.get_truncated_tool_calls()
+        assert len(truncated) == 2
+        # Short results persist verbatim so stored errors stay diagnosable.
+        assert truncated[0]["result"] == "A" * 100
+        assert truncated[0]["status"] == "completed"
+        # Oversize results are bounded for the message JSONB copy.
+        assert len(truncated[1]["result"]) == PERSISTED_RESULT_MAX_LEN + 3
+        assert truncated[1]["result"].endswith("...")
+
+    def test_get_truncated_tool_calls_preserves_error_status(self):
+        executor = ToolExecutor()
+        executor.tool_calls = [
+            {
+                "tool_name": "test",
+                "call_id": "1",
+                "action_name": "act",
+                "arguments": {},
+                "result": "boom",
+                "status": "error",
             }
         ]
 
         truncated = executor.get_truncated_tool_calls()
-        assert len(truncated) == 1
-        assert len(truncated[0]["result"]) <= 53
-        assert truncated[0]["status"] == "completed"
+        assert truncated[0]["status"] == "error"
+
+    def test_result_status_reflects_in_band_tool_errors(self):
+        from application.agents.tool_executor import result_status
+
+        assert result_status({"status": "error", "error": "invalid spec"}) == "error"
+        assert result_status({"error": "input artifact A9 not found"}) == "error"
+        assert result_status({"status": "ok", "artifact_id": "x"}) == "completed"
+        assert result_status({"error": None, "status": "ok"}) == "completed"
+        assert result_status("plain text result") == "completed"
 
     def test_tool_caching(self, mock_tool_manager, monkeypatch):
         executor = ToolExecutor(user="test_user")
@@ -636,6 +1252,37 @@ class TestToolExecutorExecute:
         tool_config = call_kwargs[1]["tool_config"] if "tool_config" in call_kwargs[1] else call_kwargs[0][1]
         assert "api_key" in tool_config.get("auth_credentials", tool_config)
 
+    def test_get_or_load_tool_decrypts_with_tool_owner(self, monkeypatch):
+        """Team-shared tool: credentials decrypt with the OWNER's sub, not the
+        invoker's (teams OQ2 — delegation). The tool row carries user_id=owner
+        while the executor runs as a different member."""
+        executor = ToolExecutor(user="member_bob")
+
+        mock_tm = Mock()
+        mock_tm.load_tool.return_value = Mock()
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolManager", lambda config: mock_tm
+        )
+        captured = {}
+
+        def _fake_decrypt(creds, user):
+            captured["user"] = user
+            return {"api_key": "owner_secret"}
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.decrypt_credentials", _fake_decrypt
+        )
+
+        tool_data = {
+            "id": "00000000-0000-0000-0000-000000000009",
+            "name": "custom_tool",
+            "user_id": "owner_alice",
+            "config": {"encrypted_credentials": "blob"},
+        }
+        executor._get_or_load_tool(tool_data, "t9", "act")
+        # Decrypted under the tool owner, NOT the invoking member.
+        assert captured["user"] == "owner_alice"
+
     def test_get_or_load_tool_mcp_tool(self, monkeypatch):
         """Cover lines 281-283: mcp_tool path sets query_mode."""
         executor = ToolExecutor(user="test_user")
@@ -750,3 +1397,19 @@ class TestToolExecutorAdditionalCoverage:
         tool_config = call_args[1].get("tool_config", call_args[0][1] if len(call_args[0]) > 1 else {})
         assert tool_config.get("body_content_type") == "application/json"
         assert tool_config.get("body_encoding_rules") == {"encode_as": "json"}
+
+
+@pytest.mark.unit
+class TestGetEnabledToolNames:
+    def test_returns_names_from_get_tools(self, monkeypatch):
+        executor = ToolExecutor()
+        monkeypatch.setattr(
+            executor,
+            "get_tools",
+            lambda: {
+                "id1": {"name": "code_executor"},
+                "id2": {"name": "search"},
+                "id3": {},  # nameless rows are skipped
+            },
+        )
+        assert executor.get_enabled_tool_names() == {"code_executor", "search"}

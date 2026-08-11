@@ -3,14 +3,29 @@
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
+from application.agents.default_tools import (
+    builtin_agent_tools_for_management,
+    BUILTIN_AGENT_TOOLS,
+    default_tool_name_for_id,
+    default_tools_for_management,
+    is_builtin_agent_tool_id,
+    is_default_tool_id,
+    is_synthesized_tool_id,
+    WORKFLOW_ONLY_BUILTINS,
+)
 from application.agents.tools.spec_parser import parse_spec
 from application.agents.tools.tool_manager import ToolManager
 from application.api import api
+from application.api.user.artifacts.authz import Principal, authorize_artifact
+from application.api.user.team_sharing import effective_write_owner, visible_with_access
 from application.core.url_validation import SSRFError, validate_url
 from application.security.encryption import decrypt_credentials, encrypt_credentials
+from application.storage.db.base_repository import looks_like_uuid
+from application.storage.db.repositories.artifacts import ArtifactsRepository
 from application.storage.db.repositories.notes import NotesRepository
 from application.storage.db.repositories.todos import TodosRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository
+from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields, validate_function_name
 
@@ -207,26 +222,72 @@ class GetTools(Resource):
                 return make_response(jsonify({"success": False}), 401)
             user = decoded_token.get("sub")
             with db_readonly() as conn:
-                rows = UserToolsRepository(conn).list_for_user(user)
+                tools_repo = UserToolsRepository(conn)
+                rows = tools_repo.list_for_user(user)
+                user_doc = UsersRepository(conn).get(user)
+                owned_ids = {str(r["id"]) for r in rows}
+                # Tools shared with the caller's teams. Secrets are stripped
+                # unconditionally below — a grantee never sees the owner's
+                # credentials (they only run with the owner's creds server-side).
+                team_shared = visible_with_access(conn, user, "tool")
+                shared_ids = [tid for tid in team_shared if tid not in owned_ids]
+                shared_rows = tools_repo.list_by_ids(shared_ids)
             user_tools = []
-            for row in rows:
-                tool_copy = _row_to_api(row)
 
+            def _shape_tool(row, *, ownership="user", force_strip_secret=False):
+                tool_copy = _row_to_api(row)
                 config_req = tool_copy.get("configRequirements", {})
                 if not config_req:
                     tool_instance = tool_manager.tools.get(tool_copy.get("name"))
                     if tool_instance:
                         config_req = tool_instance.get_config_requirements()
                         tool_copy["configRequirements"] = config_req
-
                 has_secrets = any(
                     spec.get("secret") for spec in config_req.values()
                 ) if config_req else False
-                if has_secrets and "encrypted_credentials" in tool_copy.get("config", {}):
+                if (has_secrets or force_strip_secret) and "encrypted_credentials" in tool_copy.get(
+                    "config", {}
+                ):
                     tool_copy["config"]["has_encrypted_credentials"] = True
                     tool_copy["config"].pop("encrypted_credentials", None)
+                tool_copy["ownership"] = ownership
+                return tool_copy
 
-                user_tools.append(tool_copy)
+            for row in rows:
+                user_tools.append(_shape_tool(row))
+            for row in shared_rows:
+                shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
+                shaped["team_access"] = team_shared.get(str(row["id"]))
+                user_tools.append(shaped)
+
+            # ``scheduler`` is dual-registered (default chat tool + agent-
+            # selectable builtin) and resolves to the same synthetic uuid5 id.
+            # Surface a single row with both flags so the frontend can show it
+            # in the management page (toggle) and the agent picker.
+            seen_ids: set = set()
+            for default_row in default_tools_for_management(user_doc):
+                default_copy = _row_to_api(default_row)
+                default_copy["default"] = True
+                if default_copy.get("name") in BUILTIN_AGENT_TOOLS:
+                    default_copy["builtin"] = True
+                seen_ids.add(str(default_copy["id"]))
+                user_tools.append(default_copy)
+            # Builtins (e.g. scheduler) hidden from Add-Tool catalog, visible
+            # to the agent picker. Skip ones already added via the default
+            # path — both registries share ``_DEFAULT_TOOL_NAMESPACE``.
+            # ``workflow_only`` builtins (e.g. ``read_document``) carry that
+            # flag so the classic picker can hide them and the workflow node
+            # picker can keep them.
+            for builtin_row in builtin_agent_tools_for_management():
+                builtin_copy = _row_to_api(builtin_row)
+                if str(builtin_copy["id"]) in seen_ids:
+                    continue
+                builtin_copy["builtin"] = True
+                builtin_copy["default"] = False
+                builtin_copy["workflow_only"] = (
+                    builtin_copy.get("name") in WORKFLOW_ONLY_BUILTINS
+                )
+                user_tools.append(builtin_copy)
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -367,6 +428,46 @@ class UpdateTool(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        # Default-tool branch first: a dual-registered tool (e.g. ``scheduler``)
+        # matches BOTH ``is_default_tool_id`` and ``is_builtin_agent_tool_id``.
+        # The toggle in Tools settings is the per-user opt-out for the
+        # agentless default — it must reach the ``set_default_tool_enabled``
+        # path, not the builtin "not editable" reject.
+        if is_default_tool_id(data["id"]):
+            if "status" not in data:
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "Default tools are not editable; "
+                            "only their on/off status can be changed.",
+                        }
+                    ),
+                    400,
+                )
+            tool_name = default_tool_name_for_id(data["id"])
+            try:
+                with db_session() as conn:
+                    UsersRepository(conn).set_default_tool_enabled(
+                        user, tool_name, bool(data["status"])
+                    )
+            except Exception as err:
+                current_app.logger.error(
+                    f"Error updating default tool: {err}", exc_info=True
+                )
+                return make_response(jsonify({"success": False}), 400)
+            return make_response(jsonify({"success": True}), 200)
+        if is_builtin_agent_tool_id(data["id"]):
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Built-in agent tools are not editable; "
+                        "add them to an agent via the agent picker.",
+                    }
+                ),
+                400,
+            )
         try:
             update_data: dict = {}
             for key in ("name", "displayName", "customName", "description", "actions"):
@@ -471,6 +572,17 @@ class UpdateToolConfig(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        if is_synthesized_tool_id(data["id"]):
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Default and built-in tools are config-free "
+                        "and cannot be configured.",
+                    }
+                ),
+                400,
+            )
         try:
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
@@ -550,18 +662,32 @@ class UpdateToolActions(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        if is_synthesized_tool_id(data["id"]):
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Default and built-in tools' actions are not editable.",
+                    }
+                ),
+                400,
+            )
         try:
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
                 tool_doc = repo.get_any(data["id"], user)
-                if not tool_doc:
-                    return make_response(
-                        jsonify({"success": False, "message": "Tool not found"}),
-                        404,
-                    )
-                repo.update(
-                    str(tool_doc["id"]), user, {"actions": data["actions"]},
-                )
+                if tool_doc:
+                    repo.update(str(tool_doc["id"]), user, {"actions": data["actions"]})
+                else:
+                    # Team editor write path (secrets stay owner-only — actions
+                    # carry no credentials, so editing them is safe).
+                    owner = effective_write_owner(conn, "tool", data["id"], user)
+                    if not owner:
+                        return make_response(
+                            jsonify({"success": False, "message": "Tool not found"}),
+                            404,
+                        )
+                    repo.update(data["id"], owner, {"actions": data["actions"]})
         except Exception as err:
             current_app.logger.error(
                 f"Error updating tool actions: {err}", exc_info=True
@@ -595,6 +721,27 @@ class UpdateToolStatus(Resource):
         if missing_fields:
             return missing_fields
         try:
+            # Default branch first so a dual-registered id (e.g. ``scheduler``)
+            # writes the per-user opt-out instead of being rejected as a
+            # not-editable builtin (both predicates match the same uuid5).
+            if is_default_tool_id(data["id"]):
+                tool_name = default_tool_name_for_id(data["id"])
+                with db_session() as conn:
+                    UsersRepository(conn).set_default_tool_enabled(
+                        user, tool_name, bool(data["status"])
+                    )
+                return make_response(jsonify({"success": True}), 200)
+            if is_builtin_agent_tool_id(data["id"]):
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "Built-in agent tools have no per-user "
+                            "toggle; add them to an agent via the agent picker.",
+                        }
+                    ),
+                    400,
+                )
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
                 tool_doc = repo.get_any(data["id"], user)
@@ -633,6 +780,16 @@ class DeleteTool(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        if is_synthesized_tool_id(data["id"]):
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Built-in tools cannot be deleted; disable them instead.",
+                    }
+                ),
+                400,
+            )
         try:
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
@@ -782,6 +939,46 @@ class GetArtifact(Resource):
                             "total_count": len(items),
                             "open_count": open_count,
                             "completed_count": completed_count,
+                        },
+                    }
+                    return make_response(
+                        jsonify({"success": True, "artifact": artifact}), 200
+                    )
+
+                # Generalized document/file artifacts live in the
+                # ``artifacts`` store, authorized by their parent (not user_id).
+                # Shape-gate the UUID lookup so a non-UUID id (legacy note/todo
+                # ObjectId already handled above) never reaches the CAST that
+                # would poison this read-only transaction.
+                artifact_doc = None
+                if looks_like_uuid(artifact_id):
+                    artifacts_repo = ArtifactsRepository(conn)
+                    artifact_doc = artifacts_repo.get_artifact(artifact_id)
+                if artifact_doc and authorize_artifact(
+                    conn, artifact_doc, Principal(user_id=user_id)
+                ):
+                    current = artifacts_repo.get_version(
+                        artifact_id, artifact_doc.get("current_version")
+                    )
+                    artifact = {
+                        "artifact_type": (
+                            "document"
+                            if artifact_doc.get("kind") != "file"
+                            else "file"
+                        ),
+                        "data": {
+                            "id": str(artifact_doc.get("id")),
+                            "kind": artifact_doc.get("kind"),
+                            "title": artifact_doc.get("title"),
+                            "current_version": artifact_doc.get("current_version"),
+                            "mime_type": current.get("mime_type") if current else None,
+                            "filename": current.get("filename") if current else None,
+                            "size": current.get("size") if current else None,
+                            "download_url": (
+                                f"/api/artifacts/{artifact_id}/download"
+                                if current and current.get("storage_path")
+                                else None
+                            ),
                         },
                     }
                     return make_response(

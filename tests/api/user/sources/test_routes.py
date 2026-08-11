@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
+from sqlalchemy import text
 
 
 @pytest.fixture
@@ -256,8 +257,38 @@ class TestPaginatedSources:
         for key in (
             "id", "name", "date", "model", "location", "tokens",
             "retriever", "syncFrequency", "provider", "isNested", "type",
+            "ingestStatus",
         ):
             assert key in row
+
+    def test_exposes_stalled_ingest_status(self, app, pg_conn):
+        """A source whose ingest the reconciler escalated to 'stalled'
+        surfaces ingestStatus='failed' so the UI can badge it.
+        """
+        from application.api.user.sources.routes import PaginatedSources
+
+        user = "u-ingest-status"
+        src = _seed_source(pg_conn, user, name="stalled-doc", type="file")
+        pg_conn.execute(
+            text(
+                """
+                INSERT INTO ingest_chunk_progress (
+                    source_id, total_chunks, embedded_chunks, last_index,
+                    status
+                )
+                VALUES (CAST(:sid AS uuid), 907, 9, 8, 'stalled')
+                """
+            ),
+            {"sid": str(src["id"])},
+        )
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=1&rows=10"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        row = response.json["paginated"][0]
+        assert row["ingestStatus"] == "failed"
 
 
 class TestDeleteOldIndexes:
@@ -481,7 +512,9 @@ class TestSyncSource:
             response = SyncSource().post()
         assert response.status_code == 400
 
-    def test_returns_404_missing_source(self, app, pg_conn):
+    def test_returns_403_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team editor grant resolves to None, which the
+        # owner-or-editor gate answers as 403 "Source not accessible".
         from application.api.user.sources.routes import SyncSource
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -492,7 +525,7 @@ class TestSyncSource:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = SyncSource().post()
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     def test_returns_400_for_connector_type(self, app, pg_conn):
         from application.api.user.sources.routes import SyncSource
@@ -553,6 +586,35 @@ class TestSyncSource:
         assert response.status_code == 200
         assert response.json["task_id"] == "task-123"
 
+    def test_normalizes_dict_remote_data_before_dispatch(self, app, pg_conn):
+        """The route must hand the sync task the normalized URL string."""
+        from application.api.user.sources.routes import SyncSource
+
+        user = "u-normalize"
+        src = _seed_source(
+            pg_conn, user, name="crawl-src", type="crawler",
+            remote_data=json.dumps(
+                {"url": "https://example.com", "provider": "crawler"}
+            ),
+        )
+
+        fake_task = MagicMock(id="task-norm")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.sync_source.delay",
+            return_value=fake_task,
+        ) as mock_delay, app.test_request_context(
+            "/api/sync_source",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SyncSource().post()
+
+        assert response.status_code == 200
+        assert mock_delay.call_args.kwargs["source_data"] == "https://example.com"
+        assert mock_delay.call_args.kwargs["loader"] == "crawler"
+
     def test_sync_task_raises_returns_400(self, app, pg_conn):
         from application.api.user.sources.routes import SyncSource
 
@@ -573,6 +635,189 @@ class TestSyncSource:
             from flask import request
             request.decoded_token = {"sub": user}
             response = SyncSource().post()
+        assert response.status_code == 400
+
+
+class TestReingestSource:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import ReingestSource
+
+        with app.test_request_context(
+            "/api/sources/reingest", method="POST", json={"source_id": "x"}
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = ReingestSource().post()
+        assert response.status_code == 401
+
+    def test_returns_400_missing_id(self, app):
+        from application.api.user.sources.routes import ReingestSource
+
+        with app.test_request_context(
+            "/api/sources/reingest", method="POST", json={}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = ReingestSource().post()
+        assert response.status_code == 400
+
+    def test_returns_403_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team editor grant resolves to None, which the
+        # owner-or-editor gate answers as 403 "Source not accessible".
+        from application.api.user.sources.routes import ReingestSource
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": "00000000-0000-0000-0000-000000000000"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = ReingestSource().post()
+        assert response.status_code == 403
+
+    def test_triggers_reingest_task(self, app, pg_conn):
+        from application.api.user.sources.routes import ReingestSource
+
+        user = "u-reingest"
+        src = _seed_source(pg_conn, user, name="stalled-src", type="file")
+
+        fake_task = MagicMock(id="reingest-task-1")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reingest_source_task.delay",
+            return_value=fake_task,
+        ) as mock_delay, app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ReingestSource().post()
+
+        assert response.status_code == 200
+        assert response.json["task_id"] == "reingest-task-1"
+        assert mock_delay.call_args.kwargs["source_id"] == str(src["id"])
+        assert mock_delay.call_args.kwargs["user"] == user
+        # Scoped idempotency key engages the task's lease so repeated
+        # clicks collapse onto one reingest instead of racing.
+        assert mock_delay.call_args.kwargs["idempotency_key"] == (
+            f"reingest-source:{user}:{src['id']}"
+        )
+
+    def test_team_editor_reingests_as_owner(self, app, pg_conn):
+        """A team editor (not the owner) can reingest a shared source; the
+        task dispatches AS the real owner so the owner-scoped pipeline and
+        the owner-agnostic vector partition stay consistent.
+        """
+        import uuid
+
+        from application.api.user.sources.routes import ReingestSource
+        from application.storage.db.repositories.team_members import (
+            TeamMembersRepository,
+        )
+        from application.storage.db.repositories.team_resource_grants import (
+            TeamResourceGrantsRepository,
+        )
+        from application.storage.db.repositories.teams import TeamsRepository
+
+        owner = "alice-reingest"
+        editor = "bob-reingest"
+        src = _seed_source(pg_conn, owner, name="shared-src", type="file")
+        sid = str(src["id"])
+        team = TeamsRepository(pg_conn).create(
+            "Acme", f"acme-{uuid.uuid4().hex[:8]}", owner
+        )
+        TeamMembersRepository(pg_conn).add_member(
+            team["id"], editor, role="team_member"
+        )
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", sid, owner_id=owner, granted_by=owner,
+            access_level="editor",
+        )
+
+        fake_task = MagicMock(id="reingest-task-editor")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reingest_source_task.delay",
+            return_value=fake_task,
+        ) as mock_delay, app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": sid},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": editor}
+            response = ReingestSource().post()
+
+        assert response.status_code == 200
+        assert mock_delay.call_args.kwargs["source_id"] == sid
+        # Dispatched AS the owner, not the editor caller.
+        assert mock_delay.call_args.kwargs["user"] == owner
+        assert mock_delay.call_args.kwargs["idempotency_key"] == (
+            f"reingest-source:{owner}:{sid}"
+        )
+
+    def test_clears_stalled_ingest_progress_row(self, app, pg_conn):
+        """Reingest drops the stale chunk-progress row so the sources
+        list stops deriving a 'failed' ingest status for the source.
+        """
+        from application.api.user.sources.routes import ReingestSource
+
+        user = "u-reingest-clear"
+        src = _seed_source(pg_conn, user, name="stalled-doc", type="file")
+        pg_conn.execute(
+            text(
+                """
+                INSERT INTO ingest_chunk_progress (
+                    source_id, total_chunks, embedded_chunks, last_index,
+                    status
+                )
+                VALUES (CAST(:sid AS uuid), 100, 9, 8, 'stalled')
+                """
+            ),
+            {"sid": str(src["id"])},
+        )
+
+        fake_task = MagicMock(id="reingest-task-2")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reingest_source_task.delay",
+            return_value=fake_task,
+        ), app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ReingestSource().post()
+
+        assert response.status_code == 200
+        remaining = pg_conn.execute(
+            text(
+                "SELECT count(*) FROM ingest_chunk_progress "
+                "WHERE source_id = CAST(:sid AS uuid)"
+            ),
+            {"sid": str(src["id"])},
+        ).scalar()
+        assert remaining == 0
+
+    def test_reingest_task_raises_returns_400(self, app, pg_conn):
+        from application.api.user.sources.routes import ReingestSource
+
+        user = "u-reingest-fail"
+        src = _seed_source(pg_conn, user, name="fail-src", type="file")
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reingest_source_task.delay",
+            side_effect=RuntimeError("boom"),
+        ), app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ReingestSource().post()
         assert response.status_code == 400
 
 
@@ -627,3 +872,265 @@ class TestDirectoryStructure:
         data = response.json
         assert data["provider"] == "gdrive"
         assert data["base_path"] == "/data/nested"
+
+
+class TestSourceConfigResource:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import SourceConfigResource
+
+        with app.test_request_context(
+            "/api/sources/x/config", method="PATCH", json={}
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = SourceConfigResource().patch("x")
+        assert response.status_code == 401
+
+    def test_invalid_config_rejected(self, app, pg_conn):
+        # Strict-on-write: an unknown field fails validation → 400.
+        from application.api.user.sources.routes import SourceConfigResource
+
+        user = "u-cfg-bad"
+        src = _seed_source(pg_conn, user, name="cfg-src", type="file")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{src['id']}/config",
+            method="PATCH",
+            json={"retrieval": {"bogus_field": 1}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(str(src["id"]))
+        assert response.status_code == 400
+
+    def test_owner_updates_retrieval_no_reingest(self, app, pg_conn):
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-owner"
+        src = _seed_source(pg_conn, user, name="cfg-live", type="file")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{src['id']}/config",
+            method="PATCH",
+            json={"retrieval": {"chunks": 7, "rephrase_query": False}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(str(src["id"]))
+
+        assert response.status_code == 200
+        # Retrieval-only change takes effect live, no re-ingest needed.
+        assert response.json["requires_reingest"] is False
+        got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)
+        assert got["config"]["retrieval"]["chunks"] == 7
+        assert got["config"]["retrieval"]["rephrase_query"] is False
+
+    def test_chunking_change_requires_reingest(self, app, pg_conn):
+        from application.api.user.sources.routes import SourceConfigResource
+
+        user = "u-cfg-chunk"
+        src = _seed_source(pg_conn, user, name="cfg-chunk", type="file")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{src['id']}/config",
+            method="PATCH",
+            json={"chunking": {"max_tokens": 800}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(str(src["id"]))
+
+        assert response.status_code == 200
+        assert response.json["requires_reingest"] is True
+
+    def test_viewer_rejected(self, app, pg_conn):
+        # A team VIEWER (not editor) cannot edit config → 403.
+        import uuid
+
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.repositories.team_members import (
+            TeamMembersRepository,
+        )
+        from application.storage.db.repositories.team_resource_grants import (
+            TeamResourceGrantsRepository,
+        )
+        from application.storage.db.repositories.teams import TeamsRepository
+
+        owner = "alice-cfg"
+        viewer = "bob-cfg-viewer"
+        src = _seed_source(pg_conn, owner, name="shared-cfg", type="file")
+        sid = str(src["id"])
+        team = TeamsRepository(pg_conn).create(
+            "AcmeCfg", f"acmecfg-{uuid.uuid4().hex[:8]}", owner
+        )
+        TeamMembersRepository(pg_conn).add_member(
+            team["id"], viewer, role="team_member"
+        )
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", sid, owner_id=owner, granted_by=owner,
+            access_level="viewer",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"retrieval": {"chunks": 5}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": viewer}
+            response = SourceConfigResource().patch(sid)
+        assert response.status_code == 403
+        # The write must NOT have landed.
+        got = SourcesRepository(pg_conn).get_any(sid, owner)
+        assert got["config"] == {}
+
+    def test_team_editor_writes_under_owner(self, app, pg_conn):
+        # A team EDITOR can edit; the write lands under the OWNER's id.
+        import uuid
+
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.repositories.team_members import (
+            TeamMembersRepository,
+        )
+        from application.storage.db.repositories.team_resource_grants import (
+            TeamResourceGrantsRepository,
+        )
+        from application.storage.db.repositories.teams import TeamsRepository
+
+        owner = "alice-cfg-edit"
+        editor = "bob-cfg-editor"
+        src = _seed_source(pg_conn, owner, name="shared-cfg-edit", type="file")
+        sid = str(src["id"])
+        team = TeamsRepository(pg_conn).create(
+            "AcmeEdit", f"acmeedit-{uuid.uuid4().hex[:8]}", owner
+        )
+        TeamMembersRepository(pg_conn).add_member(
+            team["id"], editor, role="team_member"
+        )
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", sid, owner_id=owner, granted_by=owner,
+            access_level="editor",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"retrieval": {"chunks": 9}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": editor}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 200
+        # The write landed under the owner id (not the editor's), so the
+        # owner-scoped read sees it.
+        got = SourcesRepository(pg_conn).get_any(sid, owner)
+        assert got["config"]["retrieval"]["chunks"] == 9
+
+    def test_kind_flip_to_wiki_rejected(self, app, pg_conn):
+        # Flipping kind to wiki must route through /wiki/convert, not config.
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-wiki-flip"
+        src = _seed_source(pg_conn, user, name="cfg-wiki", type="file")
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"kind": "wiki"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 400
+        # The kind must NOT have silently flipped.
+        from application.storage.db.source_config import SourceConfig
+
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert SourceConfig.parse(got.get("config")).kind != "wiki"
+
+    def test_other_edits_work_on_wiki_source(self, app, pg_conn):
+        # A wiki source can still edit retrieval (kind stays wiki, no reject).
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-wiki-edit"
+        src = _seed_source(
+            pg_conn, user, name="wiki-cfg", type="wiki",
+            config={"kind": "wiki"},
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"kind": "wiki", "retrieval": {"chunks": 4}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 200
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert got["config"]["retrieval"]["chunks"] == 4
+
+    def test_partial_edit_preserves_wiki_kind(self, app, pg_conn):
+        # A partial edit that OMITS kind must not demote a wiki to classic
+        # (SourceConfig.kind defaults to "classic" on a full-replace write).
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.source_config import SourceConfig
+
+        user = "u-cfg-wiki-partial"
+        src = _seed_source(
+            pg_conn, user, name="wiki-partial", type="wiki",
+            config={"kind": "wiki"},
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"retrieval": {"chunks": 6}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 200
+        assert response.json["config"]["kind"] == "wiki"
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert SourceConfig.parse(got.get("config")).kind == "wiki"
+        assert got["config"]["retrieval"]["chunks"] == 6
+
+    def test_explicit_kind_demotion_from_wiki_rejected(self, app, pg_conn):
+        # Demoting wiki -> classic via config is rejected; use /wiki/convert.
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.source_config import SourceConfig
+
+        user = "u-cfg-wiki-demote"
+        src = _seed_source(
+            pg_conn, user, name="wiki-demote", type="wiki",
+            config={"kind": "wiki"},
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"kind": "classic"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 400
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert SourceConfig.parse(got.get("config")).kind == "wiki"

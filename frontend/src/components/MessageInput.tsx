@@ -1,20 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
-import { LoaderCircle, Mic, Square } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
-import AlertIcon from '../assets/alert.svg';
-import ClipIcon from '../assets/clip.svg';
 import DragFileUpload from '../assets/DragFileUpload.svg';
-import ExitIcon from '../assets/exit.svg';
-import SendArrowIcon from './SendArrowIcon';
+import SendArrow from '../assets/send.svg?react';
 import SourceIcon from '../assets/source.svg';
-import DocumentationDark from '../assets/documentation-dark.svg';
-import ToolIcon from '../assets/tool.svg';
 import {
   addAttachment,
   removeAttachment,
@@ -26,24 +26,35 @@ import {
 import { ActiveState, Doc } from '../models/misc';
 import {
   selectSelectedDocs,
+  selectSourceDocs,
   selectToken,
+  setSelectedDocs,
 } from '../preferences/preferenceSlice';
+import type { RootState } from '../store';
 import Upload from '../upload/Upload';
-import { getOS, isTouchDevice } from '../utils/browserUtils';
-import SourcesPopup from './SourcesPopup';
-import ToolsPopup from './ToolsPopup';
+import { isTouchDevice } from '../utils/browserUtils';
+import { Button } from './ui/button';
+import { type MultiSelectPopoverItem } from './MultiSelectPopover';
+import ToolIcon from './ToolIcon';
+import {
+  AttachFileButton,
+  AttachmentChipList,
+  MicButton,
+  type RecordingState,
+  SourcesTrigger,
+  ToolsTrigger,
+} from './message-input';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
   FILE_UPLOAD_ACCEPT,
-  FILE_UPLOAD_ACCEPT_ATTR,
 } from '../constants/fileUpload';
 import { getEnv } from '@/utils/envUtils';
+import { UserToolType } from '../settings/types';
+import { isChatToolVisible } from '../utils/toolUtils';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
-
-type RecordingState = 'idle' | 'recording' | 'transcribing' | 'error';
 
 const LIVE_TRANSCRIPTION_TIMESLICE_MS = 1000;
 const LIVE_CAPTURE_SAMPLE_RATE = 16000;
@@ -289,6 +300,10 @@ type MessageInputProps = {
   showSourceButton?: boolean;
   showToolButton?: boolean;
   autoFocus?: boolean;
+  // Opt-in: enable send with empty text when there are completed
+  // attachments (used by doc-driven workflow runs). Normal chat leaves this
+  // unset, preserving the text-required behavior.
+  allowSendWithoutText?: boolean;
 };
 
 export default function MessageInput({
@@ -297,15 +312,16 @@ export default function MessageInput({
   showSourceButton = true,
   showToolButton = true,
   autoFocus = true,
+  allowSendWithoutText = false,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voiceFileInputRef = useRef<HTMLInputElement>(null);
-  const sourceButtonRef = useRef<HTMLButtonElement>(null);
-  const toolButtonRef = useRef<HTMLButtonElement>(null);
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
+  const [userTools, setUserTools] = useState<UserToolType[]>([]);
+  const [toolsLoading, setToolsLoading] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
@@ -313,10 +329,12 @@ export default function MessageInput({
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
   const selectedDocs = useSelector(selectSelectedDocs);
+  const sourceDocs = useSelector(selectSourceDocs);
   const token = useSelector(selectToken);
   const attachments = useSelector(selectAttachments);
 
   const dispatch = useDispatch();
+  const store = useStore<RootState>();
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -336,7 +354,6 @@ export default function MessageInput({
   const voiceBaseValueRef = useRef('');
   const liveTranscriptRef = useRef('');
 
-  const browserOS = getOS();
   const isTouch = isTouchDevice();
 
   const stopMediaStream = () => {
@@ -386,30 +403,91 @@ export default function MessageInput({
   };
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        ((browserOS === 'win' || browserOS === 'linux') &&
-          event.ctrlKey &&
-          event.key === 'k') ||
-        (browserOS === 'mac' && event.metaKey && event.key === 'k')
-      ) {
-        event.preventDefault();
-        setIsSourcesPopupOpen((s) => !s);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [browserOS]);
-
-  useEffect(() => {
     return () => {
       stopAudioProcessing();
       resetLiveTranscriptionState();
     };
   }, []);
+
+  // Recover the race where attachment.* SSE arrives before the upload
+  // XHR's onload sets ``attachmentId``: walk recentEvents and watchdog
+  // the row so it can't stay stuck on 'processing'. Mirrors
+  // Upload.tsx's ``trackTraining``.
+  const trackAttachment = useCallback(
+    (clientId: string, attachmentId: string) => {
+      let handled = false;
+
+      const check = () => {
+        const state = store.getState();
+        const row = state.upload.attachments.find((a) => a.id === clientId);
+        if (!row) return true; // removed by user; stop tracking
+        if (row.status === 'completed' || row.status === 'failed') {
+          handled = true;
+          return true;
+        }
+        for (const event of state.notifications.recentEvents) {
+          if (event.scope?.id !== attachmentId) continue;
+          if (event.type === 'attachment.completed') {
+            const payload = (event.payload || {}) as Record<string, unknown>;
+            const tokenCount = Number(payload.token_count);
+            handled = true;
+            dispatch(
+              updateAttachment({
+                id: clientId,
+                updates: {
+                  status: 'completed',
+                  progress: 100,
+                  ...(Number.isFinite(tokenCount)
+                    ? { token_count: tokenCount }
+                    : {}),
+                },
+              }),
+            );
+            return true;
+          }
+          if (event.type === 'attachment.failed') {
+            handled = true;
+            dispatch(
+              updateAttachment({
+                id: clientId,
+                updates: { status: 'failed' },
+              }),
+            );
+            return true;
+          }
+        }
+        return false;
+      };
+
+      if (check()) return;
+      const MAX_WAIT_MS = 5 * 60_000;
+      let unsubscribe: (() => void) | null = null;
+      const timer = window.setTimeout(() => {
+        unsubscribe?.();
+        if (!handled) {
+          handled = true;
+          console.warn(
+            'trackAttachment: timed out waiting for terminal SSE',
+            clientId,
+            attachmentId,
+          );
+          dispatch(
+            updateAttachment({
+              id: clientId,
+              updates: { status: 'failed' },
+            }),
+          );
+        }
+      }, MAX_WAIT_MS);
+      unsubscribe = store.subscribe(() => {
+        if (check()) {
+          window.clearTimeout(timer);
+          unsubscribe?.();
+        }
+      });
+    },
+    [dispatch, store],
+  );
 
   const uploadFiles = useCallback(
     (files: File[]) => {
@@ -511,11 +589,19 @@ export default function MessageInput({
                           id: uiId,
                           updates: {
                             taskId: task.task_id,
+                            // Stash the server's attachment id so SSE
+                            // ``attachment.*`` events can match this
+                            // row by ``scope.id`` and drive the
+                            // per-attachment push-fresh poll gate.
+                            attachmentId: task.attachment_id,
                             status: 'processing',
                             progress: 10,
                           },
                         }),
                       );
+                      if (task.attachment_id) {
+                        trackAttachment(uiId, task.attachment_id);
+                      }
                       return;
                     }
 
@@ -546,11 +632,15 @@ export default function MessageInput({
                           id: uiId,
                           updates: {
                             taskId: t.task_id,
+                            attachmentId: t.attachment_id,
                             status: 'processing',
                             progress: 10,
                           },
                         }),
                       );
+                      if (t.attachment_id) {
+                        trackAttachment(uiId, t.attachment_id);
+                      }
                     } else {
                       dispatch(
                         updateAttachment({
@@ -584,11 +674,15 @@ export default function MessageInput({
                         id: uiId,
                         updates: {
                           taskId: response.task_id,
+                          attachmentId: response.attachment_id,
                           status: 'processing',
                           progress: 10,
                         },
                       }),
                     );
+                    if (response.attachment_id) {
+                      trackAttachment(uiId, response.attachment_id);
+                    }
                   }
                 } else {
                   console.warn(
@@ -715,11 +809,15 @@ export default function MessageInput({
                     id: uniqueId,
                     updates: {
                       taskId: response.task_id,
+                      attachmentId: response.attachment_id,
                       status: 'processing',
                       progress: 10,
                     },
                   }),
                 );
+                if (response.attachment_id) {
+                  trackAttachment(uniqueId, response.attachment_id);
+                }
               } else {
                 // If backend returned tasks[] for single-file, handle gracefully:
                 if (
@@ -731,11 +829,15 @@ export default function MessageInput({
                       id: uniqueId,
                       updates: {
                         taskId: response.tasks[0].task_id,
+                        attachmentId: response.tasks[0].attachment_id,
                         status: 'processing',
                         progress: 10,
                       },
                     }),
                   );
+                  if (response.tasks[0].attachment_id) {
+                    trackAttachment(uniqueId, response.tasks[0].attachment_id);
+                  }
                 } else {
                   dispatch(
                     updateAttachment({
@@ -782,7 +884,7 @@ export default function MessageInput({
         xhr.send(formData);
       });
     },
-    [dispatch, token],
+    [dispatch, token, trackAttachment],
   );
 
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -806,6 +908,11 @@ export default function MessageInput({
     onDrop,
     noClick: true,
     noKeyboard: true,
+    // The textarea below owns paste-to-attach via handlePaste. react-dropzone
+    // added its own paste handling in v19.2 (on by default), which fires on the
+    // root for pastes into any focused descendant - so both would upload the
+    // same file. Leave paste to handlePaste.
+    noPaste: true,
     multiple: true,
     onDragEnter: () => {
       setHandleDragActive(true);
@@ -817,74 +924,14 @@ export default function MessageInput({
     accept: FILE_UPLOAD_ACCEPT,
   });
 
-  useEffect(() => {
-    const checkTaskStatus = () => {
-      const processingAttachments = attachments.filter(
-        (att) => att.status === 'processing' && att.taskId,
-      );
-
-      processingAttachments.forEach((attachment) => {
-        userService
-          .getTaskStatus(attachment.taskId!, null)
-          .then((data) => data.json())
-          .then((data) => {
-            if (data.status === 'SUCCESS') {
-              dispatch(
-                updateAttachment({
-                  id: attachment.id,
-                  updates: {
-                    status: 'completed',
-                    progress: 100,
-                    id: data.result?.attachment_id,
-                    token_count: data.result?.token_count,
-                  },
-                }),
-              );
-            } else if (data.status === 'FAILURE') {
-              dispatch(
-                updateAttachment({
-                  id: attachment.id,
-                  updates: { status: 'failed' },
-                }),
-              );
-            } else if (data.status === 'PROGRESS' && data.result?.current) {
-              dispatch(
-                updateAttachment({
-                  id: attachment.id,
-                  updates: { progress: data.result.current },
-                }),
-              );
-            }
-          })
-          .catch(() => {
-            dispatch(
-              updateAttachment({
-                id: attachment.id,
-                updates: { status: 'failed' },
-              }),
-            );
-          });
-      });
-    };
-
-    const interval = setInterval(() => {
-      if (attachments.some((att) => att.status === 'processing')) {
-        checkTaskStatus();
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [attachments, dispatch]);
-
   const handleInput = useCallback(() => {
-    if (inputRef.current) {
-      if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
-      else inputRef.current.style.height = '64px';
-      inputRef.current.style.height = `${Math.min(
-        inputRef.current.scrollHeight,
-        96,
-      )}px`;
-    }
+    if (!inputRef.current) return;
+    if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
+    else inputRef.current.style.height = '64px';
+    inputRef.current.style.height = `${Math.min(
+      inputRef.current.scrollHeight,
+      Math.round(window.innerHeight * 0.4),
+    )}px`;
   }, []);
 
   const buildVoiceDraftValue = (baseText: string, transcript: string) => {
@@ -908,9 +955,6 @@ export default function MessageInput({
     setValue(
       buildVoiceDraftValue(voiceBaseValueRef.current, normalizedTranscript),
     );
-    setTimeout(() => {
-      handleInput();
-    }, 0);
   };
 
   const promptVoiceFileFallback = (message: string) => {
@@ -1296,20 +1340,23 @@ export default function MessageInput({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     handleInput();
+  }, [value, handleInput]);
+
+  useEffect(() => {
+    window.addEventListener('resize', handleInput);
+    return () => window.removeEventListener('resize', handleInput);
   }, [handleInput]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
-    handleInput();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
-      handleInput();
     }
   };
 
@@ -1351,17 +1398,106 @@ export default function MessageInput({
   };
 
   const handlePostDocumentSelect = (_docs: Doc[] | null) => {
-    // SourcesPopup updates Redux selection directly; this preserves the prop contract.
+    // Hook point for downstream side-effects after a source is toggled.
     void _docs;
   };
 
+  // Stable id for matching selected sources: prefer ``id``, fall back to ``date``.
+  const sourceItemId = (doc: Doc): string => doc.id || doc.date;
+
+  const sourceItems: MultiSelectPopoverItem[] = (sourceDocs || []).map(
+    (doc) => ({
+      id: sourceItemId(doc),
+      label: doc.name,
+      icon: SourceIcon,
+    }),
+  );
+
+  const selectedSourceIds = (
+    selectedDocs && Array.isArray(selectedDocs) ? selectedDocs : []
+  ).map((doc) => sourceItemId(doc));
+
+  const handleToggleSource = (id: string) => {
+    if (!sourceDocs) return;
+    const current = Array.isArray(selectedDocs) ? selectedDocs : [];
+    const matched = current.find((doc) => sourceItemId(doc) === id);
+    let updated: Doc[];
+    if (matched) {
+      updated = current.filter((doc) => sourceItemId(doc) !== id);
+    } else {
+      const incoming = sourceDocs.find((doc) => sourceItemId(doc) === id);
+      if (!incoming) return;
+      updated = [...current, incoming];
+    }
+    dispatch(setSelectedDocs(updated.length > 0 ? updated : []));
+    handlePostDocumentSelect(updated.length > 0 ? updated : null);
+  };
+
+  const fetchUserTools = useCallback(() => {
+    setToolsLoading(true);
+    userService
+      .getUserTools(token)
+      .then((res) => res.json())
+      .then((data) => {
+        const filtered = (data.tools || []).filter(isChatToolVisible);
+        setUserTools(filtered);
+      })
+      .catch((error) => {
+        console.error('Error fetching tools:', error);
+      })
+      .finally(() => setToolsLoading(false));
+  }, [token]);
+
+  useEffect(() => {
+    if (isToolsPopupOpen) fetchUserTools();
+  }, [isToolsPopupOpen, fetchUserTools]);
+
+  const toolItems: MultiSelectPopoverItem[] = userTools.map((tool) => ({
+    id: tool.id,
+    label: tool.customName || tool.displayName,
+    icon: <ToolIcon name={tool.name} className="h-5 w-5" />,
+  }));
+
+  const selectedToolIds = userTools
+    .filter((tool) => tool.status)
+    .map((tool) => tool.id);
+
+  const handleToggleTool = (id: string) => {
+    const tool = userTools.find((t) => t.id === id);
+    if (!tool) return;
+    const newStatus = !tool.status;
+    userService
+      .updateToolStatus({ id, status: newStatus }, token)
+      .then(() => {
+        setUserTools((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t)),
+        );
+      })
+      .catch((error) => {
+        console.error('Failed to update tool status:', error);
+      });
+  };
+
+  const handleUploadClick = () => {
+    setUploadModalState('ACTIVE');
+    setIsSourcesPopupOpen(false);
+  };
+
+  // When ``allowSendWithoutText`` is set, an attachment-only submit is
+  // permitted as long as at least one attachment has finished processing.
+  const hasCompletedAttachment = attachments.some(
+    (attachment) => attachment.status === 'completed',
+  );
+  const hasSubmittableContent =
+    Boolean(value.trim()) || (allowSendWithoutText && hasCompletedAttachment);
+  const canSubmit =
+    hasSubmittableContent &&
+    !loading &&
+    recordingState !== 'recording' &&
+    recordingState !== 'transcribing';
+
   const handleSubmit = () => {
-    if (
-      value.trim() &&
-      !loading &&
-      recordingState !== 'recording' &&
-      recordingState !== 'transcribing'
-    ) {
+    if (canSubmit) {
       onSubmit(value);
       setValue('');
       if (isTouch) {
@@ -1413,19 +1549,6 @@ export default function MessageInput({
     setDraggingId(null);
   };
 
-  const voiceButtonLabel =
-    recordingState === 'recording'
-      ? 'Stop recording'
-      : recordingState === 'transcribing'
-        ? 'Transcribing audio'
-        : 'Voice input';
-  const voiceButtonText =
-    recordingState === 'recording'
-      ? 'Stop'
-      : recordingState === 'transcribing'
-        ? 'Transcribing'
-        : 'Voice';
-
   return (
     <div {...getRootProps()} className="flex w-full flex-col">
       {/* react-dropzone input (for drag/drop) */}
@@ -1439,97 +1562,15 @@ export default function MessageInput({
         onChange={handleVoiceFileAttachment}
       />
 
-      <div className="border-border bg-card relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
-        <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
-          {attachments.map((attachment) => {
-            return (
-              <div
-                key={attachment.id}
-                draggable={true}
-                onDragStart={(e) => handleDragStart(e, attachment.id)}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDropOn(e, attachment.id)}
-                className={`group dark:text-foreground bg-muted text-muted-foreground dark:bg-accent relative flex items-center rounded-xl px-2 py-1 text-[12px] sm:px-3 sm:py-1.5 sm:text-[14px] ${
-                  attachment.status !== 'completed'
-                    ? 'opacity-70'
-                    : 'opacity-100'
-                } ${
-                  draggingId === attachment.id
-                    ? 'ring-dashed opacity-60 ring-2 ring-purple-200'
-                    : ''
-                }`}
-                title={attachment.fileName}
-              >
-                <div className="bg-primary mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
-                  {attachment.status === 'completed' && (
-                    <img
-                      src={DocumentationDark}
-                      alt="Attachment"
-                      className="h-[15px] w-[15px] object-fill"
-                    />
-                  )}
-
-                  {attachment.status === 'failed' && (
-                    <img
-                      src={AlertIcon}
-                      alt="Failed"
-                      className="h-[15px] w-[15px] object-fill"
-                    />
-                  )}
-
-                  {(attachment.status === 'uploading' ||
-                    attachment.status === 'processing') && (
-                    <div className="flex h-[15px] w-[15px] items-center justify-center">
-                      <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-0"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="transparent"
-                          strokeWidth="4"
-                          fill="none"
-                        />
-                        <circle
-                          className="text-[#ECECF1]"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          fill="none"
-                          strokeDasharray="62.83"
-                          strokeDashoffset={
-                            62.83 * (1 - attachment.progress / 100)
-                          }
-                          transform="rotate(-90 12 12)"
-                        />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-
-                <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
-                  {attachment.fileName}
-                </span>
-
-                <button
-                  className="ml-1.5 flex items-center justify-center rounded-full p-1"
-                  onClick={() => {
-                    dispatch(removeAttachment(attachment.id));
-                  }}
-                  aria-label={t('conversation.attachments.remove')}
-                >
-                  <img
-                    src={ExitIcon}
-                    alt={t('conversation.attachments.remove')}
-                    className="h-2.5 w-2.5 filter dark:invert"
-                  />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+      <div className="border-border bg-card relative flex w-full flex-col rounded-3xl border dark:bg-transparent">
+        <AttachmentChipList
+          attachments={attachments}
+          draggingId={draggingId}
+          onRemove={(id) => dispatch(removeAttachment(id))}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDropOn={handleDropOn}
+        />
 
         {voiceError && (
           <div className="px-2 pb-1 text-xs text-[#B42318] sm:px-3">
@@ -1553,8 +1594,7 @@ export default function MessageInput({
             }
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style no-scrollbar dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
-            onInput={handleInput}
+            className="inputbox-style dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full scrollbar-thin overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             aria-label={t('inputPlaceholder')}
@@ -1564,160 +1604,75 @@ export default function MessageInput({
         <div className="flex items-center px-2 pb-1.5 sm:px-3 sm:pb-2">
           <div className="flex grow flex-wrap gap-1 sm:gap-2">
             {showSourceButton && (
-              <button
-                ref={sourceButtonRef}
-                className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-accent dark:hover:bg-muted flex max-w-[130px] items-center rounded-[32px] border px-2 py-1 transition-colors sm:max-w-[150px]"
-                onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
-                title={
-                  selectedDocs && selectedDocs.length > 0
-                    ? selectedDocs.map((doc) => doc.name).join(', ')
-                    : t('conversation.sources.title')
-                }
-              >
-                <img
-                  src={SourceIcon}
-                  alt="Sources"
-                  className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
-                />
-                <span className="xs:text-[12px] dark:text-foreground text-muted-foreground truncate overflow-hidden text-[10px] font-medium sm:text-[14px]">
-                  {selectedDocs && selectedDocs.length > 0
-                    ? selectedDocs.length === 1
-                      ? selectedDocs[0].name
-                      : `${selectedDocs.length} sources selected`
-                    : t('conversation.sources.title')}
-                </span>
-                {!isTouch && (
-                  <span className="ml-1 hidden text-[10px] text-gray-500 sm:inline-block dark:text-gray-400">
-                    {browserOS === 'mac' ? '(⌘K)' : '(ctrl+K)'}
-                  </span>
-                )}
-              </button>
+              <SourcesTrigger
+                open={isSourcesPopupOpen}
+                onOpenChange={setIsSourcesPopupOpen}
+                items={sourceItems}
+                selectedIds={selectedSourceIds}
+                onToggle={handleToggleSource}
+                selectedDocs={selectedDocs}
+                onUploadClick={handleUploadClick}
+              />
             )}
 
             {showToolButton && (
-              <button
-                ref={toolButtonRef}
-                className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex max-w-[130px] items-center rounded-[32px] border px-2 py-1 transition-colors"
-                onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
-              >
-                <img
-                  src={ToolIcon}
-                  alt="Tools"
-                  className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4"
-                />
-                <span className="xs:text-[12px] dark:text-foreground text-muted-foreground truncate overflow-hidden text-[10px] font-medium sm:text-[14px]">
-                  {t('settings.tools.label')}
-                </span>
-              </button>
+              <ToolsTrigger
+                open={isToolsPopupOpen}
+                onOpenChange={setIsToolsPopupOpen}
+                items={toolItems}
+                selectedIds={selectedToolIds}
+                onToggle={handleToggleTool}
+                loading={toolsLoading}
+              />
             )}
             {ENABLE_VOICE_INPUT && (
-              <button
-                type="button"
+              <MicButton
+                recordingState={recordingState}
+                loading={loading}
                 onClick={() => {
                   void handleVoiceInput();
                 }}
-                aria-label={voiceButtonLabel}
-                title={voiceButtonLabel}
-                disabled={loading || recordingState === 'transcribing'}
-                className={`xs:px-3 xs:py-1.5 dark:border-border flex items-center rounded-[32px] border px-2 py-1 transition-colors ${
-                  recordingState === 'recording'
-                    ? 'border-[#B42318] bg-[#FEE4E2] text-[#B42318] dark:bg-[#4A2323]'
-                    : 'border-border dark:hover:bg-accent hover:bg-gray-100'
-                } ${
-                  loading || recordingState === 'transcribing'
-                    ? 'cursor-not-allowed opacity-60'
-                    : ''
-                }`}
-              >
-                {recordingState === 'transcribing' ? (
-                  <LoaderCircle className="mr-1 h-3.5 w-3.5 animate-spin sm:mr-1.5 sm:h-4 sm:w-4" />
-                ) : recordingState === 'recording' ? (
-                  <Square className="mr-1 h-3.5 w-3.5 fill-current sm:mr-1.5 sm:h-4 sm:w-4" />
-                ) : (
-                  <Mic className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4" />
-                )}
-                <span
-                  className={`xs:text-[12px] dark:text-foreground text-[10px] font-medium sm:text-[14px] ${
-                    recordingState === 'recording'
-                      ? 'text-[#B42318]'
-                      : 'text-muted-foreground'
-                  }`}
-                >
-                  {voiceButtonText}
-                </span>
-              </button>
+              />
             )}
-            <label className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-center rounded-[32px] border px-2 py-1 transition-colors">
-              <img
-                src={ClipIcon}
-                alt="Attach"
-                className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
-              />
-              <span className="xs:text-[12px] dark:text-foreground text-muted-foreground text-[10px] font-medium sm:text-[14px]">
-                {t('conversation.attachments.attach')}
-              </span>
-              <input
-                type="file"
-                className="hidden"
-                multiple
-                accept={FILE_UPLOAD_ACCEPT_ATTR}
-                onChange={handleFileAttachment}
-              />
-            </label>
+            <AttachFileButton onChange={handleFileAttachment} />
             {/* Additional badges can be added here in the future */}
           </div>
 
           {loading ? (
-            <button
+            <Button
+              type="button"
+              variant="default"
+              size="icon"
               onClick={handleCancel}
               aria-label={t('cancel')}
-              className={`bg-primary ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white sm:h-9 sm:w-9`}
+              className="bg-primary ml-auto h-7 w-7 shrink-0 rounded-full text-white sm:h-9 sm:w-9"
               disabled={!loading}
             >
-              <div className="flex h-3 w-3 items-center justify-center rounded-[3px] bg-white sm:h-3.5 sm:w-3.5" />
-            </button>
+              <div className="flex h-3 w-3 items-center justify-center rounded-sm bg-white sm:h-3.5 sm:w-3.5" />
+            </Button>
           ) : (
-            <button
+            <Button
+              type="button"
+              variant="default"
+              size="icon"
               onClick={handleSubmit}
               aria-label={t('send')}
-              className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
-                value.trim() &&
-                !loading &&
-                recordingState !== 'recording' &&
-                recordingState !== 'transcribing'
+              className={`ml-auto h-7 w-7 shrink-0 rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
+                canSubmit
                   ? 'bg-primary text-white'
                   : 'bg-muted text-muted-foreground dark:bg-accent dark:text-muted-foreground'
               }`}
-              disabled={
-                !value.trim() ||
-                loading ||
-                recordingState === 'recording' ||
-                recordingState === 'transcribing'
-              }
+              disabled={!canSubmit}
             >
-              <SendArrowIcon
+              <SendArrow
                 className="mx-auto my-auto block h-3.5 w-3.5 sm:h-4 sm:w-4"
                 aria-label={t('send')}
                 role="img"
               />
-            </button>
+            </Button>
           )}
         </div>
       </div>
-
-      <SourcesPopup
-        isOpen={isSourcesPopupOpen}
-        onClose={() => setIsSourcesPopupOpen(false)}
-        anchorRef={sourceButtonRef}
-        handlePostDocumentSelect={handlePostDocumentSelect}
-        setUploadModalState={setUploadModalState}
-      />
-
-      <ToolsPopup
-        isOpen={isToolsPopupOpen}
-        onClose={() => setIsToolsPopupOpen(false)}
-        anchorRef={toolButtonRef}
-      />
 
       {uploadModalState === 'ACTIVE' && (
         <Upload

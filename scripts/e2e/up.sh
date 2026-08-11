@@ -276,7 +276,7 @@ log "starting Celery worker (solo pool)"
     PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
     PYTHONUNBUFFERED=1 \
     nohup "$PY_BIN" -m celery -A application.app.celery worker \
-        -l INFO --pool=solo \
+        -l INFO --pool=solo -Q docsgpt,parsing \
         --without-gossip --without-mingle --without-heartbeat \
         >"$CELERY_LOG" 2>&1 &
     echo $! > "$CELERY_PID"

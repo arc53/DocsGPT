@@ -1,0 +1,121 @@
+# Optional egress-firewall overlay for the docsgpt-sandbox runner (compose).
+#
+# Docker Compose cannot express L3 egress filtering the way a Kubernetes
+# NetworkPolicy can, so SSRF containment in compose deployments is delivered by
+# taking away the runner's direct internet route and forcing its outbound
+# traffic through an egress-gateway sidecar that DENIES private / link-local /
+# metadata ranges and ALLOWS the public internet.
+#
+# HOW THIS OVERLAY WORKS
+# The sandbox overlay (docker-compose.optional.sandbox.yaml) puts docsgpt-sandbox
+# on two networks: the internal `sandbox-net` (control plane to backend/worker)
+# and `sandbox-egress` (its internet route). Layer THIS overlay on top of it to
+# flip `sandbox-egress` to `internal: true`, which removes the
+# runner's direct route to the internet / host / RFC1918 / metadata entirely --
+# so raw sockets in arbitrary sandbox code have no route OFF the host except the
+# deny-private proxy. The proxy is the ONLY container with an internet route
+# (on its own `sandbox-egress-out` network) and its ACL denies private
+# destinations. We flip a network's scalar property by KEY (a well-defined
+# Compose merge); we do NOT try to remove an item from the service's `networks`
+# LIST, which Compose cannot express (it unions lists) -- the reason a naive
+# `networks: [sandbox-net]` override silently leaves the runner on its old net.
+#
+# WHAT THIS OVERLAY DOES NOT CONTAIN (read before enabling the sandbox):
+# The runner STILL shares `sandbox-net` with `backend` and `worker` -- that is
+# its control path and it cannot be removed without breaking code execution. A
+# shared Docker network is bidirectional and Compose cannot sever it
+# one-directionally, so arbitrary sandbox code can still open sockets to
+# `backend:7091` and reach the worker. The internal flip contains raw sockets to
+# the internet / host / RFC1918 / metadata, NOT to backend/worker on sandbox-net.
+# (The Kubernetes NetworkPolicy DOES block this, via its RFC1918 egress
+# carve-out; compose has no equivalent.)
+#
+# MITIGATION -- required when enabling the sandbox (do the first, ideally both):
+#  - Run the backend with real authentication (`AUTH_TYPE` != none / a real auth
+#    provider) so a reachable API rejects unauthenticated requests. Without it,
+#    runner->backend reach is a free control-plane bypass.
+#  - Add a host-firewall DROP for runner->backend/worker on sandbox-net
+#    (approach (1) below).
+#
+# Two layers below: (2) is what this overlay wires up (internet egress via the
+# deny-private proxy); (1) is the host-firewall DROP that closes the
+# runner->backend/worker gap. Apply both for the strongest posture.
+#
+#  (1) Host-firewall DROP for runner->backend/worker (closes the gap above). Run
+#      as root on the Docker host AFTER `... up`. The project name is pinned to
+#      `docsgpt-oss` (see `name:` in docker-compose.yaml), so the shared control
+#      net is `docsgpt-oss_sandbox-net`. `docker compose ... ps -q` resolves each
+#      container id regardless of its generated name (there is no fixed
+#      `container_name`), and the `index` function is REQUIRED because a
+#      Go-template dotted key cannot contain hyphens -- the old
+#      `{{.NetworkSettings.Networks.docsgpt-oss_sandbox-egress.IPAddress}}` form
+#      never parsed. Both IPs are read on sandbox-net so source+dest match the
+#      shared path:
+#        CF="-f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.sandbox.yaml -f deployment/optional/docker-compose.optional.sandbox-egress.yaml"
+#        NET=docsgpt-oss_sandbox-net
+#        SBX=$(docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$(docker compose $CF ps -q docsgpt-sandbox)")
+#        BE=$( docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$(docker compose $CF ps -q backend)")
+#        WK=$( docker inspect -f "{{(index .NetworkSettings.Networks \"$NET\").IPAddress}}" "$(docker compose $CF ps -q worker)")
+#        iptables -I DOCKER-USER -s "$SBX" -d "$BE" -j DROP   # runner -> backend (incl. :7091)
+#        iptables -I DOCKER-USER -s "$SBX" -d "$WK" -j DROP   # runner -> worker
+#      (These container-to-container DROPs require the host's
+#      `bridge-nf-call-iptables=1`, Docker's default, so bridged traffic
+#      traverses DOCKER-USER.) If a lookup is empty (renamed project, or the
+#      container is not up yet), resolve by hand instead of running a broken
+#      command: `docker compose $CF ps` to list ids, then `docker inspect
+#      <runner-id>` / `<backend-id>`, read the sandbox-net
+#      `.NetworkSettings.Networks.*.IPAddress`, and add the same DROP rules.
+#      Re-run after any recreate -- container IPs are not stable across `up`.
+#      (Internet / RFC1918 / metadata egress is already gone via the internal
+#      flip, so no separate SSRF drop is needed here.)
+#
+#  (2) Egress-gateway sidecar (this overlay): the runner has NO direct internet
+#      route (see above); its only path out is the deny-private forward proxy.
+#      Point the runner's HTTP(S) client at the proxy via the env vars below.
+#      This does NOT stop runner->backend/worker on sandbox-net -- pair it with
+#      backend auth and/or approach (1).
+#
+# Apply on top of the base stack AND the sandbox overlay (order matters):
+#   docker compose -f deployment/docker-compose.yaml \
+#     -f deployment/optional/docker-compose.optional.sandbox.yaml \
+#     -f deployment/optional/docker-compose.optional.sandbox-egress.yaml up -d
+#
+# NOTE: because `sandbox-egress` is internal here, non-HTTP raw egress TO THE
+# INTERNET / HOST / RFC1918 / METADATA is blocked at L3 regardless of what the
+# code does (there is simply no route). HTTP(S) that honors the proxy env is
+# filtered by the proxy ACL. This does NOT block raw egress to `backend:7091` /
+# the worker on the shared `sandbox-net` (see WHAT THIS OVERLAY DOES NOT CONTAIN
+# / MITIGATION above): enable backend auth and/or apply approach (1). On a
+# multi-tenant or untrusted deployment, prefer the Kubernetes NetworkPolicy,
+# which blocks the internal path too.
+
+services:
+  # Forward proxy that denies private/link-local/metadata destinations and
+  # allows the public internet. Replace the image/command with your proxy of
+  # choice (tinyproxy, squid, mitmproxy with a deny rule, etc.); the ACL must
+  # DENY 10/8, 172.16/12, 192.168/16, 169.254/16, 127/8 and ALLOW the rest.
+  sandbox-egress-proxy:
+    image: ghcr.io/example/egress-deny-private:latest # replace with your proxy image
+    restart: unless-stopped
+    networks:
+      - sandbox-net        # reachable by the runner (control-plane net)
+      - sandbox-egress-out # the ONLY container with an internet route
+
+  docsgpt-sandbox:
+    # No `networks:` override here on purpose: the sandbox overlay already
+    # attaches the runner to sandbox-net + sandbox-egress. Flipping sandbox-egress
+    # to internal (below) removes its direct internet route; its only way out is
+    # this proxy.
+    environment:
+      - HTTP_PROXY=http://sandbox-egress-proxy:8080
+      - HTTPS_PROXY=http://sandbox-egress-proxy:8080
+      - NO_PROXY=localhost,127.0.0.1
+
+networks:
+  # Flip the runner's egress net to internal: no direct route to the internet,
+  # host, RFC1918, or cloud metadata. (Merged by key over the base definition.)
+  sandbox-egress:
+    internal: true
+  # Internet-facing route for the proxy ONLY.
+  sandbox-egress-out:
+    driver: bridge

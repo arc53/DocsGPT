@@ -37,37 +37,81 @@ DocsGPT includes a suite of pre-built tools designed to expand its capabilities 
       description: 'A highly flexible tool that allows DocsGPT to interact with virtually any API without needing to write custom Python code.'
     },
     {
-      title: 'Brave Search Tool',
+      title: 'Brave Search',
       link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/brave.py',
-      description: 'Enables DocsGPT to perform real-time web and image searches using the Brave Search API for up-to-date information.'
+      description: 'Enables DocsGPT to perform real-time web and image searches using the Brave Search API. Requires an API key.'
     },
     {
-      title: 'Cryptoprice Tool',
+      title: 'DuckDuckGo Search',
+      link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/duckduckgo.py',
+      description: 'Performs web and image searches using DuckDuckGo. No API key required.'
+    },
+    {
+      title: 'CryptoPrice',
       link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/cryptoprice.py',
-      description: 'Fetches the current price of specified cryptocurrencies.'
+      description: 'Fetches the current price of specified cryptocurrencies using the CryptoCompare public API.'
     },
     {
-      title: 'Ntfy Tool',
+      title: 'Ntfy',
       link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/ntfy.py',
-      description: 'Allows DocsGPT to send push notifications to Ntfy.sh channels, ideal for alerts and updates.'
+      description: 'Allows DocsGPT to send push notifications to ntfy topics on a specified server, ideal for alerts and updates.'
     },
     {
-      title: 'PostgreSQL Tool',
-      link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/postgres.py',
-      description: 'Provides capabilities to connect to a PostgreSQL database, execute SQL queries, and retrieve schema information.'
-    },
-    {
-      title: 'Read Webpage Tool', // Renamed from Scraper Tool
-      link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/read_webpage.py',
-      description: 'Enables DocsGPT to fetch and extract (scrape) textual content from specified web page URLs.'
-    },
-    {
-      title: 'Telegram Tool',
+      title: 'Telegram Bot',
       link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/telegram.py',
-      description: 'Allows DocsGPT to send messages or images to Telegram chats via a Telegram Bot.'
+      description: 'Allows DocsGPT to send messages or images to Telegram chats via a Telegram Bot. Requires a bot token and chat ID.'
+    },
+    {
+      title: 'PostgreSQL Database',
+      link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/postgres.py',
+      description: 'Connects to a PostgreSQL database to execute SQL queries and retrieve schema information.'
+    },
+    {
+      title: 'Read Webpage (browser)',
+      link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/read_webpage.py',
+      description: 'Fetches the HTML content of a URL and converts it to Markdown for the agent to read.'
+    },
+    {
+      title: 'Remote Device',
+      link: '/Tools/remote-device',
+      description: 'Runs shell commands on a paired remote machine through the docsgpt-cli host. See the Remote Device guide.'
+    },
+    {
+      title: 'MCP Tool',
+      link: '/Guides/Integrations/mcp-tool-integration',
+      description: 'Connects to remote Model Context Protocol (MCP) servers to access their dynamic tools and resources.'
+    },
+    {
+      title: 'Memory',
+      link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/memory.py',
+      description: 'Stores and retrieves information across conversations through a per-user memory file directory.'
+    },
+    {
+      title: 'Notepad',
+      link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/notes.py',
+      description: 'A single editable note. Supports viewing, overwriting, and string replacement.'
+    },
+    {
+      title: 'Todo List',
+      link: 'https://github.com/arc53/DocsGPT/blob/main/application/agents/tools/todo_list.py',
+      description: 'Manages todo items — creating, viewing, updating, and deleting todos.'
     }
   ]}
 />
+
+## Default Chat Tools
+
+In a regular chat (no custom agent), DocsGPT can enable a small set of tools automatically so the assistant is useful out of the box. These are the **default chat tools**, controlled by the `DEFAULT_CHAT_TOOLS` setting:
+
+```env
+DEFAULT_CHAT_TOOLS=memory,read_webpage,scheduler
+```
+
+- Default tools are config-free and run with synthetic, deterministic tool IDs (no manual setup needed).
+- Each user can opt out of individual default tools from their settings; the disabled list is stored per user.
+- Some default tools are excluded from **headless runs** (scheduled tasks and webhook triggers). For example, `scheduler` is skipped in those runs to prevent a scheduled task from chaining new schedules on every fire.
+
+To change the defaults for the whole instance, set `DEFAULT_CHAT_TOOLS` to a comma-separated list of tool names. See [App Configuration](/Deploying/DocsGPT-Settings) for the full settings reference.
 
 ## Using Tools in DocsGPT (User Perspective)
 

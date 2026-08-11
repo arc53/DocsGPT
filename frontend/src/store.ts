@@ -1,15 +1,22 @@
 import { configureStore } from '@reduxjs/toolkit';
 
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
-import { conversationSlice } from './conversation/conversationSlice';
+import {
+  conversationListenerMiddleware,
+  conversationSlice,
+} from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
+import notificationsReducer from './notifications/notificationsSlice';
 import { getStoredRecentDocs } from './preferences/preferenceApi';
 import {
   Preference,
   prefListenerMiddleware,
   prefSlice,
 } from './preferences/preferenceSlice';
+import graphBuildReducer from './settings/graphBuildSlice';
+import teamsReducer from './teams/teamsSlice';
 import uploadReducer from './upload/uploadSlice';
 
 const key = localStorage.getItem('DocsGPTApiKey');
@@ -56,6 +63,8 @@ const preloadedState: { preference: Preference } = {
     availableModels: [],
     modelsLoading: false,
     agentFolders: null,
+    roles: [],
+    rolesResolved: false,
   },
 };
 const store = configureStore({
@@ -67,9 +76,16 @@ const store = configureStore({
     upload: uploadReducer,
     agentPreview: agentPreviewReducer,
     workflowPreview: workflowPreviewReducer,
+    notifications: notificationsReducer,
+    schedules: schedulesReducer,
+    teams: teamsReducer,
+    graphBuild: graphBuildReducer,
   },
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(prefListenerMiddleware.middleware),
+    getDefaultMiddleware().concat(
+      prefListenerMiddleware.middleware,
+      conversationListenerMiddleware.middleware,
+    ),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

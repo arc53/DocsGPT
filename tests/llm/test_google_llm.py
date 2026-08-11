@@ -51,10 +51,10 @@ class FakeTypesModule:
             self.thinking_level = thinking_level
 
     class GenerateContentConfig:
-        def __init__(self):
+        def __init__(self, thinking_config=None, **_kw):
             self.system_instruction = None
             self.tools = None
-            self.thinking_config = None
+            self.thinking_config = thinking_config
             self.response_schema = None
             self.response_mime_type = None
 
@@ -125,7 +125,9 @@ def test_raw_gen_stream_yields_chunks():
     assert list(gen) == ["a", "b"]
 
 
-def test_raw_gen_stream_does_not_set_thinking_config_by_default(monkeypatch):
+def test_raw_gen_stream_opts_into_thought_summaries(monkeypatch):
+    """Gemini won't surface thought parts unless include_thoughts is
+    set on thinking_config — see google_ai.py:_raw_gen_stream."""
     captured = {}
 
     def fake_stream(self, *args, **kwargs):
@@ -138,7 +140,8 @@ def test_raw_gen_stream_does_not_set_thinking_config_by_default(monkeypatch):
     msgs = [{"role": "user", "content": "hello"}]
     list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
 
-    assert captured["config"].thinking_config is None
+    assert captured["config"].thinking_config is not None
+    assert captured["config"].thinking_config.include_thoughts is True
 
 
 def test_raw_gen_stream_emits_thought_events(monkeypatch):

@@ -2,38 +2,41 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
+import {
+  LayoutGrid,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search as SearchIcon,
+  Settings as SettingsIcon,
+} from 'lucide-react';
 
 import { Agent } from './agents/types';
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
-import Add from './assets/add.svg';
-import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
-import PanelLeftClose from './assets/panel-left-close.svg';
-import PanelLeftOpen from './assets/panel-left-open.svg';
 import Github from './assets/git_nav.svg';
-import Hamburger from './assets/hamburger.svg';
-import openNewChat from './assets/openNewChat.svg';
 import Pin from './assets/pin.svg';
-import AgentImage from './components/AgentImage';
-import SettingGear from './assets/settingGear.svg';
-import Spark from './assets/spark.svg';
-import SpinnerDark from './assets/spinner-dark.svg';
-import Spinner from './assets/spinner.svg';
+import { Avatar } from './components/ui/avatar';
+import { Button } from './components/ui/button';
+import Spinner from './components/Spinner';
 import Twitter from './assets/TwitterX.svg';
 import UnPin from './assets/unpin.svg';
 import Help from './components/Help';
 import {
   handleAbort,
+  loadConversation,
   selectQueries,
   setConversation,
   updateConversationId,
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
-import { useDarkTheme, useMediaQuery } from './hooks';
+import { useMediaQuery } from './hooks';
 import useTokenAuth from './hooks/useTokenAuth';
-import DeleteConvModal from './modals/DeleteConvModal';
+import ConfirmationModal from './modals/ConfirmationModal';
 import JWTModal from './modals/JWTModal';
+import SearchConversationsModal from './modals/SearchConversationsModal';
 import { ActiveState } from './models/misc';
 import { getConversations } from './preferences/preferenceApi';
 import {
@@ -50,6 +53,8 @@ import {
   setSelectedAgent,
   setSharedAgents,
 } from './preferences/preferenceSlice';
+import { AppDispatch } from './store';
+import TeamSwitcher from './teams/TeamSwitcher';
 import Upload from './upload/Upload';
 
 interface NavigationProps {
@@ -58,7 +63,7 @@ interface NavigationProps {
 }
 
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
 
   const { t } = useTranslation();
@@ -73,13 +78,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const selectedAgent = useSelector(selectSelectedAgent);
 
   const { isMobile, isTablet } = useMediaQuery();
-  const [isDarkTheme] = useDarkTheme();
   const { showTokenModal, handleTokenSubmit } = useTokenAuth();
 
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [recentAgents, setRecentAgents] = useState<Agent[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const navRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -102,6 +107,19 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       };
     }
   }, [navOpen, isMobile, isTablet, setNavOpen]);
+
+  useEffect(() => {
+    function handleSearchShortcut(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+
+    document.addEventListener('keydown', handleSearchShortcut);
+    return () => document.removeEventListener('keydown', handleSearchShortcut);
+  }, []);
+
   async function fetchRecentAgents() {
     try {
       const response = await userService.getPinnedAgents(token);
@@ -182,7 +200,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     resetConversation();
     dispatch(setSelectedAgent(agent));
     if (isMobile || isTablet) setNavOpen(!navOpen);
-    navigate('/');
+    navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
   };
 
   const handleTogglePin = (agent: Agent) => {
@@ -200,20 +218,21 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     try {
       dispatch(setSelectedAgent(null));
 
-      const response = await conversationService.getConversation(index, token);
-      if (!response.ok) {
-        navigate('/');
+      // Pre-fetch to choose the route shape (owned-agent / shared / none).
+      const result = await dispatch(
+        loadConversation({ id: index, force: true }),
+      ).unwrap();
+      // Stale: a newer load has already updated Redux; the URL is
+      // wherever that newer flow lands, leave it alone.
+      if (result.stale) return;
+      const data = result.data;
+      if (!data) {
+        navigate('/c/new');
         return;
       }
 
-      const data = await response.json();
-      if (!data) return;
-
-      dispatch(setConversation(data.queries));
-      dispatch(updateConversationId({ query: { conversationId: index } }));
-
       if (!data.agent_id) {
-        navigate('/');
+        navigate(`/c/${index}`);
         return;
       }
 
@@ -224,7 +243,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           token,
         );
         if (!sharedResponse.ok) {
-          navigate('/');
+          navigate(`/c/${index}`);
           return;
         }
         agent = await sharedResponse.json();
@@ -232,7 +251,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       } else {
         const agentResponse = await userService.getAgent(data.agent_id, token);
         if (!agentResponse.ok) {
-          navigate('/');
+          navigate(`/c/${index}`);
           return;
         }
         agent = await agentResponse.json();
@@ -240,12 +259,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           navigate(`/agents/shared/${agent.shared_token}`);
         } else {
           await Promise.resolve(dispatch(setSelectedAgent(agent)));
-          navigate('/');
+          navigate(`/agents/${data.agent_id}/c/${index}`);
         }
       }
     } catch (error) {
       console.error('Error handling conversation click:', error);
-      navigate('/');
+      navigate('/c/new');
     }
   };
 
@@ -264,6 +283,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     if (queries && queries?.length > 0) {
       resetConversation();
     }
+    navigate('/c/new');
   };
 
   async function updateConversationName(updatedConversation: {
@@ -275,7 +295,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .then((response) => response.json())
       .then((data) => {
         if (data) {
-          navigate('/');
           fetchConversations();
         }
       })
@@ -297,80 +316,119 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         />
       )}
 
-      {
-        <div className="absolute top-3 left-3 z-20 hidden transition-all duration-300 ease-in-out lg:block">
-          <div className="flex items-center gap-3">
-            {!navOpen && (
-              <button
-                onClick={() => {
-                  setNavOpen(!navOpen);
-                }}
-                className="transition-transform duration-200 hover:scale-110"
-              >
-                <img
-                  src={PanelLeftOpen}
-                  alt="Open navigation menu"
-                  className="m-auto transition-all duration-300 ease-in-out"
-                />
-              </button>
-            )}
-            {queries?.length > 0 && (
-              <button
-                onClick={() => {
-                  newChat();
-                }}
-                className="transition-transform duration-200 hover:scale-110"
-              >
-                <img
-                  src={openNewChat}
-                  alt="Start new chat"
-                  className="cursor-pointer"
-                />
-              </button>
-            )}
-            <div className="text-muted-foreground text-[20px] font-medium">
-              DocsGPT
-            </div>
+      {/* Icon rail (desktop only, when sidebar collapsed) */}
+      {!navOpen && !isMobile && !isTablet && (
+        <div
+          ref={navRef}
+          className="bg-sidebar border-border fixed top-0 left-0 z-10 hidden h-full w-14 flex-col items-center gap-2 border-r py-3 lg:flex">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setNavOpen(true)}
+            aria-label="Open navigation menu"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <PanelLeftOpen className="size-5" strokeWidth={1.75} />
+          </Button>
+          {queries?.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => newChat()}
+              aria-label="Start new chat"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="size-5" strokeWidth={1.75} />
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              dispatch(setSelectedAgent(null));
+              navigate('/agents');
+            }}
+            aria-label={t('manageAgents')}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <LayoutGrid className="size-5" strokeWidth={1.75} />
+          </Button>
+          {conversations?.data && conversations.data.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setSearchOpen(true)}
+              aria-label={t('modals.searchConversations.searchPlaceholder')}
+              title={t('modals.searchConversations.searchPlaceholder')}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <SearchIcon className="size-5" strokeWidth={1.75} />
+            </Button>
+          )}
+          <div className="mt-auto flex flex-col items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                resetConversation();
+                navigate('/settings');
+              }}
+              aria-label={t('settings.label')}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <SettingsIcon className="size-5" strokeWidth={1.75} />
+            </Button>
           </div>
         </div>
-      }
+      )}
       <div
-        ref={navRef}
-        className={`${
-          !navOpen && '-ml-96 md:-ml-72'
-        } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
+        className={`${!navOpen && '-ml-96 md:-ml-72'
+          } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
       >
         <div
-          className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
+          className={
+            'visible mt-2 flex h-[6vh] w-full items-center justify-between gap-1 px-2 md:h-12'
+          }
         >
-          <div
-            className="mx-4 my-auto flex cursor-pointer gap-1.5"
-            onClick={() => {
-              if (isMobile) {
-                setNavOpen(!navOpen);
-              }
-            }}
-          >
-            <a href="/" className="flex gap-1.5">
-              <img className="h-10" src={DocsGPT3} alt="DocsGPT Logo" />
-              <p className="my-auto text-2xl font-semibold">DocsGPT</p>
-            </a>
+          <div className="min-w-0 flex-1">
+            <TeamSwitcher
+              onNavigate={() => {
+                if (isMobile || isTablet) {
+                  setNavOpen(false);
+                }
+              }}
+            />
           </div>
-          <button
-            className="float-right mr-5"
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground hover:text-foreground shrink-0"
             onClick={() => {
               setNavOpen(!navOpen);
             }}
+            aria-label={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
-            <img
-              src={navOpen ? PanelLeftClose : PanelLeftOpen}
-              alt={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-              className="m-auto transition-all duration-300 ease-in-out hover:scale-110"
-            />
-          </button>
+            {navOpen ? (
+              <PanelLeftClose
+                className="size-5 transition-all duration-300 ease-in-out hover:scale-110"
+                strokeWidth={1.75}
+              />
+            ) : (
+              <PanelLeftOpen
+                className="size-5 transition-all duration-300 ease-in-out hover:scale-110"
+                strokeWidth={1.75}
+              />
+            )}
+          </Button>
         </div>
         <NavLink
-          to={'/'}
+          to={'/c/new'}
           onClick={() => {
             if (isMobile || isTablet) {
               setNavOpen(!navOpen);
@@ -378,17 +436,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             resetConversation();
           }}
           className={({ isActive }) =>
-            `${
-              isActive ? 'bg-transparent' : ''
-            } group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
+            `${isActive ? 'bg-transparent' : ''
+            } group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
           }
         >
-          <img
-            src={Add}
-            alt="Create new chat"
-            className="opacity-80 group-hover:opacity-100"
+          <Plus
+            className="text-muted-foreground group-hover:text-foreground size-5 shrink-0"
+            strokeWidth={1.75}
+            aria-label="Create new chat"
           />
-          <p className="text-muted-foreground dark:text-foreground dark:group-hover:text-foreground text-sm group-hover:text-neutral-600">
+          <p className="text-muted-foreground group-hover:text-foreground text-sm">
             {t('newChat')}
           </p>
         </NavLink>
@@ -397,12 +454,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className="scrollbar-overlay mb-auto h-[78vh] overflow-x-hidden overflow-y-auto dark:text-white"
         >
           {conversations?.loading && !isDeletingConversation && (
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform">
-              <img
-                src={isDarkTheme ? Spinner : SpinnerDark}
-                className="animate-spin cursor-pointer bg-transparent"
-                alt="Loading conversations"
-              />
+            <div
+              className="text-foreground absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform dark:text-white"
+              role="status"
+              aria-label="Loading conversations"
+            >
+              <Spinner size="small" />
             </div>
           )}
           {recentAgents?.length > 0 ? (
@@ -417,19 +474,18 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   {recentAgents.map((agent, idx) => (
                     <div
                       key={idx}
-                      className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${
-                        agent.id === selectedAgent?.id && !conversationId
+                      className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${agent.id === selectedAgent?.id && !conversationId
                           ? 'bg-sidebar-accent'
                           : ''
-                      }`}
+                        }`}
                       onClick={() => handleAgentClick(agent)}
                     >
                       <div className="flex items-center gap-2">
                         <div className="flex w-6 justify-center">
-                          <AgentImage
+                          <Avatar
                             src={agent.image}
                             alt="agent-logo"
-                            className="h-6 w-6 rounded-full object-contain"
+                            imgClassName="h-6 w-6 rounded-full object-contain"
                           />
                         </div>
                         <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
@@ -439,75 +495,102 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       <div
                         className={`${isMobile || isTablet ? 'flex' : 'invisible flex group-hover:visible'} items-center px-3`}
                       >
-                        <button
-                          className="rounded-full hover:opacity-75"
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="h-auto w-auto rounded-full p-0 hover:bg-transparent hover:opacity-75"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleTogglePin(agent);
                           }}
+                          aria-label={
+                            agent.pinned ? 'Unpin agent' : 'Pin agent'
+                          }
                         >
                           <img
                             src={agent.pinned ? UnPin : Pin}
                             className="h-4 w-4"
                           ></img>
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}
                 </div>
-                <div
-                  className="hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
+                <NavLink
+                  to="/agents"
+                  end
                   onClick={() => {
                     dispatch(setSelectedAgent(null));
                     if (isMobile || isTablet) {
                       setNavOpen(false);
                     }
-                    navigate('/agents');
                   }}
+                  className={({ isActive }) =>
+                    `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 ${isActive ? 'bg-sidebar-accent' : ''
+                    }`
+                  }
                 >
                   <div className="flex w-6 justify-center">
-                    <img
-                      src={Spark}
-                      alt="manage-agents"
-                      className="h-[18px] w-[18px]"
+                    <LayoutGrid
+                      className="text-muted-foreground size-5"
+                      strokeWidth={1.75}
+                      aria-label="manage-agents"
                     />
                   </div>
                   <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                     {t('manageAgents')}
                   </p>
-                </div>
+                </NavLink>
               </div>
             </div>
           ) : (
-            <div
-              className="hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
+            <NavLink
+              to="/agents"
+              end
               onClick={() => {
                 if (isMobile || isTablet) {
                   setNavOpen(false);
                 }
                 dispatch(setSelectedAgent(null));
-                navigate('/agents');
               }}
+              className={({ isActive }) =>
+                `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${isActive ? 'bg-sidebar-accent' : ''
+                }`
+              }
             >
-              <div className="flex w-6 justify-center">
-                <img
-                  src={Spark}
-                  alt="manage-agents"
-                  className="h-[18px] w-[18px]"
-                />
-              </div>
+              <LayoutGrid
+                className="text-muted-foreground size-5 shrink-0"
+                strokeWidth={1.75}
+                aria-label="manage-agents"
+              />
               <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                 {t('manageAgents')}
               </p>
-            </div>
+            </NavLink>
           )}
           {conversations?.data && conversations.data.length > 0 ? (
             <div className="mt-7">
-              <div className="mx-4 my-auto mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
+              <div className="my-auto mt-2 ml-2.75 p-1 flex h-9 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSearchOpen(true)}
+                  className="mr-1 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent rounded-full"
+                  aria-label={t('modals.searchConversations.searchPlaceholder')}
+                  title={t('modals.searchConversations.searchPlaceholder')}
+                >
+                  <SearchIcon
+                    className="size-5"
+                    strokeWidth={1.75}
+                    aria-label="search"
+                  />
+                </Button>
               </div>
               <div className="conversations-container">
-                {conversations.data?.map((conversation) => (
+                {(conversations.data ?? []).map((conversation) => (
                   <ConversationTile
                     key={conversation.id}
                     conversation={conversation}
@@ -540,17 +623,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/settings"
               className={({ isActive }) =>
-                `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-4 rounded-3xl ${
-                  isActive ? 'bg-sidebar-accent' : ''
+                `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${isActive ? 'bg-sidebar-accent' : ''
                 }`
               }
             >
-              <img
-                src={SettingGear}
-                alt="Settings"
-                width={21}
-                height={21}
-                className="my-auto ml-2 filter dark:invert"
+              <SettingsIcon
+                className="text-muted-foreground size-5 shrink-0"
+                strokeWidth={1.75}
+                aria-label="Settings"
               />
               <p className="text-foreground text-sm dark:text-white">
                 {t('settings.label')}
@@ -607,26 +687,27 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
       </div>
       <div className="dark:border-b-sidebar-border bg-sidebar sticky z-10 h-16 w-full border-b-2 lg:hidden">
-        <div className="ml-6 flex h-full items-center gap-6">
-          <button
-            className="h-6 w-6 lg:hidden"
+        <div className="relative flex h-full items-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground hover:text-foreground ml-4 size-9 lg:hidden"
             onClick={() => setNavOpen(true)}
+            aria-label="Toggle mobile menu"
           >
-            <img
-              src={Hamburger}
-              alt="Toggle mobile menu"
-              className="w-7 filter dark:invert"
-            />
-          </button>
-          <div className="text-muted-foreground text-[20px] font-medium">
-            DocsGPT
-          </div>
+            <Menu className="size-5" strokeWidth={1.75} />
+          </Button>
+
         </div>
       </div>
-      <DeleteConvModal
+      <ConfirmationModal
+        message={t('modals.deleteConv.confirm')}
         modalState={modalStateDeleteConv}
-        setModalState={setModalStateDeleteConv}
-        handleDeleteAllConv={handleDeleteAllConversations}
+        setModalState={(state) => dispatch(setModalStateDeleteConv(state))}
+        submitLabel={t('modals.deleteConv.delete')}
+        handleSubmit={handleDeleteAllConversations}
+        variant="danger"
       />
       {uploadModalState === 'ACTIVE' && (
         <Upload
@@ -641,6 +722,17 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         modalState={showTokenModal ? 'ACTIVE' : 'INACTIVE'}
         handleTokenSubmit={handleTokenSubmit}
       />
+      {searchOpen && (
+        <SearchConversationsModal
+          close={() => setSearchOpen(false)}
+          conversations={conversations?.data ?? []}
+          token={token}
+          onSelectConversation={(id) => {
+            handleConversationClick(id);
+            if (isMobile || isTablet) setNavOpen(false);
+          }}
+        />
+      )}
     </>
   );
 }

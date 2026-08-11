@@ -1,25 +1,31 @@
+import { ExternalLink, X } from 'lucide-react';
 import {
   SyntheticEvent,
+  useCallback,
   useEffect,
   useRef,
   useState,
-  useCallback,
+  type ReactNode,
 } from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
-import Exit from '../assets/exit.svg';
 import { useDarkTheme } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import CheckMark2 from '../assets/checkMark2.svg';
 import Trash from '../assets/red-trash.svg';
-import Share from '../assets/share.svg';
 import threeDots from '../assets/three-dots.svg';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useTranslation } from 'react-i18next';
-import ContextMenu from '../components/ContextMenu';
-import { MenuOption } from '../components/ContextMenu';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import { useOutsideAlerter } from '../hooks';
 
 interface ConversationProps {
@@ -51,7 +57,6 @@ export default function ConversationTile({
   const [isHovered, setIsHovered] = useState(false);
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
-  const menuRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
   useEffect(() => {
     setConversationsName(conversation.name);
@@ -64,26 +69,16 @@ export default function ConversationTile({
   }
 
   function handleSaveConversation(changedConversation: ConversationProps) {
-    if (changedConversation.name.trim().length) {
+    if (
+      changedConversation.name.trim().length &&
+      changedConversation.name.trim() !== conversation.name.trim()
+    ) {
       onSave(changedConversation);
       setIsEdit(false);
     } else {
       onClear();
     }
   }
-
-  const handleClickOutside = (event: MouseEvent) => {
-    if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-      setOpen(false);
-    }
-  };
-
-  useEffect(() => {
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   const preventScroll = useCallback((event: WheelEvent | TouchEvent) => {
     event.preventDefault();
@@ -131,36 +126,39 @@ export default function ConversationTile({
     }
   };
 
-  const menuOptions: MenuOption[] = [
+  type ConversationMenuOption = {
+    icon: ReactNode;
+    label: string;
+    onClick: (event: SyntheticEvent) => void;
+    variant: 'default' | 'destructive';
+  };
+
+  const menuOptions: ConversationMenuOption[] = [
     {
-      icon: Share,
+      icon: <ExternalLink className="size-3.5" strokeWidth={1.75} />,
       label: t('convTile.share'),
       onClick: (event: SyntheticEvent) => {
         event.stopPropagation();
         setShareModalState(true);
         setOpen(false);
       },
-      variant: 'primary',
-      iconWidth: 14,
-      iconHeight: 14,
+      variant: 'default',
     },
     {
-      icon: Edit,
+      icon: <img src={Edit} alt="" width={16} height={16} />,
       label: t('convTile.rename'),
       onClick: handleEditConversation,
-      variant: 'primary',
+      variant: 'default',
     },
     {
-      icon: Trash,
+      icon: <img src={Trash} alt="" width={18} height={18} />,
       label: t('convTile.delete'),
       onClick: (event: SyntheticEvent) => {
         event.stopPropagation();
         setDeleteModalState('ACTIVE');
         setOpen(false);
       },
-      iconWidth: 18,
-      iconHeight: 18,
-      variant: 'danger',
+      variant: 'destructive',
     },
   ];
 
@@ -200,10 +198,10 @@ export default function ConversationTile({
       >
         <div className={`flex w-10/12 gap-4`}>
           {isEdit ? (
-            <input
+            <Input
               autoFocus
               type="text"
-              className="h-6 w-full rounded-2xl bg-transparent px-1 text-sm leading-6 font-normal outline-none"
+              className="h-6 w-full rounded-2xl border-0 px-1 text-sm leading-6 font-normal shadow-none focus-visible:ring-0 md:text-sm dark:border-0"
               value={conversationName}
               onChange={(e) => setConversationsName(e.target.value)}
               onKeyDown={handleRenameKeyDown}
@@ -215,10 +213,7 @@ export default function ConversationTile({
           )}
         </div>
         {(conversationId === conversation.id || isHovered || isOpen) && (
-          <div
-            className="dark:text-muted-foreground flex text-white"
-            ref={menuRef}
-          >
+          <div className="dark:text-muted-foreground flex text-white">
             {isEdit ? (
               <div className="flex gap-1">
                 <img
@@ -234,36 +229,52 @@ export default function ConversationTile({
                     });
                   }}
                 />
-                <img
-                  src={Exit}
-                  alt="Exit"
-                  className={`mt-px mr-4 h-3 w-3 cursor-pointer filter hover:opacity-50 dark:invert`}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Exit"
                   id={`img-${conversation.id}`}
+                  className="mt-px mr-4 h-auto w-auto bg-transparent p-0 hover:bg-transparent hover:opacity-50"
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
                     onClear();
                   }}
-                />
+                >
+                  <X className="h-3 w-3" />
+                </Button>
               </div>
             ) : (
-              <button
-                onClick={(event: SyntheticEvent) => {
-                  event.stopPropagation();
-                  setOpen(!isOpen);
-                }}
-                className="hover:bg-accent dark:hover:bg-accent mr-2 flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200"
-              >
-                <img src={threeDots} width={8} alt="menu" />
-              </button>
+              <DropdownMenu open={isOpen} onOpenChange={setOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={(event: SyntheticEvent) => {
+                      event.stopPropagation();
+                    }}
+                    className="mr-2 h-6 w-6 rounded-full"
+                  >
+                    <img src={threeDots} width={8} alt="menu" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[144px]">
+                  {menuOptions.map((option, index) => (
+                    <DropdownMenuItem
+                      key={index}
+                      variant={option.variant}
+                      onSelect={(event) => {
+                        option.onClick(event as unknown as SyntheticEvent);
+                      }}
+                    >
+                      {option.icon}
+                      <span>{option.label}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
-            <ContextMenu
-              isOpen={isOpen}
-              setIsOpen={setOpen}
-              options={menuOptions}
-              anchorRef={tileRef}
-              position="bottom-right"
-              offset={{ x: 1, y: 8 }}
-            />
           </div>
         )}
       </div>

@@ -45,7 +45,10 @@ class TelegramTool(Tool):
         return [
             {
                 "name": "telegram_send_message",
-                "description": "Send a notification to Telegram chat",
+                "description": (
+                    "Send a text message to the configured Telegram chat via "
+                    "the bot. Compose the final message text before sending."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -64,7 +67,10 @@ class TelegramTool(Tool):
             },
             {
                 "name": "telegram_send_image",
-                "description": "Send an image to the Telegram chat",
+                "description": (
+                    "Send an image to the configured Telegram chat. Requires "
+                    "a publicly accessible image URL."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {

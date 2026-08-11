@@ -1,5 +1,6 @@
 """Conversation sharing routes."""
 
+import logging
 import uuid
 
 from flask import current_app, jsonify, make_response, request
@@ -16,6 +17,8 @@ from application.storage.db.repositories.shared_conversations import (
 )
 from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
+
+logger = logging.getLogger(__name__)
 
 
 sharing_ns = Namespace(
@@ -57,9 +60,18 @@ def _resolve_prompt_pg_id(conn, prompt_id_raw, user_id):
     return str(row[0]) if row else None
 
 
-def _resolve_source_pg_id(conn, source_raw):
-    """Translate a source id (UUID or legacy Mongo ObjectId) to a PG UUID."""
+def _resolve_source_pg_id(conn, source_raw, user=None):
+    """Translate a source id (UUID or legacy Mongo ObjectId) to a PG UUID.
+
+    ``source_raw`` is client-supplied and was resolved with no ownership
+    predicate, so a caller could bake any tenant's source id into the agent
+    this share creates — and ``/api/search`` then searched it. ``user`` is
+    required to authorize; without it nothing resolves.
+    """
     if not source_raw:
+        return None
+    if not user:
+        logger.warning("Refusing to resolve a share source with no principal.")
         return None
     value = str(source_raw)
     # See ``_resolve_prompt_pg_id`` for the shape-gate rationale.
@@ -70,12 +82,28 @@ def _resolve_source_pg_id(conn, source_raw):
             ),
             {"sid": value},
         ).fetchone()
-        return str(row[0]) if row else None
+        return _authorized_source(conn, row, user)
     row = conn.execute(
         _sql_text("SELECT id FROM sources WHERE legacy_mongo_id = :sid"),
         {"sid": value},
     ).fetchone()
-    return str(row[0]) if row else None
+    return _authorized_source(conn, row, user)
+
+
+def _authorized_source(conn, row, user):
+    """Return the resolved source id only if ``user`` may reference it."""
+    if not row:
+        return None
+    resolved = str(row[0])
+    from application.api.user.team_sharing import can_access
+
+    if not can_access(conn, "source", resolved, user):
+        logger.warning(
+            "Refusing to attach source %s to a share: %s has no access.",
+            resolved, user,
+        )
+        return None
+    return resolved
 
 
 def _find_reusable_share_agent(
@@ -184,7 +212,9 @@ class ShareConversation(Resource):
                         chunks_int = None
 
                     prompt_pg_id = _resolve_prompt_pg_id(conn, prompt_id_raw, user)
-                    source_pg_id = _resolve_source_pg_id(conn, data.get("source"))
+                    source_pg_id = _resolve_source_pg_id(
+                        conn, data.get("source"), user
+                    )
                     retriever = data.get("retriever")
 
                     reusable = _find_reusable_share_agent(

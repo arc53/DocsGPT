@@ -1,0 +1,96 @@
+---
+title: Wiki Sources — Living, LLM-Editable Documentation
+description: Create a knowledge source that the agent can read and write — a living wiki it keeps up to date, with human edits, provenance stamps, and version safety.
+---
+
+import { Callout } from 'nextra/components'
+
+# Wiki Sources
+
+A **wiki source** is a knowledge source that the agent can both read *and* write. Instead of being a fixed set of ingested files, a wiki is a small set of Markdown pages that the LLM edits over time — recording what it learns, correcting stale information, and building living documentation. Humans can edit the same pages directly, and every change is stamped with who made it.
+
+Unlike a classic source, a wiki is **team-scoped, not per-user**: it is shared and edited at the source level, so a whole team works against the same living document.
+
+## How a wiki differs from a classic source
+
+| | Classic source | Wiki source |
+| --- | --- | --- |
+| Content | Ingested files, read-only | Markdown pages, read **and** write |
+| Who edits | You (re-upload to change) | The agent and humans |
+| Default exposure | `prefetch` (chunks injected up front) | `agentic_tool` (the agent browses pages on demand) |
+| Searchability | Embedded at ingest | Re-embedded automatically on every edit |
+| Scope | Per owner | Team-shareable, edited at source scope |
+
+Because a wiki defaults to the `agentic_tool` [exposure](/Sources/Per-source-configuration#exposure-prefetch-vs-agentic-tool), the agent navigates it as a tool — opening, searching, and editing pages as needed — rather than receiving a bulk prefetch.
+
+## How the agent edits a wiki
+
+The agent edits a wiki through an internal **Wiki tool** that is automatically scoped to one wiki source. It supports a small, edit-safe action surface:
+
+- **view** a page,
+- **create** or overwrite a page,
+- **str_replace** an exact, unique string,
+- **insert** at a line,
+- **delete** a page,
+- **rename** a page.
+
+Two safety properties matter:
+
+- **Provenance stamps.** Every page records whether its last change came from a human or the agent, so edits are traceable.
+- **Optimistic versioning.** Edits carry an expected version; if a page changed underneath, the edit is rejected rather than silently clobbering a concurrent change. String replacements must match exactly and uniquely.
+
+After any edit, the affected page is **re-embedded asynchronously** so the wiki stays searchable and the new content is immediately retrievable.
+
+<Callout type="info" emoji="ℹ️">
+Each wiki page is capped at 1 MB (1,000,000 bytes). Pages are addressed by path (the home page is `/index.md`).
+</Callout>
+
+## Creating a wiki
+
+In the UI, choose **New wiki source** when adding a source. From the API:
+
+```bash
+curl -X POST https://your-docsgpt/api/sources/wiki \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "Team Handbook", "initial_content": "# Team Handbook\n\nWelcome." }'
+```
+
+- `name` (required) — the wiki source name.
+- `initial_content` (optional) — Markdown that seeds the home page `/index.md` and triggers its first re-embed.
+
+No ingestion task runs for a wiki; pages are authored directly. The response returns the new `source_id`.
+
+## Converting an existing source into a wiki
+
+You can turn an already-ingested source into a wiki so the agent can start maintaining it:
+
+```bash
+curl -X POST https://your-docsgpt/api/sources/<source_id>/wiki/convert \
+  -H "Authorization: Bearer <token>"
+```
+
+- A **blank** source is enabled inline (no task) and immediately becomes a wiki.
+- A source **with files** runs a conversion task that reassembles its existing chunks into wiki pages; poll the returned task for a per-file summary.
+- Conversion is rejected with `409` if the source is still ingesting — wait for it to finish first.
+
+<Callout type="warning" emoji="⚠️">
+Switching a source to (or from) wiki mode goes only through `POST /api/sources/<id>/wiki/convert`. It cannot be done through the [config PATCH endpoint](/Sources/Per-source-configuration#editing-the-config-via-api).
+</Callout>
+
+## Reading and editing pages directly
+
+Humans can read and edit wiki pages through the API (and the wiki viewer in the UI):
+
+```text
+GET  /api/sources/<source_id>/wiki/pages          # list pages
+GET  /api/sources/<source_id>/wiki/page?path=...  # fetch one page fresh
+PUT  /api/sources/<source_id>/wiki/page           # create or overwrite a page (human edit)
+```
+
+Human edits are stamped with `human` provenance and trigger the same re-embed as agent edits. Read access follows source sharing (owner or anyone the source is shared with); writing requires owner or team `editor` access.
+
+## Related
+
+- [Per-Source Configuration](/Sources/Per-source-configuration) — exposure and retrieval settings a wiki uses.
+- [Access Control & Teams](/Deploying/Access-Control) — sharing a wiki with a team.

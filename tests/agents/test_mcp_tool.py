@@ -492,7 +492,7 @@ class TestMCPOAuthManager:
         from application.agents.tools.mcp_tool import MCPOAuthManager
 
         manager = MCPOAuthManager(MagicMock())
-        result = manager.get_oauth_status("")
+        result = manager.get_oauth_status("", "alice")
         assert result["status"] == "not_started"
 
 

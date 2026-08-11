@@ -66,12 +66,18 @@ class NotesTool(Tool):
         """Execute an action by name.
 
         Args:
-            action_name: One of view, overwrite, str_replace, insert, delete.
+            action_name: One of note_view, note_overwrite, note_str_replace,
+                note_insert, note_delete (legacy unprefixed names are
+                accepted too).
             **kwargs: Parameters for the action.
 
         Returns:
             A human-readable string result.
         """
+        # Stripping the namespace prefix accepts both the published names
+        # (note_view) and legacy unprefixed names from saved user_tools rows.
+        action_name = action_name.removeprefix("note_")
+
         if not self.user_id:
             return "Error: NotesTool requires a valid user_id."
 
@@ -104,13 +110,13 @@ class NotesTool(Tool):
         """Return JSON metadata describing supported actions for tool schemas."""
         return [
             {
-                "name": "view",
-                "description": "Retrieve the user's note.",
+                "name": "note_view",
+                "description": "Retrieve the user's saved note.",
                 "parameters": {"type": "object", "properties": {}},
             },
             {
-                "name": "overwrite",
-                "description": "Replace the entire note content (creates if doesn't exist).",
+                "name": "note_overwrite",
+                "description": "Replace the entire note content (creates the note if it does not exist).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -120,7 +126,7 @@ class NotesTool(Tool):
                 },
             },
             {
-                "name": "str_replace",
+                "name": "note_str_replace",
                 "description": "Replace occurrences of old_str with new_str in the note.",
                 "parameters": {
                     "type": "object",
@@ -132,8 +138,8 @@ class NotesTool(Tool):
                 },
             },
             {
-                "name": "insert",
-                "description": "Insert text at the specified line number (1-indexed).",
+                "name": "note_insert",
+                "description": "Insert text into the note at the specified line number (1-indexed).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -144,7 +150,7 @@ class NotesTool(Tool):
                 },
             },
             {
-                "name": "delete",
+                "name": "note_delete",
                 "description": "Delete the user's note.",
                 "parameters": {"type": "object", "properties": {}},
             },

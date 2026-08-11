@@ -1,7 +1,9 @@
+import { Search as SearchIcon } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import userService from '../api/services/userService';
 import { formatBytes } from '../utils/stringUtils';
-import { formatDate } from '../utils/dateTimeUtils';
+import { formatDateTime } from '../utils/dateTimeUtils';
 import {
   getSessionToken,
   setSessionToken,
@@ -11,8 +13,8 @@ import ConnectorAuth from '../components/ConnectorAuth';
 import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
 import CheckIcon from '../assets/checkmark.svg';
-import SearchIcon from '../assets/search.svg';
-import Input from './Input';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
 import {
   Table,
   TableContainer,
@@ -21,7 +23,8 @@ import {
   TableRow,
   TableHeader,
   TableCell,
-} from './Table';
+} from './ui/table';
+import { useDebouncedCallback } from '../hooks';
 import { getEnv } from '@/utils/envUtils';
 
 interface CloudFile {
@@ -101,7 +104,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const [activeTab, setActiveTab] = useState<'my_files' | 'shared'>('my_files');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const isFolder = (file: CloudFile) => {
@@ -127,7 +129,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
       setIsLoading(true);
 
-      const apiHost = getEnv('VITE_API_HOST');
       if (!pageToken) {
         setFiles([]);
       }
@@ -142,15 +143,11 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           search_query: searchQuery,
           shared: shared,
         };
-        const response = await fetch(`${apiHost}/api/connectors/files`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
+        const response = await userService.getConnectorFiles(
+          body,
+          token,
+          controller.signal,
+        );
 
         const data = await response.json();
         if (data.success) {
@@ -188,20 +185,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     }
 
     try {
-      const apiHost = getEnv('VITE_API_HOST');
-      const validateResponse = await fetch(
-        `${apiHost}/api/connectors/validate-session`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            provider: provider,
-            session_token: sessionToken,
-          }),
-        },
+      const validateResponse = await userService.validateConnectorSession(
+        provider,
+        token,
       );
 
       if (!validateResponse.ok) {
@@ -293,32 +279,26 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
   useEffect(() => {
     return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
       abortControllerRef.current?.abort();
     };
   }, []);
 
+  const debouncedLoadFiles = useDebouncedCallback((query: string) => {
+    const sessionToken = getSessionToken(provider);
+    if (sessionToken) {
+      loadCloudFiles(
+        sessionToken,
+        currentFolderId,
+        undefined,
+        query,
+        activeTab === 'shared' && !currentFolderId,
+      );
+    }
+  }, 300);
+
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    searchTimeoutRef.current = setTimeout(() => {
-      const sessionToken = getSessionToken(provider);
-      if (sessionToken) {
-        loadCloudFiles(
-          sessionToken,
-          currentFolderId,
-          undefined,
-          query,
-          activeTab === 'shared' && !currentFolderId,
-        );
-      }
-    }, 300);
+    debouncedLoadFiles(query);
   };
 
   const handleFolderClick = (folderId: string, folderName: string) => {
@@ -425,23 +405,14 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         onDisconnect={() => {
           const sessionToken = getSessionToken(provider);
           if (sessionToken) {
-            const apiHost = getEnv('VITE_API_HOST');
-            fetch(`${apiHost}/api/connectors/disconnect`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({
-                provider: provider,
-                session_token: sessionToken,
-              }),
-            }).catch((err) =>
-              console.error(
-                `Error disconnecting from ${getProviderConfig(provider).displayName}:`,
-                err,
-              ),
-            );
+            userService
+              .disconnectConnector(provider, sessionToken, token)
+              .catch((err) =>
+                console.error(
+                  `Error disconnecting from ${getProviderConfig(provider).displayName}:`,
+                  err,
+                ),
+              );
           }
 
           removeSessionToken(provider);
@@ -463,26 +434,30 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           <div className="border-border dark:border-border rounded-t-lg">
             {provider === 'share_point' && allowsSharedContent && (
               <div className="border-border dark:border-border flex border-b">
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
                   onClick={() => handleTabChange('my_files')}
-                  className={`px-4 py-2 text-sm font-medium ${
+                  className={`h-auto rounded-none px-4 py-2 text-sm font-medium ${
                     activeTab === 'my_files'
-                      ? 'border-b-2 border-[#A076F6] text-[#A076F6]'
+                      ? 'border-b-2 border-[#A076F6] text-[#A076F6] hover:bg-transparent hover:text-[#A076F6]'
                       : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
                   }`}
                 >
                   {t('filePicker.myFiles')}
-                </button>
-                <button
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
                   onClick={() => handleTabChange('shared')}
-                  className={`px-4 py-2 text-sm font-medium ${
+                  className={`h-auto rounded-none px-4 py-2 text-sm font-medium ${
                     activeTab === 'shared'
-                      ? 'border-b-2 border-[#A076F6] text-[#A076F6]'
+                      ? 'border-b-2 border-[#A076F6] text-[#A076F6] hover:bg-transparent hover:text-[#A076F6]'
                       : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
                   }`}
                 >
                   {t('filePicker.sharedWithMe')}
-                </button>
+                </Button>
               </div>
             )}
             <div className="dark:bg-muted rounded-t-lg bg-[#EEE6FF78] px-4 pt-4">
@@ -493,13 +468,16 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                     className="flex items-center gap-1"
                   >
                     {index > 0 && <span className="text-gray-400">/</span>}
-                    <button
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
                       onClick={() => navigateBack(index)}
-                      className="text-sm text-[#A076F6] hover:text-[#8A5FD4] hover:underline"
+                      className="h-auto p-0 text-sm text-[#A076F6] underline-offset-2 hover:text-[#8A5FD4]"
                       disabled={index === folderPath.length - 1}
                     >
                       {path.name}
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -511,14 +489,15 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
               <div className="mb-3 max-w-md">
                 <Input
                   type="text"
-                  placeholder={t('filePicker.searchPlaceholder')}
+                  label={t('filePicker.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
-                  colorVariant="silver"
-                  borderVariant="thin"
                   labelBgClassName="bg-[#EEE6FF78] dark:bg-muted"
                   leftIcon={
-                    <img src={SearchIcon} alt="Search" width={16} height={16} />
+                    <SearchIcon
+                      className="text-muted-foreground size-4"
+                      strokeWidth={1.75}
+                    />
                   }
                 />
               </div>
@@ -621,7 +600,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-xs">
-                                  {formatDate(file.modifiedTime)}
+                                  {formatDateTime(file.modifiedTime)}
                                 </TableCell>
                                 <TableCell className="text-xs">
                                   {file.size ? formatBytes(file.size) : '-'}

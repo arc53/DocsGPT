@@ -26,7 +26,7 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Test with pytest and generate coverage report
         run: |
-          python -m pytest --cov=application --cov-report=xml --cov-report=term-missing
+          python -m pytest -n auto --cov=application --cov-report=xml --cov-report=term-missing
       - name: Upload coverage reports to Codecov
         if: github.event_name == 'pull_request' && matrix.python-version == '3.12'
         uses: codecov/codecov-action@v5

@@ -1,7 +1,7 @@
 /**
- * Phase 2 — P2-14 · Attachment upload bound to conversation message.
+ * P2-14 · Attachment upload bound to conversation message.
  *
- * Writes to the Tier-1 `attachments` table (via `/api/store_attachment` → Celery
+ * Writes to the `attachments` table (via `/api/store_attachment` → Celery
  * worker `attachment_worker` → `AttachmentsRepository.create`) and, via the
  * subsequent `/stream` call, to `conversation_messages.attachments[]`
  * (UUID[]).
@@ -32,7 +32,7 @@
  * flow is flakier here than a raw multipart POST, and the P2 brief explicitly
  * permits API-direct when the upload surface is Celery-dispatched). DB
  * assertions on BOTH `attachments` and `conversation_messages.attachments[]`
- * are non-negotiable per the Phase 2 invariant.
+ * are non-negotiable per the migration invariant.
  */
 
 import { readFile } from 'node:fs/promises';

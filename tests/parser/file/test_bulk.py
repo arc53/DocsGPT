@@ -4,6 +4,7 @@ Covers: SimpleDirectoryReader (init, file discovery, load_data, directory
 structure building), get_default_file_extractor.
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -157,6 +158,148 @@ class TestSimpleDirectoryReaderLoadData:
         assert len(docs) >= 1
         for doc in docs:
             assert isinstance(doc, Document)
+
+    def test_unparseable_file_is_skipped_not_fatal(self, tmp_path):
+        """One bad file must not cost the user the other 99.
+
+        Parsers raise ``DocumentParseError`` rather than returning their own
+        traceback as the document text, so an unguarded loop turns a single
+        corrupt PDF into a failed ingest for the whole zip/folder/sync.
+        """
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.bulk import SimpleDirectoryReader
+
+        (tmp_path / "good1.md").write_text("first")
+        (tmp_path / "bad.md").write_text("corrupt")
+        (tmp_path / "good2.md").write_text("second")
+
+        def _parse(path, **kwargs):
+            if path.name == "bad.md":
+                raise DocumentParseError("Failed to parse bad.md with docling: boom")
+            return f"parsed {path.name}"
+
+        mock_parser = MagicMock()
+        mock_parser.parser_config_set = True
+        mock_parser.parse_file.side_effect = _parse
+        mock_parser.get_file_metadata.return_value = {}
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(tmp_path),
+            file_extractor={".md": mock_parser},
+            recursive=False,
+            exclude_hidden=True,
+        )
+        docs = reader.load_data()
+
+        texts = sorted(doc.text for doc in docs)
+        assert texts == ["parsed good1.md", "parsed good2.md"]
+        # The skip is recorded, not silent: callers can surface it.
+        assert [Path(p).name for p, _ in reader.failed_files] == ["bad.md"]
+        assert "boom" in reader.failed_files[0][1]
+
+    def test_single_unparseable_file_still_raises(self, tmp_path):
+        """The attachment path parses exactly one file and must fail loudly.
+
+        Skipping there would hand ``load_data()[0]`` an empty list and turn a
+        clear "this PDF could not be read" into an IndexError.
+        """
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.bulk import SimpleDirectoryReader
+
+        (tmp_path / "bad.pdf").write_text("not really a pdf")
+
+        mock_parser = MagicMock()
+        mock_parser.parser_config_set = True
+        mock_parser.parse_file.side_effect = DocumentParseError(
+            "Failed to parse bad.pdf with docling: InvalidCxxCompiler"
+        )
+
+        reader = SimpleDirectoryReader(
+            input_files=[str(tmp_path / "bad.pdf")],
+            file_extractor={".pdf": mock_parser},
+        )
+        # The parser's own message reaches the user verbatim, unwrapped.
+        with pytest.raises(DocumentParseError, match="InvalidCxxCompiler"):
+            reader.load_data()
+
+    def test_all_files_unparseable_raises(self, tmp_path):
+        """Nothing parsed is a failed ingest, not an empty success."""
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.bulk import SimpleDirectoryReader
+
+        (tmp_path / "a.md").write_text("x")
+        (tmp_path / "b.md").write_text("y")
+
+        mock_parser = MagicMock()
+        mock_parser.parser_config_set = True
+        mock_parser.parse_file.side_effect = DocumentParseError("nope")
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(tmp_path),
+            file_extractor={".md": mock_parser},
+            recursive=False,
+            exclude_hidden=True,
+        )
+        with pytest.raises(DocumentParseError) as excinfo:
+            reader.load_data()
+        assert "None of the 2 files" in str(excinfo.value)
+
+    def test_skipped_file_still_advances_progress(self, tmp_path):
+        """Progress must not stall on a skipped file."""
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.bulk import SimpleDirectoryReader
+
+        (tmp_path / "good.md").write_text("ok")
+        (tmp_path / "bad.md").write_text("bad")
+
+        def _parse(path, **kwargs):
+            if path.name == "bad.md":
+                raise DocumentParseError("boom")
+            return "ok"
+
+        mock_parser = MagicMock()
+        mock_parser.parser_config_set = True
+        mock_parser.parse_file.side_effect = _parse
+        mock_parser.get_file_metadata.return_value = {}
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(tmp_path),
+            file_extractor={".md": mock_parser},
+            recursive=False,
+            exclude_hidden=True,
+        )
+        calls = []
+        reader.load_data(progress_callback=lambda done, total: calls.append((done, total)))
+        assert [c[0] for c in calls] == [1, 2]
+
+    def test_load_data_progress_callback_fires_per_file(self, temp_dir):
+        from application.parser.file.bulk import SimpleDirectoryReader
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(temp_dir), recursive=False, exclude_hidden=True,
+        )
+        calls = []
+        reader.load_data(progress_callback=lambda done, total: calls.append((done, total)))
+
+        total_files = len(reader.input_files)
+        assert total_files >= 1
+        # One callback per file, monotonically increasing, ending at total.
+        assert [c[0] for c in calls] == list(range(1, total_files + 1))
+        assert all(c[1] == total_files for c in calls)
+
+    def test_load_data_progress_callback_errors_swallowed(self, temp_dir):
+        from application.parser.file.bulk import SimpleDirectoryReader
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(temp_dir), recursive=False, exclude_hidden=True,
+        )
+
+        def _boom(done, total):
+            raise RuntimeError("callback blew up")
+
+        # A failing callback must not abort ingestion.
+        docs = reader.load_data(progress_callback=_boom)
+        assert len(docs) >= 1
 
     def test_load_data_concatenate(self, temp_dir):
         from application.parser.file.bulk import SimpleDirectoryReader

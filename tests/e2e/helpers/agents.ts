@@ -1,6 +1,6 @@
 /**
- * Phase 2 helper — shared agent provisioning for specs that need a
- * published agent (with a real api_key) for subsequent /stream or /search
+ * Shared agent provisioning for specs that need a published agent
+ * (with a real api_key) for subsequent /stream or /search
  * calls. A PUBLISHED classic agent requires name, description, chunks,
  * retriever, prompt_id AND a source — otherwise `/api/create_agent`
  * returns 400.

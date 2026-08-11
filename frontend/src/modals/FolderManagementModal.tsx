@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
-import WrapperModal from './WrapperModal';
 
 type FolderNameModalProps = {
   modalState: ActiveState;
@@ -42,46 +44,54 @@ export default function FolderNameModal({
     }
   };
 
-  if (modalState !== 'ACTIVE') return null;
+  const handleCancel = () => {
+    setModalState('INACTIVE');
+    setName('');
+  };
 
   return (
-    <WrapperModal close={() => setModalState('INACTIVE')}>
-      <div className="w-72">
-        <h2 className="text-foreground dark:text-foreground mb-4 text-lg font-semibold">
-          {mode === 'create'
-            ? t('agents.folders.newFolder')
-            : t('agents.folders.rename')}
-        </h2>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={t('agents.folders.folderName')}
-          autoFocus
-          className="border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none dark:text-white"
-        />
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={() => {
-              setModalState('INACTIVE');
-              setName('');
-            }}
-            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(open) => {
+        if (!open) handleCancel();
+      }}
+      size="sm"
+      title={
+        mode === 'create'
+          ? t('agents.folders.newFolder')
+          : t('agents.folders.rename')
+      }
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleCancel}
+            className="rounded-3xl px-5"
           >
             {t('cancel')}
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white disabled:opacity-50"
+            className="rounded-3xl px-5"
           >
             {mode === 'create'
               ? t('agents.folders.createFolder')
               : t('agents.folders.rename')}
-          </button>
-        </div>
-      </div>
-    </WrapperModal>
+          </Button>
+        </>
+      }
+    >
+      <Input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={t('agents.folders.folderName')}
+        autoFocus
+      />
+    </Modal>
   );
 }

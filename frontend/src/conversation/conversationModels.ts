@@ -1,8 +1,11 @@
+import { AnswerSegment } from './answerSegments';
 import { ToolCallsType } from './types';
 
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed' | 'awaiting_tool_actions';
 export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;
+// Mirrors ``conversation_messages.status``.
+export type MessageStatus = 'pending' | 'streaming' | 'complete' | 'failed';
 
 export interface Message {
   text: string;
@@ -60,11 +63,28 @@ export interface Query {
   thought?: string;
   sources?: { title: string; text: string; link: string }[];
   tool_calls?: ToolCallsType[];
+  // Arrival-ordered layout of the fields above, so reasoning and tool calls
+  // render where they happened. Live-stream only; absent on reload, where
+  // ``getAnswerSegments`` synthesizes an order instead.
+  segments?: AnswerSegment[];
+  // Set when this answer came from a workflow agent run; lets the chat render
+  // the run's produced artifacts via WorkflowRunArtifacts.
+  workflow_run_id?: string;
   error?: string;
+  // Non-fatal notice (e.g. some workflow input documents were dropped). Shown
+  // alongside the answer; unlike ``error`` it does not fail the turn or end the stream.
+  notice?: string;
   attachments?: { id: string; fileName: string }[];
   structured?: boolean;
   schema?: object;
   research?: ResearchState;
+  // WAL placeholder id; lets the client tail an in-flight stream.
+  messageId?: string;
+  messageStatus?: MessageStatus;
+  requestId?: string;
+  lastHeartbeatAt?: string;
+  // Persisted so Retry can re-send the same key for server-side dedup.
+  idempotencyKey?: string;
 }
 
 export interface RetrievalPayload {
@@ -79,5 +99,6 @@ export interface RetrievalPayload {
   agent_id?: string;
   attachments?: string[];
   save_conversation?: boolean;
+  visibility?: 'listed' | 'hidden';
   model_id?: string;
 }

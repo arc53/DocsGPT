@@ -322,12 +322,12 @@ def test_get_actions_metadata(memory_tool):
     metadata = memory_tool.get_actions_metadata()
 
     action_names = [action["name"] for action in metadata]
-    assert "view" in action_names
-    assert "create" in action_names
-    assert "str_replace" in action_names
-    assert "insert" in action_names
-    assert "delete" in action_names
-    assert "rename" in action_names
+    assert "memory_view" in action_names
+    assert "memory_create" in action_names
+    assert "memory_str_replace" in action_names
+    assert "memory_insert" in action_names
+    assert "memory_delete" in action_names
+    assert "memory_rename" in action_names
 
     for action in metadata:
         assert "name" in action

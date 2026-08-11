@@ -131,6 +131,32 @@ class UserToolsRepository:
                 return row
         return self.get_by_legacy_id(tool_id, user_id)
 
+    def get_by_id(self, tool_id: str) -> Optional[dict]:
+        """Fetch a user_tool by id with NO ownership scoping.
+
+        Used ONLY after a team-grant authorization check (team sharing). Callers
+        MUST strip ``encrypted_credentials`` before returning a non-owner's tool.
+        """
+        if not looks_like_uuid(tool_id):
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM user_tools WHERE id = CAST(:id AS uuid)"),
+            {"id": tool_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def list_by_ids(self, tool_ids) -> list[dict]:
+        """Fetch user_tools whose id is in ``tool_ids`` (team-shared listing path)."""
+        ids = [str(t) for t in tool_ids if looks_like_uuid(str(t))]
+        if not ids:
+            return []
+        result = self._conn.execute(
+            text("SELECT * FROM user_tools WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at"),
+            {"ids": ids},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(
             text("SELECT * FROM user_tools WHERE user_id = :user_id ORDER BY created_at"),

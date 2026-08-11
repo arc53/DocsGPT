@@ -23,11 +23,11 @@ class TestNtfyExecuteAction:
         with pytest.raises(ValueError, match="Unknown action"):
             tool.execute_action("bad_action")
 
-    @patch("application.agents.tools.ntfy.requests.post")
-    def test_send_message_basic(self, mock_post, tool):
+    @patch("application.agents.tools.ntfy.pinned_request")
+    def test_send_message_basic(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_post.return_value = mock_resp
+        mock_pinned_request.return_value = mock_resp
 
         result = tool.execute_action(
             "ntfy_send_message",
@@ -38,16 +38,17 @@ class TestNtfyExecuteAction:
 
         assert result["status_code"] == 200
         assert result["message"] == "Message sent"
-        mock_post.assert_called_once()
-        call_args = mock_post.call_args
-        assert call_args[0][0] == "https://ntfy.sh/test"
-        assert call_args[1]["data"] == b"Hello"
+        mock_pinned_request.assert_called_once()
+        args, kwargs = mock_pinned_request.call_args
+        assert args[0] == "POST"
+        assert args[1] == "https://ntfy.sh/test"
+        assert kwargs["data"] == b"Hello"
 
-    @patch("application.agents.tools.ntfy.requests.post")
-    def test_send_with_title_and_priority(self, mock_post, tool):
+    @patch("application.agents.tools.ntfy.pinned_request")
+    def test_send_with_title_and_priority(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_post.return_value = mock_resp
+        mock_pinned_request.return_value = mock_resp
 
         tool.execute_action(
             "ntfy_send_message",
@@ -58,15 +59,15 @@ class TestNtfyExecuteAction:
             priority=5,
         )
 
-        headers = mock_post.call_args[1]["headers"]
+        headers = mock_pinned_request.call_args[1]["headers"]
         assert headers["X-Title"] == "Warning"
         assert headers["X-Priority"] == "5"
 
-    @patch("application.agents.tools.ntfy.requests.post")
-    def test_auth_header_with_token(self, mock_post, tool):
+    @patch("application.agents.tools.ntfy.pinned_request")
+    def test_auth_header_with_token(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_post.return_value = mock_resp
+        mock_pinned_request.return_value = mock_resp
 
         tool.execute_action(
             "ntfy_send_message",
@@ -75,14 +76,14 @@ class TestNtfyExecuteAction:
             topic="t",
         )
 
-        headers = mock_post.call_args[1]["headers"]
+        headers = mock_pinned_request.call_args[1]["headers"]
         assert headers["Authorization"] == "Basic test_token"
 
-    @patch("application.agents.tools.ntfy.requests.post")
-    def test_no_auth_without_token(self, mock_post, tool_no_token):
+    @patch("application.agents.tools.ntfy.pinned_request")
+    def test_no_auth_without_token(self, mock_pinned_request, tool_no_token):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_post.return_value = mock_resp
+        mock_pinned_request.return_value = mock_resp
 
         tool_no_token.execute_action(
             "ntfy_send_message",
@@ -91,7 +92,7 @@ class TestNtfyExecuteAction:
             topic="t",
         )
 
-        headers = mock_post.call_args[1]["headers"]
+        headers = mock_pinned_request.call_args[1]["headers"]
         assert "Authorization" not in headers
 
     def test_invalid_priority_raises(self, tool):
@@ -114,11 +115,11 @@ class TestNtfyExecuteAction:
                 priority="abc",
             )
 
-    @patch("application.agents.tools.ntfy.requests.post")
-    def test_trailing_slash_stripped(self, mock_post, tool):
+    @patch("application.agents.tools.ntfy.pinned_request")
+    def test_trailing_slash_stripped(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_post.return_value = mock_resp
+        mock_pinned_request.return_value = mock_resp
 
         tool.execute_action(
             "ntfy_send_message",
@@ -127,7 +128,7 @@ class TestNtfyExecuteAction:
             topic="test",
         )
 
-        assert mock_post.call_args[0][0] == "https://ntfy.sh/test"
+        assert mock_pinned_request.call_args[0][1] == "https://ntfy.sh/test"
 
 
 @pytest.mark.unit

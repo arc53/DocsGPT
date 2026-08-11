@@ -4,6 +4,7 @@ import SingleArrowLeft from '../assets/single-left-arrow.svg';
 import SingleArrowRight from '../assets/single-right-arrow.svg';
 import DoubleArrowLeft from '../assets/double-arrow-left.svg';
 import DoubleArrowRight from '../assets/double-arrow-right.svg';
+import { Button } from './ui/button';
 
 interface PaginationProps {
   currentPage: number;
@@ -59,12 +60,15 @@ const Pagination: React.FC<PaginationProps> = ({
           {t('pagination.rowsPerPage')}:
         </span>
         <div className="relative">
-          <button
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={toggleDropdown}
-            className="dark:bg-card dark:text-foreground hover:bg-accent dark:hover:bg-accent rounded border px-3 py-1"
+            className="dark:bg-card h-auto rounded px-3 py-1 shadow-none"
           >
             {rowsPerPage}
-          </button>
+          </Button>
           <div
             className={`ring-opacity-5 dark:bg-card bg-card absolute right-0 z-50 mt-1 w-28 transform shadow-lg ring-1 ring-black transition-all duration-200 ease-in-out ${
               isDropdownOpen
@@ -94,50 +98,62 @@ const Pagination: React.FC<PaginationProps> = ({
         {t('pagination.pageOf', { currentPage, totalPages })}
       </div>
       <div className="flex items-center gap-2 text-gray-900 dark:text-gray-50">
-        <button
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
           onClick={handleFirstPage}
           disabled={currentPage === 1}
-          className="rounded border px-2 py-1 disabled:opacity-50"
+          className="h-auto rounded px-2 py-1 shadow-none"
         >
           <img
             src={DoubleArrowLeft}
             alt={t('pagination.firstPage')}
             className="dark:brightness-200 dark:invert dark:sepia"
           />
-        </button>
-        <button
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
           onClick={handlePreviousPage}
           disabled={currentPage === 1}
-          className="rounded border px-2 py-1 disabled:opacity-50"
+          className="h-auto rounded px-2 py-1 shadow-none"
         >
           <img
             src={SingleArrowLeft}
             alt={t('pagination.previousPage')}
             className="dark:brightness-200 dark:invert dark:sepia"
           />
-        </button>
-        <button
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
           onClick={handleNextPage}
           disabled={currentPage === totalPages}
-          className="rounded border px-2 py-1 disabled:opacity-50"
+          className="h-auto rounded px-2 py-1 shadow-none"
         >
           <img
             src={SingleArrowRight}
             alt={t('pagination.nextPage')}
             className="dark:brightness-200 dark:invert dark:sepia"
           />
-        </button>
-        <button
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
           onClick={handleLastPage}
           disabled={currentPage === totalPages}
-          className="rounded border px-2 py-1 disabled:opacity-50"
+          className="h-auto rounded px-2 py-1 shadow-none"
         >
           <img
             src={DoubleArrowRight}
             alt={t('pagination.lastPage')}
             className="dark:brightness-200 dark:invert dark:sepia"
           />
-        </button>
+        </Button>
       </div>
     </div>
   );

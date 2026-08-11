@@ -96,23 +96,23 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     pip install -r application/requirements.txt
     ```
 
-5.  **Run the Flask App:**
+5.  **Run the Backend:**
 
-    Start the Flask backend application:
-
-    ```bash
-    flask --app application/app.py run --host=0.0.0.0 --port=7091
-    ```
-
-    This command will launch the backend server, making it accessible on `http://localhost:7091`. It's the fastest inner-loop option for day-to-day development — the Werkzeug interactive debugger still works and it hot-reloads on source changes. It serves the Flask routes only.
-
-    If you need to exercise the full ASGI stack — the `/mcp` endpoint (FastMCP server), or to match the production runtime — run the ASGI composition under uvicorn instead:
+    For local development, run the ASGI composition under uvicorn. It serves the **whole** application, hot-reloads on source changes, and matches the production runtime:
 
     ```bash
     uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
     ```
 
-    Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same `application.asgi:asgi_app` target.
+    This makes the backend accessible on `http://localhost:7091`. Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same `application.asgi:asgi_app` target.
+
+    A plain Flask run is a faster inner loop (quick startup, the Werkzeug interactive debugger):
+
+    ```bash
+    flask --app application/app.py run --host=0.0.0.0 --port=7091
+    ```
+
+    But it serves **only** the WSGI Flask app and omits the routes mounted on the ASGI shell in `application/asgi.py`: the `/mcp` FastMCP endpoint and the native-async SSE reconnect reader `GET /api/messages/<id>/events`. Under `flask run` those paths return 404 — chat still works (`POST /stream` is a Flask route), but a stream interrupted by a disconnect won't auto-resume on reconnect. Use `flask run` only when you don't need those routes.
 
 6.  **Start the Celery Worker:**
 

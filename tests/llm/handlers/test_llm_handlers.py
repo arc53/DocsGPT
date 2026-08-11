@@ -226,6 +226,225 @@ class TestLLMHandler:
 
 
 # ---------------------------------------------------------------------------
+# handle_tool_calls: assistant tool_call id <-> tool result id pairing
+# ---------------------------------------------------------------------------
+
+
+class _StubToolExecutor:
+    def __init__(self):
+        self._name_to_tool = {}
+
+    def check_pause(self, tools_dict, call, llm_class_name):
+        return None
+
+
+class _StubAgent:
+    """Minimal agent driving handle_tool_calls' success path."""
+
+    def __init__(self, resolved_call_id):
+        self.llm = Mock()
+        self.tool_executor = _StubToolExecutor()
+        self._resolved_call_id = resolved_call_id
+
+    def _execute_tool_action(self, tools_dict, call):
+        # Mirror tool_executor.execute: returns (result, call_id) where call_id
+        # is a synthesized UUID when the provider omitted the tool-call id.
+        yield from ()
+        return {"ok": True}, self._resolved_call_id
+
+
+class TestHandleToolCallsIdPairing:
+    def _drain(self, gen):
+        try:
+            while True:
+                next(gen)
+        except StopIteration as e:
+            return e.value
+
+    def test_tool_result_id_matches_assistant_when_provider_omits_id(self):
+        # Provider returned an empty tool-call id; the executor synthesizes one.
+        handler = ConcreteHandler()
+        call = ToolCall(id="", name="run_code", arguments={"code": "1"})
+        resolved = "resolved-uuid-123"
+        agent = _StubAgent(resolved)
+
+        updated_messages, pending = self._drain(
+            handler.handle_tool_calls(agent, [call], tools_dict={}, messages=[])
+        )
+
+        assistant = next(m for m in updated_messages if m["role"] == "assistant")
+        tool_msg = next(m for m in updated_messages if m["role"] == "tool")
+        assert assistant["tool_calls"][0]["id"] == resolved
+        # The tool result must carry the SAME id as the assistant tool_call,
+        # not the empty provider id — otherwise the next completion 400s.
+        assert tool_msg["tool_call_id"] == resolved
+        assert pending is None
+
+
+class _MultiCallStubAgent:
+    """Agent whose executor echoes each call's own id, optionally failing some."""
+
+    def __init__(self, fail_ids=()):
+        self.llm = Mock()
+        self.tool_executor = _StubToolExecutor()
+        self._fail_ids = set(fail_ids)
+
+    def _execute_tool_action(self, tools_dict, call):
+        yield from ()
+        if call.id in self._fail_ids:
+            raise RuntimeError(f"boom:{call.id}")
+        return {"ok": call.id}, call.id
+
+
+class TestHandleToolCallsParallelBatchLayout:
+    """A parallel batch must produce the standard provider layout: ONE
+    assistant message carrying every tool_call, followed by one tool message
+    per call.
+
+    Emitting a separate assistant message per call (the previous behaviour)
+    breaks ``_trim_for_previous_response``, which keeps only what follows the
+    LAST assistant message — so every output except the final one is dropped
+    from a chained Responses request and the provider 400s with
+    "No tool output found for function call ...".
+    """
+
+    def _drain(self, gen):
+        try:
+            while True:
+                next(gen)
+        except StopIteration as e:
+            return e.value
+
+    def _calls(self, n):
+        return [
+            ToolCall(id=f"call_{i}", name="search", arguments={"q": str(i)})
+            for i in range(n)
+        ]
+
+    def test_parallel_batch_produces_single_assistant_message(self):
+        handler = ConcreteHandler()
+        calls = self._calls(3)
+
+        updated, pending = self._drain(
+            handler.handle_tool_calls(
+                _MultiCallStubAgent(), calls, tools_dict={}, messages=[]
+            )
+        )
+
+        assistants = [m for m in updated if m["role"] == "assistant"]
+        assert len(assistants) == 1
+        assert [tc["id"] for tc in assistants[0]["tool_calls"]] == [
+            "call_0",
+            "call_1",
+            "call_2",
+        ]
+        assert pending is None
+
+    def test_parallel_batch_orders_assistant_before_every_result(self):
+        handler = ConcreteHandler()
+        calls = self._calls(3)
+
+        updated, _ = self._drain(
+            handler.handle_tool_calls(
+                _MultiCallStubAgent(), calls, tools_dict={}, messages=[]
+            )
+        )
+
+        roles = [m["role"] for m in updated]
+        assert roles == ["assistant", "tool", "tool", "tool"]
+        assert [m["tool_call_id"] for m in updated if m["role"] == "tool"] == [
+            "call_0",
+            "call_1",
+            "call_2",
+        ]
+
+    def test_every_call_in_the_batch_has_its_output(self):
+        """The invariant the provider enforces: every tool_call on the
+        assistant message is answered by a tool message."""
+        handler = ConcreteHandler()
+        calls = self._calls(4)
+
+        updated, _ = self._drain(
+            handler.handle_tool_calls(
+                _MultiCallStubAgent(), calls, tools_dict={}, messages=[]
+            )
+        )
+
+        declared = {
+            tc["id"]
+            for m in updated
+            if m["role"] == "assistant"
+            for tc in m["tool_calls"]
+        }
+        answered = {m["tool_call_id"] for m in updated if m["role"] == "tool"}
+        assert declared == answered
+
+    def test_reasoning_content_attached_once_not_per_call(self):
+        handler = ConcreteHandler()
+        calls = self._calls(3)
+
+        updated, _ = self._drain(
+            handler.handle_tool_calls(
+                _MultiCallStubAgent(),
+                calls,
+                tools_dict={},
+                messages=[],
+                reasoning_content="thinking",
+            )
+        )
+
+        assistants = [m for m in updated if m["role"] == "assistant"]
+        assert len(assistants) == 1
+        assert assistants[0]["reasoning_content"] == "thinking"
+
+    def test_failed_call_shares_the_batch_assistant_message(self):
+        """A tool that raises still contributes its call to the same assistant
+        message and gets an error tool message — pairing must hold."""
+        handler = ConcreteHandler()
+        calls = self._calls(3)
+
+        updated, _ = self._drain(
+            handler.handle_tool_calls(
+                _MultiCallStubAgent(fail_ids={"call_1"}),
+                calls,
+                tools_dict={},
+                messages=[],
+            )
+        )
+
+        assistants = [m for m in updated if m["role"] == "assistant"]
+        assert len(assistants) == 1
+        declared = {tc["id"] for tc in assistants[0]["tool_calls"]}
+        answered = {m["tool_call_id"] for m in updated if m["role"] == "tool"}
+        assert declared == {"call_0", "call_1", "call_2"} == answered
+
+    def test_single_call_batch_unchanged(self):
+        handler = ConcreteHandler()
+
+        updated, _ = self._drain(
+            handler.handle_tool_calls(
+                _MultiCallStubAgent(), self._calls(1), tools_dict={}, messages=[]
+            )
+        )
+
+        assert [m["role"] for m in updated] == ["assistant", "tool"]
+        assert len(updated[0]["tool_calls"]) == 1
+
+    def test_existing_history_is_preserved(self):
+        handler = ConcreteHandler()
+        history = [{"role": "user", "content": "hi"}]
+
+        updated, _ = self._drain(
+            handler.handle_tool_calls(
+                _MultiCallStubAgent(), self._calls(2), tools_dict={}, messages=history
+            )
+        )
+
+        assert updated[0] == {"role": "user", "content": "hi"}
+        assert [m["role"] for m in updated[1:]] == ["assistant", "tool", "tool"]
+
+
+# ---------------------------------------------------------------------------
 # _append_unsupported_attachments
 # ---------------------------------------------------------------------------
 
@@ -727,6 +946,146 @@ class TestHandleToolCalls:
         ]
         assert len(error_events) == 1
 
+    def test_tool_error_keeps_messages_well_formed(self):
+        """A raising tool must still leave the assistant tool_calls message
+        before its role:"tool" error so the next completion isn't rejected."""
+        handler = ConcreteHandler()
+        agent = Mock()
+        agent._check_context_limit = Mock(return_value=False)
+        agent.context_limit_reached = False
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
+        agent.tool_executor._name_to_tool = {}
+        agent._execute_tool_action = Mock(side_effect=RuntimeError("boom"))
+
+        call = ToolCall(id="c1", name="action_1", arguments="{}")
+        gen = handler.handle_tool_calls(agent, [call], {"1": {"name": "t"}}, [])
+        try:
+            while True:
+                next(gen)
+        except StopIteration as e:
+            messages, _pending = e.value
+
+        assert len(messages) == 2
+        assistant_msg, tool_msg = messages
+        assert assistant_msg["role"] == "assistant"
+        assert assistant_msg["tool_calls"][0]["id"] == "c1"
+        assert tool_msg["role"] == "tool"
+        assert tool_msg["tool_call_id"] == "c1"
+        assert "boom" in tool_msg["content"]
+        # OpenAI ordering rule: the tool message must immediately follow an
+        # assistant message whose tool_calls include its tool_call_id.
+        assistant_ids = {tc["id"] for tc in assistant_msg["tool_calls"]}
+        assert tool_msg["tool_call_id"] in assistant_ids
+
+    def test_create_tool_message_failure_no_duplicate_assistant(self):
+        """A tool that succeeds but returns an unserializable result makes
+        create_tool_message raise *after* the success path appended the
+        assistant tool_calls message. The except branch must reuse that
+        message, not append a second one — exactly one assistant(tool_calls)
+        precedes the role:"tool" error, or the next completion 400s."""
+
+        class _SerializingHandler(ConcreteHandler):
+            def create_tool_message(
+                self, tool_call: ToolCall, result: Any
+            ) -> Dict:
+                # Mirror real handlers: JSON-encode non-str results, which
+                # raises on a value the encoder can't serialize. The error
+                # path passes a plain string, so only the success path trips.
+                import json as _json
+
+                content = (
+                    result
+                    if isinstance(result, str)
+                    else _json.dumps(result)
+                )
+                return {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": content,
+                }
+
+        handler = _SerializingHandler()
+        agent = self._make_agent()
+        agent.tool_executor._name_to_tool = {}
+
+        # Tool runs fine but returns a value json.dumps can't encode.
+        def fake_execute(tools_dict, call):
+            yield {"type": "tool_call", "data": {"status": "pending"}}
+            return (object(), call.id)
+
+        agent._execute_tool_action = Mock(side_effect=fake_execute)
+
+        call = ToolCall(id="c1", name="action_1", arguments="{}")
+        gen = handler.handle_tool_calls(agent, [call], {"1": {"name": "t"}}, [])
+        try:
+            while True:
+                next(gen)
+        except StopIteration as e:
+            messages, _pending = e.value
+
+        # Exactly one assistant(tool_calls) for c1, then the tool error — the
+        # buggy path produced [assistant, assistant, tool].
+        assert [m["role"] for m in messages] == ["assistant", "tool"]
+        assistant_msgs = [
+            m for m in messages
+            if m.get("role") == "assistant"
+            and any(tc["id"] == "c1" for tc in m.get("tool_calls", []))
+        ]
+        assert len(assistant_msgs) == 1
+        tool_msg = messages[-1]
+        assert tool_msg["role"] == "tool"
+        assert tool_msg["tool_call_id"] == "c1"
+        assert "Error executing tool" in tool_msg["content"]
+
+    def test_partial_batch_failure_answers_every_tool_call(self):
+        """One tool raises, others succeed: every assistant tool_call must
+        get a matching role:"tool" reply (OpenAI rejects unanswered ids)."""
+        handler = ConcreteHandler()
+        agent = Mock()
+        agent._check_context_limit = Mock(return_value=False)
+        agent.context_limit_reached = False
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
+        agent.tool_executor._name_to_tool = {}
+
+        def fake_execute(tools_dict, call):
+            yield {"type": "tool_call", "data": {"status": "pending"}}
+            if call.id == "c2":
+                raise RuntimeError("boom")
+            return ("ok", call.id)
+
+        agent._execute_tool_action = Mock(side_effect=fake_execute)
+
+        calls = [
+            ToolCall(id="c1", name="a_1", arguments="{}"),
+            ToolCall(id="c2", name="b_1", arguments="{}"),
+            ToolCall(id="c3", name="c_1", arguments="{}"),
+        ]
+        gen = handler.handle_tool_calls(agent, calls, {"1": {"name": "t"}}, [])
+        try:
+            while True:
+                next(gen)
+        except StopIteration as e:
+            messages, _pending = e.value
+
+        # Every tool message must answer a tool_call declared by an assistant
+        # message EARLIER in the array, and every declared call must be
+        # answered. (Adjacency is deliberately not asserted: the standard
+        # provider layout is one assistant message carrying the whole batch
+        # followed by all its results, so only the first result is adjacent.)
+        declared_ids: set = set()
+        answered_ids: set = set()
+        for msg in messages:
+            if msg.get("role") == "assistant":
+                declared_ids.update(tc["id"] for tc in msg.get("tool_calls", []))
+            elif msg.get("role") == "tool":
+                assert msg["tool_call_id"] in declared_ids, (
+                    "tool result precedes the assistant message declaring it"
+                )
+                answered_ids.add(msg["tool_call_id"])
+        assert answered_ids == {"c1", "c2", "c3"} == declared_ids
+
     def test_thought_signature_preserved(self):
         handler = ConcreteHandler()
         agent = self._make_agent()
@@ -963,7 +1322,9 @@ class TestHandleStreaming:
             mock_settings.ENABLE_CONVERSATION_COMPRESSION = False
 
             # handle_tool_calls yields skip events and sets context_limit_reached
-            def fake_handle_tool_calls(agent, calls, tools_dict, messages):
+            def fake_handle_tool_calls(
+                agent, calls, tools_dict, messages, reasoning_content=""
+            ):
                 agent.context_limit_reached = True
                 yield {"type": "tool_call", "data": {"status": "skipped"}}
                 return messages, None

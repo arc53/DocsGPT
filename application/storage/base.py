@@ -37,6 +37,23 @@ class BaseStorage(ABC):
         """
         pass
 
+    def generate_presigned_url(self, path: str, expires_in: int = 300) -> str:
+        """Return a short-lived presigned download URL; not all backends support it.
+
+        Args:
+            path: Path to the file
+            expires_in: TTL of the signed URL in seconds
+
+        Returns:
+            str: A presigned URL granting time-limited read access
+
+        Raises:
+            NotImplementedError: If the backend cannot mint presigned URLs.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support presigned URLs"
+        )
+
     @abstractmethod
     def process_file(self, path: str, processor_func: Callable, **kwargs):
         """

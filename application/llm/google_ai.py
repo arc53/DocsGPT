@@ -6,6 +6,7 @@ from google.genai import types
 from application.core.settings import settings
 
 from application.llm.base import BaseLLM
+from application.llm.handlers.google import _decode_thought_signature
 from application.storage.storage_creator import StorageCreator
 
 
@@ -258,7 +259,7 @@ class GoogleLLM(BaseLLM):
                         except (_json.JSONDecodeError, TypeError):
                             args = {}
                     cleaned_args = self._remove_null_values(args)
-                    thought_sig = tc.get("thought_signature")
+                    thought_sig = _decode_thought_signature(tc.get("thought_signature"))
                     if thought_sig:
                         parts.append(
                             types.Part(
@@ -322,7 +323,9 @@ class GoogleLLM(BaseLLM):
                                             name=item["function_call"]["name"],
                                             args=cleaned_args,
                                         ),
-                                        thoughtSignature=item["thought_signature"],
+                                        thoughtSignature=_decode_thought_signature(
+                                            item["thought_signature"]
+                                        ),
                                     )
                                 )
                             else:
@@ -542,11 +545,12 @@ class GoogleLLM(BaseLLM):
         **kwargs,
     ):
         """Generate content using Google AI API without streaming."""
-        client = genai.Client(api_key=self.api_key)
         system_instruction = None
         if formatting == "openai":
             messages, system_instruction = self._clean_messages_google(messages)
-        config = types.GenerateContentConfig()
+        config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(include_thoughts=True),
+        )
         if system_instruction:
             config.system_instruction = system_instruction
         if tools:
@@ -557,7 +561,7 @@ class GoogleLLM(BaseLLM):
         if response_schema:
             config.response_schema = response_schema
             config.response_mime_type = "application/json"
-        response = client.models.generate_content(
+        response = self.client.models.generate_content(
             model=model,
             contents=messages,
             config=config,
@@ -580,11 +584,16 @@ class GoogleLLM(BaseLLM):
         **kwargs,
     ):
         """Generate content using Google AI API with streaming."""
-        client = genai.Client(api_key=self.api_key)
         system_instruction = None
         if formatting == "openai":
             messages, system_instruction = self._clean_messages_google(messages)
-        config = types.GenerateContentConfig()
+        # include_thoughts surfaces Gemini's thought-summary parts so the
+        # same {"type":"thought"} accumulator that DeepSeek uses can
+        # capture and persist them. Off by default; thinking itself is
+        # already on for Gemini 3.x flash/pro.
+        config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(include_thoughts=True),
+        )
         if system_instruction:
             config.system_instruction = system_instruction
         if tools:
@@ -596,7 +605,24 @@ class GoogleLLM(BaseLLM):
             config.response_mime_type = "application/json"
         # Check if we have both tools and file attachments
 
-        response = client.models.generate_content_stream(
+        has_attachments = False
+        for message in messages:
+            parts = getattr(message, "parts", None) or []
+            for part in parts:
+                if hasattr(part, "file_data") and part.file_data is not None:
+                    has_attachments = True
+                    break
+            if has_attachments:
+                break
+        messages_summary = self._summarize_messages_for_log(messages)
+        logging.info(
+            "GoogleLLM: Starting stream generation. Model: %s, Messages: %s, Has attachments: %s",
+            model,
+            messages_summary,
+            has_attachments,
+        )
+
+        response = self.client.models.generate_content_stream(
             model=model,
             contents=messages,
             config=config,
@@ -642,8 +668,12 @@ class GoogleLLM(BaseLLM):
         """Return whether this LLM supports structured JSON output."""
         return True
 
-    def prepare_structured_output_format(self, json_schema):
-        """Convert JSON schema to Google AI structured output format."""
+    def prepare_structured_output_format(self, json_schema, strict=True):
+        """Convert JSON schema to Google AI structured output format.
+
+        ``strict`` is accepted for signature parity with the OpenAI provider;
+        Google enforces the schema natively via ``response_schema``.
+        """
         if not json_schema:
             return None
         type_map = {

@@ -6,18 +6,20 @@ const conversationService = {
     data: any,
     token: string | null,
     signal: AbortSignal,
+    headers: Record<string, string> = {},
   ): Promise<any> =>
-    apiClient.post(endpoints.CONVERSATION.ANSWER, data, token, {}, signal),
+    apiClient.post(endpoints.CONVERSATION.ANSWER, data, token, headers, signal),
   answerStream: (
     data: any,
     token: string | null,
     signal: AbortSignal,
+    headers: Record<string, string> = {},
   ): Promise<any> =>
     apiClient.post(
       endpoints.CONVERSATION.ANSWER_STREAMING,
       data,
       token,
-      {},
+      headers,
       signal,
     ),
   search: (data: any, token: string | null): Promise<any> =>
@@ -26,8 +28,20 @@ const conversationService = {
     apiClient.post(endpoints.CONVERSATION.FEEDBACK, data, token, {}),
   getConversation: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.CONVERSATION.CONVERSATION(id), token, {}),
+  tailMessage: (messageId: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.CONVERSATION.MESSAGE_TAIL(messageId), token, {}),
   getConversations: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.CONVERSATION.CONVERSATIONS, token, {}),
+  searchConversations: (
+    query: string,
+    token: string | null,
+    limit = 30,
+  ): Promise<any> =>
+    apiClient.get(
+      endpoints.CONVERSATION.SEARCH_CONVERSATIONS(query, limit),
+      token,
+      {},
+    ),
   shareConversation: (
     isPromptable: boolean,
     data: any,

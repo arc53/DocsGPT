@@ -7,8 +7,49 @@ This module handles:
 """
 
 import json
+import re
 import time
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+# Some upstream models/proxies echo their reasoning into ``content`` as
+# stringified ``{'type': 'thought', 'thought': '...'}`` event reprs (instead of
+# using the separate reasoning channel) — most visibly when ``response_format``
+# is set. OpenAI's API never puts reasoning in ``content``, so for the
+# OpenAI-compatible endpoint we strip these and reroute them to
+# ``reasoning_content`` to keep ``content`` clean and compatible.
+# The thought value is a Python string repr: single-quoted, or double-quoted when
+# the token contains an apostrophe (e.g. "'ll"). Match the full quoted value
+# (honoring escapes) so tokens containing ``}`` or newlines don't truncate the
+# match and leave stray ``'}`` tails in the content.
+_LEAKED_THOUGHT_RE = re.compile(
+    r"""\{'type': 'thought', 'thought': ('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\}""",
+    re.DOTALL,
+)
+
+
+def _strip_repr_quotes(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+        return value[1:-1]
+    return value
+
+
+def _split_leaked_reasoning(content: Optional[str]) -> tuple:
+    """Return ``(clean_content, leaked_reasoning)``.
+
+    ``clean_content`` has any stringified thought-event reprs removed;
+    ``leaked_reasoning`` is the concatenated reasoning text that was extracted.
+    A no-op (returns the input unchanged) when no leak markers are present.
+    """
+    if not content or "'type': 'thought'" not in content:
+        return content, ""
+    extracted: List[str] = []
+    cleaned = _LEAKED_THOUGHT_RE.sub(
+        lambda m: (extracted.append(_strip_repr_quotes(m.group(1))) or ""), content
+    )
+    return cleaned, "".join(extracted)
+
 
 def _get_client_tool_name(tc: Dict) -> str:
     """Return the original tool name for client-facing responses.
@@ -80,15 +121,41 @@ def extract_conversation_id(messages: List[Dict]) -> Optional[str]:
     return None
 
 
-def extract_system_prompt(messages: List[Dict]) -> Optional[str]:
-    """Extract the first system message content from the messages array.
+def content_to_text(content: Any) -> str:
+    """Flatten an OpenAI message ``content`` to plain text.
 
-    Returns None if no system message is present.
+    ``content`` may be a string or a list of typed parts
+    (``{"type":"text",...}`` / ``{"type":"image_url",...}`` / ...). Only text
+    parts contribute; image/other parts are dropped here. The full content
+    array is preserved separately (see ``multimodal_content``) so images still
+    reach the model in the final user message.
     """
-    for msg in messages:
-        if msg.get("role") == "system":
-            return msg.get("content", "")
-    return None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                out.append(part.get("text", "") or "")
+            elif isinstance(part, str):
+                out.append(part)
+        return "\n".join(out)
+    return "" if content is None else str(content)
+
+
+def extract_system_prompt(messages: List[Dict]) -> Optional[str]:
+    """Combine system and developer instructions in request order.
+
+    Chat-completions clients use both roles. DocsGPT has one prompt-override
+    slot, so preserving their order is the least surprising translation.
+    Returns None when neither role is present.
+    """
+    prompts = [
+        content_to_text(msg.get("content", ""))
+        for msg in messages
+        if msg.get("role") in ("system", "developer")
+    ]
+    return "\n\n".join(prompts) if prompts else None
 
 
 def convert_history(messages: List[Dict]) -> List[Dict]:
@@ -101,15 +168,15 @@ def convert_history(messages: List[Dict]) -> List[Dict]:
     i = 0
     while i < len(messages):
         msg = messages[i]
-        if msg.get("role") == "system":
+        if msg.get("role") in ("system", "developer"):
             i += 1
             continue
         if msg.get("role") == "user":
             # Look ahead for assistant response
             if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant":
-                content = messages[i + 1].get("content") or ""
+                content = content_to_text(messages[i + 1].get("content") or "")
                 history.append({
-                    "prompt": msg.get("content", ""),
+                    "prompt": content_to_text(msg.get("content", "")),
                     "response": content,
                 })
                 i += 2
@@ -119,6 +186,37 @@ def convert_history(messages: List[Dict]) -> List[Dict]:
             continue
         i += 1
     return history
+
+
+def extract_response_schema(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Extract a JSON schema for structured output from a chat-completions request.
+
+    Supports two request shapes:
+    - OpenAI ``response_format``:
+      ``{"type": "json_schema", "json_schema": {"name": ..., "schema": {...}}}``
+      (a bare schema under ``json_schema`` is also tolerated).
+    - ``response_schema`` convenience field: a raw JSON Schema object, or a
+      ``{"schema": {...}}`` wrapper.
+
+    Returns a raw JSON Schema object, or None. ``response_format``
+    ``{"type": "json_object"}`` carries no schema to enforce and yields None
+    (the model is still steered by the system prompt).
+    """
+    response_schema = data.get("response_schema")
+    if isinstance(response_schema, dict) and response_schema:
+        inner = response_schema.get("schema")
+        return inner if isinstance(inner, dict) else response_schema
+
+    response_format = data.get("response_format")
+    if isinstance(response_format, dict) and response_format.get("type") == "json_schema":
+        json_schema = response_format.get("json_schema")
+        if isinstance(json_schema, dict):
+            schema = json_schema.get("schema")
+            if isinstance(schema, dict):
+                return schema
+            if "type" in json_schema:
+                return json_schema
+    return None
 
 
 def translate_request(
@@ -134,29 +232,80 @@ def translate_request(
         Dict suitable for passing to ``StreamProcessor``.
     """
     messages = data.get("messages", [])
+    response_schema = extract_response_schema(data)
+    _rf = data.get("response_format")
+    _rf = _rf if isinstance(_rf, dict) else {}
+    # OpenAI Structured Outputs default to strict; honor an explicit strict:false.
+    json_schema_strict = bool((_rf.get("json_schema") or {}).get("strict", True))
+    json_object_mode = _rf.get("type") == "json_object"
+
+    # OpenAI sampling params, forwarded to the LLM gen call (the agent otherwise
+    # uses its configured defaults).
+    sampling_params = {}
+    for _k in (
+        "temperature", "max_tokens", "max_completion_tokens",
+        "top_p", "frequency_penalty", "presence_penalty", "stop", "seed",
+    ):
+        if data.get(_k) is not None:
+            sampling_params[_k] = data[_k]
+    # OpenAI rejects sending both; the provider maps max_tokens ->
+    # max_completion_tokens, so drop the alias when the canonical key is present.
+    if "max_completion_tokens" in sampling_params:
+        sampling_params.pop("max_tokens", None)
+    if data.get("tools") and data.get("tool_choice") is not None:
+        sampling_params["tool_choice"] = data["tool_choice"]
+    if data.get("tools") and data.get("parallel_tool_calls") is not None:
+        sampling_params["parallel_tool_calls"] = data["parallel_tool_calls"]
 
     # Check for continuation (tool results after assistant tool_calls)
     if is_continuation(messages):
         tool_actions = extract_tool_results(messages)
         conversation_id = extract_conversation_id(messages)
         if not conversation_id:
-            conversation_id = data.get("conversation_id")
+            conversation_id = data.get("conversation_id") or (
+                data.get("docsgpt") or {}
+            ).get("conversation_id")
         result = {
             "conversation_id": conversation_id,
             "tool_actions": tool_actions,
             "api_key": api_key,
+            # Full messages array for STATELESS continuation: OpenAI clients
+            # (opencode, etc.) don't carry a conversation_id, so the agent is
+            # rebuilt from the resent messages instead of server-side state.
+            "messages": messages,
         }
+        if data.get("conversation_id") and not result.get("conversation_id"):
+            result["conversation_id"] = data["conversation_id"]
+        # Persistence: stateful continuations (carrying a conversation_id)
+        # persist the final turn; stateless ones (no conversation_id, e.g.
+        # opencode) skip it, else every tool round writes an orphan conversation
+        # with an empty question. ``docsgpt.persist`` overrides. Visibility is
+        # not request-controllable on v1 — rows always persist hidden, so the
+        # legacy ``docsgpt.save_conversation`` flag is ignored.
+        docsgpt_ext = data.get("docsgpt", {})
+        result["persist"] = bool(docsgpt_ext.get("persist", bool(conversation_id)))
         # Carry tools forward for next iteration
         if data.get("tools"):
             result["client_tools"] = data["tools"]
+        if response_schema is not None:
+            result["json_schema"] = response_schema
+            result["json_schema_strict"] = json_schema_strict
+        if json_object_mode:
+            result["json_object"] = True
+        if sampling_params:
+            result["llm_params"] = sampling_params
         return result
 
-    # Normal request — extract question from last user message
-    question = ""
+    # Normal request — extract the question (text) from the last user message,
+    # and keep its full content array (text + image_url parts) when multimodal so
+    # images still reach the model in the final user message.
+    last_user_content = None
     for msg in reversed(messages):
         if msg.get("role") == "user":
-            question = msg.get("content", "")
+            last_user_content = msg.get("content")
             break
+    question = content_to_text(last_user_content)
+    multimodal_content = last_user_content if isinstance(last_user_content, list) else None
 
     history = convert_history(messages)
     system_prompt_override = extract_system_prompt(messages)
@@ -167,10 +316,13 @@ def translate_request(
         "question": question,
         "api_key": api_key,
         "history": json.dumps(history),
-        # Conversations are NOT persisted by default on the v1 endpoint.
-        # Callers opt in via ``docsgpt.save_conversation: true``.
-        "save_conversation": bool(docsgpt.get("save_conversation", False)),
+        # v1 conversations always persist and stay hidden from the agent
+        # owner's sidebar; the legacy ``docsgpt.save_conversation`` flag
+        # (old meaning: "persist this conversation") is ignored.
     }
+    conversation_id = data.get("conversation_id") or docsgpt.get("conversation_id")
+    if conversation_id:
+        result["conversation_id"] = conversation_id
 
     if system_prompt_override is not None:
         result["system_prompt_override"] = system_prompt_override
@@ -182,6 +334,16 @@ def translate_request(
     # DocsGPT extensions
     if docsgpt.get("attachments"):
         result["attachments"] = docsgpt["attachments"]
+
+    if response_schema is not None:
+        result["json_schema"] = response_schema
+        result["json_schema_strict"] = json_schema_strict
+    if json_object_mode:
+        result["json_object"] = True
+    if sampling_params:
+        result["llm_params"] = sampling_params
+    if multimodal_content is not None:
+        result["multimodal_content"] = multimodal_content
 
     return result
 
@@ -199,6 +361,9 @@ def translate_response(
     thought: str,
     model_name: str,
     pending_tool_calls: Optional[List[Dict]] = None,
+    strip_reasoning_leak: bool = False,
+    usage: Optional[Dict[str, Any]] = None,
+    finish_reason_override: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Translate DocsGPT response to chat completions format.
 
@@ -240,10 +405,15 @@ def translate_response(
         ]
         finish_reason = "tool_calls"
     else:
-        message["content"] = answer
-        if thought:
-            message["reasoning_content"] = thought
-        finish_reason = "stop"
+        if strip_reasoning_leak:
+            clean_answer, leaked_reasoning = _split_leaked_reasoning(answer)
+        else:
+            clean_answer, leaked_reasoning = answer, ""
+        message["content"] = clean_answer
+        combined_reasoning = (thought or "") + leaked_reasoning
+        if combined_reasoning:
+            message["reasoning_content"] = combined_reasoning
+        finish_reason = finish_reason_override or "stop"
 
     result: Dict[str, Any] = {
         "id": completion_id,
@@ -257,7 +427,7 @@ def translate_response(
                 "finish_reason": finish_reason,
             }
         ],
-        "usage": {
+        "usage": usage or {
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
@@ -283,6 +453,15 @@ def translate_response(
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class StreamTranslationState:
+    """State shared while translating one internal stream."""
+
+    tool_indices: Dict[str, int] = field(default_factory=dict)
+    tool_pause_finished: bool = False
+    done: bool = False
+
+
 def _make_chunk(
     completion_id: str,
     model_name: str,
@@ -306,15 +485,47 @@ def _make_chunk(
     return f"data: {json.dumps(chunk)}\n\n"
 
 
-def _make_docsgpt_chunk(data: Dict[str, Any]) -> str:
-    """Build a DocsGPT extension SSE chunk."""
-    return f"data: {json.dumps({'docsgpt': data})}\n\n"
+def make_usage_chunk(
+    completion_id: str, model_name: str, usage: Dict[str, Any]
+) -> str:
+    """Build the optional final usage chunk used by ``stream_options``."""
+    chunk = {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model_name,
+        "choices": [],
+        "usage": usage,
+    }
+    return f"data: {json.dumps(chunk)}\n\n"
+
+
+def _make_docsgpt_chunk(data: Dict[str, Any], completion_id: str, model_name: str) -> str:
+    """Build a DocsGPT extension chunk that is ALSO a valid ``chat.completion.chunk``.
+
+    Strict OpenAI clients (e.g. the Vercel AI SDK used by opencode) validate every
+    SSE ``data:`` frame as a chat.completion.chunk, so the DocsGPT extension is
+    attached to an otherwise-empty (no-op) chunk rather than sent as a bare
+    ``{"docsgpt": ...}`` object — which has no ``choices`` and fails validation.
+    OpenAI clients ignore the extra top-level ``docsgpt`` field.
+    """
+    chunk = {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model_name,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+        "docsgpt": data,
+    }
+    return f"data: {json.dumps(chunk)}\n\n"
 
 
 def translate_stream_event(
     event_data: Dict[str, Any],
     completion_id: str,
     model_name: str,
+    strip_reasoning_leak: bool = False,
+    state: Optional[StreamTranslationState] = None,
 ) -> List[str]:
     """Translate a DocsGPT SSE event dict to standard streaming chunks.
 
@@ -333,11 +544,21 @@ def translate_stream_event(
     """
     event_type = event_data.get("type")
     chunks: List[str] = []
+    state = state or StreamTranslationState()
 
     if event_type == "answer":
-        chunks.append(
-            _make_chunk(completion_id, model_name, {"content": event_data.get("answer", "")})
+        raw = event_data.get("answer", "")
+        clean, leaked = (
+            _split_leaked_reasoning(raw) if strip_reasoning_leak else (raw, "")
         )
+        if leaked:
+            chunks.append(
+                _make_chunk(completion_id, model_name, {"reasoning_content": leaked})
+            )
+        if clean:
+            chunks.append(
+                _make_chunk(completion_id, model_name, {"content": clean})
+            )
 
     elif event_type == "thought":
         chunks.append(
@@ -349,10 +570,10 @@ def translate_stream_event(
 
     elif event_type == "source":
         chunks.append(
-            _make_docsgpt_chunk({
-                "type": "source",
-                "sources": event_data.get("source", []),
-            })
+            _make_docsgpt_chunk(
+                {"type": "source", "sources": event_data.get("source", [])},
+                completion_id, model_name,
+            )
         )
 
     elif event_type == "tool_call":
@@ -363,11 +584,14 @@ def translate_stream_event(
             # Standard: stream as tool_calls delta
             args = tc_data.get("arguments", {})
             args_str = json.dumps(args) if isinstance(args, dict) else str(args)
+            call_id = tc_data.get("call_id", "")
+            if call_id not in state.tool_indices:
+                state.tool_indices[call_id] = len(state.tool_indices)
             chunks.append(
                 _make_chunk(completion_id, model_name, {
                     "tool_calls": [{
-                        "index": 0,
-                        "id": tc_data.get("call_id", ""),
+                        "index": state.tool_indices[call_id],
+                        "id": call_id,
                         "type": "function",
                         "function": {
                             "name": _get_client_tool_name(tc_data),
@@ -378,37 +602,54 @@ def translate_stream_event(
             )
         elif status == "awaiting_approval":
             # Extension: approval needed
-            chunks.append(_make_docsgpt_chunk({"type": "tool_call", "data": tc_data}))
+            chunks.append(_make_docsgpt_chunk({"type": "tool_call", "data": tc_data}, completion_id, model_name))
         elif status in ("completed", "pending", "error", "denied", "skipped"):
             # Extension: tool call progress
-            chunks.append(_make_docsgpt_chunk({"type": "tool_call", "data": tc_data}))
+            chunks.append(_make_docsgpt_chunk({"type": "tool_call", "data": tc_data}, completion_id, model_name))
 
     elif event_type == "tool_calls_pending":
         # Standard: finish_reason = tool_calls
-        chunks.append(
-            _make_chunk(completion_id, model_name, {}, finish_reason="tool_calls")
-        )
+        if not state.tool_pause_finished:
+            chunks.append(
+                _make_chunk(completion_id, model_name, {}, finish_reason="tool_calls")
+            )
+            state.tool_pause_finished = True
         # Also emit as docsgpt extension
         chunks.append(
-            _make_docsgpt_chunk({
-                "type": "tool_calls_pending",
-                "pending_tool_calls": event_data.get("data", {}).get("pending_tool_calls", []),
-            })
+            _make_docsgpt_chunk(
+                {
+                    "type": "tool_calls_pending",
+                    "pending_tool_calls": event_data.get("data", {}).get("pending_tool_calls", []),
+                },
+                completion_id, model_name,
+            )
         )
 
     elif event_type == "end":
-        chunks.append(
-            _make_chunk(completion_id, model_name, {}, finish_reason="stop")
-        )
-        chunks.append("data: [DONE]\n\n")
+        if not state.done:
+            if not state.tool_pause_finished:
+                chunks.append(
+                    _make_chunk(
+                        completion_id,
+                        model_name,
+                        {},
+                        finish_reason=event_data.get("finish_reason") or "stop",
+                    )
+                )
+            chunks.append("data: [DONE]\n\n")
+            state.done = True
 
     elif event_type == "id":
-        chunks.append(
-            _make_docsgpt_chunk({
-                "type": "id",
-                "conversation_id": event_data.get("id", ""),
-            })
-        )
+        # Skip the "None" placeholder conversation_id emitted when the call is
+        # not persisted (persist=false tool rounds) — nothing useful to surface.
+        conv_id = event_data.get("id", "")
+        if conv_id and conv_id != "None":
+            chunks.append(
+                _make_docsgpt_chunk(
+                    {"type": "id", "conversation_id": conv_id},
+                    completion_id, model_name,
+                )
+            )
 
     elif event_type == "error":
         # Emit as standard error (non-standard but widely supported)
@@ -421,12 +662,18 @@ def translate_stream_event(
         chunks.append(f"data: {json.dumps(error_data)}\n\n")
 
     elif event_type == "structured_answer":
-        chunks.append(
-            _make_chunk(
-                completion_id, model_name,
-                {"content": event_data.get("answer", "")},
-            )
+        raw = event_data.get("answer", "")
+        clean, leaked = (
+            _split_leaked_reasoning(raw) if strip_reasoning_leak else (raw, "")
         )
+        if leaked:
+            chunks.append(
+                _make_chunk(completion_id, model_name, {"reasoning_content": leaked})
+            )
+        if clean:
+            chunks.append(
+                _make_chunk(completion_id, model_name, {"content": clean})
+            )
 
     # Skip: tool_calls (redundant), research_plan, research_progress
 

@@ -6,6 +6,9 @@ from openai import OpenAI
 from application.core.settings import settings
 from application.stt.base import BaseSTT
 
+# Placeholder sent to OpenAI-compatible backends that require no credentials.
+NO_API_KEY = "sk-no-key"
+
 
 class OpenAISTT(BaseSTT):
     def __init__(
@@ -14,7 +17,10 @@ class OpenAISTT(BaseSTT):
         base_url: Optional[str] = None,
         model: Optional[str] = None,
     ):
-        self.api_key = api_key or settings.OPENAI_API_KEY or settings.API_KEY
+        # See application/llm/openai.py: openai>=2.53 rejects a falsy api_key.
+        self.api_key = (
+            api_key or settings.OPENAI_API_KEY or settings.API_KEY or NO_API_KEY
+        )
         self.base_url = base_url or settings.OPENAI_BASE_URL or "https://api.openai.com/v1"
         self.model = model or settings.OPENAI_STT_MODEL
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)

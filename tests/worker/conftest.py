@@ -40,7 +40,12 @@ def patch_worker_db(pg_conn, monkeypatch):
 def task_self():
     """Minimal stand-in for the Celery task ``self`` passed to workers.
 
-    Only ``update_state`` is ever exercised in the happy paths we cover
-    here, so a MagicMock is more than enough.
+    ``update_state`` and ``request.retries`` are the only attributes the
+    worker bodies touch in our tests. Defaulting ``retries`` to 0 makes
+    every fixture instance behave like a fresh first attempt, which is
+    what the queued-event publishes are gated on. Tests covering the
+    retry path override this to a positive int.
     """
-    return MagicMock(name="celery_task_self")
+    task = MagicMock(name="celery_task_self")
+    task.request.retries = 0
+    return task

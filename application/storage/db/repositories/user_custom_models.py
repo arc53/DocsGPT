@@ -34,6 +34,8 @@ _ALLOWED_CAPABILITY_KEYS = frozenset(
         "supports_streaming",
         "attachments",
         "context_window",
+        "api_flavor",
+        "reasoning_effort",
     }
 )
 

@@ -99,7 +99,6 @@ class TestSerializeFormUrlencoded:
             ContentType.FORM_URLENCODED,
             encoding_rules={"tags": {"style": "form", "explode": False}},
         )
-        # Value is percent-encoded by _serialize_form_value then urlencoded again
         assert "tags=" in body
         assert "a" in body and "b" in body
 

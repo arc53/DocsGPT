@@ -8,6 +8,7 @@ from typing import Any, Optional
 from sqlalchemy import Connection, text
 
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
+from application.utils import strip_null_bytes
 
 
 _UPDATABLE_SCALARS = {
@@ -69,15 +70,21 @@ class AttachmentsRepository:
             ),
             {
                 "user_id": user_id,
-                "filename": filename,
+                "filename": strip_null_bytes(filename),
                 "upload_path": upload_path,
                 "mime_type": mime_type,
                 "size": size,
-                "content": content,
+                # A parsed document with embedded NULs (mislabeled binary)
+                # would otherwise fail the INSERT — Postgres rejects \x00.
+                "content": strip_null_bytes(content),
                 "token_count": token_count,
                 "openai_file_id": openai_file_id,
                 "google_file_uri": google_file_uri,
-                "metadata": json.dumps(metadata) if metadata is not None else None,
+                "metadata": (
+                    json.dumps(strip_null_bytes(metadata))
+                    if metadata is not None
+                    else None
+                ),
                 "legacy_mongo_id": legacy_mongo_id,
             },
         )
@@ -193,6 +200,7 @@ class AttachmentsRepository:
         set_clauses: list[str] = []
         params: dict = {"id": attachment_id, "user_id": user_id}
         for col, val in filtered.items():
+            val = strip_null_bytes(val)
             if col in _UPDATABLE_JSONB:
                 set_clauses.append(f"{col} = CAST(:{col} AS jsonb)")
                 params[col] = json.dumps(val) if val is not None else None
@@ -247,6 +255,7 @@ class AttachmentsRepository:
         set_clauses: list[str] = []
         params: dict = {"legacy_id": legacy_mongo_id, "user_id": user_id}
         for col, val in filtered.items():
+            val = strip_null_bytes(val)
             if col in _UPDATABLE_JSONB:
                 set_clauses.append(f"{col} = CAST(:{col} AS jsonb)")
                 params[col] = json.dumps(val) if val is not None else None

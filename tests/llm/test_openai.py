@@ -8,15 +8,15 @@ Extends coverage beyond test_openai_llm.py:
   - _raw_gen with tools and response_format
   - _raw_gen_stream tool_calls yielding
   - prepare_structured_output_format nested schemas
-  - AzureOpenAILLM constructor
   - _supports_tools / _supports_structured_output
   - get_supported_attachment_types
   - prepare_messages_with_attachments edge cases
   - _get_base64_image / _upload_file_to_openai
 """
 
+import base64
 import types
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -89,7 +89,11 @@ class FakeChatCompletions:
 
 
 class FakeFiles:
+    def __init__(self):
+        self.created = []
+
     def create(self, file=None, purpose=None):
+        self.created.append(purpose)
         return types.SimpleNamespace(id="file_id_uploaded")
 
 
@@ -729,6 +733,149 @@ class TestPrepareMessagesWithAttachments:
         assert isinstance(user_msg["content"], list)
 
 
+@pytest.mark.unit
+class TestPdfAttachmentNullFileIdCache:
+    """A NULL ``openai_file_id`` column must not read as a cache hit.
+
+    Attachment dicts come from ``SELECT *`` (``row_to_dict``), so every row
+    carries an ``openai_file_id`` key and it is NULL until an upload caches
+    one. Testing for key *membership* therefore treated every fresh
+    attachment as cached, returned ``None`` without uploading, and — because
+    nothing raised — skipped the fallback that inlines the extracted text.
+    The user was told their perfectly good PDF "could not be processed".
+    """
+
+    @pytest.fixture(autouse=True)
+    def _real_pdf_on_disk(self, tmp_path):
+        """The upload path opens the file, so it has to exist."""
+        pdf = tmp_path / "contract.pdf"
+        pdf.write_bytes(b"%PDF-1.4\ntrailer<</Root 1 0 R>>\n")
+        self._pdf_path = str(pdf)
+
+    def _pg_shaped_attachment(self, **overrides):
+        """What ``_attachment_to_dict`` actually produces for a fresh row."""
+        attachment = {
+            "id": "att-1",
+            "filename": "contract.pdf",
+            "path": self._pdf_path,
+            "upload_path": self._pdf_path,
+            "mime_type": "application/pdf",
+            "size": 120_000,
+            "content": "REAL EXTRACTED TEXT",
+            "token_count": 6748,
+            "openai_file_id": None,
+            "google_file_uri": None,
+        }
+        attachment.update(overrides)
+        return attachment
+
+    def test_null_cached_id_still_uploads(self, llm):
+        file_id = llm._upload_file_to_openai(self._pg_shaped_attachment())
+        assert file_id, "a NULL cached id must not short-circuit the upload"
+        assert llm.client.files.created, "files.create was never called"
+
+    def test_populated_cached_id_short_circuits(self, llm):
+        stamped = llm._stamp_file_id("file-cached")
+        attachment = self._pg_shaped_attachment(openai_file_id=stamped)
+        assert llm._upload_file_to_openai(attachment) == "file-cached"
+        assert not llm.client.files.created, "should not re-upload a cached file"
+
+    def test_cached_id_from_another_endpoint_is_ignored(self, llm):
+        """A file_id only resolves at the endpoint that minted it.
+
+        ``attachments.openai_file_id`` is one global column, so an id cached
+        against deployment A would otherwise be replayed against deployment B,
+        which answers "No such File object" on every retry — permanently,
+        since the row keeps the bad id.
+        """
+        attachment = self._pg_shaped_attachment(
+            openai_file_id="0123456789abcdef:file-from-elsewhere"
+        )
+        file_id = llm._upload_file_to_openai(attachment)
+        assert file_id == "file_id_uploaded"
+        assert llm.client.files.created, "a foreign-scope id must re-upload"
+
+    def test_legacy_unscoped_cached_id_is_ignored(self, llm):
+        """Rows written before scoping carry a bare id; re-upload and restamp."""
+        attachment = self._pg_shaped_attachment(openai_file_id="file-legacy")
+        assert llm._upload_file_to_openai(attachment) == "file_id_uploaded"
+        assert llm.client.files.created
+
+    def test_oversized_content_is_truncated_before_inlining(self, llm):
+        """Attachments merge in *after* the context-window check, so nothing
+        downstream trims this — a big PDF would blow the whole request."""
+        llm._upload_file_to_openai = lambda _attachment: None
+        llm.model_id = None  # exercise the no-registry default budget
+        huge = "word " * 200_000
+        attachment = self._pg_shaped_attachment(content=huge)
+
+        result = llm.prepare_messages_with_attachments(
+            [{"role": "user", "content": "summarize"}], [attachment]
+        )
+        text = next(
+            p["text"]
+            for p in result[-1]["content"]
+            if p.get("type") == "text" and p["text"].startswith("File content:")
+        )
+        assert len(text) < len(huge)
+        assert "Content truncated" in text
+
+    def test_extracted_text_reaches_the_model_when_upload_yields_no_id(self, llm):
+        """The production failure: no id, no exception, no text, wrong answer."""
+        llm._upload_file_to_openai = lambda _attachment: None
+
+        msgs = [{"role": "user", "content": "summarize the attached pdf"}]
+        result = llm.prepare_messages_with_attachments(
+            msgs, [self._pg_shaped_attachment()]
+        )
+
+        user_msg = next(m for m in result if m["role"] == "user")
+        assert not any(
+            p.get("type") == "file" and not p.get("file", {}).get("file_id")
+            for p in user_msg["content"]
+        ), "must not emit a file part with an empty file_id"
+        assert any(
+            "REAL EXTRACTED TEXT" in p.get("text", "")
+            for p in user_msg["content"]
+            if p.get("type") == "text"
+        ), "extracted content must be inlined rather than dropped"
+
+    def test_degrade_note_names_the_real_file(self, llm):
+        """Fall back to the note only with no text, and never say 'upload.pdf'."""
+        llm._upload_file_to_openai = lambda _attachment: None
+        attachment = self._pg_shaped_attachment(content="")
+
+        msgs = [{"role": "user", "content": "summarize"}]
+        result = llm.prepare_messages_with_attachments(msgs, [attachment])
+
+        user_msg = next(m for m in result if m["role"] == "user")
+        notes = [
+            p["text"]
+            for p in user_msg["content"]
+            if p.get("type") == "text" and "could not be processed" in p.get("text", "")
+        ]
+        assert len(notes) == 1
+        assert "contract.pdf" in notes[0]
+        assert "upload.pdf" not in notes[0]
+
+    def test_file_part_carries_only_file_id(self, llm):
+        """Never send ``filename`` next to ``file_id``.
+
+        Verified against the Azure Foundry deployment: a file part carrying
+        both is rejected outright —
+        ``400 Unknown parameter: 'messages[0].content[1].file.filename'``.
+        The upload itself and a ``file_id``-only part both return 200 and the
+        model reads the PDF correctly, so the reference is all we may send.
+        """
+        msgs = [{"role": "user", "content": "summarize"}]
+        result = llm.prepare_messages_with_attachments(
+            msgs, [self._pg_shaped_attachment()]
+        )
+        user_msg = next(m for m in result if m["role"] == "user")
+        file_part = next(p for p in user_msg["content"] if p.get("type") == "file")
+        assert file_part["file"] == {"file_id": "file_id_uploaded"}
+
+
 # _get_base64_image
 
 
@@ -749,44 +896,6 @@ class TestGetBase64Image:
         llm.storage = types.SimpleNamespace(get_file=fake_get_file)
         with pytest.raises(FileNotFoundError):
             llm._get_base64_image({"path": "/nonexistent"})
-
-
-# AzureOpenAILLM
-
-
-@pytest.mark.unit
-class TestAzureOpenAILLM:
-
-    def test_constructor(self, monkeypatch):
-        monkeypatch.setattr(
-            "application.llm.openai.settings",
-            types.SimpleNamespace(
-                OPENAI_API_KEY="k",
-                API_KEY="k",
-                OPENAI_BASE_URL="",
-                OPENAI_API_BASE="https://my.azure.endpoint",
-                OPENAI_API_VERSION="2024-02-01",
-                AZURE_DEPLOYMENT_NAME="my-deployment",
-            ),
-        )
-        monkeypatch.setattr(
-            "application.llm.openai.StorageCreator",
-            types.SimpleNamespace(get_storage=lambda: None),
-        )
-        from unittest.mock import MagicMock
-
-        monkeypatch.setattr("application.llm.openai.OpenAI", MagicMock())
-        mock_azure = MagicMock()
-        monkeypatch.setattr("openai.AzureOpenAI", mock_azure, raising=False)
-
-        # We need to reimport to get fresh class with mocked module
-        import importlib
-        import application.llm.openai as oai_mod
-
-        importlib.reload(oai_mod)
-
-        # Just verify the class exists and inherits from OpenAILLM
-        assert issubclass(oai_mod.AzureOpenAILLM, oai_mod.OpenAILLM)
 
 
 # _truncate_base64_for_logging — additional edges
@@ -1086,8 +1195,15 @@ class TestPrepareMessagesWithAttachmentsAdditional:
 class TestUploadFileToOpenai:
 
     def test_cached_file_id_returned(self, llm):
-        """Cover line 469: cached openai_file_id."""
-        result = llm._upload_file_to_openai({"openai_file_id": "cached_id"})
+        """A cached openai_file_id short-circuits the upload.
+
+        The stored value is endpoint-scoped: a bare id is a legacy row and is
+        deliberately treated as a miss (see
+        ``TestPdfAttachmentNullFileIdCache``).
+        """
+        result = llm._upload_file_to_openai(
+            {"openai_file_id": llm._stamp_file_id("cached_id")}
+        )
         assert result == "cached_id"
 
     def test_file_not_found_raises(self, llm):
@@ -1194,8 +1310,10 @@ class TestOpenAILLMConstructor:
 class TestUploadFileToOpenai2:
 
     def test_returns_cached_file_id(self, llm):
-        """Cover line 491-492: returns cached openai_file_id."""
-        result = llm._upload_file_to_openai({"openai_file_id": "file-123"})
+        """Returns the cached openai_file_id when it belongs to this endpoint."""
+        result = llm._upload_file_to_openai(
+            {"openai_file_id": llm._stamp_file_id("file-123")}
+        )
         assert result == "file-123"
 
     def test_file_not_found_raises(self, llm):
@@ -1424,7 +1542,9 @@ class TestUploadFileToOpenaiLine469:
     """Cover line 469: cached openai_file_id returned early."""
 
     def test_cached_id_returned_immediately(self, llm):
-        result = llm._upload_file_to_openai({"openai_file_id": "file-cached-123"})
+        result = llm._upload_file_to_openai(
+            {"openai_file_id": llm._stamp_file_id("file-cached-123")}
+        )
         assert result == "file-cached-123"
 
 
@@ -1567,9 +1687,9 @@ class TestUploadFileToOpenAIError:
             llm._upload_file_to_openai({"path": "/doc.pdf"})
 
     def test_upload_cached_file_id(self, llm):
-        """Cover line 491-492: already has openai_file_id."""
+        """Already has an endpoint-scoped openai_file_id."""
         result = llm._upload_file_to_openai(
-            {"path": "/doc.pdf", "openai_file_id": "file-cached"}
+            {"path": "/doc.pdf", "openai_file_id": llm._stamp_file_id("file-cached")}
         )
         assert result == "file-cached"
 
@@ -1579,3 +1699,384 @@ class TestUploadFileToOpenAIError:
         )
         with pytest.raises(FileNotFoundError, match="File not found"):
             llm._upload_file_to_openai({"path": "/missing.pdf"})
+
+
+# _clean_messages_openai — inline file_data resolution (ledger #1 unsupported_file)
+
+
+_TINY_PDF_BYTES = b"%PDF-1.4 tiny e2e stub"
+_TINY_PDF_B64 = base64.b64encode(_TINY_PDF_BYTES).decode()
+
+
+class _CountingFiles:
+    """Files-API stub that records uploads and can simulate an endpoint
+    without a Files API (the OpenAI-compatible fallback deployments)."""
+
+    def __init__(self, fail=False):
+        self.calls = []
+        self.fail = fail
+
+    def create(self, file=None, purpose=None):
+        self.calls.append((file, purpose))
+        if self.fail:
+            raise RuntimeError("files API unavailable")
+        return types.SimpleNamespace(id=f"file-{len(self.calls)}")
+
+
+class TestInlineFilePartResolution:
+    def _msg(self, file_obj):
+        return [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "what is in the file?"},
+                    {"type": "file", "file": file_obj},
+                ],
+            }
+        ]
+
+    def test_file_data_uri_uploaded_and_swapped_for_file_id(self, llm):
+        files = _CountingFiles()
+        llm.client.files = files
+        out = llm._clean_messages_openai(
+            self._msg(
+                {
+                    "filename": "Scan-48.pdf",
+                    "file_data": f"data:application/pdf;base64,{_TINY_PDF_B64}",
+                }
+            )
+        )
+        parts = out[0]["content"]
+        assert parts[0] == {"type": "text", "text": "what is in the file?"}
+        assert parts[1] == {"type": "file", "file": {"file_id": "file-1"}}
+        ((uploaded, purpose),) = files.calls
+        assert purpose == "assistants"
+        assert uploaded[0] == "Scan-48.pdf"
+        assert uploaded[1].read() == _TINY_PDF_BYTES
+
+    def test_raw_base64_without_data_uri_prefix(self, llm):
+        files = _CountingFiles()
+        llm.client.files = files
+        out = llm._clean_messages_openai(
+            self._msg({"filename": "a.pdf", "file_data": _TINY_PDF_B64})
+        )
+        assert out[0]["content"][1]["file"] == {"file_id": "file-1"}
+
+    def test_same_file_data_uploaded_once(self, llm):
+        files = _CountingFiles()
+        llm.client.files = files
+        msg = self._msg(
+            {
+                "filename": "a.pdf",
+                "file_data": f"data:application/pdf;base64,{_TINY_PDF_B64}",
+            }
+        )
+        llm._clean_messages_openai(msg)
+        out2 = llm._clean_messages_openai(msg)
+        assert len(files.calls) == 1
+        assert out2[0]["content"][1]["file"] == {"file_id": "file-1"}
+
+    def test_equivalent_encodings_share_one_cache_entry(self, llm):
+        """Data-URI, bare-base64, and MIME-wrapped forms of the same bytes
+        must hash to one dedup key — the key is derived from the canonical
+        payload, not the raw ``file_data`` string."""
+        files = _CountingFiles()
+        llm.client.files = files
+        variants = [
+            f"data:application/pdf;base64,{_TINY_PDF_B64}",
+            _TINY_PDF_B64,
+            base64.encodebytes(_TINY_PDF_BYTES).decode(),
+        ]
+        for file_data in variants:
+            out = llm._clean_messages_openai(
+                self._msg({"filename": "a.pdf", "file_data": file_data})
+            )
+            assert out[0]["content"][1] == {
+                "type": "file",
+                "file": {"file_id": "file-1"},
+            }
+        assert len(files.calls) == 1
+
+    def test_upload_failure_degrades_to_text_note(self, llm):
+        llm.client.files = _CountingFiles(fail=True)
+        out = llm._clean_messages_openai(
+            self._msg(
+                {
+                    "filename": "Scan-48.pdf",
+                    "file_data": f"data:application/pdf;base64,{_TINY_PDF_B64}",
+                }
+            )
+        )
+        parts = out[0]["content"]
+        assert parts[1]["type"] == "text"
+        assert "Scan-48.pdf" in parts[1]["text"]
+
+    def test_invalid_base64_degrades_to_text_note(self, llm):
+        files = _CountingFiles()
+        llm.client.files = files
+        out = llm._clean_messages_openai(
+            self._msg({"filename": "x.pdf", "file_data": "data:application/pdf;base64,%%%not-base64%%%"})
+        )
+        assert out[0]["content"][1]["type"] == "text"
+        assert files.calls == []
+
+    def test_existing_file_id_part_untouched(self, llm):
+        files = _CountingFiles()
+        llm.client.files = files
+        out = llm._clean_messages_openai(self._msg({"file_id": "file-abc"}))
+        assert out[0]["content"][1] == {
+            "type": "file",
+            "file": {"file_id": "file-abc"},
+        }
+        assert files.calls == []
+
+    def test_empty_file_part_degrades_to_text_note(self, llm):
+        # The classic ledger-#1 flavor: {"type": "file", "file": {"file_id": None}}
+        files = _CountingFiles()
+        llm.client.files = files
+        out = llm._clean_messages_openai(self._msg({"file_id": None}))
+        parts = out[0]["content"]
+        assert parts[1]["type"] == "text"
+        assert files.calls == []
+
+    def test_responses_parts_conversion_gets_file_id(self, llm):
+        files = _CountingFiles()
+        llm.client.files = files
+        cleaned = llm._clean_messages_openai(
+            self._msg(
+                {
+                    "filename": "a.pdf",
+                    "file_data": f"data:application/pdf;base64,{_TINY_PDF_B64}",
+                }
+            )
+        )
+        parts = OpenAILLM._responses_content_parts("user", cleaned[0]["content"])
+        assert {"type": "input_file", "file_id": "file-1"} in parts
+
+    # -- Fix #1: file_id + file_data both present must drop file_data --
+
+    def test_file_id_and_file_data_normalized_to_file_id_only(self, llm):
+        """A client sending both keys would otherwise leak ``file_data``
+        into ``_responses_content_parts`` (Azure Responses then 400s on
+        the inline payload regardless of the ``file_id``)."""
+        files = _CountingFiles()
+        llm.client.files = files
+        out = llm._clean_messages_openai(
+            self._msg(
+                {
+                    "file_id": "file-preexisting",
+                    "filename": "Scan-48.pdf",
+                    "file_data": f"data:application/pdf;base64,{_TINY_PDF_B64}",
+                }
+            )
+        )
+        part = out[0]["content"][1]
+        # Normalized: only ``file_id`` survives — no ``file_data``, no
+        # stray ``filename`` that _responses_content_parts would ship.
+        assert part == {"type": "file", "file": {"file_id": "file-preexisting"}}
+        # No spurious upload — the client already had a file_id.
+        assert files.calls == []
+        # And the Responses translator no longer sees any inline data.
+        rparts = OpenAILLM._responses_content_parts("user", out[0]["content"])
+        assert {"type": "input_file", "file_id": "file-preexisting"} in rparts
+        assert not any("file_data" in p for p in rparts)
+
+    # -- Fix #3: whitespace/newline-wrapped base64 must decode --
+
+    def test_mime_wrapped_base64_decodes_cleanly(self, llm):
+        """``base64.encodebytes`` line-wraps every 76 chars; pretty-printed
+        JSON producers may inject ``\\n``. With ``validate=True`` those
+        would raise, throwing recoverable payloads into the degrade path."""
+        files = _CountingFiles()
+        llm.client.files = files
+        wrapped_b64 = base64.encodebytes(_TINY_PDF_BYTES).decode()  # ends with \n
+        assert "\n" in wrapped_b64
+        out = llm._clean_messages_openai(
+            self._msg(
+                {
+                    "filename": "wrapped.pdf",
+                    "file_data": f"data:application/pdf;base64,{wrapped_b64}",
+                }
+            )
+        )
+        assert out[0]["content"][1] == {"type": "file", "file": {"file_id": "file-1"}}
+        ((uploaded, _),) = files.calls
+        # The decoded bytes must equal the ORIGINAL — no whitespace bleed.
+        assert uploaded[1].read() == _TINY_PDF_BYTES
+
+    # -- Fix #4: no-comma data URI must degrade, not upload zero bytes --
+
+    def test_data_uri_missing_comma_degrades_without_upload(self, llm):
+        """``"data:application/pdf;base64".partition(",")`` -> empty payload;
+        the previous code decoded ``b""`` and shipped a zero-byte file."""
+        files = _CountingFiles()
+        llm.client.files = files
+        out = llm._clean_messages_openai(
+            self._msg(
+                {
+                    "filename": "no-comma.pdf",
+                    "file_data": "data:application/pdf;base64",
+                }
+            )
+        )
+        part = out[0]["content"][1]
+        assert part["type"] == "text"
+        assert "no-comma.pdf" in part["text"]
+        assert files.calls == []  # no zero-byte artifact left in provider bucket
+
+    def test_data_uri_with_comma_but_empty_body_degrades(self, llm):
+        """Guard covers the near-neighbour: comma present, body empty."""
+        files = _CountingFiles()
+        llm.client.files = files
+        out = llm._clean_messages_openai(
+            self._msg({"filename": "empty.pdf", "file_data": "data:application/pdf;base64,"})
+        )
+        assert out[0]["content"][1]["type"] == "text"
+        assert files.calls == []
+
+    # -- Fix #2: Redis cache — cross-request dedup for /v1 replays --
+
+    def _patch_redis(self, cache):
+        """Patch ``application.cache.get_redis_instance`` to return the
+        provided fake redis (a dict-backed stub) — one context per test.
+
+        The helpers ``_inline_file_id_cache_*`` do ``from application.cache
+        import get_redis_instance`` INSIDE the function, so patching the
+        module attribute is enough — no import-time capture to worry about.
+        """
+        return patch("application.cache.get_redis_instance", return_value=cache)
+
+    class _FakeRedis:
+        def __init__(self):
+            self.store = {}
+            self.setex_calls = []
+            self.get_calls = []
+
+        def get(self, key):
+            self.get_calls.append(key)
+            return self.store.get(key)
+
+        def setex(self, key, ttl, value):
+            self.setex_calls.append((key, ttl, value))
+            self.store[key] = value.encode() if isinstance(value, str) else value
+
+    def test_redis_cache_hit_skips_upload_across_instances(self, llm):
+        """Two independent OpenAILLM instances (per-request creation is how
+        LLMCreator works) sharing the same credential must both see the
+        cached file_id after the first uploads it."""
+        cache = self._FakeRedis()
+        files_1 = _CountingFiles()
+        llm.client.files = files_1
+        msg = self._msg(
+            {"filename": "Scan-48.pdf",
+             "file_data": f"data:application/pdf;base64,{_TINY_PDF_B64}"}
+        )
+        with self._patch_redis(cache):
+            llm._clean_messages_openai(msg)
+        # First call: upload happened, cache populated with a real TTL.
+        assert len(files_1.calls) == 1
+        assert len(cache.setex_calls) == 1
+        key, ttl, val = cache.setex_calls[0]
+        assert key.startswith("openai_inline_file:") and ttl == 86400 and val == "file-1"
+
+        # Second call, second instance (simulates the next /v1 turn's
+        # freshly-constructed LLM), same credentials → cache-hit path.
+        llm2 = OpenAILLM(api_key="sk-test", user_api_key=None)
+        llm2.client = types.SimpleNamespace(files=_CountingFiles())
+        with self._patch_redis(cache):
+            out2 = llm2._clean_messages_openai(msg)
+        assert out2[0]["content"][1] == {"type": "file", "file": {"file_id": "file-1"}}
+        # No new upload — the second instance's Files stub is untouched.
+        assert llm2.client.files.calls == []
+
+    def test_redis_cache_key_isolates_by_credential(self, llm):
+        """A file_id is only valid on the endpoint+credential it was
+        uploaded to; the key must therefore not collide across credentials
+        (else a foundry-uploaded id would be handed to a byom endpoint)."""
+        cache = self._FakeRedis()
+        llm._effective_base_url = "https://foundry.example/openai/v1"
+        llm.api_key = "sk-foundry"
+        llm.client.files = _CountingFiles()
+        msg = self._msg(
+            {"filename": "x.pdf",
+             "file_data": f"data:application/pdf;base64,{_TINY_PDF_B64}"}
+        )
+        with self._patch_redis(cache):
+            llm._clean_messages_openai(msg)
+
+        llm2 = OpenAILLM(api_key="sk-byom", user_api_key=None)
+        llm2._effective_base_url = "https://byom.example/v1"
+        llm2.client = types.SimpleNamespace(files=_CountingFiles())
+        with self._patch_redis(cache):
+            llm2._clean_messages_openai(msg)
+        # Second credential missed the cache → uploaded again.
+        assert len(llm2.client.files.calls) == 1
+        # Two distinct cache keys landed in Redis, one per credential.
+        assert len(cache.setex_calls) == 2
+        assert cache.setex_calls[0][0] != cache.setex_calls[1][0]
+
+    def test_redis_unreachable_falls_back_to_upload(self, llm):
+        """If Redis is down, ``get_redis_instance`` returns None — the
+        code must upload normally and never raise."""
+        llm.client.files = _CountingFiles()
+        msg = self._msg(
+            {"filename": "x.pdf",
+             "file_data": f"data:application/pdf;base64,{_TINY_PDF_B64}"}
+        )
+        with self._patch_redis(None):
+            out = llm._clean_messages_openai(msg)
+        assert out[0]["content"][1] == {"type": "file", "file": {"file_id": "file-1"}}
+        assert len(llm.client.files.calls) == 1
+
+    def test_redis_read_exception_swallowed(self, llm):
+        """A transient Redis error mid-request must not surface — degrade
+        to an upload silently."""
+
+        class BrokenRedis:
+            def get(self, key):
+                raise RuntimeError("connection reset")
+
+            def setex(self, key, ttl, value):
+                raise RuntimeError("connection reset")
+
+        llm.client.files = _CountingFiles()
+        msg = self._msg(
+            {"filename": "x.pdf",
+             "file_data": f"data:application/pdf;base64,{_TINY_PDF_B64}"}
+        )
+        with self._patch_redis(BrokenRedis()):
+            out = llm._clean_messages_openai(msg)
+        # Upload happened because the read errored → treated as miss.
+        assert len(llm.client.files.calls) == 1
+        assert out[0]["content"][1] == {"type": "file", "file": {"file_id": "file-1"}}
+
+
+@pytest.mark.unit
+class TestKeylessConstruction:
+    """openai>=2.53 raises on a falsy api_key at construction.
+
+    Keyless OpenAI-compatible backends (Ollama, llama.cpp, vLLM) have no
+    credential, and pydantic-settings yields "" — not None — for a bare
+    `API_KEY=` line in .env, so the empty string must not reach the SDK.
+    """
+
+    @pytest.mark.parametrize("blank", ["", None])
+    def test_llm_accepts_blank_key(self, blank):
+        with patch("application.llm.openai.settings") as mock_settings:
+            mock_settings.OPENAI_API_KEY = blank
+            mock_settings.API_KEY = blank
+            mock_settings.OPENAI_BASE_URL = "http://localhost:11434/v1"
+            llm = OpenAILLM(api_key=blank)
+        assert llm.api_key == "sk-no-key"
+
+    @pytest.mark.parametrize("blank", ["", None])
+    def test_stt_accepts_blank_key(self, blank):
+        from application.stt.openai_stt import OpenAISTT
+
+        with patch("application.stt.openai_stt.settings") as mock_settings:
+            mock_settings.OPENAI_API_KEY = blank
+            mock_settings.API_KEY = blank
+            mock_settings.OPENAI_BASE_URL = "http://localhost:11434/v1"
+            mock_settings.OPENAI_STT_MODEL = "whisper-1"
+            stt = OpenAISTT(api_key=blank)
+        assert stt.api_key == "sk-no-key"

@@ -227,6 +227,8 @@ class TestLLMCreatorDispatchUsesUpstreamModelId:
                 "supports_structured_output": False,
                 "attachments": [],
                 "context_window": 8192,
+                "api_flavor": "responses",
+                "reasoning_effort": "high",
             },
         )
 
@@ -262,6 +264,8 @@ class TestLLMCreatorDispatchUsesUpstreamModelId:
         assert caps.supports_tools is False
         assert caps.supports_structured_output is False
         assert caps.supported_attachment_types == []
+        assert caps.api_flavor == "responses"
+        assert caps.reasoning_effort == "high"
 
     def test_byom_image_alias_expands_to_mime_types(self, pg_conn):
         """A BYOM stored with ``attachments: ["image"]`` (the alias the

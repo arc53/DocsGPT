@@ -4,6 +4,8 @@ from contextlib import contextmanager
 from unittest.mock import patch
 from uuid import uuid4
 
+import pytest
+from sqlalchemy import text
 
 
 @contextmanager
@@ -45,19 +47,26 @@ class TestMakeSerializable:
         got = _make_serializable([u, {"x": u}, 1])
         assert got == [str(u), {"x": str(u)}, 1]
 
-    def test_bytes_decoded_to_string(self):
+    def test_bytes_base64_encoded(self):
+        # Migrated from UTF-8-replace to base64 once the helper moved to
+        # the shared serialization module — base64 is lossless and round-
+        # trippable (UTF-8-replace silently corrupted binary payloads).
+        import base64
         from application.api.answer.services.continuation_service import (
             _make_serializable,
         )
-        assert _make_serializable(b"hello") == "hello"
+        got = _make_serializable(b"hello")
+        assert got == base64.b64encode(b"hello").decode("ascii")
 
-    def test_bytes_invalid_utf8_replaced(self):
+    def test_bytes_arbitrary_binary_roundtrips(self):
+        import base64
         from application.api.answer.services.continuation_service import (
             _make_serializable,
         )
-        # Invalid UTF-8 byte sequence
-        got = _make_serializable(b"\xff\xfe")
+        raw = b"\xff\xfe\x00\x10"
+        got = _make_serializable(raw)
         assert isinstance(got, str)
+        assert base64.b64decode(got) == raw
 
     def test_passes_through_primitives(self):
         from application.api.answer.services.continuation_service import (
@@ -67,6 +76,50 @@ class TestMakeSerializable:
         assert _make_serializable(42) == 42
         assert _make_serializable(None) is None
         assert _make_serializable(True) is True
+
+    def test_datetime_becomes_iso_string(self):
+        # PG SELECT * pulls timestamptz columns through as datetime —
+        # tools_dict carries ``created_at``/``updated_at`` from user_tools
+        # rows, which would otherwise blow up json.dumps in pending_tool_state.
+        import json
+        from datetime import datetime, timezone
+        from application.api.answer.services.continuation_service import (
+            _make_serializable,
+        )
+
+        ts = datetime(2026, 5, 2, 12, 14, 32, tzinfo=timezone.utc)
+        got = _make_serializable(ts)
+        assert got == "2026-05-02T12:14:32+00:00"
+        json.dumps(got)  # would raise on raw datetime
+
+    def test_datetime_nested_in_tools_dict(self):
+        # Mirrors the production failure: tools_dict is a dict-of-dicts
+        # where each tool row has timestamp fields buried under string keys.
+        import json
+        from datetime import datetime, timezone
+        from application.api.answer.services.continuation_service import (
+            _make_serializable,
+        )
+
+        ts = datetime(2026, 5, 2, 12, 14, 32, tzinfo=timezone.utc)
+        tools_dict = {
+            "0": {
+                "name": "mcp_tool",
+                "actions": [{"name": "search", "active": True}],
+                "created_at": ts,
+                "updated_at": ts,
+            }
+        }
+        got = _make_serializable(tools_dict)
+        json.dumps(got)
+        assert got["0"]["created_at"] == "2026-05-02T12:14:32+00:00"
+
+    def test_date_becomes_iso_string(self):
+        from datetime import date
+        from application.api.answer.services.continuation_service import (
+            _make_serializable,
+        )
+        assert _make_serializable(date(2026, 5, 2)) == "2026-05-02"
 
 
 class TestContinuationServiceSaveLoad:
@@ -109,6 +162,68 @@ class TestContinuationServiceSaveLoad:
                 "00000000-0000-0000-0000-000000000000", "u",
             )
         assert got is None
+
+    def test_claim_state_is_atomic_and_duplicate_is_conflict(self, pg_conn):
+        from application.api.answer.services.continuation_service import (
+            ContinuationService,
+            ResumeInProgressError,
+        )
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-claim"
+        conv = ConversationsRepository(pg_conn).create(user, name="c")
+        conv_id = str(conv["id"])
+        service = ContinuationService()
+        with _patch_db(pg_conn):
+            service.save_state(
+                conversation_id=conv_id,
+                user=user,
+                messages=[],
+                pending_tool_calls=[{"call_id": "call-1"}],
+                tools_dict={},
+                tool_schemas=[],
+                agent_config={"agent_id": "agent-a"},
+            )
+            claimed = service.claim_state(conv_id, user)
+            assert claimed is not None
+            assert claimed["status"] == "resuming"
+            with pytest.raises(ResumeInProgressError):
+                service.claim_state(conv_id, user)
+
+    def test_expired_state_is_neither_loaded_nor_claimed(self, pg_conn):
+        from application.api.answer.services.continuation_service import (
+            ContinuationService,
+        )
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-expired"
+        conv = ConversationsRepository(pg_conn).create(user, name="c")
+        conv_id = str(conv["id"])
+        service = ContinuationService()
+        with _patch_db(pg_conn):
+            service.save_state(
+                conversation_id=conv_id,
+                user=user,
+                messages=[],
+                pending_tool_calls=[{"call_id": "call-1"}],
+                tools_dict={},
+                tool_schemas=[],
+                agent_config={},
+            )
+            pg_conn.execute(
+                text(
+                    "UPDATE pending_tool_state "
+                    "SET expires_at = clock_timestamp() - interval '1 second' "
+                    "WHERE conversation_id = CAST(:conv AS uuid)"
+                ),
+                {"conv": conv_id},
+            )
+            assert service.load_state(conv_id, user) is None
+            assert service.claim_state(conv_id, user) is None
 
     def test_save_state_no_client_tools(self, pg_conn):
         from application.api.answer.services.continuation_service import (
