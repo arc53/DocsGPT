@@ -1,5 +1,6 @@
 """Agents module."""
 
+from .guardrails import agents_guardrails_ns
 from .routes import agents_ns
 from .sharing import agents_sharing_ns
 from .webhooks import agents_webhooks_ns
@@ -7,6 +8,7 @@ from .folders import agents_folders_ns
 from .portability import agents_portability_ns
 
 __all__ = [
+    "agents_guardrails_ns",
     "agents_ns",
     "agents_sharing_ns",
     "agents_webhooks_ns",

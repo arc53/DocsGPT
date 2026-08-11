@@ -292,6 +292,29 @@ class Settings(BaseSettings):
     COMPRESSION_RECENT_FIELD_MAX_TOKENS: int = 8000  # Per-field cap on the verbatim tail kept after a compression point (0 disables)
     TOOL_RESULT_MAX_TOKENS: int = 20000  # Cap on a single tool result entering the LLM context (0 disables); journal/DB keep the full result
 
+    # Agent Guardrails
+    # Master switch. When False, no guardrail stage runs regardless of what an
+    # agent's config says.
+    GUARDRAILS_ENABLED: bool = True
+    # Registry-key allowlist; values must match GuardrailCreator.checks keys.
+    # Empty means "every registered check".
+    GUARDRAILS_CHECKS_ENABLED: list = []
+    # Instance floor: a GuardrailsConfig fragment every agent inherits and
+    # cannot weaken. Agents may add controls or make an action stricter, never
+    # looser. "enabled" is required — without it the floor parses but applies
+    # to nothing. Example:
+    # {"enabled": true, "mode": "scan_all",
+    #  "controls": [{"check": "secrets", "stage": "output",
+    #                "action": "redact"}]}
+    GUARDRAILS_FLOOR: dict = {}
+    # Judge model for the topic/policy checks. None reuses the request's model.
+    GUARDRAILS_JUDGE_MODEL: Optional[str] = None
+    # Persist scanned text alongside guardrail_events. Off by default: the
+    # pre-redaction text is exactly the sensitive material a PII control exists
+    # to keep out of storage.
+    GUARDRAILS_STORE_SCANNED_TEXT: bool = False
+    GUARDRAILS_EVENTS_RETENTION_DAYS: int = Field(default=30, ge=1)
+
     # Internal SSE push channel (notifications + durable replay journal)
     # Master switch — when False, /api/events emits a "push_disabled" comment
     # and returns; clients fall back to polling. Publisher becomes a no-op.

@@ -90,16 +90,22 @@ class TestMigration0026RoundTrip:
         """A legacy stack_logs row (written before the column existed) is
         attributed to its agent by matching the stored api_key to
         ``agents.key`` during the upgrade."""
-        from application.storage.db.repositories.agents import AgentsRepository
-
         url = pg_engine.url.render_as_string(hide_password=False)
         _run_alembic(url, "downgrade", _0025)
 
         with pg_engine.begin() as conn:
-            agent = AgentsRepository(conn).create(
-                "u-mig26", "a", "published", key="mig26-key",
+            # Raw SQL, not AgentsRepository: the repository RETURNINGs every
+            # column in today's Core metadata, which does not exist on the
+            # 0025 schema this test deliberately runs against.
+            agent_id = str(
+                conn.execute(
+                    text(
+                        "INSERT INTO agents (user_id, name, status, key) "
+                        "VALUES ('u-mig26', 'a', 'published', 'mig26-key') "
+                        "RETURNING id"
+                    )
+                ).scalar()
             )
-            agent_id = str(agent["id"])
             # Pre-0026 shape: no agent_id column.
             conn.execute(
                 text(

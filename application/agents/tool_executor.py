@@ -13,6 +13,7 @@ from application.agents.default_tools import (
 )
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
+from application.guardrails.types import Stage as GuardrailStage, resolve_tool_result
 from application.security.encryption import decrypt_credentials
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
@@ -349,6 +350,8 @@ class ToolExecutor:
         self.headless = bool(headless)
         # Tool-instance ids pre-authorized for headless approval-gated execution.
         self.tool_allowlist: set = {str(x) for x in tool_allowlist} if tool_allowlist else set()
+        # Set by BaseAgent._prepare_tools when the agent has tool-stage controls.
+        self.guardrail_engine = None
         self.tool_calls: List[Dict] = []
         self._loaded_tools: Dict[str, object] = {}
         # Explicit tool-id scope (workflow agent nodes): when set (even empty),
@@ -598,6 +601,27 @@ class ToolExecutor:
                         if v.get("required", False):
                             params["required"].append(k)
         return params
+
+    def _guardrail_tool_result(self, result: Any, tool_name: str, action_name: str) -> Any:
+        """Scan a tool result before it fans out to the LLM, UI and journal.
+
+        A tool result is untrusted third-party text on the same footing as a
+        retrieved document, and it is a common exfiltration path for secrets
+        that the calling API happened to echo back.
+        """
+        engine = getattr(self, "guardrail_engine", None)
+        if engine is None or not engine.has_stage(GuardrailStage.TOOL_RESULT):
+            return result
+        if not isinstance(result, str) or not result:
+            return result
+        try:
+            engine.context.tool_name = tool_name
+            engine.context.action_name = action_name
+            decision = engine.evaluate(result, GuardrailStage.TOOL_RESULT)
+        except Exception:
+            logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
+            return result
+        return resolve_tool_result(result, decision)
 
     def check_pause(self, tools_dict: Dict, call, llm_class_name: str) -> Optional[Dict]:
         """Return a pending-action dict (approval / client / headless_denied) or None.
@@ -1002,6 +1026,7 @@ class ToolExecutor:
         # the conversation row, tool_call_attempts, and the stream event —
         # sanitize once so every lane gets clean text.
         result = sanitize_tool_result(result)
+        result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
 

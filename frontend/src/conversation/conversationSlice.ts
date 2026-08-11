@@ -307,6 +307,15 @@ export const fetchAnswer = createAsyncThunk<
                   message: data.notice ?? '',
                 }),
               );
+            } else if (data.type === 'guardrail') {
+              if (data.retract) {
+                dispatch(
+                  conversationSlice.actions.retractResponse({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                  }),
+                );
+              }
             } else if (data.type === 'error') {
               dispatch(conversationSlice.actions.setStatus('failed'));
               dispatch(
@@ -467,6 +476,15 @@ export const fetchAnswer = createAsyncThunk<
                   message: data.notice ?? '',
                 }),
               );
+            } else if (data.type === 'guardrail') {
+              if (data.retract) {
+                dispatch(
+                  conversationSlice.actions.retractResponse({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                  }),
+                );
+              }
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(conversationSlice.actions.setStatus('failed'));
@@ -736,6 +754,18 @@ export const submitToolActions = createAsyncThunk<
             message: data.notice ?? '',
           }),
         );
+      } else if (data.type === 'guardrail') {
+        // A resumed turn is still the same turn: the output guard runs on the
+        // continuation too, so this path needs the same retraction as the
+        // initial stream or the blocked text stays on screen until reload.
+        if (data.retract) {
+          dispatch(
+            conversationSlice.actions.retractResponse({
+              conversationId,
+              index: targetIndex,
+            }),
+          );
+        }
       } else if (data.type === 'error') {
         dispatch(conversationSlice.actions.setStatus('failed'));
         dispatch(
@@ -1082,6 +1112,22 @@ export const conversationSlice = createSlice({
       state.queries[index].notice = message;
     },
 
+    retractResponse(
+      state,
+      action: PayloadAction<{ conversationId: string | null; index: number }>,
+    ) {
+      // A guardrail tripped after tokens were already rendered. The backend
+      // has replaced the persisted message with the block message, so drop the
+      // partial answer here too — otherwise the leaked text stays on screen
+      // until reload and contradicts what is in the database.
+      const { conversationId, index } = action.payload;
+      if (state.conversationId !== conversationId) return;
+      if (!state.queries[index]) return;
+
+      state.queries[index].response = '';
+      state.queries[index].thought = '';
+    },
+
     resetConversation: (state) => {
       state.queries = initialState.queries;
       state.status = initialState.status;
@@ -1129,6 +1175,7 @@ export const {
   setStatus,
   raiseError,
   raiseNotice,
+  retractResponse,
   resetConversation,
   applyMessageTail,
   updateMessageMeta,

@@ -301,6 +301,23 @@ class BaseAnswerResource:
         # Intentional: a continuation round reserves no new WAL row, so on the
         # stateless ``/v1`` path the intermediate tool rounds aren't persisted
         # (only the first turn + the final answer turn are). Accepted as-is.
+        # Input controls have to run before the question is stored, not only
+        # inside ``gen``: this frame is what writes ``conversation_messages``
+        # and ``user_logs``, so a redaction that reached the model prompt alone
+        # would still leave the raw text — the PII the control exists to keep
+        # out of storage — in both. ``gen`` re-runs the stage against the
+        # original question and hits the agent's stage cache, so the scan is
+        # paid for once.
+        raw_question = question
+        guard_input = getattr(agent, "apply_input_guardrails", None)
+        if callable(guard_input) and not _continuation:
+            try:
+                question, _ = guard_input(question)
+            except Exception:
+                logger.exception(
+                    "Input guardrail scan failed; persisting the question unredacted"
+                )
+
         wal_eligible = should_persist and not _continuation
         if wal_eligible:
             try:
@@ -327,6 +344,16 @@ class BaseAnswerResource:
                 )
         elif _continuation and _continuation.get("reserved_message_id"):
             reserved_message_id = _continuation["reserved_message_id"]
+
+        # Bind the row now so an audit flush that happens before the ``finally``
+        # below — an input block returns from ``gen`` immediately and flushes
+        # there — still writes rows linked to their message instead of orphans.
+        bind_message_id = getattr(agent, "bind_guardrail_message_id", None)
+        if callable(bind_message_id):
+            try:
+                bind_message_id(reserved_message_id)
+            except Exception:
+                logger.exception("Could not bind guardrail audit to the message row")
 
         primary_llm = getattr(agent, "llm", None)
         if primary_llm is not None:
@@ -572,7 +599,11 @@ class BaseAnswerResource:
                     reasoning_content=_continuation.get("reasoning_content", ""),
                 )
             else:
-                gen_iter = agent.gen(query=question)
+                # The original text: ``gen`` runs the input stage itself and
+                # applies the redaction to what it sends the model. Handing it
+                # the already-redacted question would make that a second scan
+                # over different text, and a remote check would be paid twice.
+                gen_iter = agent.gen(query=raw_question)
 
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a
@@ -656,6 +687,29 @@ class BaseAnswerResource:
                         if not line.get("user_facing"):
                             error_text = sanitize_api_error(error_text)
                         stream_error = error_text
+                        guardrail_meta = line.get("guardrail")
+                        if guardrail_meta:
+                            # A guardrail tripped mid-stream. Tokens already on
+                            # the wire cannot be recalled, but the persisted
+                            # message must not keep them — otherwise reloading
+                            # the page redisplays exactly what was just blocked.
+                            # ``thought`` counts: a reasoning model states its
+                            # intent before acting on it, so the trace is where
+                            # the blocked material appears first. The client
+                            # clears it live, so leaving it here would surface
+                            # it only on reload.
+                            response_full = error_text
+                            thought = ""
+                            structured_chunks.clear()
+                            is_structured = False
+                            query_metadata["guardrail"] = guardrail_meta
+                            yield _emit(
+                                {
+                                    "type": "guardrail",
+                                    "guardrail": guardrail_meta,
+                                    "retract": True,
+                                }
+                            )
                         yield _emit({"type": "error", "error": error_text})
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
@@ -805,6 +859,13 @@ class BaseAnswerResource:
                                     "prompt": getattr(agent, "prompt", ""),
                                     "json_schema": getattr(agent, "json_schema", None),
                                     "retriever_config": getattr(agent, "retriever_config", None),
+                                    # Guardrails must survive the pause: a
+                                    # resumed turn is still the same turn.
+                                    "guardrails": (
+                                        agent.guardrails_config.model_dump(mode="json")
+                                        if getattr(agent, "guardrails_config", None)
+                                        else None
+                                    ),
                                     # Reused on resume so the same WAL row
                                     # is finalised and request_id stays
                                     # consistent across token_usage rows.
@@ -1355,6 +1416,15 @@ class BaseAnswerResource:
             # recycles.
             if heartbeat_stop is not None:
                 heartbeat_stop.set()
+            # The audit trail must survive an aborted or failed turn — a
+            # guardrail that fired on a stream the client dropped is exactly
+            # the event an operator needs to see.
+            flush_guardrails = getattr(agent, "flush_guardrail_audit", None)
+            if callable(flush_guardrails):
+                try:
+                    flush_guardrails(reserved_message_id)
+                except Exception:
+                    logger.exception("Guardrail audit flush failed")
 
     def _finalize_stateless_tool_pause(
         self,

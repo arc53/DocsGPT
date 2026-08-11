@@ -3,6 +3,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from application.agents.base import BaseAgent
+from application.guardrails.config import (
+    DEFAULT_BLOCK_MESSAGE as GUARDRAIL_DEFAULT_MESSAGE,
+)
 from application.agents.workflows.schemas import (
     ExecutionStatus,
     Workflow,
@@ -52,6 +55,17 @@ class WorkflowAgent(BaseAgent):
 
     @log_activity()
     def gen(self, query: str, log_context: LogContext = None) -> Generator[Dict[str, str], None, None]:
+        # This override skips BaseAgent.gen, so the input stage has to be run
+        # here or a workflow agent would accept guardrail config in the builder
+        # and silently enforce none of it.
+        self.bind_guardrail_log_context(log_context)
+        query, decision = self.apply_input_guardrails(query)
+        if decision is not None and decision.blocked:
+            yield self._guardrail_block_event(
+                decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE
+            )
+            self.flush_guardrail_audit()
+            return
         yield from self._gen_inner(query, log_context)
 
     def _gen_inner(self, query: str, log_context: LogContext) -> Generator[Dict[str, str], None, None]:

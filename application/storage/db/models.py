@@ -23,6 +23,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Float,
     ForeignKeyConstraint,
     Index,
     Integer,
@@ -341,6 +342,9 @@ agents_table = Table(
     Column("tools", JSONB, nullable=False, server_default="[]"),
     Column("json_schema", JSONB),
     Column("models", JSONB),
+    # Per-agent behavior contract (AgentConfig — guardrails today). Empty
+    # ``{}`` parses to guardrails-disabled.
+    Column("config", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("default_model_id", Text),
     Column("folder_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
     Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
@@ -732,6 +736,51 @@ webhook_dedup_table = Table(
 # (terminal: ``failed``; ``compensated`` is grandfathered in the CHECK
 # from migration 0004 but no code writes it). The reconciler sweeps
 # stuck rows via the partial ``tool_call_attempts_pending_ts_idx``.
+# Guardrail decision journal. Polymorphic on ``detector_type`` so a new check
+# records into it without a migration; ``message_id`` is ON DELETE SET NULL so
+# the trail outlives the conversation, same as ``tool_call_attempts``.
+guardrail_events_table = Table(
+    "guardrail_events",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text),
+    Column("api_key", Text),
+    Column("agent_id", UUID(as_uuid=True)),
+    Column(
+        "message_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversation_messages.id", ondelete="SET NULL"),
+    ),
+    Column("request_id", Text),
+    Column("stage", Text, nullable=False),
+    Column("check_name", Text, nullable=False),
+    Column("detector_type", Text, nullable=False),
+    Column("action", Text, nullable=False),
+    # triggered | not_evaluated
+    Column("outcome", Text, nullable=False),
+    Column("category", Text),
+    Column("score", Float),
+    Column("match_count", Integer, nullable=False, server_default="0"),
+    # Only populated when GUARDRAILS_STORE_SCANNED_TEXT is on.
+    Column("matched_value", Text),
+    Column("detail", Text),
+    Column("policy_snapshot", JSONB),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+Index(
+    "ix_guardrail_events_agent_created",
+    guardrail_events_table.c.agent_id,
+    guardrail_events_table.c.created_at,
+)
+Index(
+    "ix_guardrail_events_user_created",
+    guardrail_events_table.c.user_id,
+    guardrail_events_table.c.created_at,
+)
+Index("ix_guardrail_events_message", guardrail_events_table.c.message_id)
+Index("ix_guardrail_events_created", guardrail_events_table.c.created_at)
+
 tool_call_attempts_table = Table(
     "tool_call_attempts",
     metadata,

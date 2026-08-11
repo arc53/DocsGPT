@@ -490,6 +490,11 @@ def setup_periodic_tasks(sender, **kwargs):
     )
     sender.add_periodic_task(
         timedelta(hours=24),
+        cleanup_guardrail_events.s(),
+        name="cleanup-guardrail-events",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
         cleanup_orphan_memories.s(),
         name="cleanup-orphan-memories",
     )
@@ -652,6 +657,30 @@ def cleanup_message_events(self):
     engine = get_engine()
     with engine.begin() as conn:
         deleted = MessageEventsRepository(conn).cleanup_older_than(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_guardrail_events(self):
+    """Delete ``guardrail_events`` rows older than the retention window.
+
+    The journal has no natural bound: every triggered control on every turn
+    writes a row, and the table carries scanned text when the operator opted
+    into storing it, so it should not be kept indefinitely.
+    """
+    from application.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from application.storage.db.engine import get_engine
+    from application.storage.db.repositories.guardrail_events import (
+        GuardrailEventsRepository,
+    )
+
+    ttl_days = settings.GUARDRAILS_EVENTS_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = GuardrailEventsRepository(conn).purge_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
 
 

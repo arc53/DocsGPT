@@ -6,8 +6,10 @@ import uuid
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
+from pydantic import ValidationError as PydanticValidationError
 
 from application.api import api
+from application.guardrails.config import AgentConfig
 from application.api.user.base import (
     handle_image_upload,
     resolve_prompt_name,
@@ -48,6 +50,13 @@ from application.utils import (
 
 agents_ns = Namespace("agents", description="Agent management operations", path="/api")
 
+# Returned verbatim on a rejected ``config`` write. Deliberately static — the
+# validator's own text can carry input-derived detail, and an error body is not
+# the place for it.
+INVALID_CONFIG_MESSAGE = (
+    "Invalid config: one or more guardrail controls failed validation."
+)
+
 
 AGENT_TYPE_SCHEMAS = {
     "classic": {
@@ -86,6 +95,7 @@ AGENT_TYPE_SCHEMAS = {
             "limited_request_mode",
             "request_limit",
             "allow_system_prompt_override",
+            "config",
         ],
     },
     "workflow": {
@@ -106,6 +116,7 @@ AGENT_TYPE_SCHEMAS = {
             "limited_request_mode",
             "request_limit",
             "allow_system_prompt_override",
+            "config",
         ],
     },
 }
@@ -245,6 +256,7 @@ def _format_agent_output(
         "agent_type": agent.get("agent_type", "") or "",
         "status": agent.get("status", "") or "",
         "json_schema": agent.get("json_schema"),
+        "config": agent.get("config") or {},
         "limited_token_mode": bool(agent.get("limited_token_mode", False)),
         "token_limit": agent.get("token_limit") or settings.DEFAULT_AGENT_LIMITS["token_limit"],
         "limited_request_mode": bool(agent.get("limited_request_mode", False)),
@@ -354,8 +366,52 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
         kwargs["json_schema"] = data["json_schema"]
     if "models" in allowed_fields and data.get("models") is not None:
         kwargs["models"] = data["models"]
+    if "config" in allowed_fields and data.get("config") is not None:
+        kwargs["config"] = data["config"]
 
     return kwargs
+
+
+def normalize_agent_config(raw):
+    """Validate an inbound ``config`` payload, returning the normalized dict.
+
+    Strict on write: an unknown check, an action a stage cannot honour, or bad
+    per-check settings is a 400 rather than a silently-ignored control that the
+    operator believes is protecting them.
+
+    Args:
+        raw: The ``config`` value from the request (dict, JSON string, or None).
+
+    Returns:
+        The normalized config dict, or None when nothing was supplied.
+
+    Raises:
+        ValueError: When the payload cannot be validated.
+    """
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            raise ValueError("config must be a JSON object")
+    if not isinstance(raw, dict):
+        raise ValueError("config must be a JSON object")
+    try:
+        return AgentConfig.model_validate(raw).model_dump(mode="json")
+    except PydanticValidationError as exc:
+        raise ValueError(_first_pydantic_error(exc))
+
+
+def _first_pydantic_error(exc: PydanticValidationError) -> str:
+    """Render the first validation error as a short, user-facing message."""
+    errors = exc.errors()
+    if not errors:
+        return "config is invalid"
+    first = errors[0]
+    location = ".".join(str(part) for part in first.get("loc", ()) if part != "__root__")
+    message = str(first.get("msg", "invalid")).replace("Value error, ", "")
+    return f"config.{location}: {message}" if location else f"config: {message}"
 
 
 @agents_ns.route("/get_agent")
@@ -557,6 +613,25 @@ class CreateAgent(Resource):
                     jsonify({"success": False, "message": "Invalid JSON schema"}),
                     400,
                 )
+        if "config" in data:
+            try:
+                normalized_config = normalize_agent_config(data.get("config"))
+            except ValueError as exc:
+                # Static message, detail to the log: validation internals must
+                # not reach the caller (same policy as SourceConfig writes in
+                # api/user/sources/routes.py). The builder validates the same
+                # rules client-side, so this path is for API callers.
+                current_app.logger.warning(
+                    "Agent config rejected on create (user=%s): %s", user, exc
+                )
+                return make_response(
+                    jsonify({"success": False, "message": INVALID_CONFIG_MESSAGE}),
+                    400,
+                )
+            if normalized_config is None:
+                data.pop("config", None)
+            else:
+                data["config"] = normalized_config
         if data.get("status") not in ["draft", "published"]:
             return make_response(
                 jsonify(
@@ -789,7 +864,7 @@ class UpdateAgent(Resource):
                 data = request.get_json()
             else:
                 data = request.form.to_dict()
-                json_fields = ["tools", "sources", "json_schema", "models"]
+                json_fields = ["tools", "sources", "json_schema", "models", "config"]
                 for field in json_fields:
                     if field in data and data[field]:
                         try:
@@ -863,6 +938,7 @@ class UpdateAgent(Resource):
                     "limited_request_mode",
                     "request_limit",
                     "models",
+                    "config",
                     "default_model_id",
                     "folder_id",
                     "workflow",
@@ -941,6 +1017,17 @@ class UpdateAgent(Resource):
                                 return _reject("Invalid JSON schema", user, field)
                         else:
                             update_fields["json_schema"] = None
+                    elif field == "config":
+                        try:
+                            normalized_config = normalize_agent_config(data.get("config"))
+                        except ValueError as exc:
+                            current_app.logger.warning(
+                                "Agent config rejected on update (user=%s): %s",
+                                user,
+                                exc,
+                            )
+                            return _reject(INVALID_CONFIG_MESSAGE, user, field)
+                        update_fields["config"] = normalized_config or {}
                     elif field == "limited_token_mode":
                         raw_value = data.get("limited_token_mode", False)
                         bool_value = (
@@ -1194,6 +1281,10 @@ class UpdateAgent(Resource):
                     for _q in (
                         "token_limit", "request_limit",
                         "limited_token_mode", "limited_request_mode",
+                        # Guardrails are the owner's policy for their agent.
+                        # An editor who could clear them would silently strip
+                        # protection from everyone else using it.
+                        "config",
                     ):
                         update_fields.pop(_q, None)
 
@@ -1564,7 +1655,7 @@ class AdoptAgent(Resource):
                     val = template.get(col)
                     if val not in (None, ""):
                         create_kwargs[col] = val
-                for col in ("tools", "json_schema", "models", "shared_metadata"):
+                for col in ("tools", "json_schema", "models", "shared_metadata", "config"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]
                 for col in ("chunks", "token_limit", "request_limit"):

@@ -369,6 +369,11 @@ class WorkflowEngine:
         if doc_manifest:
             node_prompt = f"{node_prompt}\n\n{doc_manifest}" if node_prompt else doc_manifest
 
+        # No ``agent_config`` here, deliberately: per-agent guardrails are not
+        # wired through workflows yet, so a node runs the instance floor (which
+        # ``resolve_config(None)`` still applies) but none of the parent
+        # agent's own controls. Passing it would need an aggregate output guard
+        # in WorkflowAgent to be meaningful.
         factory_kwargs = {
             "agent_type": node_config.agent_type,
             "endpoint": self.agent.endpoint,
