@@ -301,9 +301,11 @@ class Settings(BaseSettings):
     GUARDRAILS_CHECKS_ENABLED: list = []
     # Instance floor: a GuardrailsConfig fragment every agent inherits and
     # cannot weaken. Agents may add controls or make an action stricter, never
-    # looser. Example:
-    # {"mode": "scan_all", "controls": [{"check": "secrets", "stage": "output",
-    #                                    "action": "redact"}]}
+    # looser. "enabled" is required — without it the floor parses but applies
+    # to nothing. Example:
+    # {"enabled": true, "mode": "scan_all",
+    #  "controls": [{"check": "secrets", "stage": "output",
+    #                "action": "redact"}]}
     GUARDRAILS_FLOOR: dict = {}
     # Judge model for the topic/policy checks. None reuses the request's model.
     GUARDRAILS_JUDGE_MODEL: Optional[str] = None

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional, Pattern
+from urllib.parse import urlsplit
 
 from application.guardrails.base import GuardrailCheck, ScanContext
 from application.guardrails.types import CheckOutcome, Span, Stage
@@ -52,7 +53,13 @@ SECRET_PATTERNS: Dict[str, Pattern[str]] = {
     "ANTHROPIC_KEY": re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}\b"),
     "SLACK_TOKEN": re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
     "GOOGLE_API_KEY": re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
-    "PRIVATE_KEY": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----"),
+    # Spans the whole armored block, not just the header: redacting the BEGIN
+    # line alone would release the key material. Falls back to the header when
+    # the block is unterminated or longer than the cap.
+    "PRIVATE_KEY": re.compile(
+        r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----"
+        r"(?:[\s\S]{0,8192}?-----END (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----)?"
+    ),
     "JWT": re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
     "GENERIC_SECRET": re.compile(
         r"(?i)\b(?:api[_-]?key|secret|passwd|password|token)\b\s*[:=]\s*"
@@ -115,7 +122,9 @@ class SecretsCheck(GuardrailCheck):
     supported_stages = _ALL_TEXT_STAGES
     supports_redaction = True
     latency_hint_ms = 2
-    max_match_chars = 2048
+    # Must cover the longest match PRIVATE_KEY can produce, or the streaming
+    # guard would release the tail of a PEM block before scanning it.
+    max_match_chars = 8192
 
     def scan(self, text: str, stage: Stage, context: ScanContext) -> CheckOutcome:
         spans: List[Span] = []
@@ -213,7 +222,10 @@ class URLCheck(GuardrailCheck):
     latency_hint_ms = 2
     max_match_chars = 2048
 
-    _URL = re.compile(r"\bhttps?://([A-Za-z0-9.\-:]+)(?:/[^\s<>\"')]*)?", re.IGNORECASE)
+    # Matches the whole URL; the host is taken from the parsed authority rather
+    # than from a capture group, so ``https://allowed.com@evil.tld`` cannot pass
+    # its userinfo off as the host.
+    _URL = re.compile(r"\bhttps?://[^\s<>\"')]+", re.IGNORECASE)
 
     @classmethod
     def validate_settings(cls, settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -235,12 +247,26 @@ class URLCheck(GuardrailCheck):
     def _host_matches(host: str, entry: str) -> bool:
         return host == entry or host.endswith("." + entry)
 
+    @staticmethod
+    def _host_of(url: str) -> Optional[str]:
+        """The authority's host, or None when the URL will not parse."""
+        try:
+            return urlsplit(url).hostname
+        except ValueError:
+            return None
+
     def scan(self, text: str, stage: Stage, context: ScanContext) -> CheckOutcome:
         allow = self.settings.get("allow_hosts") or []
         block = self.settings.get("block_hosts") or []
         spans: List[Span] = []
         for match in self._URL.finditer(text):
-            host = match.group(1).lower().split(":")[0]
+            host = self._host_of(match.group(0))
+            if host is None:
+                # A URL we cannot resolve is one we cannot vouch for.
+                spans.append(
+                    Span(match.start(), match.end(), "URL", replacement="<url redacted>")
+                )
+                continue
             denied = any(self._host_matches(host, b) for b in block)
             if not denied and allow:
                 denied = not any(self._host_matches(host, a) for a in allow)

@@ -88,6 +88,40 @@ class TestSecretsCheck:
         )
         assert outcome.triggered is False
 
+    def test_private_key_body_is_redacted_not_just_the_header(self, ctx):
+        """Masking the BEGIN line alone would ship the key material verbatim."""
+        body = "MIIBOgIBAAJBAKj34GkxFhD9" + "A" * 64
+        text = f"here:\n-----BEGIN RSA PRIVATE KEY-----\n{body}\n-----END RSA PRIVATE KEY-----\ndone"
+        outcome = SecretsCheck({}).scan(text, Stage.OUTPUT, ctx)
+        redacted = apply_spans(text, outcome.spans)
+        assert body not in redacted
+        assert "-----END RSA PRIVATE KEY-----" not in redacted
+        assert redacted.startswith("here:\n") and redacted.endswith("\ndone")
+
+    @pytest.mark.parametrize(
+        "header",
+        [
+            "-----BEGIN PRIVATE KEY-----",
+            "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+            "-----BEGIN DSA PRIVATE KEY-----",
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----",
+        ],
+    )
+    def test_detects_armored_variants(self, ctx, header):
+        end = header.replace("BEGIN", "END")
+        text = f"{header}\n{'c' * 48}\n{end}"
+        outcome = SecretsCheck({}).scan(text, Stage.OUTPUT, ctx)
+        assert outcome.triggered is True
+        assert "PRIVATE_KEY" in outcome.categories
+
+    def test_unterminated_private_key_still_flags(self, ctx):
+        """A truncated block must not fall back to reporting nothing."""
+        outcome = SecretsCheck({}).scan(
+            "-----BEGIN RSA PRIVATE KEY-----\n" + "d" * 40, Stage.OUTPUT, ctx
+        )
+        assert outcome.triggered is True
+        assert "PRIVATE_KEY" in outcome.categories
+
 
 class TestDenylistCheck:
     def test_word_match_does_not_fire_on_substring(self, ctx):
@@ -134,6 +168,30 @@ class TestURLCheck:
         check = URLCheck(settings)
         assert check.scan("https://evil.test/p", Stage.OUTPUT, ctx).triggered is True
         assert check.scan("https://ok.test/p", Stage.OUTPUT, ctx).triggered is False
+
+    def test_userinfo_does_not_masquerade_as_the_host(self, ctx):
+        """``https://allowed@evil.test`` resolves to evil.test in every browser."""
+        check = URLCheck(URLCheck.validate_settings({"allow_hosts": ["arc53.com"]}))
+        outcome = check.scan("https://arc53.com@evil.test/steal?d=1", Stage.OUTPUT, ctx)
+        assert outcome.triggered is True
+
+    def test_userinfo_does_not_bypass_the_blocklist(self, ctx):
+        check = URLCheck(URLCheck.validate_settings({"block_hosts": ["evil.test"]}))
+        assert check.scan("http://ok.test@evil.test/raw", Stage.OUTPUT, ctx).triggered is True
+
+    def test_userinfo_with_password_and_port(self, ctx):
+        check = URLCheck(URLCheck.validate_settings({"allow_hosts": ["arc53.com"]}))
+        assert check.scan("https://user:pw@evil.test:8443/x", Stage.OUTPUT, ctx).triggered is True
+        assert check.scan("https://user:pw@arc53.com:8443/x", Stage.OUTPUT, ctx).triggered is False
+
+    def test_redacted_span_covers_the_whole_url(self, ctx):
+        """A partial span would leave the real host in the output."""
+        check = URLCheck(URLCheck.validate_settings({"allow_hosts": ["arc53.com"]}))
+        text = "see https://arc53.com@evil.test/steal?d=1 ok"
+        outcome = check.scan(text, Stage.OUTPUT, ctx)
+        redacted = apply_spans(text, outcome.spans)
+        assert "evil.test" not in redacted
+        assert redacted == "see <url redacted> ok"
 
 
 class TestInjectionCheck:

@@ -42,13 +42,20 @@ def instance_floor() -> Optional[GuardrailsConfig]:
     if not raw:
         return None
     try:
-        return GuardrailsConfig.model_validate(raw)
+        floor = GuardrailsConfig.model_validate(raw)
     except Exception:
         logger.error(
             "GUARDRAILS_FLOOR is invalid and is being ignored; agents run "
             "without an instance floor until it is fixed"
         )
         return None
+    if not floor.enabled:
+        logger.warning(
+            'GUARDRAILS_FLOOR is set but "enabled" is false, so no floor is '
+            "applied; add \"enabled\": true to enforce it"
+        )
+        return None
+    return floor
 
 
 def merge_floor(agent: GuardrailsConfig, floor: Optional[GuardrailsConfig]) -> GuardrailsConfig:
