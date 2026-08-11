@@ -176,7 +176,7 @@ export default function SharedAgent() {
             }
           />
         </div>
-        <div className="flex w-[95%] max-w-[1500px] flex-col items-center pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
+        <div className="flex w-[95%] max-w-290 flex-col items-center pb-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12">
           <div className="w-full px-2">
             <MessageInput
               onSubmit={(text) => handleQuestionSubmission(text)}

@@ -1100,7 +1100,15 @@
       "insert": "Página de wiki editada",
       "delete": "Página de wiki eliminada",
       "rename": "Página de wiki renombrada",
-      "failed": "falló"
+      "failed": "falló",
+      "active": {
+        "edited": "Editando wiki…",
+        "create": "Creando página de wiki…",
+        "str_replace": "Editando página de wiki…",
+        "insert": "Editando página de wiki…",
+        "delete": "Eliminando página de wiki…",
+        "rename": "Renombrando página de wiki…"
+      }
     },
     "streamingStatus": {
       "thinking": "Pensando…",

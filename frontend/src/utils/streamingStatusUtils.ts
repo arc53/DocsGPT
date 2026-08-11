@@ -91,12 +91,26 @@ function activityLabel(
   );
 }
 
+/**
+ * Whether the call has been handed off and not come back yet. A call the client
+ * still has to execute counts: it has no result either.
+ */
+export function isToolCallRunning(toolCall: {
+  status?: ToolCallsType['status'];
+}): boolean {
+  return (
+    toolCall.status === 'pending' ||
+    toolCall.status === 'requires_client_execution'
+  );
+}
+
 export function getToolChipLabel(
   toolCall: ToolCallsType,
   t: TFunction,
 ): string {
   const activity = describeToolCall(toolCall);
-  const namespace =
-    toolCall.status === 'pending' ? 'streamingStatus' : 'toolChip';
+  const namespace = isToolCallRunning(toolCall)
+    ? 'streamingStatus'
+    : 'toolChip';
   return activityLabel(activity, namespace, t);
 }

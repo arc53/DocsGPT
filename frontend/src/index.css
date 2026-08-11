@@ -752,6 +752,12 @@ Avoid over-scrolling in mobile browsers
       color: inherit;
       background: none;
     }
+
+    /* Same specificity as the dark gradient above, which would otherwise
+       outrank the reset and paint the sweep as a solid bar behind the text. */
+    .dark .shimmer-text {
+      background-image: none;
+    }
   }
 
   @keyframes fadeInUp {

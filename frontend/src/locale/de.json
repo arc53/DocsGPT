@@ -1100,7 +1100,15 @@
       "insert": "Wiki-Seite bearbeitet",
       "delete": "Wiki-Seite gelöscht",
       "rename": "Wiki-Seite umbenannt",
-      "failed": "fehlgeschlagen"
+      "failed": "fehlgeschlagen",
+      "active": {
+        "edited": "Bearbeite Wiki…",
+        "create": "Erstelle Wiki-Seite…",
+        "str_replace": "Bearbeite Wiki-Seite…",
+        "insert": "Bearbeite Wiki-Seite…",
+        "delete": "Lösche Wiki-Seite…",
+        "rename": "Benenne Wiki-Seite um…"
+      }
     },
     "streamingStatus": {
       "thinking": "Denke nach…",

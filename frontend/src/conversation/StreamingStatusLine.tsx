@@ -23,6 +23,11 @@ export default function StreamingStatusLine({
       aria-live="polite"
       className={cn('flex h-6 min-w-0 items-center gap-2', className)}
     >
+      {/* Stands in for a step chip's icon so the live text keeps the same
+          offset whether a chip or this line is carrying it. */}
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+        <span className="bg-muted-foreground/50 h-1.5 w-1.5 animate-pulse rounded-full" />
+      </span>
       <span className="shimmer-text max-w-[70vw] truncate text-sm lg:max-w-md">
         {hasAnswerText
           ? t('conversation.streamingStatus.generating')

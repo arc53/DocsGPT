@@ -1013,9 +1013,11 @@ export const conversationSlice = createSlice({
       const { index, tail } = action.payload;
       const query = state.queries[index];
       if (!query) return;
-      // A tail is a flat snapshot with no ordering, so any live segments it
-      // overwrites would be stale; drop them and let rendering synthesize.
-      delete query.segments;
+      // A tail is a flat snapshot with no ordering. The live order is left
+      // alone: dropping it here left the stream reducers rebuilding a partial
+      // one from the next delta, which hid every step that came before. It is
+      // rendering that decides, per answer, whether the recorded order still
+      // accounts for the snapshot or synthesis has to take over.
       const status = tail?.status as MessageStatus | undefined;
       query.messageStatus = status;
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;
