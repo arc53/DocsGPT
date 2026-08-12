@@ -7,6 +7,7 @@ import shutil
 import stat
 import tempfile
 import zipfile
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
@@ -335,16 +336,13 @@ def _commit_staging(staging_root: str, destination_root: str) -> None:
             os.replace(source, target)
             moved_files.append(target)
     except Exception:
+        # Rollback is best effort and must not hide the original commit failure.
         for target in reversed(moved_files):
-            try:
+            with suppress(OSError):
                 os.remove(target)
-            except OSError:
-                pass
         for target in reversed(created_directories):
-            try:
+            with suppress(OSError):
                 os.rmdir(target)
-            except OSError:
-                pass
         raise
 
 

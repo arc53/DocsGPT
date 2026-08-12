@@ -344,8 +344,8 @@ class UploadFile(Resource):
                 413,
             )
         except (UploadTooLargeError, ZipExtractionError) as err:
-            zip_error_detail = safe_zip_error_message(err)
             if isinstance(err, ZipExtractionError):
+                zip_error_detail = safe_zip_error_message(err)
                 current_app.logger.warning(
                     "Rejected unsafe ZIP upload %s: %s",
                     active_upload_name,
@@ -362,7 +362,8 @@ class UploadFile(Resource):
                     {
                         "success": False,
                         "message": (
-                            f"{active_upload_name}: {zip_error_detail}"
+                            f"{active_upload_name}: "
+                            "ZIP archive failed safety validation"
                             if isinstance(err, ZipExtractionError)
                             else upload_limit_message()
                         ),

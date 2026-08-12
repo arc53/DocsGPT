@@ -1588,6 +1588,7 @@ class TestServeImage:
                 assert response.headers.get("Content-Type") == "image/png"
                 assert response.headers.get("X-Content-Type-Options") == "nosniff"
                 assert response.is_streamed
+                assert response.content_length is None
                 assert b"".join(response.response) == b"\x89PNG\r\n"
                 mock_storage.get_file.assert_called_once_with(self.image_path)
 

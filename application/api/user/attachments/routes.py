@@ -61,7 +61,7 @@ _AGENT_IMAGE_REDIRECT_CACHE_SECONDS = _AGENT_IMAGE_PRESIGNED_TTL_SECONDS - 60
 
 
 def _stream_file(file_obj, size_bytes: int):
-    """Yield exactly the size-checked file range and always close the handle."""
+    """Yield up to the size-checked file range and always close the handle."""
     remaining = size_bytes
     try:
         while remaining > 0:
@@ -742,7 +742,6 @@ class ServeImage(Resource):
                 content_type=content_type,
                 direct_passthrough=True,
             )
-            response.content_length = size_bytes
             response.headers.set("Cache-Control", "public, max-age=86400, immutable")
             response.headers.set("X-Content-Type-Options", "nosniff")
 

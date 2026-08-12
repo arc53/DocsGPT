@@ -300,9 +300,13 @@ class TestUploadFile:
             response = UploadFile().post()
 
         assert response.status_code == 413
-        assert "documents.zip" in response.json["message"]
+        assert response.json["message"] == (
+            "documents.zip: ZIP archive failed safety validation"
+        )
+        assert "bad" not in response.json["message"]
         assert "\n" not in response.json["message"]
         logged_values = " ".join(str(value) for value in warning.call_args.args)
+        assert "bad\\x0aFORGED" in logged_values
         assert "\n" not in logged_values
 
     def test_expands_nested_zip_before_storage(self, app):

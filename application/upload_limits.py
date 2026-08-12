@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+from contextlib import suppress
 from typing import BinaryIO
 
 from application.core.settings import settings
@@ -80,10 +81,8 @@ def copy_upload_to_path(
     """
     limit = int(max_bytes or settings.UPLOAD_MAX_FILE_BYTES)
     stream = getattr(upload, "stream", upload)
-    try:
+    with suppress(AttributeError, OSError):
         stream.seek(0)
-    except (AttributeError, OSError):
-        pass
 
     total = 0
     with open(destination, "wb") as target:
@@ -102,10 +101,8 @@ def read_upload_limited(upload: BinaryIO, max_bytes: int | None = None) -> bytes
     """Read at most one configured file into memory, rejecting overflow."""
     limit = int(max_bytes or settings.UPLOAD_MAX_FILE_BYTES)
     stream = getattr(upload, "stream", upload)
-    try:
+    with suppress(AttributeError, OSError):
         stream.seek(0)
-    except (AttributeError, OSError):
-        pass
     data = bytearray()
     while True:
         chunk = stream.read(min(_COPY_CHUNK_BYTES, limit - len(data) + 1))
@@ -125,10 +122,8 @@ def read_text_upload_limited(
     """Decode a bounded upload without first duplicating it into ``bytes``."""
     limit = int(max_bytes or settings.UPLOAD_MAX_FILE_BYTES)
     stream = getattr(upload, "stream", upload)
-    try:
+    with suppress(AttributeError, OSError):
         stream.seek(0)
-    except (AttributeError, OSError):
-        pass
 
     raw_reader = _LimitedRawReader(stream, limit)
     buffered_reader = io.BufferedReader(raw_reader, buffer_size=_COPY_CHUNK_BYTES)
@@ -136,11 +131,8 @@ def read_text_upload_limited(
     try:
         return text_reader.read()
     finally:
-        try:
+        # Cleanup is best effort and must not mask the read result or exception.
+        with suppress(ValueError, OSError):
             text_reader.detach()
-        except (ValueError, OSError):
-            pass
-        try:
+        with suppress(ValueError, OSError):
             buffered_reader.detach()
-        except (ValueError, OSError):
-            pass
