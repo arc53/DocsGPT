@@ -51,6 +51,22 @@ By default, Docling parser classes use RapidOCR options (language default: `engl
 Parser internals like OCR language and force-full-page OCR are currently set by code defaults, not separate `.env` settings.
 </Callout>
 
+### Model compilation
+
+Docling runs its layout, table, and OCR models through `torch.compile` by
+default. DocsGPT turns that off. On x86-64 Linux, compiling raised the first
+parse of a two-page PDF from 8.4s to 58.6s while steady-state parsing stayed
+at 1.5s either way, so the warmup is overhead a per-file parse never recovers.
+Compiling also fails outright on Apple Silicon, on install paths containing a
+space, on Windows without MSVC, and in slim images with no C compiler.
+
+```env
+DOCLING_COMPILE_TORCH_MODELS=false
+```
+
+Set it to `true` only if you are parsing large batches on a machine where the
+warmup pays for itself.
+
 ## Attachment Behavior by Model Support
 
 When attachments are used in chat, behavior depends on the selected model/provider:

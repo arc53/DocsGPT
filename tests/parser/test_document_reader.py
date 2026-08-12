@@ -516,3 +516,51 @@ def test_bound_parse_payload_small_content_not_flagged():
     out = bound_parse_payload({"output": "text", "content": "hi"}, max_chars=10)
     assert out["content"] == "hi"
     assert out["truncated"] is False
+
+
+# ---------------------------------------------------------------------------
+# vanilla-converter fallback honors the torch.compile toggle
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_vanilla_converter_applies_inference_settings(monkeypatch, tmp_path):
+    """The fallback builds its own DocumentConverter, so it must disable
+    torch.compile itself — the configured-parser path can't do it for it."""
+    import sys
+    import types
+
+    called = []
+    monkeypatch.setattr(
+        "application.parser.file.docling_parser._apply_inference_settings",
+        lambda: called.append(True),
+    )
+
+    class _Doc:
+        texts = []
+        tables = []
+        pages = {}
+
+        def export_to_markdown(self):
+            return "# md"
+
+        def export_to_dict(self):
+            return {"texts": []}
+
+    class _Converter:
+        def convert(self, *a, **k):
+            assert called == [True], "converter built before torch.compile was disabled"
+            return types.SimpleNamespace(document=_Doc())
+
+    fake_docling = types.ModuleType("docling")
+    fake_dc_module = types.ModuleType("docling.document_converter")
+    fake_dc_module.DocumentConverter = _Converter
+    fake_docling.document_converter = fake_dc_module
+    monkeypatch.setitem(sys.modules, "docling", fake_docling)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", fake_dc_module)
+
+    path = tmp_path / "doc.pdf"
+    path.write_bytes(b"%PDF")
+
+    out = dr._docling_structured(path, ocr_enabled=False, include_tables=False, parser=None)
+
+    assert out["markdown"] == "# md"
+    assert called == [True]

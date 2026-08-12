@@ -252,6 +252,9 @@ def _docling_structured(path: Path, *, ocr_enabled: bool, include_tables: bool, 
     else:
         from docling.document_converter import DocumentConverter
 
+        from application.parser.file.docling_parser import _apply_inference_settings
+
+        _apply_inference_settings()
         converter = DocumentConverter()
         doc = converter.convert(str(path)).document
         markdown = doc.export_to_markdown()
