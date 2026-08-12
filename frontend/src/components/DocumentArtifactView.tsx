@@ -1,4 +1,3 @@
-import mermaid from 'mermaid';
 import { Download, FileText, History, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSelector } from 'react-redux';
@@ -7,6 +6,7 @@ import userService from '../api/services/userService';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import MarkdownPreview from './MarkdownPreview';
+import { renderMermaidDiagram } from './mermaidSecurity';
 import Spinner from './Spinner';
 import {
   buildPreviewDocument,
@@ -67,13 +67,12 @@ function FramePreview({
     let cancelled = false;
     setRendered(null);
     setRenderError(false);
-    mermaid.initialize({
-      startOnLoad: false,
+    renderMermaidDiagram({
+      id: `artifact-mermaid-${Date.now()}`,
+      code: source,
+      isDarkTheme,
       securityLevel: 'sandbox',
-      theme: isDarkTheme ? 'dark' : 'default',
-    });
-    mermaid
-      .render(`artifact-mermaid-${Date.now()}`, source)
+    })
       .then(({ svg }) => {
         if (!cancelled) setRendered(svg);
       })
