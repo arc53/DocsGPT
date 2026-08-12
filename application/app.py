@@ -28,6 +28,7 @@ from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
 from application.api.v1 import v1_bp  # noqa: E402
 from application.celery_init import celery  # noqa: E402
+from application.core.secret_key import resolve_jwt_secret_key  # noqa: E402
 from application.core.settings import settings  # noqa: E402
 from application.storage.db.bootstrap import ensure_database_ready  # noqa: E402
 from application.stt.upload_limits import (  # noqa: E402
@@ -84,18 +85,13 @@ app.config.update(
 celery.config_from_object("application.celeryconfig")
 api.init_app(app)
 
-if settings.AUTH_TYPE in ("simple_jwt", "session_jwt", "oidc") and not settings.JWT_SECRET_KEY:
-    key_file = ".jwt_secret_key"
-    try:
-        with open(key_file, "r") as f:
-            settings.JWT_SECRET_KEY = f.read().strip()
-    except FileNotFoundError:
-        new_key = os.urandom(32).hex()
-        with open(key_file, "w") as f:
-            f.write(new_key)
-        settings.JWT_SECRET_KEY = new_key
-    except Exception as e:
-        raise RuntimeError(f"Failed to setup JWT_SECRET_KEY: {e}")
+# The same stable secret also signs opaque agent-image capabilities, including
+# in no-auth mode. Production replicas must receive one shared configured key;
+# only local development may use the atomic filesystem fallback.
+settings.JWT_SECRET_KEY = resolve_jwt_secret_key(
+    settings.JWT_SECRET_KEY,
+    os.getenv("DEPLOYMENT_TYPE"),
+)
 if settings.AUTH_TYPE == "oidc":
     _missing_oidc = [
         name

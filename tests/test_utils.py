@@ -317,42 +317,54 @@ class TestGenerateImageUrl:
         assert generate_image_url("http://example.com/img.png") == "http://example.com/img.png"
 
     @pytest.mark.unit
-    def test_s3_strategy(self):
+    def test_internal_image_uses_opaque_capability(self):
         with patch("application.utils.settings") as s:
-            s.URL_STRATEGY = "s3"
-            s.S3_BUCKET_NAME = "my-bucket"
-            s.S3_ENDPOINT_URL = None
-            s.S3_REGION = "us-west-2"
-            result = generate_image_url("path/to/img.png")
-            assert result == "https://my-bucket.s3.us-west-2.amazonaws.com/path/to/img.png"
+            s.JWT_SECRET_KEY = "test-image-secret"
+            s.UPLOAD_FOLDER = "inputs"
+            s.API_URL = "https://api.example.com"
+            result = generate_image_url(
+                "inputs/user-1/attachments/avatar.png",
+                "00000000-0000-0000-0000-000000000001",
+                "user-1",
+            )
+            assert result.startswith(
+                "https://api.example.com/api/images/"
+                "00000000-0000-0000-0000-000000000001/"
+            )
+            assert "inputs" not in result
+            assert "avatar.png" not in result
 
     @pytest.mark.unit
-    def test_s3_strategy_custom_endpoint_path_style(self):
+    def test_internal_image_fails_closed_without_agent_identity(self):
         with patch("application.utils.settings") as s:
-            s.URL_STRATEGY = "s3"
-            s.S3_BUCKET_NAME = "my-bucket"
-            s.S3_ENDPOINT_URL = "https://account.r2.cloudflarestorage.com"
-            s.S3_PATH_STYLE = True
-            result = generate_image_url("path/to/img.png")
-            assert result == "https://account.r2.cloudflarestorage.com/my-bucket/path/to/img.png"
+            s.JWT_SECRET_KEY = "test-image-secret"
+            s.UPLOAD_FOLDER = "inputs"
+            assert generate_image_url("inputs/user-1/attachments/avatar.png") == ""
 
     @pytest.mark.unit
-    def test_s3_strategy_custom_endpoint_virtual_host(self):
+    def test_internal_image_fails_closed_without_secret(self):
         with patch("application.utils.settings") as s:
-            s.URL_STRATEGY = "s3"
-            s.S3_BUCKET_NAME = "my-bucket"
-            s.S3_ENDPOINT_URL = "https://minio.example.com"
-            s.S3_PATH_STYLE = False
-            result = generate_image_url("path/to/img.png")
-            assert result == "https://my-bucket.minio.example.com/path/to/img.png"
+            s.JWT_SECRET_KEY = ""
+            s.UPLOAD_FOLDER = "inputs"
+            result = generate_image_url(
+                "inputs/user-1/attachments/avatar.png",
+                "00000000-0000-0000-0000-000000000001",
+                "user-1",
+            )
+            assert result == ""
 
     @pytest.mark.unit
-    def test_backend_strategy(self):
+    def test_internal_image_rejects_path_outside_owner_uploads(self):
         with patch("application.utils.settings") as s:
-            s.URL_STRATEGY = "backend"
+            s.JWT_SECRET_KEY = "test-image-secret"
+            s.UPLOAD_FOLDER = "inputs"
             s.API_URL = "http://localhost:7091"
-            result = generate_image_url("path/to/img.png")
-            assert result == "http://localhost:7091/api/images/path/to/img.png"
+            result = generate_image_url(
+                ".env",
+                "00000000-0000-0000-0000-000000000001",
+                "user-1",
+            )
+            assert result == ""
 
 
 class TestCalculateCompressionThreshold:
@@ -641,17 +653,20 @@ class TestGenerateImageUrlEdgeCases:
     @pytest.mark.unit
     def test_non_string_input(self):
         result = generate_image_url(123)
-        # Not a string, not starting with http, uses default strategy
-        assert "/api/images/" in result or "s3" in result
+        assert result == ""
 
     @pytest.mark.unit
-    def test_default_strategy_is_backend(self):
+    def test_email_owner_legacy_path_is_supported(self):
         with patch("application.utils.settings") as s:
-            # Simulate missing URL_STRATEGY attribute
-            del s.URL_STRATEGY
+            s.JWT_SECRET_KEY = "test-image-secret"
+            s.UPLOAD_FOLDER = "inputs"
             s.API_URL = "http://localhost:7091"
-            result = generate_image_url("img.png")
-            assert "localhost:7091" in result
+            result = generate_image_url(
+                "inputs/person@example.com/attachments/img.png",
+                "00000000-0000-0000-0000-000000000001",
+                "person@example.com",
+            )
+            assert result.startswith("http://localhost:7091/api/images/")
 
 
 class TestGetHashEdgeCases:

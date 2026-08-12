@@ -176,6 +176,25 @@ class AgentsRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def find_image_record(self, agent_id: str) -> Optional[dict]:
+        """Fetch only the fields needed to verify a public image capability.
+
+        This lookup is intentionally not owner-scoped because the resulting
+        row is not authorization: callers must verify its HMAC capability
+        before reading or returning any storage bytes.
+        """
+        if not looks_like_uuid(agent_id):
+            return None
+        result = self._conn.execute(
+            text(
+                "SELECT id, user_id, image FROM agents "
+                "WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": agent_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
     def list_by_ids(self, agent_ids) -> list[dict]:
         """Fetch agents whose id is in ``agent_ids`` (team-shared listing path)."""
         ids = [str(a) for a in agent_ids if looks_like_uuid(str(a))]

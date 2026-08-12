@@ -99,6 +99,8 @@ class Settings(BaseSettings):
     DOCLING_TABULAR_MAX_BYTES: int = 2_000_000
     DOCLING_MARKUP_MAX_BYTES: int = 8_000_000
     ATTACHMENT_TEXT_MAX_BYTES: int = 5_000_000
+    AGENT_IMAGE_MAX_BYTES: int = 5_000_000
+    AGENT_IMAGE_MAX_PIXELS: int = 16_777_216
     VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
     # Allow-list of retriever keys an agent may use. Values must match the
     # ``RetrieverCreator.retrievers`` registry keys (``classic`` / ``default``),

@@ -33,9 +33,11 @@ The `deployment/k8s` folder contains the necessary deployment and service config
    cd docsgpt/deployment/k8s
    ```
 
-2. **Configure Secrets (optional)**
+2. **Configure Secrets**
 
-   Ensure that you have all the necessary secrets in `docsgpt-secrets.yaml`. Update it with your secrets before applying if you want. By default we will use qdrant as a vectorstore and public docsgpt llm as llm for inference.
+   Add a strong, base64-encoded `JWT_SECRET_KEY` to `docsgpt-secrets.yaml` before applying it. The API and worker deployments share this value so authentication tokens and agent-avatar capability URLs remain valid across pod restarts and replicas. You can generate a value with `openssl rand -hex 32 | base64`.
+
+   Configure any additional provider secrets you need. By default, the manifests use Qdrant as the vector store and the public DocsGPT LLM for inference.
    
    Alternatively, you can use [Neon](https://get.neon.com/docsgpt) as an easy way to set up your vector store with pgvector, which is highly recommended for quick deployments.
 

@@ -60,6 +60,14 @@ class LocalStorage(BaseStorage):
 
         return open(full_path, 'rb')
 
+    def get_file_size(self, path: str) -> int:
+        """Return the size of a local file without opening and buffering it."""
+        full_path = self._get_full_path(path)
+        try:
+            return os.path.getsize(full_path)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"File not found: {full_path}") from exc
+
     def delete_file(self, path: str) -> bool:
         """Delete a file from local storage."""
         full_path = self._get_full_path(path)

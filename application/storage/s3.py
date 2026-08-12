@@ -121,13 +121,33 @@ class S3Storage(BaseStorage):
         file_obj.seek(0)
         return file_obj
 
-    def generate_presigned_url(self, path: str, expires_in: int = 300) -> str:
+    def get_file_size(self, path: str) -> int:
+        """Return an S3 object's size using HEAD without downloading its body."""
+        path = self._validate_path(path)
+        try:
+            metadata = self.s3.head_object(Bucket=self.bucket_name, Key=path)
+        except ClientError as exc:
+            error_code = str(exc.response.get("Error", {}).get("Code", ""))
+            if error_code in {"404", "NoSuchKey", "NotFound"}:
+                raise FileNotFoundError(f"File not found: {path}") from exc
+            raise
+        return int(metadata["ContentLength"])
+
+    def generate_presigned_url(
+        self,
+        path: str,
+        expires_in: int = 300,
+        content_type: Optional[str] = None,
+    ) -> str:
         """Return a short-lived presigned GET URL for a private object (TTL <= 1h)."""
         path = self._validate_path(path)
         expires_in = min(expires_in, 3600)
+        params = {"Bucket": self.bucket_name, "Key": path}
+        if content_type:
+            params["ResponseContentType"] = content_type
         return self.s3.generate_presigned_url(
             "get_object",
-            Params={"Bucket": self.bucket_name, "Key": path},
+            Params=params,
             ExpiresIn=expires_in,
         )
 

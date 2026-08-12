@@ -1520,23 +1520,53 @@ class TestLiveSpeechToTextAdditional:
 class TestServeImage:
     """Tests for ServeImage endpoint."""
 
+    agent_id = "00000000-0000-0000-0000-000000000001"
+    image_path = "inputs/user123/attachments/avatar.png"
+
+    @staticmethod
+    def _capability(agent_id, image_path, user_id="user123"):
+        from application.utils import generate_agent_image_capability
+
+        return generate_agent_image_capability(agent_id, image_path, user_id)
+
     def test_serve_image_success(self, flask_app):
         from application.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
         mock_storage = MagicMock()
         mock_file_obj = io.BytesIO(b"\x89PNG\r\n")
+        mock_storage.get_file_size.return_value = len(mock_file_obj.getvalue())
         mock_storage.get_file.return_value = mock_file_obj
 
-        with patch("application.api.user.base.storage", mock_storage):
+        agent = {
+            "id": self.agent_id,
+            "user_id": "user123",
+            "image": self.image_path,
+        }
+
+        with patch(
+            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+        ), patch(
+            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            return_value=agent,
+        ), patch(
+            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch(
+            "application.api.user.attachments.routes.settings.STORAGE_TYPE", "local"
+        ), patch("application.api.user.base.storage", mock_storage):
+            capability = self._capability(self.agent_id, self.image_path)
             with app.test_request_context(
-                "/api/images/test/image.png",
+                f"/api/images/{self.agent_id}/{capability}",
                 method="GET",
             ):
                 resource = ServeImage()
-                response = resource.get("test/image.png")
+                response = resource.get(self.agent_id, capability)
                 assert _get_response_status(response) == 200
                 assert response.headers.get("Content-Type") == "image/png"
+                assert response.headers.get("X-Content-Type-Options") == "nosniff"
+                assert response.is_streamed
+                assert b"".join(response.response) == b"\x89PNG\r\n"
+                mock_storage.get_file.assert_called_once_with(self.image_path)
 
     def test_serve_image_jpg_content_type(self, flask_app):
         from application.api.user.attachments.routes import ServeImage
@@ -1544,32 +1574,184 @@ class TestServeImage:
         app = Flask(__name__)
         mock_storage = MagicMock()
         mock_file_obj = io.BytesIO(b"\xff\xd8\xff\xe0")
+        mock_storage.get_file_size.return_value = len(mock_file_obj.getvalue())
         mock_storage.get_file.return_value = mock_file_obj
 
-        with patch("application.api.user.base.storage", mock_storage):
+        image_path = "inputs/user123/attachments/photo.jpg"
+        agent = {
+            "id": self.agent_id,
+            "user_id": "user123",
+            "image": image_path,
+        }
+
+        with patch(
+            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+        ), patch(
+            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            return_value=agent,
+        ), patch(
+            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch(
+            "application.api.user.attachments.routes.settings.STORAGE_TYPE", "local"
+        ), patch("application.api.user.base.storage", mock_storage):
+            capability = self._capability(self.agent_id, image_path)
             with app.test_request_context(
-                "/api/images/test/photo.jpg",
+                f"/api/images/{self.agent_id}/{capability}",
                 method="GET",
             ):
                 resource = ServeImage()
-                response = resource.get("test/photo.jpg")
+                response = resource.get(self.agent_id, capability)
                 assert _get_response_status(response) == 200
                 assert response.headers.get("Content-Type") == "image/jpeg"
 
-    def test_serve_image_not_found(self, flask_app):
+    def test_s3_avatar_redirects_without_downloading_object(self, flask_app):
         from application.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
         mock_storage = MagicMock()
-        mock_storage.get_file.side_effect = FileNotFoundError("not found")
+        mock_storage.get_file_size.return_value = 1024
+        mock_storage.generate_presigned_url.return_value = (
+            "https://bucket.example/avatar.png?signature=short-lived"
+        )
+        agent = {
+            "id": self.agent_id,
+            "user_id": "user123",
+            "image": self.image_path,
+        }
 
-        with patch("application.api.user.base.storage", mock_storage):
+        with patch(
+            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+        ), patch(
+            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            return_value=agent,
+        ), patch(
+            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch(
+            "application.api.user.attachments.routes.settings.STORAGE_TYPE", "s3"
+        ), patch("application.api.user.base.storage", mock_storage):
+            capability = self._capability(self.agent_id, self.image_path)
             with app.test_request_context(
-                "/api/images/missing/image.png",
+                f"/api/images/{self.agent_id}/{capability}", method="GET"
+            ):
+                response = ServeImage().get(self.agent_id, capability)
+
+        assert response.status_code == 302
+        assert response.headers["Location"].startswith("https://bucket.example/")
+        assert response.headers["Cache-Control"] == "private, max-age=240"
+        mock_storage.generate_presigned_url.assert_called_once_with(
+            self.image_path, expires_in=300, content_type="image/png"
+        )
+        mock_storage.get_file.assert_not_called()
+
+    def test_legacy_oversized_avatar_is_rejected_before_read(self, flask_app):
+        from application.api.user.attachments.routes import ServeImage
+
+        app = Flask(__name__)
+        mock_storage = MagicMock()
+        mock_storage.get_file_size.return_value = 5001
+        agent = {
+            "id": self.agent_id,
+            "user_id": "user123",
+            "image": self.image_path,
+        }
+
+        with patch(
+            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+        ), patch(
+            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            return_value=agent,
+        ), patch(
+            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch(
+            "application.api.user.attachments.routes.settings.AGENT_IMAGE_MAX_BYTES", 5000
+        ), patch("application.api.user.base.storage", mock_storage):
+            capability = self._capability(self.agent_id, self.image_path)
+            with app.test_request_context(
+                f"/api/images/{self.agent_id}/{capability}", method="GET"
+            ):
+                response = ServeImage().get(self.agent_id, capability)
+
+        assert response.status_code == 404
+        mock_storage.get_file.assert_not_called()
+        mock_storage.generate_presigned_url.assert_not_called()
+
+    def test_unknown_capability_never_reads_storage(self, flask_app):
+        from application.api.user.attachments.routes import ServeImage
+
+        app = Flask(__name__)
+        mock_storage = MagicMock()
+
+        agent = {
+            "id": self.agent_id,
+            "user_id": "user123",
+            "image": self.image_path,
+        }
+
+        with patch(
+            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+        ), patch(
+            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            return_value=agent,
+        ), patch(
+            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch("application.api.user.base.storage", mock_storage):
+            with app.test_request_context(
+                f"/api/images/{self.agent_id}/{'0' * 64}",
                 method="GET",
             ):
                 resource = ServeImage()
-                response = resource.get("missing/image.png")
+                response = resource.get(self.agent_id, "0" * 64)
+                assert _get_response_status(response) == 404
+                mock_storage.get_file.assert_not_called()
+
+    def test_poisoned_agent_path_never_reads_storage(self, flask_app):
+        from application.api.user.attachments.routes import ServeImage
+
+        app = Flask(__name__)
+        mock_storage = MagicMock()
+        agent = {"id": self.agent_id, "user_id": "user123", "image": ".env"}
+
+        with patch(
+            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+        ), patch(
+            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            return_value=agent,
+        ), patch(
+            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch("application.api.user.base.storage", mock_storage):
+            capability = self._capability(self.agent_id, ".env")
+            with app.test_request_context(
+                f"/api/images/{self.agent_id}/{capability}", method="GET"
+            ):
+                response = ServeImage().get(self.agent_id, capability)
+                assert _get_response_status(response) == 404
+                mock_storage.get_file.assert_not_called()
+
+    def test_serve_image_file_not_found(self, flask_app):
+        from application.api.user.attachments.routes import ServeImage
+
+        app = Flask(__name__)
+        mock_storage = MagicMock()
+        mock_storage.get_file_size.side_effect = FileNotFoundError("not found")
+        agent = {
+            "id": self.agent_id,
+            "user_id": "user123",
+            "image": self.image_path,
+        }
+
+        with patch(
+            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+        ), patch(
+            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            return_value=agent,
+        ), patch(
+            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch("application.api.user.base.storage", mock_storage):
+            capability = self._capability(self.agent_id, self.image_path)
+            with app.test_request_context(
+                f"/api/images/{self.agent_id}/{capability}", method="GET"
+            ):
+                response = ServeImage().get(self.agent_id, capability)
                 assert _get_response_status(response) == 404
 
     def test_serve_image_generic_error(self, flask_app):
@@ -1577,15 +1759,29 @@ class TestServeImage:
 
         app = Flask(__name__)
         mock_storage = MagicMock()
-        mock_storage.get_file.side_effect = Exception("storage error")
+        mock_storage.get_file_size.side_effect = Exception("storage error")
 
-        with patch("application.api.user.base.storage", mock_storage):
+        agent = {
+            "id": self.agent_id,
+            "user_id": "user123",
+            "image": self.image_path,
+        }
+
+        with patch(
+            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+        ), patch(
+            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            return_value=agent,
+        ), patch(
+            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch("application.api.user.base.storage", mock_storage):
+            capability = self._capability(self.agent_id, self.image_path)
             with app.test_request_context(
-                "/api/images/broken/image.png",
+                f"/api/images/{self.agent_id}/{capability}",
                 method="GET",
             ):
                 resource = ServeImage()
-                response = resource.get("broken/image.png")
+                response = resource.get(self.agent_id, capability)
                 assert _get_response_status(response) == 500
 
 

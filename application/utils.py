@@ -1,12 +1,13 @@
 import base64
 import hashlib
+import hmac
 import io
 import logging
 import os
 import re
 import uuid
+from pathlib import PurePosixPath
 from typing import List
-from urllib.parse import urlparse
 
 import tiktoken
 from flask import jsonify, make_response
@@ -237,31 +238,117 @@ def validate_function_name(function_name):
     return True
 
 
-def generate_image_url(image_path):
+AGENT_IMAGE_FORMATS = {
+    ".gif": ("GIF", "image/gif"),
+    ".jpeg": ("JPEG", "image/jpeg"),
+    ".jpg": ("JPEG", "image/jpeg"),
+    ".png": ("PNG", "image/png"),
+    ".webp": ("WEBP", "image/webp"),
+}
+
+
+def is_external_image_url(image_path: object) -> bool:
+    """Return whether an image value is an externally hosted HTTP(S) URL."""
+    return isinstance(image_path, str) and image_path.startswith(("http://", "https://"))
+
+
+def safe_user_storage_component(user_id: object) -> str:
+    """Return a deterministic, traversal-safe directory component for a user ID."""
+    raw_user_id = str(user_id or "")
+    component = secure_filename(raw_user_id)[:80] or "user"
+    digest = hashlib.sha256(raw_user_id.encode("utf-8")).hexdigest()[:16]
+    return f"{component}-{digest}"
+
+
+def get_agent_image_content_type(image_path: object) -> str | None:
+    """Return an allow-listed raster MIME type for an internal image path."""
+    if not isinstance(image_path, str):
+        return None
+    policy = AGENT_IMAGE_FORMATS.get(PurePosixPath(image_path).suffix.lower())
+    return policy[1] if policy else None
+
+
+def is_safe_agent_image_path(image_path: object, user_id: object) -> bool:
+    """Validate that a path is an agent avatar under its owner's upload directory."""
+    if not isinstance(image_path, str) or not image_path or not user_id:
+        return False
+    if is_external_image_url(image_path) or "\\" in image_path or "\x00" in image_path:
+        return False
+
+    candidate = PurePosixPath(image_path)
+    upload_root = PurePosixPath(str(settings.UPLOAD_FOLDER).rstrip("/"))
+    if candidate.is_absolute() or upload_root.is_absolute() or ".." in candidate.parts:
+        return False
+    if get_agent_image_content_type(image_path) is None:
+        return False
+
+    owner_components = {safe_user_storage_component(user_id)}
+    raw_user_id = str(user_id)
+    raw_owner = PurePosixPath(raw_user_id)
+    if (
+        len(raw_owner.parts) == 1
+        and raw_user_id not in {"", ".", ".."}
+        and "\\" not in raw_user_id
+        and "\x00" not in raw_user_id
+    ):
+        # Compatibility for avatars written before user IDs were sanitized.
+        owner_components.add(raw_user_id)
+
+    for owner_component in owner_components:
+        expected_parent = upload_root / owner_component / "attachments"
+        if candidate.parent == expected_parent and candidate.name:
+            return True
+    return False
+
+
+def generate_agent_image_capability(
+    agent_id: object, image_path: object, user_id: object
+) -> str:
+    """Create an HMAC capability for one agent's current internal image."""
+    secret = getattr(settings, "JWT_SECRET_KEY", "")
+    if not isinstance(secret, str) or not secret:
+        return ""
+    try:
+        canonical_agent_id = str(uuid.UUID(str(agent_id)))
+    except (TypeError, ValueError, AttributeError):
+        return ""
+    if not isinstance(image_path, str) or not user_id:
+        return ""
+    payload = (
+        f"docsgpt-agent-image-v1\0{canonical_agent_id}\0{user_id}\0{image_path}"
+    ).encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def verify_agent_image_capability(
+    capability: object, agent_id: object, image_path: object, user_id: object
+) -> bool:
+    """Verify an agent image capability without timing-leaky string comparison."""
+    if not isinstance(capability, str) or not re.fullmatch(r"[0-9a-f]{64}", capability):
+        return False
+    expected = generate_agent_image_capability(agent_id, image_path, user_id)
+    return bool(expected) and hmac.compare_digest(capability, expected)
+
+
+def generate_image_url(image_path, agent_id=None, user_id=None):
+    """Return an external URL or an opaque capability URL for an agent image.
+
+    Internal storage paths are never included in the returned URL. Invalid or
+    unscoped paths fail closed so a poisoned database row cannot become a file
+    read capability.
+    """
     if isinstance(image_path, str) and (
         image_path.startswith("http://") or image_path.startswith("https://")
     ):
         return image_path
-    strategy = getattr(settings, "URL_STRATEGY", "backend")
-    if strategy == "s3":
-        bucket_name = settings.S3_BUCKET_NAME
-        endpoint_url = settings.S3_ENDPOINT_URL
-        if endpoint_url:
-            # S3-compatible service (MinIO, R2, B2, Spaces, ...).
-            base = endpoint_url.rstrip("/")
-            if settings.S3_PATH_STYLE:
-                return f"{base}/{bucket_name}/{image_path}"
-            parsed = urlparse(base)
-            return f"{parsed.scheme}://{bucket_name}.{parsed.netloc}/{image_path}"
-        region_name = (
-            settings.S3_REGION
-            or getattr(settings, "SAGEMAKER_REGION", None)
-            or "eu-central-1"
-        )
-        return f"https://{bucket_name}.s3.{region_name}.amazonaws.com/{image_path}"
-    else:
-        base_url = getattr(settings, "API_URL", "http://localhost:7091")
-        return f"{base_url}/api/images/{image_path}"
+    if not is_safe_agent_image_path(image_path, user_id):
+        return ""
+    capability = generate_agent_image_capability(agent_id, image_path, user_id)
+    if not capability:
+        return ""
+    canonical_agent_id = str(uuid.UUID(str(agent_id)))
+    base_url = getattr(settings, "API_URL", "http://localhost:7091").rstrip("/")
+    return f"{base_url}/api/images/{canonical_agent_id}/{capability}"
 
 
 def calculate_compression_threshold(

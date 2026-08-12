@@ -258,3 +258,11 @@ class TestBuildCreateKwargs:
             {}, image_url="/upload/img.png", agent_type="classic",
         )
         assert out.get("image") == "/upload/img.png"
+
+    def test_client_image_path_is_never_persisted(self):
+        from application.api.user.agents.routes import _build_create_kwargs
+
+        out = _build_create_kwargs(
+            {"image": ".env"}, image_url="", agent_type="classic",
+        )
+        assert "image" not in out

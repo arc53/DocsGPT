@@ -465,6 +465,28 @@ class TestUpdateAgent:
         got = AgentsRepository(pg_conn).get(str(agent["id"]), user)
         assert got["name"] == "new name"
 
+    def test_ignores_client_supplied_image_path(self, app, pg_conn):
+        from application.api.user.agents.routes import UpdateAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-upd-image-path"
+        agent = _seed_agent(
+            pg_conn, user=user, status="draft", with_source=False,
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"description": "safe update", "image": ".env"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+
+        assert response.status_code == 200
+        got = AgentsRepository(pg_conn).get(str(agent["id"]), user)
+        assert got["description"] == "safe update"
+        assert got["image"] is None
+
     def test_invalid_status_returns_400(self, app, pg_conn):
         from application.api.user.agents.routes import UpdateAgent
 

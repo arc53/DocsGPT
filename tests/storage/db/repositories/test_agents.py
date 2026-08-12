@@ -71,6 +71,18 @@ class TestGet:
         created = repo.create("user-1", "a", "draft")
         assert repo.get(created["id"], "user-other") is None
 
+    def test_find_image_record_returns_only_capability_fields(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create(
+            "user-1", "a", "draft", image="inputs/user-1/attachments/a.png"
+        )
+
+        image_record = repo.find_image_record(str(created["id"]))
+
+        assert set(image_record) >= {"id", "user_id", "image"}
+        assert image_record["image"] == "inputs/user-1/attachments/a.png"
+        assert "name" not in image_record
+
     def test_get_by_legacy_id(self, pg_conn):
         repo = _repo(pg_conn)
         created = repo.create(

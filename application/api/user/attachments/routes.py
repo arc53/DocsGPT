@@ -6,12 +6,13 @@ from pathlib import Path
 
 import uuid
 
-from flask import current_app, jsonify, make_response, request
+from flask import Response, current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
 from application.cache import get_redis_instance
 from application.core.settings import settings
+from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.session import db_readonly
 from application.stt.constants import (
@@ -35,12 +36,36 @@ from application.stt.live_session import (
 )
 from application.stt.stt_creator import STTCreator
 from application.tts.tts_creator import TTSCreator
-from application.utils import safe_filename
+from application.utils import (
+    get_agent_image_content_type,
+    is_external_image_url,
+    is_safe_agent_image_path,
+    safe_filename,
+    verify_agent_image_capability,
+)
 
 
 attachments_ns = Namespace(
     "attachments", description="File attachments and media operations", path="/api"
 )
+
+_AGENT_IMAGE_CHUNK_BYTES = 64 * 1024
+_AGENT_IMAGE_PRESIGNED_TTL_SECONDS = 300
+_AGENT_IMAGE_REDIRECT_CACHE_SECONDS = _AGENT_IMAGE_PRESIGNED_TTL_SECONDS - 60
+
+
+def _stream_file(file_obj, size_bytes: int):
+    """Yield exactly the size-checked file range and always close the handle."""
+    remaining = size_bytes
+    try:
+        while remaining > 0:
+            chunk = file_obj.read(min(_AGENT_IMAGE_CHUNK_BYTES, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
+    finally:
+        file_obj.close()
 
 
 def _resolve_authenticated_user():
@@ -630,25 +655,71 @@ class LiveSpeechToTextFinish(Resource):
         )
 
 
-@attachments_ns.route("/images/<path:image_path>")
+@attachments_ns.route("/images/<string:agent_id>/<string:capability>")
 class ServeImage(Resource):
-    @api.doc(description="Serve an image from storage")
-    def get(self, image_path):
-        if ".." in image_path or image_path.startswith("/") or "\x00" in image_path:
-            return make_response(
-                jsonify({"success": False, "message": "Invalid image path"}), 400
-            )
+    @api.doc(description="Serve an agent image using an opaque capability URL")
+    def get(self, agent_id, capability):
         try:
+            if not looks_like_uuid(agent_id):
+                return make_response(
+                    jsonify({"success": False, "message": "Image not found"}), 404
+                )
+            with db_readonly() as conn:
+                agent = AgentsRepository(conn).find_image_record(agent_id)
+            if not agent:
+                return make_response(
+                    jsonify({"success": False, "message": "Image not found"}), 404
+                )
+
+            image_path = agent.get("image")
+            user_id = agent.get("user_id")
+            content_type = get_agent_image_content_type(image_path)
+            if (
+                is_external_image_url(image_path)
+                or not content_type
+                or not is_safe_agent_image_path(image_path, user_id)
+                or not verify_agent_image_capability(
+                    capability, agent_id, image_path, user_id
+                )
+            ):
+                return make_response(
+                    jsonify({"success": False, "message": "Image not found"}), 404
+                )
+
             from application.api.user.base import storage
 
+            size_bytes = storage.get_file_size(image_path)
+            if size_bytes < 0 or size_bytes > settings.AGENT_IMAGE_MAX_BYTES:
+                current_app.logger.warning(
+                    "Rejected oversized legacy agent image for agent %s", agent_id
+                )
+                return make_response(
+                    jsonify({"success": False, "message": "Image not found"}), 404
+                )
+
+            if settings.STORAGE_TYPE == "s3":
+                image_url = storage.generate_presigned_url(
+                    image_path,
+                    expires_in=_AGENT_IMAGE_PRESIGNED_TTL_SECONDS,
+                    content_type=content_type,
+                )
+                response = redirect(image_url, code=302)
+                response.headers.set(
+                    "Cache-Control",
+                    f"private, max-age={_AGENT_IMAGE_REDIRECT_CACHE_SECONDS}",
+                )
+                response.headers.set("X-Content-Type-Options", "nosniff")
+                return response
+
             file_obj = storage.get_file(image_path)
-            extension = image_path.split(".")[-1].lower()
-            content_type = f"image/{extension}"
-            if extension == "jpg":
-                content_type = "image/jpeg"
-            response = make_response(file_obj.read())
-            response.headers.set("Content-Type", content_type)
-            response.headers.set("Cache-Control", "max-age=86400")
+            response = Response(
+                _stream_file(file_obj, size_bytes),
+                content_type=content_type,
+                direct_passthrough=True,
+            )
+            response.content_length = size_bytes
+            response.headers.set("Cache-Control", "public, max-age=86400, immutable")
+            response.headers.set("X-Content-Type-Options", "nosniff")
 
             return response
         except FileNotFoundError:
@@ -657,7 +728,7 @@ class ServeImage(Resource):
             )
         except ValueError:
             return make_response(
-                jsonify({"success": False, "message": "Invalid image path"}), 400
+                jsonify({"success": False, "message": "Image not found"}), 404
             )
         except Exception as e:
             current_app.logger.error(f"Error serving image: {e}")

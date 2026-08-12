@@ -1,7 +1,7 @@
 """Base storage class for file system abstraction."""
 
 from abc import ABC, abstractmethod
-from typing import BinaryIO, List, Callable
+from typing import BinaryIO, Callable, List, Optional
 
 
 class BaseStorage(ABC):
@@ -37,12 +37,41 @@ class BaseStorage(ABC):
         """
         pass
 
-    def generate_presigned_url(self, path: str, expires_in: int = 300) -> str:
+    def get_file_size(self, path: str) -> int:
+        """Return a file's encoded size without retaining its bytes in memory.
+
+        Storage backends should override this with a metadata-only lookup. The
+        compatibility fallback seeks an already-open file and is suitable for
+        file-like backends that do not provide object metadata.
+
+        Args:
+            path: Path to the file.
+
+        Returns:
+            File size in bytes.
+        """
+        file_obj = self.get_file(path)
+        try:
+            current = file_obj.tell()
+            file_obj.seek(0, 2)
+            size = file_obj.tell()
+            file_obj.seek(current)
+            return size
+        finally:
+            file_obj.close()
+
+    def generate_presigned_url(
+        self,
+        path: str,
+        expires_in: int = 300,
+        content_type: Optional[str] = None,
+    ) -> str:
         """Return a short-lived presigned download URL; not all backends support it.
 
         Args:
             path: Path to the file
             expires_in: TTL of the signed URL in seconds
+            content_type: Optional response Content-Type override
 
         Returns:
             str: A presigned URL granting time-limited read access
