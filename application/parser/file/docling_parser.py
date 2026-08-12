@@ -43,6 +43,29 @@ def _apply_pipeline_caps(pipeline_options) -> None:
             setattr(pipeline_options, name, value)
 
 
+def _apply_inference_settings() -> None:
+    """Set docling's global torch.compile toggle from ``DOCLING_COMPILE_TORCH_MODELS``.
+
+    docling compiles its layout/table/OCR models with ``torch.compile`` by
+    default. For DocsGPT's one-shot, per-file parses that warmup is never
+    amortized, and it hard-fails wherever TorchInductor cannot build: it emits
+    invalid Metal on Apple Silicon, and its C++ path does not quote the ``-L``
+    library path, so any install directory containing a space fails to build.
+
+    Guarded so docling builds without the inference settings are unaffected.
+    """
+    from application.core.settings import settings
+
+    try:
+        from docling.datamodel.settings import settings as docling_settings
+    except ImportError:  # pragma: no cover - docling always present here
+        return
+
+    inference = getattr(docling_settings, "inference", None)
+    if inference is not None and hasattr(inference, "compile_torch_models"):
+        inference.compile_torch_models = settings.DOCLING_COMPILE_TORCH_MODELS
+
+
 def _tabular_content_size(file: Path) -> int:
     """Effective content size of a tabular file, in bytes.
 
@@ -255,6 +278,8 @@ class DoclingParser(BaseParser):
             PdfFormatOption,
         )
         from docling.datamodel.pipeline_options import PdfPipelineOptions
+
+        _apply_inference_settings()
 
         pipeline_options = PdfPipelineOptions(
             do_ocr=self.ocr_enabled,

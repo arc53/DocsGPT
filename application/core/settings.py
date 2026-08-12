@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     # Pages docling's threaded pipeline buffers in flight; the library
     # default (100) drives worker RSS to ~3 GB on a mid-size PDF.
     DOCLING_PIPELINE_QUEUE_MAX_SIZE: int = 2
+    DOCLING_COMPILE_TORCH_MODELS: bool = False
     DOCLING_TABULAR_MAX_BYTES: int = 2_000_000
     DOCLING_MARKUP_MAX_BYTES: int = 8_000_000
     ATTACHMENT_TEXT_MAX_BYTES: int = 5_000_000

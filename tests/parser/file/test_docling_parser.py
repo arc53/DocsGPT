@@ -891,3 +891,123 @@ class TestTabularGateSeam:
 
         with pytest.raises(DocumentParseError):
             DoclingCSVParser().parse_file(path)
+
+
+# =====================================================================
+# torch.compile inference setting
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestApplyInferenceSettings:
+    """_apply_inference_settings governs docling's torch.compile of its models.
+
+    docling >= 2.92 compiles its layout/OCR models with torch.compile by
+    default, which hard-fails TorchInductor's Metal codegen on Apple Silicon
+    and buys nothing for one-shot parses.
+    """
+
+    def test_disables_torch_compile_by_default(self, monkeypatch):
+        from application.parser.file.docling_parser import _apply_inference_settings
+
+        class Inference:
+            compile_torch_models = True
+
+        class DoclingSettings:
+            inference = Inference()
+
+        docling_settings = DoclingSettings()
+        monkeypatch.setattr(
+            "docling.datamodel.settings.settings", docling_settings, raising=False
+        )
+
+        _apply_inference_settings()
+
+        assert docling_settings.inference.compile_torch_models is False
+
+    def test_opt_in_reenables_torch_compile(self, monkeypatch):
+        from application.core.settings import settings
+        from application.parser.file.docling_parser import _apply_inference_settings
+
+        monkeypatch.setattr(
+            settings, "DOCLING_COMPILE_TORCH_MODELS", True, raising=False
+        )
+
+        class Inference:
+            compile_torch_models = False
+
+        class DoclingSettings:
+            inference = Inference()
+
+        docling_settings = DoclingSettings()
+        monkeypatch.setattr(
+            "docling.datamodel.settings.settings", docling_settings, raising=False
+        )
+
+        _apply_inference_settings()
+
+        assert docling_settings.inference.compile_torch_models is True
+
+    def test_noop_on_docling_without_inference_settings(self, monkeypatch):
+        """Builds predating the inference settings must be a silent no-op."""
+        from application.parser.file.docling_parser import _apply_inference_settings
+
+        class DoclingSettings:
+            pass
+
+        monkeypatch.setattr(
+            "docling.datamodel.settings.settings", DoclingSettings(), raising=False
+        )
+
+        _apply_inference_settings()  # must not raise
+
+    def test_create_converter_applies_inference_settings(self, monkeypatch):
+        """The cap is worthless unless the converter path actually calls it."""
+        from application.parser.file.docling_parser import DoclingParser
+
+        called = []
+        monkeypatch.setattr(
+            "application.parser.file.docling_parser._apply_inference_settings",
+            lambda: called.append(True),
+        )
+        monkeypatch.setattr(
+            "docling.document_converter.DocumentConverter",
+            MagicMock(),
+        )
+
+        DoclingParser(ocr_enabled=False)._create_converter()
+
+        assert called == [True]
+
+    def test_inference_settings_applied_before_options_are_built(self, monkeypatch):
+        """Ordering is load-bearing, not incidental.
+
+        ``compile_model`` is a ``default_factory`` that reads docling's global
+        at *option construction* time, so flipping the global after building
+        ``PdfPipelineOptions`` is silently ignored. Pin the order.
+        """
+        import docling.datamodel.pipeline_options as dpo
+
+        from application.parser.file.docling_parser import DoclingParser
+
+        events = []
+        monkeypatch.setattr(
+            "application.parser.file.docling_parser._apply_inference_settings",
+            lambda: events.append("settings"),
+        )
+
+        real_options = dpo.PdfPipelineOptions
+
+        def _tracking_options(*args, **kwargs):
+            events.append("options")
+            return real_options(*args, **kwargs)
+
+        monkeypatch.setattr(dpo, "PdfPipelineOptions", _tracking_options)
+        monkeypatch.setattr("docling.document_converter.DocumentConverter", MagicMock())
+
+        DoclingParser(ocr_enabled=False)._create_converter()
+
+        assert events == ["settings", "options"], (
+            "torch.compile must be disabled before PdfPipelineOptions is "
+            f"constructed, got {events}"
+        )

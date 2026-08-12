@@ -12,7 +12,7 @@ cryptography==50.0.0
 dataclasses-json==0.6.7
 daytona==0.203.0
 defusedxml==0.7.1
-docling==2.84.0
+docling==2.119.0
 rapidocr==3.9.2
 onnxruntime==1.28.0
 docx2txt==0.9
