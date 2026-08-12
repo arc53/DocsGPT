@@ -296,7 +296,7 @@ def _safe_agent_image_filename(filename: str) -> str:
 
 def handle_image_upload(
     request, existing_url: str, user: str, storage
-) -> Tuple[str, Optional[Response]]:
+) -> Tuple[Optional[str], Optional[Response]]:
     """
     Handle image file upload from request.
 
