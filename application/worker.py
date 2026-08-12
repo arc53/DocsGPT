@@ -8,7 +8,6 @@ import string
 import tempfile
 import threading
 from typing import Any, Dict
-import zipfile
 
 import uuid
 from collections import Counter
@@ -31,6 +30,14 @@ from application.parser.remote.remote_creator import (
     normalize_remote_data,
 )
 from application.parser.schema.base import Document
+from application.security.zip_archive import (
+    extract_zip_safely,
+    safe_zip_error_message,
+    validate_zip_archive,
+    ZipExtractionBudget,
+    ZipExtractionError,
+    ZipExtractionLimits,
+)
 
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
@@ -293,15 +300,11 @@ current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 
-# Zip extraction security limits
-MAX_UNCOMPRESSED_SIZE = 500 * 1024 * 1024  # 500 MB max uncompressed size
-MAX_FILE_COUNT = 10000  # Maximum number of files to extract
-MAX_COMPRESSION_RATIO = 100  # Maximum compression ratio (to detect zip bombs)
-
-
-class ZipExtractionError(Exception):
-    """Raised when zip extraction fails due to security constraints."""
-    pass
+# Zip extraction security limits. Kept as module constants for backward
+# compatibility with worker callers/tests; values come from operator settings.
+MAX_UNCOMPRESSED_SIZE = settings.UPLOAD_MAX_ARCHIVE_BYTES
+MAX_FILE_COUNT = settings.UPLOAD_MAX_ARCHIVE_FILES
+MAX_COMPRESSION_RATIO = settings.UPLOAD_MAX_ARCHIVE_RATIO
 
 
 def _is_path_safe(base_path: str, target_path: str) -> bool:
@@ -337,58 +340,26 @@ def _validate_zip_safety(zip_path: str, extract_to: str) -> None:
     Raises:
         ZipExtractionError: If the zip file fails security validation.
     """
-    try:
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            # Get compressed size
-            compressed_size = os.path.getsize(zip_path)
-
-            # Calculate total uncompressed size and file count
-            total_uncompressed = 0
-            file_count = 0
-
-            for info in zip_ref.infolist():
-                file_count += 1
-
-                # Check file count limit
-                if file_count > MAX_FILE_COUNT:
-                    raise ZipExtractionError(
-                        f"Zip file contains too many files (>{MAX_FILE_COUNT}). "
-                        "This may be a zip bomb attack."
-                    )
-
-                # Accumulate uncompressed size
-                total_uncompressed += info.file_size
-
-                # Check total uncompressed size
-                if total_uncompressed > MAX_UNCOMPRESSED_SIZE:
-                    raise ZipExtractionError(
-                        f"Zip file uncompressed size exceeds limit "
-                        f"({total_uncompressed / (1024*1024):.1f} MB > "
-                        f"{MAX_UNCOMPRESSED_SIZE / (1024*1024):.1f} MB). "
-                        "This may be a zip bomb attack."
-                    )
-
-                # Check for path traversal (zip slip)
-                target_path = os.path.join(extract_to, info.filename)
-                if not _is_path_safe(extract_to, target_path):
-                    raise ZipExtractionError(
-                        f"Zip file contains path traversal attempt: {info.filename}"
-                    )
-
-            # Check compression ratio (only if compressed size is meaningful)
-            if compressed_size > 0 and total_uncompressed > 0:
-                compression_ratio = total_uncompressed / compressed_size
-                if compression_ratio > MAX_COMPRESSION_RATIO:
-                    raise ZipExtractionError(
-                        f"Zip file has suspicious compression ratio ({compression_ratio:.1f}:1 > "
-                        f"{MAX_COMPRESSION_RATIO}:1). This may be a zip bomb attack."
-                    )
-
-    except zipfile.BadZipFile as e:
-        raise ZipExtractionError(f"Invalid or corrupted zip file: {e}")
+    del extract_to  # Path checks are platform-independent inside the validator.
+    validate_zip_archive(
+        zip_path,
+        ZipExtractionLimits(
+            max_uncompressed_bytes=MAX_UNCOMPRESSED_SIZE,
+            max_files=MAX_FILE_COUNT,
+            max_compression_ratio=MAX_COMPRESSION_RATIO,
+            max_member_bytes=settings.UPLOAD_MAX_FILE_BYTES,
+            max_depth=RECURSION_DEPTH,
+        ),
+    )
 
 
-def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
+def extract_zip_recursive(
+    zip_path: str,
+    extract_to: str,
+    current_depth: int = 0,
+    max_depth: int = 5,
+    _budget: ZipExtractionBudget | None = None,
+) -> None:
     """
     Recursively extract zip files with security protections.
 
@@ -410,16 +381,27 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
         return
 
     try:
-        # Validate zip file safety before extraction
-        _validate_zip_safety(zip_path, extract_to)
-
-        # Safe to extract
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(extract_to)
+        budget = _budget or ZipExtractionBudget()
+        extract_zip_safely(
+            zip_path,
+            extract_to,
+            ZipExtractionLimits(
+                max_uncompressed_bytes=MAX_UNCOMPRESSED_SIZE,
+                max_files=MAX_FILE_COUNT,
+                max_compression_ratio=MAX_COMPRESSION_RATIO,
+                max_member_bytes=settings.UPLOAD_MAX_FILE_BYTES,
+                max_depth=max_depth - current_depth,
+            ),
+            budget,
+        )
         os.remove(zip_path)  # Remove the zip file after extracting
 
     except ZipExtractionError as e:
-        logging.error(f"Zip security validation failed for {zip_path}: {e}")
+        logging.error(
+            "Zip security validation failed for %s: %s",
+            safe_zip_error_message(zip_path),
+            safe_zip_error_message(e),
+        )
         # Remove the potentially malicious zip file
         try:
             os.remove(zip_path)
@@ -427,16 +409,13 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
             pass
         return
     except Exception as e:
-        logging.error(f"Error extracting zip file {zip_path}: {e}", exc_info=True)
+        logging.error(
+            "Error extracting zip file %s: %s",
+            safe_zip_error_message(zip_path),
+            safe_zip_error_message(e),
+            exc_info=True,
+        )
         return
-
-    # Check for nested zip files and extract them
-    for root, dirs, files in os.walk(extract_to):
-        for file in files:
-            if file.endswith(".zip"):
-                # If a nested zip file is found, extract it recursively
-                file_path = os.path.join(root, file)
-                extract_zip_recursive(file_path, root, current_depth + 1, max_depth)
 
 
 def download_file(url, params, dest_path):
@@ -623,7 +602,7 @@ def ingest_worker(
                     f.write(file_data.read())
 
                 # Handle zip files
-                if temp_filename.endswith(".zip"):
+                if temp_filename.lower().endswith(".zip"):
                     logging.info(f"Extracting zip file: {temp_filename}")
                     extract_zip_recursive(
                         temp_file_path,

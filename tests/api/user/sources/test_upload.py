@@ -124,6 +124,34 @@ class TestUploadFile:
         assert response.json["success"] is True
         assert response.json["task_id"] == "task-1"
 
+    def test_rejects_file_over_configured_upload_limit(self, app):
+        from application.api.user.sources.upload import UploadFile
+
+        fake_storage = MagicMock()
+        with patch(
+            "application.api.user.sources.upload.settings.UPLOAD_MAX_FILE_BYTES",
+            4,
+        ), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.sources.upload.ingest.apply_async",
+        ) as apply_async, app.test_request_context(
+            "/api/upload", method="POST",
+            data={
+                "user": "alice", "name": "job",
+                "file": (io.BytesIO(b"12345"), "large.txt"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "alice"}
+            response = UploadFile().post()
+
+        assert response.status_code == 413
+        fake_storage.save_file.assert_not_called()
+        apply_async.assert_not_called()
+
     def test_storage_error_returns_400(self, app):
         from application.api.user.sources.upload import UploadFile
 
@@ -180,6 +208,140 @@ class TestUploadFile:
         assert response.status_code == 200
         # save_file called at least twice (for 2 files in zip)
         assert fake_storage.save_file.call_count >= 2
+
+    def test_rejects_zip_with_excessive_expansion_ratio(self, app):
+        from application.api.user.sources.upload import UploadFile
+        import zipfile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("bomb.txt", b"A" * (1024 * 1024))
+        zip_buffer.seek(0)
+
+        fake_storage = MagicMock()
+        with patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.sources.upload.ingest.apply_async",
+        ) as apply_async, app.test_request_context(
+            "/api/upload", method="POST",
+            data={
+                "user": "alice", "name": "job",
+                "file": (zip_buffer, "bomb.zip"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "alice"}
+            response = UploadFile().post()
+
+        assert response.status_code == 413
+        fake_storage.save_file.assert_not_called()
+        apply_async.assert_not_called()
+
+    def test_accepts_highly_compressible_csv(self, app):
+        from application.api.user.sources.upload import UploadFile
+        import zipfile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("export.csv", b"a,b,c\n" * 900_000)
+        zip_buffer.seek(0)
+
+        fake_storage = MagicMock()
+        with patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.sources.upload.ingest.apply_async",
+            return_value=MagicMock(id="csv-task"),
+        ), app.test_request_context(
+            "/api/upload",
+            method="POST",
+            data={
+                "user": "alice",
+                "name": "job",
+                "file": (zip_buffer, "export.zip"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "alice"}
+            response = UploadFile().post()
+
+        assert response.status_code == 200
+        assert fake_storage.save_file.call_count == 1
+
+    def test_archive_error_names_file_and_escapes_log_controls(self, app):
+        from application.api.user.sources.upload import UploadFile
+        import zipfile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as archive:
+            archive.writestr("../bad\nFORGED", b"bad")
+        zip_buffer.seek(0)
+
+        with patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=MagicMock(),
+        ), patch.object(app.logger, "warning") as warning, app.test_request_context(
+            "/api/upload",
+            method="POST",
+            data={
+                "user": "alice",
+                "name": "job",
+                "file": (zip_buffer, "documents.zip"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "alice"}
+            response = UploadFile().post()
+
+        assert response.status_code == 413
+        assert "documents.zip" in response.json["message"]
+        assert "\n" not in response.json["message"]
+        logged_values = " ".join(str(value) for value in warning.call_args.args)
+        assert "\n" not in logged_values
+
+    def test_expands_nested_zip_before_storage(self, app):
+        from application.api.user.sources.upload import UploadFile
+        import zipfile
+
+        inner = io.BytesIO()
+        with zipfile.ZipFile(inner, "w") as archive:
+            archive.writestr("inside.txt", b"inside")
+        outer = io.BytesIO()
+        with zipfile.ZipFile(outer, "w") as archive:
+            archive.writestr("inner.zip", inner.getvalue())
+        outer.seek(0)
+
+        fake_storage = MagicMock()
+        with patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.sources.upload.ingest.apply_async",
+            return_value=MagicMock(id="nested-task"),
+        ), app.test_request_context(
+            "/api/upload",
+            method="POST",
+            data={
+                "user": "alice",
+                "name": "job",
+                "file": (outer, "outer.zip"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "alice"}
+            response = UploadFile().post()
+
+        assert response.status_code == 200
+        saved_paths = [call.args[1] for call in fake_storage.save_file.call_args_list]
+        assert any(path.endswith("/inner/inside.txt") for path in saved_paths)
+        assert not any(path.endswith(".zip") for path in saved_paths)
 
     def test_office_format_zip_saved_as_is(self, app):
         from application.api.user.sources.upload import UploadFile
@@ -447,6 +609,36 @@ class TestManageSourceFiles:
             request.decoded_token = {"sub": user}
             response = ManageSourceFiles().post()
         assert response.status_code == 400
+
+    def test_add_rejects_file_over_upload_limit(self, app, pg_conn):
+        from application.api.user.sources.upload import ManageSourceFiles
+
+        user = "u-add-large"
+        src = _seed_source(pg_conn, user=user, file_path="/data/src")
+        fake_storage = MagicMock()
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.upload_limits.settings.UPLOAD_MAX_FILE_BYTES", 4
+        ), patch(
+            "application.api.user.tasks.reingest_source_task.apply_async"
+        ) as apply_async, app.test_request_context(
+            "/api/manage_source_files", method="POST",
+            data={
+                "source_id": str(src["id"]),
+                "operation": "add",
+                "file": (io.BytesIO(b"12345"), "large.txt"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ManageSourceFiles().post()
+
+        assert response.status_code == 413
+        fake_storage.save_file.assert_not_called()
+        apply_async.assert_not_called()
 
     def test_add_files_success(self, app, pg_conn):
         from application.api.user.sources.upload import ManageSourceFiles

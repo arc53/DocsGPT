@@ -8,6 +8,7 @@ import uuid
 
 from flask import Response, current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
+from werkzeug.datastructures import FileStorage
 
 from application.api import api
 from application.cache import get_redis_instance
@@ -36,6 +37,11 @@ from application.stt.live_session import (
 )
 from application.stt.stt_creator import STTCreator
 from application.tts.tts_creator import TTSCreator
+from application.upload_limits import (
+    copy_upload_to_path,
+    upload_limit_message,
+    UploadTooLargeError,
+)
 from application.utils import (
     get_agent_image_content_type,
     is_external_image_url,
@@ -122,6 +128,8 @@ def _enforce_uploaded_audio_size_limit(file, filename: str) -> None:
 def _get_store_attachment_user_error(exc: Exception) -> str:
     if isinstance(exc, AudioFileTooLargeError):
         return build_stt_file_size_limit_message()
+    if isinstance(exc, UploadTooLargeError):
+        return upload_limit_message()
     return "Failed to process file"
 
 
@@ -200,7 +208,21 @@ class StoreAttachment(Resource):
                         f"{str(attachment_id)}/{original_filename}"
                     )
 
-                    metadata = storage.save_file(file, relative_path)
+                    # Validate a bounded local spool before storage reads it.
+                    # This protects local and S3 backends even without a
+                    # trustworthy Content-Length header.
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        staged_path = os.path.join(temp_dir, original_filename)
+                        copy_upload_to_path(file, staged_path)
+                        with open(staged_path, "rb") as staged_stream:
+                            staged_upload = FileStorage(
+                                stream=staged_stream,
+                                filename=original_filename,
+                                content_type=file.mimetype,
+                            )
+                            metadata = storage.save_file(
+                                staged_upload, relative_path
+                            )
                     file_info = {
                         "filename": original_filename,
                         "attachment_id": str(attachment_id),
@@ -224,15 +246,18 @@ class StoreAttachment(Resource):
                     })
             
             if not tasks:
+                size_limit_messages = {
+                    build_stt_file_size_limit_message(),
+                    upload_limit_message(),
+                }
                 if errors and all(
-                    error.get("error") == build_stt_file_size_limit_message()
-                    for error in errors
+                    error.get("error") in size_limit_messages for error in errors
                 ):
                     return make_response(
                         jsonify(
                             {
                                 "success": False,
-                                "message": build_stt_file_size_limit_message(),
+                                "message": errors[0]["error"],
                                 "errors": errors,
                             }
                         ),

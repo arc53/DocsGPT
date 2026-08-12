@@ -18,6 +18,7 @@ from application.agents.tools.tool_manager import ToolManager
 from application.api import api
 from application.api.user.artifacts.authz import Principal, authorize_artifact
 from application.api.user.team_sharing import effective_write_owner, visible_with_access
+from application.core.settings import settings
 from application.core.url_validation import SSRFError, validate_url
 from application.security.encryption import decrypt_credentials, encrypt_credentials
 from application.storage.db.base_repository import looks_like_uuid
@@ -27,6 +28,11 @@ from application.storage.db.repositories.todos import TodosRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository
 from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
+from application.upload_limits import (
+    read_text_upload_limited,
+    upload_limit_message,
+    UploadTooLargeError,
+)
 from application.utils import check_required_fields, validate_function_name
 
 tool_config = {}
@@ -821,7 +827,21 @@ class ParseSpec(Resource):
                     jsonify({"success": False, "message": "No file selected"}), 400
                 )
             try:
-                spec_content = file.read().decode("utf-8")
+                spec_content = read_text_upload_limited(
+                    file, max_bytes=settings.PARSE_SPEC_MAX_BYTES
+                )
+            except UploadTooLargeError:
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": upload_limit_message(
+                                settings.PARSE_SPEC_MAX_BYTES
+                            ),
+                        }
+                    ),
+                    413,
+                )
             except UnicodeDecodeError:
                 return make_response(
                     jsonify({"success": False, "message": "Invalid file encoding"}), 400
@@ -832,6 +852,21 @@ class ParseSpec(Resource):
         else:
             return make_response(
                 jsonify({"success": False, "message": "No spec provided"}), 400
+            )
+        if (
+            not isinstance(spec_content, str)
+            or len(spec_content.encode("utf-8")) > settings.PARSE_SPEC_MAX_BYTES
+        ):
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": upload_limit_message(
+                            settings.PARSE_SPEC_MAX_BYTES
+                        ),
+                    }
+                ),
+                413,
             )
         if not spec_content or not spec_content.strip():
             return make_response(

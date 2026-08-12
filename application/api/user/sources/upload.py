@@ -17,6 +17,13 @@ from application.core.settings import settings
 from application.storage.db.source_ids import derive_source_id as _derive_source_id
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from application.security.zip_archive import (
+    extract_zip_safely,
+    safe_zip_error_message,
+    ZipExtractionBudget,
+    ZipExtractionError,
+    ZipExtractionLimits,
+)
 from application.storage.db.repositories.idempotency import IdempotencyRepository
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.source_config import SourceConfig
@@ -27,6 +34,11 @@ from application.stt.upload_limits import (
     build_stt_file_size_limit_message,
     enforce_audio_file_size_limit,
     is_audio_filename,
+)
+from application.upload_limits import (
+    copy_upload_to_path,
+    upload_limit_message,
+    UploadTooLargeError,
 )
 from application.utils import check_required_fields, safe_filename
 
@@ -145,13 +157,21 @@ def _release_claim(key):
             "Failed to release task_dedup claim for key=%s", key,
         )
 
-
-
-
 def _enforce_audio_path_size_limit(file_path: str, filename: str) -> None:
     if not is_audio_filename(filename):
         return
     enforce_audio_file_size_limit(os.path.getsize(file_path))
+
+
+def _source_archive_limits() -> ZipExtractionLimits:
+    """Return configured limits shared by all archives in one upload."""
+    return ZipExtractionLimits(
+        max_uncompressed_bytes=settings.UPLOAD_MAX_ARCHIVE_BYTES,
+        max_files=settings.UPLOAD_MAX_ARCHIVE_FILES,
+        max_compression_ratio=settings.UPLOAD_MAX_ARCHIVE_RATIO,
+        max_member_bytes=settings.UPLOAD_MAX_FILE_BYTES,
+        max_depth=settings.UPLOAD_MAX_ARCHIVE_DEPTH,
+    )
 
 
 @sources_upload_ns.route("/upload")
@@ -222,67 +242,66 @@ class UploadFile(Resource):
         base_path = f"{settings.UPLOAD_FOLDER}/{safe_user}/{dir_name}"
         file_name_map = {}
 
+        active_upload_name = "uploaded archive"
         try:
             storage = StorageCreator.get_storage()
 
-            for file in files:
-                original_filename = os.path.basename(file.filename)
-                safe_file = safe_filename(original_filename)
-                if original_filename:
-                    file_name_map[safe_file] = original_filename
+            # Stage and validate every file before the first storage write. A
+            # later oversized file/archive cannot leave a partially accepted
+            # source behind. All ZIPs in the request share one expansion budget.
+            with tempfile.TemporaryDirectory() as temp_dir:
+                pending_files: list[tuple[str, str]] = []
+                archive_budget = ZipExtractionBudget()
+                archive_limits = _source_archive_limits()
 
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_file_path = os.path.join(temp_dir, safe_file)
-                    file.save(temp_file_path)
+                for index, file in enumerate(files):
+                    original_filename = os.path.basename(file.filename)
+                    safe_file = safe_filename(original_filename)
+                    active_upload_name = safe_zip_error_message(
+                        original_filename or safe_file, max_chars=200
+                    )
+                    if original_filename:
+                        file_name_map[safe_file] = original_filename
+
+                    upload_dir = os.path.join(temp_dir, str(index))
+                    os.makedirs(upload_dir, exist_ok=True)
+                    temp_file_path = os.path.join(upload_dir, safe_file)
+                    copy_upload_to_path(file, temp_file_path)
                     _enforce_audio_path_size_limit(temp_file_path, safe_file)
 
-                    # Only extract actual .zip files, not Office formats (.docx, .xlsx, .pptx)
-                    # which are technically zip archives but should be processed as-is
+                    # Office/e-book containers are ZIP-based formats but must
+                    # be parsed as documents, not expanded as user archives.
                     is_office_format = safe_file.lower().endswith(
                         (".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub")
                     )
                     if zipfile.is_zipfile(temp_file_path) and not is_office_format:
-                        try:
-                            with zipfile.ZipFile(temp_file_path, "r") as zip_ref:
-                                zip_ref.extractall(path=temp_dir)
-
-                                # Walk through extracted files and upload them
-
-                                for root, _, files in os.walk(temp_dir):
-                                    for extracted_file in files:
-                                        if (
-                                            os.path.join(root, extracted_file)
-                                            == temp_file_path
-                                        ):
-                                            continue
-                                        rel_path = os.path.relpath(
-                                            os.path.join(root, extracted_file), temp_dir
-                                        )
-                                        storage_path = f"{base_path}/{rel_path}"
-                                        _enforce_audio_path_size_limit(
-                                            os.path.join(root, extracted_file),
-                                            extracted_file,
-                                        )
-
-                                        with open(
-                                            os.path.join(root, extracted_file), "rb"
-                                        ) as f:
-                                            storage.save_file(f, storage_path)
-                        except Exception as e:
-                            current_app.logger.error(
-                                f"Error extracting zip: {e}", exc_info=True
-                            )
-                            # If zip extraction fails, save the original zip file
-
-                            file_path = f"{base_path}/{safe_file}"
-                            with open(temp_file_path, "rb") as f:
-                                storage.save_file(f, file_path)
+                        extract_dir = os.path.join(upload_dir, "extracted")
+                        extract_zip_safely(
+                            temp_file_path,
+                            extract_dir,
+                            archive_limits,
+                            archive_budget,
+                        )
+                        for root, _, extracted_files in os.walk(extract_dir):
+                            for extracted_file in extracted_files:
+                                local_path = os.path.join(root, extracted_file)
+                                _enforce_audio_path_size_limit(
+                                    local_path, extracted_file
+                                )
+                                rel_path = os.path.relpath(
+                                    local_path, extract_dir
+                                ).replace(os.sep, "/")
+                                pending_files.append(
+                                    (local_path, f"{base_path}/{rel_path}")
+                                )
                     else:
-                        # For non-zip files, save directly
+                        pending_files.append(
+                            (temp_file_path, f"{base_path}/{safe_file}")
+                        )
 
-                        file_path = f"{base_path}/{safe_file}"
-                        with open(temp_file_path, "rb") as f:
-                            storage.save_file(f, file_path)
+                for local_path, storage_path in pending_files:
+                    with open(local_path, "rb") as staged_file:
+                        storage.save_file(staged_file, storage_path)
             # Mint the source UUID up here so the HTTP response and the
             # worker's SSE envelopes share one id. With an idempotency
             # key we reuse the deterministic uuid5 (retried task lands on
@@ -320,6 +339,33 @@ class UploadFile(Resource):
                     {
                         "success": False,
                         "message": build_stt_file_size_limit_message(),
+                    }
+                ),
+                413,
+            )
+        except (UploadTooLargeError, ZipExtractionError) as err:
+            zip_error_detail = safe_zip_error_message(err)
+            if isinstance(err, ZipExtractionError):
+                current_app.logger.warning(
+                    "Rejected unsafe ZIP upload %s: %s",
+                    active_upload_name,
+                    zip_error_detail,
+                )
+            else:
+                current_app.logger.warning(
+                    "Rejected oversized upload %s", active_upload_name
+                )
+            if scoped_key:
+                _release_claim(scoped_key)
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": (
+                            f"{active_upload_name}: {zip_error_detail}"
+                            if isinstance(err, ZipExtractionError)
+                            else upload_limit_message()
+                        ),
                     }
                 ),
                 413,
@@ -678,21 +724,43 @@ class ManageSourceFiles(Resource):
                         cached["source_id"] = resolved_source_id
                         return make_response(jsonify(cached), 200)
 
-                added_files = []
-                map_updated = False
-
                 target_dir = source_file_path
                 if parent_dir:
                     target_dir = f"{source_file_path}/{parent_dir}"
-                for file in files:
-                    if file.filename:
+                added_files = []
+                map_updated = False
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    staged_files: list[tuple[str, str, str, str]] = []
+                    for index, file in enumerate(files):
+                        if not file.filename:
+                            continue
                         original_filename = os.path.basename(file.filename)
                         safe_filename_str = safe_filename(original_filename)
-                        file_path = f"{target_dir}/{safe_filename_str}"
+                        staged_path = os.path.join(
+                            temp_dir, f"{index}-{safe_filename_str}"
+                        )
+                        copy_upload_to_path(file, staged_path)
+                        _enforce_audio_path_size_limit(
+                            staged_path, safe_filename_str
+                        )
+                        staged_files.append(
+                            (
+                                staged_path,
+                                f"{target_dir}/{safe_filename_str}",
+                                safe_filename_str,
+                                original_filename,
+                            )
+                        )
 
-                        # Save file to storage
-
-                        storage.save_file(file, file_path)
+                    # All files are bounded before the first storage mutation.
+                    for (
+                        staged_path,
+                        file_path,
+                        safe_filename_str,
+                        original_filename,
+                    ) in staged_files:
+                        with open(staged_path, "rb") as staged_file:
+                            storage.save_file(staged_file, file_path)
                         added_files.append(safe_filename_str)
                         if original_filename:
                             relative_key = (
@@ -977,6 +1045,17 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
+        except (UploadTooLargeError, AudioFileTooLargeError) as err:
+            if scoped_key and not claim_transferred:
+                _release_claim(scoped_key)
+            message = (
+                build_stt_file_size_limit_message()
+                if isinstance(err, AudioFileTooLargeError)
+                else upload_limit_message()
+            )
+            return make_response(
+                jsonify({"success": False, "message": message}), 413
+            )
         except Exception as err:
             # Release the dedup claim only if it wasn't transferred to
             # a worker. Without this, a same-key retry within the 24h

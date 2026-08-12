@@ -933,6 +933,46 @@ class TestParseSpec:
         assert response.status_code == 200
         assert response.json["success"] is True
 
+    def test_rejects_oversized_spec_upload(self, app):
+        from application.api.user.tools.routes import ParseSpec
+        from io import BytesIO
+
+        with patch(
+            "application.api.user.tools.routes.settings.PARSE_SPEC_MAX_BYTES", 4
+        ), patch(
+            "application.api.user.tools.routes.parse_spec"
+        ) as parse_mock, app.test_request_context(
+            "/api/parse_spec",
+            method="POST",
+            content_type="multipart/form-data",
+            data={"file": (BytesIO(b"12345"), "spec.yaml")},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "user1"}
+            response = ParseSpec().post()
+
+        assert response.status_code == 413
+        parse_mock.assert_not_called()
+
+    def test_rejects_oversized_json_spec(self, app):
+        from application.api.user.tools.routes import ParseSpec
+
+        with patch(
+            "application.api.user.tools.routes.settings.PARSE_SPEC_MAX_BYTES", 4
+        ), patch(
+            "application.api.user.tools.routes.parse_spec"
+        ) as parse_mock, app.test_request_context(
+            "/api/parse_spec",
+            method="POST",
+            json={"spec_content": "12345"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "user1"}
+            response = ParseSpec().post()
+
+        assert response.status_code == 413
+        parse_mock.assert_not_called()
+
     def test_returns_400_file_no_filename(self, app):
         from application.api.user.tools.routes import ParseSpec
         from io import BytesIO
@@ -1689,5 +1729,3 @@ class TestDualRegisteredToggle:
         assert "scheduler" in (
             user_doc["tool_preferences"]["disabled_default_tools"]
         )
-
-

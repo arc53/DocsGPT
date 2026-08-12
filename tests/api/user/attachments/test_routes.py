@@ -69,6 +69,29 @@ class FakeRedis:
 
 class TestStoreAttachmentEndpoint:
     @patch("application.api.user.tasks.store_attachment.delay")
+    def test_store_attachment_rejects_oversized_non_audio_file(
+        self, mock_store_attachment, flask_app
+    ):
+        from application.api.user.attachments.routes import StoreAttachment
+
+        app = Flask(__name__)
+        mock_storage = MagicMock()
+        with patch("application.api.user.base.storage", mock_storage), patch(
+            "application.upload_limits.settings.UPLOAD_MAX_FILE_BYTES", 4
+        ), app.test_request_context(
+            "/api/store_attachment",
+            method="POST",
+            data={"file": (io.BytesIO(b"12345"), "large.txt")},
+            content_type="multipart/form-data",
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = StoreAttachment().post()
+
+        assert _get_response_status(response) == 413
+        mock_storage.save_file.assert_not_called()
+        mock_store_attachment.assert_not_called()
+
+    @patch("application.api.user.tasks.store_attachment.delay")
     def test_store_attachment_preserves_upload_indexes_for_partial_failures(
         self, mock_store_attachment, flask_app
     ):

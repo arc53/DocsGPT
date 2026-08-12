@@ -174,6 +174,30 @@ the built-in catalog — it does **not** fail to start. If a YAML
 declares an unknown provider name or has a schema error, the app
 **does** fail to start, with the offending file path in the message.
 
+## Document Upload Limits
+
+DocsGPT bounds public document and attachment uploads before storage or parsing.
+ZIP limits are cumulative across nested archives. Unsafe archive paths,
+duplicate file entries, encrypted members, symlinks, and other special files
+are rejected. Repeated directory records are ignored, and case-colliding names
+are disambiguated without overwriting either file. Nested archives expand into
+a directory named after the archive; files that merely end in `.zip` remain
+ordinary files.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `UPLOAD_MAX_REQUEST_BYTES` | `268435456` | Maximum request body for a public file-upload route, including multipart overhead. |
+| `UPLOAD_MAX_FILE_BYTES` | `104857600` | Maximum encoded size of one uploaded file or one extracted ZIP member. |
+| `PARSE_SPEC_MAX_BYTES` | `10485760` | Maximum UTF-8 size of an uploaded or JSON API specification. |
+| `UPLOAD_MAX_ARCHIVE_BYTES` | `262144000` | Maximum total uncompressed bytes across all ZIP layers in one extraction. |
+| `UPLOAD_MAX_ARCHIVE_FILES` | `10000` | Maximum total extracted files across all nested layers; directory records do not count. |
+| `UPLOAD_MAX_ARCHIVE_RATIO` | `1000` | Maximum uncompressed-to-compressed expansion ratio for each archive layer. |
+| `UPLOAD_MAX_ARCHIVE_DEPTH` | `3` | Maximum number of nested ZIP layers expanded after the outer archive. |
+
+These byte/count limits and the non-negative nesting depth can be overridden in `.env`.
+The request limit intentionally applies only to public upload routes; internal
+worker index transfers use their own trusted service boundary.
+
 ## Speech-to-Text Settings
 
 DocsGPT can transcribe audio in two places:

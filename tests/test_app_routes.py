@@ -147,6 +147,58 @@ class TestSttRequestSizeLimits:
             assert response.status_code == 413
 
 
+class TestDocumentUploadRequestSizeLimits:
+
+    @pytest.mark.unit
+    def test_oversized_upload_rejected_before_multipart_parsing(self, client):
+        with patch(
+            "application.app.settings.UPLOAD_MAX_REQUEST_BYTES",
+            32,
+        ):
+            response = client.post(
+                "/api/upload",
+                data=b"x" * 100,
+                content_type="multipart/form-data",
+            )
+
+        assert response.status_code == 413
+        assert response.get_json() == {
+            "success": False,
+            "message": "Request exceeds the 32-byte upload limit",
+        }
+
+    @pytest.mark.unit
+    def test_internal_worker_upload_is_not_subject_to_user_limit(self, client):
+        with patch(
+            "application.app.settings.UPLOAD_MAX_REQUEST_BYTES",
+            32,
+        ):
+            response = client.post(
+                "/api/upload_index",
+                data=b"x" * 100,
+                content_type="application/octet-stream",
+            )
+
+        assert response.status_code != 413
+
+    @pytest.mark.unit
+    def test_json_spec_uses_dedicated_request_limit(self, client):
+        with patch(
+            "application.app.settings.PARSE_SPEC_MAX_BYTES",
+            32,
+        ):
+            response = client.post(
+                "/api/parse_spec",
+                json={"spec_content": "x" * 100},
+            )
+
+        assert response.status_code == 413
+        assert response.get_json() == {
+            "success": False,
+            "message": "Request exceeds the 32-byte upload limit",
+        }
+
+
 class TestAuthenticateRequest:
 
     @pytest.mark.unit
