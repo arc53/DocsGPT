@@ -80,7 +80,7 @@
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-n": "^17.24.0",
     "eslint-plugin-prettier": "^5.5.6",
-    "eslint-plugin-promise": "^6.6.0",
+    "eslint-plugin-promise": "^7.3.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-unused-imports": "^4.1.4",
     "happy-dom": "^20.11.1",
