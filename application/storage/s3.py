@@ -128,7 +128,9 @@ class S3Storage(BaseStorage):
             metadata = self.s3.head_object(Bucket=self.bucket_name, Key=path)
         except ClientError as exc:
             error_code = str(exc.response.get("Error", {}).get("Code", ""))
-            if error_code in {"404", "NoSuchKey", "NotFound"}:
+            # HEAD on a missing key returns 403 instead of 404 when credentials
+            # lack s3:ListBucket, so access-denied codes also mean "absent".
+            if error_code in {"404", "NoSuchKey", "NotFound", "403", "AccessDenied", "Forbidden"}:
                 raise FileNotFoundError(f"File not found: {path}") from exc
             raise
         return int(metadata["ContentLength"])

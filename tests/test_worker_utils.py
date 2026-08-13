@@ -204,7 +204,7 @@ class TestExtractZipRecursive:
         assert found, "expected nested zip to be extracted"
 
     def test_nested_archives_share_one_expansion_budget(self, tmp_path):
-        from application.worker import extract_zip_recursive
+        from application.worker import extract_zip_recursive, ZipExtractionError
 
         inner = tmp_path / "inner.zip"
         with zipfile.ZipFile(inner, "w", zipfile.ZIP_STORED) as zf:
@@ -222,7 +222,8 @@ class TestExtractZipRecursive:
         with patch("application.worker.MAX_UNCOMPRESSED_SIZE", limit), patch(
             "application.worker.MAX_COMPRESSION_RATIO", 10_000,
         ):
-            extract_zip_recursive(str(outer), str(extract_to))
+            with pytest.raises(ZipExtractionError):
+                extract_zip_recursive(str(outer), str(extract_to))
 
         assert not (extract_to / "inside.txt").exists()
 

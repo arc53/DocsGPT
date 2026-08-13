@@ -238,12 +238,15 @@ def validate_function_name(function_name):
     return True
 
 
+# Extension -> (accepted Pillow formats, MIME type). JPEG entries also accept
+# MPO because Pillow reports multi-picture JPEGs (e.g. iPhone portrait photos,
+# Samsung motion photos) as MPO.
 AGENT_IMAGE_FORMATS = {
-    ".gif": ("GIF", "image/gif"),
-    ".jpeg": ("JPEG", "image/jpeg"),
-    ".jpg": ("JPEG", "image/jpeg"),
-    ".png": ("PNG", "image/png"),
-    ".webp": ("WEBP", "image/webp"),
+    ".gif": (("GIF",), "image/gif"),
+    ".jpeg": (("JPEG", "MPO"), "image/jpeg"),
+    ".jpg": (("JPEG", "MPO"), "image/jpeg"),
+    ".png": (("PNG",), "image/png"),
+    ".webp": (("WEBP",), "image/webp"),
 }
 
 

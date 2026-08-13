@@ -375,6 +375,10 @@ def extract_zip_recursive(
         extract_to (str): Destination path for extracted files.
         current_depth (int): Current depth of recursion.
         max_depth (int): Maximum allowed depth of recursion to prevent infinite loops.
+
+    Raises:
+        ZipExtractionError: If the archive fails safety validation, so ingestion
+            fails loudly instead of indexing an empty directory.
     """
     if current_depth > max_depth:
         logging.warning(f"Reached maximum recursion depth of {max_depth}")
@@ -407,7 +411,7 @@ def extract_zip_recursive(
             os.remove(zip_path)
         except OSError:
             pass
-        return
+        raise
     except Exception as e:
         logging.error(
             "Error extracting zip file %s: %s",
@@ -415,7 +419,7 @@ def extract_zip_recursive(
             safe_zip_error_message(e),
             exc_info=True,
         )
-        return
+        raise
 
 
 def download_file(url, params, dest_path):

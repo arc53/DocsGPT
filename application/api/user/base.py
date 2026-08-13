@@ -269,7 +269,7 @@ def _validate_agent_image_upload(file, filename: str) -> None:
 
     with Image.open(stream) as image:
         image_format = (image.format or "").upper()
-        if image_format != image_policy[0]:
+        if image_format not in image_policy[0]:
             raise ValueError("Image content does not match its extension")
         if image.width * image.height > settings.AGENT_IMAGE_MAX_PIXELS:
             raise ValueError("Image exceeds the pixel limit")

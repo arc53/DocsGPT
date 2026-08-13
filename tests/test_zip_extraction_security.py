@@ -287,7 +287,7 @@ class TestExtractZipRecursive:
             assert not os.path.exists(os.path.join(extract_to, "inner.zip"))
 
     def test_respects_max_depth(self):
-        """Extraction should stop at max recursion depth."""
+        """Nesting beyond max depth should fail the extraction loudly."""
         with tempfile.TemporaryDirectory() as temp_dir:
             extract_to = os.path.join(temp_dir, "extract")
             os.makedirs(extract_to)
@@ -311,10 +311,8 @@ class TestExtractZipRecursive:
                 f.write(current_content)
 
             # Extract with max_depth=2
-            extract_zip_recursive(zip_path, extract_to, max_depth=2)
-
-            # The deepest nested zips should remain unextracted
-            # (we can't easily verify the exact behavior, but the function should not crash)
+            with pytest.raises(ZipExtractionError):
+                extract_zip_recursive(zip_path, extract_to, max_depth=2)
 
     def test_rejects_path_traversal(self):
         """Zip with path traversal should be rejected and removed."""
@@ -327,7 +325,8 @@ class TestExtractZipRecursive:
             with zipfile.ZipFile(zip_path, "w") as zf:
                 zf.writestr("../../../tmp/malicious.txt", "malicious")
 
-            extract_zip_recursive(zip_path, extract_to)
+            with pytest.raises(ZipExtractionError):
+                extract_zip_recursive(zip_path, extract_to)
 
             # Zip should be removed
             assert not os.path.exists(zip_path)
@@ -348,12 +347,13 @@ class TestExtractZipRecursive:
             with zipfile.ZipFile(zip_path, "w") as zf:
                 zf.writestr(link, "../../outside")
 
-            extract_zip_recursive(zip_path, extract_to)
+            with pytest.raises(ZipExtractionError):
+                extract_zip_recursive(zip_path, extract_to)
 
             assert not os.path.lexists(os.path.join(extract_to, "escape-link"))
 
-    def test_handles_corrupted_zip_gracefully(self):
-        """Corrupted zip should be handled gracefully without crashing."""
+    def test_corrupted_zip_fails_loudly(self):
+        """Corrupted zip should raise so ingestion fails instead of indexing nothing."""
         with tempfile.TemporaryDirectory() as temp_dir:
             zip_path = os.path.join(temp_dir, "corrupted.zip")
             extract_to = os.path.join(temp_dir, "extract")
@@ -363,10 +363,11 @@ class TestExtractZipRecursive:
             with open(zip_path, "wb") as f:
                 f.write(b"This is not a valid zip file")
 
-            # Should not raise, just log error
-            extract_zip_recursive(zip_path, extract_to)
+            with pytest.raises(ZipExtractionError):
+                extract_zip_recursive(zip_path, extract_to)
 
-            # Function should complete without exception
+            # The rejected zip should be removed
+            assert not os.path.exists(zip_path)
 
 
 class TestZipBombProtection:

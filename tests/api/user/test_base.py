@@ -165,6 +165,29 @@ class TestHandleImageUpload:
             assert "user123" in url
             mock_storage.save_file.assert_called_once()
 
+    def test_accepts_multi_picture_jpeg(self, flask_app):
+        from application.api.user.base import handle_image_upload
+
+        # Pillow reports multi-picture JPEGs (e.g. iPhone portrait photos) as
+        # MPO; they must still be accepted under a .jpg extension.
+        buffer = io.BytesIO()
+        frame = Image.new("RGB", (1, 1), color="white")
+        frame.save(buffer, format="MPO", save_all=True, append_images=[frame])
+
+        with flask_app.test_request_context():
+            mock_file = FileStorage(
+                stream=io.BytesIO(buffer.getvalue()), filename="photo.jpg"
+            )
+            mock_storage = Mock()
+
+            url, error = handle_image_upload(
+                Mock(files={"image": mock_file}), "", "user123", mock_storage
+            )
+
+            assert error is None
+            assert url is not None
+            mock_storage.save_file.assert_called_once()
+
     def test_uploads_image_with_non_ascii_basename(self, flask_app):
         from application.api.user.base import handle_image_upload
 

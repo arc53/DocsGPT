@@ -270,6 +270,19 @@ class TestS3StorageFileSize:
         with pytest.raises(FileNotFoundError, match="File not found"):
             s3_storage.get_file_size("avatars/missing.png")
 
+    @pytest.mark.unit
+    def test_get_file_size_maps_denied_head_to_file_not_found(
+        self, s3_storage, mock_boto3_client
+    ):
+        # Without s3:ListBucket, HEAD on a missing key returns 403, not 404.
+        mock_boto3_client.head_object.side_effect = ClientError(
+            {"Error": {"Code": "403", "Message": "Forbidden"}},
+            "head_object",
+        )
+
+        with pytest.raises(FileNotFoundError, match="File not found"):
+            s3_storage.get_file_size("avatars/missing.png")
+
 
 class TestS3StoragePresignedUrl:
     """Test response metadata on short-lived direct avatar delivery URLs."""
