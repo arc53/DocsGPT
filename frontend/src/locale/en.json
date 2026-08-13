@@ -8,6 +8,10 @@
   "sourceDocs": "Source",
   "none": "None",
   "cancel": "Cancel",
+  "errorBoundary": {
+    "message": "Something went wrong displaying this content.",
+    "tryAgain": "Try again"
+  },
   "help": "Help",
   "emailUs": "Email us",
   "documentation": "Documentation",
@@ -1090,7 +1094,13 @@
     },
     "attachments": {
       "attach": "Attach",
-      "remove": "Remove attachment"
+      "remove": "Remove attachment",
+      "waitingToSend_one": "Will send when {{count}} file finishes processing…",
+      "waitingToSend_other": "Will send when {{count}} files finish processing…",
+      "cancelQueuedSend": "Cancel",
+      "sendBlockedByFailed": "{{names}} couldn't be processed — remove to send",
+      "attachedCount_one": "Attached: {{count}} file",
+      "attachedCount_other": "Attached: {{count}} files"
     },
     "retry": "Retry",
     "reasoning": "Reasoning",

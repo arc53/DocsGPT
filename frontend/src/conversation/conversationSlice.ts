@@ -160,20 +160,29 @@ export const loadConversation = createAsyncThunk<
 
 export const fetchAnswer = createAsyncThunk<
   Answer,
-  { question: string; indx?: number }
->('fetchAnswer', async ({ question, indx }, { dispatch, getState }) => {
+  { question: string; indx?: number; attachmentIds?: string[] }
+>('fetchAnswer', async (arg, { dispatch, getState }) => {
+  const { question, indx } = arg;
   if (abortController) abortController.abort();
   abortController = new AbortController();
   const { signal } = abortController;
 
   let isSourceUpdated = false;
   const state = getState() as RootState;
-  const attachmentIds = selectCompletedAttachments(state)
-    .filter((a) => a.id)
-    .map((a) => a.id) as string[];
-
-  if (attachmentIds.length > 0) {
-    dispatch(clearAttachments());
+  // Explicit ids (new sends and retries pass the ids bound to the turn)
+  // keep the wire payload in sync with what the query row displays.
+  // The fallback reads the composer state for callers that predate the
+  // argument and consumes it, which loses the ids on a later retry.
+  let attachmentIds: string[];
+  if (arg.attachmentIds !== undefined) {
+    attachmentIds = arg.attachmentIds;
+  } else {
+    attachmentIds = selectCompletedAttachments(state)
+      .filter((a) => a.id)
+      .map((a) => a.id) as string[];
+    if (attachmentIds.length > 0) {
+      dispatch(clearAttachments());
+    }
   }
 
   // Mutable so the SSE handler can adopt a server-assigned id and
@@ -1147,8 +1156,14 @@ export const conversationSlice = createSlice({
         }
         state.status = 'failed';
         if (state.queries.length > 0) {
-          state.queries[state.queries.length - 1].error =
-            'Something went wrong';
+          // Indexed sends (edit/retry) must fail on their own row, not
+          // whatever happens to be last.
+          const indx = action.meta.arg?.indx;
+          const targetIndex =
+            indx !== undefined && indx >= 0 && indx < state.queries.length
+              ? indx
+              : state.queries.length - 1;
+          state.queries[targetIndex].error = 'Something went wrong';
         }
       });
   },
