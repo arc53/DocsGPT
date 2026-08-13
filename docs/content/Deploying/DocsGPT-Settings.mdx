@@ -174,6 +174,30 @@ the built-in catalog — it does **not** fail to start. If a YAML
 declares an unknown provider name or has a schema error, the app
 **does** fail to start, with the offending file path in the message.
 
+## Document Upload Limits
+
+DocsGPT bounds public document and attachment uploads before storage or parsing.
+ZIP limits are cumulative across nested archives. Unsafe archive paths,
+duplicate file entries, encrypted members, symlinks, and other special files
+are rejected. Repeated directory records are ignored, and case-colliding names
+are disambiguated without overwriting either file. Nested archives expand into
+a directory named after the archive; files that merely end in `.zip` remain
+ordinary files.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `UPLOAD_MAX_REQUEST_BYTES` | `268435456` | Maximum request body for a public file-upload route, including multipart overhead. |
+| `UPLOAD_MAX_FILE_BYTES` | `104857600` | Maximum encoded size of one uploaded file or one extracted ZIP member. |
+| `PARSE_SPEC_MAX_BYTES` | `10485760` | Maximum UTF-8 size of an uploaded or JSON API specification. |
+| `UPLOAD_MAX_ARCHIVE_BYTES` | `262144000` | Maximum total uncompressed bytes across all ZIP layers in one extraction. |
+| `UPLOAD_MAX_ARCHIVE_FILES` | `10000` | Maximum total extracted files across all nested layers; directory records do not count. |
+| `UPLOAD_MAX_ARCHIVE_RATIO` | `1000` | Maximum uncompressed-to-compressed expansion ratio for each archive layer. |
+| `UPLOAD_MAX_ARCHIVE_DEPTH` | `3` | Maximum number of nested ZIP layers expanded after the outer archive. |
+
+These byte/count limits and the non-negative nesting depth can be overridden in `.env`.
+The request limit intentionally applies only to public upload routes; internal
+worker index transfers use their own trusted service boundary.
+
 ## Speech-to-Text Settings
 
 DocsGPT can transcribe audio in two places:
@@ -217,6 +241,17 @@ STT_ENABLE_DIARIZATION=false
 
 `faster_whisper` is an optional backend dependency. Install it in the Python environment used by the DocsGPT API and worker before selecting this provider.
 
+## Agent Image Settings
+
+Agent avatars uploaded to DocsGPT must be valid PNG, JPEG, GIF, or WebP files.
+The decoded image and its file extension must agree; SVG and other formats are
+rejected. These limits apply before the image is written to local or S3 storage.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `AGENT_IMAGE_MAX_BYTES` | `5000000` | Maximum encoded avatar file size in bytes. |
+| `AGENT_IMAGE_MAX_PIXELS` | `16777216` | Maximum decoded width × height, limiting decompression-bomb images. |
+
 ## Authentication Settings
 
 DocsGPT includes a JWT (JSON Web Token) based authentication feature for managing sessions or securing local deployments while allowing access.
@@ -237,27 +272,28 @@ The `AUTH_TYPE` setting in your `.env` file or `settings.py` determines the auth
 Add the following to your `.env` file (or set in `settings.py`):
 
 ```env
+# Shared signing key (required in production for every authentication mode)
+JWT_SECRET_KEY=<long-random-value>
+
 # No authentication (default)
 AUTH_TYPE=None
 
 # OR: Simple JWT (shared token)
 AUTH_TYPE=simple_jwt
-JWT_SECRET_KEY=your_secret_key_here
 
 # OR: Session JWT (per-user/session tokens)
 AUTH_TYPE=session_jwt
-JWT_SECRET_KEY=your_secret_key_here
 
 # OR: SSO via an OpenID Connect provider (Authentik, Keycloak, Okta, ...)
 AUTH_TYPE=oidc
 OIDC_ISSUER=https://auth.example.com/application/o/docsgpt/
 OIDC_CLIENT_ID=your_client_id
 OIDC_FRONTEND_URL=https://docsgpt.example.com
-JWT_SECRET_KEY=your_secret_key_here
 ```
 
-- If `AUTH_TYPE` is set to `simple_jwt` or `session_jwt`, a `JWT_SECRET_KEY` is required.
-- If `JWT_SECRET_KEY` is not set, DocsGPT will generate one and store it in `.jwt_secret_key` in the project root.
+- `JWT_SECRET_KEY` signs authentication tokens where applicable and opaque agent-avatar capabilities in every authentication mode, including no-auth mode.
+- Cloud and production deployments must set a strong `JWT_SECRET_KEY`, shared unchanged by every API and worker replica. Startup fails rather than creating replica-local keys when it is missing.
+- Local development may omit it. DocsGPT atomically generates an owner-readable `.jwt_secret_key` in the project root and reuses it on later starts.
 
 #### How Each Method Works
 
@@ -283,7 +319,7 @@ JWT_SECRET_KEY=your_secret_key_here
 
 - Always keep your `JWT_SECRET_KEY` secure and private.
 - If you set it manually, use a strong, random string.
-- If not set, DocsGPT will generate a secure key and persist it in `.jwt_secret_key`.
+- Keep the value stable. Rotating it invalidates active JWTs and previously generated agent-avatar URLs.
 
 #### Checking Current Auth Type
 
@@ -317,7 +353,7 @@ By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 
 | `S3_REGION` | Region (use `auto` for Cloudflare R2) | — |
 | `S3_ENDPOINT_URL` | Custom endpoint for S3-compatible services; leave unset for AWS S3 | — |
 | `S3_PATH_STYLE` | Use path-style addressing (required by most non-AWS services) | `false` |
-| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct object URLs) | `backend` |
+| `URL_STRATEGY` | Artifact-download delivery: `backend` proxies bytes through the API; `s3` returns short-lived presigned object URLs. Agent avatars always use capability URLs and, with S3 storage, redirect to a size-checked presigned URL. | `backend` |
 
 ### AWS S3
 

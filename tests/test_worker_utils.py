@@ -203,6 +203,30 @@ class TestExtractZipRecursive:
         found = list(extract_to.rglob("inside.txt"))
         assert found, "expected nested zip to be extracted"
 
+    def test_nested_archives_share_one_expansion_budget(self, tmp_path):
+        from application.worker import extract_zip_recursive, ZipExtractionError
+
+        inner = tmp_path / "inner.zip"
+        with zipfile.ZipFile(inner, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("inside.txt", b"x" * 60)
+
+        outer = tmp_path / "outer.zip"
+        with zipfile.ZipFile(outer, "w", zipfile.ZIP_STORED) as zf:
+            zf.write(inner, "inner.zip")
+
+        # The outer archive fits, as does the inner archive in isolation, but
+        # extracting both exceeds one cumulative request budget.
+        limit = inner.stat().st_size + 30
+        extract_to = tmp_path / "out"
+        extract_to.mkdir()
+        with patch("application.worker.MAX_UNCOMPRESSED_SIZE", limit), patch(
+            "application.worker.MAX_COMPRESSION_RATIO", 10_000,
+        ):
+            with pytest.raises(ZipExtractionError):
+                extract_zip_recursive(str(outer), str(extract_to))
+
+        assert not (extract_to / "inside.txt").exists()
+
 
 class TestDownloadFile:
     def test_writes_file_on_success(self, tmp_path):

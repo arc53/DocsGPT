@@ -11,6 +11,7 @@ from pydantic import ValidationError as PydanticValidationError
 from application.api import api
 from application.guardrails.config import AgentConfig
 from application.api.user.base import (
+    copy_agent_image_for_user,
     handle_image_upload,
     resolve_prompt_name,
     resolve_source_details,
@@ -244,7 +245,11 @@ def _format_agent_output(
         "slug": agent.get("slug", "") or "",
         "description": agent.get("description", "") or "",
         "image": (
-            generate_image_url(agent["image"]) if agent.get("image") else ""
+            generate_image_url(
+                agent["image"], agent["id"], agent.get("user_id")
+            )
+            if agent.get("image")
+            else ""
         ),
         "source": source_value,
         "sources": sources_list,
@@ -308,7 +313,7 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
     allowed_fields = set(schema["fields"])
 
     for key in (
-        "description", "agent_type", "key", "image", "retriever",
+        "description", "agent_type", "key", "retriever",
         "default_model_id",
     ):
         if key in allowed_fields and data.get(key) not in (None, ""):
@@ -787,8 +792,8 @@ class UpdateAgent(Resource):
             "description": fields.String(
                 required=True, description="New description of the agent"
             ),
-            "image": fields.String(
-                required=False, description="New image URL or identifier"
+            "image": fields.Raw(
+                required=False, description="Image file upload", type="file"
             ),
             "source": fields.String(
                 required=False, description="Source ID (legacy single source)"
@@ -913,8 +918,12 @@ class UpdateAgent(Resource):
                         404,
                     )
                 pg_agent_id = str(existing_agent["id"])
+                existing_image = existing_agent.get("image", "") or ""
                 image_url, image_error = handle_image_upload(
-                    request, existing_agent.get("image", "") or "", user, storage,
+                    request,
+                    existing_image,
+                    existing_agent.get("user_id") or user,
+                    storage,
                 )
                 if image_error:
                     return image_error
@@ -923,7 +932,6 @@ class UpdateAgent(Resource):
                 allowed_fields = [
                     "name",
                     "description",
-                    "image",
                     "source",
                     "sources",
                     "chunks",
@@ -1133,7 +1141,7 @@ class UpdateAgent(Resource):
                                     f"Field '{field}' cannot be empty", user, field
                                 )
                         update_fields[field] = value
-                if image_url:
+                if image_url and image_url != existing_image:
                     update_fields["image"] = image_url
                 if not update_fields:
                     return _reject("No valid update data provided", user)
@@ -1543,7 +1551,11 @@ class PinnedAgents(Resource):
                         "name": agent.get("name", ""),
                         "description": agent.get("description", ""),
                         "image": (
-                            generate_image_url(agent["image"]) if agent.get("image") else ""
+                            generate_image_url(
+                                agent["image"], agent["id"], agent.get("user_id")
+                            )
+                            if agent.get("image")
+                            else ""
                         ),
                         "source": str(source_id) if source_id else "",
                         "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "",
@@ -1591,7 +1603,13 @@ class GetTemplateAgents(Resource):
                     "id": str(agent["id"]),
                     "name": agent.get("name"),
                     "description": agent.get("description") or "",
-                    "image": agent.get("image") or "",
+                    "image": (
+                        generate_image_url(
+                            agent["image"], agent["id"], agent.get("user_id")
+                        )
+                        if agent.get("image")
+                        else ""
+                    ),
                 }
                 for agent in template_rows
             ]
@@ -1647,7 +1665,7 @@ class AdoptAgent(Resource):
                 # and must get its own values (slug stays NULL until exported).
                 create_kwargs: dict = {}
                 for col in (
-                    "description", "agent_type", "image", "retriever",
+                    "description", "agent_type", "retriever",
                     "default_model_id",
                     "source_id", "prompt_id", "folder_id", "workflow_id",
                     "extra_source_ids",
@@ -1655,6 +1673,16 @@ class AdoptAgent(Resource):
                     val = template.get(col)
                     if val not in (None, ""):
                         create_kwargs[col] = val
+
+                # The avatar must live under the adopter's own upload
+                # directory: image paths are validated against their owner,
+                # so a copied reference to the template owner's blob would
+                # fail closed and render blank.
+                adopted_image = copy_agent_image_for_user(
+                    template.get("image"), user, storage
+                )
+                if adopted_image:
+                    create_kwargs["image"] = adopted_image
                 for col in ("tools", "json_schema", "models", "shared_metadata", "config"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]

@@ -124,6 +124,23 @@ class TestLocalStorageGetFile:
 
 
 @pytest.mark.unit
+class TestLocalStorageFileSize:
+
+    @patch("os.path.getsize", return_value=42)
+    def test_get_file_size_uses_metadata_without_opening(
+        self, mock_getsize, local_storage
+    ):
+        assert local_storage.get_file_size("avatars/test.png") == 42
+
+        expected_path = os.path.join(
+            os.path.realpath("/tmp/test_storage"), "avatars/test.png"
+        )
+        assert os.path.normpath(mock_getsize.call_args[0][0]) == os.path.normpath(
+            expected_path
+        )
+
+
+@pytest.mark.unit
 class TestLocalStorageDeleteFile:
 
     @patch("os.remove")

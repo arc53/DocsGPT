@@ -6,6 +6,7 @@ import uuid
 import dotenv
 from flask import Flask, Response, jsonify, redirect, request
 from jose import jwt
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from application.auth import handle_auth
 
@@ -28,11 +29,16 @@ from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
 from application.api.v1 import v1_bp  # noqa: E402
 from application.celery_init import celery  # noqa: E402
+from application.core.secret_key import resolve_jwt_secret_key  # noqa: E402
 from application.core.settings import settings  # noqa: E402
 from application.storage.db.bootstrap import ensure_database_ready  # noqa: E402
 from application.stt.upload_limits import (  # noqa: E402
     build_stt_file_size_limit_message,
     should_reject_stt_request,
+)
+from application.upload_limits import (  # noqa: E402
+    is_document_upload_path,
+    upload_request_limit_message,
 )
 
 
@@ -84,18 +90,59 @@ app.config.update(
 celery.config_from_object("application.celeryconfig")
 api.init_app(app)
 
-if settings.AUTH_TYPE in ("simple_jwt", "session_jwt", "oidc") and not settings.JWT_SECRET_KEY:
-    key_file = ".jwt_secret_key"
-    try:
-        with open(key_file, "r") as f:
-            settings.JWT_SECRET_KEY = f.read().strip()
-    except FileNotFoundError:
-        new_key = os.urandom(32).hex()
-        with open(key_file, "w") as f:
-            f.write(new_key)
-        settings.JWT_SECRET_KEY = new_key
-    except Exception as e:
-        raise RuntimeError(f"Failed to setup JWT_SECRET_KEY: {e}")
+
+def _upload_limit_error_payload() -> dict[str, bool | str]:
+    """Build a consistent 413 payload using the active route-specific limit."""
+    active_limit = request.max_content_length
+    if active_limit is None:
+        active_limit = settings.UPLOAD_MAX_REQUEST_BYTES
+    return {
+        "success": False,
+        "message": upload_request_limit_message(active_limit),
+    }
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(_error):
+    """Return API-shaped JSON instead of Werkzeug's HTML 413 page."""
+    return jsonify(_upload_limit_error_payload()), 413
+
+
+@api.errorhandler(RequestEntityTooLarge)
+def handle_restx_request_entity_too_large(_error):
+    """Keep Flask-RESTX from replacing the configured upload-limit response."""
+    return _upload_limit_error_payload(), 413
+
+
+@app.before_request
+def enforce_document_upload_request_size_limit():
+    """Bound multipart parsing for public file-upload routes only.
+
+    Internal worker index uploads are intentionally excluded; they are trusted
+    service traffic and can legitimately exceed the end-user document limit.
+    """
+    if request.method == "OPTIONS" or not is_document_upload_path(request.path):
+        return None
+    request_limit = (
+        settings.PARSE_SPEC_MAX_BYTES
+        if request.path == "/api/parse_spec" and request.is_json
+        else settings.UPLOAD_MAX_REQUEST_BYTES
+    )
+    request.max_content_length = request_limit
+    if (
+        request.content_length is not None
+        and request.content_length > request_limit
+    ):
+        raise RequestEntityTooLarge()
+    return None
+
+# The same stable secret also signs opaque agent-image capabilities, including
+# in no-auth mode. Production replicas must receive one shared configured key;
+# only local development may use the atomic filesystem fallback.
+settings.JWT_SECRET_KEY = resolve_jwt_secret_key(
+    settings.JWT_SECRET_KEY,
+    os.getenv("DEPLOYMENT_TYPE"),
+)
 if settings.AUTH_TYPE == "oidc":
     _missing_oidc = [
         name

@@ -99,6 +99,8 @@ spec:
         - secretRef:
             name: docsgpt-secrets
         env:
+        - name: DEPLOYMENT_TYPE
+          value: "cloud"
         - name: API_URL
           value: "http://<your-api-endpoint>"
         - name: POSTGRES_URI

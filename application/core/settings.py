@@ -88,6 +88,16 @@ class Settings(BaseSettings):
         "request_limit": 500,
     }
     UPLOAD_FOLDER: str = "inputs"
+    # Public upload request cap is applied by Flask before multipart parsing.
+    # The per-file cap is also enforced while copying each controlled stream.
+    UPLOAD_MAX_REQUEST_BYTES: int = Field(default=256 * 1024 * 1024, gt=0)
+    UPLOAD_MAX_FILE_BYTES: int = Field(default=100 * 1024 * 1024, gt=0)
+    PARSE_SPEC_MAX_BYTES: int = Field(default=10 * 1024 * 1024, gt=0)
+    # ZIP limits apply cumulatively across nested archives in one extraction.
+    UPLOAD_MAX_ARCHIVE_BYTES: int = Field(default=250 * 1024 * 1024, gt=0)
+    UPLOAD_MAX_ARCHIVE_FILES: int = Field(default=10_000, gt=0)
+    UPLOAD_MAX_ARCHIVE_RATIO: int = Field(default=1000, gt=0)
+    UPLOAD_MAX_ARCHIVE_DEPTH: int = Field(default=3, ge=0)
     PARSE_PDF_AS_IMAGE: bool = False
     PARSE_IMAGE_REMOTE: bool = False
     DOCLING_OCR_ENABLED: bool = False  # Enable OCR for docling parsers (PDF, images)
@@ -99,6 +109,8 @@ class Settings(BaseSettings):
     DOCLING_TABULAR_MAX_BYTES: int = 2_000_000
     DOCLING_MARKUP_MAX_BYTES: int = 8_000_000
     ATTACHMENT_TEXT_MAX_BYTES: int = 5_000_000
+    AGENT_IMAGE_MAX_BYTES: int = 5_000_000
+    AGENT_IMAGE_MAX_PIXELS: int = 16_777_216
     VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
     # Allow-list of retriever keys an agent may use. Values must match the
     # ``RetrieverCreator.retrievers`` registry keys (``classic`` / ``default``),

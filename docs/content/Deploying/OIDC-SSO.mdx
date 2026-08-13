@@ -45,7 +45,7 @@ Sessions last `OIDC_SESSION_LIFETIME_SECONDS` (8 hours by default) and renew wit
 | `OIDC_ALLOWED_GROUPS` | no | — | Comma-separated group allowlist. Unset, any authenticated IdP user may sign in — see [Restricting sign-in by group](#restricting-sign-in-by-group). |
 | `OIDC_ADMIN_GROUPS` | no | — | Comma-separated groups whose members are granted the global `admin` role. Re-checked at every login and renewal — see [Granting admin via groups](#granting-admin-via-groups). |
 | `OIDC_GROUPS_CLAIM` | no | `groups` | ID-token/userinfo claim carrying the user's group membership. |
-| `JWT_SECRET_KEY` | recommended | auto-generated | Signs DocsGPT session tokens. Set it explicitly in production — required when running multiple API replicas. |
+| `JWT_SECRET_KEY` | required in production | auto-generated for local development | Signs DocsGPT session tokens and agent-avatar capabilities. Every API and worker replica must use the same value. |
 
 `SCIM_ENABLED` and `SCIM_TOKEN` are listed in the [SCIM section](#scim-user-provisioning).
 

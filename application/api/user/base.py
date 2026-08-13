@@ -6,9 +6,11 @@ import datetime
 import os
 import uuid
 from functools import wraps
+from pathlib import PurePosixPath
 from typing import Optional, Tuple
 
 from flask import current_app, jsonify, make_response, Response
+from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
 from sqlalchemy import text as _sql_text
@@ -18,6 +20,12 @@ from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
+from application.utils import (
+    AGENT_IMAGE_FORMATS,
+    get_agent_image_content_type,
+    is_external_image_url,
+    safe_user_storage_component,
+)
 from application.vectorstore.vector_creator import VectorCreator
 
 
@@ -27,7 +35,6 @@ storage = StorageCreator.get_storage()
 current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
-
 
 def generate_minute_range(start_date, end_date):
     """Generate a dictionary with minute-level time ranges."""
@@ -237,9 +244,112 @@ def get_vector_store(source_id):
     return store
 
 
+def _validate_agent_image_upload(file, filename: str) -> None:
+    """Validate an uploaded agent avatar and rewind it for storage.
+
+    Args:
+        file: Werkzeug file upload object.
+        filename: Sanitized upload filename.
+
+    Raises:
+        OSError: If the upload stream cannot be inspected.
+        ValueError: If the file exceeds a limit or is not an allowed raster image.
+    """
+    extension = PurePosixPath(filename).suffix.lower()
+    image_policy = AGENT_IMAGE_FORMATS.get(extension)
+    if not filename or image_policy is None:
+        raise ValueError("Unsupported image extension")
+
+    stream = file.stream
+    stream.seek(0, os.SEEK_END)
+    size_bytes = stream.tell()
+    stream.seek(0)
+    if size_bytes > settings.AGENT_IMAGE_MAX_BYTES:
+        raise ValueError("Image exceeds the upload size limit")
+
+    with Image.open(stream) as image:
+        image_format = (image.format or "").upper()
+        if image_format not in image_policy[0]:
+            raise ValueError("Image content does not match its extension")
+        if image.width * image.height > settings.AGENT_IMAGE_MAX_PIXELS:
+            raise ValueError("Image exceeds the pixel limit")
+        image.verify()
+    stream.seek(0)
+
+
+def _safe_agent_image_filename(filename: str) -> str:
+    """Build an ASCII storage filename without discarding a Unicode file's suffix.
+
+    Args:
+        filename: Original multipart upload filename.
+
+    Returns:
+        A traversal-safe filename with a normalized, allow-listed extension.
+
+    Raises:
+        ValueError: If the original filename has no supported image extension.
+    """
+    normalized_path = filename.replace("\\", "/")
+    original_path = PurePosixPath(normalized_path)
+    extension = original_path.suffix.lower()
+    if extension not in AGENT_IMAGE_FORMATS:
+        raise ValueError("Unsupported image extension")
+
+    safe_stem = secure_filename(original_path.stem).strip("._") or "avatar"
+    return f"{safe_stem}{extension}"
+
+
+def copy_agent_image_for_user(image_path: object, user: str, storage) -> str:
+    """Copy an internal agent avatar into ``user``'s own attachments directory.
+
+    Avatar paths are validated against their owner's upload directory, so an
+    agent copied to a new owner needs its own blob rather than a reference to
+    the original owner's.
+
+    Args:
+        image_path: Source avatar storage path, or an external image URL.
+        user: Identity that will own the copy.
+        storage: Storage backend used for both the read and the write.
+
+    Returns:
+        The newly owned storage path, an unchanged external URL, or an empty
+        string when the source is unusable.
+    """
+    if not isinstance(image_path, str) or not image_path:
+        return ""
+    if is_external_image_url(image_path):
+        return image_path
+    if get_agent_image_content_type(image_path) is None:
+        return ""
+
+    source_name = PurePosixPath(image_path).name
+    prefix, separator, remainder = source_name.partition("_")
+    if separator and remainder and looks_like_uuid(prefix):
+        source_name = remainder
+    try:
+        filename = _safe_agent_image_filename(source_name)
+    except ValueError:
+        return ""
+
+    owner_component = safe_user_storage_component(user)
+    destination = (
+        f"{settings.UPLOAD_FOLDER.rstrip('/')}/{owner_component}/"
+        f"attachments/{uuid.uuid4()}_{filename}"
+    )
+    try:
+        with storage.get_file(image_path) as source_file:
+            storage.save_file(source_file, destination, storage_class="STANDARD")
+    except Exception as e:
+        current_app.logger.warning(
+            "Could not copy agent image %s for %s: %s", image_path, user, e
+        )
+        return ""
+    return destination
+
+
 def handle_image_upload(
-    request, existing_url: str, user: str, storage, base_path: str = "attachments/"
-) -> Tuple[str, Optional[Response]]:
+    request, existing_url: str, user: str, storage
+) -> Tuple[Optional[str], Optional[Response]]:
     """
     Handle image file upload from request.
 
@@ -248,7 +358,6 @@ def handle_image_upload(
         existing_url: Existing image URL (fallback)
         user: User ID
         storage: Storage instance
-        base_path: Base path for upload
 
     Returns:
         Tuple of (image_url, error_response)
@@ -258,8 +367,26 @@ def handle_image_upload(
     if "image" in request.files:
         file = request.files["image"]
         if file.filename != "":
-            filename = secure_filename(file.filename)
-            upload_path = f"{settings.UPLOAD_FOLDER.rstrip('/')}/{user}/{base_path.rstrip('/')}/{uuid.uuid4()}_{filename}"
+            try:
+                filename = _safe_agent_image_filename(file.filename)
+                _validate_agent_image_upload(file, filename)
+            except (
+                Image.DecompressionBombError,
+                UnidentifiedImageError,
+                ValueError,
+                OSError,
+            ) as e:
+                current_app.logger.warning(f"Invalid agent image upload: {e}")
+                return None, make_response(
+                    jsonify({"success": False, "message": "Invalid image upload"}),
+                    400,
+                )
+
+            owner_component = safe_user_storage_component(user)
+            upload_path = (
+                f"{settings.UPLOAD_FOLDER.rstrip('/')}/{owner_component}/"
+                f"attachments/{uuid.uuid4()}_{filename}"
+            )
             try:
                 storage.save_file(file, upload_path, storage_class="STANDARD")
                 image_url = upload_path

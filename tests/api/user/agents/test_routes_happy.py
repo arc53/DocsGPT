@@ -465,6 +465,28 @@ class TestUpdateAgent:
         got = AgentsRepository(pg_conn).get(str(agent["id"]), user)
         assert got["name"] == "new name"
 
+    def test_ignores_client_supplied_image_path(self, app, pg_conn):
+        from application.api.user.agents.routes import UpdateAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-upd-image-path"
+        agent = _seed_agent(
+            pg_conn, user=user, status="draft", with_source=False,
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"description": "safe update", "image": ".env"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+
+        assert response.status_code == 200
+        got = AgentsRepository(pg_conn).get(str(agent["id"]), user)
+        assert got["description"] == "safe update"
+        assert got["image"] is None
+
     def test_invalid_status_returns_400(self, app, pg_conn):
         from application.api.user.agents.routes import UpdateAgent
 
@@ -1220,6 +1242,120 @@ class TestAdoptAgentMore:
         # Adoption copies agent into user's list
         mine = repo.list_for_user("u-adopter")
         assert any(a["name"] == "Template X" for a in mine)
+
+    def test_adopt_copies_image_into_adopter_storage(self, app, pg_conn):
+        import io
+        from unittest.mock import MagicMock
+
+        from application.api.user.agents.routes import AdoptAgent
+        from application.core.settings import settings
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.utils import (
+            is_safe_agent_image_path,
+            safe_user_storage_component,
+        )
+
+        repo = AgentsRepository(pg_conn)
+        template = repo.create(
+            "__system__",
+            "Template Img",
+            "template",
+            image="inputs/__system__/attachments/abc_logo.png",
+        )
+
+        storage = MagicMock()
+        storage.get_file.return_value = io.BytesIO(b"png-bytes")
+        storage.save_file.side_effect = lambda data, path, **kw: {"path": path}
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.agents.routes.storage", storage
+        ), app.test_request_context(
+            f"/api/adopt_agent?id={template['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-adopter"}
+            response = AdoptAgent().post()
+
+        assert response.status_code == 200
+        adopted = next(
+            a for a in repo.list_for_user("u-adopter") if a["name"] == "Template Img"
+        )
+        owner = safe_user_storage_component("u-adopter")
+        expected_prefix = f"{settings.UPLOAD_FOLDER}/{owner}/attachments/"
+        assert adopted["image"].startswith(expected_prefix)
+        assert adopted["image"].endswith("_logo.png")
+        assert is_safe_agent_image_path(adopted["image"], "u-adopter")
+        storage.get_file.assert_called_once_with(
+            "inputs/__system__/attachments/abc_logo.png"
+        )
+
+    def test_adopt_drops_image_when_copy_fails(self, app, pg_conn):
+        from unittest.mock import MagicMock
+
+        from application.api.user.agents.routes import AdoptAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        repo = AgentsRepository(pg_conn)
+        template = repo.create(
+            "__system__",
+            "Template Broken Img",
+            "template",
+            image="inputs/__system__/attachments/gone_logo.png",
+        )
+
+        storage = MagicMock()
+        storage.get_file.side_effect = FileNotFoundError("missing")
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.agents.routes.storage", storage
+        ), app.test_request_context(
+            f"/api/adopt_agent?id={template['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-adopter2"}
+            response = AdoptAgent().post()
+
+        assert response.status_code == 200
+        adopted = next(
+            a
+            for a in repo.list_for_user("u-adopter2")
+            if a["name"] == "Template Broken Img"
+        )
+        assert not adopted.get("image")
+
+    def test_adopt_keeps_external_image_url(self, app, pg_conn):
+        from unittest.mock import MagicMock
+
+        from application.api.user.agents.routes import AdoptAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        repo = AgentsRepository(pg_conn)
+        template = repo.create(
+            "__system__",
+            "Template Ext Img",
+            "template",
+            image="https://cdn.example.com/logo.png",
+        )
+
+        storage = MagicMock()
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.agents.routes.storage", storage
+        ), app.test_request_context(
+            f"/api/adopt_agent?id={template['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-adopter3"}
+            response = AdoptAgent().post()
+
+        assert response.status_code == 200
+        adopted = next(
+            a
+            for a in repo.list_for_user("u-adopter3")
+            if a["name"] == "Template Ext Img"
+        )
+        assert adopted["image"] == "https://cdn.example.com/logo.png"
+        storage.get_file.assert_not_called()
 
     def test_adopt_template_missing_returns_404(self, app, pg_conn):
         from application.api.user.agents.routes import AdoptAgent
