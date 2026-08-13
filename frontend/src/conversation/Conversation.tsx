@@ -32,8 +32,10 @@ import {
   submitToolActions,
   updateQuery,
 } from './conversationSlice';
+import { getSendReadiness } from '../components/message-input/armedSend';
 import {
   clearAttachments,
+  selectAttachments,
   selectCompletedAttachments,
 } from '../upload/uploadSlice';
 
@@ -58,6 +60,10 @@ export default function Conversation() {
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
   const completedAttachments = useSelector(selectCompletedAttachments);
+  const attachments = useSelector(selectAttachments);
+  // A direct send (hero card) that must wait for pending attachments is
+  // parked here; MessageInput consumes it into an armed composer send.
+  const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
@@ -214,6 +220,12 @@ export default function Conversation() {
           index,
           attachmentIds: rowAttachmentIds,
         });
+      } else if (getSendReadiness(attachments).state !== 'ready') {
+        // Direct new sends (hero suggestion cards) bypass MessageInput's
+        // submit gate. With files still uploading/parsing (or failed),
+        // sending now would silently drop them — route the question into
+        // the composer instead, where the armed-send banner takes over.
+        setQueuedQuestion(trimmedQuestion);
       } else {
         const filesAttached = completedAttachments
           .filter((a) => a.id)
@@ -236,7 +248,7 @@ export default function Conversation() {
         if (filesAttached.length > 0) dispatch(clearAttachments());
       }
     },
-    [dispatch, handleFetchAnswer, completedAttachments, queries],
+    [dispatch, handleFetchAnswer, completedAttachments, attachments, queries],
   );
 
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
@@ -423,6 +435,8 @@ export default function Conversation() {
               onSubmit={(text) => {
                 handleQuestionSubmission(text);
               }}
+              queuedQuestion={queuedQuestion}
+              onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
               loading={status === 'loading'}
               showSourceButton={selectedAgent ? false : true}
               showToolButton={selectedAgent ? false : true}
