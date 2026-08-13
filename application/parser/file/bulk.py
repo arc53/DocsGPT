@@ -25,13 +25,50 @@ def _build_audio_parser_mapping() -> Dict[str, BaseParser]:
     return {extension: AudioParser() for extension in SUPPORTED_AUDIO_EXTENSIONS}
 
 
+def _wrap_pdf_fast_path(pdf_parser: BaseParser) -> BaseParser:
+    """Put the pypdfium2 text-layer parser in front of ``pdf_parser``.
+
+    Args:
+        pdf_parser: Parser to fall back to for PDFs with no usable text layer.
+
+    Returns:
+        BaseParser: The fast-path parser, or ``pdf_parser`` unchanged when
+        pypdfium2 is unavailable.
+    """
+    try:
+        from application.parser.file.pdfium_parser import PdfiumTextParser
+    except ImportError:
+        logging.warning(
+            "pypdfium2 is not installed; PDF attachments will use %s",
+            type(pdf_parser).__name__,
+        )
+        return pdf_parser
+    return PdfiumTextParser(
+        fallback_parser=pdf_parser,
+        min_median_chars=settings.ATTACHMENT_PDF_TEXT_MIN_MEDIAN_CHARS,
+    )
+
+
 def get_default_file_extractor(
     ocr_enabled: Optional[bool] = None,
+    pdf_text_fast_path: bool = False,
 ) -> Dict[str, BaseParser]:
     """Get the default file extractor.
 
     Uses docling parsers by default for advanced document processing.
     Falls back to standard parsers if docling is not installed.
+
+    Args:
+        ocr_enabled: Enable OCR in the docling parsers. Defaults to
+            ``settings.DOCLING_OCR_ENABLED``.
+        pdf_text_fast_path: Read PDFs via their embedded text layer
+            (pypdfium2) instead of docling, falling back to docling for scans.
+            Off by default: it trades docling's structural markdown for speed,
+            which suits attachments (read into a prompt) but not source
+            ingestion (chunked and embedded for retrieval).
+
+    Returns:
+        Dict[str, BaseParser]: Parser keyed by lower-case file suffix.
     """
     try:
         from application.parser.file.docling_parser import (
@@ -48,9 +85,12 @@ def get_default_file_extractor(
         )
         if ocr_enabled is None:
             ocr_enabled = settings.DOCLING_OCR_ENABLED
+        pdf_parser: BaseParser = DoclingPDFParser(ocr_enabled=ocr_enabled)
+        if pdf_text_fast_path:
+            pdf_parser = _wrap_pdf_fast_path(pdf_parser)
         return {
             # Documents
-            ".pdf": DoclingPDFParser(ocr_enabled=ocr_enabled),
+            ".pdf": pdf_parser,
             ".docx": DoclingDocxParser(),
             ".pptx": DoclingPPTXParser(),
             ".xlsx": DoclingXLSXParser(),
@@ -88,8 +128,11 @@ def get_default_file_extractor(
             "For advanced document parsing, install with: pip install docling"
         )
         # Fallback to standard parsers
+        legacy_pdf: BaseParser = PDFParser()
+        if pdf_text_fast_path:
+            legacy_pdf = _wrap_pdf_fast_path(legacy_pdf)
         return {
-            ".pdf": PDFParser(),
+            ".pdf": legacy_pdf,
             ".docx": DocxParser(),
             ".csv": PandasCSVParser(),
             ".xlsx": ExcelParser(),

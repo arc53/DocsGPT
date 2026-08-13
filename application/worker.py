@@ -1594,15 +1594,6 @@ def record_attachment_failure(user, file_info, error, parser=None):
     if not attachment_id:
         return
     try:
-        # An exception after the success write (event publishing, state
-        # updates) must not replace durable extracted content with a
-        # NULL-content failed row.
-        with db_readonly() as conn:
-            existing = AttachmentsRepository(conn).get_by_legacy_id(
-                str(attachment_id), user
-            )
-        if existing is not None and existing.get("content") is not None:
-            return
         metadata = {
             **(file_info.get("metadata") or {}),
             "extraction": {
@@ -1612,16 +1603,27 @@ def record_attachment_failure(user, file_info, error, parser=None):
                 "error": str(error)[:1024],
             },
         }
-        _upsert_attachment_row(
-            user,
-            filename,
-            file_info.get("path") or "",
-            mime_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
-            content=None,
-            token_count=None,
-            metadata=metadata,
-            attachment_id=attachment_id,
-        )
+        with db_session() as conn:
+            repo = AttachmentsRepository(conn)
+            # The conditional update carries the no-clobber guard in its own
+            # WHERE clause: a success row committed by a concurrent duplicate
+            # execution (broker redelivery, the poison guard racing a live
+            # attempt) or earlier in this attempt is never overwritten with a
+            # NULL-content failure.
+            if repo.update_metadata_if_content_null(str(attachment_id), user, metadata):
+                return
+            if repo.get_by_legacy_id(str(attachment_id), user) is not None:
+                return
+            repo.create(
+                user,
+                filename,
+                file_info.get("path") or "",
+                mime_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
+                content=None,
+                token_count=None,
+                metadata=metadata,
+                legacy_mongo_id=str(attachment_id),
+            )
     except Exception:
         logging.error(
             f"Failed to record failure row for attachment {attachment_id}",
@@ -1667,8 +1669,13 @@ def attachment_worker(self, file_info, user):
             scope={"kind": "attachment", "id": str(attachment_id)},
         )
 
+        # Attachments only: PDFs are read via their text layer where one
+        # exists (see ``ATTACHMENT_PDF_TEXT_FAST_PATH``). Source ingestion
+        # calls SimpleDirectoryReader without a ``file_extractor`` and so keeps
+        # the docling default, which is what retrieval quality depends on.
         file_extractor = get_default_file_extractor(
-            ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED
+            ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED,
+            pdf_text_fast_path=settings.ATTACHMENT_PDF_TEXT_FAST_PATH,
         )
         _parser = file_extractor.get(os.path.splitext(filename)[1].lower())
         parser_name = type(_parser).__name__ if _parser is not None else "SimpleDirectoryReader"
@@ -1693,6 +1700,9 @@ def attachment_worker(self, file_info, user):
 
         attachment_document = storage.process_file(relative_path, _parse_local_file)
         content = attachment_document.text
+        # A fast-path parser may have delegated to its fallback for this file,
+        # so record the engine that actually ran rather than the one selected.
+        parser_name = getattr(_parser, "last_engine", None) or parser_name
         parser_metadata = {
             key: value
             for key, value in (attachment_document.extra_info or {}).items()

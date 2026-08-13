@@ -108,6 +108,17 @@ class Settings(BaseSettings):
     DOCLING_COMPILE_TORCH_MODELS: bool = False
     DOCLING_TABULAR_MAX_BYTES: int = 2_000_000
     DOCLING_MARKUP_MAX_BYTES: int = 8_000_000
+    # Read PDF *attachments* via their embedded text layer (pypdfium2) instead
+    # of docling, falling back to docling when there is no text layer to read.
+    # Attachments go into a prompt, so docling's structural markdown earns far
+    # less than the tens of seconds per file it costs; source ingestion is
+    # unaffected and always uses docling, because chunking and retrieval do
+    # depend on that structure.
+    ATTACHMENT_PDF_TEXT_FAST_PATH: bool = True
+    # Median characters per sampled page below which a PDF is treated as a scan
+    # and handed to docling. Measured separation on real uploads: scans at
+    # 0-17 chars/page, text-layer documents at 433-6834.
+    ATTACHMENT_PDF_TEXT_MIN_MEDIAN_CHARS: int = 32
     ATTACHMENT_TEXT_MAX_BYTES: int = 5_000_000
     AGENT_IMAGE_MAX_BYTES: int = 5_000_000
     AGENT_IMAGE_MAX_PIXELS: int = 16_777_216

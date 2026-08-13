@@ -270,3 +270,38 @@ class AttachmentsRepository:
             params,
         )
         return result.rowcount > 0
+
+    def update_metadata_if_content_null(
+        self, legacy_mongo_id: str, user_id: str, metadata: Any
+    ) -> bool:
+        """Failure-provenance write that refuses to touch stored content.
+
+        The ``content IS NULL`` predicate makes the no-clobber guard atomic:
+        a concurrent success write (task redelivery, the poison guard racing
+        a still-live attempt) can commit between any prior check and this
+        statement, and the row it filled is left alone.
+
+        Returns:
+            True when a NULL-content row was updated.
+        """
+        if user_id is None:
+            return False
+        result = self._conn.execute(
+            text(
+                "UPDATE attachments SET metadata = CAST(:metadata AS jsonb) "
+                "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id "
+                "AND content IS NULL"
+            ),
+            {
+                "metadata": (
+                    json.dumps(strip_null_bytes(metadata))
+                    if metadata is not None
+                    else None
+                ),
+                "legacy_id": (
+                    str(legacy_mongo_id) if legacy_mongo_id is not None else None
+                ),
+                "user_id": user_id,
+            },
+        )
+        return result.rowcount > 0
