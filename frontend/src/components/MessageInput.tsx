@@ -304,6 +304,11 @@ type MessageInputProps = {
   // attachments (used by doc-driven workflow runs). Normal chat leaves this
   // unset, preserving the text-required behavior.
   allowSendWithoutText?: boolean;
+  // A question queued by a send path outside the composer (hero
+  // suggestion cards) while attachments were still pending: seeds the
+  // input and arms the send so the standard waiting banner takes over.
+  queuedQuestion?: string | null;
+  onQueuedQuestionConsumed?: () => void;
 };
 
 export default function MessageInput({
@@ -313,6 +318,8 @@ export default function MessageInput({
   showToolButton = true,
   autoFocus = true,
   allowSendWithoutText = false,
+  queuedQuestion = null,
+  onQueuedQuestionConsumed,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -1486,9 +1493,6 @@ export default function MessageInput({
   // When ``allowSendWithoutText`` is set, an attachment-only submit is
   // permitted as long as at least one attachment exists; a still-pending
   // one arms the send instead of submitting (see handleSubmit).
-  const completedAttachmentCount = attachments.filter(
-    (attachment) => attachment.status === 'completed',
-  ).length;
   const hasSubmittableContent =
     Boolean(value.trim()) || (allowSendWithoutText && attachments.length > 0);
   const canSubmit =
@@ -1517,6 +1521,16 @@ export default function MessageInput({
     arm: armSend,
     cancel: cancelArmedSend,
   } = useArmedSend({ attachments, onFlush: submitNow });
+
+  // Adopt a question queued outside the composer: seed the input, arm,
+  // and hand the wait to the standard banner. If the attachments already
+  // resolved by the time this runs, the armed-send effect flushes at once.
+  useEffect(() => {
+    if (queuedQuestion == null || queuedQuestion === '') return;
+    setValue(queuedQuestion);
+    armSend();
+    onQueuedQuestionConsumed?.();
+  }, [queuedQuestion]);
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -1616,13 +1630,6 @@ export default function MessageInput({
           >
             {t('conversation.attachments.sendBlockedByFailed', {
               names: sendReadiness.failedNames.join(', '),
-            })}
-          </div>
-        )}
-        {!sendArmed && completedAttachmentCount > 0 && (
-          <div className="text-muted-foreground px-2 pb-1 text-xs sm:px-3">
-            {t('conversation.attachments.attachedCount', {
-              count: completedAttachmentCount,
             })}
           </div>
         )}

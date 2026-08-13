@@ -19,33 +19,33 @@
  * here `setInputFiles` on the dropzone input is the point.
  */
 
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import * as playwright from '@playwright/test';
+import * as playwright from "@playwright/test";
 const { expect, test } = playwright;
 
-import type { Page } from '@playwright/test';
+import type { Page } from "@playwright/test";
 
-import { newUserContext } from '../../helpers/auth.js';
-import { pg } from '../../helpers/db.js';
-import { resetDb } from '../../helpers/reset.js';
+import { newUserContext } from "../../helpers/auth.js";
+import { pg } from "../../helpers/db.js";
+import { resetDb } from "../../helpers/reset.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const FIXTURES_DIR = resolve(HERE, '..', '..', 'fixtures', 'docs');
-const SMALL_FIXTURE_PATH = resolve(FIXTURES_DIR, 'notes.txt');
+const FIXTURES_DIR = resolve(HERE, "..", "..", "fixtures", "docs");
+const SMALL_FIXTURE_PATH = resolve(FIXTURES_DIR, "notes.txt");
 
 async function openComposer(page: Page): Promise<void> {
-  await page.goto('/');
-  await expect(page.locator('#message-input')).toBeVisible();
+  await page.goto("/");
+  await expect(page.locator("#message-input")).toBeVisible();
 }
 
-test.describe('tier-a · composer resilience', () => {
+test.describe("tier-a · composer resilience", () => {
   test.beforeEach(async () => {
     await resetDb();
   });
 
-  test('failed /stream surfaces a visible error and Retry re-sends successfully', async ({
+  test("failed /stream surfaces a visible error and Retry re-sends successfully", async ({
     browser,
   }) => {
     const { context, sub } = await newUserContext(browser);
@@ -55,31 +55,31 @@ test.describe('tier-a · composer resilience', () => {
 
       // Force the stream POST to die at the network layer — the shape of
       // an outage the frontend cannot see an HTTP status for.
-      await page.route('**/stream', (route) => route.abort('failed'));
+      await page.route("**/stream", (route) => route.abort("failed"));
 
-      const textarea = page.locator('#message-input');
-      await textarea.fill('resilience probe — e2e-composer-retry');
-      await textarea.press('Enter');
+      const textarea = page.locator("#message-input");
+      await textarea.fill("resilience probe — e2e-composer-retry");
+      await textarea.press("Enter");
 
       // Visible failure, not a silent drop: the error bubble and a
       // usable Retry control.
-      await expect(page.getByText('Something went wrong')).toBeVisible({
+      await expect(page.getByText("Something went wrong")).toBeVisible({
         timeout: 15_000,
       });
-      const retryButton = page.getByRole('button', { name: /retry/i });
+      const retryButton = page.getByRole("button", { name: /retry/i });
       await expect(retryButton).toBeEnabled();
 
       // Network heals; Retry must complete the SAME turn.
-      await page.unroute('**/stream');
+      await page.unroute("**/stream");
       const streamDone = page.waitForResponse(
-        (r) => r.url().includes('/stream') && r.request().method() === 'POST',
+        (r) => r.url().includes("/stream") && r.request().method() === "POST",
         { timeout: 45_000 },
       );
       await retryButton.click();
       const streamRes = await streamDone;
       expect(streamRes.status()).toBe(200);
 
-      await expect(page.getByText('Something went wrong')).toBeHidden({
+      await expect(page.getByText("Something went wrong")).toBeHidden({
         timeout: 15_000,
       });
 
@@ -95,14 +95,14 @@ test.describe('tier-a · composer resilience', () => {
         [sub],
       );
       expect(rows).toHaveLength(1);
-      expect(rows[0].prompt).toBe('resilience probe — e2e-composer-retry');
+      expect(rows[0].prompt).toBe("resilience probe — e2e-composer-retry");
       expect(rows[0].response).toBeTruthy();
     } finally {
       await context.close();
     }
   });
 
-  test('send while a file is still processing arms, waits, and flushes with the file bound to the turn', async ({
+  test("send while a file is still processing arms, waits, and flushes with the file bound to the turn", async ({
     browser,
   }) => {
     const { context, sub } = await newUserContext(browser);
@@ -112,15 +112,15 @@ test.describe('tier-a · composer resilience', () => {
 
       // Track /stream POSTs so we can prove the send was HELD.
       const streamPosts: string[] = [];
-      page.on('request', (req) => {
-        if (req.url().includes('/stream') && req.method() === 'POST') {
-          streamPosts.push(req.postData() ?? '');
+      page.on("request", (req) => {
+        if (req.url().includes("/stream") && req.method() === "POST") {
+          streamPosts.push(req.postData() ?? "");
         }
       });
 
       // Hold the upload response long enough to press Enter while the
       // attachment is still visibly 'uploading'.
-      await page.route('**/api/store_attachment', async (route) => {
+      await page.route("**/api/store_attachment", async (route) => {
         await new Promise((r) => setTimeout(r, 2_000));
         await route.continue();
       });
@@ -132,9 +132,9 @@ test.describe('tier-a · composer resilience', () => {
         .first()
         .setInputFiles(SMALL_FIXTURE_PATH);
 
-      const textarea = page.locator('#message-input');
-      await textarea.fill('what is in the attached file? e2e-armed-send');
-      await textarea.press('Enter');
+      const textarea = page.locator("#message-input");
+      await textarea.fill("what is in the attached file? e2e-armed-send");
+      await textarea.press("Enter");
 
       // The send is armed, not fired: banner visible, no /stream yet,
       // and the prompt is still in the composer.
@@ -143,13 +143,13 @@ test.describe('tier-a · composer resilience', () => {
       ).toBeVisible({ timeout: 5_000 });
       expect(streamPosts).toHaveLength(0);
       await expect(textarea).toHaveValue(
-        'what is in the attached file? e2e-armed-send',
+        "what is in the attached file? e2e-armed-send",
       );
 
       // Upload completes → Celery parses → attachment.completed lands via
       // SSE → the armed send auto-flushes. notes.txt parses in seconds.
       const streamDone = page.waitForResponse(
-        (r) => r.url().includes('/stream') && r.request().method() === 'POST',
+        (r) => r.url().includes("/stream") && r.request().method() === "POST",
         { timeout: 60_000 },
       );
       const streamRes = await streamDone;
@@ -163,10 +163,10 @@ test.describe('tier-a · composer resilience', () => {
       expect(payload.attachments).toHaveLength(1);
 
       // Banner cleared, composer emptied by the flush.
-      await expect(
-        page.getByText(/will send when/i),
-      ).toBeHidden({ timeout: 15_000 });
-      await expect(textarea).toHaveValue('');
+      await expect(page.getByText(/will send when/i)).toBeHidden({
+        timeout: 15_000,
+      });
+      await expect(textarea).toHaveValue("");
 
       // The invariant that motivated all of this: the file is BOUND to
       // the turn — conversation_messages.attachments[] holds one PG PK
@@ -187,10 +187,61 @@ test.describe('tier-a · composer resilience', () => {
       );
       expect(rows).toHaveLength(1);
       expect(rows[0].prompt).toBe(
-        'what is in the attached file? e2e-armed-send',
+        "what is in the attached file? e2e-armed-send",
       );
       expect(Number(rows[0].attachment_count)).toBe(1);
       expect(Number(rows[0].resolved)).toBe(1);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("hero suggestion card while a file is processing routes into the armed composer instead of sending without it", async ({
+    browser,
+  }) => {
+    const { context } = await newUserContext(browser);
+    try {
+      const page = await context.newPage();
+      await openComposer(page);
+
+      const streamPosts: string[] = [];
+      page.on("request", (req) => {
+        if (req.url().includes("/stream") && req.method() === "POST") {
+          streamPosts.push(req.postData() ?? "");
+        }
+      });
+
+      await page.route("**/api/store_attachment", async (route) => {
+        await new Promise((r) => setTimeout(r, 2_000));
+        await route.continue();
+      });
+      await page
+        .locator('input[type="file"]')
+        .first()
+        .setInputFiles(SMALL_FIXTURE_PATH);
+
+      // The hero cards call handleQuestion directly — the historical
+      // bypass around the composer's arming gate.
+      await page.getByText("Learn about DocsGPT").click();
+
+      // Not sent: the question landed in the composer, armed.
+      await expect(
+        page.getByText(/will send when 1 file finishes processing/i),
+      ).toBeVisible({ timeout: 5_000 });
+      expect(streamPosts).toHaveLength(0);
+      await expect(page.locator("#message-input")).toHaveValue(
+        /what is docsgpt/i,
+      );
+
+      // Once the file resolves, the flush carries it on the turn.
+      const streamRes = await page.waitForResponse(
+        (r) => r.url().includes("/stream") && r.request().method() === "POST",
+        { timeout: 60_000 },
+      );
+      expect(streamRes.status()).toBe(200);
+      expect(streamPosts).toHaveLength(1);
+      const payload = JSON.parse(streamPosts[0]) as { attachments?: string[] };
+      expect(payload.attachments).toHaveLength(1);
     } finally {
       await context.close();
     }

@@ -1098,9 +1098,7 @@
       "waitingToSend_one": "Will send when {{count}} file finishes processing…",
       "waitingToSend_other": "Will send when {{count}} files finish processing…",
       "cancelQueuedSend": "Cancel",
-      "sendBlockedByFailed": "{{names}} couldn't be processed — remove to send",
-      "attachedCount_one": "Attached: {{count}} file",
-      "attachedCount_other": "Attached: {{count}} files"
+      "sendBlockedByFailed": "{{names}} couldn't be processed — remove to send"
     },
     "retry": "Retry",
     "reasoning": "Reasoning",
