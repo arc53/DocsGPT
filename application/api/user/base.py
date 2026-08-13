@@ -20,7 +20,12 @@ from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
-from application.utils import AGENT_IMAGE_FORMATS, safe_user_storage_component
+from application.utils import (
+    AGENT_IMAGE_FORMATS,
+    get_agent_image_content_type,
+    is_external_image_url,
+    safe_user_storage_component,
+)
 from application.vectorstore.vector_creator import VectorCreator
 
 
@@ -292,6 +297,54 @@ def _safe_agent_image_filename(filename: str) -> str:
 
     safe_stem = secure_filename(original_path.stem).strip("._") or "avatar"
     return f"{safe_stem}{extension}"
+
+
+def copy_agent_image_for_user(image_path: object, user: str, storage) -> str:
+    """Copy an internal agent avatar into ``user``'s own attachments directory.
+
+    Avatar paths are validated against their owner's upload directory, so an
+    agent copied to a new owner needs its own blob rather than a reference to
+    the original owner's.
+
+    Args:
+        image_path: Source avatar storage path, or an external image URL.
+        user: Identity that will own the copy.
+        storage: Storage backend used for both the read and the write.
+
+    Returns:
+        The newly owned storage path, an unchanged external URL, or an empty
+        string when the source is unusable.
+    """
+    if not isinstance(image_path, str) or not image_path:
+        return ""
+    if is_external_image_url(image_path):
+        return image_path
+    if get_agent_image_content_type(image_path) is None:
+        return ""
+
+    source_name = PurePosixPath(image_path).name
+    prefix, separator, remainder = source_name.partition("_")
+    if separator and remainder and looks_like_uuid(prefix):
+        source_name = remainder
+    try:
+        filename = _safe_agent_image_filename(source_name)
+    except ValueError:
+        return ""
+
+    owner_component = safe_user_storage_component(user)
+    destination = (
+        f"{settings.UPLOAD_FOLDER.rstrip('/')}/{owner_component}/"
+        f"attachments/{uuid.uuid4()}_{filename}"
+    )
+    try:
+        with storage.get_file(image_path) as source_file:
+            storage.save_file(source_file, destination, storage_class="STANDARD")
+    except Exception as e:
+        current_app.logger.warning(
+            "Could not copy agent image %s for %s: %s", image_path, user, e
+        )
+        return ""
+    return destination
 
 
 def handle_image_upload(

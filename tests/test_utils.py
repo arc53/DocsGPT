@@ -16,6 +16,7 @@ from application.utils import (
     get_hash,
     get_missing_fields,
     generate_image_url,
+    is_safe_agent_image_path,
     limit_chat_history,
     num_tokens_from_object_or_list,
     num_tokens_from_string,
@@ -365,6 +366,66 @@ class TestGenerateImageUrl:
                 "user-1",
             )
             assert result == ""
+
+    @pytest.mark.unit
+    def test_absolute_upload_folder_still_serves_owned_images(self):
+        with patch("application.utils.settings") as s:
+            s.JWT_SECRET_KEY = "test-image-secret"
+            s.UPLOAD_FOLDER = "/data/inputs"
+            s.API_URL = "https://api.example.com"
+            result = generate_image_url(
+                "/data/inputs/user-1/attachments/avatar.png",
+                "00000000-0000-0000-0000-000000000001",
+                "user-1",
+            )
+            assert result.startswith(
+                "https://api.example.com/api/images/"
+                "00000000-0000-0000-0000-000000000001/"
+            )
+
+
+class TestIsSafeAgentImagePath:
+
+    @pytest.mark.unit
+    def test_absolute_upload_folder_accepts_owned_path(self):
+        with patch("application.utils.settings") as s:
+            s.UPLOAD_FOLDER = "/data/inputs"
+            assert is_safe_agent_image_path(
+                "/data/inputs/user-1/attachments/avatar.png", "user-1"
+            )
+
+    @pytest.mark.unit
+    def test_absolute_upload_folder_rejects_other_owner(self):
+        with patch("application.utils.settings") as s:
+            s.UPLOAD_FOLDER = "/data/inputs"
+            assert not is_safe_agent_image_path(
+                "/data/inputs/user-2/attachments/avatar.png", "user-1"
+            )
+
+    @pytest.mark.unit
+    def test_absolute_upload_folder_rejects_escape(self):
+        with patch("application.utils.settings") as s:
+            s.UPLOAD_FOLDER = "/data/inputs"
+            assert not is_safe_agent_image_path(
+                "/data/inputs/user-1/attachments/../../../etc/passwd.png", "user-1"
+            )
+            assert not is_safe_agent_image_path("/etc/passwd.png", "user-1")
+
+    @pytest.mark.unit
+    def test_relative_upload_folder_rejects_absolute_path(self):
+        with patch("application.utils.settings") as s:
+            s.UPLOAD_FOLDER = "inputs"
+            assert not is_safe_agent_image_path(
+                "/inputs/user-1/attachments/avatar.png", "user-1"
+            )
+
+    @pytest.mark.unit
+    def test_relative_upload_folder_accepts_owned_path(self):
+        with patch("application.utils.settings") as s:
+            s.UPLOAD_FOLDER = "inputs"
+            assert is_safe_agent_image_path(
+                "inputs/user-1/attachments/avatar.png", "user-1"
+            )
 
 
 class TestCalculateCompressionThreshold:

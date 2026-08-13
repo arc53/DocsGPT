@@ -11,6 +11,7 @@ from pydantic import ValidationError as PydanticValidationError
 from application.api import api
 from application.guardrails.config import AgentConfig
 from application.api.user.base import (
+    copy_agent_image_for_user,
     handle_image_upload,
     resolve_prompt_name,
     resolve_source_details,
@@ -1664,7 +1665,7 @@ class AdoptAgent(Resource):
                 # and must get its own values (slug stays NULL until exported).
                 create_kwargs: dict = {}
                 for col in (
-                    "description", "agent_type", "image", "retriever",
+                    "description", "agent_type", "retriever",
                     "default_model_id",
                     "source_id", "prompt_id", "folder_id", "workflow_id",
                     "extra_source_ids",
@@ -1672,6 +1673,16 @@ class AdoptAgent(Resource):
                     val = template.get(col)
                     if val not in (None, ""):
                         create_kwargs[col] = val
+
+                # The avatar must live under the adopter's own upload
+                # directory: image paths are validated against their owner,
+                # so a copied reference to the template owner's blob would
+                # fail closed and render blank.
+                adopted_image = copy_agent_image_for_user(
+                    template.get("image"), user, storage
+                )
+                if adopted_image:
+                    create_kwargs["image"] = adopted_image
                 for col in ("tools", "json_schema", "models", "shared_metadata", "config"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]

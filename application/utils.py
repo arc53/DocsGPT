@@ -277,7 +277,10 @@ def is_safe_agent_image_path(image_path: object, user_id: object) -> bool:
 
     candidate = PurePosixPath(image_path)
     upload_root = PurePosixPath(str(settings.UPLOAD_FOLDER).rstrip("/"))
-    if candidate.is_absolute() or upload_root.is_absolute() or ".." in candidate.parts:
+    # An absolute UPLOAD_FOLDER yields absolute stored paths, so the two must
+    # agree; mismatched anchors mean the path did not come from this root. The
+    # exact parent match below is what actually contains the path.
+    if candidate.is_absolute() != upload_root.is_absolute() or ".." in candidate.parts:
         return False
     if get_agent_image_content_type(image_path) is None:
         return False
