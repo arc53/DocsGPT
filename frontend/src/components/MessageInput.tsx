@@ -44,6 +44,7 @@ import {
   SourcesTrigger,
   ToolsTrigger,
 } from './message-input';
+import { useArmedSend } from './message-input/armedSend';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
@@ -1483,32 +1484,50 @@ export default function MessageInput({
   };
 
   // When ``allowSendWithoutText`` is set, an attachment-only submit is
-  // permitted as long as at least one attachment has finished processing.
-  const hasCompletedAttachment = attachments.some(
+  // permitted as long as at least one attachment exists; a still-pending
+  // one arms the send instead of submitting (see handleSubmit).
+  const completedAttachmentCount = attachments.filter(
     (attachment) => attachment.status === 'completed',
-  );
+  ).length;
   const hasSubmittableContent =
-    Boolean(value.trim()) || (allowSendWithoutText && hasCompletedAttachment);
+    Boolean(value.trim()) || (allowSendWithoutText && attachments.length > 0);
   const canSubmit =
     hasSubmittableContent &&
     !loading &&
     recordingState !== 'recording' &&
     recordingState !== 'transcribing';
 
-  const handleSubmit = () => {
-    if (canSubmit) {
-      onSubmit(value);
-      setValue('');
-      if (isTouch) {
-        inputRef.current?.blur();
-      } else if (autoFocus) {
-        setTimeout(() => {
-          if (isMountedRef.current) {
-            inputRef.current?.focus();
-          }
-        }, 0);
-      }
+  const submitNow = () => {
+    onSubmit(value);
+    setValue('');
+    if (isTouch) {
+      inputRef.current?.blur();
+    } else if (autoFocus) {
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          inputRef.current?.focus();
+        }
+      }, 0);
     }
+  };
+
+  const {
+    armed: sendArmed,
+    readiness: sendReadiness,
+    arm: armSend,
+    cancel: cancelArmedSend,
+  } = useArmedSend({ attachments, onFlush: submitNow });
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    // Attachments still uploading/parsing (or failed) must never be
+    // silently dropped from the payload: hold the send in the composer
+    // until every attachment resolves, then flush automatically.
+    if (sendReadiness.state !== 'ready') {
+      armSend();
+      return;
+    }
+    submitNow();
   };
 
   const handleCancel = () => {
@@ -1571,6 +1590,42 @@ export default function MessageInput({
           onDropOn={handleDropOn}
         />
 
+        {sendArmed && sendReadiness.state === 'waiting' && (
+          <div
+            className="text-muted-foreground flex items-center gap-2 px-2 pb-1 text-xs sm:px-3"
+            role="status"
+          >
+            <span>
+              {t('conversation.attachments.waitingToSend', {
+                count: sendReadiness.pendingCount,
+              })}
+            </span>
+            <button
+              type="button"
+              onClick={cancelArmedSend}
+              className="underline hover:opacity-80"
+            >
+              {t('conversation.attachments.cancelQueuedSend')}
+            </button>
+          </div>
+        )}
+        {sendArmed && sendReadiness.state === 'blocked' && (
+          <div
+            className="px-2 pb-1 text-xs text-[#B42318] sm:px-3"
+            role="alert"
+          >
+            {t('conversation.attachments.sendBlockedByFailed', {
+              names: sendReadiness.failedNames.join(', '),
+            })}
+          </div>
+        )}
+        {!sendArmed && completedAttachmentCount > 0 && (
+          <div className="text-muted-foreground px-2 pb-1 text-xs sm:px-3">
+            {t('conversation.attachments.attachedCount', {
+              count: completedAttachmentCount,
+            })}
+          </div>
+        )}
         {voiceError && (
           <div className="px-2 pb-1 text-xs text-[#B42318] sm:px-3">
             {voiceError}

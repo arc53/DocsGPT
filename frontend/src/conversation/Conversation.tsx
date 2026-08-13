@@ -7,6 +7,7 @@ import userService from '../api/services/userService';
 import SharedAgentCard from '../agents/SharedAgentCard';
 import { Agent } from '../agents/types';
 import ArtifactSidebar from '../components/ArtifactSidebar';
+import ErrorBoundary from '../components/ErrorBoundary';
 import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
 import {
@@ -31,7 +32,10 @@ import {
   submitToolActions,
   updateQuery,
 } from './conversationSlice';
-import { selectCompletedAttachments } from '../upload/uploadSlice';
+import {
+  clearAttachments,
+  selectCompletedAttachments,
+} from '../upload/uploadSlice';
 
 export default function Conversation() {
   const { t } = useTranslation();
@@ -165,8 +169,16 @@ export default function Conversation() {
   }, [conversationId, status]);
 
   const handleFetchAnswer = useCallback(
-    ({ question, index }: { question: string; index?: number }) => {
-      dispatch(fetchAnswer({ question, indx: index }));
+    ({
+      question,
+      index,
+      attachmentIds,
+    }: {
+      question: string;
+      index?: number;
+      attachmentIds?: string[];
+    }) => {
+      dispatch(fetchAnswer({ question, indx: index, attachmentIds }));
     },
     [dispatch, selectedAgent],
   );
@@ -184,11 +196,12 @@ export default function Conversation() {
       const trimmedQuestion = question.trim();
       if (trimmedQuestion === '') return;
 
-      const filesAttached = completedAttachments
-        .filter((a) => a.id)
-        .map((a) => ({ id: a.id as string, fileName: a.fileName }));
-
       if (index !== undefined) {
+        // Retry/edit of an existing turn: re-send the ids bound to that
+        // row — the composer slice was consumed by the original send.
+        const rowAttachmentIds = (queries[index]?.attachments ?? []).map(
+          (a) => a.id,
+        );
         dispatch(
           resendQuery({
             index,
@@ -196,8 +209,16 @@ export default function Conversation() {
             keepIdempotencyKey: isRetry,
           }),
         );
-        handleFetchAnswer({ question: trimmedQuestion, index });
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index,
+          attachmentIds: rowAttachmentIds,
+        });
       } else {
+        const filesAttached = completedAttachments
+          .filter((a) => a.id)
+          .map((a) => ({ id: a.id as string, fileName: a.fileName }));
+
         if (!isRetry)
           dispatch(
             addQuery({
@@ -205,10 +226,17 @@ export default function Conversation() {
               attachments: filesAttached,
             }),
           );
-        handleFetchAnswer({ question: trimmedQuestion, index });
+        // One source of truth: the ids on the wire are exactly the ids
+        // the optimistic row displays.
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index,
+          attachmentIds: filesAttached.map((f) => f.id),
+        });
+        if (filesAttached.length > 0) dispatch(clearAttachments());
       }
     },
-    [dispatch, handleFetchAnswer, completedAttachments],
+    [dispatch, handleFetchAnswer, completedAttachments, queries],
   );
 
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
@@ -336,38 +364,41 @@ export default function Conversation() {
         }`}
       >
         <div className="relative min-h-0 flex-1">
-          <ConversationMessages
-            key={conversationMountKey}
-            handleQuestion={handleQuestion}
-            handleQuestionSubmission={handleQuestionSubmission}
-            handleFeedback={handleFeedback}
-            queries={queries}
-            status={status}
-            showHeroOnEmpty={selectedAgent ? false : true}
-            onOpenArtifact={handleOpenArtifact}
-            onToolAction={handleToolAction}
-            isSplitView={isSplitArtifactOpen}
-            agentId={selectedAgent?.id}
-            headerContent={
-              selectedAgent ? (
-                <div className="flex w-full items-center justify-center py-4">
-                  <SharedAgentCard
-                    agent={selectedAgent}
-                    onEdit={
-                      selectedAgent.id
-                        ? () =>
-                            navigate(
-                              selectedAgent.agent_type === 'workflow'
-                                ? `/agents/workflow/edit/${selectedAgent.id}`
-                                : `/agents/edit/${selectedAgent.id}`,
-                            )
-                        : undefined
-                    }
-                  />
-                </div>
-              ) : undefined
-            }
-          />
+          {/* A render crash in the message list must leave the composer
+              usable; the boundary resets on conversation switch. */}
+          <ErrorBoundary key={conversationMountKey}>
+            <ConversationMessages
+              handleQuestion={handleQuestion}
+              handleQuestionSubmission={handleQuestionSubmission}
+              handleFeedback={handleFeedback}
+              queries={queries}
+              status={status}
+              showHeroOnEmpty={selectedAgent ? false : true}
+              onOpenArtifact={handleOpenArtifact}
+              onToolAction={handleToolAction}
+              isSplitView={isSplitArtifactOpen}
+              agentId={selectedAgent?.id}
+              headerContent={
+                selectedAgent ? (
+                  <div className="flex w-full items-center justify-center py-4">
+                    <SharedAgentCard
+                      agent={selectedAgent}
+                      onEdit={
+                        selectedAgent.id
+                          ? () =>
+                              navigate(
+                                selectedAgent.agent_type === 'workflow'
+                                  ? `/agents/workflow/edit/${selectedAgent.id}`
+                                  : `/agents/edit/${selectedAgent.id}`,
+                              )
+                          : undefined
+                      }
+                    />
+                  </div>
+                ) : undefined
+              }
+            />
+          </ErrorBoundary>
           <div
             className={`from-background pointer-events-none absolute bottom-0 left-1/2 h-6 w-full -translate-x-1/2 rounded-t-2xl bg-linear-to-t to-transparent bg-clip-content px-2 ${
               isSplitArtifactOpen
