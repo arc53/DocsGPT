@@ -44,11 +44,11 @@ class _BaseStrategyChunker:
         self.encoding = get_encoding()
 
     def _token_count(self, text: str) -> int:
-        return len(self.encoding.encode(text))
+        return len(self.encoding.encode_ordinary(text))
 
     def _split_by_tokens(self, text: str) -> List[str]:
         """Split ``text`` into pieces no larger than ``max_tokens`` tokens."""
-        tokens = self.encoding.encode(text)
+        tokens = self.encoding.encode_ordinary(text)
         pieces = []
         for start in range(0, len(tokens), self.max_tokens):
             chunk_tokens = tokens[start:start + self.max_tokens]
@@ -188,7 +188,7 @@ class ParentChildChunker(_BaseStrategyChunker):
         processed: List[Document] = []
         child_size = self._child_size()
         for doc in documents:
-            tokens = self.encoding.encode(doc.text)
+            tokens = self.encoding.encode_ordinary(doc.text)
             part_index = 0
             for p_start in range(0, len(tokens), self.max_tokens):
                 parent_tokens = tokens[p_start:p_start + self.max_tokens]

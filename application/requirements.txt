@@ -78,6 +78,7 @@ praw==8.0.2
 pymilvus==3.0.1
 milvus-lite==3.2.0; sys_platform != "win32"
 pypdf==6.15.0
+pypdfium2==5.12.1
 qdrant-client==1.19.0
 python-dateutil==2.9.0.post0
 python-dotenv

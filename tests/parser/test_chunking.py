@@ -281,3 +281,24 @@ class TestChunkerIntegration:
             assert doc.extra_info is not None
             assert "token_count" in doc.extra_info
             assert doc.extra_info["token_count"] > 0
+
+
+# =====================================================================
+# Special-token text must chunk as ordinary text, not raise
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestSpecialTokenText:
+
+    def test_chunking_document_containing_special_token_markers(self):
+        # A document ABOUT LLMs contains literal <|endoftext|>; plain
+        # ``encode()`` raises ValueError on it and destroyed the ingest.
+        chunker = Chunker(chunking_strategy="classic_chunk", max_tokens=50, min_tokens=0)
+        doc = Document(
+            text="The <|endoftext|> marker separates documents. " * 30,
+            doc_id="d1",
+        )
+        chunks = chunker.chunk([doc])
+        assert chunks
+        assert all("<|endoftext|>" in c.text for c in chunks[:1])

@@ -2105,3 +2105,90 @@ class TestHandleToolCallsCompressionSuccess:
             if isinstance(e, dict) and e.get("data", {}).get("status") == "skipped"
         ]
         assert len(skip_events) == 1  # Only second call skipped
+
+
+# ---------------------------------------------------------------------------
+# _append_unsupported_attachments — extraction-provenance gate
+# ---------------------------------------------------------------------------
+
+
+class TestAttachmentExtractionGate:
+    """Rows now carry ``metadata.extraction`` provenance; the append gate
+    must honor it. Legacy rows (no ``extraction`` key) keep working."""
+
+    def test_failed_extraction_row_is_skipped(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "mime_type": "application/vnd.ms-excel",
+            "content": None,
+            "metadata": {"extraction": {"status": "failed", "error": "docling boom"}},
+        }]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        assert result[0]["content"] == "sys"
+        assert "None" not in result[0]["content"]
+        assert "docling boom" not in result[0]["content"]
+
+    def test_null_content_row_is_skipped_even_without_extraction(self):
+        # A PG row always has the ``content`` key; key membership is not a
+        # signal. ``content=None`` must never append the string "None".
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{"id": "a1", "mime_type": "text/plain", "content": None}]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        assert result[0]["content"] == "sys"
+
+    def test_legacy_row_without_extraction_still_appended(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "content": "legacy file text",
+            "metadata": {"storage_type": "local"},
+        }]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        assert "legacy file text" in result[0]["content"]
+
+    def test_ok_row_appended_without_truncation_notice(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "content": "full file text",
+            "metadata": {"extraction": {"status": "ok", "truncated": False}},
+        }]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        assert "full file text" in result[0]["content"]
+        assert "truncated" not in result[0]["content"]
+
+    def test_truncated_row_appended_with_partial_document_notice(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "filename": "big.pdf",
+            "content": "partial file text",
+            "metadata": {"extraction": {
+                "status": "ok",
+                "truncated": True,
+                "original_tokens": 250000,
+                "stored_tokens": 100000,
+            }},
+        }]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        prompt = result[0]["content"]
+        assert "partial file text" in prompt
+        assert "truncated" in prompt
+        assert "100,000" in prompt
+        assert "250,000" in prompt

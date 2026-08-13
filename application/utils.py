@@ -105,7 +105,10 @@ def truncate_to_line_boundary(data: bytes) -> bytes:
 def num_tokens_from_string(string: str) -> int:
     encoding = get_encoding()
     if isinstance(string, str):
-        num_tokens = len(encoding.encode(string))
+        # encode_ordinary: plain ``encode()`` raises ValueError on literal
+        # special-token text like <|endoftext|>, which user documents
+        # legitimately contain.
+        num_tokens = len(encoding.encode_ordinary(string))
         return num_tokens
     else:
         return 0

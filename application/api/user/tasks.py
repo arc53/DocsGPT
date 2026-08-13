@@ -219,7 +219,9 @@ def _emit_attachment_poison_event(task_name, bound):
 
     Mirrors ``_emit_ingest_poison_event``: the guard returns before the
     worker runs, so ``attachment_worker``'s own events never fire and the
-    upload toast would otherwise spin on "processing" forever.
+    upload toast would otherwise spin on "processing" forever. Also writes
+    the failure row the worker never got to write, so the poisoned upload
+    stays visible to a DB scan and not just to whoever saw the toast.
     """
     user = bound.get("user")
     file_info = bound.get("file_info") or {}
@@ -227,7 +229,11 @@ def _emit_attachment_poison_event(task_name, bound):
     if not user or not attachment_id:
         return
     from application.events.publisher import publish_user_event
+    from application.worker import record_attachment_failure
 
+    record_attachment_failure(
+        user, file_info, "Attachment processing stopped after repeated failures."
+    )
     publish_user_event(
         user,
         "attachment.failed",

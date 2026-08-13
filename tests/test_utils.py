@@ -102,6 +102,31 @@ class TestNumTokens:
     def test_empty_string(self):
         assert num_tokens_from_string("") == 0
 
+    @pytest.mark.unit
+    def test_special_token_text_counts_instead_of_raising(self):
+        # User documents legitimately contain literal marker text like
+        # <|endoftext|> (any paper about LLMs). Plain ``encode()`` raises
+        # ValueError on it; counting must treat it as ordinary text.
+        count = num_tokens_from_string(
+            "This paper discusses the <|endoftext|> token in GPT models."
+        )
+        assert count > 0
+
+    @pytest.mark.unit
+    def test_unbroken_cjk_run_counts_in_bounded_time(self):
+        # An unbroken letter run is a single BPE piece; tiktoken < 0.13.0
+        # merged it quadratically (~26s for this input, minutes for real
+        # uploads). tiktoken 0.13.0 does it in milliseconds. Guards
+        # against a dependency downgrade re-introducing the hang.
+        import time
+
+        dense = "統計資料表格內容分析報告書類文書處理系統設計開發" * 4000  # 96k chars, one piece
+        start = time.monotonic()
+        count = num_tokens_from_string(dense)
+        elapsed = time.monotonic() - start
+        assert count > 100000
+        assert elapsed < 10, f"pathological encode took {elapsed:.1f}s — tiktoken downgraded?"
+
 
 class TestNumTokensFromObjectOrList:
 

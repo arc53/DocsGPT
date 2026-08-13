@@ -11,6 +11,9 @@ class _Enc:
     def encode(self, s: str):
         return list(s)
 
+    def encode_ordinary(self, s: str):
+        return list(s)
+
 
 @pytest.fixture(autouse=True)
 def _patch_tokenizer(monkeypatch):

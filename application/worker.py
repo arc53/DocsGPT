@@ -57,6 +57,7 @@ from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
 from application.utils import (
     count_tokens_docs,
+    get_encoding,
     num_tokens_from_string,
     safe_filename,
     truncate_to_line_boundary,
@@ -67,6 +68,9 @@ from application.utils import (
 
 MIN_TOKENS = 150
 MAX_TOKENS = 1250
+# Attachment content stored for prompting is capped in tokens — the same
+# unit the gate is expressed in — so a stored row can never exceed the cap.
+ATTACHMENT_MAX_TOKENS = 100_000
 RECURSION_DEPTH = 2
 INGEST_HEARTBEAT_INTERVAL_SECONDS = 30
 
@@ -1539,6 +1543,95 @@ def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
     return tmp.name, True
 
 
+def _upsert_attachment_row(
+    user, filename, relative_path, *, mime_type, content, token_count, metadata, attachment_id
+):
+    """Create or update the attachment row for one upload handle.
+
+    The upload route mints a UUID-shaped ``attachment_id`` (stored in the
+    storage path); the PG ``attachments.id`` is DB-generated, so the handle
+    lives in ``legacy_mongo_id``. Task retries share the handle — an earlier
+    attempt's failure row is updated in place, never duplicated.
+    """
+    with db_session() as conn:
+        repo = AttachmentsRepository(conn)
+        existing = repo.get_by_legacy_id(str(attachment_id), user)
+        if existing:
+            repo.update(
+                existing["id"],
+                user,
+                {
+                    "filename": filename,
+                    "upload_path": relative_path,
+                    "mime_type": mime_type,
+                    "content": content,
+                    "token_count": token_count,
+                    "metadata": metadata,
+                },
+            )
+        else:
+            repo.create(
+                user,
+                filename,
+                relative_path,
+                mime_type=mime_type,
+                content=content,
+                token_count=token_count,
+                metadata=metadata,
+                legacy_mongo_id=str(attachment_id),
+            )
+
+
+def record_attachment_failure(user, file_info, error, parser=None):
+    """Persist a failure row so a broken parse is visible to a DB scan.
+
+    Called on the worker's error path and by the poison guard; never raises —
+    the original exception must keep propagating, and the parser's error text
+    goes into ``metadata.extraction``, never into ``content``.
+    """
+    attachment_id = file_info.get("attachment_id")
+    filename = file_info.get("filename") or ""
+    if not attachment_id:
+        return
+    try:
+        metadata = {
+            **(file_info.get("metadata") or {}),
+            "extraction": {
+                "status": "failed",
+                "parser": parser,
+                "truncated": False,
+                "error": str(error)[:1024],
+            },
+        }
+        with db_session() as conn:
+            repo = AttachmentsRepository(conn)
+            # The conditional update carries the no-clobber guard in its own
+            # WHERE clause: a success row committed by a concurrent duplicate
+            # execution (broker redelivery, the poison guard racing a live
+            # attempt) or earlier in this attempt is never overwritten with a
+            # NULL-content failure.
+            if repo.update_metadata_if_content_null(str(attachment_id), user, metadata):
+                return
+            if repo.get_by_legacy_id(str(attachment_id), user) is not None:
+                return
+            repo.create(
+                user,
+                filename,
+                file_info.get("path") or "",
+                mime_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
+                content=None,
+                token_count=None,
+                metadata=metadata,
+                legacy_mongo_id=str(attachment_id),
+            )
+    except Exception:
+        logging.error(
+            f"Failed to record failure row for attachment {attachment_id}",
+            extra={"user": user},
+            exc_info=True,
+        )
+
+
 def attachment_worker(self, file_info, user):
     """
     Process and store a single attachment without vectorization.
@@ -1548,6 +1641,7 @@ def attachment_worker(self, file_info, user):
     attachment_id = file_info["attachment_id"]
     relative_path = file_info["path"]
     metadata = file_info.get("metadata", {})
+    parser_name = None
 
     publish_user_event(
         user,
@@ -1575,9 +1669,17 @@ def attachment_worker(self, file_info, user):
             scope={"kind": "attachment", "id": str(attachment_id)},
         )
 
+        # Attachments only: PDFs are read via their text layer where one
+        # exists (see ``ATTACHMENT_PDF_TEXT_FAST_PATH``). Source ingestion
+        # calls SimpleDirectoryReader without a ``file_extractor`` and so keeps
+        # the docling default, which is what retrieval quality depends on.
         file_extractor = get_default_file_extractor(
-            ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED
+            ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED,
+            pdf_text_fast_path=settings.ATTACHMENT_PDF_TEXT_FAST_PATH,
         )
+        _parser = file_extractor.get(os.path.splitext(filename)[1].lower())
+        parser_name = type(_parser).__name__ if _parser is not None else "SimpleDirectoryReader"
+
         def _parse_local_file(local_path: str, **kwargs) -> Document:
             _reject_attachment_zip_bomb(local_path)
             parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
@@ -1598,6 +1700,9 @@ def attachment_worker(self, file_info, user):
 
         attachment_document = storage.process_file(relative_path, _parse_local_file)
         content = attachment_document.text
+        # A fast-path parser may have delegated to its fallback for this file,
+        # so record the engine that actually ran rather than the one selected.
+        parser_name = getattr(_parser, "last_engine", None) or parser_name
         parser_metadata = {
             key: value
             for key, value in (attachment_document.extra_info or {}).items()
@@ -1606,10 +1711,29 @@ def attachment_worker(self, file_info, user):
         if parser_metadata:
             metadata = {**metadata, **parser_metadata}
 
-        token_count = num_tokens_from_string(content)
-        if token_count > 100000:
-            content = content[:250000]
-            token_count = num_tokens_from_string(content)
+        # Gate and cut in the same unit. The old form gated on tokens but cut
+        # at 250k *chars*, which for dense scripts (CJK ~1.4 tokens/char)
+        # stored 300k+ tokens while looking like a clean extraction.
+        encoding = get_encoding()
+        tokens = encoding.encode_ordinary(content)
+        original_tokens = len(tokens)
+        truncated = original_tokens > ATTACHMENT_MAX_TOKENS
+        if truncated:
+            content = encoding.decode(tokens[:ATTACHMENT_MAX_TOKENS])
+            token_count = ATTACHMENT_MAX_TOKENS
+        else:
+            token_count = original_tokens
+
+        metadata = {
+            **metadata,
+            "extraction": {
+                "status": "ok",
+                "parser": parser_name,
+                "truncated": truncated,
+                "original_tokens": original_tokens,
+                "stored_tokens": token_count,
+            },
+        }
 
         self.update_state(
             state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
@@ -1628,20 +1752,16 @@ def attachment_worker(self, file_info, user):
 
         mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
-        # The upload route produces a UUID-shaped ``attachment_id`` (stored
-        # in the storage path) but the PG ``attachments.id`` is generated
-        # by the DB. Keep ``attachment_id`` as the caller-visible handle
-        # used for the storage path, and stash it in ``legacy_mongo_id``
-        # so the attachment row is resolvable via that handle too.
-        with db_session() as conn:
-            AttachmentsRepository(conn).create(
-                user, filename, relative_path,
-                mime_type=mime_type,
-                content=content,
-                token_count=token_count,
-                metadata=metadata,
-                legacy_mongo_id=str(attachment_id),
-            )
+        _upsert_attachment_row(
+            user,
+            filename,
+            relative_path,
+            mime_type=mime_type,
+            content=content,
+            token_count=token_count,
+            metadata=metadata,
+            attachment_id=attachment_id,
+        )
 
         logging.info(
             f"Stored attachment with ID: {attachment_id}", extra={"user": user}
@@ -1675,6 +1795,7 @@ def attachment_worker(self, file_info, user):
             extra={"user": user},
             exc_info=True,
         )
+        record_attachment_failure(user, file_info, e, parser=parser_name)
         publish_user_event(
             user,
             "attachment.failed",

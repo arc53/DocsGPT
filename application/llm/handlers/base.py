@@ -316,11 +316,39 @@ class LLMHandler(ABC):
         attachment_texts = []
 
         for attachment in attachments:
-            logger.info(f"Adding attachment {attachment.get('id')} to context")
-            if "content" in attachment:
-                attachment_texts.append(
-                    f"Attached file content:\n\n{attachment['content']}"
+            # ``metadata.extraction`` records what parsing actually did.
+            # Rows predating it have no ``extraction`` key and pass; rows
+            # whose extraction failed must not reach the prompt (a PG row
+            # always has a ``content`` key, so key membership is no gate).
+            extraction = (attachment.get("metadata") or {}).get("extraction") or {}
+            status = extraction.get("status")
+            if status is not None and status != "ok":
+                logger.info(
+                    f"Skipping attachment {attachment.get('id')}: extraction status {status}"
                 )
+                continue
+            content = attachment.get("content")
+            if content is None:
+                logger.info(
+                    f"Skipping attachment {attachment.get('id')}: no extracted content"
+                )
+                continue
+            logger.info(f"Adding attachment {attachment.get('id')} to context")
+            note = ""
+            if extraction.get("truncated"):
+                stored = extraction.get("stored_tokens")
+                original = extraction.get("original_tokens")
+                counts = (
+                    f"only the first {stored:,} of ~{original:,} tokens are included"
+                    if isinstance(stored, int) and isinstance(original, int)
+                    else "part of the document is missing"
+                )
+                name = attachment.get("filename") or "This file"
+                note = (
+                    f'[NOTE: "{name}" was truncated during extraction — {counts}. '
+                    "Scope any whole-document claims to this portion.]\n\n"
+                )
+            attachment_texts.append(f"Attached file content:\n\n{note}{content}")
         if attachment_texts:
             combined_text = "\n\n".join(attachment_texts)
 

@@ -598,7 +598,7 @@ class TestAttachmentWorkerPublishes:
             worker.StorageCreator, "get_storage", lambda: fake_storage
         )
         monkeypatch.setattr(
-            worker, "get_default_file_extractor", lambda ocr_enabled=False: {}
+            worker, "get_default_file_extractor", lambda ocr_enabled=False, pdf_text_fast_path=False: {}
         )
 
         file_info = {
@@ -654,7 +654,7 @@ class TestAttachmentWorkerPublishes:
             worker.StorageCreator, "get_storage", lambda: fake_storage
         )
         monkeypatch.setattr(
-            worker, "get_default_file_extractor", lambda ocr_enabled=False: {}
+            worker, "get_default_file_extractor", lambda ocr_enabled=False, pdf_text_fast_path=False: {}
         )
 
         file_info = {
