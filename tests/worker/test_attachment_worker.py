@@ -67,7 +67,7 @@ class TestAttachmentWorker:
         assert row["content"] == "hello world"
         assert row["user_id"] == "user1"
 
-    def test_parse_failure_stores_nothing_and_tells_the_user(
+    def test_parse_failure_stores_failure_row_and_tells_the_user(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
         """A parse failure must fail loudly, not store the error as content.
@@ -76,6 +76,9 @@ class TestAttachmentWorker:
         parser returned its own traceback as the "document", and the worker
         stored it and published ``attachment.completed`` — so the upload
         looked fine and the model was handed an error message as the PDF.
+        The failure now leaves a queryable row whose ``metadata.extraction``
+        records the error; ``content`` stays NULL so the model can never
+        read a traceback as the document.
         """
         from application import worker
         from application.parser.file.base_parser import DocumentParseError
@@ -109,12 +112,17 @@ class TestAttachmentWorker:
         with pytest.raises(DocumentParseError):
             worker.attachment_worker(task_self, file_info, "user1")
 
-        # Nothing may be persisted — an attachment whose text is a traceback
-        # is worse than no attachment, because the model will read it.
+        # The error lives in metadata, never in content — an attachment whose
+        # text is a traceback is worse than no attachment, because the model
+        # will read it.
         row = AttachmentsRepository(pg_conn).get_by_legacy_id(
             file_info["attachment_id"], "user1"
         )
-        assert row is None, "a failed parse must not insert an attachment row"
+        assert row is not None, "a failed parse must leave a queryable row"
+        assert row["content"] is None
+        extraction = row["metadata"]["extraction"]
+        assert extraction["status"] == "failed"
+        assert "InvalidCxxCompiler" in extraction["error"]
 
         # The user is told it failed, and never told it completed.
         events = [event for event, _ in published]

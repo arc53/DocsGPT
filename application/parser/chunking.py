@@ -44,8 +44,8 @@ class Chunker:
     def split_document(self, doc: Document) -> List[Document]:
         split_docs = []
         header, body = self.separate_header_and_body(doc.text)
-        header_tokens = self.encoding.encode(header) if header else []
-        body_tokens = self.encoding.encode(body)
+        header_tokens = self.encoding.encode_ordinary(header) if header else []
+        body_tokens = self.encoding.encode_ordinary(body)
 
         current_position = 0
         part_index = 0
@@ -71,7 +71,7 @@ class Chunker:
         i = 0
         while i < len(documents):
             doc = documents[i]
-            tokens = self.encoding.encode(doc.text)
+            tokens = self.encoding.encode_ordinary(doc.text)
             token_count = len(tokens)
 
             if self.min_tokens <= token_count <= self.max_tokens:

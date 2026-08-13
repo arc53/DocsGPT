@@ -51,7 +51,7 @@ class RemoteEmbeddings:
         def clip(text):
             if not isinstance(text, str):
                 return text
-            tokens = encoding.encode(text)
+            tokens = encoding.encode_ordinary(text)
             if len(tokens) <= limit:
                 return text
             logging.warning(

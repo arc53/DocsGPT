@@ -263,8 +263,15 @@ def _docling_structured(path: Path, *, ocr_enabled: bool, include_tables: bool, 
     if include_tables:
         for tbl in getattr(doc, "tables", []) or []:
             try:
+                from application.parser.file.tabular_parser import cell_to_text
+
+                # ``astype(str)`` leaks pandas-3 NaNs and mangles gapped int
+                # columns ("1001.0") — same contract as the tabular parser.
                 df = tbl.export_to_dataframe()
-                tables.append({"columns": [str(c) for c in df.columns], "rows": df.astype(str).values.tolist()})
+                tables.append({
+                    "columns": [cell_to_text(c) for c in df.columns],
+                    "rows": [[cell_to_text(v) for v in row] for row in df.values.tolist()],
+                })
             except Exception:
                 try:
                     tables.append({"markdown": tbl.export_to_markdown()})
