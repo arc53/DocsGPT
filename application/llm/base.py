@@ -203,6 +203,103 @@ class BaseLLM(ABC):
             logger.debug("Fallback payload size estimation failed", exc_info=True)
         return True
 
+    @staticmethod
+    def _fallback_attachment_texts(attachments):
+        """Extracted attachment texts, in upload order, for file-part swaps."""
+        texts = []
+        for attachment in attachments or []:
+            if not isinstance(attachment, dict):
+                continue
+            if attachment.get("content"):
+                texts.append(attachment["content"])
+        return texts
+
+    def _prepare_fallback_messages(self, fallback, messages, attachments=None):
+        """Rebuild primary-prepared messages so the fallback can accept them.
+
+        ``prepare_messages_with_attachments`` ran against the *primary*
+        model, so by the time a fallback engages the array can carry content
+        parts the backup provider cannot take: ``file`` parts hold Files-API
+        ids only the primary's endpoint+credential can resolve, and
+        ``image_url`` parts 4xx on non-vision models. Handing them over
+        unchanged makes the fallback die exactly like the primary did
+        ("Fallback LLM also failed"). Swap what the fallback can't accept
+        for text — the attachment's extracted content when available — and
+        collapse all-text parts arrays to plain string content, the one
+        shape every chat endpoint accepts.
+        """
+        if not messages:
+            return messages
+        try:
+            supported = list(fallback.get_supported_attachment_types() or [])
+        except Exception:
+            supported = []
+        keeps_images = any(str(t).startswith("image/") for t in supported)
+        # A Files-API id resolves only against the endpoint + credential
+        # that minted it (the invariant ``_scoped_file_id`` enforces), so a
+        # pdf-capable fallback keeps file parts only on the same endpoint.
+        keeps_files = "application/pdf" in supported
+        if keeps_files:
+            try:
+                self_scope = getattr(self, "_endpoint_scope", None)
+                fallback_scope = getattr(fallback, "_endpoint_scope", None)
+                keeps_files = (
+                    callable(self_scope)
+                    and callable(fallback_scope)
+                    and self_scope() == fallback_scope()
+                )
+            except Exception:
+                keeps_files = False
+        file_texts = self._fallback_attachment_texts(attachments)
+        prepared = []
+        for message in messages:
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, list):
+                prepared.append(message)
+                continue
+            parts = []
+            all_text = True
+            for part in content:
+                part_type = part.get("type") if isinstance(part, dict) else None
+                if part_type == "file" and not keeps_files:
+                    if file_texts:
+                        parts.append(
+                            {
+                                "type": "text",
+                                "text": f"File content:\n\n{file_texts.pop(0)}",
+                            }
+                        )
+                    else:
+                        filename = (part.get("file") or {}).get(
+                            "filename"
+                        ) or "attachment"
+                        parts.append(
+                            {
+                                "type": "text",
+                                "text": f"[File '{filename}' could not be included]",
+                            }
+                        )
+                elif part_type == "image_url" and not keeps_images:
+                    parts.append(
+                        {
+                            "type": "text",
+                            "text": "[Image attachment omitted: the responding "
+                            "model does not support image input]",
+                        }
+                    )
+                else:
+                    parts.append(part)
+                    if part_type != "text":
+                        all_text = False
+            if all_text:
+                text = "\n\n".join(
+                    p.get("text", "") for p in parts if isinstance(p, dict)
+                )
+                prepared.append({**message, "content": text})
+            else:
+                prepared.append({**message, "content": parts})
+        return prepared
+
     def _execute_with_fallback(
         self, method_name: str, decorators: list, *args, **kwargs
     ):
@@ -274,6 +371,12 @@ class BaseLLM(ABC):
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
             fallback_kwargs = {**kwargs, "model": fallback.model_id}
+            if fallback_kwargs.get("messages"):
+                fallback_kwargs["messages"] = self._prepare_fallback_messages(
+                    fallback,
+                    fallback_kwargs["messages"],
+                    kwargs.get("_usage_attachments") or kwargs.get("attachments"),
+                )
             try:
                 return fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:
@@ -399,6 +502,12 @@ class BaseLLM(ABC):
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
             fallback_kwargs = {**kwargs, "model": fallback.model_id}
+            if fallback_kwargs.get("messages"):
+                fallback_kwargs["messages"] = self._prepare_fallback_messages(
+                    fallback,
+                    fallback_kwargs["messages"],
+                    kwargs.get("_usage_attachments") or kwargs.get("attachments"),
+                )
             try:
                 yield from fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:

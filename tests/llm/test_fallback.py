@@ -4,6 +4,7 @@ Verifies that when a primary model fails (immediately or mid-stream), the
 per-agent backup model is used before the global FALLBACK_* settings.
 """
 
+import copy
 from unittest.mock import MagicMock
 
 import httpx
@@ -39,6 +40,7 @@ class FakeLLM(BaseLLM):
         self.gen_called = False
         self.gen_stream_called = False
         self.last_model_received = None  # tracks the model kwarg passed to gen/gen_stream
+        self.last_messages_received = None  # tracks the messages kwarg at the raw level
 
     # Track at the raw-method level. _execute_with_fallback applies
     # decorators to the fallback's raw method directly and
@@ -47,6 +49,7 @@ class FakeLLM(BaseLLM):
     def _raw_gen(self, baseself, model, messages, stream, tools=None, **kwargs):
         self.gen_called = True
         self.last_model_received = model
+        self.last_messages_received = messages
         if self.fail_at is not None:
             raise RuntimeError("primary model unavailable")
         return self.responses[0]
@@ -55,6 +58,7 @@ class FakeLLM(BaseLLM):
         self.gen_stream_called = True
         self.stream_calls = getattr(self, "stream_calls", 0) + 1
         self.last_model_received = model
+        self.last_messages_received = messages
         yielded = 0
         # Per-attempt failure schedule: `fail_schedule[n]` = fail_at value
         # for the n-th call (0-indexed). Falls back to the constant
@@ -1146,3 +1150,149 @@ class TestNoRestreamAfterFinish:
         out = list(primary.gen_stream(**CALL_ARGS))
         assert out == ["fallback chunk"]
         assert backup.gen_stream_called is True
+
+
+# Tests — fallback message reshaping (parts arrays prepared for the primary)
+#
+# ``prepare_messages_with_attachments`` runs against the *primary* model, so
+# by the time a fallback engages the messages can carry ``file`` parts (whose
+# Files-API ids only the primary's endpoint+credential can resolve) and
+# ``image_url`` parts a non-vision fallback 4xxes on. These tests pin the
+# handoff contract: the fallback must receive content it can accept.
+
+
+def _parts_messages():
+    return [
+        {"role": "system", "content": "You are helpful."},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "summarize the attached report"},
+                {"type": "file", "file": {"file_id": "assistant-abc123"}},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,AAAA"},
+                },
+            ],
+        },
+    ]
+
+
+ATTACHMENTS = [
+    {"id": "att-1", "filename": "report.pdf", "content": "EXTRACTED REPORT TEXT"}
+]
+
+
+class VisionFakeLLM(FakeLLM):
+    def get_supported_attachment_types(self):
+        return ["image/png", "image/jpeg"]
+
+
+class SharedEndpointPdfFakeLLM(FakeLLM):
+    def get_supported_attachment_types(self):
+        return ["application/pdf", "image/png"]
+
+    def _endpoint_scope(self):
+        return "scope-shared"
+
+
+@pytest.mark.integration
+class TestFallbackMessageReshaping:
+
+    def _run_stream(self, primary, messages, attachments):
+        return list(
+            primary.gen_stream(
+                model="test-model",
+                messages=messages,
+                _usage_attachments=attachments,
+            )
+        )
+
+    def test_stream_fallback_gets_flattened_string_content(self):
+        fallback = FakeLLM(stream_chunks=["fb"])
+        primary = FakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+        original = _parts_messages()
+        snapshot = copy.deepcopy(original)
+
+        chunks = self._run_stream(primary, original, ATTACHMENTS)
+
+        assert chunks == ["fb"]
+        received = fallback.last_messages_received
+        assert received[0] == {"role": "system", "content": "You are helpful."}
+        user_content = received[1]["content"]
+        assert isinstance(user_content, str)
+        assert "summarize the attached report" in user_content
+        assert "EXTRACTED REPORT TEXT" in user_content
+        assert "Image attachment omitted" in user_content
+        # The primary-scoped Files-API id must never reach another endpoint.
+        assert "assistant-abc123" not in user_content
+        # The primary's own message array is not mutated.
+        assert original == snapshot
+
+    def test_stream_vision_fallback_keeps_image_parts(self):
+        fallback = VisionFakeLLM(stream_chunks=["fb"])
+        primary = FakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+
+        self._run_stream(primary, _parts_messages(), ATTACHMENTS)
+
+        user_content = fallback.last_messages_received[1]["content"]
+        assert isinstance(user_content, list)
+        types = [part["type"] for part in user_content]
+        assert "image_url" in types
+        assert "file" not in types
+        joined = " ".join(
+            part.get("text", "") for part in user_content if part["type"] == "text"
+        )
+        assert "EXTRACTED REPORT TEXT" in joined
+
+    def test_stream_same_endpoint_pdf_fallback_keeps_file_parts(self):
+        fallback = SharedEndpointPdfFakeLLM(stream_chunks=["fb"])
+        primary = SharedEndpointPdfFakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+
+        self._run_stream(primary, _parts_messages(), ATTACHMENTS)
+
+        user_content = fallback.last_messages_received[1]["content"]
+        assert isinstance(user_content, list)
+        assert {"type": "file", "file": {"file_id": "assistant-abc123"}} in user_content
+
+    def test_stream_file_part_without_extracted_content_becomes_note(self):
+        fallback = FakeLLM(stream_chunks=["fb"])
+        primary = FakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+
+        self._run_stream(primary, _parts_messages(), attachments=None)
+
+        user_content = fallback.last_messages_received[1]["content"]
+        assert isinstance(user_content, str)
+        assert "could not be included" in user_content
+        assert "assistant-abc123" not in user_content
+
+    def test_stream_string_messages_pass_through_unchanged(self):
+        fallback = FakeLLM(stream_chunks=["fb"])
+        primary = FakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+        messages = [{"role": "user", "content": "plain text"}]
+
+        self._run_stream(primary, messages, ATTACHMENTS)
+
+        assert fallback.last_messages_received == messages
+
+    def test_gen_fallback_gets_flattened_string_content(self):
+        fallback = FakeLLM(responses=["fb answer"])
+        primary = FakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+
+        result = primary.gen(
+            model="test-model",
+            messages=_parts_messages(),
+            _usage_attachments=ATTACHMENTS,
+        )
+
+        assert result == "fb answer"
+        user_content = fallback.last_messages_received[1]["content"]
+        assert isinstance(user_content, str)
+        assert "EXTRACTED REPORT TEXT" in user_content
+        assert "assistant-abc123" not in user_content
