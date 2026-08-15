@@ -1,0 +1,28 @@
+name: "DocsGPT CodeQL config"
+
+# Which query suites run. security-extended is GitHub's curated set; the local
+# ./.github/codeql/queries pack adds DocsGPT-specific input-point inventory and
+# dangerous-sink taint queries. CodeQL runs only the queries whose language
+# matches each analysis, so the mixed python/javascript pack is safe to share.
+queries:
+  - uses: security-extended
+  - uses: ./.github/codeql/queries
+
+# Restrict extraction to first-party source. Vendored, generated, and test
+# code adds noise without adding signal for these checks.
+paths:
+  - application
+  - frontend/src
+  - extensions
+  - scripts
+
+paths-ignore:
+  - '**/node_modules'
+  - '**/__pycache__'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+  - '**/*.spec.ts'
+  - tests
+  - docs
+  - htmlcov
+  - frontend/dist
