@@ -120,7 +120,7 @@ docker compose -f deployment/docker-compose.yaml down
 (or use the specific `docker compose down` command shown after running the setup script).
 
 > [!Note]
-> For development environment setup instructions, please refer to the [Development Environment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
+> If you selected a different setup option (e.g. local build, Azure, or dev mode), use the matching compose file instead — check `deployment/` for `docker-compose-hub.yaml`, `docker-compose-local.yaml`, `docker-compose-dev.yaml`, or `docker-compose-azure.yaml`, and run `docker compose -f deployment/<file> down`. For development environment setup, see the [Development Environment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
 
 ## Contributing
 
