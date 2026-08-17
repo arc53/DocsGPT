@@ -147,6 +147,77 @@ class TestSplitDocument:
             assert "token_count" in split_doc.extra_info
 
 
+@pytest.mark.unit
+class TestSplitDocumentHeaderEdgeCases:
+    """Regression tests for split_document when the header is large or
+    when ``duplicate_headers`` is enabled.
+
+    Previously, when the header (first three lines) tokenised to >=
+    ``max_tokens``, the per-chunk step ``max_tokens - len(header_tokens)``
+    went non-positive. Negative slicing then produced an oversized first
+    chunk, an empty chunk, and re-chunked/duplicated body content. The
+    ``duplicate_headers`` flag was also a no-op past the first chunk
+    because ``header_tokens`` was reset to ``[]`` after each iteration.
+    """
+
+    def test_header_larger_than_max_tokens_conserves_body(self):
+        # Three long lines so the header alone exceeds max_tokens.
+        long_line = "alpha beta gamma delta epsilon zeta eta theta"
+        header_text = f"{long_line}\n{long_line}\n{long_line}\n"
+        body_text = "word " * 60
+        chunker = Chunker(max_tokens=20, min_tokens=5)
+
+        header, body = chunker.separate_header_and_body(header_text + body_text)
+        header_len = len(chunker.encoding.encode(header))
+        body_len = len(chunker.encoding.encode(body))
+        assert header_len >= chunker.max_tokens  # precondition: triggers the bug
+
+        result = chunker.split_document(Document(text=header_text + body_text, doc_id="d1"))
+
+        token_counts = [d.extra_info["token_count"] for d in result]
+        # No empty chunks.
+        assert all(tc > 0 for tc in token_counts)
+        # No corrupted oversize: a chunk is at most the (unavoidable) header
+        # plus one body window.
+        assert all(tc <= header_len + chunker.max_tokens for tc in token_counts)
+        # Every body token is emitted exactly once and the header exactly
+        # once (duplicate_headers defaults to False): total == header + body.
+        assert sum(token_counts) == header_len + body_len
+
+    def test_header_larger_than_max_tokens_terminates_and_keeps_header(self):
+        long_line = "alpha beta gamma delta epsilon zeta eta theta"
+        header_text = f"{long_line}\n{long_line}\n{long_line}\n"
+        doc = Document(text=header_text + "word " * 40, doc_id="d1")
+        chunker = Chunker(max_tokens=15, min_tokens=5)
+
+        result = chunker.split_document(doc)
+
+        assert len(result) > 0
+        assert "alpha" in result[0].text  # header preserved on first chunk
+        # Sequential, unique part ids.
+        assert [d.doc_id for d in result] == [f"d1-{i}" for i in range(len(result))]
+
+    def test_duplicate_headers_repeats_header_on_every_chunk(self):
+        text = "TITLE\nAUTHOR\nDATE\n" + "word " * 120
+        chunker = Chunker(max_tokens=30, min_tokens=5, duplicate_headers=True)
+
+        result = chunker.split_document(Document(text=text, doc_id="d1"))
+
+        assert len(result) > 1
+        # With duplicate_headers=True the header must appear in every chunk.
+        assert all("TITLE" in d.text for d in result)
+
+    def test_duplicate_headers_false_only_first_chunk_has_header(self):
+        text = "TITLE\nAUTHOR\nDATE\n" + "word " * 120
+        chunker = Chunker(max_tokens=30, min_tokens=5, duplicate_headers=False)
+
+        result = chunker.split_document(Document(text=text, doc_id="d1"))
+
+        assert len(result) > 1
+        assert "TITLE" in result[0].text
+        assert all("TITLE" not in d.text for d in result[1:])
+
+
 # =====================================================================
 # Classic Chunk
 # =====================================================================

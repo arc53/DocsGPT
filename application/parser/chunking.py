@@ -50,9 +50,16 @@ class Chunker:
         current_position = 0
         part_index = 0
         while current_position < len(body_tokens):
-            end_position = current_position + self.max_tokens - len(header_tokens)
-            chunk_tokens = (header_tokens + body_tokens[current_position:end_position]
-                            if self.duplicate_headers or part_index == 0 else body_tokens[current_position:end_position])
+            include_header = self.duplicate_headers or part_index == 0
+            active_header = header_tokens if include_header else []
+            # Reserve room for the header inside the token window, but always
+            # leave space for at least one body token so the loop keeps making
+            # forward progress even when the header alone meets or exceeds
+            # ``max_tokens``. Without this floor the step can be <= 0, which
+            # produces empty, duplicated, and oversized chunks.
+            body_capacity = max(self.max_tokens - len(active_header), 1)
+            end_position = current_position + body_capacity
+            chunk_tokens = active_header + body_tokens[current_position:end_position]
             chunk_text = self.encoding.decode(chunk_tokens)
             new_doc = Document(
                 text=chunk_text,
@@ -63,7 +70,6 @@ class Chunker:
             split_docs.append(new_doc)
             current_position = end_position
             part_index += 1
-            header_tokens = []
         return split_docs
 
     def classic_chunk(self, documents: List[Document]) -> List[Document]:
