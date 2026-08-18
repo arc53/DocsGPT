@@ -9,6 +9,7 @@ import zh from './zh.json'; //Mandarin
 import zhTW from './zh-TW.json'; //Traditional Chinese
 import ru from './ru.json'; //Russian
 import de from './de.json'; //German
+import ko from './ko.json'; //Korean
 
 i18n
   .use(LanguageDetector)
@@ -35,6 +36,9 @@ i18n
       },
       de: {
         translation: de,
+      },
+      ko: {
+        translation: ko,
       },
     },
     fallbackLng: 'en',
