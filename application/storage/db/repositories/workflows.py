@@ -115,6 +115,93 @@ class WorkflowsRepository:
         row = result.fetchone()
         return row[0] if row else None
 
+    def clone_to_user(
+        self,
+        workflow_id: str,
+        new_owner: str,
+        *,
+        from_owner: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Deep-copy a workflow's current graph into a new workflow owned by ``new_owner``.
+
+        The runtime resolves ``agents.workflow_id`` strictly owner-scoped, so a
+        workflow reference can never be shared across users by id — it must be
+        copied. Only the current graph version is copied; the clone starts at
+        version 1. The source is resolved scoped to ``from_owner`` when given
+        (callers pass the expected owner so a stray id can't clone another
+        tenant's graph). Omitting ``from_owner`` resolves the source with NO
+        ownership check — only do that when ``workflow_id`` comes from trusted
+        server-side state, never from client input. Returns the new workflow
+        row, or None if the source is missing.
+        """
+        from application.storage.db.repositories.workflow_edges import (
+            WorkflowEdgesRepository,
+        )
+        from application.storage.db.repositories.workflow_nodes import (
+            WorkflowNodesRepository,
+        )
+
+        if not looks_like_uuid(workflow_id):
+            return None
+        source = (
+            self.get(workflow_id, from_owner)
+            if from_owner is not None
+            else self.get_by_id(workflow_id)
+        )
+        if source is None:
+            return None
+        try:
+            version = int(source.get("current_graph_version") or 1)
+        except (TypeError, ValueError):
+            version = 1
+        if version <= 0:
+            version = 1
+
+        clone = self.create(
+            new_owner, source.get("name") or "", description=source.get("description")
+        )
+        clone_id = str(clone["id"])
+
+        nodes_repo = WorkflowNodesRepository(self._conn)
+        node_rows = nodes_repo.find_by_version(workflow_id, version)
+        created_nodes = nodes_repo.bulk_create(
+            clone_id,
+            1,
+            [
+                {
+                    "node_id": n["node_id"],
+                    "node_type": n["node_type"],
+                    "title": n.get("title"),
+                    "description": n.get("description"),
+                    "position": n.get("position") or {"x": 0, "y": 0},
+                    "config": n.get("config") or {},
+                }
+                for n in node_rows
+            ],
+        )
+        uuid_by_node_id = {n["node_id"]: n["id"] for n in created_nodes}
+
+        edges_repo = WorkflowEdgesRepository(self._conn)
+        edge_rows = edges_repo.find_by_version(workflow_id, version)
+        translated = []
+        for e in edge_rows:
+            from_uuid = uuid_by_node_id.get(e.get("source_id"))
+            to_uuid = uuid_by_node_id.get(e.get("target_id"))
+            if not from_uuid or not to_uuid:
+                continue
+            translated.append(
+                {
+                    "edge_id": e["edge_id"],
+                    "from_node_id": from_uuid,
+                    "to_node_id": to_uuid,
+                    "source_handle": e.get("source_handle"),
+                    "target_handle": e.get("target_handle"),
+                    "config": e.get("config") or {},
+                }
+            )
+        edges_repo.bulk_create(clone_id, 1, translated)
+        return clone
+
     def delete(self, workflow_id: str, user_id: str) -> bool:
         # Run artifacts parent to ``workflow_runs`` (which cascade-delete with the
         # workflow), but ``artifacts.workflow_run_id`` is a bare uuid with no FK, so

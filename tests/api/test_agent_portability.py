@@ -286,10 +286,29 @@ def test_parse_rejects_bad_documents():
         parse_agent_yaml("kind: Agent\napiVersion: other/v1\nspec:\n  name: x\n")
     with pytest.raises(AgentImportError):
         parse_agent_yaml("kind: Agent\napiVersion: docsgpt.arc53.com/v1\nspec: {}\n")
+    # A workflow agent without a graph parses (drafts may have none)…
+    doc = parse_agent_yaml(
+        "kind: Agent\napiVersion: docsgpt.arc53.com/v1\n"
+        "spec:\n  name: x\n  agent_type: workflow\n"
+    )
+    assert doc["spec"]["agent_type"] == "workflow"
+    # …but a present workflow block must be well-formed.
+    with pytest.raises(AgentImportError):
+        parse_agent_yaml(
+            "kind: Agent\napiVersion: docsgpt.arc53.com/v1\n"
+            "spec:\n  name: x\n  agent_type: workflow\n  workflow: nonsense\n"
+        )
     with pytest.raises(AgentImportError):
         parse_agent_yaml(
             "kind: Agent\napiVersion: docsgpt.arc53.com/v1\n"
             "spec:\n  name: x\n  agent_type: workflow\n"
+            "  workflow:\n    nodes: {}\n    edges: []\n"
+        )
+    with pytest.raises(AgentImportError):
+        parse_agent_yaml(
+            "kind: Agent\napiVersion: docsgpt.arc53.com/v1\n"
+            "spec:\n  name: x\n  agent_type: workflow\n"
+            "  workflow:\n    nodes:\n      - id: n1\n    edges: []\n"
         )
 
 

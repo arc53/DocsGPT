@@ -54,6 +54,11 @@ type ImportPlan = {
   tools: PlanTool[];
   prompt: { status: string; name?: string };
   models: PlanModel[];
+  workflow?: {
+    nodes: number;
+    edges: number;
+    action: 'create' | 'update';
+  } | null;
 };
 
 interface ImportAgentModalProps {
@@ -85,7 +90,7 @@ export default function ImportAgentModal({
   const [modelKeys, setModelKeys] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<string[] | null>(null);
   const [importedStatus, setImportedStatus] = useState<string | null>(null);
-  const [goToAgentId, setGoToAgentId] = useState<string | null>(null);
+  const [goToEditPath, setGoToEditPath] = useState<string | null>(null);
 
   const reset = () => {
     setYamlText('');
@@ -99,7 +104,7 @@ export default function ImportAgentModal({
     setModelKeys({});
     setWarnings(null);
     setImportedStatus(null);
-    setGoToAgentId(null);
+    setGoToEditPath(null);
   };
 
   const handleClose = () => {
@@ -187,16 +192,20 @@ export default function ImportAgentModal({
         return;
       }
       const agentId = data.agent_id as string;
+      const editPath =
+        data.agent_type === 'workflow'
+          ? `/agents/workflow/edit/${agentId}`
+          : `/agents/edit/${agentId}`;
       if (data.warnings && data.warnings.length > 0) {
         // Keep the modal open so the user sees what was skipped.
-        setGoToAgentId(agentId);
+        setGoToEditPath(editPath);
         setWarnings(data.warnings as string[]);
         setImportedStatus((data.status as string) || null);
         setPlan(null);
         return;
       }
       handleClose();
-      navigate(`/agents/edit/${agentId}`);
+      navigate(editPath);
     } catch {
       setError(t('modals.importAgent.importError'));
     } finally {
@@ -217,9 +226,9 @@ export default function ImportAgentModal({
         <Button
           type="button"
           onClick={() => {
-            const id = goToAgentId;
+            const path = goToEditPath;
             handleClose();
-            if (id) navigate(`/agents/edit/${id}`);
+            if (path) navigate(path);
           }}
           className="rounded-3xl px-5"
         >
@@ -327,6 +336,19 @@ export default function ImportAgentModal({
                   })
                 : t('modals.importAgent.willCreate')}
             </div>
+
+            {plan.workflow && (
+              <p className="flex items-center gap-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                {plan.workflow.action === 'update'
+                  ? t('modals.importAgent.workflowUpdate', {
+                      nodes: plan.workflow.nodes,
+                    })
+                  : t('modals.importAgent.workflowCreate', {
+                      nodes: plan.workflow.nodes,
+                    })}
+              </p>
+            )}
 
             {plan.sources.length > 0 && (
               <Section title={t('modals.importAgent.sources')}>

@@ -38,8 +38,6 @@ from application.storage.db.repositories.shared_conversations import (
 from application.storage.db.repositories.stack_logs import StackLogsRepository
 from application.storage.db.repositories.token_usage import TokenUsageRepository
 from application.storage.db.repositories.users import UsersRepository
-from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
-from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
 from application.storage.db.repositories.workflows import WorkflowsRepository
 from application.storage.db.session import db_readonly, db_session
 from application.utils import (
@@ -1473,15 +1471,13 @@ class DeleteAgent(Resource):
                 workflow_id = agent.get("workflow_id")
                 # For workflow-type agents, delete the owned workflow in the
                 # same transaction. workflow_nodes/workflow_edges cascade
-                # via ON DELETE CASCADE so a single workflow delete suffices.
+                # via ON DELETE CASCADE so the single owner-scoped delete
+                # suffices — and it must stay the ONLY delete: an explicit
+                # (unscoped) node/edge cleanup here once let deleting an agent
+                # whose ``workflow_id`` pointed at another user's workflow gut
+                # that user's graph.
                 if agent.get("agent_type") == "workflow" and workflow_id:
                     try:
-                        WorkflowNodesRepository(conn).delete_by_workflow(
-                            str(workflow_id),
-                        )
-                        WorkflowEdgesRepository(conn).delete_by_workflow(
-                            str(workflow_id),
-                        )
                         WorkflowsRepository(conn).delete(str(workflow_id), user)
                     except Exception as wf_err:
                         current_app.logger.warning(
@@ -1667,12 +1663,31 @@ class AdoptAgent(Resource):
                 for col in (
                     "description", "agent_type", "retriever",
                     "default_model_id",
-                    "source_id", "prompt_id", "folder_id", "workflow_id",
+                    "source_id", "prompt_id", "folder_id",
                     "extra_source_ids",
                 ):
                     val = template.get(col)
                     if val not in (None, ""):
                         create_kwargs[col] = val
+
+                # ``workflow_id`` must NOT be copied by reference: the runtime
+                # resolves it strictly owner-scoped, so the adopter would get
+                # "Workflow not found or inaccessible" on every run. Deep-copy
+                # the template's graph into a workflow the adopter owns.
+                if template.get("workflow_id"):
+                    cloned_workflow = WorkflowsRepository(conn).clone_to_user(
+                        str(template["workflow_id"]),
+                        user,
+                        from_owner=template.get("user_id"),
+                    )
+                    if cloned_workflow is not None:
+                        create_kwargs["workflow_id"] = str(cloned_workflow["id"])
+                    else:
+                        current_app.logger.warning(
+                            "Adopt: template %s references missing workflow %s; "
+                            "adopted agent created without one",
+                            template.get("id"), template.get("workflow_id"),
+                        )
 
                 # The avatar must live under the adopter's own upload
                 # directory: image paths are validated against their owner,
