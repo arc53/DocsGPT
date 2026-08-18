@@ -5,6 +5,7 @@ from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
+from application.api.user.utils import error_response
 from application.api.user.team_sharing import team_access_for, visible_with_access
 from application.storage.db.repositories.prompts import PromptsRepository
 from application.prompts.composer import compose_preset, is_composed_preset
@@ -33,8 +34,10 @@ class CreatePrompt(Resource):
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        data = request.get_json()
+            return error_response("Unauthorized", 401)
+        data = request.get_json(silent=True)
+        if not data:
+            return error_response("Request body required")
         required_fields = ["content", "name"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
@@ -46,7 +49,7 @@ class CreatePrompt(Resource):
             new_id = str(prompt["id"])
         except Exception as err:
             current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
+            return error_response("Error creating prompt", 400)
         return make_response(jsonify({"id": new_id}), 200)
 
 
