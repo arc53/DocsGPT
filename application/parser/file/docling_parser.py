@@ -9,10 +9,11 @@ images (PNG, JPEG, TIFF, BMP, WEBP), WebVTT, and specialized XML formats.
 import importlib.util
 import logging
 import os
+import re
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from application.parser.file.base_parser import BaseParser, DocumentParseError
 from application.utils import truncate_to_line_boundary
@@ -213,6 +214,124 @@ def _parse_markup_bounded(
             pass
 
 
+# Suffixes whose text comes (wholly or partly) from OCR, and are therefore
+# covered by the near-empty-output dropout guard. Everything else docling
+# handles (docx/xlsx/html/vtt/...) has a native text layer and legitimately
+# short files, so the guard would only produce false alarms there.
+_IMAGE_SUFFIXES = frozenset(
+    {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".webp"}
+)
+_OCR_GUARDED_SUFFIXES = _IMAGE_SUFFIXES | {".pdf"}
+
+# Chars-per-page floor below which an OCR parse is treated as a pipeline
+# dropout rather than as the document's real content. Scanned pages that
+# carry any text at all clear this comfortably; the observed failure mode
+# returns literally zero characters per page.
+_DEFAULT_OCR_MIN_CHARS_PER_PAGE = 20
+
+# Docling emits this placeholder for a picture it did not read; it is markup,
+# not document text, so it must not count towards the chars-per-page ratio.
+_IMAGE_PLACEHOLDER_RE = re.compile(r"<!--\s*image\s*-->")
+
+
+def _ocr_min_chars_per_page() -> int:
+    """Chars-per-page floor for the OCR dropout guard; 0 disables it."""
+    from application.core.settings import settings
+
+    try:
+        return int(
+            getattr(
+                settings,
+                "DOCLING_OCR_MIN_CHARS_PER_PAGE",
+                _DEFAULT_OCR_MIN_CHARS_PER_PAGE,
+            )
+        )
+    except (TypeError, ValueError):
+        return _DEFAULT_OCR_MIN_CHARS_PER_PAGE
+
+
+def _text_char_count(content: Optional[str]) -> int:
+    """Count real text characters in exported content, ignoring placeholders."""
+    if not content:
+        return 0
+    return len(_IMAGE_PLACEHOLDER_RE.sub("", content).strip())
+
+
+def _positive_len(value: object) -> int:
+    """``len(value)`` when it is a positive int, 0 when it is neither."""
+    try:
+        length = len(value)
+    except TypeError:
+        return 0
+    return length if isinstance(length, int) and length > 0 else 0
+
+
+def _result_page_count(result: object, file: Path) -> int:
+    """Page count of a conversion result, never below 1.
+
+    Args:
+        result: Docling ``ConversionResult``.
+        file: Path of the file that was converted.
+
+    Returns:
+        Number of pages; 1 for images and whenever docling reports none.
+    """
+    if Path(file).suffix.lower() in _IMAGE_SUFFIXES:
+        return 1
+    document = getattr(result, "document", None)
+    pages = _positive_len(getattr(document, "pages", None))
+    if pages:
+        return pages
+    num_pages = getattr(document, "num_pages", None)
+    if callable(num_pages):
+        try:
+            reported = num_pages()
+        except Exception:  # pragma: no cover - defensive, docling-version drift
+            reported = None
+        if isinstance(reported, int) and reported > 0:
+            return reported
+    return _positive_len(getattr(result, "pages", None)) or 1
+
+
+def _pdf_text_layer_probe(file: Path) -> Tuple[int, int]:
+    """Measure a PDF's embedded text layer with pypdfium2.
+
+    Used only to explain a suspected OCR dropout: a near-empty parse of a PDF
+    that *does* carry a text layer means docling failed to read text it never
+    needed OCR for, while an absent text layer points at the OCR stage itself.
+
+    Args:
+        file: Path to the PDF.
+
+    Returns:
+        Tuple of (page count, characters in the text layer); (0, 0) when the
+        file cannot be probed.
+    """
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        return 0, 0
+    try:
+        pdf = pdfium.PdfDocument(str(file))
+    except Exception:
+        return 0, 0
+    try:
+        total = 0
+        for index in range(len(pdf)):
+            page = pdf[index]
+            textpage = page.get_textpage()
+            try:
+                total += max(0, textpage.count_chars())
+            finally:
+                textpage.close()
+                page.close()
+        return len(pdf), total
+    except Exception:
+        return 0, 0
+    finally:
+        pdf.close()
+
+
 class DoclingParser(BaseParser):
     """Parser using docling for advanced document processing.
 
@@ -291,6 +410,13 @@ class DoclingParser(BaseParser):
             ocr_options = self._get_ocr_options()
             if ocr_options is not None:
                 pipeline_options.ocr_options = ocr_options
+            # Docling's *default* OCR options carry their own flag, so without
+            # this the setting was silently dropped whenever `_get_ocr_options`
+            # returned None (use_rapidocr=False) — including the dropout retry,
+            # whose whole point is forcing full-page OCR.
+            active_ocr_options = getattr(pipeline_options, "ocr_options", None)
+            if hasattr(active_ocr_options, "force_full_page_ocr"):
+                active_ocr_options.force_full_page_ocr = self.force_full_page_ocr
 
         return DocumentConverter(
             format_options={
@@ -383,11 +509,102 @@ class DoclingParser(BaseParser):
 
         return content
 
+    def _ocr_guard_applies(self, file: Path) -> bool:
+        """Whether the near-empty-output dropout guard covers this parse."""
+        return (
+            bool(self.ocr_enabled)
+            and _ocr_min_chars_per_page() > 0
+            and Path(file).suffix.lower() in _OCR_GUARDED_SUFFIXES
+        )
+
+    def _recover_from_ocr_dropout(
+        self, file: Path, first_pass_chars: int, pages: int
+    ) -> str:
+        """Retry a near-empty OCR parse once on a fresh full-page-OCR converter.
+
+        Docling caches its pipeline (and the threaded page queue behind it) on
+        the ``DocumentConverter`` instance, so a converter that has degraded
+        mid-worker keeps returning empty pages while a fresh one starts clean —
+        hence a brand new converter rather than a second `convert` call.
+
+        ``self._converter`` is dropped either way instead of being replaced by
+        the retry converter: the degraded instance must not survive, but the
+        retry one is configured for full-page OCR, and keeping it would impose
+        that cost (and its worse results on text PDFs) on every later file in
+        the worker. The next parse lazily rebuilds one with normal options.
+
+        Args:
+            file: Path to the file being parsed.
+            first_pass_chars: Text characters the first pass produced.
+            pages: Page count reported for the first pass.
+
+        Returns:
+            The retry's content, when it clears the chars-per-page floor.
+
+        Raises:
+            DocumentParseError: If the retry is near-empty too, so the caller
+                fails loudly instead of indexing an empty document.
+        """
+        name = Path(file).name
+        logger.warning(
+            "OCR output for %s is near-empty (%d chars over %d page(s)); "
+            "retrying once on a fresh converter with full-page OCR",
+            name,
+            first_pass_chars,
+            pages,
+        )
+        original_force_full_page_ocr = self.force_full_page_ocr
+        try:
+            self.force_full_page_ocr = True
+            result = self._create_converter().convert(str(file))
+            content = self._export_content(result.document)
+        finally:
+            self.force_full_page_ocr = original_force_full_page_ocr
+            self._converter = None
+
+        retry_chars = _text_char_count(content)
+        retry_pages = max(pages, _result_page_count(result, file))
+        if retry_chars >= _ocr_min_chars_per_page() * retry_pages:
+            logger.warning(
+                "Recovered %s on retry: %d chars over %d page(s) after a "
+                "near-empty first pass (%d chars); the degraded converter has "
+                "been discarded",
+                name,
+                retry_chars,
+                retry_pages,
+                first_pass_chars,
+            )
+            return content
+
+        detail = ""
+        if Path(file).suffix.lower() == ".pdf":
+            layer_pages, layer_chars = _pdf_text_layer_probe(file)
+            if layer_chars > 0:
+                detail = (
+                    f" The PDF carries a {layer_chars}-char text layer over "
+                    f"{layer_pages} page(s) that docling should have read "
+                    "without OCR at all."
+                )
+            elif layer_pages > 0:
+                detail = (
+                    f" The PDF has no text layer over {layer_pages} page(s), "
+                    "so OCR was the only possible source."
+                )
+        raise DocumentParseError(
+            f"OCR produced {retry_chars} chars over {retry_pages} pages for "
+            f"{name}; likely OCR pipeline dropout — document not indexed."
+            + detail
+        )
+
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse file using docling with hybrid OCR.
 
         Uses smart OCR approach where the layout model detects text vs bitmap
         regions. Text is extracted directly, bitmaps are OCR'd only when needed.
+
+        When OCR is enabled for a PDF or image, a near-empty result is treated
+        as a pipeline dropout rather than as the document's content: it is
+        retried once on a fresh converter, and failing that it raises.
 
         Args:
             file: Path to the file to parse
@@ -395,6 +612,10 @@ class DoclingParser(BaseParser):
 
         Returns:
             Parsed document content as markdown string
+
+        Raises:
+            DocumentParseError: If docling fails, or if an OCR parse stays
+                near-empty across both passes.
         """
         logger.info(f"parse_file called for: {file}")
 
@@ -405,10 +626,29 @@ class DoclingParser(BaseParser):
             logger.info(f"Converting file with hybrid OCR: {file}")
             result = self._converter.convert(str(file))
             content = self._export_content(result.document)
-            logger.info(f"Parse complete, content length: {len(content)} chars")
+            pages = _result_page_count(result, file)
+            chars = _text_char_count(content)
+            logger.info(
+                "Parse complete for %s: %d chars (%d text) over %d page(s), "
+                "%.1f chars/page",
+                Path(file).name,
+                len(content),
+                chars,
+                pages,
+                chars / pages,
+            )
+
+            if self._ocr_guard_applies(file) and chars < (
+                _ocr_min_chars_per_page() * pages
+            ):
+                return self._recover_from_ocr_dropout(file, chars, pages)
 
             return content
 
+        except DocumentParseError:
+            # Already the loud, actionable failure — do not re-wrap it into a
+            # generic "Failed to parse ..." and lose the dropout diagnosis.
+            raise
         except Exception as e:
             logger.error(f"Error parsing file with docling: {e}", exc_info=True)
             # ``errors`` governs *decoding* leniency, not whether a total

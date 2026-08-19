@@ -73,9 +73,27 @@ class ElasticsearchStore(BaseVectorStore):
 
         return es_client
 
-    def search(self, question, k=2, index_name=settings.ELASTIC_INDEX, *args, **kwargs):
-        embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, self.embeddings_key)
-        vector = embeddings.embed_query(question)
+    def search(
+        self,
+        question,
+        k=2,
+        index_name=settings.ELASTIC_INDEX,
+        *args,
+        query_vector=None,
+        **kwargs,
+    ):
+        """Search by kNN + full text, fused with RRF.
+
+        Args:
+            query_vector: Precomputed embedding of ``question``; when given the
+                store skips embedding the query itself.
+        """
+        vector = query_vector
+        if vector is None:
+            embeddings = self._get_embeddings(
+                settings.EMBEDDINGS_NAME, self.embeddings_key
+            )
+            vector = embeddings.embed_query(question)
         knn = {
             "filter": [{"match": {"metadata.source_id.keyword": self.source_id}}],
             "field": "vector",

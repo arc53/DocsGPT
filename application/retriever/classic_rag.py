@@ -1,13 +1,27 @@
 import logging
+from typing import Any, Dict, List, Optional, Tuple
 
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
 from application.retriever.base import BaseRetriever
+from application.retriever.fanout import (  # noqa: F401  (re-exported)
+    DEFAULT_MAX_PARALLEL_SOURCES,
+    EMBEDDING_ATTRS as _EMBEDDING_ATTRS,
+    embed_questions,
+    max_parallel_sources,
+    run_source_jobs,
+    store_embeddings,
+)
 from application.retriever.labels import labels_from_metadata
 from application.utils import num_tokens_from_string
 from application.vectorstore.vector_creator import VectorCreator
 
 logger = logging.getLogger(__name__)
+
+
+def _max_parallel_sources(n_sources: int) -> int:
+    """Worker count for the per-source fan-out, bounded by the source count."""
+    return max_parallel_sources(n_sources, settings)
 
 
 class ClassicRAG(BaseRetriever):
@@ -152,13 +166,25 @@ class ClassicRAG(BaseRetriever):
             logger.error(f"Error rephrasing query: {e}", exc_info=True)
             return self.original_question
 
-    def _fetch_candidates(self, docsearch, question, src_k, score_threshold):
+    def _fetch_candidates(
+        self,
+        docsearch,
+        question: str,
+        src_k: int,
+        score_threshold: Optional[float],
+        query_vector: Optional[List[float]] = None,
+    ):
         """Fetch candidate hits for one vector store (vector search).
 
         Returns plain hits, or ``(hit, score)`` pairs when ``include_scores`` is
         set. Subclasses override this to change candidate sourcing (e.g. RRF
         fusion) while inheriting the surrounding per-source resolution and
         budgeting.
+
+        Args:
+            query_vector: Query embedding computed once for the whole
+                retrieval. Forwarded so the store skips embedding the query
+                again; stores that don't support it ignore the kwarg.
         """
         # ``score_threshold`` is honoured by pgvector/mongodb and safely ignored
         # by stores whose ``search`` swallows kwargs. The candidate count is
@@ -167,6 +193,8 @@ class ClassicRAG(BaseRetriever):
         search_kwargs = {"k": k}
         if score_threshold is not None:
             search_kwargs["score_threshold"] = score_threshold
+        if query_vector is not None:
+            search_kwargs["query_vector"] = query_vector
         if self.include_scores:
             return docsearch.search_with_scores(question, **search_kwargs)
         return docsearch.search(question, **search_kwargs)
@@ -174,6 +202,152 @@ class ClassicRAG(BaseRetriever):
     def _score_kind(self, docsearch):
         """Label for the scores ``_fetch_candidates`` attaches (None if unscored)."""
         return getattr(docsearch, "score_kind", None)
+
+    def _resolve_source(
+        self, vectorstore_id: str, chunks_per_source: int
+    ) -> Dict[str, Any]:
+        """Resolve one source's fetch parameters (top-k, threshold, query).
+
+        Per-source overrides come from the Dispatcher; absent, the source gets
+        the global behaviour — byte-identical to the pre-override path.
+        """
+        src_cfg = self.per_source_retrieval.get(vectorstore_id)
+        if src_cfg is None:
+            # No per-source override → the effective rephrase_query defaults to
+            # True, so use the (lazily-cached) rephrased question. In the
+            # non-deferred path the cache is already populated.
+            return {
+                "id": vectorstore_id,
+                "src_k": chunks_per_source,
+                "score_threshold": None,
+                "question": self._get_rephrased_question(),
+            }
+        src_k = max(1, int(src_cfg.chunks))
+        # Prescreen fetches a larger candidate set up front; the Dispatcher's
+        # prescreen stage trims back to max_keep afterwards. Raise the fetch
+        # size to candidate_k here.
+        ps_cfg = (
+            src_cfg.prescreen_config() if hasattr(src_cfg, "prescreen_config") else None
+        )
+        if ps_cfg is not None:
+            src_k = max(src_k, int(ps_cfg.candidate_k))
+        return {
+            "id": vectorstore_id,
+            "src_k": src_k,
+            "score_threshold": src_cfg.score_threshold,
+            "question": (
+                self._get_rephrased_question()
+                if src_cfg.rephrase_query
+                else self.original_question
+            ),
+        }
+
+    def _plan_sources(self, chunks_per_source: int) -> List[Dict[str, Any]]:
+        """Resolve every source's fetch parameters, in source order.
+
+        Runs on the calling thread: the lazy rephrase behind it is an LLM
+        side-call that must happen once, not once per worker.
+        """
+        plans = []
+        for vectorstore_id in self.vectorstores:
+            if not vectorstore_id:
+                continue
+            try:
+                plans.append(self._resolve_source(vectorstore_id, chunks_per_source))
+            except Exception as e:
+                logger.error(
+                    f"Error searching vectorstore {vectorstore_id}: {e}", exc_info=True
+                )
+        return plans
+
+    @staticmethod
+    def _store_embeddings(docsearch):
+        """Return the embeddings object a vector store searches with, if any."""
+        return store_embeddings(docsearch)
+
+    def _embed_questions(
+        self, docsearch, questions: List[str]
+    ) -> Dict[str, List[float]]:
+        """Embed each distinct query once for the whole retrieval."""
+        return embed_questions(docsearch, questions)
+
+    def _search_source(
+        self,
+        plan: Dict[str, Any],
+        docsearch=None,
+        query_vector: Optional[List[float]] = None,
+    ) -> Optional[Tuple[Any, Optional[str]]]:
+        """Search one source, returning ``(candidates, score_kind)``.
+
+        Builds the vector store when not supplied, so each worker thread owns
+        its own store instance (and therefore its own DB connection). Errors are
+        logged and reported as ``None`` so one bad source cannot take the rest
+        of the retrieval down with it.
+        """
+        try:
+            if docsearch is None:
+                docsearch = VectorCreator.create_vectorstore(
+                    settings.VECTOR_STORE, plan["id"], settings.EMBEDDINGS_KEY
+                )
+            docs_temp = self._fetch_candidates(
+                docsearch,
+                plan["question"],
+                plan["src_k"],
+                plan["score_threshold"],
+                query_vector=query_vector,
+            )
+            score_kind = self._score_kind(docsearch) if self.include_scores else None
+            return docs_temp, score_kind
+        except Exception as e:
+            logger.error(
+                f"Error searching vectorstore {plan['id']}: {e}", exc_info=True
+            )
+            return None
+
+    def _fetch_all(
+        self, plans: List[Dict[str, Any]]
+    ) -> List[Optional[Tuple[Any, Optional[str]]]]:
+        """Fetch every source's candidates, one embedding and one fan-out.
+
+        The first store is built on the calling thread because its embeddings
+        object supplies the shared query vector — and priming the embeddings
+        singleton there keeps the workers off a concurrent model load. The
+        searches then run on a bounded pool, and results come back in the
+        original source order so the merge stays deterministic.
+        """
+        first_store = None
+        try:
+            first_store = VectorCreator.create_vectorstore(
+                settings.VECTOR_STORE, plans[0]["id"], settings.EMBEDDINGS_KEY
+            )
+        except Exception as e:
+            logger.error(
+                f"Error searching vectorstore {plans[0]['id']}: {e}", exc_info=True
+            )
+
+        if first_store is None:
+            # The first source is already a logged failure; the rest still run,
+            # each embedding its own query (there is no store to borrow one from).
+            return [None] + self._run_jobs([(plan, None, None) for plan in plans[1:]])
+
+        questions = list(dict.fromkeys(plan["question"] for plan in plans))
+        vectors = self._embed_questions(first_store, questions)
+        return self._run_jobs(
+            [
+                (plan, first_store if idx == 0 else None, vectors.get(plan["question"]))
+                for idx, plan in enumerate(plans)
+            ]
+        )
+
+    def _run_jobs(self, jobs: List[Tuple]) -> List[Optional[Tuple[Any, Optional[str]]]]:
+        """Run the per-source search jobs, concurrently when there are several."""
+        if not jobs:
+            return []
+        return run_source_jobs(
+            lambda job: self._search_source(*job),
+            jobs,
+            workers=_max_parallel_sources(len(jobs)),
+        )
 
     def _get_data(self):
         if self.chunks == 0 or not self.vectorstores:
@@ -194,96 +368,64 @@ class ClassicRAG(BaseRetriever):
         token_budget = max(int(self.doc_token_limit * 0.9), 100)
         cumulative_tokens = 0
 
-        for vectorstore_id in self.vectorstores:
-            if vectorstore_id:
-                try:
-                    # Per-source overrides (set by the Dispatcher). Absent →
-                    # global behaviour, byte-identical to before.
-                    src_cfg = self.per_source_retrieval.get(vectorstore_id)
-                    if src_cfg is not None:
-                        src_k = max(1, int(src_cfg.chunks))
-                        # Prescreen fetches a larger candidate set up front; the
-                        # Dispatcher's prescreen stage trims back to max_keep
-                        # afterwards. Raise the fetch size to candidate_k here.
-                        ps_cfg = (
-                            src_cfg.prescreen_config()
-                            if hasattr(src_cfg, "prescreen_config")
-                            else None
-                        )
-                        if ps_cfg is not None:
-                            src_k = max(src_k, int(ps_cfg.candidate_k))
-                        score_threshold = src_cfg.score_threshold
-                        question = (
-                            self._get_rephrased_question()
-                            if src_cfg.rephrase_query
-                            else self.original_question
-                        )
-                    else:
-                        src_k = chunks_per_source
-                        score_threshold = None
-                        # No per-source override → the effective rephrase_query
-                        # defaults to True, so use the (lazily-cached) rephrased
-                        # question. In the non-deferred path the cache is already
-                        # populated, so this matches today's behaviour exactly.
-                        question = self._get_rephrased_question()
+        # Resolve every source, then fetch them all (one query embedding, one
+        # bounded fan-out). The merge below stays serial and in source order, so
+        # dedupe/budget/trim semantics are exactly what they were.
+        plans = self._plan_sources(chunks_per_source)
+        results = self._fetch_all(plans) if plans else []
 
-                    docsearch = VectorCreator.create_vectorstore(
-                        settings.VECTOR_STORE, vectorstore_id, settings.EMBEDDINGS_KEY
-                    )
-                    docs_temp = self._fetch_candidates(
-                        docsearch, question, src_k, score_threshold
-                    )
-                    score_kind = (
-                        self._score_kind(docsearch) if self.include_scores else None
-                    )
+        for plan, result in zip(plans, results):
+            if result is None:
+                continue
+            vectorstore_id = plan["id"]
+            src_k = plan["src_k"]
+            docs_temp, score_kind = result
+            try:
+                # ``_fetch_candidates`` over-fetches (k >= 20) so a prescreen
+                # stage has candidates to filter; trim back to src_k so
+                # ``chunks`` is the final top-k it claims to be. With
+                # prescreen on, src_k is already raised to candidate_k above,
+                # so the stage still sees its full candidate set.
+                kept = 0
 
-                    # ``_fetch_candidates`` over-fetches (k >= 20) so a prescreen
-                    # stage has candidates to filter; trim back to src_k so
-                    # ``chunks`` is the final top-k it claims to be. With
-                    # prescreen on, src_k is already raised to candidate_k above,
-                    # so the stage still sees its full candidate set.
-                    kept = 0
-
-                    for doc in docs_temp:
-                        if kept >= src_k or cumulative_tokens >= token_budget:
-                            break
-
-                        score = None
-                        if isinstance(doc, tuple):
-                            doc, score = doc
-
-                        if hasattr(doc, "page_content") and hasattr(doc, "metadata"):
-                            page_content = doc.page_content
-                            metadata = doc.metadata
-                        else:
-                            page_content = doc.get("text", doc.get("page_content", ""))
-                            metadata = doc.get("metadata", {})
-
-                        labels = labels_from_metadata(
-                            metadata, page_content, vectorstore_id
-                        )
-
-                        doc_text_with_header = f"{labels['filename']}\n{page_content}"
-                        doc_tokens = num_tokens_from_string(doc_text_with_header)
-
-                        if cumulative_tokens + doc_tokens < token_budget:
-                            entry = {"text": page_content, **labels}
-                            if self.include_scores:
-                                entry["score"] = score
-                                entry["score_kind"] = score_kind
-                            all_docs.append(entry)
-                            cumulative_tokens += doc_tokens
-                            kept += 1
-
-                    if cumulative_tokens >= token_budget:
+                for doc in docs_temp:
+                    if kept >= src_k or cumulative_tokens >= token_budget:
                         break
 
-                except Exception as e:
-                    logger.error(
-                        f"Error searching vectorstore {vectorstore_id}: {e}",
-                        exc_info=True,
-                    )
-                    continue
+                    score = None
+                    if isinstance(doc, tuple):
+                        doc, score = doc
+
+                    if hasattr(doc, "page_content") and hasattr(doc, "metadata"):
+                        page_content = doc.page_content
+                        metadata = doc.metadata
+                    else:
+                        page_content = doc.get("text", doc.get("page_content", ""))
+                        metadata = doc.get("metadata", {})
+
+                    labels = labels_from_metadata(metadata, page_content, vectorstore_id)
+
+                    doc_text_with_header = f"{labels['filename']}\n{page_content}"
+                    doc_tokens = num_tokens_from_string(doc_text_with_header)
+
+                    if cumulative_tokens + doc_tokens < token_budget:
+                        entry = {"text": page_content, **labels}
+                        if self.include_scores:
+                            entry["score"] = score
+                            entry["score_kind"] = score_kind
+                        all_docs.append(entry)
+                        cumulative_tokens += doc_tokens
+                        kept += 1
+
+                if cumulative_tokens >= token_budget:
+                    break
+
+            except Exception as e:
+                logger.error(
+                    f"Error searching vectorstore {vectorstore_id}: {e}",
+                    exc_info=True,
+                )
+                continue
 
         # ``chunks_per_source`` has a floor of 1 so no attached source is
         # starved, which means N sources always yield at least N documents —

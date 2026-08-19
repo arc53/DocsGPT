@@ -592,3 +592,218 @@ def test_node_extract_cap_bounds_parse_attempts_even_when_every_parse_times_out(
     assert parse_calls["n"] == 2  # not 4 -- failed parses still consume cap budget
     notes = [a for a in out if a.get("id") == _EXTRACT_TRUNCATION_ID]
     assert len(notes) == 1
+
+
+# ---------------------------------------------------------------------------
+# Reuse of the text ``store_attachment`` already extracted (no double OCR)
+# ---------------------------------------------------------------------------
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+_OK_EXTRACTION = {
+    "status": "ok",
+    "parser": "DoclingParser",
+    "truncated": False,
+    "original_tokens": 12,
+    "stored_tokens": 12,
+}
+
+
+def _with_extraction(attachment: dict, content, extraction=_OK_EXTRACTION) -> dict:
+    """Add the ``content`` + ``metadata.extraction`` shape ``store_attachment`` persists."""
+    attachment["content"] = content
+    attachment["metadata"] = {} if extraction is None else {"extraction": dict(extraction)}
+    return attachment
+
+
+def _forbid_parse(monkeypatch) -> None:
+    """Make any enqueue of the parsing worker a hard failure."""
+    import application.api.user.tasks as tasks
+
+    def _apply_async(*a, **k):
+        raise AssertionError("the document must not be re-parsed")
+
+    monkeypatch.setattr(tasks.parse_document, "apply_async", _apply_async)
+
+
+def _count_parses(monkeypatch, calls: dict) -> None:
+    """Stub the parsing worker so each blocking parse succeeds and is counted."""
+    import application.api.user.tasks as tasks
+
+    class _R:
+        def get(self, timeout=None, disable_sync_subtasks=True):
+            return {"status": "ok", "content": "PARSED"}
+
+    def _apply_async(args=None, queue=None, **kw):
+        calls["n"] = calls.get("n", 0) + 1
+        return _R()
+
+    monkeypatch.setattr(tasks.parse_document, "apply_async", _apply_async)
+
+
+def _bridged_engine(pg_engine, tmp_path, monkeypatch, attachments):
+    """Run the bridge for ``attachments`` and return (engine, refs)."""
+    wf_id = _make_workflow(pg_engine)
+    agent = _agent(wf_id, attachments)
+    _patch_engine(monkeypatch)
+    list(agent._gen_inner("summarize", log_context=None))
+    engine = _RecordingEngine.instances[-1]
+    return engine, engine.captured_inputs["input_documents"]
+
+
+def test_preextracted_attachment_text_is_reused_without_reparsing(
+    pg_engine, tmp_path, monkeypatch
+):
+    """An attachment already parsed at upload time is inlined verbatim; the worker is never called."""
+    storage = _wire(pg_engine, tmp_path, monkeypatch)
+    att = _with_extraction(
+        _stage_attachment(storage, b"PK-docx-bytes", "scan.docx", DOCX_MIME),
+        "PRE-EXTRACTED OCR TEXT",
+    )
+    engine, refs = _bridged_engine(pg_engine, tmp_path, monkeypatch, [att])
+
+    # The text rides on the engine only -- never in the persisted run state/refs.
+    aid = refs[0]["artifact_id"]
+    assert engine.preextracted_text == {aid: "PRE-EXTRACTED OCR TEXT"}
+    assert set(refs[0]) == {"artifact_id", "ref", "filename", "mime_type"}
+    assert "content" not in str(engine.state["input_documents"])
+
+    _forbid_parse(monkeypatch)
+    out = engine._materialize_node_attachments(
+        AgentNodeConfig(input_documents=["*"]), "Reviewer", supported_types=[]
+    )
+
+    assert out == [{"id": aid, "mime_type": "text/plain", "content": "PRE-EXTRACTED OCR TEXT"}]
+
+
+def test_preextracted_text_is_bounded_head_and_tail(pg_engine, tmp_path, monkeypatch):
+    """Reused text goes through the same head+tail window as the inline-text path."""
+    from application.parser.document_reader import _TEXT_MAX_BYTES
+
+    storage = _wire(pg_engine, tmp_path, monkeypatch)
+    big = "A" * (_TEXT_MAX_BYTES * 3)
+    att = _with_extraction(
+        _stage_attachment(storage, b"PK-docx-bytes", "huge.docx", DOCX_MIME), big
+    )
+    engine, _ = _bridged_engine(pg_engine, tmp_path, monkeypatch, [att])
+
+    _forbid_parse(monkeypatch)
+    out = engine._materialize_node_attachments(
+        AgentNodeConfig(input_documents=["*"]), "Reviewer", supported_types=[]
+    )
+
+    content = out[0]["content"]
+    assert "...[truncated" in content
+    assert len(content.encode("utf-8")) < _TEXT_MAX_BYTES + 200
+
+
+def test_truncated_attachment_text_falls_through_to_parse(pg_engine, tmp_path, monkeypatch):
+    """A row cut at ATTACHMENT_MAX_TOKENS lost its tail, so the node re-parses instead."""
+    storage = _wire(pg_engine, tmp_path, monkeypatch)
+    att = _with_extraction(
+        _stage_attachment(storage, b"PK-docx-bytes", "long.docx", DOCX_MIME),
+        "HEAD ONLY",
+        extraction={**_OK_EXTRACTION, "truncated": True},
+    )
+    engine, _ = _bridged_engine(pg_engine, tmp_path, monkeypatch, [att])
+
+    assert engine.preextracted_text == {}
+    calls: dict = {}
+    _count_parses(monkeypatch, calls)
+    out = engine._materialize_node_attachments(
+        AgentNodeConfig(input_documents=["*"]), "Reviewer", supported_types=[]
+    )
+
+    assert calls["n"] == 1
+    assert out[0]["content"] == "PARSED"
+
+
+def test_failed_or_empty_attachment_text_falls_through_to_parse(
+    pg_engine, tmp_path, monkeypatch
+):
+    """An empty/whitespace ``content`` (or a failed extraction) is never reused."""
+    storage = _wire(pg_engine, tmp_path, monkeypatch)
+    empty = _with_extraction(
+        _stage_attachment(storage, b"PK-a", "empty.docx", DOCX_MIME), "   "
+    )
+    failed = _with_extraction(
+        _stage_attachment(storage, b"PK-b", "failed.docx", DOCX_MIME),
+        None,
+        extraction={"status": "failed", "parser": None, "truncated": False, "error": "boom"},
+    )
+    engine, _ = _bridged_engine(pg_engine, tmp_path, monkeypatch, [empty, failed])
+
+    assert engine.preextracted_text == {}
+    calls: dict = {}
+    _count_parses(monkeypatch, calls)
+    out = engine._materialize_node_attachments(
+        AgentNodeConfig(input_documents=["*"]), "Reviewer", supported_types=[]
+    )
+
+    assert calls["n"] == 2
+    assert [a["content"] for a in out] == ["PARSED", "PARSED"]
+
+
+def test_legacy_row_without_extraction_metadata_is_trusted(pg_engine, tmp_path, monkeypatch):
+    """A pre-``extraction`` row with non-empty content is reused (nothing records otherwise)."""
+    storage = _wire(pg_engine, tmp_path, monkeypatch)
+    att = _stage_attachment(storage, b"PK-docx-bytes", "legacy.docx", DOCX_MIME)
+    att["content"] = "LEGACY TEXT"  # no ``metadata`` key at all
+    engine, refs = _bridged_engine(pg_engine, tmp_path, monkeypatch, [att])
+
+    assert engine.preextracted_text == {refs[0]["artifact_id"]: "LEGACY TEXT"}
+    _forbid_parse(monkeypatch)
+    out = engine._materialize_node_attachments(
+        AgentNodeConfig(input_documents=["*"]), "Reviewer", supported_types=[]
+    )
+    assert out[0]["content"] == "LEGACY TEXT"
+
+
+def test_preextracted_docs_do_not_consume_the_extract_cap(pg_engine, tmp_path, monkeypatch):
+    """Reused text costs no blocking parse, so it must not spend the per-node parse budget."""
+    from application.core.settings import settings
+
+    storage = _wire(pg_engine, tmp_path, monkeypatch)
+    attachments = [
+        _with_extraction(
+            _stage_attachment(storage, b"PK-0", "pre0.docx", DOCX_MIME), "REUSED 0"
+        ),
+        _with_extraction(
+            _stage_attachment(storage, b"PK-1", "pre1.docx", DOCX_MIME), "REUSED 1"
+        ),
+        _stage_attachment(storage, b"PK-2", "raw2.docx", DOCX_MIME),
+        _stage_attachment(storage, b"PK-3", "raw3.docx", DOCX_MIME),
+    ]
+    engine, _ = _bridged_engine(pg_engine, tmp_path, monkeypatch, attachments)
+
+    monkeypatch.setattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 2, raising=False)
+    calls: dict = {}
+    _count_parses(monkeypatch, calls)
+
+    out = engine._materialize_node_attachments(
+        AgentNodeConfig(input_documents=["*"]), "Reviewer", supported_types=[]
+    )
+
+    # All four documents made it in: the two reused ones did not spend cap budget,
+    # so both remaining documents still fit the cap of 2 blocking parses.
+    assert [a["content"] for a in out] == ["REUSED 0", "REUSED 1", "PARSED", "PARSED"]
+    assert calls["n"] == 2
+    assert not [a for a in out if a.get("id") == _EXTRACT_TRUNCATION_ID]
+
+
+@pytest.mark.parametrize(
+    "attachment,expected",
+    [
+        ({"content": "text", "metadata": {"extraction": {"status": "ok", "truncated": False}}}, "text"),
+        ({"content": "text", "metadata": {"extraction": {"status": "ok", "truncated": True}}}, None),
+        ({"content": "text", "metadata": {"extraction": {"status": "failed"}}}, None),
+        ({"content": "text", "metadata": {}}, "text"),
+        ({"content": "text"}, "text"),
+        ({"content": "text", "metadata": {"extraction": "nope"}}, None),
+        ({"content": "", "metadata": {"extraction": {"status": "ok", "truncated": False}}}, None),
+        ({"content": None}, None),
+        ({}, None),
+    ],
+)
+def test_usable_attachment_text_matrix(attachment, expected):
+    """Only whole, successfully-extracted, non-empty text is eligible for reuse."""
+    assert WorkflowAgent._usable_attachment_text(attachment) == expected

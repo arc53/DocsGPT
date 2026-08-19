@@ -23,6 +23,7 @@ from application.agents.workflows.schemas import (
     WorkflowNode,
 )
 from application.agents.workflows.workflow_engine import WorkflowEngine
+from application.core.settings import settings
 from application.storage.db.repositories.artifacts import ArtifactsRepository
 
 RUN_ID = "11111111-1111-1111-1111-111111111111"
@@ -231,7 +232,7 @@ def test_extract_non_text_uses_parse_worker(monkeypatch):
     _patch_repo(monkeypatch, {aid: rec})
     eng = _engine(monkeypatch)
     monkeypatch.setattr(
-        WorkflowEngine, "_parse_document_text", lambda self, artifact_id: "EXTRACTED MD"
+        WorkflowEngine, "_parse_document_text", lambda self, artifact_id, size=None: "EXTRACTED MD"
     )
     cfg = _node_config(input_documents=[aid], file_passing="extract")
 
@@ -295,7 +296,7 @@ def test_native_file_cap_bounds_native_then_extracts(monkeypatch):
     )
     # extract of a non-text image routes through the parsing worker; stub it so it returns text.
     monkeypatch.setattr(
-        WorkflowEngine, "_parse_document_text", lambda self, artifact_id: "fallback text"
+        WorkflowEngine, "_parse_document_text", lambda self, artifact_id, size=None: "fallback text"
     )
     cfg = _node_config(input_documents=ids, file_passing="auto")
 
@@ -381,6 +382,93 @@ def test_duplicate_refs_attach_once(monkeypatch):
     out = eng._materialize_node_attachments(cfg, "Node", VISION_TYPES)
 
     assert out == [{"id": aid, "mime_type": "image/png", "path": rec["versions"][1]["storage_path"]}]
+
+
+# ---------------------------------------------------------------------------
+# Size-scaled parse window
+# ---------------------------------------------------------------------------
+
+
+def _capture_parse(monkeypatch) -> dict:
+    """Patch parse_document.apply_async so nothing touches a broker; capture the call."""
+    import application.api.user.tasks as tasks
+
+    captured: Dict[str, Any] = {}
+
+    class _R:
+        def get(self, timeout=None, disable_sync_subtasks=True):
+            captured["timeout"] = timeout
+            return {"status": "ok", "content": "PARSED"}
+
+    def _apply_async(args=None, queue=None, **kw):
+        captured["kwargs"] = kw
+        return _R()
+
+    monkeypatch.setattr(tasks.parse_document, "apply_async", _apply_async)
+    return captured
+
+
+@pytest.mark.unit
+def test_parse_window_scales_with_the_document_size(monkeypatch):
+    """The version's ``size`` reaches the parse: a longer await AND matching Celery limits."""
+    from application.api.user.tasks import parse_task_time_limits, parse_timeout_for_size
+
+    size = 8 * 1024 * 1024
+    aid, rec = _artifact(RUN_ID, "application/pdf", filename="scan.pdf", size=size)
+    _patch_repo(monkeypatch, {aid: rec})
+    eng = _engine(monkeypatch)
+    captured = _capture_parse(monkeypatch)
+
+    out = eng._materialize_node_attachments(
+        _node_config(input_documents=[aid], file_passing="extract"), "Node", TEXT_TYPES
+    )
+
+    expected = parse_timeout_for_size(size)
+    assert out == [{"id": aid, "mime_type": "text/plain", "content": "PARSED"}]
+    assert captured["timeout"] == expected
+    # Without the per-call limits the worker self-terminates at the base timeout,
+    # so the longer await would buy nothing.
+    assert captured["kwargs"] == parse_task_time_limits(expected)
+    assert captured["kwargs"]["soft_time_limit"] > settings.DOCUMENT_PARSE_TIMEOUT
+
+
+@pytest.mark.unit
+def test_parse_window_falls_back_to_the_base_timeout_without_a_size(monkeypatch):
+    """A NULL/missing version size keeps the configured base window as the floor."""
+    aid, rec = _artifact(RUN_ID, "application/pdf", filename="scan.pdf", size=None)
+    _patch_repo(monkeypatch, {aid: rec})
+    eng = _engine(monkeypatch)
+    captured = _capture_parse(monkeypatch)
+
+    eng._materialize_node_attachments(
+        _node_config(input_documents=[aid], file_passing="extract"), "Node", TEXT_TYPES
+    )
+
+    assert captured["timeout"] == float(settings.DOCUMENT_PARSE_TIMEOUT)
+    assert captured["kwargs"]["soft_time_limit"] == settings.DOCUMENT_PARSE_TIMEOUT
+
+
+@pytest.mark.unit
+def test_preextracted_text_skips_the_parse_worker(monkeypatch):
+    """Text already extracted at upload time is inlined; the parsing worker is never called."""
+    aid, rec = _artifact(RUN_ID, "application/pdf", filename="scan.pdf")
+    _patch_repo(monkeypatch, {aid: rec})
+    eng = _engine(monkeypatch)
+    eng.preextracted_text[aid] = "ALREADY OCRED"
+
+    import application.api.user.tasks as tasks
+
+    monkeypatch.setattr(
+        tasks.parse_document,
+        "apply_async",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not re-parse")),
+    )
+
+    out = eng._materialize_node_attachments(
+        _node_config(input_documents=[aid], file_passing="extract"), "Node", TEXT_TYPES
+    )
+
+    assert out == [{"id": aid, "mime_type": "text/plain", "content": "ALREADY OCRED"}]
 
 
 # ---------------------------------------------------------------------------
@@ -484,7 +572,7 @@ def test_execute_agent_node_native_decision_tracks_provider_types(monkeypatch):
     _patch_repo(monkeypatch, {aid: rec})
     _patch_capabilities(monkeypatch)
     monkeypatch.setattr(
-        WorkflowEngine, "_parse_document_text", lambda self, artifact_id: "EXTRACTED"
+        WorkflowEngine, "_parse_document_text", lambda self, artifact_id, size=None: "EXTRACTED"
     )
     eng = _engine(monkeypatch)
 

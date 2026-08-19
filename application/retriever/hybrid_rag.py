@@ -55,16 +55,22 @@ class HybridRetriever(ClassicRAG):
         carry their own label."""
         return "rrf"
 
-    def _fetch_candidates(self, docsearch, question, src_k, score_threshold):
+    def _fetch_candidates(
+        self, docsearch, question, src_k, score_threshold, query_vector=None
+    ):
         """Return RRF-fused vector+keyword hits for one vector store.
 
         Inherits the per-source resolution and budgeting from
         :meth:`ClassicRAG._get_data`; only candidate sourcing differs.
         RRF scores are not cosine similarities, so ``score_threshold`` is
-        intentionally not applied to the fused list.
+        intentionally not applied to the fused list. ``query_vector`` is the
+        retrieval's single query embedding — the keyword half never needs one.
         """
         candidate_k = min(max(src_k * 2, 20), 500)
-        vector_hits = docsearch.search(question, k=candidate_k)
+        vector_kwargs = {"k": candidate_k}
+        if query_vector is not None:
+            vector_kwargs["query_vector"] = query_vector
+        vector_hits = docsearch.search(question, **vector_kwargs)
         keyword_hits = docsearch.keyword_search(question, k=candidate_k)
         fused = fuse_with_scores(vector_hits, keyword_hits)
         if self.include_scores:

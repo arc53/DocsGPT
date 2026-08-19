@@ -1,5 +1,6 @@
 import logging
 from datetime import timedelta
+from typing import Dict, Optional
 
 from sqlalchemy.exc import DataError
 
@@ -270,6 +271,47 @@ def process_agent_webhook(self, agent_id, payload, idempotency_key=None):
     return resp
 
 
+# Seconds the hard (SIGKILL) limit trails the soft limit, giving the soft handler
+# room to unwind and return a terminal result before the worker is killed.
+_PARSE_HARD_LIMIT_GRACE = 30
+
+
+def parse_timeout_for_size(size_bytes: Optional[int]) -> float:
+    """Seconds to allow one ``parse_document``: floored at the base timeout, scaled by size, capped.
+
+    Args:
+        size_bytes: Byte size of the document, or None when unknown (base timeout).
+
+    Returns:
+        The parse window in seconds.
+    """
+    from application.core.settings import settings
+
+    base = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120) or 120)
+    per_mib = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 0) or 0)
+    ceiling = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT_MAX", base) or base)
+    size = float(size_bytes) if isinstance(size_bytes, (int, float)) else 0.0
+    scaled = base + per_mib * max(size, 0.0) / (1024 * 1024)
+    return min(ceiling, max(base, scaled))
+
+
+def parse_task_time_limits(timeout: float) -> Dict[str, int]:
+    """Per-call Celery limits for a ``parse_document`` the caller awaits for ``timeout`` seconds.
+
+    The task's import-time ``soft_time_limit`` is bound to the BASE timeout, so a caller
+    awaiting a longer, size-scaled window must raise the per-call limits to match or the
+    worker self-terminates the parse first.
+
+    Args:
+        timeout: The awaited parse window in seconds.
+
+    Returns:
+        ``apply_async`` kwargs carrying the soft and hard time limits.
+    """
+    soft = max(1, int(timeout))
+    return {"soft_time_limit": soft, "time_limit": soft + _PARSE_HARD_LIMIT_GRACE}
+
+
 # Not DURABLE: the read_document tool awaits this synchronously with a timeout, so a
 # blind autoretry would double-parse and the caller would already have degraded. The
 # task is routed to the dedicated ``parsing`` queue (celeryconfig task_routes) so a
@@ -286,18 +328,23 @@ def parse_document(self, artifact_id, parent, user_id, options=None):
         # A pathological/malicious document must not pin a parsing-worker slot past the
         # window the caller already abandoned. Return the worker's clean error shape so
         # the slot frees and the Redis result backend still gets a terminal result.
-        limit = getattr(self, "soft_time_limit", None)
+        # ``request.timelimit`` is (hard, soft) and carries the caller's PER-CALL limit,
+        # so prefer it over the import-time default when reporting the window.
+        limit = (getattr(self.request, "timelimit", None) or (None, None))[1]
+        if limit is None:
+            limit = getattr(self, "soft_time_limit", None)
         suffix = f" after {int(limit)}s" if limit else ""
         return {"status": "error", "error": f"document parsing timed out{suffix}."}
 
 
-# Bind the soft limit to DOCUMENT_PARSE_TIMEOUT (the same window read_document awaits) so
+# Bind the soft limit to DOCUMENT_PARSE_TIMEOUT (the floor of the window callers await) so
 # the prefork worker self-terminates a runaway parse instead of pinning the slot; the hard
-# limit is the SIGKILL backstop if the soft handler can't unwind in time.
+# limit is the SIGKILL backstop if the soft handler can't unwind in time. Callers awaiting a
+# size-scaled window override both per call via ``parse_task_time_limits``.
 try:
     from application.core.settings import settings as _parse_settings
     parse_document.soft_time_limit = int(_parse_settings.DOCUMENT_PARSE_TIMEOUT)
-    parse_document.time_limit = parse_document.soft_time_limit + 30
+    parse_document.time_limit = parse_document.soft_time_limit + _PARSE_HARD_LIMIT_GRACE
 except Exception:
     pass
 

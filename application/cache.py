@@ -26,6 +26,73 @@ def _cache_default(value):
         return f"<bytes:sha256:{hashlib.sha256(bytes(value)).hexdigest()}>"
     return repr(value)
 
+
+# Generation kwargs that never reach the provider: usage-accounting side
+# channels only. Everything else the caller passes (``response_format``,
+# ``response_schema``, ``tool_choice``, ``reasoning_effort``, sampling
+# params, ...) is part of the request and therefore part of the key —
+# otherwise a workflow node that changed its JSON schema replays the old
+# schema's cached answer for the whole TTL.
+_CACHE_KEY_IGNORED_KWARGS = frozenset({"_usage_attachments", "attachments"})
+
+# Kwargs that make the answer depend on provider-held state no key can
+# capture. ``previous_response_id`` chains a Responses API turn server
+# side, and a cache hit would also skip the ``_last_response_id``
+# bookkeeping the next turn needs — so skip the cache entirely.
+_CACHE_BYPASS_KWARGS = ("previous_response_id",)
+
+
+def _gen_kwargs_fingerprint(extra: dict | None) -> str:
+    """Stable fingerprint of the generation-affecting kwargs.
+
+    Args:
+        extra: Keyword arguments forwarded to the generation call.
+
+    Returns:
+        A sorted JSON dump of the semantic kwargs, or "" when there are none.
+
+    Raises:
+        ValueError: If the kwargs cannot be serialized (callers treat this
+            as "do not cache").
+    """
+    if not extra:
+        return ""
+    filtered = {
+        key: value
+        for key, value in extra.items()
+        if key not in _CACHE_KEY_IGNORED_KWARGS and value is not None
+    }
+    if not filtered:
+        return ""
+    try:
+        return json.dumps(filtered, sort_keys=True, default=_cache_default)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Unserializable generation kwargs: {e}") from e
+
+
+def _bypasses_cache(extra: dict | None) -> bool:
+    """Whether a kwarg ties the call to provider-side conversation state."""
+    if not extra:
+        return False
+    return any(extra.get(key) for key in _CACHE_BYPASS_KWARGS)
+
+
+def _is_stream_payload(raw: str) -> bool:
+    """Whether a cached value is a ``stream_cache`` chunk envelope.
+
+    ``gen_cache`` and ``stream_cache`` share one key space, so a
+    non-streaming read can land on a stream entry; without this guard the
+    serialized chunk list would be handed back as the model's answer.
+    """
+    if not raw.startswith("{"):
+        return False
+    try:
+        decoded = json.loads(raw)
+    except ValueError:
+        return False
+    return isinstance(decoded, dict) and isinstance(decoded.get("chunks"), list)
+
+
 _redis_instance = None
 _redis_creation_failed = False
 _instance_lock = Lock()
@@ -116,23 +183,44 @@ def get_pubsub_redis_instance():
     return _pubsub_redis_instance
 
 
-def gen_cache_key(messages, model="docgpt", tools=None):
+def gen_cache_key(messages, model="docgpt", tools=None, extra=None):
+    """Build the Redis key for one generation call.
+
+    Args:
+        messages: Chat messages for the call.
+        model: Model identifier.
+        tools: Tool schemas, when the call carries any.
+        extra: Remaining generation kwargs (``response_format``,
+            ``response_schema``, sampling params, ...). Non-semantic keys
+            are dropped before hashing; the suffix is omitted entirely when
+            nothing semantic remains, so keys for plain calls are unchanged.
+
+    Returns:
+        Hex digest used as the cache key.
+
+    Raises:
+        ValueError: If ``messages`` holds a non-dict entry, or ``extra``
+            cannot be serialized.
+    """
     if not all(isinstance(msg, dict) for msg in messages):
         raise ValueError("All messages must be dictionaries.")
     messages_str = json.dumps(messages, default=_cache_default)
     tools_str = json.dumps(str(tools)) if tools else ""
     combined = f"{model}_{messages_str}_{tools_str}"
+    extra_str = _gen_kwargs_fingerprint(extra)
+    if extra_str:
+        combined = f"{combined}_{extra_str}"
     cache_key = get_hash(combined)
     return cache_key
 
 
 def gen_cache(func):
     def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
-        if tools is not None:
+        if tools is not None or _bypasses_cache(kwargs):
             return func(self, model, messages, stream, tools, *args, **kwargs)
-        
+
         try:
-            cache_key = gen_cache_key(messages, model, tools)
+            cache_key = gen_cache_key(messages, model, tools, extra=kwargs)
         except ValueError as e:
             logger.error(f"Cache key generation failed: {e}")
             return func(self, model, messages, stream, tools, *args, **kwargs)
@@ -142,7 +230,9 @@ def gen_cache(func):
             try:
                 cached_response = redis_client.get(cache_key)
                 if cached_response:
-                    return cached_response.decode("utf-8")
+                    decoded = cached_response.decode("utf-8")
+                    if not _is_stream_payload(decoded):
+                        return decoded
             except Exception as e:
                 logger.error(f"Error getting cached response: {e}", exc_info=True)
 
@@ -160,12 +250,12 @@ def gen_cache(func):
 
 def stream_cache(func):
     def wrapper(self, model, messages, stream, tools=None, *args, **kwargs):
-        if tools is not None:
+        if tools is not None or _bypasses_cache(kwargs):
             yield from func(self, model, messages, stream, tools, *args, **kwargs)
             return
-        
+
         try:
-            cache_key = gen_cache_key(messages, model, tools)
+            cache_key = gen_cache_key(messages, model, tools, extra=kwargs)
         except ValueError as e:
             logger.error(f"Cache key generation failed: {e}")
             yield from func(self, model, messages, stream, tools, *args, **kwargs)

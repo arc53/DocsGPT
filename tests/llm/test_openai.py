@@ -15,12 +15,19 @@ Extends coverage beyond test_openai_llm.py:
 """
 
 import base64
+import logging
 import types
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
+from openai import BadRequestError
 
-from application.llm.openai import OpenAILLM, _truncate_base64_for_logging
+from application.llm.openai import (
+    OpenAILLM,
+    _is_tools_unsupported_error,
+    _truncate_base64_for_logging,
+)
 
 
 # Fake client helpers
@@ -2080,3 +2087,235 @@ class TestKeylessConstruction:
             mock_settings.OPENAI_STT_MODEL = "whisper-1"
             stt = OpenAISTT(api_key=blank)
         assert stt.api_key == "sk-no-key"
+
+
+# Tool-calling fallback for endpoints that can't serve tools
+
+
+VLLM_TOOL_ERROR = (
+    '"auto" tool choice requires --enable-auto-tool-choice and '
+    "--tool-call-parser to be set"
+)
+
+
+def _bad_request(message):
+    """Build a real ``openai.BadRequestError`` carrying ``message``."""
+    request = httpx.Request("POST", "http://localhost:8000/v1/chat/completions")
+    response = httpx.Response(400, request=request)
+    return BadRequestError(message, response=response, body={"message": message})
+
+
+class _RecordingCreate:
+    """``create`` stub that raises on the first call, then succeeds."""
+
+    def __init__(self, error, result):
+        self.error = error
+        self.result = result
+        self.calls = []
+
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        if len(self.calls) == 1 and self.error is not None:
+            raise self.error
+        return self.result
+
+
+@pytest.mark.unit
+class TestIsToolsUnsupportedError:
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            VLLM_TOOL_ERROR,
+            "Tool calling is not supported by this model",
+            "This endpoint does not support tools",
+            "function calling is unavailable for this deployment",
+            "Unsupported parameter: 'tools'",
+        ],
+    )
+    def test_matches_tool_messages(self, message):
+        assert _is_tools_unsupported_error(_bad_request(message)) is True
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "This model's maximum context length is 8192 tokens",
+            "Invalid value for 'temperature': must be <= 2",
+            "Incorrect API key provided",
+        ],
+    )
+    def test_ignores_unrelated_messages(self, message):
+        assert _is_tools_unsupported_error(_bad_request(message)) is False
+
+    def test_matches_message_only_present_in_body(self):
+        request = httpx.Request("POST", "http://localhost:8000/v1/chat/completions")
+        error = BadRequestError(
+            "Error code: 400",
+            response=httpx.Response(400, request=request),
+            body={"message": VLLM_TOOL_ERROR},
+        )
+        assert _is_tools_unsupported_error(error) is True
+
+
+@pytest.mark.unit
+class TestToolCallingFallback:
+    """An OpenAI-compatible endpoint without tool support (vLLM started
+    without --enable-auto-tool-choice) 400s every chat, because agentless
+    chat always sends synthesized default tools. Degrade instead."""
+
+    TOOLS = [{"type": "function", "function": {"name": "t"}}]
+    MSGS = [{"role": "user", "content": "hi"}]
+
+    def test_raw_gen_retries_once_without_tools(self, llm):
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR),
+            _Response(choices=[_Choice(content="degraded answer")]),
+        )
+        llm.client.chat.completions.create = create
+
+        result = llm._raw_gen(
+            llm, model="local-model", messages=self.MSGS, stream=False,
+            tools=self.TOOLS, tool_choice="auto", parallel_tool_calls=True,
+        )
+
+        assert len(create.calls) == 2
+        assert create.calls[0]["tools"] == self.TOOLS
+        assert "tools" not in create.calls[1]
+        assert "tool_choice" not in create.calls[1]
+        assert "parallel_tool_calls" not in create.calls[1]
+        # The caller asked for tools, so the tool-shaped return contract holds.
+        assert result.message.content == "degraded answer"
+
+    def test_raw_gen_stream_retries_once_without_tools(self, llm):
+        retry_response = _Response(
+            lines=[_StreamLine([_Choice(delta="degraded")])]
+        )
+        create = _RecordingCreate(_bad_request(VLLM_TOOL_ERROR), retry_response)
+        llm.client.chat.completions.create = create
+
+        chunks = list(
+            llm._raw_gen_stream(
+                llm, model="local-model", messages=self.MSGS, stream=True,
+                tools=self.TOOLS, tool_choice="auto",
+            )
+        )
+
+        assert chunks == ["degraded"]
+        assert len(create.calls) == 2
+        assert create.calls[0]["tools"] == self.TOOLS
+        assert "tools" not in create.calls[1]
+        assert "tool_choice" not in create.calls[1]
+
+    def test_unrelated_bad_request_propagates(self, llm):
+        error = _bad_request("This model's maximum context length is 8192 tokens")
+        create = _RecordingCreate(error, _Response(choices=[_Choice(content="x")]))
+        llm.client.chat.completions.create = create
+
+        with pytest.raises(BadRequestError):
+            llm._raw_gen(
+                llm, model="local-model", messages=self.MSGS, stream=False,
+                tools=self.TOOLS,
+            )
+
+        assert len(create.calls) == 1
+        assert llm._supports_tools() is True
+
+    def test_unrelated_bad_request_propagates_from_stream(self, llm):
+        error = _bad_request("This model's maximum context length is 8192 tokens")
+        create = _RecordingCreate(error, _Response(lines=[]))
+        llm.client.chat.completions.create = create
+
+        with pytest.raises(BadRequestError):
+            list(
+                llm._raw_gen_stream(
+                    llm, model="local-model", messages=self.MSGS, stream=True,
+                    tools=self.TOOLS,
+                )
+            )
+
+        assert len(create.calls) == 1
+
+    def test_tool_error_without_tools_in_request_propagates(self, llm):
+        """No tools were sent, so there is nothing to degrade to."""
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR), _Response(choices=[_Choice(content="x")])
+        )
+        llm.client.chat.completions.create = create
+
+        with pytest.raises(BadRequestError):
+            llm._raw_gen(
+                llm, model="local-model", messages=self.MSGS, stream=False, tools=None
+            )
+
+        assert len(create.calls) == 1
+        assert llm._supports_tools() is True
+
+    def test_supports_tools_false_after_rejection(self, llm):
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR),
+            _Response(choices=[_Choice(content="degraded")]),
+        )
+        llm.client.chat.completions.create = create
+
+        assert llm._supports_tools() is True
+        llm._raw_gen(
+            llm, model="local-model", messages=self.MSGS, stream=False,
+            tools=self.TOOLS,
+        )
+        assert llm._supports_tools() is False
+
+    def test_later_calls_skip_tools_without_another_round_trip(self, llm):
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR),
+            _Response(choices=[_Choice(content="degraded")]),
+        )
+        llm.client.chat.completions.create = create
+
+        llm._raw_gen(
+            llm, model="local-model", messages=self.MSGS, stream=False,
+            tools=self.TOOLS,
+        )
+        llm._raw_gen(
+            llm, model="local-model", messages=self.MSGS, stream=False,
+            tools=self.TOOLS, tool_choice="auto",
+        )
+
+        # 2 for the first call (reject + retry), 1 for the second.
+        assert len(create.calls) == 3
+        assert "tools" not in create.calls[2]
+        assert "tool_choice" not in create.calls[2]
+
+    def test_rejection_does_not_leak_to_other_instances(self, llm):
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR),
+            _Response(choices=[_Choice(content="degraded")]),
+        )
+        llm.client.chat.completions.create = create
+        llm._raw_gen(
+            llm, model="local-model", messages=self.MSGS, stream=False,
+            tools=self.TOOLS,
+        )
+
+        other = OpenAILLM(api_key="sk-test", user_api_key=None)
+        assert other._supports_tools() is True
+
+    def test_warns_once_with_actionable_message(self, llm, caplog):
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR),
+            _Response(choices=[_Choice(content="degraded")]),
+        )
+        llm.client.chat.completions.create = create
+
+        with caplog.at_level(logging.WARNING):
+            llm._raw_gen(
+                llm, model="local-model", messages=self.MSGS, stream=False,
+                tools=self.TOOLS,
+            )
+            llm._note_tools_rejected("local-model", "second time")
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        message = warnings[0].getMessage()
+        assert "supports_tools: false" in message
+        assert "local-model" in message
+        assert "--enable-auto-tool-choice" in message

@@ -1,6 +1,7 @@
 import logging
 import os
 from abc import ABC, abstractmethod
+from typing import Optional
 
 import requests
 
@@ -196,9 +197,95 @@ class EmbeddingsSingleton:
         }
 
         if embeddings_name in embeddings_factory:
-            return embeddings_factory[embeddings_name](*args, **kwargs)
+            if args or kwargs:
+                logging.debug(
+                    "Dropping %d positional and %d keyword argument(s) for pinned "
+                    "embeddings model %s: its factory takes none.",
+                    len(args),
+                    len(kwargs),
+                    embeddings_name,
+                )
+            return embeddings_factory[embeddings_name]()
         else:
             return EmbeddingsWrapper(embeddings_name, *args, **kwargs)
+
+
+def _azure_configured() -> bool:
+    """True when the Azure OpenAI deployment settings are all present."""
+    return bool(
+        settings.OPENAI_API_BASE
+        and settings.OPENAI_API_VERSION
+        and settings.AZURE_DEPLOYMENT_NAME
+    )
+
+
+def get_embeddings(
+    embeddings_name: Optional[str] = None, embeddings_key: Optional[str] = None
+):
+    """Resolve the configured embeddings instance. The single entry point.
+
+    Callers that reach for :meth:`EmbeddingsSingleton.get_instance` directly
+    reproduce neither the bundled local-model path (the Docker image ships
+    ``/app/models/all-mpnet-base-v2``) nor the OpenAI/Azure key handling: they
+    download a second copy of the model from the hub, and passing the key
+    positionally to the pinned HuggingFace names raises ``TypeError`` because
+    those factories take no arguments. Route every caller through here.
+
+    Args:
+        embeddings_name: Model name; defaults to ``settings.EMBEDDINGS_NAME``.
+        embeddings_key: API key; defaults to ``settings.EMBEDDINGS_KEY``.
+
+    Returns:
+        The shared embeddings instance for the resolved model.
+    """
+    embeddings_name = embeddings_name or settings.EMBEDDINGS_NAME
+    embeddings_key = (
+        embeddings_key if embeddings_key is not None else settings.EMBEDDINGS_KEY
+    )
+
+    # Check for remote embeddings first
+    if settings.EMBEDDINGS_BASE_URL:
+        logging.info(
+            f"Using remote embeddings API at: {settings.EMBEDDINGS_BASE_URL}"
+        )
+        return EmbeddingsSingleton._remote_instance(embeddings_name, embeddings_key)
+
+    if embeddings_name == "openai_text-embedding-ada-002":
+        if _azure_configured():
+            embedding_instance = EmbeddingsSingleton.get_instance(
+                embeddings_name, model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME
+            )
+        else:
+            embedding_instance = EmbeddingsSingleton.get_instance(
+                embeddings_name, openai_api_key=embeddings_key
+            )
+    elif embeddings_name == "huggingface_sentence-transformers/all-mpnet-base-v2":
+        possible_paths = [
+            "/app/models/all-mpnet-base-v2",  # Docker absolute path
+            "./models/all-mpnet-base-v2",  # Relative path
+        ]
+        local_model_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                local_model_path = path
+                logging.info(f"Found local model at path: {path}")
+                break
+            else:
+                logging.info(f"Path does not exist: {path}")
+        if local_model_path:
+            embedding_instance = EmbeddingsSingleton.get_instance(
+                local_model_path,
+            )
+        else:
+            logging.warning(
+                f"Local model not found in any of the paths: {possible_paths}. Falling back to HuggingFace download."
+            )
+            embedding_instance = EmbeddingsSingleton.get_instance(
+                embeddings_name,
+            )
+    else:
+        embedding_instance = EmbeddingsSingleton.get_instance(embeddings_name)
+    return embedding_instance
 
 
 class BaseVectorStore(ABC):
@@ -207,7 +294,14 @@ class BaseVectorStore(ABC):
 
     @abstractmethod
     def search(self, *args, **kwargs):
-        """Search for similar documents/chunks in the vectorstore"""
+        """Search for similar documents/chunks in the vectorstore.
+
+        Implementations accept an optional ``query_vector`` kwarg: the query
+        already embedded by the caller, so a multi-source retrieval embeds once
+        instead of once per store. A store that cannot use it must still swallow
+        the kwarg (every signature here ends in ``**kwargs``) and embed the
+        question itself.
+        """
         pass
 
     def keyword_search(self, question, k=10):
@@ -279,53 +373,9 @@ class BaseVectorStore(ABC):
         return deleted
 
     def is_azure_configured(self):
-        return (
-            settings.OPENAI_API_BASE
-            and settings.OPENAI_API_VERSION
-            and settings.AZURE_DEPLOYMENT_NAME
-        )
+        """Kept for compatibility; delegates to the module-level check."""
+        return _azure_configured()
 
     def _get_embeddings(self, embeddings_name, embeddings_key=None):
-        # Check for remote embeddings first
-        if settings.EMBEDDINGS_BASE_URL:
-            logging.info(
-                f"Using remote embeddings API at: {settings.EMBEDDINGS_BASE_URL}"
-            )
-            return EmbeddingsSingleton._remote_instance(embeddings_name, embeddings_key)
-
-        if embeddings_name == "openai_text-embedding-ada-002":
-            if self.is_azure_configured():
-                embedding_instance = EmbeddingsSingleton.get_instance(
-                    embeddings_name, model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME
-                )
-            else:
-                embedding_instance = EmbeddingsSingleton.get_instance(
-                    embeddings_name, openai_api_key=embeddings_key
-                )
-        elif embeddings_name == "huggingface_sentence-transformers/all-mpnet-base-v2":
-            possible_paths = [
-                "/app/models/all-mpnet-base-v2",  # Docker absolute path
-                "./models/all-mpnet-base-v2",  # Relative path
-            ]
-            local_model_path = None
-            for path in possible_paths:
-                if os.path.exists(path):
-                    local_model_path = path
-                    logging.info(f"Found local model at path: {path}")
-                    break
-                else:
-                    logging.info(f"Path does not exist: {path}")
-            if local_model_path:
-                embedding_instance = EmbeddingsSingleton.get_instance(
-                    local_model_path,
-                )
-            else:
-                logging.warning(
-                    f"Local model not found in any of the paths: {possible_paths}. Falling back to HuggingFace download."
-                )
-                embedding_instance = EmbeddingsSingleton.get_instance(
-                    embeddings_name,
-                )
-        else:
-            embedding_instance = EmbeddingsSingleton.get_instance(embeddings_name)
-        return embedding_instance
+        """Resolve embeddings for this store; see :func:`get_embeddings`."""
+        return get_embeddings(embeddings_name, embeddings_key)

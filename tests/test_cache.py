@@ -658,3 +658,254 @@ def test_gen_cache_key_handles_bytearray_and_memoryview():
     # All three should hash the same content to the same key.
     assert gen_cache_key(msgs_ba, "m") == gen_cache_key(msgs_b, "m")
     assert gen_cache_key(msgs_mv, "m") == gen_cache_key(msgs_b, "m")
+
+
+# =====================================================================
+# Generation kwargs are part of the cache key
+#
+# The decorators wrap ``_raw_gen``/``_raw_gen_stream``, whose extra kwargs
+# carry ``response_format`` (OpenAI structured output) and
+# ``response_schema`` (Google). Before these were hashed, changing a
+# workflow node's JSON schema replayed the previous schema's answer for
+# the whole 30-minute TTL.
+# =====================================================================
+
+
+class _FakeRedis:
+    """Dict-backed stand-in for the redis client used by the decorators."""
+
+    def __init__(self):
+        self.store = {}
+
+    def get(self, key):
+        return self.store.get(key)
+
+    def set(self, key, value, ex=None):
+        self.store[key] = value.encode("utf-8") if isinstance(value, str) else value
+
+    def delete(self, key):
+        self.store.pop(key, None)
+
+
+_SCHEMA_A = {
+    "type": "json_schema",
+    "json_schema": {"name": "r", "schema": {"properties": {"a": {"type": "string"}}}},
+}
+_SCHEMA_B = {
+    "type": "json_schema",
+    "json_schema": {"name": "r", "schema": {"properties": {"b": {"type": "number"}}}},
+}
+
+
+@pytest.mark.unit
+def test_gen_cache_key_differs_for_different_response_format():
+    messages = [{"role": "user", "content": "test"}]
+    key_a = gen_cache_key(messages, "m", None, extra={"response_format": _SCHEMA_A})
+    key_b = gen_cache_key(messages, "m", None, extra={"response_format": _SCHEMA_B})
+    assert key_a != key_b
+
+
+@pytest.mark.unit
+def test_gen_cache_key_stable_for_same_response_format():
+    messages = [{"role": "user", "content": "test"}]
+    key_a = gen_cache_key(messages, "m", None, extra={"response_format": _SCHEMA_A})
+    key_b = gen_cache_key(messages, "m", None, extra={"response_format": dict(_SCHEMA_A)})
+    assert key_a == key_b
+
+
+@pytest.mark.unit
+def test_gen_cache_key_response_format_differs_from_no_format():
+    messages = [{"role": "user", "content": "test"}]
+    assert gen_cache_key(messages, "m") != gen_cache_key(
+        messages, "m", None, extra={"response_format": _SCHEMA_A}
+    )
+
+
+@pytest.mark.unit
+def test_gen_cache_key_differs_for_different_response_schema():
+    """Google's structured-output kwarg is keyed just like OpenAI's."""
+    messages = [{"role": "user", "content": "test"}]
+    key_a = gen_cache_key(messages, "m", None, extra={"response_schema": _SCHEMA_A})
+    key_b = gen_cache_key(messages, "m", None, extra={"response_schema": _SCHEMA_B})
+    assert key_a != key_b
+
+
+@pytest.mark.unit
+def test_gen_cache_key_covers_other_generation_kwargs():
+    messages = [{"role": "user", "content": "test"}]
+    assert gen_cache_key(
+        messages, "m", None, extra={"temperature": 0.1}
+    ) != gen_cache_key(messages, "m", None, extra={"temperature": 0.9})
+    assert gen_cache_key(
+        messages, "m", None, extra={"reasoning_effort": "low"}
+    ) != gen_cache_key(messages, "m", None, extra={"reasoning_effort": "high"})
+
+
+@pytest.mark.unit
+def test_gen_cache_key_ignores_usage_attachments():
+    """``_usage_attachments`` is a token-accounting side channel that never
+    reaches the provider — and the gen/stream decorator stacks disagree on
+    whether it is still in kwargs — so it must not move the key."""
+    messages = [{"role": "user", "content": "test"}]
+    plain = gen_cache_key(messages, "m")
+    with_attachments = gen_cache_key(
+        messages, "m", None, extra={"_usage_attachments": [{"id": "att1"}]}
+    )
+    assert plain == with_attachments
+
+
+@pytest.mark.unit
+def test_gen_cache_key_ignores_none_valued_kwargs():
+    """``response_format=None`` is the default, not a distinct request."""
+    messages = [{"role": "user", "content": "test"}]
+    assert gen_cache_key(messages, "m") == gen_cache_key(
+        messages, "m", None, extra={"response_format": None, "response_schema": None}
+    )
+
+
+@pytest.mark.unit
+def test_gen_cache_key_extra_ordering_is_irrelevant():
+    messages = [{"role": "user", "content": "test"}]
+    first = gen_cache_key(messages, "m", None, extra={"a": 1, "b": 2})
+    second = gen_cache_key(messages, "m", None, extra={"b": 2, "a": 1})
+    assert first == second
+
+
+@pytest.mark.unit
+def test_gen_cache_key_unserializable_extra_raises_value_error():
+    """A key we cannot compute must raise so the decorators bypass the
+    cache rather than reuse a wrong entry."""
+    messages = [{"role": "user", "content": "test"}]
+    circular = {}
+    circular["self"] = circular
+    with pytest.raises(ValueError):
+        gen_cache_key(messages, "m", None, extra={"response_format": circular})
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_gen_cache_does_not_serve_entry_from_other_response_format(mock_make_redis):
+    fake = _FakeRedis()
+    mock_make_redis.return_value = fake
+    calls = []
+
+    @gen_cache
+    def mock_function(self, model, messages, stream, tools, **kwargs):
+        calls.append(kwargs.get("response_format"))
+        return f"answer-{len(calls)}"
+
+    messages = [{"role": "user", "content": "test"}]
+    first = mock_function(
+        None, "m", messages, stream=False, tools=None, response_format=_SCHEMA_A
+    )
+    second = mock_function(
+        None, "m", messages, stream=False, tools=None, response_format=_SCHEMA_B
+    )
+    cached = mock_function(
+        None, "m", messages, stream=False, tools=None, response_format=_SCHEMA_A
+    )
+
+    assert first == "answer-1"
+    assert second == "answer-2"
+    assert cached == "answer-1"
+    assert calls == [_SCHEMA_A, _SCHEMA_B]
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_stream_cache_does_not_replay_entry_from_other_response_format(mock_make_redis):
+    """The reported bug: a workflow node whose schema changed replayed the
+    old schema's cached stream for the rest of the TTL."""
+    fake = _FakeRedis()
+    mock_make_redis.return_value = fake
+    calls = []
+
+    @stream_cache
+    def mock_function(self, model, messages, stream, tools, **kwargs):
+        calls.append(kwargs.get("response_format"))
+        yield f"chunk-{len(calls)}"
+
+    messages = [{"role": "user", "content": "test"}]
+    first = list(
+        mock_function(
+            None, "m", messages, stream=True, tools=None, response_format=_SCHEMA_A
+        )
+    )
+    second = list(
+        mock_function(
+            None, "m", messages, stream=True, tools=None, response_format=_SCHEMA_B
+        )
+    )
+    replay = list(
+        mock_function(
+            None, "m", messages, stream=True, tools=None, response_format=_SCHEMA_A
+        )
+    )
+
+    assert first == ["chunk-1"]
+    assert second == ["chunk-2"]
+    assert replay == ["chunk-1"]
+    assert calls == [_SCHEMA_A, _SCHEMA_B]
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_gen_cache_bypassed_for_previous_response_id(mock_make_redis):
+    """A Responses API turn chained to a server-held id depends on state no
+    key can capture, so it must not read or write the cache."""
+    fake = MagicMock()
+    mock_make_redis.return_value = fake
+
+    @gen_cache
+    def mock_function(self, model, messages, stream, tools, **kwargs):
+        return "fresh"
+
+    messages = [{"role": "user", "content": "test"}]
+    result = mock_function(
+        None, "m", messages, stream=False, tools=None, previous_response_id="resp_1"
+    )
+
+    assert result == "fresh"
+    fake.get.assert_not_called()
+    fake.set.assert_not_called()
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_stream_cache_bypassed_for_previous_response_id(mock_make_redis):
+    fake = MagicMock()
+    mock_make_redis.return_value = fake
+
+    @stream_cache
+    def mock_function(self, model, messages, stream, tools, **kwargs):
+        yield "fresh"
+
+    messages = [{"role": "user", "content": "test"}]
+    result = list(
+        mock_function(
+            None, "m", messages, stream=True, tools=None, previous_response_id="resp_1"
+        )
+    )
+
+    assert result == ["fresh"]
+    fake.get.assert_not_called()
+    fake.set.assert_not_called()
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_gen_cache_ignores_stream_payload_stored_under_same_key(mock_make_redis):
+    """``gen_cache`` and ``stream_cache`` share a key space; a stream
+    envelope must never be handed back as a non-streaming answer."""
+    fake = _FakeRedis()
+    mock_make_redis.return_value = fake
+    messages = [{"role": "user", "content": "test"}]
+    key = gen_cache_key(messages, "m", None)
+    fake.set(key, json.dumps({"version": 1, "chunks": ["a", "b"]}))
+
+    @gen_cache
+    def mock_function(self, model, messages, stream, tools, **kwargs):
+        return "real answer"
+
+    result = mock_function(None, "m", messages, stream=False, tools=None)
+    assert result == "real answer"

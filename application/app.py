@@ -31,7 +31,10 @@ from application.api.v1 import v1_bp  # noqa: E402
 from application.celery_init import celery  # noqa: E402
 from application.core.secret_key import resolve_jwt_secret_key  # noqa: E402
 from application.core.settings import settings  # noqa: E402
-from application.storage.db.bootstrap import ensure_database_ready  # noqa: E402
+from application.storage.db.bootstrap import (  # noqa: E402
+    ensure_database_ready,
+    ensure_vector_schema,
+)
 from application.stt.upload_limits import (  # noqa: E402
     build_stt_file_size_limit_message,
     should_reject_stt_request,
@@ -58,6 +61,11 @@ ensure_database_ready(
     migrate=settings.AUTO_MIGRATE,
     logger=logging.getLogger("application.app"),
 )
+
+# Own the vector DB's schema here too, so the retrieval hot path is pure reads
+# instead of re-running DDL for every source of every request.
+if settings.AUTO_VECTOR_SCHEMA:
+    ensure_vector_schema(logger=logging.getLogger("application.app"))
 
 from application.agents.default_tools import (  # noqa: E402
     validate_default_chat_tools,

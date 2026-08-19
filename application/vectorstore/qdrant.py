@@ -109,12 +109,20 @@ class QdrantStore(BaseVectorStore):
         k: int = 2,
         *args,
         score_threshold: Optional[float] = None,
+        query_vector: Optional[List[float]] = None,
         **kwargs,
     ) -> List[Tuple[Document, float]]:
-        """Search, pairing each hit with its cosine similarity."""
+        """Search, pairing each hit with its cosine similarity.
+
+        Args:
+            query_vector: Precomputed embedding of ``question``; when given the
+                store skips embedding the query itself.
+        """
+        if query_vector is None:
+            query_vector = self._embeddings.embed_query(question)
         hits = self._client.query_points(
             collection_name=self._collection,
-            query=self._embeddings.embed_query(question),
+            query=query_vector,
             query_filter=self._filter,
             limit=k,
             with_payload=True,

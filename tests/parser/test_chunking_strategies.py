@@ -140,6 +140,13 @@ class _FakeEmbeddings:
 
 @pytest.mark.unit
 class TestSemantic:
+    @pytest.fixture(autouse=True)
+    def _no_remote_embeddings(self, monkeypatch):
+        """The resolver short-circuits to the remote API when this is set."""
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "EMBEDDINGS_BASE_URL", None)
+
     def test_breakpoint_forces_split(self):
         # Two topics: sentences 0-1 vs 2-3, orthogonal embeddings between.
         text = "Alpha one. Alpha two. Beta one. Beta two."
@@ -250,3 +257,25 @@ class TestClassicByteIdentical:
         assert [(c.doc_id, c.text, c.extra_info) for c in via] == [
             (c.doc_id, c.text, c.extra_info) for c in direct
         ]
+
+
+@pytest.mark.unit
+class TestSemanticEmbeddingsResolution:
+    def test_uses_shared_resolver(self):
+        """Semantic chunking must resolve embeddings through ``get_embeddings``.
+
+        Calling the singleton directly with the configured name skips the
+        bundled local model and downloads a second copy from the hub.
+        """
+        vectors = [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]]
+        text = "Alpha one. Alpha two. Beta one. Beta two."
+        chunker = SemanticChunker(max_tokens=2000, min_tokens=0)
+
+        with patch(
+            "application.vectorstore.base.get_embeddings",
+            return_value=_FakeEmbeddings(vectors),
+        ) as mock_resolver:
+            out = chunker.chunk([Document(text=text, doc_id="d")])
+
+        mock_resolver.assert_called_once_with()
+        assert len(out) == 2

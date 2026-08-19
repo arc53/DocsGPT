@@ -76,6 +76,13 @@ class WorkflowEngine:
         # embedded draft), so run-scoped artifacts must NOT be persisted as orphans.
         # Defaults True; WorkflowAgent flips it off on the draft path.
         self.run_persisted: bool = True
+        # Transient, in-memory ``artifact_id -> text`` for input documents whose text
+        # was already extracted when the attachment was stored, so a node reuses it
+        # instead of re-parsing (re-OCRing) the same bytes. Deliberately NOT part of
+        # ``state``: state is snapshotted into the run row, and the text is large.
+        # Populated once per run by ``WorkflowAgent._bridge_attachments``; lifetime is
+        # this engine instance, i.e. exactly the run.
+        self.preextracted_text: Dict[str, str] = {}
         self.state: WorkflowState = {}
         self.execution_log: List[Dict[str, Any]] = []
         self._condition_result: Optional[str] = None
@@ -805,16 +812,22 @@ class WorkflowEngine:
                 attachments.append({"id": artifact_id, "mime_type": mime_type, "path": storage_path})
                 native_count += 1
             else:
-                # Inline-text mimes are read directly (cheap); other mimes route
-                # through the parsing worker -- a blocking, ~120s per-document call.
-                # Cap how many documents a single node sends down that path so a
-                # node referencing many non-native documents (e.g. the ``*`` token)
-                # can't serialize dozens of parses. Inline text is not capped.
-                needs_parse = not self._is_inline_text_mime(mime_type)
+                # Inline-text mimes are read directly (cheap), and a document whose
+                # text was already extracted when its attachment was stored is reused
+                # as-is (no parse at all); every other mime routes through the parsing
+                # worker -- a blocking, size-scaled per-document call. Cap how many
+                # documents a single node sends down THAT path so a node referencing
+                # many non-native documents (e.g. the ``*`` token) can't serialize
+                # dozens of parses. Inline text and reused text are not capped: they
+                # cost no blocking parse, so charging them would starve the budget.
+                needs_parse = (
+                    artifact_id not in self.preextracted_text
+                    and not self._is_inline_text_mime(mime_type)
+                )
                 if needs_parse:
                     # Count (and gate on) the parse ATTEMPT, not the success: a
-                    # timed-out/failed parse is the ~120s worst case we must bound,
-                    # so it has to consume cap budget too. Otherwise a degraded
+                    # timed-out/failed parse is the full-window worst case we must
+                    # bound, so it has to consume cap budget too. Otherwise a degraded
                     # parsing backend (every parse fails) never advances the count
                     # and the node keeps issuing blocking parses without limit.
                     if extract_count >= extract_max:
@@ -822,7 +835,7 @@ class WorkflowEngine:
                         continue
                     extract_count += 1
                 content = self._extract_attachment_text(
-                    artifact_id, storage_path, mime_type, filename, max_bytes
+                    artifact_id, storage_path, mime_type, filename, max_bytes, size=size
                 )
                 if content is None:
                     logger.warning(
@@ -873,12 +886,30 @@ class WorkflowEngine:
         return mime_type == "application/pdf" and supports_images
 
     def _extract_attachment_text(
-        self, artifact_id: str, storage_path: str, mime_type: str, filename: str, max_bytes: int
+        self,
+        artifact_id: str,
+        storage_path: str,
+        mime_type: str,
+        filename: str,
+        max_bytes: int,
+        size: Optional[int] = None,
     ) -> Optional[str]:
-        """Get an attachment's text: inline already-text formats, else parse via the parsing worker; None on failure."""
+        """Get an attachment's text: reuse upload-time extraction, else inline text mimes, else parse."""
         from application.parser.document_reader import truncate_text_head_tail
         from application.storage.storage_creator import StorageCreator
 
+        # An uploaded chat attachment was already parsed (and possibly OCR'd) when it
+        # was stored, so re-parsing it here would repeat the dominant cost of the run
+        # for every node that references it. Bounded with the same head+tail window the
+        # inline-text path uses.
+        preextracted = self.preextracted_text.get(artifact_id)
+        if preextracted:
+            logger.info(
+                "Workflow node: reusing upload-time extraction for %s (%s); skipping re-parse",
+                filename,
+                artifact_id,
+            )
+            return truncate_text_head_tail(preextracted)
         if self._is_inline_text_mime(mime_type):
             try:
                 data = StorageCreator.get_storage().get_file(storage_path).read()
@@ -902,13 +933,17 @@ class WorkflowEngine:
             return truncate_text_head_tail(text)
         # Non-text mimes parse via the dedicated parsing queue (works on any backend,
         # no sandbox): the worker re-resolves the artifact run-scoped and reads its bytes.
-        return self._parse_document_text(artifact_id)
+        return self._parse_document_text(artifact_id, size=size)
 
-    def _parse_document_text(self, artifact_id: str) -> Optional[str]:
-        """Enqueue ``parse_document`` for this run and await the bounded markdown; None on failure."""
+    def _parse_document_text(self, artifact_id: str, size: Optional[int] = None) -> Optional[str]:
+        """Enqueue ``parse_document`` for this run and await the size-scaled markdown; None on failure."""
         from celery.exceptions import TimeoutError as CeleryTimeoutError
 
-        from application.api.user.tasks import parse_document
+        from application.api.user.tasks import (
+            parse_document,
+            parse_task_time_limits,
+            parse_timeout_for_size,
+        )
         from application.core.settings import settings
 
         user_id = self._resolve_user_id()
@@ -916,11 +951,15 @@ class WorkflowEngine:
             return None
         options = {"output": "markdown", "include_tables": False, "persist": False}
         queue = getattr(settings, "DOCUMENT_PARSE_QUEUE", "parsing")
-        timeout = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120))
+        # OCR cost scales with pages, so the window grows with the document's size
+        # (floored at DOCUMENT_PARSE_TIMEOUT); the task's per-call time limits are
+        # raised to match, else the worker would self-terminate mid-parse.
+        timeout = parse_timeout_for_size(size)
         try:
             async_result = parse_document.apply_async(
                 args=[artifact_id, {"workflow_run_id": self.workflow_run_id}, user_id, options],
                 queue=queue,
+                **parse_task_time_limits(timeout),
             )
             # A workflow can run inside a Celery worker (scheduled runs / webhooks).
             # In a prefork worker ``task_join_will_block()`` is process-wide, so the

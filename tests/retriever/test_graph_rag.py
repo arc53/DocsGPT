@@ -56,7 +56,7 @@ class TestGraphRAGFallback:
         self, _avail, mock_store_cls, _patch_llm_creator
     ):
         store = MagicMock()
-        store.count_nodes.return_value = 0
+        store.count_nodes_many.return_value = {"src1": 0}
         mock_store_cls.return_value = store
 
         rag = _make_retriever()
@@ -68,6 +68,7 @@ class TestGraphRAGFallback:
         assert docs == classic_docs
         store.search_nodes_by_embedding.assert_not_called()
         store.get_subgraph.assert_not_called()
+        store.close.assert_called_once()
 
     @patch("application.retriever.graph_rag.GraphStore")
     @patch("application.retriever.graph_rag.graphrag_available", return_value=False)
@@ -101,6 +102,9 @@ def _store_with_graph(
 ):
     store = MagicMock()
     store.count_nodes.return_value = len(nodes)
+    store.count_nodes_many.side_effect = lambda ids: {
+        source_id: len(nodes) for source_id in ids
+    }
     store.search_nodes_by_embedding.return_value = seed_rows
     store.get_subgraph.return_value = {"nodes": nodes, "edges": edges}
     store.get_chunk_ids_for_nodes.return_value = node_chunks
@@ -166,7 +170,7 @@ class TestGraphRAGHappyPath:
         rag = _make_retriever(chunks=2)
         # Call the PPR path directly: _get_data would swallow a raise and fall
         # back to ClassicRAG, hiding the regression.
-        docs = rag._graph_docs_for_source(store, "src1")
+        docs = rag._graph_docs_for_source(store, "src1", [0.1, 0.2, 0.3])
 
         assert len(docs) >= 1
 
@@ -278,7 +282,7 @@ class TestGraphRAGHappyPath:
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
         store = _store_with_graph([], [], {}, {}, [])
-        store.count_nodes.return_value = 5
+        store.count_nodes_many.side_effect = lambda ids: {s: 5 for s in ids}
         mock_store_cls.return_value = store
 
         rag = _make_retriever()
@@ -449,3 +453,296 @@ class TestGraphRAGTopK:
         docs = rag._get_data()
 
         assert len(docs) == 2
+
+
+# ── Embeddings resolution ─────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestEmbedQueryResolution:
+    def test_embed_query_uses_shared_resolver(self):
+        """Query embedding must go through ``get_embeddings``.
+
+        Only the resolver knows the bundled local-model path, so calling the
+        singleton directly loads a second copy of the model (or crashes on the
+        positional key).
+        """
+        fake = Mock()
+        fake.embed_query.return_value = [0.1, 0.2, 0.3]
+
+        with patch(
+            "application.retriever.graph_rag.get_embeddings", return_value=fake
+        ) as mock_resolver:
+            result = GraphRAGRetriever._embed_query(object(), "a question")
+
+        mock_resolver.assert_called_once_with()
+        fake.embed_query.assert_called_once_with("a question")
+        assert result == [0.1, 0.2, 0.3]
+
+
+# ── Batched retrieval across sources ─────────────────────────────────────────
+
+
+def _multi_source_retriever(sources, **overrides):
+    """Retriever over several attached sources."""
+    return _make_retriever(
+        source={"question": "q", "active_docs": list(sources)}, **overrides
+    )
+
+
+def _recording_classic(rag, docs):
+    """Stub ``ClassicRAG._get_data`` that records the sources it was handed."""
+    seen = []
+
+    def _run():
+        seen.append(list(rag._classic.vectorstores))
+        return [dict(doc) for doc in docs]
+
+    rag._classic._get_data = Mock(side_effect=_run)
+    return seen
+
+
+def _single_node_store(counts):
+    """Graph store whose every source yields one chunk, with ``counts`` shape."""
+    store = _store_with_graph(
+        [{"id": "n1", "doc_freq": 1}],
+        [],
+        {"n1": ["c1"]},
+        {"c1": "graph text"},
+        [{"id": "n1", "distance": 0.0}],
+    )
+    store.count_nodes_many.side_effect = lambda ids: {
+        source_id: counts[source_id] for source_id in ids
+    }
+    return store
+
+
+_CLASSIC_DOC = {"title": "cl", "text": "classic", "source": "a", "filename": "cl"}
+
+
+class _SourceConfig:
+    """Minimal stand-in for the Dispatcher's per-source RetrievalConfig."""
+
+    def __init__(self, chunks: int):
+        self.chunks = chunks
+
+
+@pytest.mark.unit
+class TestGraphRAGBatching:
+    """N attached sources cost one count query and one classic run, not N of each."""
+
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_node_counts_fetched_in_one_query(
+        self, _avail, mock_store_cls, _patch_llm_creator
+    ):
+        store = MagicMock()
+        store.count_nodes_many.return_value = {"a": 0, "b": 0, "c": 0}
+        mock_store_cls.return_value = store
+
+        rag = _multi_source_retriever(["a", "b", "c"])
+        _recording_classic(rag, [])
+
+        rag._get_data()
+
+        store.count_nodes_many.assert_called_once_with(["a", "b", "c"])
+        store.count_nodes.assert_not_called()
+
+    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_graphless_sources_share_one_classic_call(
+        self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
+    ):
+        store = _single_node_store({"a": 0, "b": 3, "c": 0})
+        mock_store_cls.return_value = store
+
+        rag = _multi_source_retriever(["a", "b", "c"], chunks=3)
+        seen = _recording_classic(rag, [_CLASSIC_DOC])
+
+        docs = rag._get_data()
+
+        assert rag._classic._get_data.call_count == 1
+        assert seen == [["a", "c"]]
+        # The classic batch occupies the slot of the first graphless source, so
+        # the graph source's docs still follow it in attachment order.
+        assert [doc["text"] for doc in docs] == ["classic", "graph text"]
+
+    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_only_the_batched_sources_keep_their_overrides(
+        self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
+    ):
+        store = _single_node_store({"a": 0, "b": 3, "c": 0})
+        mock_store_cls.return_value = store
+
+        rag = _multi_source_retriever(["a", "b", "c"], chunks=3)
+        configs = {sid: _SourceConfig(2) for sid in ("a", "b", "c")}
+        rag.per_source_retrieval = dict(configs)
+        captured = {}
+
+        def _run():
+            captured["overrides"] = dict(rag._classic.per_source_retrieval)
+            return []
+
+        rag._classic._get_data = Mock(side_effect=_run)
+
+        rag._get_data()
+
+        assert captured["overrides"] == {"a": configs["a"], "c": configs["c"]}
+        # Restored afterwards, exactly as the per-source path did.
+        assert rag._classic.per_source_retrieval == {}
+
+    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_query_is_embedded_once_for_several_graph_sources(
+        self, _avail, mock_store_cls, _tok, _patch_llm_creator
+    ):
+        store = _single_node_store({"a": 3, "b": 3})
+        mock_store_cls.return_value = store
+
+        rag = _multi_source_retriever(["a", "b"], chunks=4)
+        rag._embed_query = Mock(return_value=[0.1, 0.2, 0.3])
+
+        docs = rag._get_data()
+
+        assert rag._embed_query.call_count == 1
+        assert store.search_nodes_by_embedding.call_count == 2
+        # The one vector is what every source searches with.
+        for call in store.search_nodes_by_embedding.call_args_list:
+            assert call.args[1] == [0.1, 0.2, 0.3]
+        assert [doc["text"] for doc in docs] == ["graph text", "graph text"]
+
+    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_failed_graph_sources_land_in_one_batched_fallback(
+        self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
+    ):
+        store = _single_node_store({"a": 3, "b": 3, "c": 3})
+
+        def _seed(source_id, embedding, k=10):
+            if source_id in ("b", "c"):
+                raise RuntimeError("graph exploded")
+            return [{"id": "n1", "distance": 0.0}]
+
+        store.search_nodes_by_embedding.side_effect = _seed
+        mock_store_cls.return_value = store
+
+        rag = _multi_source_retriever(["a", "b", "c"], chunks=6)
+        seen = _recording_classic(rag, [_CLASSIC_DOC])
+
+        docs = rag._get_data()
+
+        assert rag._classic._get_data.call_count == 1
+        assert seen == [["b", "c"]]
+        # The retried batch is appended after the graph results.
+        assert [doc["text"] for doc in docs] == ["graph text", "classic"]
+
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_embedding_failure_falls_back_for_every_graph_source(
+        self, _avail, mock_store_cls, _patch_llm_creator
+    ):
+        store = _single_node_store({"a": 3, "b": 3})
+        mock_store_cls.return_value = store
+
+        rag = _multi_source_retriever(["a", "b"])
+        rag._embed_query = Mock(side_effect=RuntimeError("no embeddings"))
+        seen = _recording_classic(rag, [_CLASSIC_DOC])
+
+        docs = rag._get_data()
+
+        assert seen == [["a", "b"]]
+        assert [doc["text"] for doc in docs] == ["classic"]
+        store.search_nodes_by_embedding.assert_not_called()
+
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_count_failure_falls_back_in_one_call(
+        self, _avail, mock_store_cls, _patch_llm_creator
+    ):
+        store = MagicMock()
+        store.count_nodes_many.side_effect = RuntimeError("no graph tables")
+        mock_store_cls.return_value = store
+
+        rag = _multi_source_retriever(["a", "b"])
+        seen = _recording_classic(rag, [_CLASSIC_DOC])
+
+        docs = rag._get_data()
+
+        assert seen == [["a", "b"]]
+        assert [doc["text"] for doc in docs] == ["classic"]
+
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_unbuildable_store_falls_back_in_one_call(
+        self, _avail, mock_store_cls, _patch_llm_creator
+    ):
+        mock_store_cls.side_effect = RuntimeError("no connection string")
+
+        rag = _multi_source_retriever(["a", "b"])
+        seen = _recording_classic(rag, [_CLASSIC_DOC])
+
+        rag._get_data()
+
+        assert seen == [["a", "b"]]
+
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=False)
+    def test_unavailable_graphrag_makes_one_batched_classic_call(
+        self, _avail, mock_store_cls, _patch_llm_creator
+    ):
+        rag = _multi_source_retriever(["a", "b", "c"])
+        seen = _recording_classic(rag, [_CLASSIC_DOC])
+
+        rag._get_data()
+
+        assert rag._classic._get_data.call_count == 1
+        assert seen == [["a", "b", "c"]]
+        mock_store_cls.assert_not_called()
+
+    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_store_is_closed_on_the_success_path(
+        self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
+    ):
+        store = _single_node_store({"a": 3})
+        mock_store_cls.return_value = store
+
+        rag = _multi_source_retriever(["a"], chunks=2)
+        rag._get_data()
+
+        store.close.assert_called_once()
+
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_store_is_closed_when_retrieval_raises(
+        self, _avail, mock_store_cls, _patch_llm_creator
+    ):
+        store = MagicMock()
+        store.count_nodes_many.return_value = {"a": 0}
+        mock_store_cls.return_value = store
+
+        rag = _multi_source_retriever(["a"])
+        rag._classic._get_data = Mock(side_effect=RuntimeError("boom"))
+
+        with pytest.raises(RuntimeError):
+            rag._get_data()
+
+        store.close.assert_called_once()
+
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_empty_source_list_never_builds_a_store(
+        self, _avail, mock_store_cls, _patch_llm_creator
+    ):
+        rag = _make_retriever(source={"question": "q", "active_docs": []})
+        rag._classic._get_data = Mock(return_value=[])
+
+        assert rag._get_data() == []
+        mock_store_cls.assert_not_called()
+        rag._classic._get_data.assert_not_called()

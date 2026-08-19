@@ -259,7 +259,9 @@ class TestDoclingParserParseFile:
         mock_converter = MagicMock()
         mock_result = MagicMock()
         mock_doc = MagicMock()
-        mock_doc.export_to_markdown.return_value = "content"
+        # Long enough to clear the OCR chars-per-page floor, which a default
+        # (ocr_enabled=True) parser applies to PDFs.
+        mock_doc.export_to_markdown.return_value = "converted document content"
         mock_doc.texts = []
         mock_result.document = mock_doc
         mock_converter.convert.return_value = mock_result
@@ -268,7 +270,7 @@ class TestDoclingParserParseFile:
             parser._converter = mock_converter
             mock_init.return_value = {}
             result = parser.parse_file(Path("test.pdf"))
-            assert "content" in result
+            assert "converted document content" in result
 
     def test_parse_file_error_ignore_raises_instead_of_returning_error_text(self):
         """A failed conversion must never become the document's text.
@@ -1011,3 +1013,352 @@ class TestApplyInferenceSettings:
             "torch.compile must be disabled before PdfPipelineOptions is "
             f"constructed, got {events}"
         )
+
+
+# =====================================================================
+# OCR dropout guard
+# =====================================================================
+
+
+def _mock_conversion(markdown: str, pages: int = 1) -> MagicMock:
+    """Build a mock docling ConversionResult exporting ``markdown``."""
+    document = MagicMock()
+    document.export_to_markdown.return_value = markdown
+    document.texts = []
+    document.pages = {index: object() for index in range(pages)}
+    result = MagicMock()
+    result.document = document
+    return result
+
+
+def _set_threshold(monkeypatch, value: int) -> None:
+    """Point the OCR dropout guard at a specific chars-per-page floor."""
+    from application.core.settings import settings as real_settings
+
+    class _Stub:
+        def __getattr__(self, name):
+            return getattr(real_settings, name)
+
+    stub = _Stub()
+    stub.DOCLING_OCR_MIN_CHARS_PER_PAGE = value
+    monkeypatch.setattr("application.core.settings.settings", stub)
+
+
+@pytest.mark.unit
+class TestOCRDropoutGuard:
+    """A near-empty OCR parse must be loud, never stored as the document.
+
+    In production, after a long scanned PDF, docling's pipeline degraded
+    inside the worker and returned zero characters for every later scanned
+    page — with no error. ``parse_file`` returned that empty string and
+    ingestion reported success, so the source was indexed as empty.
+    """
+
+    def test_near_empty_first_pass_recovers_on_fresh_converter(self, caplog):
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        degraded = MagicMock()
+        degraded.convert.return_value = _mock_conversion(
+            "<!-- image -->\n\n<!-- image -->\n\n<!-- image -->", pages=3
+        )
+        parser._converter = degraded
+
+        fresh = MagicMock()
+        fresh.convert.return_value = _mock_conversion(
+            "Recovered scanned text for page one, page two and page three.",
+            pages=3,
+        )
+        forced_during_retry = []
+
+        def _create_converter():
+            forced_during_retry.append(parser.force_full_page_ocr)
+            return fresh
+
+        with patch.object(
+            parser, "_create_converter", side_effect=_create_converter
+        ) as create, caplog.at_level("WARNING"):
+            result = parser.parse_file(Path("scan.pdf"))
+
+        assert "Recovered scanned text" in result
+        # Exactly one retry, on a converter that did not exist before.
+        assert create.call_count == 1
+        assert fresh.convert.call_count == 1
+        assert degraded.convert.call_count == 1
+        # The retry forces full-page OCR...
+        assert forced_during_retry == [True]
+        # ...but that must not stick to the parser or its converter, or every
+        # later file in the worker pays for full-page OCR it does not need.
+        assert parser.force_full_page_ocr is False
+        assert parser._converter is None
+        messages = " ".join(caplog.messages)
+        assert "scan.pdf" in messages
+        assert "near-empty" in messages
+        assert "Recovered scan.pdf on retry" in messages
+
+    def test_near_empty_both_passes_raises_document_parse_error(self):
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        degraded = MagicMock()
+        degraded.convert.return_value = _mock_conversion("<!-- image -->", pages=100)
+        parser._converter = degraded
+
+        fresh = MagicMock()
+        fresh.convert.return_value = _mock_conversion("", pages=100)
+
+        with patch.object(parser, "_create_converter", return_value=fresh):
+            with pytest.raises(DocumentParseError) as excinfo:
+                parser.parse_file(Path("scan.pdf"))
+
+        message = str(excinfo.value)
+        assert "scan.pdf" in message
+        assert "OCR produced 0 chars over 100 pages" in message
+        assert "OCR pipeline dropout" in message
+        assert "not indexed" in message
+        # The dropout diagnosis must survive: the generic handler must not
+        # re-wrap it into "Failed to parse ... with docling".
+        assert "Failed to parse" not in message
+        assert parser._converter is None
+
+    def test_dropout_error_reports_an_unread_text_layer(self, monkeypatch):
+        """A text layer docling ignored points at the pipeline, not the scan."""
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        monkeypatch.setattr(
+            "application.parser.file.docling_parser._pdf_text_layer_probe",
+            lambda file: (12, 48_000),
+        )
+        parser = DoclingPDFParser(ocr_enabled=True)
+        parser._converter = MagicMock()
+        parser._converter.convert.return_value = _mock_conversion("", pages=12)
+
+        with patch.object(parser, "_create_converter", return_value=parser._converter):
+            with pytest.raises(DocumentParseError) as excinfo:
+                parser.parse_file(Path("scan.pdf"))
+
+        assert "The PDF carries a 48000-char text layer" in str(excinfo.value)
+
+    def test_ocr_disabled_returns_near_empty_content_untouched(self):
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=False)
+        converter = MagicMock()
+        converter.convert.return_value = _mock_conversion("tiny", pages=40)
+        parser._converter = converter
+
+        with patch.object(parser, "_create_converter") as create:
+            assert parser.parse_file(Path("text.pdf")) == "tiny"
+
+        assert create.call_count == 0
+        assert converter.convert.call_count == 1
+        assert parser._converter is converter
+
+    def test_threshold_zero_disables_the_guard(self, monkeypatch):
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        _set_threshold(monkeypatch, 0)
+        parser = DoclingPDFParser(ocr_enabled=True)
+        converter = MagicMock()
+        converter.convert.return_value = _mock_conversion("", pages=100)
+        parser._converter = converter
+
+        with patch.object(parser, "_create_converter") as create:
+            assert parser.parse_file(Path("scan.pdf")) == ""
+
+        assert create.call_count == 0
+        assert parser._converter is converter
+
+    def test_healthy_ocr_parse_converts_once(self):
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        converter = MagicMock()
+        converter.convert.return_value = _mock_conversion(
+            "A page of genuinely scanned text. " * 10, pages=2
+        )
+        parser._converter = converter
+
+        with patch.object(parser, "_create_converter") as create:
+            result = parser.parse_file(Path("scan.pdf"))
+
+        assert "genuinely scanned text" in result
+        assert converter.convert.call_count == 1
+        assert create.call_count == 0
+        assert parser._converter is converter
+
+    def test_threshold_is_per_page_not_per_document(self, monkeypatch):
+        """200 chars is healthy for one page and a dropout for a hundred."""
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        content = "x" * 200
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        parser._converter = MagicMock()
+        parser._converter.convert.return_value = _mock_conversion(content, pages=1)
+        with patch.object(parser, "_create_converter") as create:
+            assert parser.parse_file(Path("one-page.pdf")) == content
+        assert create.call_count == 0
+
+        long_doc = DoclingPDFParser(ocr_enabled=True)
+        long_doc._converter = MagicMock()
+        long_doc._converter.convert.return_value = _mock_conversion(content, pages=100)
+        with patch.object(
+            long_doc, "_create_converter", return_value=long_doc._converter
+        ):
+            with pytest.raises(DocumentParseError):
+                long_doc.parse_file(Path("hundred-page.pdf"))
+
+    def test_guard_does_not_apply_to_non_ocr_formats(self):
+        """DOCX parsers inherit ocr_enabled=True but never OCR anything."""
+        from application.parser.file.docling_parser import DoclingDocxParser
+
+        parser = DoclingDocxParser()
+        assert parser.ocr_enabled is True
+        converter = MagicMock()
+        converter.convert.return_value = _mock_conversion("Hi", pages=1)
+        parser._converter = converter
+
+        with patch.object(parser, "_create_converter") as create:
+            assert parser.parse_file(Path("memo.docx")) == "Hi"
+
+        assert create.call_count == 0
+
+    def test_guard_applies_to_images(self):
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import DoclingImageParser
+
+        parser = DoclingImageParser(ocr_enabled=True)
+        converter = MagicMock()
+        converter.convert.return_value = _mock_conversion("<!-- image -->")
+        parser._converter = converter
+
+        with patch.object(parser, "_create_converter", return_value=converter):
+            with pytest.raises(DocumentParseError, match="scan.png"):
+                parser.parse_file(Path("scan.png"))
+
+    def test_retry_conversion_failure_is_still_a_parse_error(self):
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        parser._converter = MagicMock()
+        parser._converter.convert.return_value = _mock_conversion("", pages=2)
+
+        fresh = MagicMock()
+        fresh.convert.side_effect = RuntimeError("OCR model unavailable")
+
+        with patch.object(parser, "_create_converter", return_value=fresh):
+            with pytest.raises(DocumentParseError, match="OCR model unavailable"):
+                parser.parse_file(Path("scan.pdf"))
+
+        assert parser.force_full_page_ocr is False
+        assert parser._converter is None
+
+
+@pytest.mark.unit
+class TestOCRDropoutHelpers:
+
+    def test_image_placeholders_are_not_text(self):
+        from application.parser.file.docling_parser import _text_char_count
+
+        assert _text_char_count(None) == 0
+        assert _text_char_count("") == 0
+        assert _text_char_count("<!-- image -->\n\n<!-- image -->") == 0
+        assert _text_char_count("  <!-- image -->  abc  ") == 3
+
+    def test_page_count_prefers_document_pages(self):
+        from application.parser.file.docling_parser import _result_page_count
+
+        result = _mock_conversion("x", pages=7)
+        assert _result_page_count(result, Path("a.pdf")) == 7
+
+    def test_page_count_falls_back_to_num_pages(self):
+        from application.parser.file.docling_parser import _result_page_count
+
+        result = _mock_conversion("x", pages=0)
+        result.document.num_pages.return_value = 5
+        assert _result_page_count(result, Path("a.pdf")) == 5
+
+    def test_page_count_falls_back_to_result_pages(self):
+        from application.parser.file.docling_parser import _result_page_count
+
+        result = _mock_conversion("x", pages=0)
+        result.document.num_pages.return_value = None
+        result.pages = [object(), object()]
+        assert _result_page_count(result, Path("a.pdf")) == 2
+
+    def test_page_count_defaults_to_one(self):
+        from application.parser.file.docling_parser import _result_page_count
+
+        result = _mock_conversion("x", pages=0)
+        result.document.num_pages.return_value = None
+        result.pages = []
+        assert _result_page_count(result, Path("a.pdf")) == 1
+
+    def test_images_are_always_one_page(self):
+        from application.parser.file.docling_parser import _result_page_count
+
+        result = _mock_conversion("x", pages=9)
+        assert _result_page_count(result, Path("a.png")) == 1
+
+    def test_threshold_reads_settings_with_a_default(self, monkeypatch):
+        from application.parser.file.docling_parser import _ocr_min_chars_per_page
+
+        assert _ocr_min_chars_per_page() == 20
+        _set_threshold(monkeypatch, 5)
+        assert _ocr_min_chars_per_page() == 5
+        _set_threshold(monkeypatch, "nonsense")
+        assert _ocr_min_chars_per_page() == 20
+
+    def test_text_layer_probe_survives_an_unreadable_pdf(self, tmp_path):
+        from application.parser.file.docling_parser import _pdf_text_layer_probe
+
+        assert _pdf_text_layer_probe(tmp_path / "missing.pdf") == (0, 0)
+        broken = tmp_path / "broken.pdf"
+        broken.write_bytes(b"not a pdf")
+        assert _pdf_text_layer_probe(broken) == (0, 0)
+
+
+@pytest.mark.unit
+class TestForceFullPageOCRWiring:
+    """``force_full_page_ocr`` must reach the pipeline for any OCR engine."""
+
+    def _pipeline_options(self, monkeypatch, **kwargs):
+        import docling.datamodel.pipeline_options as dpo
+
+        from application.parser.file.docling_parser import DoclingParser
+
+        built = []
+        real_options = dpo.PdfPipelineOptions
+
+        def _tracking_options(*args, **opts):
+            options = real_options(*args, **opts)
+            built.append(options)
+            return options
+
+        monkeypatch.setattr(dpo, "PdfPipelineOptions", _tracking_options)
+        monkeypatch.setattr("docling.document_converter.DocumentConverter", MagicMock())
+        DoclingParser(**kwargs)._create_converter()
+        return built[0]
+
+    def test_forced_without_rapidocr(self, monkeypatch):
+        options = self._pipeline_options(
+            monkeypatch,
+            ocr_enabled=True,
+            use_rapidocr=False,
+            force_full_page_ocr=True,
+        )
+        assert options.ocr_options.force_full_page_ocr is True
+
+    def test_not_forced_by_default(self, monkeypatch):
+        options = self._pipeline_options(
+            monkeypatch,
+            ocr_enabled=True,
+            use_rapidocr=False,
+            force_full_page_ocr=False,
+        )
+        assert options.ocr_options.force_full_page_ocr is False

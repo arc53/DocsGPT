@@ -5,12 +5,18 @@ per-agent backup model is used before the global FALLBACK_* settings.
 """
 
 import copy
+import logging
+import types
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
 
+from application.llm.anthropic import AnthropicLLM
 from application.llm.base import BaseLLM
+from application.llm.google_ai import GoogleLLM
+from application.llm.groq import GroqLLM
+from application.llm.openai import OpenAILLM
 
 
 # Concrete LLM stubs
@@ -41,6 +47,7 @@ class FakeLLM(BaseLLM):
         self.gen_stream_called = False
         self.last_model_received = None  # tracks the model kwarg passed to gen/gen_stream
         self.last_messages_received = None  # tracks the messages kwarg at the raw level
+        self.last_kwargs_received = None  # tracks the extra gen kwargs at the raw level
 
     # Track at the raw-method level. _execute_with_fallback applies
     # decorators to the fallback's raw method directly and
@@ -50,6 +57,7 @@ class FakeLLM(BaseLLM):
         self.gen_called = True
         self.last_model_received = model
         self.last_messages_received = messages
+        self.last_kwargs_received = dict(kwargs)
         if self.fail_at is not None:
             raise RuntimeError("primary model unavailable")
         return self.responses[0]
@@ -59,6 +67,7 @@ class FakeLLM(BaseLLM):
         self.stream_calls = getattr(self, "stream_calls", 0) + 1
         self.last_model_received = model
         self.last_messages_received = messages
+        self.last_kwargs_received = dict(kwargs)
         yielded = 0
         # Per-attempt failure schedule: `fail_schedule[n]` = fail_at value
         # for the n-th call (0-indexed). Falls back to the constant
@@ -1296,3 +1305,489 @@ class TestFallbackMessageReshaping:
         assert isinstance(user_content, str)
         assert "EXTRACTED REPORT TEXT" in user_content
         assert "assistant-abc123" not in user_content
+
+
+# Tests — cross-provider structured-output adaptation
+#
+# Structured output is provider-specific: OpenAI-wire classes take
+# ``response_format``, Google takes ``response_schema``. Forwarding the
+# primary's kwarg verbatim either loses enforcement silently (Google swallows
+# ``response_format`` in ``**kwargs``) or raises TypeError inside the OpenAI
+# SDK (``response_schema`` is not a Chat-Completions param) — which turned the
+# fallback into no fallback at all for every structured node.
+
+
+SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string"},
+        "score": {"type": "integer"},
+    },
+    "required": ["answer"],
+}
+
+
+class _OpenAIWireFake(FakeLLM):
+    """OpenAI-wire double: real declaration + real preparer, fake transport."""
+
+    provider_name = "openai"
+    structured_output_kwarg = "response_format"
+    prepare_structured_output_format = OpenAILLM.prepare_structured_output_format
+
+    def _supports_structured_output(self):
+        return True
+
+
+class _GoogleFake(FakeLLM):
+    """Google double: real declaration + real preparer, fake transport."""
+
+    provider_name = "google"
+    structured_output_kwarg = "response_schema"
+    prepare_structured_output_format = GoogleLLM.prepare_structured_output_format
+
+    def _supports_structured_output(self):
+        return True
+
+
+class _AnthropicFake(FakeLLM):
+    """Provider with no structured-output kwarg at all."""
+
+    provider_name = "anthropic"
+
+
+def _openai_envelope(schema=SCHEMA, strict=True):
+    """An OpenAI ``response_format`` built the way a provider would."""
+    return OpenAILLM.prepare_structured_output_format(
+        _OpenAIWireFake(), schema, strict=strict
+    )
+
+
+def _google_schema(schema=SCHEMA):
+    """The Google ``response_schema`` conversion of ``schema``."""
+    return GoogleLLM.prepare_structured_output_format(_GoogleFake(), schema)
+
+
+@pytest.mark.unit
+class TestStructuredOutputDeclarations:
+    """One source of truth: the kwarg name lives on the LLM class."""
+
+    def test_openai_declares_response_format(self):
+        assert OpenAILLM.structured_output_kwarg == "response_format"
+
+    def test_openai_subclasses_inherit_the_declaration(self):
+        assert GroqLLM.structured_output_kwarg == "response_format"
+
+    def test_google_declares_response_schema(self):
+        assert GoogleLLM.structured_output_kwarg == "response_schema"
+
+    def test_anthropic_declares_nothing(self):
+        assert AnthropicLLM.structured_output_kwarg is None
+
+    def test_base_declares_nothing(self):
+        assert BaseLLM.structured_output_kwarg is None
+
+    def test_openai_prepare_records_source(self):
+        llm = _OpenAIWireFake()
+        llm.prepare_structured_output_format(SCHEMA, strict=False)
+        assert llm._structured_output_source == (SCHEMA, False)
+
+    def test_google_prepare_records_source(self):
+        llm = _GoogleFake()
+        llm.prepare_structured_output_format(SCHEMA)
+        assert llm._structured_output_source == (SCHEMA, True)
+
+    def test_empty_schema_clears_recorded_source(self):
+        llm = _OpenAIWireFake()
+        llm.prepare_structured_output_format(SCHEMA)
+        llm.prepare_structured_output_format(None)
+        assert llm._structured_output_source is None
+
+    def test_base_records_nothing_by_default(self):
+        assert FakeLLM()._structured_output_source is None
+
+
+@pytest.mark.unit
+class TestAdaptStructuredOutputKwargs:
+    """Unit-level contract of the adapter itself."""
+
+    def test_no_structured_kwargs_returns_equal_copy(self):
+        primary = _OpenAIWireFake()
+        kwargs = {"model": "m", "messages": [], "temperature": 0.2}
+
+        adapted = primary._adapt_structured_output_kwargs(_GoogleFake(), kwargs)
+
+        assert adapted == kwargs
+        assert adapted is not kwargs
+
+    def test_does_not_mutate_the_callers_kwargs(self):
+        primary = _OpenAIWireFake()
+        primary.prepare_structured_output_format(SCHEMA)
+        kwargs = {"model": "m", "response_format": _openai_envelope()}
+        snapshot = copy.deepcopy(kwargs)
+
+        primary._adapt_structured_output_kwargs(_GoogleFake(), kwargs)
+
+        assert kwargs == snapshot
+
+    def test_recovers_schema_from_envelope_when_no_source_recorded(self):
+        """A hand-built ``response_format`` (research_agent) never went through
+        ``prepare_structured_output_format``, so nothing was recorded — the raw
+        schema is still readable out of the OpenAI envelope."""
+        primary = _OpenAIWireFake()
+        assert primary._structured_output_source is None
+
+        adapted = primary._adapt_structured_output_kwargs(
+            _GoogleFake(model_id="gemini-2.5-flash"),
+            {"model": "m", "response_format": _openai_envelope()},
+        )
+
+        assert "response_format" not in adapted
+        assert adapted["response_schema"]["type"] == "OBJECT"
+        assert set(adapted["response_schema"]["properties"]) == {"answer", "score"}
+        assert adapted["model"] == "m"
+
+    def test_google_schema_without_source_is_dropped(self, caplog):
+        """Google's conversion is lossy/type-mapped — not reversible."""
+        primary = _GoogleFake()
+        assert primary._structured_output_source is None
+
+        with caplog.at_level(logging.WARNING, logger="application.llm.base"):
+            adapted = primary._adapt_structured_output_kwargs(
+                _OpenAIWireFake(model_id="gpt-4o-mini"),
+                {"model": "m", "response_schema": _google_schema()},
+            )
+
+        assert "response_schema" not in adapted
+        assert "response_format" not in adapted
+        assert "gpt-4o-mini" in caplog.text
+
+    def test_fallback_without_structured_support_drops_and_warns(self, caplog):
+        primary = _OpenAIWireFake()
+        primary.prepare_structured_output_format(SCHEMA)
+        fallback = _GoogleFake(model_id="gemini-2.5-flash")
+        fallback._supports_structured_output = lambda: False
+
+        with caplog.at_level(logging.WARNING, logger="application.llm.base"):
+            adapted = primary._adapt_structured_output_kwargs(
+                fallback, {"model": "m", "response_format": _openai_envelope()}
+            )
+
+        assert "response_format" not in adapted
+        assert "response_schema" not in adapted
+        assert "cannot enforce structured output" in caplog.text
+
+    def test_non_callable_support_flag_is_honored(self):
+        """Test doubles sometimes set the capability as a plain bool."""
+        primary = _OpenAIWireFake()
+        primary.prepare_structured_output_format(SCHEMA)
+        fallback = _GoogleFake(model_id="gemini-2.5-flash")
+        fallback._supports_structured_output = False
+
+        adapted = primary._adapt_structured_output_kwargs(
+            fallback, {"response_format": _openai_envelope()}
+        )
+
+        assert adapted == {}
+
+    def test_preparer_returning_none_drops_the_kwarg(self, caplog):
+        class _NullPreparer(_GoogleFake):
+            def prepare_structured_output_format(self, json_schema, strict=True):
+                return None
+
+        primary = _OpenAIWireFake()
+        primary.prepare_structured_output_format(SCHEMA)
+
+        with caplog.at_level(logging.WARNING, logger="application.llm.base"):
+            adapted = primary._adapt_structured_output_kwargs(
+                _NullPreparer(model_id="gemini-2.5-flash"),
+                {"response_format": _openai_envelope()},
+            )
+
+        assert adapted == {}
+        assert "cannot enforce structured output" in caplog.text
+
+    def test_preparer_raising_never_breaks_the_fallback(self, caplog):
+        class _ExplodingPreparer(_GoogleFake):
+            def prepare_structured_output_format(self, json_schema, strict=True):
+                raise ValueError("boom")
+
+        primary = _OpenAIWireFake()
+        primary.prepare_structured_output_format(SCHEMA)
+
+        with caplog.at_level(logging.WARNING, logger="application.llm.base"):
+            adapted = primary._adapt_structured_output_kwargs(
+                _ExplodingPreparer(model_id="gemini-2.5-flash"),
+                {"response_format": _openai_envelope()},
+            )
+
+        assert adapted == {}
+        assert "Failed to prepare structured output" in caplog.text
+
+    def test_strict_flag_survives_the_translation(self):
+        primary = _GoogleFake()
+        primary.prepare_structured_output_format(SCHEMA)
+        primary._structured_output_source = (SCHEMA, False)
+
+        adapted = primary._adapt_structured_output_kwargs(
+            _OpenAIWireFake(model_id="gpt-4o-mini"),
+            {"response_schema": _google_schema()},
+        )
+
+        assert adapted["response_format"]["json_schema"]["strict"] is False
+        # strict=False leaves the schema untouched (no additionalProperties).
+        assert "additionalProperties" not in (
+            adapted["response_format"]["json_schema"]["schema"]
+        )
+
+
+@pytest.mark.integration
+class TestCrossProviderStructuredOutputFallback:
+    """End-to-end through ``gen`` / ``gen_stream``: the backup must receive
+    the schema in *its own* provider's kwarg."""
+
+    def test_gen_openai_primary_google_fallback_gets_response_schema(self):
+        primary = _OpenAIWireFake(fail_at=0)
+        fallback = _GoogleFake(responses=["fb"], model_id="gemini-2.5-flash")
+        primary._fallback_llm = fallback
+        response_format = primary.prepare_structured_output_format(SCHEMA)
+
+        result = primary.gen(**CALL_ARGS, response_format=response_format)
+
+        assert result == "fb"
+        assert fallback.last_kwargs_received["response_schema"] == _google_schema()
+        assert "response_format" not in fallback.last_kwargs_received
+
+    def test_stream_openai_primary_google_fallback_gets_response_schema(self):
+        primary = _OpenAIWireFake(stream_chunks=["x"], fail_at=0)
+        fallback = _GoogleFake(stream_chunks=["fb"], model_id="gemini-2.5-flash")
+        primary._fallback_llm = fallback
+        response_format = primary.prepare_structured_output_format(SCHEMA)
+
+        chunks = list(primary.gen_stream(**CALL_ARGS, response_format=response_format))
+
+        assert chunks == ["fb"]
+        assert fallback.last_kwargs_received["response_schema"] == _google_schema()
+        assert "response_format" not in fallback.last_kwargs_received
+
+    def test_gen_google_primary_openai_fallback_gets_response_format(self):
+        primary = _GoogleFake(fail_at=0)
+        fallback = _OpenAIWireFake(responses=["fb"], model_id="gpt-4o-mini")
+        primary._fallback_llm = fallback
+        response_schema = primary.prepare_structured_output_format(SCHEMA)
+
+        result = primary.gen(**CALL_ARGS, response_schema=response_schema)
+
+        assert result == "fb"
+        received = fallback.last_kwargs_received
+        assert "response_schema" not in received
+        assert received["response_format"]["type"] == "json_schema"
+        assert set(received["response_format"]["json_schema"]["schema"]["properties"]) == {
+            "answer",
+            "score",
+        }
+
+    def test_stream_google_primary_openai_fallback_gets_response_format(self):
+        primary = _GoogleFake(stream_chunks=["x"], fail_at=0)
+        fallback = _OpenAIWireFake(stream_chunks=["fb"], model_id="gpt-4o-mini")
+        primary._fallback_llm = fallback
+        response_schema = primary.prepare_structured_output_format(SCHEMA)
+
+        chunks = list(primary.gen_stream(**CALL_ARGS, response_schema=response_schema))
+
+        assert chunks == ["fb"]
+        received = fallback.last_kwargs_received
+        assert "response_schema" not in received
+        assert received["response_format"]["type"] == "json_schema"
+
+    def test_same_wire_family_passes_response_format_verbatim(self):
+        """OpenAI -> openai_compatible: no re-preparation, byte-identical."""
+        primary = _OpenAIWireFake(fail_at=0)
+        fallback = _OpenAIWireFake(responses=["fb"], model_id="qwen3-4b")
+        primary._fallback_llm = fallback
+        response_format = primary.prepare_structured_output_format(SCHEMA)
+
+        primary.gen(**CALL_ARGS, response_format=response_format)
+
+        assert fallback.last_kwargs_received["response_format"] is response_format
+        assert "response_schema" not in fallback.last_kwargs_received
+
+    def test_same_wire_family_passes_response_schema_verbatim(self):
+        primary = _GoogleFake(fail_at=0)
+        fallback = _GoogleFake(responses=["fb"], model_id="gemini-2.5-pro")
+        primary._fallback_llm = fallback
+        response_schema = primary.prepare_structured_output_format(SCHEMA)
+
+        primary.gen(**CALL_ARGS, response_schema=response_schema)
+
+        assert fallback.last_kwargs_received["response_schema"] is response_schema
+        assert "response_format" not in fallback.last_kwargs_received
+
+    def test_json_object_mode_kept_within_the_openai_family(self):
+        primary = _OpenAIWireFake(fail_at=0)
+        fallback = _OpenAIWireFake(responses=["fb"], model_id="qwen3-4b")
+        primary._fallback_llm = fallback
+
+        primary.gen(**CALL_ARGS, response_format={"type": "json_object"})
+
+        assert fallback.last_kwargs_received["response_format"] == {
+            "type": "json_object"
+        }
+
+    def test_json_object_mode_dropped_for_google_fallback(self):
+        """Google has no json_object equivalent wired — drop, don't crash."""
+        primary = _OpenAIWireFake(fail_at=0)
+        fallback = _GoogleFake(responses=["fb"], model_id="gemini-2.5-flash")
+        primary._fallback_llm = fallback
+
+        result = primary.gen(**CALL_ARGS, response_format={"type": "json_object"})
+
+        assert result == "fb"
+        assert "response_format" not in fallback.last_kwargs_received
+        assert "response_schema" not in fallback.last_kwargs_received
+
+    def test_json_object_mode_dropped_for_google_fallback_streaming(self):
+        primary = _OpenAIWireFake(stream_chunks=["x"], fail_at=0)
+        fallback = _GoogleFake(stream_chunks=["fb"], model_id="gemini-2.5-flash")
+        primary._fallback_llm = fallback
+
+        chunks = list(
+            primary.gen_stream(**CALL_ARGS, response_format={"type": "json_object"})
+        )
+
+        assert chunks == ["fb"]
+        assert "response_format" not in fallback.last_kwargs_received
+        assert "response_schema" not in fallback.last_kwargs_received
+
+    def test_anthropic_fallback_gets_neither_kwarg(self):
+        """Anthropic has no structured-output kwarg: unstructured, not broken."""
+        primary = _OpenAIWireFake(fail_at=0)
+        fallback = _AnthropicFake(responses=["fb"], model_id="claude-sonnet-4")
+        primary._fallback_llm = fallback
+        response_format = primary.prepare_structured_output_format(SCHEMA)
+
+        result = primary.gen(**CALL_ARGS, response_format=response_format)
+
+        assert result == "fb"
+        assert fallback.last_kwargs_received == {}
+
+    def test_anthropic_fallback_gets_neither_kwarg_streaming(self):
+        primary = _GoogleFake(stream_chunks=["x"], fail_at=0)
+        fallback = _AnthropicFake(stream_chunks=["fb"], model_id="claude-sonnet-4")
+        primary._fallback_llm = fallback
+        response_schema = primary.prepare_structured_output_format(SCHEMA)
+
+        chunks = list(primary.gen_stream(**CALL_ARGS, response_schema=response_schema))
+
+        assert chunks == ["fb"]
+        assert fallback.last_kwargs_received == {}
+
+    def test_unrelated_gen_kwargs_are_forwarded_untouched(self):
+        primary = _OpenAIWireFake(fail_at=0)
+        fallback = _GoogleFake(responses=["fb"], model_id="gemini-2.5-flash")
+        primary._fallback_llm = fallback
+        response_format = primary.prepare_structured_output_format(SCHEMA)
+
+        primary.gen(
+            **CALL_ARGS, response_format=response_format, temperature=0.3
+        )
+
+        assert fallback.last_kwargs_received["temperature"] == 0.3
+
+
+# The OpenAI SDK's ``chat.completions.create`` has an explicit keyword
+# signature: a forwarded ``response_schema`` raises TypeError before the
+# request is even built, so the Google -> OpenAI hop died with "Fallback LLM
+# also failed". These tests drive the *real* ``OpenAILLM`` raw methods against
+# a client double with the same strictness.
+
+
+class _StrictChatCompletions:
+    """Chat-Completions double that rejects kwargs the real SDK rejects."""
+
+    _ACCEPTED = {
+        "model",
+        "messages",
+        "stream",
+        "stream_options",
+        "tools",
+        "tool_choice",
+        "parallel_tool_calls",
+        "response_format",
+        "temperature",
+        "top_p",
+        "max_completion_tokens",
+        "reasoning_effort",
+        "presence_penalty",
+        "frequency_penalty",
+        "seed",
+        "stop",
+        "n",
+        "user",
+    }
+
+    def __init__(self):
+        self.last_kwargs = None
+
+    def create(self, **kwargs):
+        unexpected = sorted(set(kwargs) - self._ACCEPTED)
+        if unexpected:
+            raise TypeError(
+                f"Completions.create() got an unexpected keyword argument "
+                f"'{unexpected[0]}'"
+            )
+        self.last_kwargs = kwargs
+        if kwargs.get("stream"):
+            return [
+                _stream_line(content="fb"),
+                _stream_line(finish_reason="stop"),
+            ]
+        message = types.SimpleNamespace(content="fb answer", tool_calls=None)
+        return types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=message)], usage=None
+        )
+
+
+def _stream_line(content=None, finish_reason=None):
+    delta = types.SimpleNamespace(
+        content=content, reasoning_content=None, tool_calls=None
+    )
+    choice = types.SimpleNamespace(delta=delta, finish_reason=finish_reason)
+    return types.SimpleNamespace(choices=[choice], usage=None)
+
+
+def _strict_openai_llm():
+    llm = OpenAILLM(api_key="sk-test", user_api_key=None, model_id="gpt-4o-mini")
+    llm.client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(completions=_StrictChatCompletions())
+    )
+    return llm
+
+
+@pytest.mark.integration
+class TestRealOpenAIFallbackRejectsForeignKwargs:
+
+    def test_gen_google_primary_real_openai_fallback_does_not_typeerror(self):
+        primary = _GoogleFake(fail_at=0)
+        fallback = _strict_openai_llm()
+        primary._fallback_llm = fallback
+        response_schema = primary.prepare_structured_output_format(SCHEMA)
+
+        result = primary.gen(**CALL_ARGS, response_schema=response_schema)
+
+        assert result == "fb answer"
+        sent = fallback.client.chat.completions.last_kwargs
+        assert "response_schema" not in sent
+        assert sent["response_format"]["type"] == "json_schema"
+
+    def test_stream_google_primary_real_openai_fallback_does_not_typeerror(self):
+        primary = _GoogleFake(stream_chunks=["x"], fail_at=0)
+        fallback = _strict_openai_llm()
+        primary._fallback_llm = fallback
+        response_schema = primary.prepare_structured_output_format(SCHEMA)
+
+        chunks = list(primary.gen_stream(**CALL_ARGS, response_schema=response_schema))
+
+        assert chunks == ["fb"]
+        sent = fallback.client.chat.completions.last_kwargs
+        assert "response_schema" not in sent
+        assert sent["response_format"]["type"] == "json_schema"

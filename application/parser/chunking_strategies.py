@@ -288,12 +288,9 @@ class SemanticChunker(_BaseStrategyChunker):
         sentences = self._split_sentences(text)
         if len(sentences) < 2:
             raise ValueError("too few sentences for semantic chunking")
-        from application.vectorstore.base import EmbeddingsSingleton
-        from application.core.settings import settings
+        from application.vectorstore.base import get_embeddings
 
-        embeddings = EmbeddingsSingleton.get_instance(
-            settings.EMBEDDINGS_NAME
-        ).embed_documents(sentences)
+        embeddings = get_embeddings().embed_documents(sentences)
         breakpoints = self._breakpoints(embeddings)
         groups = self._group(sentences, breakpoints)
         return [g for g in self._enforce_tokens(groups) if g.strip()]

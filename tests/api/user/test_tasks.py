@@ -830,3 +830,67 @@ def test_bare_worker_consumes_app_and_parsing_queues():
     names = {queue.name for queue in celeryconfig.task_queues}
     assert "docsgpt" in names
     assert settings.DOCUMENT_PARSE_QUEUE in names
+
+
+class TestParseTimeoutForSize:
+    """The awaited parse window is floored at the base timeout, scales with size, and is capped."""
+
+    @pytest.mark.unit
+    def test_unknown_size_uses_the_base_timeout(self):
+        from application.api.user.tasks import parse_timeout_for_size
+        from application.core.settings import settings
+
+        base = float(settings.DOCUMENT_PARSE_TIMEOUT)
+        assert parse_timeout_for_size(None) == base
+        assert parse_timeout_for_size(0) == base
+        # A negative/garbage size can never shrink the window below the floor.
+        assert parse_timeout_for_size(-1) == base
+        assert parse_timeout_for_size("nope") == base
+
+    @pytest.mark.unit
+    def test_window_grows_with_the_document_size(self, monkeypatch):
+        from application.api.user import tasks
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120, raising=False)
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 60, raising=False)
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_MAX", 900, raising=False)
+
+        assert tasks.parse_timeout_for_size(1024 * 1024) == 180.0
+        assert tasks.parse_timeout_for_size(5 * 1024 * 1024) == 420.0
+        # Fractional sizes scale proportionally, never rounded down to the floor.
+        assert tasks.parse_timeout_for_size(512 * 1024) == 150.0
+
+    @pytest.mark.unit
+    def test_window_is_capped(self, monkeypatch):
+        from application.api.user import tasks
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120, raising=False)
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 60, raising=False)
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_MAX", 900, raising=False)
+
+        # A huge document cannot pin a parsing-worker slot indefinitely.
+        assert tasks.parse_timeout_for_size(500 * 1024 * 1024) == 900.0
+
+    @pytest.mark.unit
+    def test_scaling_disabled_by_zero_per_mb(self, monkeypatch):
+        from application.api.user import tasks
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120, raising=False)
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 0, raising=False)
+
+        assert tasks.parse_timeout_for_size(50 * 1024 * 1024) == 120.0
+
+    @pytest.mark.unit
+    def test_task_time_limits_track_the_awaited_window(self):
+        from application.api.user.tasks import parse_document, parse_task_time_limits
+
+        limits = parse_task_time_limits(420.0)
+        assert limits == {"soft_time_limit": 420, "time_limit": 450}
+        # Same grace as the import-time binding, so per-call limits stay comparable.
+        grace = parse_document.time_limit - parse_document.soft_time_limit
+        assert limits["time_limit"] - limits["soft_time_limit"] == grace
+        # Never zero/negative, whatever the caller computed.
+        assert parse_task_time_limits(0)["soft_time_limit"] == 1

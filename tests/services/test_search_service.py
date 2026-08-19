@@ -287,3 +287,340 @@ class TestSourceAuthorization:
 
         monkeypatch.setattr(ts, "can_access", _boom)
         assert _authorized_source_ids(None, self._agent(), ["s1"]) == []
+
+
+def _serial_search_sources(query, source_ids, chunks):
+    """The pre-fan-out ``_search_sources``, kept as a parity oracle."""
+    from application.services.search_service import VectorCreator, settings
+
+    if chunks <= 0 or not source_ids:
+        return []
+
+    results = []
+    chunks_per_source = max(1, chunks // len(source_ids))
+    seen_texts = set()
+
+    for source_id in source_ids:
+        if not source_id or not source_id.strip():
+            continue
+        try:
+            docsearch = VectorCreator.create_vectorstore(
+                settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+            )
+            docs = docsearch.search(query, k=chunks_per_source * 2)
+            for doc in docs:
+                if len(results) >= chunks:
+                    break
+                if hasattr(doc, "page_content") and hasattr(doc, "metadata"):
+                    page_content = doc.page_content
+                    metadata = doc.metadata
+                else:
+                    page_content = doc.get("text", doc.get("page_content", ""))
+                    metadata = doc.get("metadata", {})
+                text_hash = hash(page_content[:200])
+                if text_hash in seen_texts:
+                    continue
+                seen_texts.add(text_hash)
+                title = metadata.get("title", metadata.get("post_title", ""))
+                if not isinstance(title, str):
+                    title = str(title) if title else ""
+                if title:
+                    title = title.split("/")[-1]
+                else:
+                    title = metadata.get("filename", page_content[:50] + "...")
+                source = metadata.get("source", source_id)
+                results.append(
+                    {"text": page_content, "title": title, "source": source}
+                )
+            if len(results) >= chunks:
+                break
+        except Exception:
+            continue
+
+    return results[:chunks]
+
+
+def _make_embedder(vector=(0.1, 0.2, 0.3)):
+    embedder = MagicMock()
+    embedder.embed_query = MagicMock(return_value=list(vector))
+    return embedder
+
+
+def _make_store(embedder, docs=None):
+    store = MagicMock()
+    store._embedding = embedder
+    store.search.return_value = list(docs or [])
+    return store
+
+
+def _no_embedder_store(docs=None):
+    """A store exposing no reachable embeddings object."""
+    store = MagicMock()
+    store._embedding = None
+    store._embeddings = None
+    store.embeddings = None
+    store._get_embeddings = MagicMock(side_effect=AttributeError("nope"))
+    store.search.return_value = list(docs or [])
+    return store
+
+
+def _run_search_sources(query, source_ids, chunks, stores, serial=False):
+    """Run ``_search_sources`` (or its serial oracle) against ``stores``."""
+    from application.services import search_service
+
+    impl = _serial_search_sources if serial else search_service._search_sources
+    with patch(
+        "application.services.search_service.VectorCreator.create_vectorstore",
+        side_effect=lambda _type, source_id, _key: stores[source_id],
+    ):
+        return impl(query, source_ids, chunks)
+
+
+@pytest.mark.unit
+class TestSearchSourcesFanOut:
+    """Multi-source search: one query embedding, one bounded fan-out."""
+
+    def test_query_is_embedded_once_across_three_sources(self):
+        embedder = _make_embedder()
+        stores = {
+            src: _make_store(embedder, [{"text": f"hit {src}", "metadata": {}}])
+            for src in ("a", "b", "c")
+        }
+
+        results = _run_search_sources("q", ["a", "b", "c"], 5, stores)
+
+        assert len(results) == 3
+        embedder.embed_query.assert_called_once_with("q")
+
+    def test_every_store_receives_the_same_vector(self):
+        embedder = _make_embedder()
+        stores = {
+            src: _make_store(embedder, [{"text": f"hit {src}", "metadata": {}}])
+            for src in ("a", "b", "c")
+        }
+
+        _run_search_sources("q", ["a", "b", "c"], 5, stores)
+
+        vectors = [
+            store.search.call_args.kwargs["query_vector"] for store in stores.values()
+        ]
+        assert vectors == [[0.1, 0.2, 0.3]] * 3
+
+    def test_k_per_source_is_unchanged(self):
+        embedder = _make_embedder()
+        stores = {src: _make_store(embedder) for src in ("a", "b", "c")}
+
+        _run_search_sources("q", ["a", "b", "c"], 6, stores)
+
+        for store in stores.values():
+            assert store.search.call_args.kwargs["k"] == 4
+
+    def test_output_matches_the_serial_implementation(self):
+        """Parity: order, dedupe and the ``chunks`` cap are byte-identical."""
+        duplicate = "shared chunk " * 30
+
+        def _stores():
+            embedder = _make_embedder()
+            return {
+                "a": _make_store(
+                    embedder,
+                    [
+                        {"text": "a-0", "metadata": {"title": "A0", "source": "/a0"}},
+                        {"text": duplicate, "metadata": {"title": "dup"}},
+                        {"text": "a-2", "metadata": {"filename": "a2.pdf"}},
+                    ],
+                ),
+                "b": _make_store(
+                    embedder,
+                    [
+                        {"text": duplicate, "metadata": {"title": "dup again"}},
+                        {"text": "b-1", "metadata": {}},
+                    ],
+                ),
+                "c": _make_store(
+                    embedder,
+                    [
+                        {"text": "c-0", "metadata": {"post_title": "x/y/C0"}},
+                        {"text": "c-1", "metadata": {"title": 42}},
+                    ],
+                ),
+            }
+
+        for chunks in (1, 3, 5, 6, 12):
+            serial = _run_search_sources("q", ["a", "b", "c"], chunks, _stores(), serial=True)
+            parallel = _run_search_sources("q", ["a", "b", "c"], chunks, _stores())
+            assert parallel == serial, f"mismatch at chunks={chunks}"
+
+    def test_langchain_documents_match_the_serial_implementation(self):
+        def _stores():
+            embedder = _make_embedder()
+            stores = {}
+            for src in ("a", "b"):
+                doc = MagicMock()
+                doc.page_content = f"content {src}"
+                doc.metadata = {"title": f"path/to/{src}", "source": f"/{src}"}
+                stores[src] = _make_store(embedder, [doc])
+            return stores
+
+        serial = _run_search_sources("q", ["a", "b"], 4, _stores(), serial=True)
+        parallel = _run_search_sources("q", ["a", "b"], 4, _stores())
+        assert parallel == serial
+        assert [r["title"] for r in parallel] == ["a", "b"]
+
+    def test_results_keep_source_order_when_a_slow_source_is_first(self):
+        import time
+
+        embedder = _make_embedder()
+        delays = {"a": 0.06, "b": 0.0, "c": 0.0}
+
+        def _factory(src):
+            def _search(*_args, **_kwargs):
+                time.sleep(delays[src])
+                return [{"text": f"hit {src}", "metadata": {}}]
+
+            return _search
+
+        stores = {}
+        for src in ("a", "b", "c"):
+            store = _make_store(embedder)
+            store.search.side_effect = _factory(src)
+            stores[src] = store
+
+        results = _run_search_sources("q", ["a", "b", "c"], 6, stores)
+
+        assert [r["text"] for r in results] == ["hit a", "hit b", "hit c"]
+
+    def test_sources_are_searched_concurrently(self):
+        """The barrier only clears if three searches overlap."""
+        import threading
+
+        barrier = threading.Barrier(3, timeout=10)
+        embedder = _make_embedder()
+
+        def _factory(src):
+            def _search(*_args, **_kwargs):
+                barrier.wait()
+                return [{"text": f"hit {src}", "metadata": {}}]
+
+            return _search
+
+        stores = {}
+        for src in ("a", "b", "c"):
+            store = _make_store(embedder)
+            store.search.side_effect = _factory(src)
+            stores[src] = store
+
+        results = _run_search_sources("q", ["a", "b", "c"], 6, stores)
+
+        assert [r["text"] for r in results] == ["hit a", "hit b", "hit c"]
+
+    def test_single_source_skips_the_pool(self):
+        import threading
+
+        main_thread = threading.current_thread().name
+        seen = []
+        embedder = _make_embedder()
+        store = _make_store(embedder)
+        store.search.side_effect = lambda *_a, **_k: (
+            seen.append(threading.current_thread().name),
+            [{"text": "only", "metadata": {}}],
+        )[1]
+
+        results = _run_search_sources("q", ["a"], 5, {"a": store})
+
+        assert [r["text"] for r in results] == ["only"]
+        assert seen == [main_thread]
+
+    def test_one_failing_search_does_not_kill_the_others(self):
+        embedder = _make_embedder()
+        stores = {
+            src: _make_store(embedder, [{"text": f"hit {src}", "metadata": {}}])
+            for src in ("a", "b", "c")
+        }
+        stores["b"].search.side_effect = RuntimeError("index missing")
+
+        results = _run_search_sources("q", ["a", "b", "c"], 6, stores)
+
+        assert [r["text"] for r in results] == ["hit a", "hit c"]
+
+    def test_failing_first_store_does_not_kill_the_others(self):
+        embedder = _make_embedder()
+        stores = {
+            src: _make_store(embedder, [{"text": f"hit {src}", "metadata": {}}])
+            for src in ("a", "b", "c")
+        }
+
+        def _create(_type, source_id, _key):
+            if source_id == "a":
+                raise RuntimeError("connection failed")
+            return stores[source_id]
+
+        from application.services import search_service
+
+        with patch(
+            "application.services.search_service.VectorCreator.create_vectorstore",
+            side_effect=_create,
+        ):
+            results = search_service._search_sources("q", ["a", "b", "c"], 6)
+
+        assert [r["text"] for r in results] == ["hit b", "hit c"]
+
+    def test_no_embedder_means_no_query_vector_kwarg(self):
+        stores = {
+            src: _no_embedder_store([{"text": f"hit {src}", "metadata": {}}])
+            for src in ("a", "b")
+        }
+
+        results = _run_search_sources("q", ["a", "b"], 6, stores)
+
+        assert [r["text"] for r in results] == ["hit a", "hit b"]
+        for store in stores.values():
+            assert "query_vector" not in store.search.call_args.kwargs
+
+    def test_embedding_failure_falls_back_to_per_store_embedding(self):
+        embedder = MagicMock()
+        embedder.embed_query = MagicMock(side_effect=RuntimeError("model down"))
+        stores = {
+            src: _make_store(embedder, [{"text": f"hit {src}", "metadata": {}}])
+            for src in ("a", "b")
+        }
+
+        results = _run_search_sources("q", ["a", "b"], 6, stores)
+
+        assert [r["text"] for r in results] == ["hit a", "hit b"]
+        for store in stores.values():
+            assert "query_vector" not in store.search.call_args.kwargs
+
+    def test_blank_source_ids_are_skipped_but_still_split_the_budget(self):
+        """Blank ids build no store, yet ``chunks_per_source`` counts them."""
+        embedder = _make_embedder()
+        stores = {"a": _make_store(embedder, [{"text": "hit a", "metadata": {}}])}
+
+        from application.services import search_service
+
+        with patch(
+            "application.services.search_service.VectorCreator.create_vectorstore",
+            side_effect=lambda _t, source_id, _k: stores[source_id],
+        ):
+            results = search_service._search_sources("q", ["  ", "a", ""], 6)
+
+        assert [r["text"] for r in results] == ["hit a"]
+        assert stores["a"].search.call_args.kwargs["k"] == 4
+
+    def test_all_blank_source_ids_build_no_store(self):
+        from application.services import search_service
+
+        with patch(
+            "application.services.search_service.VectorCreator.create_vectorstore"
+        ) as mock_create:
+            assert search_service._search_sources("q", ["  ", ""], 5) == []
+        mock_create.assert_not_called()
+
+    def test_zero_chunks_short_circuits(self):
+        from application.services import search_service
+
+        with patch(
+            "application.services.search_service.VectorCreator.create_vectorstore"
+        ) as mock_create:
+            assert search_service._search_sources("q", ["a"], 0) == []
+        mock_create.assert_not_called()
