@@ -67,7 +67,7 @@
     "@types/d3-force": "^3.0.10",
     "@types/lodash": "^4.17.25",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.3",
+    "@types/react-dom": "^19.2.4",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@typescript-eslint/eslint-plugin": "^8.66.0",
     "@typescript-eslint/parser": "^8.46.3",
