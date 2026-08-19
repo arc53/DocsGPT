@@ -742,3 +742,27 @@ def test_exec_completes_despite_concurrent_close():
     # The deferred close ran on the exec's own _leave.
     assert not mgr.has_session("conv-1")
     assert backend.torn_down == ["conv-1"]
+
+
+def test_sandbox_gone_during_file_op_drops_session_and_next_open_is_cold():
+    """#46 hygiene: a file op hitting a deleted cloud sandbox must invalidate the
+    manager session too, so the next open cold-opens instead of replaying the
+    cached handle into 404s."""
+    from application.sandbox.base import SandboxGoneError
+
+    class _GoneOnPutBackend(FakeBackend):
+        def put_file(self, session_id, dest_path, data):
+            self._handles.pop(session_id, None)  # backend already forgot its handle
+            raise SandboxGoneError("put_file failed: sandbox gone")
+
+    backend = _GoneOnPutBackend()
+    mgr = SandboxManager(backend, max_ttl=600)
+    old_handle = mgr.open("conv-1")
+
+    with pytest.raises(SandboxGoneError):
+        mgr.put_file("conv-1", "a.txt", b"x")
+
+    assert not mgr.has_session("conv-1")
+    new_handle = mgr.open("conv-1")
+    assert new_handle != old_handle
+    assert backend.open_calls == ["conv-1", "conv-1"]

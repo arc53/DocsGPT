@@ -47,6 +47,17 @@ class ExecResult:
         return self.status == "ok"
 
 
+class SandboxGoneError(IOError):
+    """The cloud runtime behind a session no longer exists (deleted upstream).
+
+    File-operation counterpart of ``ExecResult.runtime_invalidated``: backends
+    raise it (instead of a plain ``IOError``) when a put/get/list failed because
+    the runtime is gone, so managers can drop their cached session and the next
+    ``open`` performs a cold start instead of replaying the dead handle.
+    Subclasses ``IOError`` so callers that only handle ``IOError`` keep working.
+    """
+
+
 class CodeSandbox(ABC):
     """Common interface every sandbox backend (Jupyter, Daytona, ...) implements."""
 

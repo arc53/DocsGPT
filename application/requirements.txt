@@ -10,7 +10,7 @@ celery-redbeat==2.4.2
 croniter==6.2.4
 cryptography==50.0.0
 dataclasses-json==0.6.7
-daytona==0.203.0
+daytona==0.205.1
 defusedxml==0.7.1
 docling==2.119.0
 rapidocr==3.9.2
