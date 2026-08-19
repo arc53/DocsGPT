@@ -21,6 +21,7 @@ from application.llm.providers.novita import NovitaProvider
 from application.llm.providers.openai import OpenAIProvider
 from application.llm.providers.openai_compatible import OpenAICompatibleProvider
 from application.llm.providers.openrouter import OpenRouterProvider
+from application.llm.providers.orcarouter import OrcaRouterProvider
 
 # Order here is the order the registry iterates providers (and therefore
 # the order ``/api/models`` reports them). Match the historical order
@@ -35,6 +36,7 @@ ALL_PROVIDERS: List[Provider] = [
     GoogleProvider(),
     GroqProvider(),
     OpenRouterProvider(),
+    OrcaRouterProvider(),
     NovitaProvider(),
     HuggingFaceProvider(),
     LlamaCppProvider(),

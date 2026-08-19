@@ -1,0 +1,22 @@
+provider: orcarouter
+defaults:
+  supports_tools: true
+  supports_structured_output: true
+  attachments: [image]
+  context_window: 128000
+
+models:
+  - id: orcarouter/auto
+    display_name: OrcaRouter Auto
+    description: Auto-routed frontier model through the OrcaRouter gateway (zero-trust security on every call)
+    context_window: 262000
+
+  - id: orcarouter/deepseek-v4-pro
+    display_name: DeepSeek V4 Pro (via OrcaRouter)
+    description: Frontier 1M-context reasoning model routed through OrcaRouter
+    context_window: 1048576
+
+  - id: orcarouter/gemini-3.1-flash-lite
+    display_name: Gemini 3.1 Flash Lite (via OrcaRouter)
+    description: Low-cost fast model routed through OrcaRouter
+    context_window: 1048576

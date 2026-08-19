@@ -34,6 +34,7 @@ class TestModelProvider:
         assert ModelProvider.HUGGINGFACE == "huggingface"
         assert ModelProvider.NOVITA == "novita"
         assert ModelProvider.OPENROUTER == "openrouter"
+        assert ModelProvider.ORCAROUTER == "orcarouter"
         assert ModelProvider.LLAMA_CPP == "llama.cpp"
 
 

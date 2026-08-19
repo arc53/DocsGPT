@@ -30,6 +30,7 @@ DocsGPT offers direct, streamlined support for the following cloud LLM providers
 | Anthropic (Claude)           | `anthropic`    | `claude-3-5-sonnet-20241022`|
 | Groq                         | `groq`         | `llama-3.3-70b-versatile`   |
 | OpenRouter                   | `openrouter`   | (See OpenRouter docs)       |
+| OrcaRouter                   | `orcarouter`   | `orcarouter/auto`           |
 | Novita AI                    | `novita`       | (See Novita docs)           |
 | HuggingFace Inference API    | `huggingface`  | `meta-llama/Llama-3.1-8B-Instruct` |
 
@@ -53,6 +54,18 @@ OPENAI_BASE_URL=https://api.deepseek.com/v1 # DeepSeek's OpenAI API URL
 ```
 
 Remember to consult the documentation of your chosen OpenAI-compatible cloud provider for their specific API endpoint, required model names, and authentication methods.
+
+### Connecting to OrcaRouter
+
+[OrcaRouter](https://www.orcarouter.ai) is an OpenAI-compatible gateway that routes to frontier models (Claude, GPT, Gemini, DeepSeek, and more) through a single API key. It also runs gateway-level, zero-trust security for AI agents on the same endpoint — screening every prompt/response and governing every tool call on a default-deny basis, with no application code changes.
+
+DocsGPT ships a named `orcarouter` provider and model catalog. Set `ORCAROUTER_API_KEY` and the models appear in the in-app picker automatically:
+
+```
+LLM_PROVIDER=orcarouter
+ORCAROUTER_API_KEY=sk-orca-... # Your OrcaRouter API key
+LLM_NAME=orcarouter/auto # Default OrcaRouter gateway model
+```
 
 ### Dedicated `openai_compatible` provider (bring-your-own-model)
 

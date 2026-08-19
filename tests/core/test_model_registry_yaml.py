@@ -51,6 +51,11 @@ EXPECTED_IDS = {
         "deepseek/deepseek-v3.2",
         "anthropic/claude-sonnet-4.6",
     },
+    "orcarouter": {
+        "orcarouter/auto",
+        "orcarouter/deepseek-v4-pro",
+        "orcarouter/gemini-3.1-flash-lite",
+    },
     "novita": {
         "deepseek/deepseek-v4-pro",
         "moonshotai/kimi-k2.6",
@@ -75,6 +80,7 @@ def _make_settings(**overrides):
     s.GOOGLE_API_KEY = None
     s.GROQ_API_KEY = None
     s.OPEN_ROUTER_API_KEY = None
+    s.ORCAROUTER_API_KEY = None
     s.NOVITA_API_KEY = None
     s.HUGGINGFACE_API_KEY = None
     s.LLM_PROVIDER = ""
@@ -228,6 +234,13 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["openrouter"] | EXPECTED_IDS["docsgpt"]
 
+    def test_orcarouter_only(self):
+        s = _make_settings(ORCAROUTER_API_KEY="orca-test")
+        with patch("application.core.settings.settings", s):
+            reg = ModelRegistry()
+        ids = {m.id for m in reg.get_all_models()}
+        assert ids == EXPECTED_IDS["orcarouter"] | EXPECTED_IDS["docsgpt"]
+
     def test_novita_only(self):
         s = _make_settings(NOVITA_API_KEY="n-test")
         with patch("application.core.settings.settings", s):
@@ -257,6 +270,7 @@ class TestRegistryPermutations:
             GOOGLE_API_KEY="x",
             GROQ_API_KEY="x",
             OPEN_ROUTER_API_KEY="x",
+            ORCAROUTER_API_KEY="x",
             NOVITA_API_KEY="x",
             HUGGINGFACE_API_KEY="x",
             OPENAI_API_BASE="x",

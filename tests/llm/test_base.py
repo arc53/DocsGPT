@@ -404,6 +404,7 @@ class TestProviderNameRegistry:
         from application.llm.llama_cpp import LlamaCpp
         from application.llm.novita import NovitaLLM
         from application.llm.open_router import OpenRouterLLM
+        from application.llm.orcarouter import OrcaRouterLLM
         from application.llm.openai import OpenAILLM
 
         assert OpenAILLM.provider_name == "openai"
@@ -412,6 +413,7 @@ class TestProviderNameRegistry:
         assert GroqLLM.provider_name == "groq"
         assert NovitaLLM.provider_name == "novita"
         assert OpenRouterLLM.provider_name == "openrouter"
+        assert OrcaRouterLLM.provider_name == "orcarouter"
         assert DocsGPTAPILLM.provider_name == "docsgpt"
         assert LlamaCpp.provider_name == "llama_cpp"
 

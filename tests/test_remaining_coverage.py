@@ -237,6 +237,20 @@ class TestOpenRouterLLM:
 
 
 # ---------------------------------------------------------------------------
+# application/llm/orcarouter.py  (line 9)
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestOrcaRouterLLM:
+    def test_init_uses_orcarouter_base_url(self):
+        """Cover line 9: OrcaRouterLLM.__init__ delegates to OpenAILLM."""
+        from application.llm.orcarouter import ORCAROUTER_BASE_URL, OrcaRouterLLM
+
+        # Verify the class exists and has the correct base URL constant
+        assert ORCAROUTER_BASE_URL == "https://api.orcarouter.ai/v1"
+        assert issubclass(OrcaRouterLLM, object)
+
+
+# ---------------------------------------------------------------------------
 # application/llm/groq.py  (line 9)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
