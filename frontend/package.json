@@ -79,7 +79,7 @@
     "eslint-plugin-prettier": "^5.5.6",
     "eslint-plugin-promise": "^7.3.0",
     "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-unused-imports": "^4.1.4",
+    "eslint-plugin-unused-imports": "^4.4.1",
     "happy-dom": "^20.11.1",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
