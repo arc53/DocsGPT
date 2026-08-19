@@ -19,6 +19,7 @@ import {
   clearAttachments,
   selectCompletedAttachments,
 } from '../upload/uploadSlice';
+import { getEnv } from '@/utils/envUtils';
 
 const initialState: ConversationState = {
   queries: [],
@@ -26,7 +27,7 @@ const initialState: ConversationState = {
   conversationId: null,
 };
 
-const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
+const API_STREAMING = getEnv('VITE_API_STREAMING') === 'true';
 
 let abortController: AbortController | null = null;
 export function handlePreviewAbort() {

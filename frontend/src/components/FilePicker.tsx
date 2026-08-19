@@ -25,6 +25,7 @@ import {
   TableCell,
 } from './ui/table';
 import { useDebouncedCallback } from '../hooks';
+import { getEnv } from '@/utils/envUtils';
 
 interface CloudFile {
   id: string;
