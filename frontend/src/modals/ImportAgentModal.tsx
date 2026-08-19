@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -74,7 +75,6 @@ export default function ImportAgentModal({
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
   const navigate = useNavigate();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [yamlText, setYamlText] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
@@ -112,9 +112,7 @@ export default function ImportAgentModal({
     reset();
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
+  const processFile = async (selectedFile: File) => {
     const name = selectedFile.name.toLowerCase();
     if (!name.endsWith('.yaml') && !name.endsWith('.yml')) {
       setError(t('modals.importAgent.invalidFileType'));
@@ -125,6 +123,13 @@ export default function ImportAgentModal({
     setFileName(selectedFile.name);
     setYamlText(await selectedFile.text());
   };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: (acceptedFiles: File[]) => {
+      if (acceptedFiles[0]) processFile(acceptedFiles[0]);
+    },
+    multiple: false,
+  });
 
   const handleAnalyze = async () => {
     if (!yamlText) return;
@@ -306,8 +311,11 @@ export default function ImportAgentModal({
               {t('modals.importAgent.description')}
             </p>
             <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-border hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors"
+              {...getRootProps({
+                className: `border-border hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors ${
+                  isDragActive ? 'border-primary' : ''
+                }`,
+              })}
             >
               <img
                 src={Upload}
@@ -317,14 +325,8 @@ export default function ImportAgentModal({
               <p className="text-foreground text-sm font-medium">
                 {fileName || t('modals.importAgent.dropzoneText')}
               </p>
+              <input {...getInputProps({ accept: '.yaml,.yml' })} />
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".yaml,.yml"
-              onChange={handleFileChange}
-              className="hidden"
-            />
             {error && <p className="text-destructive text-sm">{error}</p>}
           </div>
         ) : (

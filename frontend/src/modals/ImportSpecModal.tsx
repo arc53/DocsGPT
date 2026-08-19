@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
@@ -36,7 +37,6 @@ export default function ImportSpecModal({
 }: ImportSpecModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,10 +57,7 @@ export default function ImportSpecModal({
     setBaseUrl('');
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
-
+  const processFile = (selectedFile: File) => {
     const validExtensions = ['.json', '.yaml', '.yml'];
     const hasValidExtension = validExtensions.some((ext) =>
       selectedFile.name.toLowerCase().endsWith(ext),
@@ -75,6 +72,13 @@ export default function ImportSpecModal({
     setError(null);
     setParsedResult(null);
   };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: (acceptedFiles: File[]) => {
+      if (acceptedFiles[0]) processFile(acceptedFiles[0]);
+    },
+    multiple: false,
+  });
 
   const handleParse = async () => {
     if (!file) return;
@@ -196,8 +200,11 @@ export default function ImportSpecModal({
             </p>
 
             <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-border dark:border-border hover:border-primary dark:hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors"
+              {...getRootProps({
+                className: `border-border dark:border-border hover:border-primary dark:hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors ${
+                  isDragActive ? 'border-primary' : ''
+                }`,
+              })}
             >
               <img
                 src={Upload}
@@ -210,13 +217,7 @@ export default function ImportSpecModal({
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 {t('modals.importSpec.supportedFormats')}
               </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json,.yaml,.yml"
-                onChange={handleFileChange}
-                className="hidden"
-              />
+              <input {...getInputProps({ accept: '.json,.yaml,.yml' })} />
             </div>
 
             {error && (

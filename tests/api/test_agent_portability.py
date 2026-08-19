@@ -497,3 +497,209 @@ def test_tool_skipped_when_encryption_fails(pg_conn, monkeypatch):
     agent = AgentsRepository(pg_conn).get(result["agent_id"], user)
     assert agent["tools"] == []
     assert any("encryption failed" in w for w in result["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# Action customizations (per-parameter fixed values / filled_by_llm flags)
+# ---------------------------------------------------------------------------
+
+
+_SEND_MESSAGE_META = {
+    "name": "telegram_send_message",
+    "description": "Send a message",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "chat_id": {"type": "string", "description": "Chat id"},
+            "text": {"type": "string", "description": "Message text"},
+        },
+        "required": ["chat_id", "text"],
+    },
+}
+_GET_UPDATES_META = {
+    "name": "telegram_get_updates",
+    "description": "Poll updates",
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+
+def _fake_telegram(monkeypatch):
+    import copy as _copy
+
+    fake_tool = Mock()
+    fake_tool.get_config_requirements.return_value = {
+        "token": {"secret": True, "required": True, "label": "Bot token"}
+    }
+    fake_tool.get_actions_metadata.side_effect = lambda: _copy.deepcopy(
+        [_SEND_MESSAGE_META, _GET_UPDATES_META]
+    )
+    monkeypatch.setattr(
+        "application.api.user.agents.portability._tool_instance",
+        lambda tool_type: fake_tool,
+    )
+    return fake_tool
+
+
+def _stored_telegram_actions():
+    """The shape ``update_tool_actions`` persists after the user fixes chat_id
+    and disables the updates action."""
+    return [
+        {
+            "name": "telegram_send_message",
+            "description": "Send a message",
+            "active": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chat_id": {
+                        "type": "string",
+                        "description": "Chat id",
+                        "filled_by_llm": False,
+                        "value": "123456789",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Message text",
+                        "filled_by_llm": True,
+                        "value": "",
+                    },
+                },
+                "required": ["chat_id", "text"],
+            },
+        },
+        {
+            "name": "telegram_get_updates",
+            "description": "Poll updates",
+            "active": False,
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    ]
+
+
+def test_action_customizations_round_trip(pg_conn, monkeypatch):
+    user = "u_actions"
+    _fake_telegram(monkeypatch)
+    tool = UserToolsRepository(pg_conn).create(
+        user,
+        "telegram",
+        config={"encrypted_credentials": "BLOB"},
+        custom_name="My TG",
+        display_name="Telegram",
+        description="tg",
+        config_requirements={"token": {"secret": True, "required": True}},
+        actions=_stored_telegram_actions(),
+    )
+    agent = AgentsRepository(pg_conn).create(
+        user, "TG Bot", "published", description="d", tools=[str(tool["id"])]
+    )
+
+    export = serialize_agent(pg_conn, agent, user)
+    overrides = export["spec"]["tools"][0]["actions"]
+    # Only deviations from factory defaults travel: the fixed chat_id and the
+    # disabled action — the default-state ``text`` param does not.
+    assert overrides == [
+        {
+            "name": "telegram_send_message",
+            "parameters": {"chat_id": {"filled_by_llm": False, "value": "123456789"}},
+        },
+        {"name": "telegram_get_updates", "active": False},
+    ]
+
+    # Import as a fresh user (tool re-created with the supplied secret).
+    doc = parse_agent_yaml(agent_to_yaml(export))
+    importer = "u_actions_2"
+    result = apply_import(
+        pg_conn,
+        importer,
+        doc,
+        resolution={"tools": {"tool-0": {"decision": "create", "secrets": {"token": "tok"}}}},
+    )
+    imported_agent = AgentsRepository(pg_conn).get(result["agent_id"], importer)
+    row = UserToolsRepository(pg_conn).get_any(imported_agent["tools"][0], importer)
+    by_name = {a["name"]: a for a in row["actions"]}
+    chat_id = by_name["telegram_send_message"]["parameters"]["properties"]["chat_id"]
+    text = by_name["telegram_send_message"]["parameters"]["properties"]["text"]
+    assert chat_id["filled_by_llm"] is False
+    assert chat_id["value"] == "123456789"
+    assert text["filled_by_llm"] is True and text["value"] == ""
+    assert by_name["telegram_get_updates"]["active"] is False
+    assert by_name["telegram_send_message"]["active"] is True
+
+
+def test_action_header_values_never_exported(pg_conn):
+    user = "u_actions_hdr"
+    tool = UserToolsRepository(pg_conn).create(
+        user,
+        "custom_http",
+        config={},
+        custom_name="HTTP",
+        display_name="HTTP",
+        description="",
+        config_requirements={},
+        actions=[
+            {
+                "name": "call",
+                "active": True,
+                "headers": {
+                    "properties": {
+                        "Authorization": {
+                            "type": "string",
+                            "filled_by_llm": False,
+                            "value": "Bearer sk-live-XYZ",
+                        }
+                    }
+                },
+            }
+        ],
+    )
+    agent = AgentsRepository(pg_conn).create(
+        user, "Hdr Bot", "published", description="d", tools=[str(tool["id"])]
+    )
+
+    export = serialize_agent(pg_conn, agent, user)
+    text = agent_to_yaml(export)
+    assert "Bearer sk-live-XYZ" not in text
+    # The flag still travels so the imported action keeps its shape.
+    override = export["spec"]["tools"][0]["actions"][0]
+    assert override["headers"]["Authorization"] == {"filled_by_llm": False}
+
+
+def test_action_override_for_removed_action_warns(pg_conn, monkeypatch):
+    user = "u_actions_gone"
+    _fake_telegram(monkeypatch)
+    doc = _doc(
+        name="Drifted Bot",
+        _slug="drifted",
+        tools=[
+            {
+                "type": "telegram",
+                "name": "My TG",
+                "config": {},
+                "requires_secrets": ["token"],
+                "actions": [
+                    {"name": "telegram_removed_action", "active": False},
+                    {
+                        "name": "telegram_send_message",
+                        "parameters": {
+                            "gone_param": {"filled_by_llm": False, "value": "x"},
+                            "chat_id": {"filled_by_llm": False, "value": "42"},
+                        },
+                    },
+                ],
+            }
+        ],
+    )
+    result = apply_import(
+        pg_conn,
+        user,
+        doc,
+        resolution={"tools": {"tool-0": {"secrets": {"token": "tok"}}}},
+    )
+    agent = AgentsRepository(pg_conn).get(result["agent_id"], user)
+    row = UserToolsRepository(pg_conn).get_any(agent["tools"][0], user)
+    by_name = {a["name"]: a for a in row["actions"]}
+    # The surviving customization applied; the drifted ones warned and skipped.
+    chat_id = by_name["telegram_send_message"]["parameters"]["properties"]["chat_id"]
+    assert chat_id["filled_by_llm"] is False and chat_id["value"] == "42"
+    assert any("telegram_removed_action" in w for w in result["warnings"])
+    assert any("gone_param" in w for w in result["warnings"])

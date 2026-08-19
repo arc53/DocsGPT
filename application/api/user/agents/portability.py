@@ -174,6 +174,101 @@ def _safe_export_config(stored_config: dict, config_requirements: dict) -> dict:
     return safe
 
 
+# Param-type sections an action may carry. Fixed ``value``s are exported only
+# for ``parameters`` (declared function args, treated as non-secret throughout:
+# returned to the client, shown in the actions editor). The free-form HTTP
+# types routinely hold credentials (an ``Authorization`` header fixed as a
+# value), so for those only the ``filled_by_llm`` flag travels — same posture
+# as ``_safe_export_config`` dropping free-form config.
+_ACTION_PARAM_TYPES = ("parameters", "query_params", "headers", "body")
+_ACTION_VALUE_SAFE_TYPES = frozenset({"parameters"})
+
+
+def _export_action_overrides(actions) -> list:
+    """Compact per-action customizations that deviate from factory defaults.
+
+    ``transform_actions`` initializes every action ``active`` with every param
+    ``filled_by_llm: true, value: ""`` — anything else is a user customization
+    (a fixed ``chat_id``, a disabled action) that must survive export, or the
+    imported tool silently reverts to "let the LLM fill everything".
+    """
+    out = []
+    for action in actions or []:
+        if not isinstance(action, dict) or not action.get("name"):
+            continue
+        override: dict[str, Any] = {"name": action["name"]}
+        customized = False
+        if action.get("active", True) is False:
+            override["active"] = False
+            customized = True
+        for param_type in _ACTION_PARAM_TYPES:
+            section = action.get(param_type)
+            props = section.get("properties") if isinstance(section, dict) else None
+            if not isinstance(props, dict):
+                continue
+            for pname, details in props.items():
+                if not isinstance(details, dict):
+                    continue
+                filled = details.get("filled_by_llm", True)
+                value = details.get("value", "")
+                if filled and not value:
+                    continue
+                entry: dict[str, Any] = {"filled_by_llm": bool(filled)}
+                if param_type in _ACTION_VALUE_SAFE_TYPES:
+                    entry["value"] = value
+                override.setdefault(param_type, {})[pname] = entry
+                customized = True
+        if customized:
+            out.append(override)
+    return out
+
+
+def _apply_action_overrides(base_actions: list, overrides, tool_type: str, warnings: list) -> list:
+    """Overlay exported customizations onto freshly transformed live metadata.
+
+    Matched strictly by (action name, param-type, param name): the YAML
+    contributes flags and scalar values only, never schema — a hand-edited
+    file can't inject a doctored action definition — and the merge survives
+    tool-version drift. Unknown names are skipped with a warning. Values are
+    accepted only for the ``parameters`` type, mirroring export.
+    """
+    if not isinstance(overrides, list) or not overrides:
+        return base_actions
+    by_name = {a.get("name"): a for a in base_actions if isinstance(a, dict)}
+    for override in overrides:
+        if not isinstance(override, dict):
+            continue
+        name = override.get("name") or ""
+        action = by_name.get(name)
+        if action is None:
+            warnings.append(
+                f"Tool '{tool_type}' action '{name}' no longer exists; customization skipped"
+            )
+            continue
+        if override.get("active") is False:
+            action["active"] = False
+        for param_type in _ACTION_PARAM_TYPES:
+            override_props = override.get(param_type)
+            if not isinstance(override_props, dict):
+                continue
+            section = action.get(param_type)
+            props = section.get("properties") if isinstance(section, dict) else {}
+            for pname, entry in override_props.items():
+                details = props.get(pname) if isinstance(props, dict) else None
+                if not isinstance(details, dict) or not isinstance(entry, dict):
+                    warnings.append(
+                        f"Tool '{tool_type}' action '{name}' has no parameter "
+                        f"'{pname}'; customization skipped"
+                    )
+                    continue
+                details["filled_by_llm"] = bool(entry.get("filled_by_llm", True))
+                if param_type in _ACTION_VALUE_SAFE_TYPES:
+                    value = entry.get("value", "")
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        details["value"] = "" if value is None else value
+    return base_actions
+
+
 # ---------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------
@@ -236,6 +331,9 @@ def _serialize_tools(conn, agent: dict, user: str) -> list:
             "config": _safe_export_config(row.get("config") or {}, requirements),
             "ref": tid_str,
         }
+        action_overrides = _export_action_overrides(row.get("actions"))
+        if action_overrides:
+            entry["actions"] = action_overrides
         if requires_secrets:
             entry["requires_secrets"] = requires_secrets
         out.append(entry)
@@ -839,6 +937,7 @@ def _create_tool_from_spec(conn, user: str, tool: dict, secrets: dict, warnings:
         warnings.append(f"Tool '{tool_type}' secret encryption failed; not created")
         return None
     actions = transform_actions(inst.get_actions_metadata() or [])
+    actions = _apply_action_overrides(actions, tool.get("actions"), tool_type, warnings)
     created = UserToolsRepository(conn).create(
         user,
         tool_type,
