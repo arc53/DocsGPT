@@ -290,6 +290,29 @@ class TestConnectionPooling:
         pooled_conn.rollback.assert_not_called()
         fake_pool.putconn.assert_called_once_with(pooled_conn)
 
+    def test_a_dead_pooled_connection_is_returned_before_being_replaced(
+        self, monkeypatch
+    ):
+        # psycopg_pool never reclaims a checkout that is not handed back, so
+        # replacing a connection that died in our hands would burn a pool slot
+        # permanently: after PGVECTOR_POOL_MAX_SIZE such events every checkout
+        # blocks for the pool timeout and then fails.
+        store, fake_pool, pooled_conn = self._pooled_store(monkeypatch)
+        monkeypatch.setitem(
+            pgvector_module._POOLS, store._connection_string, fake_pool
+        )
+        store._get_connection()
+        replacement = MagicMock()
+        replacement.closed = False
+        fake_pool.getconn.return_value = replacement
+
+        pooled_conn.closed = True  # server terminated the backend mid-idle
+        conn = store._get_connection()
+
+        assert conn is replacement
+        fake_pool.putconn.assert_called_once_with(pooled_conn)
+        assert fake_pool.getconn.call_count == 2
+
     def test_legacy_path_connects_directly_and_closes(self):
         store, mock_conn, _, _ = _make_store()
         store._pool_max_size = 0

@@ -8,6 +8,7 @@ a ``documents`` table built for a different model silently retrieves garbage.
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -91,7 +92,11 @@ class TestEnsureVectorSchemaCreates:
     def test_creates_the_vector_schema_under_the_advisory_lock(self, vector_settings):
         connect, conn, cursor, vector_schema, graph_schema, _ = self._run()
 
-        connect.assert_called_once_with("postgresql://user:pass@localhost/db")
+        # A bounded connect: an unreachable or suspended vector DB must fail the
+        # hook, not hang boot until a liveness probe kills the process.
+        connect.assert_called_once_with(
+            "postgresql://user:pass@localhost/db", connect_timeout=10
+        )
         statements = " ".join(str(c) for c in cursor.execute.call_args_list)
         assert "pg_advisory_xact_lock" in statements
         vector_schema.assert_called_once()
@@ -186,6 +191,29 @@ class TestBootGating:
 
         assert "if settings.AUTO_VECTOR_SCHEMA:" in source
         assert "ensure_vector_schema(" in source
+
+    def test_the_boot_hook_cannot_take_the_process_down(self):
+        """A vector-DB fault must degrade retrieval, not crash-loop the app.
+
+        The hook runs at import time, so an exception escaping it stops
+        gunicorn and every Celery worker from booting -- taking auth, chat
+        history and webhooks down with retrieval. ``PGVectorStore`` re-checks
+        the schema on its write path, so failing soft here loses nothing.
+        """
+        tree = ast.parse(_APP_PY.read_text())
+
+        def _calls_hook(node) -> bool:
+            return any(
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name)
+                and n.func.id == "ensure_vector_schema"
+                for n in ast.walk(node)
+            )
+
+        assert any(
+            isinstance(node, ast.Try) and node.handlers and _calls_hook(node)
+            for node in ast.walk(tree)
+        ), "ensure_vector_schema() at import time must be wrapped in try/except"
 
     def test_setting_defaults_on(self):
         from application.core.settings import Settings

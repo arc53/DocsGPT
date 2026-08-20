@@ -437,6 +437,28 @@ def test_put_file_uploads_under_workspace(sandbox):
     assert remote.endswith("/docsgpt-sandbox/out/data.csv")
 
 
+def test_put_file_bounds_the_upload(sandbox):
+    # Every other fs.* call is bounded at default_timeout; without this the
+    # upload falls back to the SDK's 30-minute default and a toolbox proxy that
+    # accepts but never answers pins the chat stream for that long.
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    sandbox.put_file("conv-1", "out/data.csv", b"a,b\n")
+    assert created.fs.upload_file.call_args.kwargs["timeout"] == 60
+
+
+def test_get_file_bounds_the_download(sandbox):
+    # download_file takes its timeout positionally and dispatches on
+    # isinstance(arg, int) -- a float would be read as a local destination path.
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.fs.download_file.return_value = b"hello"
+    sandbox.get_file("conv-1", "out/data.csv")
+    args = created.fs.download_file.call_args.args
+    assert args[1] == 60
+    assert isinstance(args[1], int)
+
+
 def test_put_file_creates_parent_dirs(sandbox):
     sandbox.open("conv-1")
     _, created = sandbox._client.created[0]

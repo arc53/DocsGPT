@@ -561,7 +561,7 @@ class DaytonaSandbox(CodeSandbox):
                 handle.sandbox.fs.create_folder(parent, "755", request_timeout=self._default_timeout)
             except Exception as folder_exc:  # noqa: BLE001 - folder may already exist
                 logger.debug("put_file parent folder create returned: %s", folder_exc)
-        handle.sandbox.fs.upload_file(data, remote)
+        handle.sandbox.fs.upload_file(data, remote, timeout=int(self._default_timeout))
 
     def get_file(self, session_id: str, path: str) -> bytes:
         """Download ``path`` from the session workspace as bytes, capped at ``max_file_bytes``."""
@@ -616,7 +616,9 @@ class DaytonaSandbox(CodeSandbox):
         size = getattr(info, "size", None)
         if size is not None and size > self._max_file_bytes:
             raise IOError(f"file too large: {size} > {self._max_file_bytes} bytes")
-        return handle.sandbox.fs.download_file(remote)
+        # download_file takes its timeout positionally and dispatches on
+        # isinstance(arg, int): a float would be read as a destination path.
+        return handle.sandbox.fs.download_file(remote, int(self._default_timeout))
 
     def list_files(self, session_id: str) -> List[str]:
         """List workspace-relative file paths for ``session_id`` (recursive, never escapes the workspace)."""

@@ -65,7 +65,19 @@ ensure_database_ready(
 # Own the vector DB's schema here too, so the retrieval hot path is pure reads
 # instead of re-running DDL for every source of every request.
 if settings.AUTO_VECTOR_SCHEMA:
-    ensure_vector_schema(logger=logging.getLogger("application.app"))
+    _vector_schema_log = logging.getLogger("application.app")
+    try:
+        ensure_vector_schema(logger=_vector_schema_log)
+    except Exception:
+        # The vector DB is often a separate cluster. This runs at import time,
+        # so re-raising would stop gunicorn and every Celery worker from
+        # booting -- taking auth, chat history and webhooks down over a fault
+        # that only affects retrieval. PGVectorStore re-checks the schema on
+        # its write path, so degrading here loses nothing.
+        _vector_schema_log.exception(
+            "ensure_vector_schema failed; retrieval is degraded until the "
+            "vector database is reachable and its width matches EMBEDDINGS_NAME."
+        )
 
 from application.agents.default_tools import (  # noqa: E402
     validate_default_chat_tools,

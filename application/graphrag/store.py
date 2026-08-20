@@ -126,7 +126,11 @@ class GraphStore:
         ``PGVectorStore``, so a retrieval that touches both pays one checkout
         each instead of two fresh connect handshakes.
         """
-        if self._connection is None or self._connection.closed:
+        if self._connection is not None and self._connection.closed:
+            # Hand the dead connection back before replacing it; an unreturned
+            # checkout is a pool slot lost for the life of the process.
+            self.close()
+        if self._connection is None:
             if self._pool_max_size > 0:
                 self._connection = pgconn.pool_for(
                     self._connection_string, self._pool_max_size

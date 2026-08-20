@@ -153,7 +153,9 @@ def ensure_vector_schema(*, logger: Optional[logging.Logger] = None) -> None:
     started = time.monotonic()
     # A plain connection, never the store's pool: this can run pre-fork under
     # ``gunicorn --preload``, and an inherited pooled socket is a broken one.
-    conn = psycopg.connect(dsn)
+    # Bounded: a suspended/unreachable vector cluster must fail this hook
+    # rather than hang boot until a liveness probe kills the process.
+    conn = psycopg.connect(dsn, connect_timeout=10)
     try:
         cursor = conn.cursor()
         try:

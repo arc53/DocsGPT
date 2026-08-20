@@ -97,7 +97,12 @@ class PGVectorStore(BaseVectorStore):
 
     def _get_connection(self):
         """Get or create this store's connection, pooled unless pooling is off."""
-        if self._connection is None or self._connection.closed:
+        if self._connection is not None and self._connection.closed:
+            # Hand the dead connection back before replacing it: psycopg_pool
+            # never reclaims a checkout that is not returned, so dropping it
+            # costs the pool a slot for the life of the process.
+            self.close()
+        if self._connection is None:
             if self._pool_max_size > 0:
                 self._connection = _pool_for(
                     self._connection_string, self._pool_max_size

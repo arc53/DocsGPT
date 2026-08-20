@@ -743,6 +743,29 @@ class TestGraphStorePooling:
         pooled_conn.rollback.assert_not_called()
         pool.putconn.assert_called_once_with(pooled_conn)
 
+    def test_a_dead_pooled_connection_is_returned_before_being_replaced(
+        self, monkeypatch
+    ):
+        # Same contract as ``PGVectorStore``: a connection that dies while this
+        # store holds it must go back to the pool, or the slot is lost for the
+        # life of the process. Extraction holds one store across the whole
+        # per-chunk LLM loop, which is exactly when a backend gets reaped.
+        pool, pooled_conn = self._fake_pool()
+        monkeypatch.setattr(store_module.pgconn, "pool_for", lambda dsn, n: pool)
+        monkeypatch.setitem(pgconn._POOLS, POOL_DSN, pool)
+        store = self._store()
+        store._get_connection()
+        replacement = MagicMock()
+        replacement.closed = False
+        pool.getconn.return_value = replacement
+
+        pooled_conn.closed = True
+        conn = store._get_connection()
+
+        assert conn is replacement
+        pool.putconn.assert_called_once_with(pooled_conn)
+        assert pool.getconn.call_count == 2
+
     def test_legacy_path_connects_directly_and_closes(self, monkeypatch):
         def _never(dsn, n):
             raise AssertionError("pooling is off; no pool must be built")
