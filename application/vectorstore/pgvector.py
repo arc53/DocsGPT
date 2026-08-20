@@ -18,14 +18,14 @@ DEFAULT_EMBEDDING_DIM = 768
 SCHEMA_LOCK_KEY = "docsgpt:vectors:ddl"
 
 # The connection pools moved to ``application.vectorstore.pgconn`` so the graph
-# store can share them without importing this module. These names stay bound
-# here — same objects, not copies — because callers and tests reach for
-# ``pgvector._POOLS`` / patch ``pgvector._pool_for``.
-POOL_TIMEOUT_SECONDS = pgconn.POOL_TIMEOUT_SECONDS
+# store can share them without importing this module. Only the names something
+# actually reaches through *this* module stay bound here — same objects, not
+# copies: callers and tests read ``pgvector._POOLS``, patch
+# ``pgvector._pool_for``, and assert on ``pgvector.DEFAULT_POOL_MAX_SIZE``.
+# Anything else belongs to ``pgconn`` alone; re-exporting it here would just be
+# a second name to keep in sync.
 DEFAULT_POOL_MAX_SIZE = pgconn.DEFAULT_POOL_MAX_SIZE
 _POOLS = pgconn._POOLS
-_POOLS_LOCK = pgconn._POOLS_LOCK
-_configure_pooled_connection = pgconn.configure_pooled_connection
 _pool_for = pgconn.pool_for
 
 
