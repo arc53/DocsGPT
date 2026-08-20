@@ -8,7 +8,11 @@ from application.tts.elevenlabs import ElevenlabsTTS
 def test_elevenlabs_text_to_speech_monkeypatched_client(monkeypatch):
     monkeypatch.setattr(
         "application.tts.elevenlabs.settings",
-        SimpleNamespace(ELEVENLABS_API_KEY="api-key"),
+        SimpleNamespace(
+            ELEVENLABS_API_KEY="api-key",
+            ELEVENLABS_VOICE_ID="nPczCjzI2devNBz1zQrb",
+            ELEVENLABS_LANGUAGE="en",
+        ),
     )
 
     created = {}
@@ -58,4 +62,50 @@ def test_elevenlabs_text_to_speech_monkeypatched_client(monkeypatch):
     ]
     assert lang == "en"
     assert base64.b64decode(audio_base64.encode()) == b"chunk-onechunk-two"
+
+
+def test_elevenlabs_text_to_speech_uses_configurable_voice_and_language(monkeypatch):
+    monkeypatch.setattr(
+        "application.tts.elevenlabs.settings",
+        SimpleNamespace(
+            ELEVENLABS_API_KEY="api-key",
+            ELEVENLABS_VOICE_ID="custom-voice-id",
+            ELEVENLABS_LANGUAGE="fr",
+        ),
+    )
+
+    class DummyClient:
+        def __init__(self, api_key):
+            self.convert_calls = []
+
+            class TextToSpeech:
+                def __init__(self, outer):
+                    self._outer = outer
+
+                def convert(self, *, voice_id, model_id, text, output_format):
+                    self._outer.convert_calls.append(
+                        {
+                            "voice_id": voice_id,
+                            "model_id": model_id,
+                            "text": text,
+                            "output_format": output_format,
+                        }
+                    )
+                    yield b"audio"
+
+            self.text_to_speech = TextToSpeech(self)
+
+    client_module = ModuleType("elevenlabs.client")
+    client_module.ElevenLabs = DummyClient
+    package_module = ModuleType("elevenlabs")
+    package_module.client = client_module
+
+    monkeypatch.setitem(sys.modules, "elevenlabs", package_module)
+    monkeypatch.setitem(sys.modules, "elevenlabs.client", client_module)
+
+    tts = ElevenlabsTTS()
+    _, lang = tts.text_to_speech("Bonjour")
+
+    assert tts.client.convert_calls[0]["voice_id"] == "custom-voice-id"
+    assert lang == "fr"
 
