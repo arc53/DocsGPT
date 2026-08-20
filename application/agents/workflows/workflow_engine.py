@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
@@ -750,6 +751,12 @@ class WorkflowEngine:
         supports_images = any(t.startswith("image/") for t in supported)
         max_files = int(getattr(settings, "WORKFLOW_NODE_NATIVE_MAX_FILES", 5))
         extract_max = int(getattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 5))
+        # One wall clock for every blocking parse this node issues. The cap
+        # above bounds how MANY parses run; this bounds how LONG they take in
+        # total, so N documents cannot serialize N size-scaled windows.
+        parse_deadline = time.monotonic() + float(
+            getattr(settings, "WORKFLOW_NODE_EXTRACT_BUDGET_SECONDS", 900)
+        )
         max_bytes = int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 25 * 1024 * 1024))
 
         # One read-only connection for the whole batch; the resolved-version
@@ -835,7 +842,8 @@ class WorkflowEngine:
                         continue
                     extract_count += 1
                 content = self._extract_attachment_text(
-                    artifact_id, storage_path, mime_type, filename, max_bytes, size=size
+                    artifact_id, storage_path, mime_type, filename, max_bytes,
+                    size=size, deadline=parse_deadline,
                 )
                 if content is None:
                     logger.warning(
@@ -893,8 +901,14 @@ class WorkflowEngine:
         filename: str,
         max_bytes: int,
         size: Optional[int] = None,
+        deadline: Optional[float] = None,
     ) -> Optional[str]:
-        """Get an attachment's text: reuse upload-time extraction, else inline text mimes, else parse."""
+        """Get an attachment's text: reuse upload-time extraction, else inline text mimes, else parse.
+
+        Args:
+            deadline: ``time.monotonic()`` value past which no further blocking
+                parse may run, shared across the node's documents.
+        """
         from application.parser.document_reader import truncate_text_head_tail
         from application.storage.storage_creator import StorageCreator
 
@@ -933,10 +947,22 @@ class WorkflowEngine:
             return truncate_text_head_tail(text)
         # Non-text mimes parse via the dedicated parsing queue (works on any backend,
         # no sandbox): the worker re-resolves the artifact run-scoped and reads its bytes.
-        return self._parse_document_text(artifact_id, size=size)
+        return self._parse_document_text(artifact_id, size=size, deadline=deadline)
 
-    def _parse_document_text(self, artifact_id: str, size: Optional[int] = None) -> Optional[str]:
-        """Enqueue ``parse_document`` for this run and await the size-scaled markdown; None on failure."""
+    def _parse_document_text(
+        self,
+        artifact_id: str,
+        size: Optional[int] = None,
+        deadline: Optional[float] = None,
+    ) -> Optional[str]:
+        """Enqueue ``parse_document`` for this run and await the size-scaled markdown; None on failure.
+
+        Args:
+            artifact_id: Run-scoped artifact to parse.
+            size: Stored byte size, used to scale the per-document window.
+            deadline: ``time.monotonic()`` value the await must not outlive,
+                shared with the node's other documents.
+        """
         from celery.exceptions import TimeoutError as CeleryTimeoutError
 
         from application.api.user.tasks import (
@@ -955,6 +981,13 @@ class WorkflowEngine:
         # (floored at DOCUMENT_PARSE_TIMEOUT); the task's per-call time limits are
         # raised to match, else the worker would self-terminate mid-parse.
         timeout = parse_timeout_for_size(size)
+        if deadline is not None:
+            timeout = min(timeout, deadline - time.monotonic())
+            if timeout <= 0:
+                logger.warning(
+                    "Workflow node: parse budget exhausted; skipping %s", artifact_id
+                )
+                return None
         try:
             async_result = parse_document.apply_async(
                 args=[artifact_id, {"workflow_run_id": self.workflow_run_id}, user_id, options],

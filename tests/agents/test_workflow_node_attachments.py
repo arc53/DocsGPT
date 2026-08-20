@@ -232,7 +232,7 @@ def test_extract_non_text_uses_parse_worker(monkeypatch):
     _patch_repo(monkeypatch, {aid: rec})
     eng = _engine(monkeypatch)
     monkeypatch.setattr(
-        WorkflowEngine, "_parse_document_text", lambda self, artifact_id, size=None: "EXTRACTED MD"
+        WorkflowEngine, "_parse_document_text", lambda self, artifact_id, size=None, deadline=None: "EXTRACTED MD"
     )
     cfg = _node_config(input_documents=[aid], file_passing="extract")
 
@@ -296,7 +296,7 @@ def test_native_file_cap_bounds_native_then_extracts(monkeypatch):
     )
     # extract of a non-text image routes through the parsing worker; stub it so it returns text.
     monkeypatch.setattr(
-        WorkflowEngine, "_parse_document_text", lambda self, artifact_id, size=None: "fallback text"
+        WorkflowEngine, "_parse_document_text", lambda self, artifact_id, size=None, deadline=None: "fallback text"
     )
     cfg = _node_config(input_documents=ids, file_passing="auto")
 
@@ -572,7 +572,7 @@ def test_execute_agent_node_native_decision_tracks_provider_types(monkeypatch):
     _patch_repo(monkeypatch, {aid: rec})
     _patch_capabilities(monkeypatch)
     monkeypatch.setattr(
-        WorkflowEngine, "_parse_document_text", lambda self, artifact_id, size=None: "EXTRACTED"
+        WorkflowEngine, "_parse_document_text", lambda self, artifact_id, size=None, deadline=None: "EXTRACTED"
     )
     eng = _engine(monkeypatch)
 

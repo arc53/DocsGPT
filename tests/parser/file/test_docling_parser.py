@@ -4,6 +4,7 @@ Covers: DoclingParser (init, _init_parser, _get_ocr_options, _export_content,
 parse_file), subclass initialization, error handling.
 """
 
+import logging
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1189,9 +1190,8 @@ class TestOCRDropoutGuard:
         assert create.call_count == 0
         assert parser._converter is converter
 
-    def test_threshold_is_per_page_not_per_document(self, monkeypatch):
-        """200 chars is healthy for one page and a dropout for a hundred."""
-        from application.parser.file.base_parser import DocumentParseError
+    def test_threshold_is_per_page_not_per_document(self):
+        """200 chars is healthy for one page and suspicious for a hundred."""
         from application.parser.file.docling_parser import DoclingPDFParser
 
         content = "x" * 200
@@ -1203,14 +1203,20 @@ class TestOCRDropoutGuard:
             assert parser.parse_file(Path("one-page.pdf")) == content
         assert create.call_count == 0
 
+        # Over a hundred pages the same text is below the floor, so the guard
+        # spends a full-page-OCR retry on it. It still indexes afterwards --
+        # sparse is not the same as dropped (see the dropout tests below).
         long_doc = DoclingPDFParser(ocr_enabled=True)
         long_doc._converter = MagicMock()
         long_doc._converter.convert.return_value = _mock_conversion(content, pages=100)
         with patch.object(
             long_doc, "_create_converter", return_value=long_doc._converter
+        ) as create, patch(
+            "application.parser.file.docling_parser._pdf_text_layer_probe",
+            return_value=(100, 0),
         ):
-            with pytest.raises(DocumentParseError):
-                long_doc.parse_file(Path("hundred-page.pdf"))
+            assert long_doc.parse_file(Path("hundred-page.pdf")) == content
+        assert create.call_count == 1
 
     def test_guard_does_not_apply_to_non_ocr_formats(self):
         """DOCX parsers inherit ocr_enabled=True but never OCR anything."""
@@ -1228,7 +1234,28 @@ class TestOCRDropoutGuard:
         assert create.call_count == 0
 
     def test_guard_applies_to_images(self):
-        from application.parser.file.base_parser import DocumentParseError
+        """The retry covers images -- a degraded converter may still recover one."""
+        from application.parser.file.docling_parser import DoclingImageParser
+
+        parser = DoclingImageParser(ocr_enabled=True)
+        degraded = MagicMock()
+        degraded.convert.return_value = _mock_conversion("<!-- image -->")
+        parser._converter = degraded
+
+        fresh = MagicMock()
+        fresh.convert.return_value = _mock_conversion("Recovered caption text.")
+
+        with patch.object(parser, "_create_converter", return_value=fresh) as create:
+            assert parser.parse_file(Path("scan.png")) == "Recovered caption text."
+
+        assert create.call_count == 1
+
+    def test_a_text_free_image_indexes_rather_than_failing_the_upload(self, caplog):
+        """A chart, logo or photo has no text to find; that is not a dropout.
+
+        DocumentParseError is in ``dont_autoretry_for``, so raising here fails a
+        single-file upload permanently.
+        """
         from application.parser.file.docling_parser import DoclingImageParser
 
         parser = DoclingImageParser(ocr_enabled=True)
@@ -1237,8 +1264,66 @@ class TestOCRDropoutGuard:
         parser._converter = converter
 
         with patch.object(parser, "_create_converter", return_value=converter):
-            with pytest.raises(DocumentParseError, match="scan.png"):
-                parser.parse_file(Path("scan.png"))
+            with caplog.at_level(logging.WARNING):
+                assert parser.parse_file(Path("chart.png")) == "<!-- image -->"
+
+        assert "text-sparse" in caplog.text
+
+    def test_a_text_sparse_scan_indexes_rather_than_failing_the_upload(self):
+        """20 pages of pictures with a few captions is the document, not a fault."""
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        content = "Fig 1. Fig 2. Fig 3."
+        parser = DoclingPDFParser(ocr_enabled=True)
+        converter = MagicMock()
+        converter.convert.return_value = _mock_conversion(content, pages=20)
+        parser._converter = converter
+
+        with patch.object(
+            parser, "_create_converter", return_value=converter
+        ), patch(
+            "application.parser.file.docling_parser._pdf_text_layer_probe",
+            return_value=(20, 0),
+        ):
+            assert parser.parse_file(Path("catalog.pdf")) == content
+
+    def test_a_multi_page_zero_char_parse_is_still_a_dropout(self):
+        """The incident this guard exists for: every page OCR'd to nothing."""
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        converter = MagicMock()
+        converter.convert.return_value = _mock_conversion("", pages=40)
+        parser._converter = converter
+
+        with patch.object(
+            parser, "_create_converter", return_value=converter
+        ), patch(
+            "application.parser.file.docling_parser._pdf_text_layer_probe",
+            return_value=(40, 0),
+        ):
+            with pytest.raises(DocumentParseError, match="scan.pdf"):
+                parser.parse_file(Path("scan.pdf"))
+
+    def test_a_pdf_whose_text_layer_was_missed_is_still_a_dropout(self):
+        """Text docling should have read without OCR at all -- positive evidence."""
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        converter = MagicMock()
+        converter.convert.return_value = _mock_conversion("stub", pages=20)
+        parser._converter = converter
+
+        with patch.object(
+            parser, "_create_converter", return_value=converter
+        ), patch(
+            "application.parser.file.docling_parser._pdf_text_layer_probe",
+            return_value=(20, 5000),
+        ):
+            with pytest.raises(DocumentParseError, match="text layer"):
+                parser.parse_file(Path("report.pdf"))
 
     def test_retry_conversion_failure_is_still_a_parse_error(self):
         from application.parser.file.base_parser import DocumentParseError

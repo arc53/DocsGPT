@@ -462,6 +462,12 @@ class Settings(BaseSettings):
     # avoid serializing dozens of parses; documents past the cap are skipped with
     # a truncation note instead of extracted.
     WORKFLOW_NODE_EXTRACT_MAX_FILES: int = 5
+    # Total wall clock one node may spend on blocking document parses, shared
+    # across all of them. The per-document window scales with size (up to
+    # DOCUMENT_PARSE_TIMEOUT_MAX), so without a shared budget a node could
+    # serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows and hold a web
+    # threadpool slot for that whole time.
+    WORKFLOW_NODE_EXTRACT_BUDGET_SECONDS: int = 900
     # A workflow run row is pre-created as ``running`` and finalized when its
     # generator completes; a client disconnect or worker crash can strand it in
     # ``running`` forever. The beat reaper fails runs still ``running`` past this

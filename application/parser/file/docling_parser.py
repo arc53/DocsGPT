@@ -539,11 +539,13 @@ class DoclingParser(BaseParser):
             pages: Page count reported for the first pass.
 
         Returns:
-            The retry's content, when it clears the chars-per-page floor.
+            The retry's content: either because it cleared the chars-per-page
+            floor, or because the document is genuinely text-sparse.
 
         Raises:
-            DocumentParseError: If the retry is near-empty too, so the caller
-                fails loudly instead of indexing an empty document.
+            DocumentParseError: Only with positive evidence of a dropout — a
+                PDF text layer docling should have read without OCR, or a
+                multi-page document that OCR'd to literally zero characters.
         """
         name = Path(file).name
         logger.warning(
@@ -577,6 +579,7 @@ class DoclingParser(BaseParser):
             return content
 
         detail = ""
+        layer_pages = layer_chars = 0
         if Path(file).suffix.lower() == ".pdf":
             layer_pages, layer_chars = _pdf_text_layer_probe(file)
             if layer_chars > 0:
@@ -590,11 +593,30 @@ class DoclingParser(BaseParser):
                     f" The PDF has no text layer over {layer_pages} page(s), "
                     "so OCR was the only possible source."
                 )
-        raise DocumentParseError(
-            f"OCR produced {retry_chars} chars over {retry_pages} pages for "
-            f"{name}; likely OCR pipeline dropout — document not indexed."
-            + detail
+
+        # Sparse is not the same as dropped. Fail only on positive evidence
+        # that there was text to find: a text layer docling should have read
+        # without OCR, or a multi-page document that OCR'd to literally
+        # nothing (the observed incident). A photo, logo, chart or picture-led
+        # catalogue is genuinely text-poor — failing it would reject the
+        # upload permanently, since DocumentParseError skips autoretry.
+        if layer_chars > 0 or (retry_chars == 0 and retry_pages > 1):
+            raise DocumentParseError(
+                f"OCR produced {retry_chars} chars over {retry_pages} pages for "
+                f"{name}; likely OCR pipeline dropout — document not indexed."
+                + detail
+            )
+
+        logger.warning(
+            "%s yielded only %d chars over %d page(s) after a full-page-OCR "
+            "retry; indexing it as genuinely text-sparse rather than treating "
+            "it as an OCR dropout.%s",
+            name,
+            retry_chars,
+            retry_pages,
+            detail,
         )
+        return content
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse file using docling with hybrid OCR.
@@ -602,9 +624,11 @@ class DoclingParser(BaseParser):
         Uses smart OCR approach where the layout model detects text vs bitmap
         regions. Text is extracted directly, bitmaps are OCR'd only when needed.
 
-        When OCR is enabled for a PDF or image, a near-empty result is treated
-        as a pipeline dropout rather than as the document's content: it is
-        retried once on a fresh converter, and failing that it raises.
+        When OCR is enabled for a PDF or image, a near-empty result is retried
+        once on a fresh converter. It is only rejected as a pipeline dropout if
+        the retry is near-empty *and* there is evidence text was there to find;
+        a genuinely text-sparse document (a photo, a picture-led catalogue) is
+        indexed with a warning.
 
         Args:
             file: Path to the file to parse
@@ -615,7 +639,8 @@ class DoclingParser(BaseParser):
 
         Raises:
             DocumentParseError: If docling fails, or if an OCR parse stays
-                near-empty across both passes.
+                near-empty across both passes on a document that demonstrably
+                carried text.
         """
         logger.info(f"parse_file called for: {file}")
 

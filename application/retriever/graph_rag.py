@@ -306,6 +306,17 @@ class GraphRAGRetriever(BaseRetriever):
                 )
                 failed.append(source_id)
 
+        # Every remaining segment is a ClassicRAG fan-out, and each of its legs
+        # checks out of the *same* per-DSN pool this store is holding. Hand the
+        # graph connection back first, or concurrent GraphRAG retrievals occupy
+        # every slot and then block on their own fallbacks until PoolTimeout.
+        # ``close()`` nulls the connection, so ``_get_data``'s finally stays correct.
+        if graphless or failed:
+            try:
+                store.close()
+            except Exception as e:
+                logging.debug("Error releasing GraphRAG store before fallback: %s", e)
+
         if graphless:
             segments[classic_slot] = self._classic_for_sources(graphless)
         if failed:

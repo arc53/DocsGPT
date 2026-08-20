@@ -2157,6 +2157,84 @@ class TestIsToolsUnsupportedError:
         assert _is_tools_unsupported_error(error) is True
 
 
+def _bad_request_param(message, param):
+    """A 400 that names a request *parameter*, the way OpenAI/Azure do.
+
+    Mirrors ``openai._base_client._make_status_error_from_response``, which
+    interpolates the whole decoded body into the exception's own message --
+    the reason a body-repr match sees tool words that the server never said.
+    """
+    request = httpx.Request("POST", "http://localhost:8000/v1/chat/completions")
+    response = httpx.Response(400, request=request)
+    # The SDK unwraps the "error" envelope into ``body`` (so ``error.param``
+    # resolves) but keeps the *whole* payload in the message string.
+    payload = {"error": {"message": message, "param": param}}
+    return BadRequestError(
+        f"Error code: 400 - {payload}", response=response, body=payload["error"]
+    )
+
+
+@pytest.mark.unit
+class TestToolChoiceIsNotACapabilitySignal:
+    """A rejected ``tool_choice`` is a bad argument, not a missing capability.
+
+    The SDK interpolates the whole JSON body into ``str(error)``, so matching
+    on that made ``"param": "tool_choice"`` look like "this endpoint cannot do
+    tools" -- and the v1 translator forwards a client-supplied ``tool_choice``
+    verbatim, so any API caller could trigger it.
+    """
+
+    TOOLS = [{"type": "function", "function": {"name": "t"}}]
+
+    def test_a_rejected_tool_choice_is_not_a_tools_error(self):
+        error = _bad_request_param(
+            "Invalid value: 'require'. Supported values are: 'none', 'auto'.",
+            "tool_choice",
+        )
+
+        assert _is_tools_unsupported_error(error) is False
+
+    def test_the_body_repr_alone_does_not_trip_the_match(self):
+        # str(error) contains the entire body, including the param name.
+        error = _bad_request_param("Unsupported value.", "tool_choice")
+
+        assert "tool_choice" in str(error)
+        assert _is_tools_unsupported_error(error) is False
+
+    def test_retries_without_tool_choice_but_keeps_the_tools(self, llm):
+        create = _RecordingCreate(
+            _bad_request_param("Invalid value: 'require'.", "tool_choice"),
+            _Response(choices=[_Choice(content="answered")]),
+        )
+        llm.client.chat.completions.create = create
+
+        llm._raw_gen(
+            llm, model="local-model", messages=[{"role": "user", "content": "hi"}],
+            stream=False, tools=self.TOOLS, tool_choice="require",
+        )
+
+        assert len(create.calls) == 2
+        assert "tool_choice" not in create.calls[1]
+        assert create.calls[1]["tools"] == self.TOOLS
+        assert llm._supports_tools() is True
+
+    def test_a_failed_tool_less_retry_does_not_latch(self, llm):
+        def _always_400(**kwargs):
+            raise _bad_request(VLLM_TOOL_ERROR)
+
+        llm.client.chat.completions.create = _always_400
+
+        with pytest.raises(BadRequestError):
+            llm._raw_gen(
+                llm, model="local-model",
+                messages=[{"role": "user", "content": "hi"}],
+                stream=False, tools=self.TOOLS,
+            )
+
+        # Nothing proved the endpoint is tool-less, so later turns must retry.
+        assert llm._supports_tools() is True
+
+
 @pytest.mark.unit
 class TestToolCallingFallback:
     """An OpenAI-compatible endpoint without tool support (vLLM started

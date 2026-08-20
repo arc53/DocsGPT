@@ -493,6 +493,87 @@ def test_extract_parse_opts_out_of_sync_subtask_guard(monkeypatch):
     assert captured["args"][1] == {"workflow_run_id": "run-extract"}
 
 
+def _engine_for_parse(monkeypatch, get_impl):
+    """Engine wired to a fake ``parse_document`` whose ``get`` is ``get_impl``."""
+    import application.api.user.tasks as tasks
+
+    agent = _agent(str(uuid.uuid4()), [])
+    engine = WorkflowEngine.__new__(WorkflowEngine)
+    engine.agent = agent
+    engine.workflow_run_id = "run-budget"
+
+    captured: dict = {}
+
+    class _FakeAsyncResult:
+        def get(self, timeout=None, disable_sync_subtasks=True):
+            captured.setdefault("timeouts", []).append(timeout)
+            return get_impl(timeout)
+
+    def _apply_async(args=None, queue=None, **kw):
+        captured.setdefault("limits", []).append(kw)
+        return _FakeAsyncResult()
+
+    monkeypatch.setattr(tasks.parse_document, "apply_async", _apply_async)
+    return engine, captured
+
+
+def test_parse_await_is_clamped_to_the_node_budget(monkeypatch):
+    """A node's parses share one wall clock; they do not each get a full window.
+
+    WORKFLOW_NODE_EXTRACT_MAX_FILES documents serialized at the full per-document
+    window would hold a web threadpool slot for max_files x the maximum timeout.
+    """
+    import time
+
+    engine, captured = _engine_for_parse(
+        monkeypatch, lambda timeout: {"status": "ok", "content": "md"}
+    )
+
+    # 100s of a 900s budget already spent by earlier documents in this node.
+    deadline = time.monotonic() + 100.0
+    out = engine._parse_document_text(
+        "artifact-1", size=25 * 1024 * 1024, deadline=deadline
+    )
+
+    assert out == "md"
+    granted = captured["timeouts"][0]
+    assert 0 < granted <= 100.0, "the await must not outlive the node's budget"
+
+
+def test_parse_is_skipped_once_the_node_budget_is_spent(monkeypatch, caplog):
+    """An exhausted budget skips the document instead of starting a new window."""
+    import logging
+    import time
+
+    def _never_called(timeout):
+        raise AssertionError("no parse may be enqueued past the budget")
+
+    engine, captured = _engine_for_parse(monkeypatch, _never_called)
+
+    with caplog.at_level(logging.WARNING):
+        out = engine._parse_document_text(
+            "artifact-2", size=1024, deadline=time.monotonic() - 1.0
+        )
+
+    assert out is None
+    assert not captured.get("timeouts")
+    assert "budget" in caplog.text
+
+
+def test_parse_without_a_deadline_keeps_the_size_scaled_window(monkeypatch):
+    """The per-document scaling is the point of the feature; keep it intact."""
+    from application.api.user.tasks import parse_timeout_for_size
+
+    engine, captured = _engine_for_parse(
+        monkeypatch, lambda timeout: {"status": "ok", "content": "md"}
+    )
+
+    size = 13 * 1024 * 1024
+    engine._parse_document_text("artifact-3", size=size)
+
+    assert captured["timeouts"][0] == parse_timeout_for_size(size)
+
+
 def test_node_extract_path_capped_with_truncation_note(pg_engine, tmp_path, monkeypatch):
     """A node referencing more docs than the extract cap parses only up to the cap and notes the rest."""
     storage = _wire(pg_engine, tmp_path, monkeypatch)

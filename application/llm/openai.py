@@ -18,6 +18,10 @@ NO_API_KEY = "sk-no-key"
 # when an endpoint turns out not to serve tool calling.
 _TOOL_REQUEST_KEYS = ("tools", "tool_choice", "parallel_tool_calls")
 
+# Knobs that shape *how* tools are called. A 400 naming one of these is a bad
+# argument, so they are dropped on their own before tools are given up.
+_TOOL_CHOICE_KEYS = ("tool_choice", "parallel_tool_calls")
+
 # Substrings an OpenAI-compatible server puts in a 400 when it understands the
 # request but cannot serve tool calling: vLLM without --enable-auto-tool-choice
 # / --tool-call-parser, llama.cpp, TGI, Ollama and friends. Matched case
@@ -26,8 +30,11 @@ _TOOL_REQUEST_KEYS = ("tools", "tool_choice", "parallel_tool_calls")
 _TOOLS_UNSUPPORTED_MARKERS = (
     "enable-auto-tool-choice",
     "tool-call-parser",
-    "tool_choice",
-    "tool choice",
+    # Deliberately no bare "tool_choice"/"tool choice": a 400 about a malformed
+    # tool_choice *argument* names the parameter without meaning the endpoint
+    # lacks tool support. Only unambiguous phrasings belong here.
+    "unsupported parameter: 'tool_choice'",
+    "unknown field: tool_choice",
     "tools are not supported",
     "tools is not supported",
     "does not support tools",
@@ -42,6 +49,29 @@ _TOOLS_UNSUPPORTED_MARKERS = (
 )
 
 
+def _provider_message(error: Exception) -> str:
+    """The server's own message text, without the SDK's whole-body repr.
+
+    ``openai._base_client`` interpolates the entire decoded JSON body into the
+    exception message, so matching ``str(error)`` would let a *parameter name*
+    ("param": "tool_choice") read as "this endpoint cannot serve tools".
+
+    Args:
+        error: The exception raised by the provider SDK.
+
+    Returns:
+        The server's message when the body carries one, else ``str(error)``.
+    """
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        inner = body.get("error")
+        if isinstance(inner, dict) and inner.get("message"):
+            return str(inner["message"])
+        if body.get("message"):
+            return str(body["message"])
+    return str(error)
+
+
 def _is_tools_unsupported_error(error: Exception) -> bool:
     """Whether a 400 says the endpoint cannot serve tool calling.
 
@@ -51,11 +81,7 @@ def _is_tools_unsupported_error(error: Exception) -> bool:
     Returns:
         True when the server's message matches a tool-calling marker.
     """
-    parts = [str(error)]
-    body = getattr(error, "body", None)
-    if isinstance(body, dict):
-        parts.append(str(body.get("message") or ""))
-    haystack = " ".join(parts).lower()
+    haystack = _provider_message(error).lower()
     return any(marker in haystack for marker in _TOOLS_UNSUPPORTED_MARKERS)
 
 
@@ -648,16 +674,38 @@ class OpenAILLM(BaseLLM):
             tool-less retry when the endpoint rejected tool calling.
 
         Raises:
-            openai.BadRequestError: Any 400 unrelated to tool calling, and
-                any 400 on a request that carried no tools.
+            openai.BadRequestError: Any 400 unrelated to tool calling, any 400
+                on a request that carried no tools, and any 400 raised by the
+                retry itself.
         """
         try:
             return create(**params)
         except BadRequestError as error:
-            if not params.get("tools") or not _is_tools_unsupported_error(error):
+            if not params.get("tools"):
                 raise
+            if getattr(error, "param", None) in _TOOL_CHOICE_KEYS:
+                # A rejected tool_choice is a bad argument, not a missing
+                # capability -- the v1 translator forwards a client-supplied
+                # value verbatim. Drop just that knob and keep the tools.
+                logging.warning(
+                    "Endpoint rejected %r (model=%s): %s. Retrying with tools intact.",
+                    getattr(error, "param", None),
+                    model,
+                    error,
+                )
+                retry = {
+                    key: value for key, value in params.items()
+                    if key not in _TOOL_CHOICE_KEYS
+                }
+                return create(**retry)
+            if not _is_tools_unsupported_error(error):
+                raise
+            response = create(**self._params_without_tools(params))
+            # Latch only once the tool-less retry has actually worked: a retry
+            # that also 400s proves nothing about tool support, and must not
+            # disable tools for the rest of this answer.
             self._note_tools_rejected(model, error)
-            return create(**self._params_without_tools(params))
+            return response
 
     def _raw_gen(
         self,

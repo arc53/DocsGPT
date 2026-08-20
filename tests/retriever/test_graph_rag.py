@@ -68,7 +68,9 @@ class TestGraphRAGFallback:
         assert docs == classic_docs
         store.search_nodes_by_embedding.assert_not_called()
         store.get_subgraph.assert_not_called()
-        store.close.assert_called_once()
+        # Released early (before the classic fallback checks out of the same
+        # pool) and again in _get_data's finally; close() is idempotent.
+        assert store.close.called
 
     @patch("application.retriever.graph_rag.GraphStore")
     @patch("application.retriever.graph_rag.graphrag_available", return_value=False)
@@ -110,6 +112,58 @@ def _store_with_graph(
     store.get_chunk_ids_for_nodes.return_value = node_chunks
     store.get_chunk_texts.return_value = _as_chunk_data(chunk_texts, metadata_by_chunk)
     return store
+
+
+@pytest.mark.unit
+class TestGraphRAGPoolDiscipline:
+    """The graph store must not hold a pooled connection across its fallback.
+
+    ``_classic_for_sources`` runs its own per-source fan-out, each leg of which
+    checks out of the *same* per-DSN pool. Holding the graph store's connection
+    while recursing into it lets concurrent GraphRAG retrievals occupy every
+    slot and then block on their own inner fan-outs until PoolTimeout.
+    """
+
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_connection_is_released_before_the_classic_fallback(
+        self, _avail, mock_store_cls, _patch_llm_creator
+    ):
+        store = MagicMock()
+        store.count_nodes_many.return_value = {"src1": 0}
+        mock_store_cls.return_value = store
+
+        order = []
+        store.close.side_effect = lambda: order.append("close")
+
+        rag = _make_retriever()
+        with patch.object(
+            rag, "_classic_for_sources",
+            side_effect=lambda ids: order.append("classic") or [],
+        ):
+            rag._get_data()
+
+        assert order[:2] == ["close", "classic"]
+
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_a_graph_only_retrieval_keeps_its_connection(
+        self, _avail, mock_store_cls, _patch_llm_creator, _patch_embed
+    ):
+        # Nothing falls back, so there is no nested checkout to guard against;
+        # the store keeps its connection until _get_data's finally.
+        store = MagicMock()
+        store.count_nodes_many.return_value = {"src1": 3}
+        mock_store_cls.return_value = store
+
+        rag = _make_retriever()
+        with patch.object(rag, "_graph_docs_for_source", return_value=[]):
+            with patch.object(rag, "_classic_for_sources") as classic:
+                rag._get_data()
+
+        classic.assert_not_called()
+        # Exactly one close: _get_data's finally, not an early release.
+        assert store.close.call_count == 1
 
 
 @pytest.mark.unit
@@ -733,7 +787,7 @@ class TestGraphRAGBatching:
         with pytest.raises(RuntimeError):
             rag._get_data()
 
-        store.close.assert_called_once()
+        assert store.close.called
 
     @patch("application.retriever.graph_rag.GraphStore")
     @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
