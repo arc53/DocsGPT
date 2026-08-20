@@ -24,10 +24,12 @@ from application.vectorstore import pgconn
 
 DEFAULT_NAME_EMBEDDING_DIM = 768
 
-# Mirrors ``PGVectorStore.DEFAULT_POOL_MAX_SIZE``; duplicated rather than
-# imported so the graph store never pulls the vector store (and its embeddings
-# stack) in at import time. 0 disables pooling.
-DEFAULT_POOL_MAX_SIZE = 8
+# Bound here (same objects, not copies) from the shared pool module, which both
+# stores already import. Reaching through ``pgvector`` instead would drag the
+# embeddings stack in at import time; ``pgconn`` imports nothing heavier than
+# ``logging`` and ``threading``. 0 disables pooling.
+DEFAULT_POOL_MAX_SIZE = pgconn.DEFAULT_POOL_MAX_SIZE
+_resolve_pool_max_size = pgconn.resolve_pool_max_size
 
 MAX_SUBGRAPH_NODES = 500
 MAX_SUBGRAPH_EDGES = 2000
@@ -36,14 +38,6 @@ GRAPH_OVERVIEW_DEFAULT_LIMIT = 100
 GRAPH_OVERVIEW_MAX_LIMIT = 250
 
 PGVECTOR_SOURCE_COLUMN = "source_id"
-
-
-def _resolve_pool_max_size() -> int:
-    """Pool size from settings, defensively — 0 means one direct connection."""
-    value = getattr(settings, "PGVECTOR_POOL_MAX_SIZE", DEFAULT_POOL_MAX_SIZE)
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-        return value
-    return DEFAULT_POOL_MAX_SIZE
 
 
 def _safe_identifier(name: str) -> str:

@@ -482,6 +482,79 @@ def test_inline_parse_times_out_on_the_signal_path(monkeypatch, caplog):
 
 
 @pytest.mark.unit
+def test_a_straggler_alarm_does_not_discard_a_finished_parse(monkeypatch):
+    """The alarm can land between ``fn()`` returning and the disarm call.
+
+    ``_InlineParseTimeout`` is a BaseException, so nothing catches it locally:
+    raised from the ``finally`` it replaces the return value, and the caller
+    reports a timeout for a document that parsed correctly.
+    """
+    real_setitimer = signal.setitimer
+
+    def _fire_on_disarm(which, seconds, *rest):
+        # Reproduce the race deterministically: deliver SIGALRM at the exact
+        # instant the timer is being cancelled.
+        if seconds == 0:
+            handler = signal.getsignal(signal.SIGALRM)
+            if callable(handler):
+                handler(signal.SIGALRM, None)
+        return real_setitimer(which, seconds, *rest)
+
+    monkeypatch.setattr(signal, "setitimer", _fire_on_disarm)
+
+    parsed = {"status": "ok", "content": "the document really did parse"}
+    assert rd.ReadDocumentTool._run_with_sigalrm(lambda: parsed, 30.0) == parsed
+
+
+@pytest.mark.unit
+def test_a_genuine_sigalrm_timeout_still_raises(monkeypatch):
+    """The completion flag must not disarm the guard itself."""
+    with pytest.raises(rd._InlineParseTimeout):
+        rd.ReadDocumentTool._run_with_sigalrm(lambda: time.sleep(1.0), 0.15)
+
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+
+
+@pytest.mark.unit
+def test_the_inline_helper_thread_is_a_daemon():
+    """A timed-out parse is abandoned, so its thread must not outlive the process.
+
+    ``concurrent.futures`` registers its (non-daemon) workers with an atexit
+    hook that joins them, which is exactly why application/guardrails/engine.py
+    uses raw daemon threads for the same abandon-on-timeout shape.
+    """
+    seen: Dict[str, Any] = {}
+
+    def _capture():
+        seen["thread"] = threading.current_thread()
+        return {"status": "ok"}
+
+    assert rd.ReadDocumentTool._run_in_thread(_capture, 5.0) == {"status": "ok"}
+    assert seen["thread"].name.startswith("read-document-inline")
+    assert seen["thread"].daemon is True
+
+
+@pytest.mark.unit
+def test_the_thread_path_propagates_a_parse_failure():
+    """An error raised by ``fn`` surfaces as itself, not as a timeout."""
+    def _boom():
+        raise RuntimeError("parser exploded")
+
+    with pytest.raises(RuntimeError, match="parser exploded"):
+        rd.ReadDocumentTool._run_in_thread(_boom, 5.0)
+
+
+@pytest.mark.unit
+def test_the_thread_path_does_not_mistake_a_parse_timeout_for_its_own():
+    """``fn`` raising TimeoutError is a failure, not the deadline elapsing."""
+    def _raises_timeout():
+        raise TimeoutError("the parser's own network timeout")
+
+    with pytest.raises(TimeoutError, match="own network timeout"):
+        rd.ReadDocumentTool._run_in_thread(_raises_timeout, 5.0)
+
+
+@pytest.mark.unit
 def test_inline_parse_times_out_on_the_thread_path(monkeypatch, caplog):
     """Off the main thread (gevent/threads pools, Windows) the timer is unusable."""
     seen: Dict[str, Any] = {}

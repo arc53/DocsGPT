@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os.path
+from typing import Any, Callable
 
 from openai import BadRequestError, OpenAI
 
@@ -638,7 +639,7 @@ class OpenAILLM(BaseLLM):
                 return normalized
         return ""
 
-    def _note_tools_rejected(self, model, error) -> None:
+    def _note_tools_rejected(self, model: str, error: Exception) -> None:
         """Record that this endpoint refuses tool calling, warning once."""
         if not self._tools_rejected:
             logging.warning(
@@ -661,7 +662,9 @@ class OpenAILLM(BaseLLM):
             if key not in _TOOL_REQUEST_KEYS
         }
 
-    def _create_with_tool_fallback(self, create, params: dict, model):
+    def _create_with_tool_fallback(
+        self, create: Callable[..., Any], params: dict, model: str
+    ) -> Any:
         """Send a request, retrying once without tools on a tools-unsupported 400.
 
         Args:

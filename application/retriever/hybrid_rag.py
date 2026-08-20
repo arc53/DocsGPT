@@ -8,6 +8,8 @@ support (``keyword_search`` returns ``[]``) reduce to exact vector-only
 behaviour.
 """
 
+from typing import Any, List, Optional
+
 from application.retriever.classic_rag import ClassicRAG
 
 RRF_K = 60
@@ -49,15 +51,20 @@ def fuse_with_scores(vector_hits, keyword_hits, k=RRF_K):
 class HybridRetriever(ClassicRAG):
     """ClassicRAG variant that fuses vector + keyword search with RRF."""
 
-    def _score_kind(self, docsearch):
+    def _score_kind(self, docsearch: Any) -> str:
         """RRF scores rank hits against each other, not against a similarity
         cutoff — they are not comparable to the store's cosine scores, so they
         carry their own label."""
         return "rrf"
 
     def _fetch_candidates(
-        self, docsearch, question, src_k, score_threshold, query_vector=None
-    ):
+        self,
+        docsearch: Any,
+        question: str,
+        src_k: int,
+        score_threshold: Optional[float],
+        query_vector: Optional[List[float]] = None,
+    ) -> List[Any]:
         """Return RRF-fused vector+keyword hits for one vector store.
 
         Inherits the per-source resolution and budgeting from

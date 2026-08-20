@@ -15,8 +15,6 @@ from __future__ import annotations
 import logging
 import signal
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any, Callable, Dict, List, Optional
 
 from celery import current_task
@@ -318,14 +316,22 @@ class ReadDocumentTool(Tool):
     @staticmethod
     def _run_with_sigalrm(fn: Callable[[], Any], timeout: float) -> Any:
         """Run ``fn`` with a SIGALRM deadline, always restoring the handler and cancelling the timer."""
+        completed = False
 
         def _on_alarm(signum: int, frame: Any) -> None:
+            # A straggler racing the disarm below: ``fn`` already returned, and
+            # raising here would escape the ``finally`` and replace its value
+            # with a timeout for a document that parsed fine.
+            if completed:
+                return
             raise _InlineParseTimeout()
 
         previous = signal.signal(signal.SIGALRM, _on_alarm)
         signal.setitimer(signal.ITIMER_REAL, timeout)
         try:
-            return fn()
+            result = fn()
+            completed = True
+            return result
         finally:
             # Nested so the handler is restored even if the alarm lands in this very
             # window (fn returned just as the timer expired).
@@ -336,24 +342,37 @@ class ReadDocumentTool(Tool):
 
     @staticmethod
     def _run_in_thread(fn: Callable[[], Any], timeout: float) -> Any:
-        """Run ``fn`` in a helper thread and stop waiting at ``timeout`` (the parse is NOT killed)."""
-        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="read-document-inline")
-        try:
-            future = executor.submit(fn)
+        """Run ``fn`` in a daemon helper thread, giving up at ``timeout`` (the parse is NOT killed)."""
+        # A raw daemon thread rather than a ThreadPoolExecutor: executor threads
+        # are non-daemon and registered with ``concurrent.futures``' atexit hook,
+        # which joins them -- so an abandoned parse would hold up worker
+        # shutdown for the rest of its (size-scaled) window. Same reasoning as
+        # application/guardrails/engine.py. ``shutdown(cancel_futures=True)``
+        # is not an alternative: it only drops queued work items, never the one
+        # already running.
+        slot: Dict[str, Any] = {}
+
+        def _fill() -> None:
             try:
-                return future.result(timeout=timeout)
-            except FutureTimeoutError:
-                if future.done():  # ``fn`` itself raised a TimeoutError; surface it as a failure
-                    raise
-                logger.warning(
-                    "read_document: inline parse exceeded %.0fs off the main thread; the parse thread "
-                    "keeps running until the parser finishes (it cannot be interrupted)",
-                    timeout,
-                )
-                raise _InlineParseTimeout() from None
-        finally:
-            # Never block the agent run on the orphaned parse.
-            executor.shutdown(wait=False)
+                slot["value"] = fn()
+            except BaseException as exc:  # noqa: BLE001 - re-raised on the caller's thread
+                slot["error"] = exc
+
+        thread = threading.Thread(target=_fill, daemon=True, name="read-document-inline")
+        thread.start()
+        thread.join(timeout)
+        if thread.is_alive():
+            logger.warning(
+                "read_document: inline parse exceeded %.0fs off the main thread; the parse thread "
+                "keeps running until the parser finishes (it cannot be interrupted)",
+                timeout,
+            )
+            raise _InlineParseTimeout()
+        # ``fn`` raising TimeoutError is a parse failure, not our deadline; with
+        # join()+is_alive() the two are distinguishable without a done() probe.
+        if "error" in slot:
+            raise slot["error"]
+        return slot.get("value")
 
     # ------------------------------------------------------------------
     # Input resolution (run-scoped gate, before enqueue)

@@ -15,6 +15,7 @@ import pytest
 from application.retriever.fanout import (
     DEFAULT_MAX_PARALLEL_SOURCES,
     embed_questions,
+    fetch_per_source,
     max_parallel_sources,
     run_source_jobs,
     store_embeddings,
@@ -174,3 +175,129 @@ class TestEmbedQuestions:
         embedder.embed_query = Mock(side_effect=RuntimeError("model down"))
         store = SimpleNamespace(_embedding=embedder)
         assert embed_questions(store, ["q"]) == {}
+
+
+def _fanout_store(vector=(9.0,)):
+    """A store whose embedder returns a fixed, recognisable vector."""
+    embedder = Mock()
+    embedder.embed_query = Mock(return_value=list(vector))
+    return SimpleNamespace(_embedding=embedder)
+
+
+@pytest.mark.unit
+class TestFetchPerSource:
+    """The whole per-source fan-out both ClassicRAG and the search service use."""
+
+    def test_only_the_first_store_is_built_on_the_calling_thread(self):
+        built = []
+        store = _fanout_store()
+
+        def _build(item):
+            built.append(item)
+            return store
+
+        seen = []
+        results = fetch_per_source(
+            ["a", "b", "c"],
+            _build,
+            lambda item, docsearch, vector: seen.append((item, docsearch, vector))
+            or f"hit-{item}",
+            lambda item: "q",
+        )
+
+        assert results == ["hit-a", "hit-b", "hit-c"]
+        # One construction up front; the workers build their own.
+        assert built == ["a"]
+        assert seen[0][1] is store
+        assert [s[1] for s in seen[1:]] == [None, None]
+
+    def test_the_query_is_embedded_once_for_every_source(self):
+        store = _fanout_store(vector=(7.0,))
+
+        vectors = []
+        fetch_per_source(
+            ["a", "b", "c"],
+            lambda item: store,
+            lambda item, docsearch, vector: vectors.append(vector),
+            lambda item: "same question",
+        )
+
+        assert vectors == [[7.0], [7.0], [7.0]]
+        assert store._embedding.embed_query.call_count == 1
+
+    def test_per_item_questions_get_their_own_vectors(self):
+        embedder = Mock()
+        embedder.embed_query = Mock(side_effect=lambda q: [len(q)])
+        store = SimpleNamespace(_embedding=embedder)
+
+        vectors = []
+        fetch_per_source(
+            ["ab", "cde"],
+            lambda item: store,
+            lambda item, docsearch, vector: vectors.append(vector),
+            lambda item: item,
+        )
+
+        assert vectors == [[2], [3]]
+
+    def test_results_keep_source_order_regardless_of_finish_order(self):
+        store = _fanout_store()
+        started = threading.Barrier(3, timeout=5)
+
+        def _search(item, docsearch, vector):
+            started.wait()  # force genuine interleaving
+            return item
+
+        results = fetch_per_source(
+            ["a", "b", "c"], lambda item: store, _search, lambda item: "q",
+        )
+
+        assert results == ["a", "b", "c"]
+
+    def test_a_failed_first_store_still_runs_the_rest(self):
+        def _build(item):
+            raise RuntimeError("index is gone")
+
+        results = fetch_per_source(
+            ["a", "b", "c"],
+            _build,
+            lambda item, docsearch, vector: (item, docsearch, vector),
+            lambda item: "q",
+        )
+
+        # The first slot is a logged failure; the rest run store-less and
+        # vector-less, so each embeds its own query exactly as before.
+        assert results[0] is None
+        assert results[1:] == [("b", None, None), ("c", None, None)]
+
+    def test_no_items_is_not_a_fan_out(self):
+        build = Mock()
+
+        assert fetch_per_source([], build, Mock(), Mock()) == []
+        build.assert_not_called()
+
+    def test_worker_cap_is_delegated_to_the_caller(self):
+        store = _fanout_store()
+        widths = []
+
+        fetch_per_source(
+            ["a", "b", "c"],
+            lambda item: store,
+            lambda item, docsearch, vector: item,
+            lambda item: "q",
+            workers_for=lambda n: widths.append(n) or 1,
+        )
+
+        assert widths == [3]
+
+
+@pytest.mark.unit
+class TestBothCallersShareTheFanOut:
+    """The duplication this helper replaced must not creep back in."""
+
+    def test_classic_rag_and_the_search_service_both_delegate(self):
+        import application.retriever.classic_rag as classic_rag
+        import application.services.search_service as search_service
+
+        assert classic_rag.fetch_per_source is fetch_per_source
+        assert search_service.fetch_per_source is fetch_per_source

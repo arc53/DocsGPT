@@ -14,7 +14,6 @@ from application.vectorstore.document_class import Document
 _IVFFLAT_LISTS_CACHE: Dict[str, Optional[int]] = {}
 
 DEFAULT_EMBEDDING_DIM = 768
-DEFAULT_POOL_MAX_SIZE = 8
 # Advisory-lock key shared with the boot hook so concurrent workers serialize DDL.
 SCHEMA_LOCK_KEY = "docsgpt:vectors:ddl"
 
@@ -23,6 +22,7 @@ SCHEMA_LOCK_KEY = "docsgpt:vectors:ddl"
 # here — same objects, not copies — because callers and tests reach for
 # ``pgvector._POOLS`` / patch ``pgvector._pool_for``.
 POOL_TIMEOUT_SECONDS = pgconn.POOL_TIMEOUT_SECONDS
+DEFAULT_POOL_MAX_SIZE = pgconn.DEFAULT_POOL_MAX_SIZE
 _POOLS = pgconn._POOLS
 _POOLS_LOCK = pgconn._POOLS_LOCK
 _configure_pooled_connection = pgconn.configure_pooled_connection
@@ -87,13 +87,8 @@ class PGVectorStore(BaseVectorStore):
         # a safety net for processes that never ran the boot hook.
         self._schema_ensured = False
 
-    @staticmethod
-    def _resolve_pool_max_size() -> int:
-        """Pool size from settings, defensively — 0 means one direct connection."""
-        value = getattr(settings, "PGVECTOR_POOL_MAX_SIZE", DEFAULT_POOL_MAX_SIZE)
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            return value
-        return DEFAULT_POOL_MAX_SIZE
+    # Shared with ``GraphStore`` via pgconn so the two can never disagree.
+    _resolve_pool_max_size = staticmethod(pgconn.resolve_pool_max_size)
 
     def _get_connection(self):
         """Get or create this store's connection, pooled unless pooling is off."""
@@ -117,7 +112,11 @@ class PGVectorStore(BaseVectorStore):
         return self._connection
 
     def _register_pgvector_types(self, conn) -> None:
-        """Register pgvector's adapters, tolerating a not-yet-created extension."""
+        """Register pgvector's adapters, tolerating a not-yet-created extension.
+
+        Kept as a method rather than calling :func:`pgconn.configure_pooled_connection`
+        directly because ``self._register_vector`` is the seam the tests patch.
+        """
         try:
             self._register_vector(conn)
         except Exception as e:

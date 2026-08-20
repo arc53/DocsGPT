@@ -11,7 +11,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from application.core.settings import settings
-from application.retriever.fanout import embed_questions, run_source_jobs
+from application.retriever.fanout import fetch_per_source
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.session import db_readonly
 from application.vectorstore.vector_creator import VectorCreator
@@ -125,41 +125,19 @@ def _fetch_sources(
 ) -> List[Optional[List[Any]]]:
     """Fetch every source's hits: one query embedding, one bounded fan-out.
 
-    The first store is built on the calling thread because its embeddings
-    object supplies the shared query vector — and priming the embeddings
-    singleton there keeps the workers off a concurrent model load. Results come
-    back in the original source order so the merge stays deterministic.
+    Shares :func:`~application.retriever.fanout.fetch_per_source` with
+    ``ClassicRAG`` so the search route and the answer path order, embed and
+    degrade identically.
     """
-
-    def _job(job) -> Optional[List[Any]]:
-        source_id, docsearch, query_vector = job
-        return _search_one(source_id, docsearch, query, k, query_vector)
-
-    first_store = None
-    try:
-        first_store = VectorCreator.create_vectorstore(
-            settings.VECTOR_STORE, source_ids[0], settings.EMBEDDINGS_KEY
-        )
-    except Exception as e:
-        logger.error(
-            f"Error searching vectorstore {source_ids[0]}: {e}",
-            exc_info=True,
-        )
-
-    if first_store is None:
-        # The first source is already a logged failure; the rest still run,
-        # each embedding its own query (there is no store to borrow one from).
-        return [None] + run_source_jobs(
-            _job, [(sid, None, None) for sid in source_ids[1:]]
-        )
-
-    vector = embed_questions(first_store, [query]).get(query)
-    return run_source_jobs(
-        _job,
-        [
-            (sid, first_store if idx == 0 else None, vector)
-            for idx, sid in enumerate(source_ids)
-        ],
+    return fetch_per_source(
+        source_ids,
+        lambda source_id: VectorCreator.create_vectorstore(
+            settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+        ),
+        lambda source_id, docsearch, query_vector: _search_one(
+            source_id, docsearch, query, k, query_vector
+        ),
+        lambda _source_id: query,
     )
 
 

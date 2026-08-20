@@ -895,12 +895,12 @@ def test_stream_cache_bypassed_for_previous_response_id(mock_make_redis):
 @pytest.mark.unit
 @patch("application.cache.get_redis_instance")
 def test_gen_cache_ignores_stream_payload_stored_under_same_key(mock_make_redis):
-    """``gen_cache`` and ``stream_cache`` share a key space; a stream
+    """Belt-and-braces: even planted directly under the gen key, a stream
     envelope must never be handed back as a non-streaming answer."""
     fake = _FakeRedis()
     mock_make_redis.return_value = fake
     messages = [{"role": "user", "content": "test"}]
-    key = gen_cache_key(messages, "m", None)
+    key = f"gen:{gen_cache_key(messages, 'm', None)}"
     fake.set(key, json.dumps({"version": 1, "chunks": ["a", "b"]}))
 
     @gen_cache
@@ -909,3 +909,69 @@ def test_gen_cache_ignores_stream_payload_stored_under_same_key(mock_make_redis)
 
     result = mock_function(None, "m", messages, stream=False, tools=None)
     assert result == "real answer"
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_gen_and_stream_caches_do_not_share_a_key_space(mock_make_redis):
+    """A gen write must not overwrite the stream envelope for the same call.
+
+    Both wrappers hash the same (messages, model, kwargs) tuple, so before the
+    namespacing they collided: the gen write replaced the envelope with a bare
+    string and the next stream read failed to decode it.
+    """
+    fake = _FakeRedis()
+    mock_make_redis.return_value = fake
+    messages = [{"role": "user", "content": "test"}]
+
+    @stream_cache
+    def streamer(self, model, messages, stream, tools, **kwargs):
+        yield "alpha"
+        yield "beta"
+
+    @gen_cache
+    def generator(self, model, messages, stream, tools, **kwargs):
+        return "a plain answer"
+
+    assert list(streamer(None, "m", messages, stream=True, tools=None)) == [
+        "alpha", "beta",
+    ]
+    assert generator(None, "m", messages, stream=False, tools=None) == "a plain answer"
+
+    upstream_calls = []
+
+    @stream_cache
+    def streamer_again(self, model, messages, stream, tools, **kwargs):
+        upstream_calls.append(1)
+        yield "SHOULD NOT REACH UPSTREAM"
+
+    replayed = list(streamer_again(None, "m", messages, stream=True, tools=None))
+
+    assert replayed == ["alpha", "beta"]
+    assert not upstream_calls
+
+
+@pytest.mark.unit
+@patch("application.cache.get_redis_instance")
+def test_a_json_array_answer_is_never_replayed_as_stream_chunks(mock_make_redis):
+    """A gen answer that happens to be a JSON array is not a chunk list.
+
+    The stream reader's pre-v1 compatibility branch accepts a bare JSON array,
+    so a colliding gen entry used to be replayed verbatim as the streamed
+    answer -- silent corruption rather than a cache miss.
+    """
+    fake = _FakeRedis()
+    mock_make_redis.return_value = fake
+    messages = [{"role": "user", "content": "test"}]
+
+    @gen_cache
+    def generator(self, model, messages, stream, tools, **kwargs):
+        return '["alpha", "beta"]'
+
+    generator(None, "m", messages, stream=False, tools=None)
+
+    @stream_cache
+    def streamer(self, model, messages, stream, tools, **kwargs):
+        yield "fresh"
+
+    assert list(streamer(None, "m", messages, stream=True, tools=None)) == ["fresh"]

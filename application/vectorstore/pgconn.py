@@ -21,6 +21,12 @@ from typing import Any, Dict
 # Seconds a caller waits for a free pooled connection before giving up.
 POOL_TIMEOUT_SECONDS = 30.0
 
+# Physical connections one process may hold per DSN. Lives here, not in either
+# store: ``pool_for`` keys its registry by DSN and applies ``max_size`` only on
+# creation, so two stores disagreeing about the default would make the
+# effective pool size depend on which of them touched the DSN first.
+DEFAULT_POOL_MAX_SIZE = 8
+
 # dsn -> psycopg_pool.ConnectionPool, one per process.
 _POOLS: Dict[str, Any] = {}
 _POOLS_LOCK = threading.Lock()
@@ -40,6 +46,23 @@ def configure_pooled_connection(conn) -> None:
         register_vector(conn)
     except Exception as e:
         logging.debug("pgvector types not registered yet: %s", e)
+
+
+def resolve_pool_max_size() -> int:
+    """Pool size from settings, defensively — 0 means one direct connection.
+
+    Returns:
+        int: ``PGVECTOR_POOL_MAX_SIZE`` when it is a non-negative, non-bool
+        int, else :data:`DEFAULT_POOL_MAX_SIZE`. The unit suite replaces
+        ``settings`` with a MagicMock, whose attributes must never become
+        a pool size.
+    """
+    from application.core.settings import settings
+
+    value = getattr(settings, "PGVECTOR_POOL_MAX_SIZE", DEFAULT_POOL_MAX_SIZE)
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return DEFAULT_POOL_MAX_SIZE
 
 
 def pool_for(dsn: str, max_size: int):

@@ -4,14 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
 from application.retriever.base import BaseRetriever
-from application.retriever.fanout import (  # noqa: F401  (re-exported)
-    DEFAULT_MAX_PARALLEL_SOURCES,
-    EMBEDDING_ATTRS as _EMBEDDING_ATTRS,
-    embed_questions,
-    max_parallel_sources,
-    run_source_jobs,
-    store_embeddings,
-)
+from application.retriever.fanout import fetch_per_source, max_parallel_sources
 from application.retriever.labels import labels_from_metadata
 from application.utils import num_tokens_from_string
 from application.vectorstore.vector_creator import VectorCreator
@@ -260,17 +253,6 @@ class ClassicRAG(BaseRetriever):
                 )
         return plans
 
-    @staticmethod
-    def _store_embeddings(docsearch):
-        """Return the embeddings object a vector store searches with, if any."""
-        return store_embeddings(docsearch)
-
-    def _embed_questions(
-        self, docsearch, questions: List[str]
-    ) -> Dict[str, List[float]]:
-        """Embed each distinct query once for the whole retrieval."""
-        return embed_questions(docsearch, questions)
-
     def _search_source(
         self,
         plan: Dict[str, Any],
@@ -309,44 +291,18 @@ class ClassicRAG(BaseRetriever):
     ) -> List[Optional[Tuple[Any, Optional[str]]]]:
         """Fetch every source's candidates, one embedding and one fan-out.
 
-        The first store is built on the calling thread because its embeddings
-        object supplies the shared query vector — and priming the embeddings
-        singleton there keeps the workers off a concurrent model load. The
-        searches then run on a bounded pool, and results come back in the
-        original source order so the merge stays deterministic.
+        Shares :func:`~application.retriever.fanout.fetch_per_source` with the
+        search service so both paths order, embed and degrade identically.
         """
-        first_store = None
-        try:
-            first_store = VectorCreator.create_vectorstore(
-                settings.VECTOR_STORE, plans[0]["id"], settings.EMBEDDINGS_KEY
-            )
-        except Exception as e:
-            logger.error(
-                f"Error searching vectorstore {plans[0]['id']}: {e}", exc_info=True
-            )
-
-        if first_store is None:
-            # The first source is already a logged failure; the rest still run,
-            # each embedding its own query (there is no store to borrow one from).
-            return [None] + self._run_jobs([(plan, None, None) for plan in plans[1:]])
-
-        questions = list(dict.fromkeys(plan["question"] for plan in plans))
-        vectors = self._embed_questions(first_store, questions)
-        return self._run_jobs(
-            [
-                (plan, first_store if idx == 0 else None, vectors.get(plan["question"]))
-                for idx, plan in enumerate(plans)
-            ]
-        )
-
-    def _run_jobs(self, jobs: List[Tuple]) -> List[Optional[Tuple[Any, Optional[str]]]]:
-        """Run the per-source search jobs, concurrently when there are several."""
-        if not jobs:
-            return []
-        return run_source_jobs(
-            lambda job: self._search_source(*job),
-            jobs,
-            workers=_max_parallel_sources(len(jobs)),
+        return fetch_per_source(
+            plans,
+            lambda plan: VectorCreator.create_vectorstore(
+                settings.VECTOR_STORE, plan["id"], settings.EMBEDDINGS_KEY
+            ),
+            self._search_source,
+            lambda plan: plan["question"],
+            label_of=lambda plan: plan["id"],
+            workers_for=_max_parallel_sources,
         )
 
     def _get_data(self):

@@ -125,3 +125,66 @@ def run_source_jobs(
         max_workers=workers, thread_name_prefix="rag-source"
     ) as pool:
         return list(pool.map(fn, jobs))
+
+
+def fetch_per_source(
+    items: List[Job],
+    build_store: Callable[[Job], Any],
+    search: Callable[[Job, Optional[Any], Optional[List[float]]], Result],
+    question_of: Callable[[Job], str],
+    label_of: Callable[[Job], Any] = str,
+    workers_for: Optional[Callable[[int], int]] = None,
+) -> List[Optional[Result]]:
+    """Search every source: one store built up front, one embedding, one fan-out.
+
+    The first store is built on the calling thread because its embeddings
+    object supplies the shared query vector — and priming the embeddings
+    singleton there keeps the workers off a concurrent model load. The searches
+    then run on a bounded pool, and results come back in the original source
+    order so the caller's merge stays deterministic.
+
+    Args:
+        items: One entry per source, in the order results must come back.
+        build_store: Builds the vector store for an item; may raise.
+        search: ``(item, store_or_None, query_vector_or_None) -> result``. It
+            must swallow its own errors and report failure as ``None``, since a
+            raise here aborts the whole fan-out.
+        question_of: The query for an item, used to look up its shared vector.
+        label_of: Item identifier for the store-construction error log.
+        workers_for: Pool size from the job count; defaults to
+            :func:`max_parallel_sources`.
+
+    Returns:
+        list: One entry per item, in ``items`` order. ``None`` marks a source
+        whose store could not be built or whose search reported failure.
+    """
+    items = list(items)
+    if not items:
+        return []
+
+    def _dispatch(jobs: List[Any]) -> List[Optional[Result]]:
+        if not jobs:
+            return []
+        workers = workers_for(len(jobs)) if workers_for is not None else None
+        return run_source_jobs(lambda job: search(*job), jobs, workers=workers)
+
+    first_store = None
+    try:
+        first_store = build_store(items[0])
+    except Exception as e:
+        logger.error(
+            "Error searching vectorstore %s: %s", label_of(items[0]), e, exc_info=True
+        )
+
+    if first_store is None:
+        # The first source is already a logged failure; the rest still run,
+        # each embedding its own query (there is no store to borrow one from).
+        return [None] + _dispatch([(item, None, None) for item in items[1:]])
+
+    vectors = embed_questions(first_store, [question_of(item) for item in items])
+    return _dispatch(
+        [
+            (item, first_store if idx == 0 else None, vectors.get(question_of(item)))
+            for idx, item in enumerate(items)
+        ]
+    )

@@ -77,12 +77,20 @@ def _bypasses_cache(extra: dict | None) -> bool:
     return any(extra.get(key) for key in _CACHE_BYPASS_KWARGS)
 
 
+# ``gen_cache`` and ``stream_cache`` hash the same (messages, model, kwargs)
+# tuple, so they would collide on any call served both ways: whichever wrote
+# last replaced the other's value. Namespacing the key is what keeps the two
+# payload shapes apart -- sniffing the shape on read cannot, because the write
+# side has already destroyed the other entry by then.
+_GEN_KEY_PREFIX = "gen:"
+_STREAM_KEY_PREFIX = "stream:"
+
+
 def _is_stream_payload(raw: str) -> bool:
     """Whether a cached value is a ``stream_cache`` chunk envelope.
 
-    ``gen_cache`` and ``stream_cache`` share one key space, so a
-    non-streaming read can land on a stream entry; without this guard the
-    serialized chunk list would be handed back as the model's answer.
+    Belt-and-braces behind the key prefixes above: a stream envelope must
+    never be handed back as a non-streaming answer, whatever put it there.
     """
     if not raw.startswith("{"):
         return False
@@ -220,7 +228,7 @@ def gen_cache(func):
             return func(self, model, messages, stream, tools, *args, **kwargs)
 
         try:
-            cache_key = gen_cache_key(messages, model, tools, extra=kwargs)
+            cache_key = f"{_GEN_KEY_PREFIX}{gen_cache_key(messages, model, tools, extra=kwargs)}"
         except ValueError as e:
             logger.error(f"Cache key generation failed: {e}")
             return func(self, model, messages, stream, tools, *args, **kwargs)
@@ -255,7 +263,7 @@ def stream_cache(func):
             return
 
         try:
-            cache_key = gen_cache_key(messages, model, tools, extra=kwargs)
+            cache_key = f"{_STREAM_KEY_PREFIX}{gen_cache_key(messages, model, tools, extra=kwargs)}"
         except ValueError as e:
             logger.error(f"Cache key generation failed: {e}")
             yield from func(self, model, messages, stream, tools, *args, **kwargs)

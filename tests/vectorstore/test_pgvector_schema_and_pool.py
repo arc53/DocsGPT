@@ -100,6 +100,43 @@ class TestConstructionTouchesNothing:
 
 
 @pytest.mark.unit
+class TestPoolSizingHasOneHome:
+    """``pgconn`` owns the pool defaults; both stores bind to it, not copies.
+
+    ``pool_for`` keys its registry by DSN and honours ``max_size`` only when it
+    first builds the pool, so if the vector store and the graph store carried
+    their own defaults the effective size would depend on which one touched
+    the DSN first.
+    """
+
+    def test_both_stores_share_one_implementation(self):
+        from application.graphrag import store as store_module
+        from application.vectorstore import pgconn
+
+        assert pgvector_module.DEFAULT_POOL_MAX_SIZE is pgconn.DEFAULT_POOL_MAX_SIZE
+        assert store_module.DEFAULT_POOL_MAX_SIZE is pgconn.DEFAULT_POOL_MAX_SIZE
+        assert store_module._resolve_pool_max_size is pgconn.resolve_pool_max_size
+        assert (
+            pgvector_module.PGVectorStore._resolve_pool_max_size
+            is pgconn.resolve_pool_max_size
+        )
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [(0, 0), (2, 2), (None, 8), ("4", 8), (True, 8), (-1, 8)],
+    )
+    def test_pool_size_is_resolved_defensively(self, monkeypatch, value, expected):
+        from application.core import settings as settings_module
+        from application.vectorstore import pgconn
+
+        monkeypatch.setattr(
+            settings_module.settings, "PGVECTOR_POOL_MAX_SIZE", value, raising=False
+        )
+
+        assert pgconn.resolve_pool_max_size() == expected
+
+
+@pytest.mark.unit
 class TestWritePathEnsuresSchemaOnce:
     def test_add_texts_ensures_once_across_two_calls(self):
         store, _, mock_cursor, _ = _make_store()
