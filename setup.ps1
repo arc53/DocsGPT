@@ -603,6 +603,8 @@ function Use-DocsPublicAPIEndpoint {
     
     Write-ColorText ".env file configured for DocsGPT Public API." -ForegroundColor "Green"
 
+    Ensure-PostgresPassword
+
     Prompt-AdvancedSettings
 
     # Start Docker if needed
@@ -714,6 +716,8 @@ function Serve-LocalOllama {
     
     Write-ColorText ".env file configured for Ollama ($($docker_compose_file_suffix.ToUpper()))." -ForegroundColor "Green"
     Write-ColorText "Note: MODEL_NAME is set to '$model_name'. You can change it later in the .env file." -ForegroundColor "Yellow"
+
+    Ensure-PostgresPassword
 
     Prompt-AdvancedSettings
 
@@ -880,6 +884,8 @@ function Connect-LocalInferenceEngine {
     Write-ColorText ".env file configured for $engine_name with OpenAI API format." -ForegroundColor "Green"
     Write-ColorText "Note: MODEL_NAME is set to '$model_name'. You can change it later in the .env file." -ForegroundColor "Yellow"
 
+    Ensure-PostgresPassword
+
     Prompt-AdvancedSettings
 
     # Start Docker if needed
@@ -1005,6 +1011,8 @@ function Connect-CloudAPIProvider {
 
     Write-ColorText ".env file configured for $provider_name." -ForegroundColor "Green"
 
+    Ensure-PostgresPassword
+
     Prompt-AdvancedSettings
 
     # Start Docker if needed
@@ -1036,6 +1044,22 @@ function Connect-CloudAPIProvider {
         Write-ColorText "Please ensure Docker Compose is installed and in your PATH." -ForegroundColor "Red"
         Write-ColorText "Refer to Docker documentation for installation instructions: https://docs.docker.com/compose/install/" -ForegroundColor "Red"
         exit 1
+    }
+}
+
+
+function Ensure-PostgresPassword {
+    if (-not (Select-String -Path $ENV_FILE -Pattern '^POSTGRES_PASSWORD=' -Quiet -ErrorAction SilentlyContinue)) {
+        $bytes = New-Object byte[] 32
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        try {
+            $rng.GetBytes($bytes)
+        }
+        finally {
+            $rng.Dispose()
+        }
+        $password = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLowerInvariant()
+        "POSTGRES_PASSWORD=$password" | Add-Content -Path $ENV_FILE -Encoding utf8
     }
 }
 
