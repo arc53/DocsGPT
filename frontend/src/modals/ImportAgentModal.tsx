@@ -129,6 +129,13 @@ export default function ImportAgentModal({
       if (acceptedFiles[0]) processFile(acceptedFiles[0]);
     },
     multiple: false,
+    // Declared here (not via getInputProps) so drag-and-drop is filtered
+    // too, with drag-over rejection feedback; processFile's extension check
+    // stays as a backstop for odd MIME reports.
+    accept: {
+      'application/x-yaml': ['.yaml', '.yml'],
+      'text/yaml': ['.yaml', '.yml'],
+    },
   });
 
   const handleAnalyze = async () => {
@@ -325,7 +332,7 @@ export default function ImportAgentModal({
               <p className="text-foreground text-sm font-medium">
                 {fileName || t('modals.importAgent.dropzoneText')}
               </p>
-              <input {...getInputProps({ accept: '.yaml,.yml' })} />
+              <input {...getInputProps()} />
             </div>
             {error && <p className="text-destructive text-sm">{error}</p>}
           </div>

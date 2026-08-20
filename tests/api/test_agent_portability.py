@@ -703,3 +703,122 @@ def test_action_override_for_removed_action_warns(pg_conn, monkeypatch):
     assert chat_id["filled_by_llm"] is False and chat_id["value"] == "42"
     assert any("telegram_removed_action" in w for w in result["warnings"])
     assert any("gone_param" in w for w in result["warnings"])
+
+
+def _fake_api_tool(monkeypatch):
+    """api_tool's live surface: no declared config, no column actions."""
+    fake_tool = Mock()
+    fake_tool.get_config_requirements.return_value = {}
+    fake_tool.get_actions_metadata.return_value = []
+    monkeypatch.setattr(
+        "application.api.user.agents.portability._tool_instance",
+        lambda tool_type: fake_tool,
+    )
+    # The sanitizer SSRF-gates each action URL; DNS isn't available in tests.
+    monkeypatch.setattr(
+        "application.api.user.agents.portability.validate_url", lambda url: url
+    )
+    return fake_tool
+
+
+def _stored_api_tool_config():
+    """``config["actions"]`` as ToolConfig persists it (dict keyed by name)."""
+    return {
+        "actions": {
+            "get_pet": {
+                "name": "get_pet",
+                "url": "https://api.example.com/pets/{petId}?api_key=QSSECRET",
+                "method": "GET",
+                "active": True,
+                "headers": {
+                    "properties": {
+                        "Authorization": {
+                            "type": "string",
+                            "filled_by_llm": False,
+                            "value": "Bearer sk-live-XYZ",
+                        }
+                    }
+                },
+                "query_params": {
+                    "properties": {
+                        "petId": {
+                            "type": "string",
+                            "filled_by_llm": True,
+                            "value": "",
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+
+def test_api_tool_actions_round_trip_redacted(pg_conn, monkeypatch):
+    """api_tool actions live in config, not the actions column — they must
+    travel (redacted) or the imported tool is dead (executor resolves calls
+    exclusively through ``config["actions"]``)."""
+    user = "u_api_tool"
+    _fake_api_tool(monkeypatch)
+    tool = UserToolsRepository(pg_conn).create(
+        user,
+        "api_tool",
+        config=_stored_api_tool_config(),
+        custom_name="Petstore",
+        display_name="Petstore",
+        description="pets",
+        config_requirements={},
+        actions=[],
+    )
+    agent = AgentsRepository(pg_conn).create(
+        user, "Pet Bot", "published", description="d", tools=[str(tool["id"])]
+    )
+
+    export = serialize_agent(pg_conn, agent, user)
+    text = agent_to_yaml(export)
+    assert "sk-live-XYZ" not in text and "QSSECRET" not in text
+    exported = export["spec"]["tools"][0]["config"]["actions"]["get_pet"]
+    # Shape travels; the URL loses its query string; the pinned header
+    # value is blanked while its flag and schema survive.
+    assert exported["url"] == "https://api.example.com/pets/{petId}"
+    auth = exported["headers"]["properties"]["Authorization"]
+    assert auth["filled_by_llm"] is False and auth["value"] == ""
+    assert exported["query_params"]["properties"]["petId"]["filled_by_llm"] is True
+
+    doc = parse_agent_yaml(text)
+    importer = "u_api_tool_2"
+    result = apply_import(
+        pg_conn,
+        importer,
+        doc,
+        resolution={"tools": {"tool-0": {"decision": "create"}}},
+    )
+    imported_agent = AgentsRepository(pg_conn).get(result["agent_id"], importer)
+    row = UserToolsRepository(pg_conn).get_any(imported_agent["tools"][0], importer)
+    action = row["config"]["actions"]["get_pet"]
+    assert action["url"] == "https://api.example.com/pets/{petId}"
+    assert action["method"] == "GET"
+    # The blanked pinned header is called out — the request would silently
+    # omit it until the importer sets a value in the tool's settings.
+    assert any("Authorization" in w for w in result["warnings"])
+
+
+def test_api_tool_without_actions_imports_with_warning(pg_conn, monkeypatch):
+    """Older exports carried no actions for api_tool; the tool is created but
+    the dead state is surfaced instead of silent."""
+    user = "u_api_tool_empty"
+    _fake_api_tool(monkeypatch)
+    doc = _doc(
+        name="Dead API Bot",
+        _slug="dead-api",
+        tools=[{"type": "api_tool", "name": "Legacy", "config": {}}],
+    )
+    result = apply_import(
+        pg_conn,
+        user,
+        doc,
+        resolution={"tools": {"tool-0": {"decision": "create"}}},
+    )
+    assert any("without any actions" in w for w in result["warnings"])
+    agent = AgentsRepository(pg_conn).get(result["agent_id"], user)
+    row = UserToolsRepository(pg_conn).get_any(agent["tools"][0], user)
+    assert row["config"]["actions"] == {}

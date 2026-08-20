@@ -181,8 +181,12 @@ class TestAdoptWorkflowAgent:
         assert {n["node_id"] for n in nodes} == {"start-1", "agent-1", "end-1"}
         assert len(edges) == 2
 
-    def test_adopt_survives_unresolvable_workflow(self, app, pg_conn):
-        """A template pointing at a graph its owner doesn't own adopts without one."""
+    def test_adopt_refuses_unresolvable_workflow(self, app, pg_conn):
+        """A template pointing at a graph its owner doesn't own cannot adopt.
+
+        Publishing the agent anyway would hand the adopter a workflow agent
+        with no graph — permanently unrunnable — so the adopt fails instead.
+        """
         from application.api.user.agents.routes import AdoptAgent
         from application.storage.db.repositories.agents import AgentsRepository
 
@@ -203,16 +207,86 @@ class TestAdoptWorkflowAgent:
 
             request.decoded_token = {"sub": "u-wf-adopter2"}
             response = AdoptAgent().post()
-        assert response.status_code == 200
-        adopted = next(
+        assert response.status_code == 500
+        assert not [
             a
             for a in repo.list_for_user("u-wf-adopter2")
             if a["name"] == "Broken WF Template"
-        )
-        assert adopted["workflow_id"] is None
+        ]
         # The unowned graph was not cloned or mutated.
         nodes, edges = _graph(pg_conn, wf["id"])
         assert len(nodes) == 3 and len(edges) == 2
+
+    def test_adopt_strips_foreign_node_refs(self, app, pg_conn):
+        """Cloned agent nodes keep builtin tool ids but shed the owner's refs."""
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.agents.routes import AdoptAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+        from application.storage.db.repositories.workflow_nodes import (
+            WorkflowNodesRepository,
+        )
+        from application.storage.db.repositories.workflows import WorkflowsRepository
+
+        owner_tool = UserToolsRepository(pg_conn).create(
+            "__system__", "brave", config={}, display_name="Brave"
+        )
+        builtin_id = default_tool_id("artifact_generator")
+        wf = WorkflowsRepository(pg_conn).create("__system__", "Reffy WF")
+        WorkflowNodesRepository(pg_conn).bulk_create(
+            str(wf["id"]),
+            1,
+            [
+                {"node_id": "start-1", "node_type": "start", "title": "Start"},
+                {
+                    "node_id": "agent-1",
+                    "node_type": "agent",
+                    "title": "Agent",
+                    "config": {
+                        "tools": [builtin_id, str(owner_tool["id"])],
+                        "sources": ["00000000-0000-0000-0000-00000000dead"],
+                        "model_id": "00000000-0000-0000-0000-00000000beef",
+                    },
+                },
+            ],
+        )
+        repo = AgentsRepository(pg_conn)
+        template = repo.create(
+            "__system__",
+            "Reffy Template",
+            "template",
+            agent_type="workflow",
+            workflow_id=str(wf["id"]),
+            tools=[builtin_id, str(owner_tool["id"])],
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/adopt_agent?id={template['id']}", method="POST"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "u-wf-adopter3"}
+            response = AdoptAgent().post()
+        assert response.status_code == 200
+
+        adopted = next(
+            a
+            for a in repo.list_for_user("u-wf-adopter3")
+            if a["name"] == "Reffy Template"
+        )
+        # Classic-column tools: the builtin survives, the foreign row doesn't.
+        assert adopted["tools"] == [builtin_id]
+        nodes, _ = _graph(pg_conn, adopted["workflow_id"])
+        agent_node = next(n for n in nodes if n["node_id"] == "agent-1")
+        assert agent_node["config"]["tools"] == [builtin_id]
+        assert agent_node["config"]["sources"] == []
+        assert agent_node["config"]["model_id"] is None
+        # The template's own graph is untouched.
+        src_nodes, _ = _graph(pg_conn, wf["id"])
+        src_agent = next(n for n in src_nodes if n["node_id"] == "agent-1")
+        assert str(owner_tool["id"]) in src_agent["config"]["tools"]
 
 
 class TestDeleteWorkflowAgent:

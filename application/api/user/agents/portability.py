@@ -68,6 +68,10 @@ class AgentImportError(Exception):
     """Raised when an agent YAML document is malformed or unsupported."""
 
 
+class AgentExportError(Exception):
+    """Raised when an agent cannot be exported as a document import would accept."""
+
+
 class _SafeNoAliasLoader(yaml.SafeLoader):
     """SafeLoader that also rejects anchors/aliases (billion-laughs guard)."""
 
@@ -158,12 +162,14 @@ def _safe_export_config(stored_config: dict, config_requirements: dict) -> dict:
 
     Export must never leak a credential. A key is emitted ONLY if
     ``config_requirements`` declares it and does not mark it secret.
-    Anything not described by requirements — e.g. ``api_tool``/MCP free-form
-    ``headers``, ``url`` query strings, ``server_url`` that routinely embed
-    tokens, or tools with empty ``config_requirements`` — is dropped. Reuse
-    on import matches the existing tool; create re-collects config from the
-    user. This blocklist-free approach can't be defeated by a stale or empty
-    ``config_requirements``.
+    Anything not described by requirements — e.g. MCP free-form ``headers``,
+    ``url`` query strings, ``server_url`` that routinely embed tokens, or
+    tools with empty ``config_requirements`` — is dropped. Reuse on import
+    matches the existing tool; create re-collects config from the user. This
+    blocklist-free approach can't be defeated by a stale or empty
+    ``config_requirements``. (``api_tool`` is the one exception: its
+    user-authored ``config["actions"]`` travel via
+    ``_export_api_tool_actions``, redacted under the same posture.)
     """
     requirements = config_requirements or {}
     safe: dict[str, Any] = {}
@@ -180,8 +186,120 @@ def _safe_export_config(stored_config: dict, config_requirements: dict) -> dict:
 # types routinely hold credentials (an ``Authorization`` header fixed as a
 # value), so for those only the ``filled_by_llm`` flag travels — same posture
 # as ``_safe_export_config`` dropping free-form config.
+#
+# Scope note: ``actions``-column rows come from ``transform_actions`` over live
+# tool metadata, which today only ever emits ``parameters`` sections — the
+# HTTP types appear only in ``api_tool``'s ``config["actions"]``, which travel
+# through ``_export_api_tool_actions`` / ``_sanitize_api_tool_actions`` below.
+# The full tuple is kept here so a hand-edited file naming those sections is
+# handled (flags applied, values refused) rather than silently ignored.
 _ACTION_PARAM_TYPES = ("parameters", "query_params", "headers", "body")
 _ACTION_VALUE_SAFE_TYPES = frozenset({"parameters"})
+
+# Action keys copied verbatim by ``_export_api_tool_actions`` — everything
+# except ``url`` (query-string-stripped) and the param sections (redacted).
+_API_ACTION_SAFE_KEYS = (
+    "name",
+    "description",
+    "method",
+    "active",
+    "require_approval",
+    "body_content_type",
+    "body_encoding_rules",
+)
+
+
+def _export_api_tool_actions(stored_config: dict) -> dict:
+    """Redacted copy of an ``api_tool``'s ``config["actions"]``.
+
+    ``api_tool`` is the one tool type whose actions are user-authored data in
+    ``config["actions"]`` (a dict keyed by action name) rather than the
+    ``actions`` column (the executor reads exactly that — see ToolExecutor).
+    The action *shape* — endpoint, method, param schemas, ``filled_by_llm``
+    flags, fixed ``parameters`` values — is what makes the tool work, so it
+    travels. Fixed values in the free-form HTTP sections and URL query
+    strings routinely hold credentials, so those are blanked — same posture
+    as ``_safe_export_config``.
+    """
+    actions = stored_config.get("actions")
+    if not isinstance(actions, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for name, action in actions.items():
+        if not isinstance(action, dict):
+            continue
+        entry: dict[str, Any] = {
+            k: copy.deepcopy(action[k]) for k in _API_ACTION_SAFE_KEYS if k in action
+        }
+        entry["url"] = str(action.get("url") or "").split("?", 1)[0]
+        for param_type in _ACTION_PARAM_TYPES:
+            section = action.get(param_type)
+            if not isinstance(section, dict):
+                continue
+            section = copy.deepcopy(section)
+            props = section.get("properties")
+            if param_type not in _ACTION_VALUE_SAFE_TYPES and isinstance(props, dict):
+                for details in props.values():
+                    if isinstance(details, dict) and details.get("value"):
+                        details["value"] = ""
+            entry[param_type] = section
+        out[str(name)] = entry
+    return out
+
+
+def _sanitize_api_tool_actions(raw, tool_label: str, warnings: list) -> dict:
+    """Vet a hand-editable ``config["actions"]`` block before storing it.
+
+    Unlike column actions — whose schema comes from live tool code, so the
+    YAML may contribute flags and scalar values only — ``api_tool`` actions
+    ARE user-authored schema, and the whole definition is accepted. Each
+    action's URL goes through the same SSRF gate as the tool-config routes
+    (``_validate_tool_urls``); an action with a missing or unsafe URL is
+    dropped with a warning rather than failing the import.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    if len(raw) > MAX_LIST_ITEMS:
+        raise AgentImportError(f"Too many api_tool actions (max {MAX_LIST_ITEMS})")
+    out: dict[str, Any] = {}
+    for name, action in raw.items():
+        if not isinstance(action, dict):
+            continue
+        url = str(action.get("url") or "").strip()
+        if not url:
+            warnings.append(
+                f"Tool '{tool_label}' action '{name}' has no URL; dropped"
+            )
+            continue
+        try:
+            validate_url(url)
+        except SSRFError:
+            warnings.append(
+                f"Tool '{tool_label}' action '{name}' has an unsafe URL; dropped"
+            )
+            continue
+        # Export blanks fixed values in the free-form HTTP sections (they
+        # routinely hold credentials); a param left pinned with an empty
+        # value is silently omitted from the request at run time, so
+        # surface it now instead.
+        pinned_empty = [
+            f"{param_type}.{pname}"
+            for param_type in _ACTION_PARAM_TYPES
+            if param_type not in _ACTION_VALUE_SAFE_TYPES
+            and isinstance(action.get(param_type), dict)
+            for pname, details in (action[param_type].get("properties") or {}).items()
+            if isinstance(details, dict)
+            and details.get("filled_by_llm") is False
+            and not details.get("value")
+        ]
+        if pinned_empty:
+            warnings.append(
+                f"Tool '{tool_label}' action '{name}': fixed values for "
+                f"{', '.join(pinned_empty)} don't travel in the file; set them "
+                "in the tool's settings or the request will omit them"
+            )
+        out[str(name)] = action
+    return out
 
 
 def _export_action_overrides(actions) -> list:
@@ -266,6 +384,17 @@ def _apply_action_overrides(base_actions: list, overrides, tool_type: str, warni
                     value = entry.get("value", "")
                     if isinstance(value, (str, int, float, bool)) or value is None:
                         details["value"] = "" if value is None else value
+                elif not details["filled_by_llm"] and not details.get("value"):
+                    # Pinned but valueless: the executor omits the param from
+                    # the LLM schema AND skips the empty fixed value, so the
+                    # request silently goes out without it. Values for the
+                    # free-form HTTP types never travel in the file, so this
+                    # can only be repaired in the tool's settings.
+                    warnings.append(
+                        f"Tool '{tool_type}' action '{name}': fixed value for "
+                        f"{param_type} '{pname}' doesn't travel in the file; set "
+                        "it in the tool's settings or the request will omit it"
+                    )
     return base_actions
 
 
@@ -314,13 +443,26 @@ def _serialize_tools(conn, agent: dict, user: str) -> list:
     for tid in agent.get("tools") or []:
         tid_str = str(tid)
         if is_synthesized_tool_id(tid_str):
-            out.append({"type": synthesized_tool_name_for_id(tid_str), "builtin": True})
+            out.append(
+                {
+                    "type": synthesized_tool_name_for_id(tid_str),
+                    "builtin": True,
+                    "ref": tid_str,
+                }
+            )
             continue
         row = repo.get_any(tid_str, user)
         if not row:
             continue
         requirements = row.get("config_requirements") or {}
         requires_secrets = _secret_field_names(requirements)
+        config = _safe_export_config(row.get("config") or {}, requirements)
+        if (row.get("name") or "") == "api_tool":
+            # api_tool's actions live in config, not the actions column — an
+            # export without them imports as a dead tool.
+            exported_actions = _export_api_tool_actions(row.get("config") or {})
+            if exported_actions:
+                config["actions"] = exported_actions
         entry: dict[str, Any] = {
             "type": row.get("name") or "",
             # Raw custom_name (may be "") so import matching is symmetric and
@@ -328,7 +470,7 @@ def _serialize_tools(conn, agent: dict, user: str) -> list:
             "name": row.get("custom_name") or "",
             "display_name": row.get("display_name") or "",
             "description": row.get("description") or "",
-            "config": _safe_export_config(row.get("config") or {}, requirements),
+            "config": config,
             "ref": tid_str,
         }
         action_overrides = _export_action_overrides(row.get("actions"))
@@ -389,6 +531,19 @@ def _effective_node_config(config: dict) -> dict:
     return nested if isinstance(nested, dict) else config
 
 
+def _strip_shadowed_ref_keys(config: dict) -> None:
+    """Drop flat ``tools``/``sources``/``model_id`` shadowed by a nested config.
+
+    When a node stores its settings under ``config["config"]``, the engine
+    reads only the nested dict — flat leftovers of those keys are inert, but
+    on export they would leak the exporter's raw ids into the file, and on
+    import they would store a hand-edited file's raw ids verbatim.
+    """
+    if isinstance(config.get("config"), dict):
+        for key in ("tools", "sources", "model_id"):
+            config.pop(key, None)
+
+
 def _serialize_workflow(conn, agent: dict, user: str):
     """Build the portable ``spec.workflow`` block plus its reference sections.
 
@@ -431,26 +586,21 @@ def _serialize_workflow(conn, agent: dict, user: str):
         if mid and str(mid) not in model_ids:
             model_ids.append(str(mid))
 
-    # Serialize each reference through the classic per-resource serializers so
+    # Serialize the references through the classic per-resource serializers so
     # secret redaction and identity rules stay in one place. Unresolvable ids
-    # (dangling rows) are dropped from both the section and the node config.
+    # (dangling rows) are dropped from both the section and the node config;
+    # every emitted entry carries its ``ref``, which keys the maps below.
     tools: list = []
     tool_key_by_id: dict[str, str] = {}
-    for tid in tool_ids:
-        entries = _serialize_tools(conn, {"tools": [tid]}, user)
-        if not entries:
-            continue
-        tool_key_by_id[tid] = _tool_key(len(tools))
-        tools.append(entries[0])
+    for entry in _serialize_tools(conn, {"tools": tool_ids}, user):
+        tool_key_by_id[str(entry["ref"])] = _tool_key(len(tools))
+        tools.append(entry)
 
     sources: list = []
     source_name_by_id: dict[str, str] = {}
-    for sid in source_ids:
-        entries = _serialize_sources(conn, {"source_id": sid}, user)
-        if not entries:
-            continue
-        source_name_by_id[sid] = entries[0]["name"]
-        sources.append(entries[0])
+    for entry in _serialize_sources(conn, {"extra_source_ids": source_ids}, user):
+        source_name_by_id[str(entry["ref"])] = entry["name"]
+        sources.append(entry)
 
     model = _serialize_models(conn, {"models": model_ids, "default_model_id": ""}, user)
     model_name_by_id: dict[str, str] = {}
@@ -460,8 +610,22 @@ def _serialize_workflow(conn, agent: dict, user: str):
         elif isinstance(entry, str):
             model_name_by_id[entry] = entry
 
-    # Pass 2: emit nodes/edges in the workflow API's wire shape, with agent
-    # node configs rewritten to the portable keys.
+    # ``parse_agent_yaml`` bounds these sections at import (DoS cap), so a
+    # graph referencing more would export a file that import then rejects —
+    # refuse here with a clear message instead.
+    if (
+        len(tools) > MAX_LIST_ITEMS
+        or len(sources) > MAX_LIST_ITEMS
+        or len(model["available"]) > MAX_LIST_ITEMS
+    ):
+        raise AgentExportError(
+            "This workflow references more than "
+            f"{MAX_LIST_ITEMS} tools, sources, or models and cannot be exported"
+        )
+
+    # Pass 2: emit nodes/edges with agent node configs rewritten to the
+    # portable keys. (Node settings sit under ``config`` here; the workflow
+    # API's wire shape calls that field ``data`` — import converts.)
     nodes_out = []
     for n in node_rows:
         config = copy.deepcopy(n.get("config") or {})
@@ -479,6 +643,7 @@ def _serialize_workflow(conn, agent: dict, user: str):
             ]
             if cfg.get("model_id"):
                 cfg["model_id"] = model_name_by_id.get(str(cfg["model_id"]))
+            _strip_shadowed_ref_keys(config)
         nodes_out.append(
             {
                 "id": n["node_id"],
@@ -922,6 +1087,19 @@ def _create_tool_from_spec(conn, user: str, tool: dict, secrets: dict, warnings:
     config_requirements = inst.get_config_requirements() or {}
     config = dict(tool.get("config") or {})
     config.update(secrets or {})
+    if tool_type == "api_tool":
+        label = tool.get("display_name") or tool.get("name") or tool_type
+        config["actions"] = _sanitize_api_tool_actions(
+            config.get("actions"), label, warnings
+        )
+        if not config["actions"]:
+            # Zero actions means a dead tool — the executor resolves api_tool
+            # calls exclusively through config["actions"]. Reachable via older
+            # exports (which couldn't carry actions) or a fully-dropped block.
+            warnings.append(
+                f"API tool '{label}' was created without any actions; "
+                "configure its actions in the tool's settings before use"
+            )
     missing = [k for k in _secret_field_names(config_requirements, required_only=True) if not config.get(k)]
     if missing:
         warnings.append(f"Tool '{tool_type}' needs secret(s) {missing}; not created")
@@ -1025,7 +1203,22 @@ def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list)
     name_to_id: dict[str, str] = {}
     models: list[str] = []
 
-    for entry in model_spec.get("available") or []:
+    available = model_spec.get("available") or []
+    # ``name_to_id`` (and a workflow node's ``model_id`` reference) keys on
+    # display_name alone, while custom-model identity is the full
+    # (display_name, upstream_model_id, base_url) triple — duplicates
+    # collapse onto the last entry, so surface that instead of silently
+    # rewiring nodes.
+    custom_names = [
+        e.get("display_name") or "" for e in available if isinstance(e, dict)
+    ]
+    for dup in sorted({n for n in custom_names if n and custom_names.count(n) > 1}):
+        warnings.append(
+            f"Multiple custom models share the display name '{dup}'; "
+            "references to it resolve to the last one in the file"
+        )
+
+    for entry in available:
         if isinstance(entry, str):
             if validate_model_id(entry, user):
                 models.append(entry)
@@ -1204,6 +1397,7 @@ def _apply_workflow(
                 model_ids_by_name,
                 warnings,
             )
+            _strip_shadowed_ref_keys(config)
         position = node.get("position")
         nodes_data.append(
             {
@@ -1328,6 +1522,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         "config": _import_config(spec),
         "slug": slug,
     }
+    orphaned_workflow_id: Optional[str] = None
     if is_workflow:
         # A workflow agent's behavior lives in its graph — the agent-level
         # prompt/tool/model/source slots in the file exist only to carry the
@@ -1358,6 +1553,14 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
                 )
             else:
                 authoritative["workflow_id"] = workflow_result
+                if workflow_result is None and is_update:
+                    # Explicit ``workflow: null`` on a draft: remember the old
+                    # link so the row can be reaped after the update — there is
+                    # no workflow-list API independent of agents, so an
+                    # unlinked workflow would be unreachable forever.
+                    prior = agents_repo.get(str(target["agent_id"]), user) or {}
+                    if prior.get("workflow_id"):
+                        orphaned_workflow_id = str(prior["workflow_id"])
 
     # Optional fields — applied only when present so a partial file doesn't wipe them.
     optional = {
@@ -1374,6 +1577,12 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         # Only a brand-new agent (the create path below) starts as a draft.
         fields = {**authoritative, **optional, "name": spec.get("name")}
         if agents_repo.update(str(target["agent_id"]), user, fields):
+            if orphaned_workflow_id and not agents_repo.count_by_workflow(
+                orphaned_workflow_id, user
+            ):
+                # Nothing references it anymore; delete (cascades nodes/edges
+                # and reaps run artifacts) rather than stranding the row.
+                WorkflowsRepository(conn).delete(orphaned_workflow_id, user)
             return {
                 "agent_id": str(target["agent_id"]),
                 "action": "updated",
@@ -1451,7 +1660,12 @@ class ExportAgent(Resource):
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
             agent["slug"] = ensure_agent_slug(conn, agent, user)
-            export = serialize_agent(conn, agent, user)
+            try:
+                export = serialize_agent(conn, agent, user)
+            except AgentExportError as exc:
+                return make_response(
+                    jsonify({"success": False, "message": str(exc)}), 400
+                )
         body = agent_to_yaml(export)
         filename = f"{export['metadata'].get('slug') or 'agent'}.agent.yaml"
         response = make_response(body, 200)

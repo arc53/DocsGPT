@@ -78,6 +78,13 @@ export default function ImportSpecModal({
       if (acceptedFiles[0]) processFile(acceptedFiles[0]);
     },
     multiple: false,
+    // Declared here (not via getInputProps) so drag-and-drop is filtered
+    // too; processFile's extension check stays as a backstop.
+    accept: {
+      'application/json': ['.json'],
+      'application/x-yaml': ['.yaml', '.yml'],
+      'text/yaml': ['.yaml', '.yml'],
+    },
   });
 
   const handleParse = async () => {
@@ -217,7 +224,7 @@ export default function ImportSpecModal({
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 {t('modals.importSpec.supportedFormats')}
               </p>
-              <input {...getInputProps({ accept: '.json,.yaml,.yml' })} />
+              <input {...getInputProps()} />
             </div>
 
             {error && (

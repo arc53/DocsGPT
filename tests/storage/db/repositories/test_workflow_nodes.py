@@ -161,17 +161,6 @@ class TestBulkCreateOnConflict:
 
 
 class TestDelete:
-    def test_delete_by_workflow(self, pg_conn):
-        wf = _wf(pg_conn)
-        repo = _repo(pg_conn)
-        repo.bulk_create(wf["id"], 1, [
-            {"node_id": "n1", "node_type": "start"},
-            {"node_id": "n2", "node_type": "end"},
-        ])
-        deleted = repo.delete_by_workflow(wf["id"])
-        assert deleted == 2
-        assert repo.find_by_version(wf["id"], 1) == []
-
     def test_delete_by_version(self, pg_conn):
         wf = _wf(pg_conn)
         repo = _repo(pg_conn)

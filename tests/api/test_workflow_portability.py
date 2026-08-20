@@ -131,7 +131,11 @@ def test_export_rewrites_node_refs_and_redacts_secrets(pg_conn):
     # The collected sections use the classic serializers' portable identities.
     assert spec["tools"][0]["type"] == "brave"
     assert spec["tools"][0]["requires_secrets"] == ["token"]
-    assert spec["tools"][1] == {"type": "read_document", "builtin": True}
+    assert spec["tools"][1] == {
+        "type": "read_document",
+        "builtin": True,
+        "ref": default_tool_id("read_document"),
+    }
     assert spec["sources"][0]["name"] == "KB"
     assert spec["model"]["available"][0]["display_name"] == "My Llama"
     assert spec["prompt"] == "default"
@@ -378,8 +382,29 @@ def test_import_with_null_workflow_keeps_published_but_clears_draft(pg_conn):
     assert str(updated["workflow_id"]) == str(wf["id"])
     assert any("kept its existing" in w for w in result["warnings"])
 
-    # Draft agent: explicit null clears the link.
+    # Draft agent: explicit null clears the link AND reaps the now-orphaned
+    # workflow row — there is no workflow-list API independent of agents, so
+    # an unlinked row would be unreachable forever.
     AgentsRepository(pg_conn).update(str(agent["id"]), user, {"status": "draft"})
     apply_import(pg_conn, user, doc)
     updated = AgentsRepository(pg_conn).get(str(agent["id"]), user)
     assert updated["workflow_id"] is None
+    assert WorkflowsRepository(pg_conn).get(str(wf["id"]), user) is None
+
+
+def test_null_workflow_keeps_row_still_referenced_by_another_agent(pg_conn):
+    user = "u_wf_null_shared"
+    agent, wf = _seed_workflow_agent(pg_conn, user)
+    # A second draft agent points at the same workflow.
+    AgentsRepository(pg_conn).create(
+        user, "Sibling", "draft", agent_type="workflow", workflow_id=str(wf["id"])
+    )
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, user)))
+    doc["spec"]["workflow"] = None
+
+    AgentsRepository(pg_conn).update(str(agent["id"]), user, {"status": "draft"})
+    apply_import(pg_conn, user, doc)
+    updated = AgentsRepository(pg_conn).get(str(agent["id"]), user)
+    assert updated["workflow_id"] is None
+    # Still referenced — must not be deleted.
+    assert WorkflowsRepository(pg_conn).get(str(wf["id"]), user) is not None

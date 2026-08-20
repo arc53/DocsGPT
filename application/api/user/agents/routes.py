@@ -29,8 +29,13 @@ from application.api.user.team_sharing import (
     team_access_for,
     visible_with_access,
 )
+from application.agents.default_tools import is_synthesized_tool_id
 from application.storage.db.repositories.agent_folders import AgentFoldersRepository
 from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.user_custom_models import (
+    UserCustomModelsRepository,
+)
+from application.storage.db.repositories.user_tools import UserToolsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.shared_conversations import (
     SharedConversationsRepository,
@@ -1615,6 +1620,71 @@ class GetTemplateAgents(Resource):
             return make_response(jsonify({"success": False}), 400)
 
 
+def _filter_adoptable_tool_ids(conn, user: str, tool_ids) -> list:
+    """Keep only tool ids the adopter can actually run.
+
+    Builtin synthetic ids resolve for everyone; a ``user_tools`` row must be
+    the adopter's own — the runtime resolves tools strictly owner-scoped, so
+    a template owner's tool id would just be dropped (with a log line) on
+    every run. Filtering at adopt time makes the gap visible in the builder
+    instead of at run time.
+    """
+    tools_repo = UserToolsRepository(conn)
+    kept = []
+    for tid in tool_ids or []:
+        tid = str(tid)
+        if is_synthesized_tool_id(tid) or (
+            looks_like_uuid(tid) and tools_repo.get_any(tid, user)
+        ):
+            kept.append(tid)
+    return kept
+
+
+def _strip_foreign_node_refs(conn, user: str):
+    """Build a ``clone_to_user`` node-config transform for adoption.
+
+    Agent nodes carry raw tool/source/model ids from the template owner. The
+    engine resolves all three owner-scoped at run time (dropping misses with
+    only a log line), so unresolvable refs would survive the clone as ghost
+    references — shown in the builder, never used. Strip them instead, so
+    the adopter sees empty fields to fill in.
+    """
+
+    def transform(node_type: str, config: dict) -> dict:
+        if node_type != "agent":
+            return config
+        # Node settings may sit nested under ``config`` — mirror the engine,
+        # which reads ``node.config.get("config", node.config)``.
+        nested = config.get("config")
+        cfg = nested if isinstance(nested, dict) else config
+        if cfg.get("tools"):
+            cfg["tools"] = _filter_adoptable_tool_ids(conn, user, cfg["tools"])
+        if cfg.get("sources"):
+            sources = cfg["sources"]
+            if not isinstance(sources, list):
+                sources = [sources]
+            cfg["sources"] = [
+                str(s)
+                for s in sources
+                if s and can_access(conn, "source", str(s), user)
+            ]
+        model_id = cfg.get("model_id")
+        if (
+            model_id
+            and looks_like_uuid(str(model_id))
+            and not UserCustomModelsRepository(conn).get(str(model_id), user)
+        ):
+            cfg["model_id"] = None
+        if cfg is not config:
+            # Flat leftovers of these keys are ignored by the engine but would
+            # carry the template owner's raw ids along; drop them.
+            for key in ("tools", "sources", "model_id"):
+                config.pop(key, None)
+        return config
+
+    return transform
+
+
 @agents_ns.route("/adopt_agent")
 class AdoptAgent(Resource):
     @api.doc(params={"id": "Agent ID"}, description="Adopt an agent by ID")
@@ -1673,21 +1743,37 @@ class AdoptAgent(Resource):
                 # ``workflow_id`` must NOT be copied by reference: the runtime
                 # resolves it strictly owner-scoped, so the adopter would get
                 # "Workflow not found or inaccessible" on every run. Deep-copy
-                # the template's graph into a workflow the adopter owns.
+                # the template's graph into a workflow the adopter owns,
+                # stripping node refs (tools/sources/models) the adopter can't
+                # resolve — they are owner-scoped at run time too.
                 if template.get("workflow_id"):
                     cloned_workflow = WorkflowsRepository(conn).clone_to_user(
                         str(template["workflow_id"]),
                         user,
                         from_owner=template.get("user_id"),
+                        node_config_transform=_strip_foreign_node_refs(conn, user),
                     )
-                    if cloned_workflow is not None:
-                        create_kwargs["workflow_id"] = str(cloned_workflow["id"])
-                    else:
-                        current_app.logger.warning(
-                            "Adopt: template %s references missing workflow %s; "
-                            "adopted agent created without one",
-                            template.get("id"), template.get("workflow_id"),
+                    if cloned_workflow is None:
+                        # A workflow agent without its graph can never run —
+                        # fail the adopt instead of publishing a broken agent.
+                        current_app.logger.error(
+                            "Adopt: template %s references workflow %s not owned "
+                            "by %s; adoption refused",
+                            template.get("id"),
+                            template.get("workflow_id"),
+                            template.get("user_id"),
                         )
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "This template's workflow is "
+                                    "unavailable; it cannot be adopted",
+                                }
+                            ),
+                            500,
+                        )
+                    create_kwargs["workflow_id"] = str(cloned_workflow["id"])
 
                 # The avatar must live under the adopter's own upload
                 # directory: image paths are validated against their owner,
@@ -1698,9 +1784,16 @@ class AdoptAgent(Resource):
                 )
                 if adopted_image:
                     create_kwargs["image"] = adopted_image
-                for col in ("tools", "json_schema", "models", "shared_metadata", "config"):
+                for col in ("json_schema", "models", "shared_metadata", "config"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]
+                # Tool ids resolve owner-scoped at run time, so the template
+                # owner's rows would silently drop on every run — keep only
+                # what the adopter can actually use (builtins, own tools).
+                if template.get("tools") is not None:
+                    create_kwargs["tools"] = _filter_adoptable_tool_ids(
+                        conn, user, template["tools"]
+                    )
                 for col in ("chunks", "token_limit", "request_limit"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]

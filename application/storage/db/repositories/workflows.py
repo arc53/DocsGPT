@@ -8,6 +8,7 @@ Covers CRUD on workflow metadata:
 
 from __future__ import annotations
 
+import copy
 from typing import Optional
 
 from sqlalchemy import Connection, text
@@ -121,6 +122,7 @@ class WorkflowsRepository:
         new_owner: str,
         *,
         from_owner: Optional[str] = None,
+        node_config_transform=None,
     ) -> Optional[dict]:
         """Deep-copy a workflow's current graph into a new workflow owned by ``new_owner``.
 
@@ -133,6 +135,12 @@ class WorkflowsRepository:
         ownership check — only do that when ``workflow_id`` comes from trusted
         server-side state, never from client input. Returns the new workflow
         row, or None if the source is missing.
+
+        ``node_config_transform(node_type, config) -> dict`` lets the caller
+        rewrite each node's config as it is copied (it receives a deep copy) —
+        e.g. adoption strips refs the new owner can't resolve, since node
+        configs carry raw tool/source/model ids that are owner-scoped at run
+        time and would otherwise ride along as ghost references.
         """
         from application.storage.db.repositories.workflow_edges import (
             WorkflowEdgesRepository,
@@ -162,6 +170,12 @@ class WorkflowsRepository:
         )
         clone_id = str(clone["id"])
 
+        def _cloned_config(n: dict) -> dict:
+            config = n.get("config") or {}
+            if node_config_transform is not None:
+                config = node_config_transform(n["node_type"], copy.deepcopy(config))
+            return config if isinstance(config, dict) else {}
+
         nodes_repo = WorkflowNodesRepository(self._conn)
         node_rows = nodes_repo.find_by_version(workflow_id, version)
         created_nodes = nodes_repo.bulk_create(
@@ -174,7 +188,7 @@ class WorkflowsRepository:
                     "title": n.get("title"),
                     "description": n.get("description"),
                     "position": n.get("position") or {"x": 0, "y": 0},
-                    "config": n.get("config") or {},
+                    "config": _cloned_config(n),
                 }
                 for n in node_rows
             ],
