@@ -380,6 +380,6 @@ def test_import_with_null_workflow_keeps_published_but_clears_draft(pg_conn):
 
     # Draft agent: explicit null clears the link.
     AgentsRepository(pg_conn).update(str(agent["id"]), user, {"status": "draft"})
-    result = apply_import(pg_conn, user, doc)
+    apply_import(pg_conn, user, doc)
     updated = AgentsRepository(pg_conn).get(str(agent["id"]), user)
     assert updated["workflow_id"] is None

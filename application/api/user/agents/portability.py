@@ -536,7 +536,6 @@ def serialize_agent(conn, agent: dict, user: str) -> dict:
         workflow_block, tools, sources, model = _serialize_workflow(conn, agent, user)
         prompt = "default"
     else:
-        workflow_block = None
         tools = _serialize_tools(conn, agent, user)
         sources = _serialize_sources(conn, agent, user)
         model = _serialize_models(conn, agent, user)
@@ -1293,7 +1292,6 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     )
 
     is_workflow = (spec.get("agent_type") or "classic") == "workflow"
-    workflow_result = _WORKFLOW_UNCHANGED
     if is_workflow:
         workflow_result = _apply_workflow(
             conn,
@@ -1305,6 +1303,8 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
             model_ids_by_name,
             warnings,
         )
+    else:
+        workflow_result = _WORKFLOW_UNCHANGED
 
     agents_repo = AgentsRepository(conn)
     is_update = bool(target.get("action") == "update" and target.get("agent_id"))
