@@ -1292,19 +1292,6 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     )
 
     is_workflow = (spec.get("agent_type") or "classic") == "workflow"
-    if is_workflow:
-        workflow_result = _apply_workflow(
-            conn,
-            user,
-            spec,
-            target,
-            tool_ids_by_key,
-            source_ids_by_name,
-            model_ids_by_name,
-            warnings,
-        )
-    else:
-        workflow_result = _WORKFLOW_UNCHANGED
 
     agents_repo = AgentsRepository(conn)
     is_update = bool(target.get("action") == "update" and target.get("agent_id"))
@@ -1353,6 +1340,16 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
                 "default_model_id": None,
                 "extra_source_ids": [],
             }
+        )
+        workflow_result = _apply_workflow(
+            conn,
+            user,
+            spec,
+            target,
+            tool_ids_by_key,
+            source_ids_by_name,
+            model_ids_by_name,
+            warnings,
         )
         if workflow_result is not _WORKFLOW_UNCHANGED:
             if workflow_result is None and (target.get("status") or "") == "published":
