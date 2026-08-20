@@ -134,6 +134,14 @@ class DaytonaSandbox(CodeSandbox):
         Reattach order: an in-memory handle, then (across process restarts) a live cloud
         sandbox carrying the session label, and only then a fresh ``create``. Enforces
         ``max_sandboxes`` so a flood of sessions cannot run up unbounded paid resources.
+
+        Returns:
+            str: The live sandbox id, already registered for this session.
+
+        Raises:
+            SandboxGoneError: The sandbox was confirmed gone before its workspace
+                could be primed. Nothing is cached, so a retry cold-starts.
+            RuntimeError: ``max_sandboxes`` live sandboxes already exist.
         """
         self._validate_session_id(session_id)
         # Wait out any in-flight create/reattach for this session, then reuse its
@@ -183,7 +191,24 @@ class DaytonaSandbox(CodeSandbox):
                 except Exception as del_exc:  # noqa: BLE001 - cleanup is best-effort
                     logger.warning("Failed to delete orphaned Daytona sandbox during open: %s", del_exc)
                 raise
-            self._prime(handle)
+            if not self._prime(handle):
+                # ``_prime`` only reports False once ``_sandbox_gone`` confirms it.
+                # Caching a dead handle would be worse than failing here: ``open``
+                # returns cached handles without revalidating them, so every later
+                # open for this session would replay the same dead id. Forgetting
+                # it does not strand a paid resource even if the classification was
+                # a false positive -- the sandbox carries the session label, so
+                # ``_reattach_existing`` picks it up on the next open.
+                self._forget_handle(session_id, handle)
+                logger.warning(
+                    "Freshly created Daytona sandbox %s for session %s was gone before "
+                    "its workspace could be primed; not caching it",
+                    sandbox_id,
+                    session_id,
+                )
+                raise SandboxGoneError(
+                    f"Daytona sandbox {sandbox_id} vanished during workspace prime"
+                )
             return sandbox_id
         finally:
             with self._create_cv:

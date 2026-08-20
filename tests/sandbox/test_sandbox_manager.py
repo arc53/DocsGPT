@@ -6,7 +6,7 @@ from typing import Dict, List
 
 import pytest
 
-from application.sandbox.base import CodeSandbox, ExecResult
+from application.sandbox.base import CodeSandbox, ExecResult, SandboxGoneError
 from application.sandbox.manager import SandboxCapacityError, SandboxManager
 
 
@@ -334,6 +334,30 @@ def test_cap_eviction_picks_least_recently_used(backend, monkeypatch):
     mgr.open("c")
     assert backend.torn_down == ["b"]
     assert mgr.has_session("a") and mgr.has_session("c")
+
+
+def test_a_failed_cold_open_frees_the_reserved_cap_slot(backend, monkeypatch):
+    """A backend open that raises must not leak the slot it reserved.
+
+    Reachable for real: ``DaytonaSandbox.open`` raises ``SandboxGoneError`` when
+    a freshly created sandbox is confirmed gone before its workspace is primed,
+    rather than caching a dead handle.
+    """
+    mgr = SandboxManager(backend, max_ttl=600, max_sessions=1)
+
+    def _vanished(session_id):
+        raise SandboxGoneError("sandbox vanished during workspace prime")
+
+    monkeypatch.setattr(backend, "open", _vanished)
+    with pytest.raises(SandboxGoneError):
+        mgr.open("a")
+
+    assert not mgr.has_session("a")
+
+    # The reserved slot was released, so the retry cold-starts even at max_sessions=1.
+    monkeypatch.undo()
+    mgr.open("a")
+    assert mgr.has_session("a")
 
 
 def test_cap_rejects_when_all_sessions_busy(backend):

@@ -946,6 +946,68 @@ def test_open_reattach_gone_falls_through_to_fresh_create(fake_sdk):
     assert box._handles["conv-1"].sandbox_id == "sbx-1"
 
 
+def test_open_does_not_cache_a_fresh_sandbox_that_vanished_during_prime(fake_sdk):
+    """A just-created sandbox confirmed gone must not be handed back as live.
+
+    ``_prime`` returns False only after ``_sandbox_gone`` confirms the sandbox
+    is gone, and its contract is that the caller discards the handle. The
+    reattach path obeys that; the fresh-create path must too -- ``open()``
+    returns cached handles without revalidating them, so a dead id parked in
+    ``_handles`` is replayed by every later ``open()`` for that session.
+    """
+    from application.sandbox.base import SandboxGoneError
+    from application.sandbox.daytona import DaytonaSandbox
+
+    box = DaytonaSandbox(api_key="dtn_test", language="python")
+
+    def _create_doomed(params=None, timeout=60):
+        sandbox = _FakeSandbox(
+            sandbox_id="sbx-dead", labels=getattr(params, "labels", None) or {}
+        )
+        sandbox.fs.create_folder = mock.Mock(
+            side_effect=RuntimeError("not found (it has been deleted)")
+        )
+        box._client.created.append((params, sandbox))
+        return sandbox
+
+    box._client.create = mock.Mock(side_effect=_create_doomed)
+    box._client.get = mock.Mock(side_effect=KeyError("gone"))  # control plane: deleted
+
+    with pytest.raises(SandboxGoneError):
+        box.open("conv-1")
+
+    assert "conv-1" not in box._handles
+    # The in-flight slot is released, so the next open cold-starts rather than
+    # blocking on a create that already finished.
+    assert "conv-1" not in box._creating
+
+
+def test_open_keeps_a_live_sandbox_whose_prime_merely_failed(fake_sdk):
+    """A prime that fails on a still-live sandbox is degraded, not fatal.
+
+    ``exec`` prepends makedirs and ``put_file`` creates parent dirs, so the
+    workspace materializes on first use; failing the open here would reject a
+    perfectly usable sandbox.
+    """
+    from application.sandbox.daytona import DaytonaSandbox
+
+    box = DaytonaSandbox(api_key="dtn_test", language="python")
+
+    def _create_degraded(params=None, timeout=60):
+        sandbox = _FakeSandbox(
+            sandbox_id="sbx-live", labels=getattr(params, "labels", None) or {}
+        )
+        sandbox.fs.create_folder = mock.Mock(side_effect=RuntimeError("read timed out"))
+        box._client.created.append((params, sandbox))
+        return sandbox
+
+    box._client.create = mock.Mock(side_effect=_create_degraded)
+
+    # ``get`` resolves and reports "started", so _sandbox_gone stays False.
+    assert box.open("conv-1") == "sbx-live"
+    assert box._handles["conv-1"].sandbox_id == "sbx-live"
+
+
 def test_put_file_gone_sandbox_raises_sandbox_gone_and_forgets(sandbox):
     from application.sandbox.base import SandboxGoneError
 
