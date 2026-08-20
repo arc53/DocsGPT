@@ -174,16 +174,28 @@ class FaissStore(BaseVectorStore):
         return [doc for doc, _ in self.search_with_scores(question, k, *args, **kwargs)]
 
     def search_with_scores(
-        self, question: str, k: int = 4, *args, **kwargs
+        self,
+        question: str,
+        k: int = 4,
+        *args,
+        query_vector: Optional[List[float]] = None,
+        **kwargs,
     ) -> List[Tuple[Document, float]]:
-        """Same search as :meth:`search`, pairing each hit with its L2 distance."""
+        """Same search as :meth:`search`, pairing each hit with its L2 distance.
+
+        Args:
+            query_vector: Precomputed embedding of ``question``; when given the
+                store skips embedding the query itself.
+        """
         # FAISS has no relevance-threshold knob; drop it so the per-source
         # score_threshold is safely ignored rather than crashing the forward.
         kwargs.pop("score_threshold", None)
         if self.index is None or self.index.ntotal == 0:
             return []
 
-        vector = np.array([self.embeddings.embed_query(question)], dtype=np.float32)
+        if query_vector is None:
+            query_vector = self.embeddings.embed_query(question)
+        vector = np.array([query_vector], dtype=np.float32)
         distances, rows = self.index.search(vector, min(k, self.index.ntotal))
 
         results = []

@@ -16,15 +16,19 @@ and the helpers build matching ones.
 from __future__ import annotations
 
 import uuid
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 import application.graphrag.store as store_module
+from application.vectorstore import pgconn
+from application.vectorstore import pgvector as pgvector_module
 
 GraphStore = store_module.GraphStore
 
 TEST_EMBEDDING_DIM = 8
+
+POOL_DSN = "postgresql://u:p@localhost/graphpool"
 
 _REAL_EMBEDDING_DIM = GraphStore._embedding_dim
 
@@ -36,46 +40,28 @@ def _mock_embedding_dim(monkeypatch):
     )
 
 
-def _resolve_connection_string():
-    from application.core.settings import settings
-
-    conn = getattr(settings, "PGVECTOR_CONNECTION_STRING", None)
-    if not conn and getattr(settings, "POSTGRES_URI", None):
-        from application.core.db_uri import normalize_pgvector_connection_string
-
-        conn = normalize_pgvector_connection_string(settings.POSTGRES_URI)
-    return conn
-
-
-_GRAPH_TABLES = (
-    "graph_node_chunks",
-    "graph_edges",
-    "graph_nodes",
-    "graph_ingest_progress",
-)
+@pytest.fixture(autouse=True)
+def _close_pools():
+    """Never leak a pool into another test; an ephemeral DSN dies with its DB."""
+    yield
+    for dsn, pool in list(pgconn._POOLS.items()):
+        try:
+            pool.close()
+        except Exception:
+            pass
+        pgconn._POOLS.pop(dsn, None)
 
 
-def _drop_graph_tables(conn_string):
-    import psycopg
+def _ephemeral_dsn(info) -> str:
+    """libpq DSN for the ephemeral pytest-postgresql database.
 
-    with psycopg.connect(conn_string) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                f"DROP TABLE IF EXISTS {', '.join(_GRAPH_TABLES)} CASCADE;"
-            )
-        conn.commit()
-
-
-def _live_store():
-    conn = _resolve_connection_string()
-    if not conn:
-        pytest.skip("No pgvector connection string configured")
-    try:
-        _drop_graph_tables(conn)
-        store = GraphStore(connection_string=conn)
-    except Exception as exc:
-        pytest.skip(f"pgvector DB not reachable: {exc}")
-    return store
+    Deliberately not the operator's ``POSTGRES_URI``: these tests create and
+    drop graph tables, and the dev database is not theirs to rewrite.
+    """
+    password = f":{info.password}" if info.password else ""
+    return (
+        f"postgresql://{info.user}{password}@{info.host}:{info.port}/{info.dbname}"
+    )
 
 
 def _embedding(seed: float) -> list:
@@ -87,10 +73,20 @@ def _embedding(seed: float) -> list:
 @pytest.mark.integration
 class TestGraphStoreLive:
     @pytest.fixture
-    def store(self):
-        store = _live_store()
+    def store(self, postgresql):
+        """Graph store on a fresh ephemeral database.
+
+        Construction no longer creates tables, so the fixture calls
+        ``_ensure_tables`` explicitly — exactly what ``ensure_vector_schema``
+        does at boot in production — and read-before-write tests still pass.
+        """
+        store = GraphStore(connection_string=_ephemeral_dsn(postgresql.info))
+        try:
+            store._ensure_tables()
+        except Exception as exc:
+            pytest.skip(f"pgvector extension unavailable: {exc}")
         yield store
-        _drop_graph_tables(store._connection_string)
+        store.close()
 
     @pytest.fixture
     def source_id(self):
@@ -344,6 +340,61 @@ class TestGraphStoreLive:
         finally:
             store.delete_by_source(source_id)
 
+    def test_count_nodes_many_batches_and_zero_fills(self, store):
+        """One query for N sources; a source with no graph still gets an entry."""
+        a, b, c = (str(uuid.uuid4()) for _ in range(3))
+        try:
+            store.upsert_node(a, "A1", "a1")
+            store.upsert_node(a, "A2", "a2")
+            store.upsert_node(b, "B1", "b1")
+
+            counts = store.count_nodes_many([a, b, c])
+
+            assert counts == {a: 2, b: 1, c: 0}
+            # Agrees with the per-source query it replaces.
+            assert [store.count_nodes(s) for s in (a, b, c)] == [2, 1, 0]
+            assert store.count_nodes_many([]) == {}
+        finally:
+            store.delete_by_source(a)
+            store.delete_by_source(b)
+
+    def test_pooled_connection_is_returned_to_the_shared_pool(self, store):
+        """The live store borrows from the shared pool and gives the socket back."""
+        source_id = str(uuid.uuid4())
+        assert store.count_nodes_many([source_id]) == {source_id: 0}
+        assert store._pooled is True
+        assert list(pgconn._POOLS) == [store._connection_string]
+
+        pool = pgconn._POOLS[store._connection_string]
+        store.close()
+
+        assert store._connection is None
+        stats = pool.get_stats()
+        assert stats["pool_available"] == stats["pool_size"]
+
+    def test_the_vector_store_reuses_the_graph_store_pool(self, store, postgresql):
+        """Same DSN, one pool: the graph store does not double the connections."""
+        from application.vectorstore.pgvector import PGVectorStore
+
+        stub = MagicMock()
+        stub.dimension = TEST_EMBEDDING_DIM
+        stub.embed_query.return_value = [0.0] * TEST_EMBEDDING_DIM
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            return_value=stub,
+        ):
+            vector_store = PGVectorStore(
+                source_id="live-source", connection_string=store._connection_string
+            )
+        try:
+            store.count_nodes_many([str(uuid.uuid4())])
+            vector_store._get_connection()
+
+            assert list(pgconn._POOLS) == [store._connection_string]
+            assert vector_store._pooled is True
+        finally:
+            vector_store.close()
+
     def test_delete_by_source_isolation(self, store):
         keep = str(uuid.uuid4())
         drop = str(uuid.uuid4())
@@ -381,6 +432,8 @@ class TestGraphStoreParameterization:
         conn.cursor.return_value = cursor
         store._connection = conn
         store._get_connection = lambda: conn
+        # Boot owns the schema; the write-path safety net has its own tests.
+        store._tables_ensured = True
         return store, cursor
 
     def test_delete_by_source_binds_source_id(self):
@@ -448,6 +501,7 @@ class TestEmbeddingDim:
     def test_uses_configured_model_dimension(self, monkeypatch):
         from application.vectorstore import base as base_module
 
+        monkeypatch.setattr(base_module.settings, "EMBEDDINGS_BASE_URL", None)
         fake_embedding = MagicMock()
         fake_embedding.dimension = 1536
         monkeypatch.setattr(
@@ -463,6 +517,7 @@ class TestEmbeddingDim:
     def test_falls_back_to_default_dimension(self, monkeypatch):
         from application.vectorstore import base as base_module
 
+        monkeypatch.setattr(base_module.settings, "EMBEDDINGS_BASE_URL", None)
         fake_embedding = object()
         monkeypatch.setattr(
             base_module.EmbeddingsSingleton,
@@ -473,3 +528,344 @@ class TestEmbeddingDim:
 
         store = GraphStore.__new__(GraphStore)
         assert store._embedding_dim() == store_module.DEFAULT_NAME_EMBEDDING_DIM
+
+
+@pytest.mark.unit
+class TestEmbeddingDimResolution:
+    def test_uses_shared_resolver(self, monkeypatch):
+        """The dimension probe must not build its own embeddings instance."""
+        from unittest.mock import patch
+
+        fake_embedding = MagicMock()
+        fake_embedding.dimension = 1536
+        monkeypatch.setattr(GraphStore, "_embedding_dim", _REAL_EMBEDDING_DIM)
+
+        with patch(
+            "application.vectorstore.base.get_embeddings",
+            return_value=fake_embedding,
+        ) as mock_resolver:
+            store = GraphStore.__new__(GraphStore)
+            assert store._embedding_dim() == 1536
+
+        mock_resolver.assert_called_once_with()
+
+
+@pytest.mark.unit
+class TestGraphSchemaIsBootOwned:
+    """Construction must not run DDL: reads happen once per query, per source."""
+
+    def _mock_store(self):
+        store = GraphStore.__new__(GraphStore)
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [str(uuid.uuid4())]
+        cursor.fetchall.return_value = []
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        store._connection = conn
+        store._get_connection = lambda: conn
+        store._tables_ensured = False
+        store._ensure_tables = MagicMock()
+        return store, cursor
+
+    def test_init_opens_no_connection_and_creates_no_tables(self):
+        from unittest.mock import patch
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "psycopg": MagicMock(),
+                "pgvector": MagicMock(),
+                "pgvector.psycopg": MagicMock(),
+            },
+        ), patch.object(GraphStore, "_ensure_tables") as ensure, patch.object(
+            GraphStore, "_get_connection"
+        ) as get_conn:
+            store = GraphStore(connection_string="postgresql://u:p@localhost/db")
+
+        ensure.assert_not_called()
+        get_conn.assert_not_called()
+        assert store._tables_ensured is False
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda s: s.upsert_node("sid", "N", "n"),
+            lambda s: s.add_edge("sid", "a", "b"),
+            lambda s: s.link_node_chunk("sid", "n", "c1"),
+            lambda s: s.apply_chunk("sid", "c1", [], [], {}),
+            lambda s: s.set_node_degrees("sid"),
+            lambda s: s.mark_chunk("sid", "c1", "done"),
+            lambda s: s.delete_by_source("sid"),
+        ],
+        ids=[
+            "upsert_node",
+            "add_edge",
+            "link_node_chunk",
+            "apply_chunk",
+            "set_node_degrees",
+            "mark_chunk",
+            "delete_by_source",
+        ],
+    )
+    def test_writes_ensure_tables_once(self, call):
+        store, _ = self._mock_store()
+
+        call(store)
+        store._tables_ensured = True  # what the real _ensure_tables_once sets
+        call(store)
+
+        assert store._ensure_tables.call_count == 1
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda s: s.count_nodes("sid"),
+            lambda s: s.count_nodes_many(["sid"]),
+            lambda s: s.get_node_by_normalized("sid", "n"),
+            lambda s: s.search_nodes_by_embedding("sid", _embedding(1.0)),
+            lambda s: s.get_subgraph("sid", ["n"]),
+            lambda s: s.get_graph_overview("sid"),
+            lambda s: s.get_chunk_ids_for_nodes("sid", ["n"]),
+            lambda s: s.pending_chunks("sid", ["c1"]),
+            lambda s: s.get_progress("sid"),
+        ],
+        ids=[
+            "count_nodes",
+            "count_nodes_many",
+            "get_node_by_normalized",
+            "search_nodes_by_embedding",
+            "get_subgraph",
+            "get_graph_overview",
+            "get_chunk_ids_for_nodes",
+            "pending_chunks",
+            "get_progress",
+        ],
+    )
+    def test_reads_never_create_tables(self, call):
+        store, _ = self._mock_store()
+
+        call(store)
+
+        store._ensure_tables.assert_not_called()
+
+    def test_create_schema_emits_the_ddl_without_committing(self):
+        conn, cursor = MagicMock(), MagicMock()
+        conn.cursor.return_value = cursor
+
+        GraphStore.create_schema(conn, dimension=8)
+
+        statements = " ".join(str(c) for c in cursor.execute.call_args_list)
+        assert "CREATE EXTENSION IF NOT EXISTS vector" in statements
+        for table in (
+            "graph_nodes",
+            "graph_edges",
+            "graph_node_chunks",
+            "graph_ingest_progress",
+        ):
+            assert f"CREATE TABLE IF NOT EXISTS {table}" in statements
+        assert "name_embedding vector(8)" in statements
+        assert statements.count("CREATE INDEX IF NOT EXISTS") == 5
+        conn.commit.assert_not_called()
+
+    def test_ensure_tables_locks_then_commits(self):
+        store, cursor = self._mock_store()
+        del store._ensure_tables  # exercise the real method
+
+        store._ensure_tables()
+
+        statements = " ".join(str(c) for c in cursor.execute.call_args_list)
+        assert "pg_advisory_xact_lock" in statements
+        assert "CREATE TABLE IF NOT EXISTS graph_nodes" in statements
+        store._connection.commit.assert_called_once()
+
+
+@pytest.mark.unit
+class TestGraphStorePooling:
+    """The graph store borrows from the same per-DSN pool as ``PGVectorStore``."""
+
+    def _store(self, dsn=POOL_DSN, pool_max_size=4):
+        store = GraphStore.__new__(GraphStore)
+        store._connection_string = dsn
+        store._connection = None
+        store._pooled = False
+        store._pool_max_size = pool_max_size
+        store._psycopg = MagicMock()
+        store._register_vector = MagicMock()
+        store._tables_ensured = True
+        return store
+
+    def _fake_pool(self):
+        pooled_conn = MagicMock()
+        pooled_conn.closed = False
+        pool = MagicMock()
+        pool.getconn.return_value = pooled_conn
+        return pool, pooled_conn
+
+    def test_get_connection_checks_out_of_the_pool(self, monkeypatch):
+        pool, pooled_conn = self._fake_pool()
+        monkeypatch.setattr(store_module.pgconn, "pool_for", lambda dsn, n: pool)
+        store = self._store()
+
+        conn = store._get_connection()
+
+        assert conn is pooled_conn
+        assert store._pooled is True
+        pool.getconn.assert_called_once()
+        store._psycopg.connect.assert_not_called()
+        # The pool's ``configure`` hook already registered the adapters.
+        store._register_vector.assert_not_called()
+
+    def test_close_rolls_back_and_returns_the_connection(self, monkeypatch):
+        pool, pooled_conn = self._fake_pool()
+        monkeypatch.setattr(store_module.pgconn, "pool_for", lambda dsn, n: pool)
+        monkeypatch.setitem(pgconn._POOLS, POOL_DSN, pool)
+        store = self._store()
+        store._get_connection()
+        pooled_conn.info.transaction_status.name = "INTRANS"
+
+        store.close()
+
+        pooled_conn.rollback.assert_called_once()
+        pool.putconn.assert_called_once_with(pooled_conn)
+        pooled_conn.close.assert_not_called()
+        assert store._connection is None
+
+    def test_close_does_not_roll_back_an_idle_connection(self, monkeypatch):
+        pool, pooled_conn = self._fake_pool()
+        monkeypatch.setattr(store_module.pgconn, "pool_for", lambda dsn, n: pool)
+        monkeypatch.setitem(pgconn._POOLS, POOL_DSN, pool)
+        store = self._store()
+        store._get_connection()
+        pooled_conn.info.transaction_status.name = "IDLE"
+
+        store.close()
+
+        pooled_conn.rollback.assert_not_called()
+        pool.putconn.assert_called_once_with(pooled_conn)
+
+    def test_a_dead_pooled_connection_is_returned_before_being_replaced(
+        self, monkeypatch
+    ):
+        # Same contract as ``PGVectorStore``: a connection that dies while this
+        # store holds it must go back to the pool, or the slot is lost for the
+        # life of the process. Extraction holds one store across the whole
+        # per-chunk LLM loop, which is exactly when a backend gets reaped.
+        pool, pooled_conn = self._fake_pool()
+        monkeypatch.setattr(store_module.pgconn, "pool_for", lambda dsn, n: pool)
+        monkeypatch.setitem(pgconn._POOLS, POOL_DSN, pool)
+        store = self._store()
+        store._get_connection()
+        replacement = MagicMock()
+        replacement.closed = False
+        pool.getconn.return_value = replacement
+
+        pooled_conn.closed = True
+        conn = store._get_connection()
+
+        assert conn is replacement
+        pool.putconn.assert_called_once_with(pooled_conn)
+        assert pool.getconn.call_count == 2
+
+    def test_legacy_path_connects_directly_and_closes(self, monkeypatch):
+        def _never(dsn, n):
+            raise AssertionError("pooling is off; no pool must be built")
+
+        monkeypatch.setattr(store_module.pgconn, "pool_for", _never)
+        store = self._store(pool_max_size=0)
+        direct = MagicMock()
+        direct.closed = False
+        store._psycopg.connect.return_value = direct
+
+        conn = store._get_connection()
+
+        assert conn is direct
+        assert store._pooled is False
+        store._register_vector.assert_called_once_with(direct)
+
+        store.close()
+        direct.close.assert_called_once()
+
+    def test_del_never_raises(self):
+        store = self._store()
+        broken = MagicMock()
+        broken.closed = False
+        broken.close.side_effect = RuntimeError("already gone")
+        store._connection = broken
+
+        store.__del__()  # must not propagate
+
+    def test_the_graph_store_and_the_vector_store_share_one_pool(self):
+        """One DSN, one pool object — reached from either module."""
+        pool, _ = self._fake_pool()
+        store = self._store()
+
+        with patch("psycopg_pool.ConnectionPool", return_value=pool) as pool_cls:
+            store._get_connection()
+            # ``PGVectorStore``'s own entry point resolves to the same object.
+            assert pgvector_module._pool_for(POOL_DSN, 4) is pool
+
+        assert pool_cls.call_count == 1
+        assert pgconn._POOLS[POOL_DSN] is pool
+        assert pgvector_module._POOLS is pgconn._POOLS
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [(0, 0), (2, 2), (None, 8), ("4", 8), (True, 8), (-1, 8)],
+    )
+    def test_pool_size_is_resolved_defensively(self, monkeypatch, value, expected):
+        monkeypatch.setattr(
+            store_module.settings, "PGVECTOR_POOL_MAX_SIZE", value, raising=False
+        )
+        assert store_module._resolve_pool_max_size() == expected
+
+
+@pytest.mark.unit
+class TestCountNodesMany:
+    """One ``ANY(%s)`` query replaces the retriever's per-source count fan-out."""
+
+    def _store_with_mock_conn(self, rows):
+        store = GraphStore.__new__(GraphStore)
+        cursor = MagicMock()
+        cursor.fetchall.return_value = rows
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        store._connection = conn
+        store._get_connection = lambda: conn
+        store._tables_ensured = True
+        return store, cursor, conn
+
+    def test_binds_the_ids_as_one_array_and_zero_fills(self):
+        store, cursor, _ = self._store_with_mock_conn([("a", 2), ("b", 1)])
+
+        counts = store.count_nodes_many(["a", "b", "c"])
+
+        assert counts == {"a": 2, "b": 1, "c": 0}
+        sql, params = (
+            cursor.execute.call_args.args[0],
+            cursor.execute.call_args.args[1],
+        )
+        assert "source_id = ANY(%s)" in sql
+        assert "GROUP BY source_id" in sql
+        assert cursor.execute.call_count == 1
+        assert params == (["a", "b", "c"],)
+
+    def test_empty_input_short_circuits(self):
+        store, cursor, _ = self._store_with_mock_conn([])
+
+        assert store.count_nodes_many([]) == {}
+        assert store.count_nodes_many([None, ""]) == {}
+        cursor.execute.assert_not_called()
+
+    def test_a_failed_query_reports_every_source_as_graphless(self):
+        store, cursor, conn = self._store_with_mock_conn([])
+        cursor.execute.side_effect = RuntimeError("no such table")
+
+        assert store.count_nodes_many(["a", "b"]) == {"a": 0, "b": 0}
+        conn.rollback.assert_called_once()
+
+    def test_the_callers_id_spelling_is_preserved(self):
+        """Postgres returns canonical lowercase UUID text; keys must still match."""
+        source_id = str(uuid.uuid4()).upper()
+        store, _, _ = self._store_with_mock_conn([(source_id.lower(), 3)])
+
+        assert store.count_nodes_many([source_id]) == {source_id: 3}

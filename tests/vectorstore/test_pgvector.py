@@ -31,13 +31,17 @@ def _make_store(
 
         from application.vectorstore.pgvector import PGVectorStore
 
-        # Patch _ensure_table_exists to avoid DB calls during init
-        with patch.object(PGVectorStore, "_ensure_table_exists"):
-            store = PGVectorStore(
-                source_id=source_id,
-                embeddings_key=embeddings_key,
-                connection_string=connection_string,
-            )
+        store = PGVectorStore(
+            source_id=source_id,
+            embeddings_key=embeddings_key,
+            connection_string=connection_string,
+        )
+        # Boot owns the schema, so these unit stores start already ensured;
+        # the write-path safety net has its own tests.
+        store._schema_ensured = True
+        # Legacy direct-connection mode: pooling would build a real
+        # psycopg_pool against the fake DSN. The pooled path has its own tests.
+        store._pool_max_size = 0
         # Provide a mock connection
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -438,3 +442,47 @@ class TestPGVectorSearchWithScores:
         mock_cursor.execute.side_effect = Exception("connection lost")
 
         assert store.search_with_scores("query") == []
+
+
+@pytest.mark.unit
+class TestPGVectorPrecomputedQueryVector:
+    """A caller that already embedded the query must not pay for it again.
+
+    Multi-source retrieval embeds the query once and hands the same vector to
+    every source's store; without this the query is embedded once per source.
+    """
+
+    def test_search_with_scores_skips_embedding(self):
+        store, _, mock_cursor, mock_emb = _make_store()
+        mock_cursor.fetchall.return_value = [("hello world", {}, 0.1)]
+
+        results = store.search_with_scores("query", k=2, query_vector=[0.9, 0.8, 0.7])
+
+        mock_emb.embed_query.assert_not_called()
+        assert [doc.page_content for doc, _ in results] == ["hello world"]
+
+    def test_search_skips_embedding(self):
+        store, _, mock_cursor, mock_emb = _make_store()
+        mock_cursor.fetchall.return_value = [("hello world", {}, 0.1)]
+
+        results = store.search("query", k=2, query_vector=[0.9, 0.8, 0.7])
+
+        mock_emb.embed_query.assert_not_called()
+        assert [doc.page_content for doc in results] == ["hello world"]
+
+    def test_supplied_vector_is_what_the_query_binds(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchall.return_value = [("a", {}, 0.1)]
+
+        store.search_with_scores("query", k=1, query_vector=[0.9, 0.8, 0.7])
+
+        _sql, params = mock_cursor.execute.call_args_list[0].args
+        assert params == ([0.9, 0.8, 0.7], "src1", [0.9, 0.8, 0.7], 1)
+
+    def test_none_vector_still_embeds(self):
+        store, _, mock_cursor, mock_emb = _make_store()
+        mock_cursor.fetchall.return_value = []
+
+        store.search_with_scores("query", k=2, query_vector=None)
+
+        mock_emb.embed_query.assert_called_once_with("query")

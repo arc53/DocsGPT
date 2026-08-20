@@ -1139,6 +1139,53 @@ class BaseAgent(ABC):
 
     # ---- LLM generation ----
 
+    def _llm_supports_tools(self) -> bool:
+        """Whether the LLM accepts a ``tools`` payload.
+
+        ``_supports_tools`` is a method on every real provider (the old
+        truthiness test on the *bound method* never gated anything), but
+        test doubles sometimes set it as a plain bool, so both shapes are
+        honored. A provider that never implemented the check — ``BaseLLM``
+        raises — keeps the historical permissive behavior; the provider
+        drops the tools itself.
+
+        Returns:
+            True when the ``tools`` kwarg should be sent.
+        """
+        supports = getattr(self.llm, "_supports_tools", None)
+        if supports is None:
+            return False
+        if not callable(supports):
+            return bool(supports)
+        try:
+            return bool(supports())
+        except Exception:
+            logger.debug(
+                "Tool-support check failed for %s; sending tools anyway",
+                type(self.llm).__name__,
+                exc_info=True,
+            )
+            return True
+
+    def _structured_output_kwarg(self) -> Optional[str]:
+        """Name of the gen kwarg this LLM takes structured output on.
+
+        Read off the LLM *class*, not ``llm_name``: every OpenAI-wire
+        provider (``openai_compatible``, ``groq``, ``novita``,
+        ``openrouter``, ``docsgpt``) dispatches through an ``OpenAILLM``
+        subclass, so a string comparison against "openai" silently
+        dropped guided decoding for all of them. ``BaseLLM`` owns the
+        declaration so the cross-provider fallback adapter can read it too.
+
+        Returns:
+            ``"response_format"``, ``"response_schema"``, or None when the
+            provider has no structured-output kwarg.
+        """
+        # ``type(self.llm)`` — an instance attribute on a test double would
+        # otherwise leak a truthy Mock into the gen kwargs.
+        kwarg = getattr(type(self.llm), "structured_output_kwarg", None)
+        return kwarg if kwarg in ("response_format", "response_schema") else None
+
     def _llm_gen(
         self,
         messages: List[Dict],
@@ -1162,11 +1209,7 @@ class BaseAgent(ABC):
         if self.attachments:
             gen_kwargs["_usage_attachments"] = self.attachments
 
-        if (
-            hasattr(self.llm, "_supports_tools")
-            and self.llm._supports_tools
-            and self.tools
-        ):
+        if self.tools and self._llm_supports_tools():
             gen_kwargs["tools"] = self.tools
         if (
             self.json_schema
@@ -1176,14 +1219,12 @@ class BaseAgent(ABC):
             structured_format = self.llm.prepare_structured_output_format(
                 self.json_schema, strict=getattr(self, "json_schema_strict", True)
             )
-            if structured_format:
-                if self.llm_name == "openai":
-                    gen_kwargs["response_format"] = structured_format
-                elif self.llm_name == "google":
-                    gen_kwargs["response_schema"] = structured_format
+            structured_kwarg = self._structured_output_kwarg()
+            if structured_format and structured_kwarg:
+                gen_kwargs[structured_kwarg] = structured_format
         elif (
             getattr(self, "json_object", False)
-            and self.llm_name == "openai"
+            and self._structured_output_kwarg() == "response_format"
             and hasattr(self.llm, "_supports_structured_output")
             and self.llm._supports_structured_output()
         ):

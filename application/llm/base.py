@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import ClassVar
+from typing import ClassVar, Dict, Optional, Tuple
 
 import httpx
 import openai
@@ -37,6 +37,24 @@ class BaseLLM(ABC):
     # Stamped onto the ``llm_stream_start`` event so dashboards can group
     # calls by vendor. Subclasses override.
     provider_name: ClassVar[str] = "unknown"
+
+    # Name of the gen kwarg this provider takes structured output on
+    # ("response_format" for OpenAI-wire classes, "response_schema" for
+    # Google); None = the provider has no structured-output kwarg.
+    structured_output_kwarg: ClassVar[Optional[str]] = None
+
+    # (json_schema, strict) last passed to ``prepare_structured_output_format``;
+    # lets a cross-provider fallback re-prepare the schema in the backup's own
+    # format instead of forwarding a kwarg the backup cannot read.
+    _structured_output_source: Optional[Tuple[Dict, bool]] = None
+
+    # Gen kwargs that carry structured output, across providers. Kept here
+    # (not on the provider subclasses) because the adapter has to recognize
+    # every provider's kwarg, not just its own.
+    _STRUCTURED_OUTPUT_KWARGS: ClassVar[Tuple[str, ...]] = (
+        "response_format",
+        "response_schema",
+    )
 
     def __init__(
         self,
@@ -300,6 +318,132 @@ class BaseLLM(ABC):
                 prepared.append({**message, "content": parts})
         return prepared
 
+    @staticmethod
+    def _fallback_enforces_structured_output(fallback) -> bool:
+        """Whether the fallback's capabilities still allow schema enforcement."""
+        supports = getattr(fallback, "_supports_structured_output", None)
+        if supports is None:
+            return True
+        if not callable(supports):
+            return bool(supports)
+        try:
+            return bool(supports())
+        except Exception:
+            logger.debug(
+                "Structured-output capability check failed for %s; assuming supported",
+                type(fallback).__name__,
+                exc_info=True,
+            )
+            return True
+
+    @staticmethod
+    def _recover_structured_output_source(present: Dict) -> Optional[Tuple[Dict, bool]]:
+        """Recover a raw (schema, strict) pair from already-prepared kwargs.
+
+        Callers that hand-build an OpenAI ``response_format`` never went through
+        ``prepare_structured_output_format``, so nothing was recorded; the raw
+        schema is still readable out of the envelope. A Google
+        ``response_schema`` is a lossy, type-mapped conversion — not reversible —
+        so it yields nothing.
+        """
+        response_format = present.get("response_format")
+        if not isinstance(response_format, dict):
+            return None
+        json_schema = response_format.get("json_schema")
+        if not isinstance(json_schema, dict):
+            return None
+        schema = json_schema.get("schema")
+        if not isinstance(schema, dict) or not schema:
+            return None
+        return schema, bool(json_schema.get("strict", True))
+
+    def _adapt_structured_output_kwargs(self, fallback, kwargs: Dict) -> Dict:
+        """Re-express the primary's structured-output kwargs for ``fallback``.
+
+        Structured output is provider-specific: OpenAI-wire classes take
+        ``response_format``, Google takes ``response_schema``. Forwarding the
+        primary's kwarg verbatim to a different-family backup either loses
+        enforcement silently (Google swallows ``response_format`` in
+        ``**kwargs``) or raises ``TypeError`` inside the OpenAI SDK
+        (``response_schema`` is not a Chat-Completions param), which turns the
+        fallback into no fallback at all.
+
+        Args:
+            fallback: Backup LLM the request is about to be re-sent to.
+            kwargs: The primary's generation kwargs.
+
+        Returns:
+            A copy of ``kwargs`` carrying the backup's own structured-output
+            kwarg, or neither when the backup cannot enforce a schema.
+        """
+        adapted = dict(kwargs)
+        present = {
+            name: adapted.pop(name)
+            for name in self._STRUCTURED_OUTPUT_KWARGS
+            if name in adapted
+        }
+        if not present:
+            return adapted
+
+        target = getattr(fallback, "structured_output_kwarg", None)
+        if not target or not self._fallback_enforces_structured_output(fallback):
+            logger.warning(
+                f"Fallback {fallback.model_id} cannot enforce structured "
+                f"output; continuing unstructured"
+            )
+            return adapted
+
+        response_format = present.get("response_format")
+        if (
+            isinstance(response_format, dict)
+            and response_format.get("type") == "json_object"
+        ):
+            # json_object mode is an OpenAI-wire shape with no wired equivalent
+            # elsewhere; keep it only within the same family.
+            if target == "response_format":
+                adapted[target] = response_format
+            else:
+                logger.warning(
+                    f"Fallback {fallback.model_id} has no json_object mode; "
+                    f"continuing unstructured"
+                )
+            return adapted
+
+        if target in present:
+            # Same wire family (OpenAI -> openai_compatible, Google -> Google):
+            # the prepared value is already in the backup's format.
+            adapted[target] = present[target]
+            return adapted
+
+        source = self._structured_output_source
+        if not source:
+            source = self._recover_structured_output_source(present)
+        if not source:
+            logger.warning(
+                f"Fallback {fallback.model_id} needs {target} but the source "
+                f"schema is unavailable; continuing unstructured"
+            )
+            return adapted
+
+        schema, strict = source
+        try:
+            prepared = fallback.prepare_structured_output_format(schema, strict=strict)
+        except Exception:
+            logger.warning(
+                f"Failed to prepare structured output for fallback "
+                f"{fallback.model_id}; continuing unstructured",
+                exc_info=True,
+            )
+            prepared = None
+        if prepared:
+            adapted[target] = prepared
+        else:
+            logger.warning(
+                f"Fallback {fallback.model_id} cannot enforce structured "
+                f"output; continuing unstructured"
+            )
+        return adapted
+
     def _execute_with_fallback(
         self, method_name: str, decorators: list, *args, **kwargs
     ):
@@ -371,6 +515,9 @@ class BaseLLM(ABC):
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
             fallback_kwargs = {**kwargs, "model": fallback.model_id}
+            fallback_kwargs = self._adapt_structured_output_kwargs(
+                fallback, fallback_kwargs
+            )
             if fallback_kwargs.get("messages"):
                 fallback_kwargs["messages"] = self._prepare_fallback_messages(
                     fallback,
@@ -502,6 +649,9 @@ class BaseLLM(ABC):
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
             fallback_kwargs = {**kwargs, "model": fallback.model_id}
+            fallback_kwargs = self._adapt_structured_output_kwargs(
+                fallback, fallback_kwargs
+            )
             if fallback_kwargs.get("messages"):
                 fallback_kwargs["messages"] = self._prepare_fallback_messages(
                     fallback,
@@ -673,9 +823,13 @@ class BaseLLM(ABC):
     def _supports_structured_output(self):
         return False
 
-    def prepare_structured_output_format(self, json_schema):
-        """Prepare structured output format specific to the LLM provider"""
-        _ = json_schema
+    def prepare_structured_output_format(self, json_schema, strict=True):
+        """Prepare structured output format specific to the LLM provider.
+
+        Overrides must record ``self._structured_output_source`` so a
+        cross-provider fallback can re-prepare the schema in its own format.
+        """
+        _ = (json_schema, strict)
         return None
 
     def get_supported_attachment_types(self):

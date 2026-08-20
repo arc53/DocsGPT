@@ -109,10 +109,10 @@ class TestNoVectorIndexOnEmptyTable:
     sources with hundreds of chunks, silently.
     """
 
-    def test_ensure_table_exists_creates_no_vector_index(self):
+    def test_create_schema_creates_no_vector_index(self):
         import inspect
 
-        source = inspect.getsource(PGVectorStore._ensure_table_exists)
+        source = inspect.getsource(PGVectorStore.create_schema)
         assert "USING ivfflat" not in source
         assert "USING hnsw" not in source
         # the non-vector indexes are still expected

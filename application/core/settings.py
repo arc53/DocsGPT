@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     AUTO_MIGRATE: bool = True
     # On app startup, create the target Postgres database if it's missing (requires CREATEDB privilege). Dev-friendly default.
     AUTO_CREATE_DB: bool = True
+    # On app startup, create the pgvector/graph tables and verify the embedding dimension. Set False to manage them
+    # out-of-band — there is no Alembic migration for the vector DB because it may be a separate cluster.
+    AUTO_VECTOR_SCHEMA: bool = True
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
     DEFAULT_LLM_TOKEN_LIMIT: int = 128000  # Fallback when model not found in registry
@@ -108,6 +111,12 @@ class Settings(BaseSettings):
     DOCLING_COMPILE_TORCH_MODELS: bool = False
     DOCLING_TABULAR_MAX_BYTES: int = 2_000_000
     DOCLING_MARKUP_MAX_BYTES: int = 8_000_000
+    # Chars-per-page floor below which an OCR'd PDF/image parse is treated as a docling
+    # pipeline dropout (long-running workers were observed returning zero characters for
+    # every scanned page after a long scanned PDF, with no error) rather than as content.
+    # Such a parse is retried once on a fresh full-page-OCR converter and then fails
+    # loudly instead of indexing an empty document. 0 disables the guard.
+    DOCLING_OCR_MIN_CHARS_PER_PAGE: int = 20
     # Read PDF *attachments* via their embedded text layer (pypdfium2) instead
     # of docling, falling back to docling when there is no text layer to read.
     # Attachments go into a prompt, so docling's structural markdown earns far
@@ -127,6 +136,9 @@ class Settings(BaseSettings):
     # ``RetrieverCreator.retrievers`` registry keys (``classic`` / ``default``),
     # NOT the legacy ``classic_rag`` label which never matched the registry.
     RETRIEVERS_ENABLED: list = ["classic", "default"]
+    # Concurrent per-source vector searches within one retrieval (multi-source chats);
+    # the query is embedded once and shared across sources.
+    RETRIEVAL_MAX_PARALLEL_SOURCES: int = 4
     # Kill-switch for per-source retrieval dispatch. When False the retrieval
     # path collapses to today's single-retriever behavior (consumed by the
     # Dispatcher in a later change; defined here so the flag exists up front).
@@ -225,6 +237,9 @@ class Settings(BaseSettings):
     # dialect form (``postgresql+psycopg://``) are all accepted and
     # normalized internally for ``psycopg.connect()``.
     PGVECTOR_CONNECTION_STRING: Optional[str] = None
+    # Per-process psycopg connection pool for the vector store; 0 = one direct
+    # connection per store instance, the legacy behaviour.
+    PGVECTOR_POOL_MAX_SIZE: int = 8
     # IVFFlat probes for vector search. ``None`` derives sqrt(lists) from the
     # index itself; set an integer to pin it. Higher = better recall, more scan.
     PGVECTOR_IVFFLAT_PROBES: Optional[int] = None
@@ -428,6 +443,12 @@ class Settings(BaseSettings):
     # ``read_document`` parsing on a dedicated Celery ``parsing`` queue (backend parser).
     DOCUMENT_PARSE_QUEUE: str = "parsing"  # queue the parse_document task is routed to
     DOCUMENT_PARSE_TIMEOUT: int = 120  # seconds the tool awaits the enqueued parse before degrading
+    # The base timeout is a FLOOR: the awaited window (and the task's per-call Celery
+    # time limits) grow with the document's size, because OCR cost scales with pages
+    # -- a 30-page scan needs ~60s, a 100-page scan several minutes. Without this a
+    # large scan is silently dropped from the node/tool at the base window.
+    DOCUMENT_PARSE_TIMEOUT_PER_MB: int = 60  # extra seconds of parse window per MiB of input
+    DOCUMENT_PARSE_TIMEOUT_MAX: int = 900  # absolute ceiling on the size-scaled parse window
     DOCUMENT_PARSE_MAX_BYTES: int = 0  # cap on a parsed document's bytes (0 = reuse SANDBOX_MAX_INPUT_BYTES)
     DOCUMENT_MAX_DECOMPRESSED_BYTES: int = 300 * 1024 * 1024
     DOCUMENT_MAX_ARCHIVE_ENTRIES: int = 10000
@@ -441,6 +462,12 @@ class Settings(BaseSettings):
     # avoid serializing dozens of parses; documents past the cap are skipped with
     # a truncation note instead of extracted.
     WORKFLOW_NODE_EXTRACT_MAX_FILES: int = 5
+    # Total wall clock one node may spend on blocking document parses, shared
+    # across all of them. The per-document window scales with size (up to
+    # DOCUMENT_PARSE_TIMEOUT_MAX), so without a shared budget a node could
+    # serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows and hold a web
+    # threadpool slot for that whole time.
+    WORKFLOW_NODE_EXTRACT_BUDGET_SECONDS: int = 900
     # A workflow run row is pre-created as ``running`` and finalized when its
     # generator completes; a client disconnect or worker crash can strand it in
     # ``running`` forever. The beat reaper fails runs still ``running`` past this

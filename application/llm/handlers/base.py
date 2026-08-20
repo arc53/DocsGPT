@@ -1264,14 +1264,21 @@ class LLMHandler(ABC):
                 return ""
 
             # Cap reached: force one final tool-less call so the stream
-            # always ends with content rather than cutting off.
+            # always ends with content rather than cutting off. The
+            # instruction rides as a USER turn, not a trailing system
+            # message: strict chat templates (Cloudflare's qwen, prod
+            # 2026-08-18) reject any request whose system message is not
+            # at position 0 — 400 "System message must be at the
+            # beginning" — killing the primary on the very turn meant to
+            # wrap up. ``tools=None`` below enforces the cap regardless
+            # of the role.
             if iteration >= MAX_TOOL_ITERATIONS:
                 logger.warning(
                     "agent tool loop hit cap (%d); forcing finalize",
                     MAX_TOOL_ITERATIONS,
                 )
                 messages.append(
-                    {"role": "system", "content": _FINALIZE_INSTRUCTION},
+                    {"role": "user", "content": _FINALIZE_INSTRUCTION},
                 )
                 response = agent.llm.gen(
                     model=getattr(agent.llm, "model_id", None) or agent.model_id,
@@ -1458,7 +1465,7 @@ class LLMHandler(ABC):
                 # Mirror the finalize-round contract at the bottom of
                 # this method: when the cap or context limit already
                 # forced ``tools=None`` (with an accompanying "no more
-                # tools" system message), the recovery must not reopen
+                # tools" user-turn instruction), the recovery must not reopen
                 # tools, or the model could run one extra tool call past
                 # the cap. ``_iteration >= MAX_TOOL_ITERATIONS`` catches
                 # the finalize round.
@@ -1526,11 +1533,13 @@ class LLMHandler(ABC):
         next_iteration = _iteration + 1
         cap_reached = next_iteration >= MAX_TOOL_ITERATIONS
 
-        # Check if context limit was reached during tool execution
+        # Check if context limit was reached during tool execution.
+        # Injected as a USER turn, not a trailing system message — see the
+        # cap branch below for why (strict chat templates 400 on
+        # non-leading system messages).
         if hasattr(agent, 'context_limit_reached') and agent.context_limit_reached:
-            # Add system message warning about context limit
             messages.append({
-                "role": "system",
+                "role": "user",
                 "content": (
                     "WARNING: Context window limit has been reached. "
                     "Please provide a final response to the user without making additional tool calls. "
@@ -1539,12 +1548,19 @@ class LLMHandler(ABC):
             })
             logger.info("Context limit reached - instructing agent to wrap up")
         elif cap_reached:
+            # USER turn, not a trailing system message: Cloudflare's qwen
+            # (vLLM-style template) 400s any request whose system message
+            # is not at position 0 ("System message must be at the
+            # beginning", prod 2026-08-18) — the finalize turn killed the
+            # primary and the answer came from the fallback. Probed
+            # 2026-08-20: qwen accepts the identical text as a user turn.
+            # ``tools=None`` below enforces the cap regardless of role.
             logger.warning(
                 "agent tool loop hit cap (%d); forcing finalize",
                 MAX_TOOL_ITERATIONS,
             )
             messages.append(
-                {"role": "system", "content": _FINALIZE_INSTRUCTION},
+                {"role": "user", "content": _FINALIZE_INSTRUCTION},
             )
 
         # Hard pre-send gate: tool results appended this round may have

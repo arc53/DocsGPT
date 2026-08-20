@@ -110,12 +110,20 @@ class MilvusStore(BaseVectorStore):
         k: int = 2,
         *args,
         score_threshold: Optional[float] = None,
+        query_vector: Optional[List[float]] = None,
         **kwargs,
     ) -> List[Tuple[Document, float]]:
-        """Search, pairing each hit with its cosine similarity."""
+        """Search, pairing each hit with its cosine similarity.
+
+        Args:
+            query_vector: Precomputed embedding of ``question``; when given the
+                store skips embedding the query itself.
+        """
+        if query_vector is None:
+            query_vector = self._embeddings.embed_query(question)
         results = self._client.search(
             collection_name=self._collection,
-            data=[self._embeddings.embed_query(question)],
+            data=[query_vector],
             filter=self._filter,
             limit=k,
             output_fields=["text", "metadata"],

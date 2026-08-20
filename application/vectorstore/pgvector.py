@@ -6,11 +6,27 @@ from typing import List, Optional, Any, Dict
 from psycopg.types.json import Jsonb
 
 from application.core.settings import settings
+from application.vectorstore import pgconn
 from application.vectorstore.base import BaseVectorStore
 from application.vectorstore.document_class import Document
 
 # table name -> IVFFlat ``lists`` (None when the table has no such index)
 _IVFFLAT_LISTS_CACHE: Dict[str, Optional[int]] = {}
+
+DEFAULT_EMBEDDING_DIM = 768
+# Advisory-lock key shared with the boot hook so concurrent workers serialize DDL.
+SCHEMA_LOCK_KEY = "docsgpt:vectors:ddl"
+
+# The connection pools moved to ``application.vectorstore.pgconn`` so the graph
+# store can share them without importing this module. Only the names something
+# actually reaches through *this* module stay bound here — same objects, not
+# copies: callers and tests read ``pgvector._POOLS``, patch
+# ``pgvector._pool_for``, and assert on ``pgvector.DEFAULT_POOL_MAX_SIZE``.
+# Anything else belongs to ``pgconn`` alone; re-exporting it here would just be
+# a second name to keep in sync.
+DEFAULT_POOL_MAX_SIZE = pgconn.DEFAULT_POOL_MAX_SIZE
+_POOLS = pgconn._POOLS
+_pool_for = pgconn.pool_for
 
 
 class PGVectorStore(BaseVectorStore):
@@ -63,16 +79,67 @@ class PGVectorStore(BaseVectorStore):
         self._psycopg = psycopg
         self._register_vector = register_vector
         self._connection = None
-        self._ensure_table_exists()
+        self._pooled = False
+        self._pool_max_size = self._resolve_pool_max_size()
+        # No DDL here. The retriever builds one store per source per request, so
+        # construction must stay free: schema is owned at boot by
+        # ``ensure_vector_schema``, and the write path below re-checks it once as
+        # a safety net for processes that never ran the boot hook.
+        self._schema_ensured = False
+
+    # Shared with ``GraphStore`` via pgconn so the two can never disagree.
+    _resolve_pool_max_size = staticmethod(pgconn.resolve_pool_max_size)
 
     def _get_connection(self):
-        """Get or create database connection"""
-        if self._connection is None or self._connection.closed:
-            self._connection = self._psycopg.connect(self._connection_string)
-            # Register pgvector types
-            self._register_vector(self._connection)
-            self._apply_ivfflat_probes(self._connection)
+        """Get or create this store's connection, pooled unless pooling is off."""
+        if self._connection is not None and self._connection.closed:
+            # Hand the dead connection back before replacing it: psycopg_pool
+            # never reclaims a checkout that is not returned, so dropping it
+            # costs the pool a slot for the life of the process.
+            self.close()
+        if self._connection is None:
+            if self._pool_max_size > 0:
+                self._connection = _pool_for(
+                    self._connection_string, self._pool_max_size
+                ).getconn()
+                self._pooled = True
+            else:
+                self._connection = self._psycopg.connect(self._connection_string)
+                # Register pgvector types
+                self._register_pgvector_types(self._connection)
+                self._pooled = False
+            self._apply_probes_once(self._connection)
         return self._connection
+
+    def _register_pgvector_types(self, conn) -> None:
+        """Register pgvector's adapters, tolerating a not-yet-created extension.
+
+        Kept as a method rather than calling :func:`pgconn.configure_pooled_connection`
+        directly because ``self._register_vector`` is the seam the tests patch.
+        """
+        try:
+            self._register_vector(conn)
+        except Exception as e:
+            logging.debug("pgvector types not registered yet: %s", e)
+
+    def _apply_probes_once(self, conn) -> None:
+        """Set ``ivfflat.probes`` once per physical connection and table.
+
+        A pooled connection outlives the store that checked it out, and the
+        ``SET`` is session-level, so the probe lookup must not repeat on every
+        checkout. The marker lives on the connection object itself because that
+        is what the pool recycles.
+        """
+        if getattr(conn, "_docsgpt_probes_table", None) == self._table_name:
+            return
+        self._apply_ivfflat_probes(conn)
+        try:
+            # ``SET`` (not SET LOCAL) is undone by a rollback, so make it stick
+            # before any query runs on this connection.
+            conn.commit()
+            conn._docsgpt_probes_table = self._table_name
+        except Exception as e:  # never let session tuning break a query
+            logging.debug("Could not persist ivfflat.probes: %s", e)
 
     def _ivfflat_lists(self, conn) -> Optional[int]:
         """Return the ``lists`` value of this table's IVFFlat index, if any.
@@ -125,30 +192,48 @@ class PGVectorStore(BaseVectorStore):
         except Exception as e:  # older pgvector / no index — search still works
             logging.debug("Could not set ivfflat.probes: %s", e)
 
-    def _ensure_table_exists(self):
-        """Create table and enable pgvector extension if they don't exist"""
-        conn = self._get_connection()
+    @staticmethod
+    def create_schema(
+        conn,
+        *,
+        table_name: str = "documents",
+        vector_column: str = "embedding",
+        text_column: str = "text",
+        metadata_column: str = "metadata",
+        dimension: int = DEFAULT_EMBEDDING_DIM,
+    ) -> None:
+        """Create the extension, table and indexes on ``conn`` without committing.
+
+        Shared by the boot hook (``ensure_vector_schema``) and the store's own
+        write-path safety net; the caller owns the transaction.
+
+        Args:
+            conn: Open psycopg connection.
+            table_name: Documents table to create.
+            vector_column: Embedding column name.
+            text_column: Chunk-text column name.
+            metadata_column: JSONB metadata column name.
+            dimension: Width of the embedding vectors.
+        """
         cursor = conn.cursor()
-        
+
         try:
             # Enable pgvector extension
             cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-            
-            embedding_dim = getattr(self._embedding, 'dimension', 768)
-            
+
             # Create table with vector column
             create_table_query = f"""
-            CREATE TABLE IF NOT EXISTS {self._table_name} (
+            CREATE TABLE IF NOT EXISTS {table_name} (
                 id SERIAL PRIMARY KEY,
-                {self._text_column} TEXT NOT NULL,
-                {self._vector_column} vector({embedding_dim}),
-                {self._metadata_column} JSONB,
+                {text_column} TEXT NOT NULL,
+                {vector_column} vector({dimension}),
+                {metadata_column} JSONB,
                 source_id TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """
             cursor.execute(create_table_query)
-            
+
             # NO vector index is created here, deliberately.
             #
             # This runs when the table is first created, i.e. on an EMPTY
@@ -166,25 +251,88 @@ class PGVectorStore(BaseVectorStore):
             # data, once a corpus is large enough to need one.
             # Create index for source_id filtering
             source_index_query = f"""
-            CREATE INDEX IF NOT EXISTS {self._table_name}_source_id_idx
-            ON {self._table_name} (source_id);
+            CREATE INDEX IF NOT EXISTS {table_name}_source_id_idx
+            ON {table_name} (source_id);
             """
             cursor.execute(source_index_query)
 
             # Functional GIN index backing keyword_search full-text queries.
             fts_index_query = f"""
-            CREATE INDEX IF NOT EXISTS {self._table_name}_text_fts_idx
-            ON {self._table_name} USING gin(to_tsvector('english', {self._text_column}));
+            CREATE INDEX IF NOT EXISTS {table_name}_text_fts_idx
+            ON {table_name} USING gin(to_tsvector('english', {text_column}));
             """
             cursor.execute(fts_index_query)
+        finally:
+            cursor.close()
 
+    @staticmethod
+    def table_dimension(
+        conn, table_name: str = "documents", vector_column: str = "embedding"
+    ) -> Optional[int]:
+        """Width declared by the table's vector column, or ``None`` if unknown.
+
+        ``None`` means the table is absent or the column is not a ``vector``.
+        """
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT to_regclass(%s);", (table_name,))
+            row = cursor.fetchone()
+            if not row or row[0] is None:
+                return None
+            cursor.execute(
+                "SELECT format_type(a.atttypid, a.atttypmod) FROM pg_attribute a "
+                "WHERE a.attrelid = %s::regclass AND a.attname = %s "
+                "AND NOT a.attisdropped",
+                (table_name, vector_column),
+            )
+            row = cursor.fetchone()
+            if not row or not row[0]:
+                return None
+            match = re.search(r"vector\((\d+)\)", str(row[0]))
+            return int(match.group(1)) if match else None
+        finally:
+            cursor.close()
+
+    def _ensure_table_exists(self) -> None:
+        """Create this store's schema under an advisory lock, then commit."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s));", (SCHEMA_LOCK_KEY,)
+                )
+            finally:
+                cursor.close()
+            self.create_schema(
+                conn,
+                table_name=self._table_name,
+                vector_column=self._vector_column,
+                text_column=self._text_column,
+                metadata_column=self._metadata_column,
+                dimension=getattr(self._embedding, "dimension", DEFAULT_EMBEDDING_DIM),
+            )
             conn.commit()
+            # The extension may have just been created; pick up its adapters so
+            # the insert that follows can bind a vector.
+            self._register_pgvector_types(conn)
         except Exception as e:
             conn.rollback()
             logging.error(f"Error creating table: {e}")
             raise
-        finally:
-            cursor.close()
+
+    def _ensure_schema_once(self) -> None:
+        """Create the schema on this instance's first write, at most once.
+
+        Readers never create schema — boot owns it. This is the safety net for a
+        process that never ran the boot hook (scripts, tests, the first ingest on
+        a brand-new deployment); a read against a missing table surfaces
+        psycopg's own error, like every other store.
+        """
+        if self._schema_ensured:
+            return
+        self._ensure_table_exists()
+        self._schema_ensured = True
 
     score_kind = "cosine_similarity"
 
@@ -194,6 +342,7 @@ class PGVectorStore(BaseVectorStore):
         k: int = 2,
         *args,
         score_threshold: float = None,
+        query_vector: Optional[List[float]] = None,
         **kwargs,
     ) -> List[Document]:
         """Search for similar documents using vector similarity.
@@ -204,11 +353,19 @@ class PGVectorStore(BaseVectorStore):
             score_threshold: Optional cosine-similarity floor in ``[0, 1]``.
                 Cosine distance = ``1 - similarity``; rows with similarity below
                 the threshold (distance above ``1 - threshold``) are dropped.
+            query_vector: Precomputed embedding of ``question``. Supplied by a
+                caller searching several sources with one query, so the query is
+                embedded once instead of once per store.
         """
         return [
             doc
             for doc, _ in self.search_with_scores(
-                question, k, *args, score_threshold=score_threshold, **kwargs
+                question,
+                k,
+                *args,
+                score_threshold=score_threshold,
+                query_vector=query_vector,
+                **kwargs,
             )
         ]
 
@@ -291,6 +448,7 @@ class PGVectorStore(BaseVectorStore):
         k: int = 2,
         *args,
         score_threshold: float = None,
+        query_vector: Optional[List[float]] = None,
         **kwargs,
     ) -> List[tuple]:
         """Same search as :meth:`search`, pairing each hit with its similarity.
@@ -298,8 +456,13 @@ class PGVectorStore(BaseVectorStore):
         The score is the cosine similarity (``1 - cosine_distance``) — the exact
         quantity ``score_threshold`` is compared against, so a caller can read a
         result's score and pick a threshold from it directly.
+
+        Args:
+            query_vector: Precomputed embedding of ``question``; when given the
+                store skips embedding the query itself.
         """
-        query_vector = self._embedding.embed_query(question)
+        if query_vector is None:
+            query_vector = self._embedding.embed_query(question)
 
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -334,6 +497,11 @@ class PGVectorStore(BaseVectorStore):
                     (Document(page_content=text, metadata=metadata), score)
                 )
 
+            # End the read transaction. On a persistent (pooled) connection an
+            # uncommitted SELECT leaves the backend "idle in transaction",
+            # pinning a snapshot and blocking VACUUM for as long as the store
+            # lives.
+            conn.commit()
             return documents
 
         except Exception as e:
@@ -381,10 +549,16 @@ class PGVectorStore(BaseVectorStore):
                 metadata = metadata or {}
                 documents.append(Document(page_content=text, metadata=metadata))
 
+            conn.commit()
             return documents
 
         except Exception as e:
             logging.error(f"Error in keyword search: {e}", exc_info=True)
+            try:
+                conn.rollback()
+            except Exception:
+                # Connection already gone; nothing left to roll back.
+                pass
             return []
         finally:
             cursor.close()
@@ -402,7 +576,8 @@ class PGVectorStore(BaseVectorStore):
 
         embeddings = self._embedding.embed_documents(texts)
         metadatas = metadatas or [{}] * len(texts)
-        
+
+        self._ensure_schema_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         
@@ -474,11 +649,17 @@ class PGVectorStore(BaseVectorStore):
                     "text": text,
                     "metadata": metadata or {}
                 })
-            
+
+            conn.commit()
             return chunks
-            
+
         except Exception as e:
             logging.error(f"Error getting chunks: {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                # Connection already gone; nothing left to roll back.
+                pass
             return []
         finally:
             cursor.close()
@@ -495,7 +676,8 @@ class PGVectorStore(BaseVectorStore):
 
         if not embeddings:
             raise ValueError("Could not generate embedding for chunk")
-        
+
+        self._ensure_schema_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         
@@ -570,7 +752,22 @@ class PGVectorStore(BaseVectorStore):
         finally:
             cursor.close()
 
+    def close(self) -> None:
+        """Release this store's connection: back to the pool, or closed outright.
+
+        A pooled connection is rolled back first when it is still in a
+        transaction, so the next borrower gets a clean session.
+        """
+        conn = getattr(self, "_connection", None)
+        if conn is None:
+            return
+        self._connection = None
+        pgconn.release(self._connection_string, conn, getattr(self, "_pooled", False))
+
     def __del__(self):
-        """Close database connection when object is destroyed"""
-        if hasattr(self, '_connection') and self._connection and not self._connection.closed:
-            self._connection.close()
+        """Release the connection when the object is destroyed. Never raises."""
+        try:
+            self.close()
+        except Exception:
+            # Interpreter teardown can null out module globals; never raise here.
+            pass

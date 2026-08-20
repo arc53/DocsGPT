@@ -12,6 +12,7 @@ from application.storage.storage_creator import StorageCreator
 
 class GoogleLLM(BaseLLM):
     provider_name = "google"
+    structured_output_kwarg = "response_schema"
 
     def __init__(
         self, api_key=None, user_api_key=None, decoded_token=None, *args, **kwargs
@@ -674,6 +675,8 @@ class GoogleLLM(BaseLLM):
         ``strict`` is accepted for signature parity with the OpenAI provider;
         Google enforces the schema natively via ``response_schema``.
         """
+        # Recorded so a cross-provider fallback can re-prepare the raw schema.
+        self._structured_output_source = (json_schema, strict) if json_schema else None
         if not json_schema:
             return None
         type_map = {

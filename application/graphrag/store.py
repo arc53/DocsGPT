@@ -1,12 +1,14 @@
 """Per-source knowledge-graph store co-located with the pgvector ``documents`` table.
 
-GraphRAG is pgvector-only: the graph tables live in the same DB as the
-pgvector store and are created on-demand (``CREATE TABLE IF NOT EXISTS`` +
-``CREATE EXTENSION IF NOT EXISTS vector``), mirroring
-``PGVectorStore._ensure_table_exists`` rather than going through app-DB Alembic.
-That DB may be a separate cluster (e.g. Neon) from the app DB where ``sources``
-lives, so ``source_id`` is a plain indexed UUID column with no cross-DB FK and
-all ids are generated in Python.
+GraphRAG is pgvector-only: the graph tables live in the same DB as the pgvector
+store and are created at boot by ``ensure_vector_schema`` (``CREATE TABLE IF NOT
+EXISTS`` + ``CREATE EXTENSION IF NOT EXISTS vector``), mirroring
+``PGVectorStore.create_schema`` rather than going through app-DB Alembic.
+Constructing a store runs no DDL and opens no connection; the write methods
+re-check the schema once per instance as a safety net for a process that never
+ran the boot hook. That DB may be a separate cluster (e.g. Neon) from the app DB
+where ``sources`` lives, so ``source_id`` is a plain indexed UUID column with no
+cross-DB FK and all ids are generated in Python.
 """
 
 from __future__ import annotations
@@ -18,8 +20,16 @@ from typing import Any, Dict, List, Optional
 from psycopg.types.json import Jsonb
 
 from application.core.settings import settings
+from application.vectorstore import pgconn
 
 DEFAULT_NAME_EMBEDDING_DIM = 768
+
+# Bound here (same objects, not copies) from the shared pool module, which both
+# stores already import. Reaching through ``pgvector`` instead would drag the
+# embeddings stack in at import time; ``pgconn`` imports nothing heavier than
+# ``logging`` and ``threading``. 0 disables pooling.
+DEFAULT_POOL_MAX_SIZE = pgconn.DEFAULT_POOL_MAX_SIZE
+_resolve_pool_max_size = pgconn.resolve_pool_max_size
 
 MAX_SUBGRAPH_NODES = 500
 MAX_SUBGRAPH_EDGES = 2000
@@ -97,13 +107,51 @@ class GraphStore:
         self._psycopg = psycopg
         self._register_vector = register_vector
         self._connection = None
-        self._ensure_tables()
+        self._pooled = False
+        self._pool_max_size = _resolve_pool_max_size()
+        # No DDL here: the graph tables are created at boot alongside the
+        # pgvector table, and every write re-checks once (see _ensure_tables_once).
+        self._tables_ensured = False
 
     def _get_connection(self):
-        if self._connection is None or self._connection.closed:
-            self._connection = self._psycopg.connect(self._connection_string)
-            self._register_vector(self._connection)
+        """Get or create this store's connection, pooled unless pooling is off.
+
+        Shares :mod:`application.vectorstore.pgconn`'s per-DSN pool with
+        ``PGVectorStore``, so a retrieval that touches both pays one checkout
+        each instead of two fresh connect handshakes.
+        """
+        if self._connection is not None and self._connection.closed:
+            # Hand the dead connection back before replacing it; an unreturned
+            # checkout is a pool slot lost for the life of the process.
+            self.close()
+        if self._connection is None:
+            if self._pool_max_size > 0:
+                self._connection = pgconn.pool_for(
+                    self._connection_string, self._pool_max_size
+                ).getconn()
+                self._pooled = True
+                # No _register_pgvector_types here: the pool's ``configure``
+                # hook already ran it on this physical connection, and repeating
+                # it would cost a catalog lookup on every checkout. The DDL path
+                # (_ensure_tables) still re-registers after CREATE EXTENSION.
+            else:
+                self._connection = self._psycopg.connect(self._connection_string)
+                self._register_pgvector_types(self._connection)
+                self._pooled = False
         return self._connection
+
+    def _register_pgvector_types(self, conn) -> None:
+        """Register pgvector's adapters, tolerating a not-yet-created extension.
+
+        ``register_vector`` looks the ``vector`` type up in the catalog and
+        raises when it is absent — which is exactly the state of a brand-new
+        database, before ``CREATE EXTENSION`` has run. Swallow that so the
+        schema bootstrap can proceed; it re-registers once the type exists.
+        """
+        try:
+            self._register_vector(conn)
+        except Exception as e:
+            logging.debug("pgvector types not registered yet: %s", e)
 
     def _embedding_dim(self) -> int:
         """Dimension of the configured embeddings model, matching ``PGVectorStore``.
@@ -111,20 +159,25 @@ class GraphStore:
         Falls back to ``DEFAULT_NAME_EMBEDDING_DIM`` so the graph table and the
         pgvector ``documents`` table always agree on the configured model.
         """
-        from application.vectorstore.base import EmbeddingsSingleton
+        from application.vectorstore.base import get_embeddings
 
-        embedding = EmbeddingsSingleton.get_instance(
-            settings.EMBEDDINGS_NAME, settings.EMBEDDINGS_KEY
-        )
+        embedding = get_embeddings()
         return getattr(embedding, "dimension", DEFAULT_NAME_EMBEDDING_DIM)
 
-    def _ensure_tables(self):
-        conn = self._get_connection()
+    @staticmethod
+    def create_schema(conn, *, dimension: int = DEFAULT_NAME_EMBEDDING_DIM) -> None:
+        """Create the graph tables and indexes on ``conn`` without committing.
+
+        Shared by the boot hook (``ensure_vector_schema``) and the store's own
+        write-path safety net; the caller owns the transaction.
+
+        Args:
+            conn: Open psycopg connection to the pgvector database.
+            dimension: Width of the node name-embedding vectors.
+        """
         cursor = conn.cursor()
         try:
             cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-
-            embedding_dim = self._embedding_dim()
 
             cursor.execute(
                 f"""
@@ -137,7 +190,7 @@ class GraphStore:
                     description TEXT,
                     degree INT DEFAULT 0,
                     doc_freq INT DEFAULT 0,
-                    name_embedding vector({embedding_dim}),
+                    name_embedding vector({dimension}),
                     UNIQUE (source_id, normalized_name)
                 );
                 """
@@ -206,14 +259,44 @@ class GraphStore:
             # post-filter in search_nodes_by_embedding that silently returns
             # zero nodes, and graph_rag does not fall back when the source has
             # nodes. Add an index deliberately once a graph is large enough.
+        finally:
+            cursor.close()
 
+    def _ensure_tables(self):
+        """Create the graph schema under an advisory lock, then commit."""
+        # Same key as the pgvector store and the boot hook: one lock guards all
+        # DDL in this database, so concurrent workers never race each other.
+        from application.vectorstore.pgvector import SCHEMA_LOCK_KEY
+
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s));", (SCHEMA_LOCK_KEY,)
+                )
+            finally:
+                cursor.close()
+            self.create_schema(conn, dimension=self._embedding_dim())
             conn.commit()
+            # The extension may have just been created; pick up its adapters.
+            self._register_pgvector_types(conn)
         except Exception as e:
             conn.rollback()
             logging.error(f"Error creating graph tables: {e}")
             raise
-        finally:
-            cursor.close()
+
+    def _ensure_tables_once(self) -> None:
+        """Create the graph schema on this instance's first write, at most once.
+
+        Readers never create tables — boot owns the schema. This is the safety
+        net for a process that never ran the boot hook (scripts, tests, the
+        first extraction on a brand-new deployment).
+        """
+        if getattr(self, "_tables_ensured", False):
+            return
+        self._ensure_tables()
+        self._tables_ensured = True
 
     def _upsert_node(
         self,
@@ -287,6 +370,7 @@ class GraphStore:
         incremented, the type is refreshed if previously empty, and the
         embedding is refreshed when provided. Returns the node id either way.
         """
+        self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
@@ -351,6 +435,7 @@ class GraphStore:
         source_chunk_ids: Optional[List[str]] = None,
     ) -> str:
         """Insert an edge and bump the degree of both endpoints. Returns its id."""
+        self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
@@ -384,6 +469,7 @@ class GraphStore:
         )
 
     def link_node_chunk(self, source_id: str, node_id: str, chunk_id: str):
+        self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
@@ -415,6 +501,7 @@ class GraphStore:
         are not bumped here — the caller runs ``set_node_degrees`` once at the
         end. Returns ``(nodes_upserted, edges_added)``.
         """
+        self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         node_ids: Dict[str, str] = {}
@@ -536,6 +623,53 @@ class GraphStore:
         except Exception as e:
             logging.error(f"Error counting nodes: {e}")
             return 0
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def count_nodes_many(self, source_ids: List[str]) -> Dict[str, int]:
+        """Node counts for several sources in one round trip.
+
+        Replaces the retriever's per-source ``count_nodes`` fan-out: N sources
+        used to cost N queries (each on its own fresh connection). Ids with no
+        rows are filled in with 0 in Python, so the caller always gets an entry
+        for every id it asked about.
+
+        Args:
+            source_ids: Source ids to count; empty/falsy entries are ignored.
+
+        Returns:
+            dict: ``{source_id: node_count}``, zero-filled. All zeros when the
+            query fails, which drives the ClassicRAG fallback exactly as a
+            failing ``count_nodes`` does.
+        """
+        ids = [str(s) for s in source_ids if s]
+        if not ids:
+            return {}
+        counts: Dict[str, int] = {source_id: 0 for source_id in ids}
+        # ``source_id`` is a UUID column, so Postgres hands back the canonical
+        # lowercase text. Map it to the exact string the caller passed, or a
+        # differently-cased id would land under a second key and read as 0.
+        by_canonical = {source_id.lower(): source_id for source_id in ids}
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT source_id, count(*)
+                FROM graph_nodes
+                WHERE source_id = ANY(%s)
+                GROUP BY source_id;
+                """,
+                (ids,),
+            )
+            for row in cursor.fetchall():
+                returned = str(row[0])
+                counts[by_canonical.get(returned.lower(), returned)] = int(row[1])
+            return counts
+        except Exception as e:
+            logging.error(f"Error counting nodes: {e}")
+            return counts
         finally:
             cursor.close()
             conn.rollback()
@@ -860,6 +994,7 @@ class GraphStore:
         (``WHERE id IN (src, dst)`` bumps the endpoint a single time when
         ``src == dst``). ``UNION`` deduplicates the two endpoints of each edge.
         """
+        self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
@@ -891,6 +1026,7 @@ class GraphStore:
             cursor.close()
 
     def mark_chunk(self, source_id: str, chunk_id: str, status: str):
+        self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
@@ -952,6 +1088,7 @@ class GraphStore:
 
     def delete_by_source(self, source_id: str):
         """Remove every graph row for a source (no FK cascade across clusters)."""
+        self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
@@ -972,10 +1109,26 @@ class GraphStore:
         finally:
             cursor.close()
 
+    def close(self) -> None:
+        """Release this store's connection: back to the pool, or closed outright.
+
+        A pooled connection is rolled back first when it is still in a
+        transaction, so the next borrower gets a clean session.
+        """
+        conn = getattr(self, "_connection", None)
+        if conn is None:
+            return
+        self._connection = None
+        pgconn.release(
+            getattr(self, "_connection_string", ""),
+            conn,
+            getattr(self, "_pooled", False),
+        )
+
     def __del__(self):
-        if (
-            hasattr(self, "_connection")
-            and self._connection
-            and not self._connection.closed
-        ):
-            self._connection.close()
+        """Release the connection when the object is destroyed. Never raises."""
+        try:
+            self.close()
+        except Exception:
+            # Interpreter teardown can null out module globals; never raise here.
+            pass

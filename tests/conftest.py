@@ -43,6 +43,7 @@ import os
 # opt back in by setting the env var explicitly.
 os.environ.setdefault("AUTO_MIGRATE", "false")
 os.environ.setdefault("AUTO_CREATE_DB", "false")
+os.environ.setdefault("AUTO_VECTOR_SCHEMA", "false")
 
 import subprocess
 import sys

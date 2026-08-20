@@ -6,7 +6,11 @@ from application.vectorstore.base import (
     BaseVectorStore,
     EmbeddingsSingleton,
     RemoteEmbeddings,
+    get_embeddings,
 )
+
+HF_MPNET = "huggingface_sentence-transformers/all-mpnet-base-v2"
+LOCAL_MPNET = "/app/models/all-mpnet-base-v2"
 
 
 # --- RemoteEmbeddings ---
@@ -254,6 +258,46 @@ class TestEmbeddingsSingleton:
         assert result.headers["Authorization"] == "Bearer sk-from-settings"
 
 
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    def test_get_instance_hf_ignores_positional_key(
+        self, mock_get_wrapper, mock_settings
+    ):
+        """A stray key must not reach the zero-arg HuggingFace factory.
+
+        The factories are ``lambda: EmbeddingsWrapper(...)``, so a caller that
+        passed ``settings.EMBEDDINGS_KEY`` positionally used to blow up with
+        ``TypeError: <lambda>() takes 0 positional arguments``.
+        """
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_wrapper_cls = Mock()
+        mock_instance = Mock()
+        mock_wrapper_cls.return_value = mock_instance
+        mock_get_wrapper.return_value = mock_wrapper_cls
+
+        result = EmbeddingsSingleton.get_instance(HF_MPNET, None)
+
+        assert result is mock_instance
+        mock_wrapper_cls.assert_called_once_with(
+            "sentence-transformers/all-mpnet-base-v2"
+        )
+
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    def test_get_instance_hf_ignores_keyword_args(
+        self, mock_get_wrapper, mock_settings
+    ):
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_wrapper_cls = Mock()
+        mock_get_wrapper.return_value = mock_wrapper_cls
+
+        EmbeddingsSingleton.get_instance(HF_MPNET, openai_api_key="sk-nope")
+
+        mock_wrapper_cls.assert_called_once_with(
+            "sentence-transformers/all-mpnet-base-v2"
+        )
+
+
 # --- BaseVectorStore ---
 
 
@@ -415,3 +459,159 @@ class TestSearchWithScoresDefault:
                 return []
 
         assert _Store().search_with_scores("q") == []
+
+
+# --- get_embeddings (the single resolver) ---
+
+
+@pytest.mark.unit
+class TestGetEmbeddingsResolver:
+    """``get_embeddings`` is the one entry point every caller must use.
+
+    Calling ``EmbeddingsSingleton.get_instance`` directly reproduces neither the
+    bundled local-model path nor the OpenAI/Azure key handling.
+    """
+
+    def setup_method(self):
+        EmbeddingsSingleton._instances = {}
+
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    @patch("os.path.exists", return_value=False)
+    def test_defaults_from_settings_do_not_raise(
+        self, _mock_exists, mock_get_wrapper, mock_settings
+    ):
+        """The default config (HF mpnet name, no key) must resolve, not crash."""
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.EMBEDDINGS_NAME = HF_MPNET
+        mock_settings.EMBEDDINGS_KEY = None
+        mock_wrapper_cls = Mock()
+        mock_instance = Mock()
+        mock_wrapper_cls.return_value = mock_instance
+        mock_get_wrapper.return_value = mock_wrapper_cls
+
+        result = get_embeddings()
+
+        assert result is mock_instance
+        assert set(EmbeddingsSingleton._instances) == {HF_MPNET}
+
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    @patch("os.path.exists", return_value=False)
+    def test_shares_cache_entry_with_vectorstore_helper(
+        self, _mock_exists, mock_get_wrapper, mock_settings
+    ):
+        """Same object, same cache key as the vector stores get — one model."""
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.EMBEDDINGS_NAME = HF_MPNET
+        mock_settings.EMBEDDINGS_KEY = None
+        mock_wrapper_cls = Mock()
+        mock_wrapper_cls.return_value = Mock()
+        mock_get_wrapper.return_value = mock_wrapper_cls
+
+        store_result = ConcreteVectorStore()._get_embeddings(HF_MPNET, None)
+        resolver_result = get_embeddings()
+
+        assert resolver_result is store_result
+        assert set(EmbeddingsSingleton._instances) == {HF_MPNET}
+        mock_wrapper_cls.assert_called_once()
+
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    @patch("os.path.exists")
+    def test_uses_local_model_path_and_caches_it(
+        self, mock_exists, mock_get_wrapper, mock_settings
+    ):
+        """With the bundled model present, the instance is keyed by its path.
+
+        A second call must not load a second copy of the model.
+        """
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.EMBEDDINGS_NAME = HF_MPNET
+        mock_settings.EMBEDDINGS_KEY = None
+        mock_exists.side_effect = lambda path: path == LOCAL_MPNET
+        mock_wrapper_cls = Mock()
+        mock_wrapper_cls.return_value = Mock()
+        mock_get_wrapper.return_value = mock_wrapper_cls
+
+        first = get_embeddings()
+        second = get_embeddings()
+
+        assert first is second
+        assert set(EmbeddingsSingleton._instances) == {LOCAL_MPNET}
+        mock_wrapper_cls.assert_called_once_with(LOCAL_MPNET)
+
+    @patch("application.vectorstore.base.settings")
+    def test_remote_when_base_url_configured(self, mock_settings):
+        mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
+        mock_settings.EMBEDDINGS_NAME = HF_MPNET
+        mock_settings.EMBEDDINGS_KEY = "sk-remote"
+
+        result = get_embeddings()
+
+        assert isinstance(result, RemoteEmbeddings)
+        assert result.api_url == "http://remote:8080"
+        assert result.model_name == HF_MPNET
+        assert result.headers["Authorization"] == "Bearer sk-remote"
+
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    def test_openai_passes_key(self, mock_get_instance, mock_settings):
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.OPENAI_API_BASE = None
+        mock_settings.OPENAI_API_VERSION = None
+        mock_settings.AZURE_DEPLOYMENT_NAME = None
+        mock_settings.EMBEDDINGS_NAME = "openai_text-embedding-ada-002"
+        mock_settings.EMBEDDINGS_KEY = "sk-from-settings"
+
+        get_embeddings()
+
+        mock_get_instance.assert_called_once_with(
+            "openai_text-embedding-ada-002", openai_api_key="sk-from-settings"
+        )
+
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    def test_openai_azure_uses_deployment_name(
+        self, mock_get_instance, mock_settings
+    ):
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.OPENAI_API_BASE = "https://azure.openai.com"
+        mock_settings.OPENAI_API_VERSION = "2023-05-15"
+        mock_settings.AZURE_DEPLOYMENT_NAME = "deploy"
+        mock_settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME = "embed-deploy"
+        mock_settings.EMBEDDINGS_NAME = "openai_text-embedding-ada-002"
+        mock_settings.EMBEDDINGS_KEY = "sk-key"
+
+        get_embeddings()
+
+        mock_get_instance.assert_called_once_with(
+            "openai_text-embedding-ada-002", model="embed-deploy"
+        )
+
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    def test_explicit_arguments_win_over_settings(
+        self, mock_get_instance, mock_settings
+    ):
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.EMBEDDINGS_NAME = HF_MPNET
+        mock_settings.EMBEDDINGS_KEY = "sk-from-settings"
+
+        get_embeddings("some_custom_embedding", "sk-explicit")
+
+        mock_get_instance.assert_called_once_with("some_custom_embedding")
+
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base.get_embeddings")
+    def test_vectorstore_helper_delegates_to_resolver(
+        self, mock_resolver, _mock_settings
+    ):
+        """``BaseVectorStore._get_embeddings`` is a thin delegate now."""
+        sentinel = Mock()
+        mock_resolver.return_value = sentinel
+
+        result = ConcreteVectorStore()._get_embeddings("a-name", "a-key")
+
+        assert result is sentinel
+        mock_resolver.assert_called_once_with("a-name", "a-key")

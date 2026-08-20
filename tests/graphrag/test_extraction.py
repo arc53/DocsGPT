@@ -2,8 +2,8 @@
 
 The LLM and the embeddings model are mocked in every test so the suite makes no
 real model or network calls. A live ``GraphStore`` is exercised against the
-pgvector DB with a unique temp ``source_id`` and torn down via
-``delete_by_source``; if no DB is reachable the live tests skip.
+ephemeral pytest-postgresql cluster (never the operator's dev DB) with a unique
+temp ``source_id``; if pgvector is unavailable there the live tests skip.
 """
 
 from __future__ import annotations
@@ -16,54 +16,55 @@ import pytest
 import application.graphrag.extraction as extraction_module
 from application.graphrag.store import GraphStore
 from application.storage.db.source_config import SourceConfig
+from application.vectorstore import pgconn
 
 extract_graph_for_source = extraction_module.extract_graph_for_source
 
 TEST_EMBEDDING_DIM = 8
 
 
-def _resolve_connection_string():
-    from application.core.settings import settings
-
-    conn = getattr(settings, "PGVECTOR_CONNECTION_STRING", None)
-    if not conn and getattr(settings, "POSTGRES_URI", None):
-        from application.core.db_uri import normalize_pgvector_connection_string
-
-        conn = normalize_pgvector_connection_string(settings.POSTGRES_URI)
-    return conn
-
-
-_GRAPH_TABLES = (
-    "graph_node_chunks",
-    "graph_edges",
-    "graph_nodes",
-    "graph_ingest_progress",
-)
+@pytest.fixture(autouse=True)
+def _close_pools():
+    """Never leak a pool into another test; an ephemeral DSN dies with its DB."""
+    yield
+    for dsn, pool in list(pgconn._POOLS.items()):
+        try:
+            pool.close()
+        except Exception:
+            pass
+        pgconn._POOLS.pop(dsn, None)
 
 
-def _drop_graph_tables(conn_string):
-    import psycopg
-
-    with psycopg.connect(conn_string) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                f"DROP TABLE IF EXISTS {', '.join(_GRAPH_TABLES)} CASCADE;"
-            )
-        conn.commit()
+def _ephemeral_dsn(info) -> str:
+    """libpq DSN for the ephemeral pytest-postgresql database."""
+    password = f":{info.password}" if info.password else ""
+    return (
+        f"postgresql://{info.user}{password}@{info.host}:{info.port}/{info.dbname}"
+    )
 
 
-def _live_store(monkeypatch):
+def _live_store(monkeypatch, info):
+    """Graph store on a fresh ephemeral database, schema created up front.
+
+    Construction runs no DDL any more (boot owns the schema), so the tables are
+    created explicitly here — what ``ensure_vector_schema`` does in production.
+    """
     monkeypatch.setattr(
         GraphStore, "_embedding_dim", lambda self: TEST_EMBEDDING_DIM
     )
-    conn = _resolve_connection_string()
-    if not conn:
-        pytest.skip("No pgvector connection string configured")
+    dsn = _ephemeral_dsn(info)
+    # The pipeline builds its own GraphStore() from settings, so point those at
+    # the ephemeral cluster too — never at the operator's configured DB.
+    from application.core import settings as settings_module
+
+    monkeypatch.setattr(
+        settings_module.settings, "PGVECTOR_CONNECTION_STRING", dsn, raising=False
+    )
+    store = GraphStore(connection_string=dsn)
     try:
-        _drop_graph_tables(conn)
-        store = GraphStore(connection_string=conn)
+        store._ensure_tables()
     except Exception as exc:
-        pytest.skip(f"pgvector DB not reachable: {exc}")
+        pytest.skip(f"pgvector extension unavailable: {exc}")
     return store
 
 
@@ -102,6 +103,11 @@ class _StubEmbedding:
 
 @pytest.fixture
 def stub_embedding(monkeypatch):
+    from application.core.settings import settings
+
+    # The resolver short-circuits to the remote API when this is configured,
+    # which would bypass the stub on a dev machine that sets it.
+    monkeypatch.setattr(settings, "EMBEDDINGS_BASE_URL", None)
     embedding = _StubEmbedding()
     monkeypatch.setattr(
         extraction_module.EmbeddingsSingleton,
@@ -135,10 +141,10 @@ def _extraction_json(entities, relationships):
 @pytest.mark.integration
 class TestExtractionLive:
     @pytest.fixture
-    def store(self, monkeypatch):
-        store = _live_store(monkeypatch)
+    def store(self, monkeypatch, postgresql):
+        store = _live_store(monkeypatch, postgresql.info)
         yield store
-        _drop_graph_tables(store._connection_string)
+        store.close()
 
     @pytest.fixture
     def source_id(self):
@@ -419,3 +425,37 @@ class TestParsing:
         assert extraction_module._chunk_id({"chunk_id": "abc"}) == "abc"
         assert extraction_module._chunk_id({"id": 9}) == "9"
         assert extraction_module._chunk_id({"text": "no id"}) is None
+
+
+@pytest.mark.unit
+class TestEmbeddingsResolution:
+    def test_extraction_uses_shared_resolver(self, monkeypatch):
+        """Extraction must resolve embeddings through ``get_embeddings``."""
+        from unittest.mock import MagicMock
+
+        fake_store = MagicMock()
+        fake_store.pending_chunks.return_value = []
+        monkeypatch.setattr(
+            "application.graphrag.store.GraphStore", lambda *a, **k: fake_store
+        )
+        _install_stub_llm(monkeypatch, _StubLLM([]))
+
+        calls = []
+        fake_embedding = MagicMock()
+
+        def _resolver(*args, **kwargs):
+            calls.append((args, kwargs))
+            return fake_embedding
+
+        monkeypatch.setattr(extraction_module, "get_embeddings", _resolver)
+
+        summary = extract_graph_for_source(
+            str(uuid.uuid4()),
+            user="owner-1",
+            chunks=[],
+            config=SourceConfig(),
+            request_id="req-1",
+        )
+
+        assert calls == [((), {})]
+        assert summary["chunks_processed"] == 0

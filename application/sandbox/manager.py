@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from application.sandbox.base import CodeSandbox, ExecResult
+from application.sandbox.base import CodeSandbox, ExecResult, SandboxGoneError
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +208,12 @@ class SandboxManager:
         session = self._enter(session_id)
         try:
             self._backend.put_file(session_id, dest_path, data)
+        except SandboxGoneError:
+            # File-op mirror of ``exec``'s runtime_invalidated: the cloud runtime
+            # is gone, so drop the cached session — the next open cold-starts
+            # instead of replaying the dead handle into more failures.
+            self._drop_invalidated_session(session_id, session)
+            raise
         finally:
             self._leave(session_id, expected=session)
 
@@ -216,6 +222,9 @@ class SandboxManager:
         session = self._enter(session_id)
         try:
             return self._backend.get_file(session_id, path)
+        except SandboxGoneError:
+            self._drop_invalidated_session(session_id, session)
+            raise
         finally:
             self._leave(session_id, expected=session)
 
@@ -224,6 +233,9 @@ class SandboxManager:
         session = self._enter(session_id)
         try:
             return self._backend.list_files(session_id)
+        except SandboxGoneError:
+            self._drop_invalidated_session(session_id, session)
+            raise
         finally:
             self._leave(session_id, expected=session)
 
