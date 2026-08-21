@@ -30,6 +30,7 @@ import {
 import { isToolCallRunning } from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
 import { AnswerSegment } from './answerSegments';
+import { deriveArtifactChips } from './artifactChips';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import MarkdownAnswer from './MarkdownAnswer';
 import ResearchProgress from './ResearchProgress';
@@ -111,40 +112,7 @@ const ConversationBubble = forwardRef<
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
-  const formatToolName = (toolName: string | undefined): string => {
-    if (!toolName) return '';
-    // Display-name overrides for tools whose label differs from the formatted key.
-    const overrides: Record<string, string> = {
-      artifact_generator: 'Artifact',
-    };
-    if (overrides[toolName]) return overrides[toolName];
-    return toolName
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  };
-
-  // One entry per artifact, not per tool call: a single call (``run_code``)
-  // can write several files, and only the first was reachable before.
-  const completedArtifacts = (toolCalls ?? [])
-    .filter((toolCall) => toolCall.status === 'completed')
-    .flatMap((toolCall) => {
-      const produced = toolCall.artifacts?.length
-        ? toolCall.artifacts
-        : toolCall.artifact_id
-          ? [{ id: toolCall.artifact_id, filename: undefined, ref: undefined }]
-          : [];
-      return produced.map((artifact) => ({
-        id: artifact.id,
-        ref: artifact.ref ?? undefined,
-        // The file's own name is what the user recognises; the tool that made
-        // it ("Code Executor") tells them nothing about which file this is.
-        label:
-          artifact.filename || formatToolName(toolCall.tool_name) || 'Artifact',
-        toolName: toolCall.tool_name,
-        callId: toolCall.call_id,
-      }));
-    });
+  const completedArtifacts = deriveArtifactChips(toolCalls);
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 

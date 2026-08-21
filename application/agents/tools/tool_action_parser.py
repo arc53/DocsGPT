@@ -1,7 +1,13 @@
 import json
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# An ``arguments`` payload that is not decodable JSON at all. Distinct from a
+# payload that decodes to a non-object (``[]``, ``5``), which keeps its resolved
+# tool name so the executor can report the real type against the real tool.
+_MALFORMED_ARGUMENTS: Any = object()
 
 
 class ToolActionParser:
@@ -24,7 +30,7 @@ class ToolActionParser:
         return None
 
     @staticmethod
-    def _decode_arguments(raw):
+    def _decode_arguments(raw: Any) -> Any:
         """Decode a tool call's ``arguments`` payload into a dict.
 
         A zero-parameter action (``note_view``, ``note_delete``, the todo/
@@ -39,8 +45,8 @@ class ToolActionParser:
                 empty/None for a call that takes no parameters.
 
         Returns:
-            The decoded dict, or ``None`` when the payload is genuinely
-            malformed.
+            The decoded value — ``{}`` for an empty payload — or
+            ``_MALFORMED_ARGUMENTS`` when ``raw`` is not decodable JSON.
         """
         if raw is None:
             return {}
@@ -50,11 +56,10 @@ class ToolActionParser:
             if not raw.strip():
                 return {}
             try:
-                decoded = json.loads(raw)
+                return json.loads(raw)
             except (TypeError, ValueError):
-                return None
-            return decoded if isinstance(decoded, dict) else None
-        return None
+                return _MALFORMED_ARGUMENTS
+        return _MALFORMED_ARGUMENTS
 
     def _parse_openai_llm(self, call):
         try:
@@ -62,9 +67,9 @@ class ToolActionParser:
             # treating it as one used to discard the (valid, registered) name
             # along with it. Only genuinely malformed arguments fail here.
             call_args = self._decode_arguments(call.arguments)
-            if call_args is None:
+            if call_args is _MALFORMED_ARGUMENTS:
                 logger.error(
-                    "Error parsing OpenAI LLM call: arguments are not a JSON object (%s)",
+                    "Error parsing OpenAI LLM call: arguments are not decodable JSON (%s)",
                     getattr(call, "name", "<unknown>"),
                 )
                 return None, None, None
@@ -104,7 +109,7 @@ class ToolActionParser:
             # fall back to an empty dict on malformed input so downstream
             # ``call_args.items()`` doesn't crash the stream.
             call_args = self._decode_arguments(call.arguments)
-            if call_args is None:
+            if not isinstance(call_args, dict):
                 logger.warning(
                     "Google call.arguments was not a JSON object; "
                     "falling back to empty args for %s",

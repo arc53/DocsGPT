@@ -1,6 +1,6 @@
 import 'katex/dist/katex.min.css';
 
-import { Fragment, useMemo } from 'react';
+import { Fragment, type ReactNode, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
@@ -85,6 +85,34 @@ export default function MarkdownAnswer({
     [content],
   );
 
+  // Shared by the `a` and `img` renderers: a generated file is already on the
+  // turn as a download chip, so both point at the chip rather than at a URL no
+  // browser can open.
+  const renderArtifactChip = (
+    artifact: SandboxArtifact,
+    content: ReactNode,
+  ) => {
+    if (!onOpenArtifact) return <>{content}</>;
+    return (
+      <Button
+        type="button"
+        variant="link"
+        onClick={() =>
+          onOpenArtifact({
+            id: artifact.id,
+            toolName: artifact.toolName ?? '',
+          })
+        }
+        /* Sits mid-sentence: no pill background, no fixed height, and it must
+           wrap with the surrounding text. */
+        className="text-primary h-auto w-auto bg-transparent p-0 whitespace-normal underline underline-offset-2"
+        title={artifact.label}
+      >
+        {content}
+      </Button>
+    );
+  };
+
   return (
     <>
       {contentSegments.map((segment, index) => (
@@ -109,26 +137,7 @@ export default function MarkdownAnswer({
                     return <>{children}</>;
                   }
                   if (sandboxLink.kind === 'artifact') {
-                    const { artifact } = sandboxLink;
-                    if (!onOpenArtifact) return <>{children}</>;
-                    return (
-                      <Button
-                        type="button"
-                        variant="link"
-                        onClick={() =>
-                          onOpenArtifact({
-                            id: artifact.id,
-                            toolName: artifact.toolName ?? '',
-                          })
-                        }
-                        /* Sits mid-sentence: no pill background, no fixed
-                           height, and it must wrap with the surrounding text. */
-                        className="text-primary h-auto w-auto bg-transparent p-0 whitespace-normal underline underline-offset-2"
-                        title={artifact.label}
-                      >
-                        {children}
-                      </Button>
-                    );
+                    return renderArtifactChip(sandboxLink.artifact, children);
                   }
                   if (href?.startsWith('#cite-')) {
                     const num = href.replace('#cite-', '');
@@ -168,6 +177,26 @@ export default function MarkdownAnswer({
                       {children}
                     </a>
                   );
+                },
+                img({ src, alt }) {
+                  // `![chart](sandbox:/mnt/data/chart.png)` is how a model
+                  // announces a plot it produced. react-markdown runs
+                  // urlTransform over `src` too, so without this the invented
+                  // scheme survives and renders a broken-image box beside the
+                  // chip that opens the very same file.
+                  const source = typeof src === 'string' ? src : undefined;
+                  const sandboxLink = resolveSandboxLink(source, artifacts);
+                  if (sandboxLink.kind === 'artifact') {
+                    const { artifact } = sandboxLink;
+                    return renderArtifactChip(
+                      artifact,
+                      alt || artifact.label || 'Open file',
+                    );
+                  }
+                  if (sandboxLink.kind === 'plain') {
+                    return <>{alt ?? ''}</>;
+                  }
+                  return <img src={source} alt={alt} className="max-w-full" />;
                 },
                 code(props) {
                   const { children, className, node, ref, ...rest } = props;

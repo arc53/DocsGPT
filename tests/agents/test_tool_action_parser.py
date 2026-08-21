@@ -358,3 +358,50 @@ class TestZeroArgumentToolCalls:
         call.arguments = "invalid json"
 
         assert parser.parse_args(call) == (None, None, None)
+
+
+@pytest.mark.unit
+class TestNonObjectArguments:
+    """Valid JSON of the wrong type must keep the resolved tool name.
+
+    ``[]`` or ``5`` decodes cleanly, so the name is knowable; only the payload
+    is wrong. Collapsing it into the malformed-JSON sentinel journalled the call
+    as ``tool_name: "unknown"`` with no ``tool_id``, which under-attributes the
+    per-tool analytics and fed the call into the invented-name throttle. The
+    executor's own non-dict guard reports it with the real tool instead.
+    """
+
+    MAPPING = {"read_document": ("42", "read_document")}
+
+    @pytest.mark.parametrize("arguments", ['[]', 'null', '5', '"a string"', '["a", "b"]'])
+    def test_the_name_survives_a_non_object_payload(self, arguments):
+        parser = ToolActionParser("OpenAILLM", name_mapping=self.MAPPING)
+        call = Mock()
+        call.name = "read_document"
+        call.arguments = arguments
+
+        tool_id, action_name, _call_args = parser.parse_args(call)
+
+        assert tool_id == "42"
+        assert action_name == "read_document"
+
+    def test_genuinely_malformed_arguments_still_discard_the_call(self):
+        parser = ToolActionParser("OpenAILLM", name_mapping=self.MAPPING)
+        call = Mock()
+        call.name = "read_document"
+        call.arguments = "{not json"
+
+        assert parser.parse_args(call) == (None, None, None)
+
+    @pytest.mark.parametrize("arguments", ['[]', '{not json', 'null'])
+    def test_google_still_falls_back_to_empty_args(self, arguments):
+        """Gemini's branch must keep handing downstream a dict to walk."""
+        parser = ToolActionParser("GoogleLLM", name_mapping=self.MAPPING)
+        call = Mock()
+        call.name = "read_document"
+        call.arguments = arguments
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+
+        assert (tool_id, action_name) == ("42", "read_document")
+        assert call_args == {}

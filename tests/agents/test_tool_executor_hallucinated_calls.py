@@ -118,3 +118,72 @@ class TestErrorNamesWhatTheModelCanCall:
         executor.prepare_tools_for_llm(tools_dict)
         _events, (result, _call_id) = _drain(executor, _call("make_a_pdf"), tools=tools_dict)
         assert "create_artifact" in result
+
+
+@pytest.mark.unit
+class TestThrottleScope:
+    """The throttle must fire on invented names only, and per distinct payload."""
+
+    def test_registered_tool_with_bad_arguments_is_never_refused(self):
+        """Three malformed bodies for a real tool must not strand it for the turn.
+
+        Truncated ``code``/``spec`` payloads are the common shape here, and they
+        differ every time — collapsing them into one signature refused a working
+        tool and named it as its own alternative.
+        """
+        executor = ToolExecutor()
+        tools = _tools_dict()
+        executor._name_to_tool = {"memory_view": ("t1", "memory_view")}
+        bodies = ['{"a": 1', '{"b": 2', '{"c": 3', '{"d": 4']
+
+        for index, body in enumerate(bodies):
+            _events, (result, _call_id) = _drain(
+                executor, _call("memory_view", arguments=body, call_id=f"c{index}"), tools=tools
+            )
+            assert "has already failed" not in result, (index, result)
+            assert "arguments were not a valid JSON object" in result, (index, result)
+        assert executor._unresolvable_calls == {}
+
+    def test_invented_name_is_refused_on_the_third_attempt(self):
+        executor = ToolExecutor()
+        for index in range(2):
+            _events, (result, _call_id) = _drain(
+                executor, _call("note_view", call_id=f"c{index}")
+            )
+            assert "has already failed" not in result, (index, result)
+
+        _events, (result, _call_id) = _drain(executor, _call("note_view", call_id="c2"))
+        assert "has already failed 2 times" in result, result
+
+    def test_the_refusal_does_not_suggest_the_tool_it_refuses(self):
+        """``memory`` is a real tool; refusing it must not offer it as the way out."""
+        executor = ToolExecutor()
+        tools = _tools_dict()
+        executor._tool_to_name = {("t1", "memory_view"): "memory_view"}
+        for index in range(3):
+            _events, (result, _call_id) = _drain(
+                executor, _call("memory_view", call_id=f"c{index}"), tools=tools
+            )
+        assert "has already failed" in result, result
+        assert "(none available)" in result, result
+
+    def test_distinct_payloads_for_an_invented_name_stay_distinct(self):
+        executor = ToolExecutor()
+        for index, body in enumerate(['{"a": 1}', '{"b": 2}', '{"c": 3}']):
+            _events, (result, _call_id) = _drain(
+                executor, _call("note_view", arguments=body, call_id=f"c{index}")
+            )
+            assert "has already failed" not in result, (index, result)
+        assert len(executor._unresolvable_calls) == 3
+
+    def test_the_failure_count_keeps_escalating(self):
+        """A count frozen at the limit makes the message and the ops log useless."""
+        executor = ToolExecutor()
+        results = []
+        for index in range(5):
+            _events, (result, _call_id) = _drain(
+                executor, _call("note_view", call_id=f"c{index}")
+            )
+            results.append(result)
+        assert "has already failed 2 times" in results[2], results[2]
+        assert "has already failed 4 times" in results[4], results[4]

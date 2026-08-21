@@ -128,3 +128,94 @@ describe('MarkdownAnswer sandbox: links', () => {
     expect(container.querySelector('a')?.getAttribute('href')).toBe('');
   });
 });
+
+describe('MarkdownAnswer sandbox: images and scheme-less paths', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  function render(content: string, onOpenArtifact = vi.fn()) {
+    act(() => {
+      root.render(
+        <MarkdownAnswer
+          content={content}
+          artifacts={artifacts}
+          onOpenArtifact={onOpenArtifact}
+        />,
+      );
+    });
+    return onOpenArtifact;
+  }
+
+  // `![chart](sandbox:...)` is how models announce a plot. urlTransform runs
+  // over `src` too, so without an `img` renderer the scheme reached the DOM.
+  it('turns a sandbox image into the chip instead of a broken image', () => {
+    const onOpenArtifact = render(
+      '![the sweep](sandbox:/mnt/data/summer_sweep_up.pdf)',
+    );
+
+    expect(container.querySelector('img')).toBeNull();
+    const button = container.querySelector('button');
+    expect(button?.textContent).toBe('the sweep');
+
+    act(() => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(onOpenArtifact).toHaveBeenCalledWith({
+      id: '9d28fc58-f02f-4d78-a45d-143f60d580e4',
+      toolName: 'artifact_generator',
+    });
+  });
+
+  it('drops an unresolvable sandbox image rather than rendering a broken one', () => {
+    render('![missing](sandbox:/mnt/data/nope.png)');
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).toContain('missing');
+  });
+
+  it('leaves a real image URL alone', () => {
+    render('![logo](https://example.com/logo.png)');
+
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(
+      'https://example.com/logo.png',
+    );
+  });
+
+  it('resolves a bare /mnt/data path to the chip', () => {
+    render('[the report](/mnt/data/summer_sweep_up.pdf)');
+
+    expect(container.querySelector('a')).toBeNull();
+    expect(container.querySelector('button')?.textContent).toBe('the report');
+  });
+
+  it('resolves a file: URL to the chip instead of a blank href', () => {
+    render('[the report](file:///mnt/data/summer_sweep_up.pdf)');
+
+    expect(container.querySelector('a')).toBeNull();
+    expect(container.querySelector('button')?.textContent).toBe('the report');
+  });
+
+  it('leaves an ordinary relative link untouched', () => {
+    render('[docs](/docs/getting-started)');
+
+    const anchor = container.querySelector('a');
+    expect(anchor?.getAttribute('href')).toBe('/docs/getting-started');
+  });
+
+  it('still blocks javascript: URLs', () => {
+    render('[click](javascript:alert(1))');
+
+    expect(container.querySelector('a')?.getAttribute('href')).toBe('');
+  });
+});

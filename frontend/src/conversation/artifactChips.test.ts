@@ -6,28 +6,15 @@
  * to drop ``artifacts``, so the fallback was the only path on reload: three
  * files became one chip labelled with the tool's name. The payload below is
  * captured verbatim from ``GET /api/get_single_conversation``.
+ *
+ * This exercises ``deriveArtifactChips`` itself — the function the component
+ * calls. An earlier version of this file reimplemented the derivation locally,
+ * so dropping ``artifacts`` from the component left the suite green.
  */
 import { describe, expect, it } from 'vitest';
 
+import { deriveArtifactChips } from './artifactChips';
 import type { ToolCallsType } from './types';
-
-/** Mirrors the derivation in ConversationBubble.tsx. */
-function chipsFor(toolCalls: ToolCallsType[]) {
-  return toolCalls
-    .filter((toolCall) => toolCall.status === 'completed')
-    .flatMap((toolCall) => {
-      const produced = toolCall.artifacts?.length
-        ? toolCall.artifacts
-        : toolCall.artifact_id
-          ? [{ id: toolCall.artifact_id, filename: undefined, ref: undefined }]
-          : [];
-      return produced.map((artifact) => ({
-        id: artifact.id,
-        ref: artifact.ref ?? undefined,
-        label: artifact.filename || 'Code Executor',
-      }));
-    });
-}
 
 const reloadedTurn = [
   {
@@ -53,16 +40,20 @@ const reloadedTurn = [
 
 describe('artifact chips after reload', () => {
   it('renders one chip per file, labelled by filename', () => {
-    expect(chipsFor(reloadedTurn)).toEqual([
+    expect(deriveArtifactChips(reloadedTurn)).toEqual([
       {
         id: '7c342ac8-20d3-4658-9f6a-0ac88f665037',
         ref: 'A1',
         label: 'monthly_sales.csv',
+        toolName: 'code_executor',
+        callId: 'c1',
       },
       {
         id: '5b9bea99-38ac-4102-a838-09cac7a42f1a',
         ref: 'A2',
         label: 'monthly_sales_bar_chart.png',
+        toolName: 'code_executor',
+        callId: 'c1',
       },
     ]);
   });
@@ -73,8 +64,36 @@ describe('artifact chips after reload', () => {
     const stripped = [
       { ...reloadedTurn[0], artifacts: undefined },
     ] as unknown as ToolCallsType[];
-    const chips = chipsFor(stripped);
+    const chips = deriveArtifactChips(stripped);
     expect(chips).toHaveLength(1);
     expect(chips[0].label).toBe('Code Executor');
+  });
+
+  it('skips calls that have not completed', () => {
+    const running = [
+      { ...reloadedTurn[0], status: 'pending' },
+    ] as unknown as ToolCallsType[];
+    expect(deriveArtifactChips(running)).toEqual([]);
+  });
+
+  it('falls back to the tool label, then to Artifact', () => {
+    const unnamed = [
+      {
+        tool_name: 'artifact_generator',
+        call_id: 'c2',
+        status: 'completed',
+        artifacts: [{ id: 'x1' }],
+      },
+      {
+        tool_name: undefined,
+        call_id: 'c3',
+        status: 'completed',
+        artifacts: [{ id: 'x2' }],
+      },
+    ] as unknown as ToolCallsType[];
+    expect(deriveArtifactChips(unnamed).map((chip) => chip.label)).toEqual([
+      'Artifact',
+      'Artifact',
+    ]);
   });
 });

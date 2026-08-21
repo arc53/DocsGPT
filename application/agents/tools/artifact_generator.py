@@ -804,6 +804,11 @@ class ArtifactGeneratorTool(Tool):
 
     def _render(self, kind: str, spec: Any) -> Dict[str, Any]:
         """Run the fixed renderer in the sandbox and return the produced file bytes."""
+        # ``_validate`` coerces a stringified spec internally but returns only an
+        # error payload, so validating and rendering the same value is the
+        # caller's job. Coerce here too: a caller that skipped it would otherwise
+        # pass validation and then write a JSON *string* to spec.json.
+        spec = self._coerce_spec(spec)
         session_id = self._resolve_session_id()
         if session_id is None:
             return {"error": "artifact_generator requires a conversation_id or workflow_run_id."}

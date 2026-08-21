@@ -13,6 +13,12 @@ import { defaultUrlTransform } from 'react-markdown';
  *   sandbox:/tmp/<filename>       sandbox:/<filename>
  *   artifact:A1
  *
+ * The same path also arrives with no scheme at all (``/mnt/data/report.pdf``,
+ * ``report.pdf``) or as ``file:///mnt/data/report.pdf``. Those are the same
+ * mistake wearing different clothes, so they resolve the same way — except that
+ * an unresolvable scheme-less href stays an ordinary link, since a relative URL
+ * is something a model may legitimately write.
+ *
  * Left alone the result is worse than a no-op: react-markdown's
  * ``defaultUrlTransform`` blanks any unknown protocol, so the anchor renders as
  * ``href=""`` and clicking it opens the current page again in a new tab — which
@@ -31,7 +37,14 @@ import { defaultUrlTransform } from 'react-markdown';
  * own short ref (``artifact:A1``) leaking into prose. react-markdown blanks
  * both, so both have to be intercepted.
  */
-export const GENERATED_FILE_SCHEMES = ['sandbox:', 'artifact:'] as const;
+export const GENERATED_FILE_SCHEMES = [
+  'sandbox:',
+  'artifact:',
+  // Browsers refuse to navigate to `file:` from an https page, so a `file:`
+  // href is dead whatever we do with it; routing it here at least turns it into
+  // the chip or plain text instead of react-markdown's blank `href=""`.
+  'file:',
+] as const;
 
 export type SandboxArtifact = {
   id: string;
@@ -78,6 +91,24 @@ function matchedScheme(href: string | undefined | null): string | null {
 /** Short refs the artifact tool hands back, e.g. ``A1`` is the first artifact. */
 const SHORT_REF = /^a(\d+)$/i;
 
+/** Any URL scheme, so ``https:`` and ``mailto:`` are left alone. */
+const ANY_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+
+/**
+ * Last match wins. Within one turn the model's prose means the file as it
+ * stands after the *last* write, so a rerun that overwrites ``report.pdf``
+ * should open the new copy rather than the one it replaced.
+ */
+function findLast<T>(
+  items: T[],
+  predicate: (item: T) => boolean,
+): T | undefined {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) return items[index];
+  }
+  return undefined;
+}
+
 function decodeSegment(segment: string): string {
   try {
     return decodeURIComponent(segment);
@@ -103,16 +134,27 @@ export function resolveSandboxLink(
   href: string | undefined | null,
   artifacts: SandboxArtifact[] | undefined,
 ): SandboxLinkResolution {
+  if (typeof href !== 'string' || !href) return { kind: 'external' };
   const scheme = matchedScheme(href);
-  if (!scheme || typeof href !== 'string') return { kind: 'external' };
+  // A scheme-less href may be a genuine relative link or in-page anchor, so it
+  // only ever *upgrades* to a chip on a hit and is otherwise left untouched.
+  if (!scheme && (href.startsWith('#') || ANY_SCHEME.test(href))) {
+    return { kind: 'external' };
+  }
+  const miss: SandboxLinkResolution = scheme
+    ? { kind: 'plain' }
+    : { kind: 'external' };
 
   const available = artifacts ?? [];
   // Strip the scheme, any leading slashes, and a trailing query/fragment.
-  const path = href.slice(scheme.length).replace(/^\/+/, '').split(/[?#]/)[0];
-  if (!path) return { kind: 'plain' };
+  const path = href
+    .slice(scheme?.length ?? 0)
+    .replace(/^\/+/, '')
+    .split(/[?#]/)[0];
+  if (!path) return miss;
 
   const segments = path.split('/').filter(Boolean).map(decodeSegment);
-  if (segments.length === 0) return { kind: 'plain' };
+  if (segments.length === 0) return miss;
 
   const last = segments[segments.length - 1];
 
@@ -120,12 +162,13 @@ export function resolveSandboxLink(
   // matched against the artifact's own ``ref``, never by position: ``A2`` is the
   // conversation's second artifact, which on a later turn is not this turn's
   // second one.
-  const byId = available.find((artifact) => artifact.id === last);
+  const byId = findLast(available, (artifact) => artifact.id === last);
   if (byId) return { kind: 'artifact', artifact: byId };
 
   if (SHORT_REF.test(last)) {
     const wanted = last.toUpperCase();
-    const byRef = available.find(
+    const byRef = findLast(
+      available,
       (artifact) => (artifact.ref ?? '').toUpperCase() === wanted,
     );
     if (byRef) return { kind: 'artifact', artifact: byRef };
@@ -134,11 +177,12 @@ export function resolveSandboxLink(
   // Fabricated paths (``/mnt/data/…``, ``/tmp/…``, a bare filename) — and
   // ``/artifact/<filename>``, which the model also writes — usually still name
   // a file that exists as an artifact on this turn.
-  const byName = available.find(
+  const byName = findLast(
+    available,
     (artifact) =>
-      artifact.label && artifact.label.toLowerCase() === last.toLowerCase(),
+      !!artifact.label && artifact.label.toLowerCase() === last.toLowerCase(),
   );
   if (byName) return { kind: 'artifact', artifact: byName };
 
-  return { kind: 'plain' };
+  return miss;
 }

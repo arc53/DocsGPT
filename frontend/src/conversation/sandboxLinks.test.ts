@@ -221,3 +221,78 @@ describe('resolveSandboxLink', () => {
     }
   });
 });
+
+describe('duplicate filenames within one turn', () => {
+  // A second `run_code` that rewrites `report.pdf` creates a second artifact
+  // row with the same filename. The model's prose means the file as it stands
+  // after the last write, so the newer copy is the one to open.
+  const twoWrites = [
+    { id: 'stale', label: 'report.pdf', ref: 'A1' },
+    { id: 'fresh', label: 'report.pdf', ref: 'A2' },
+  ];
+
+  it('resolves a bare filename to the most recent copy', () => {
+    const resolved = resolveSandboxLink(
+      'sandbox:/mnt/data/report.pdf',
+      twoWrites,
+    );
+    expect(resolved).toEqual({
+      kind: 'artifact',
+      artifact: { id: 'fresh', label: 'report.pdf', ref: 'A2' },
+    });
+  });
+
+  it('still honours an explicit ref over the filename', () => {
+    const resolved = resolveSandboxLink('artifact:A1', twoWrites);
+    expect(resolved).toEqual({
+      kind: 'artifact',
+      artifact: { id: 'stale', label: 'report.pdf', ref: 'A1' },
+    });
+  });
+});
+
+describe('scheme-less and file: hrefs', () => {
+  const available = [{ id: 'a1', label: 'report.pdf', ref: 'A1' }];
+
+  it.each([
+    '/mnt/data/report.pdf',
+    'report.pdf',
+    './report.pdf',
+    '/tmp/report.pdf',
+    'file:///mnt/data/report.pdf',
+  ])('resolves %s to the artifact', (href) => {
+    expect(resolveSandboxLink(href, available)).toEqual({
+      kind: 'artifact',
+      artifact: available[0],
+    });
+  });
+
+  it('leaves an unresolvable relative link as an ordinary link', () => {
+    expect(resolveSandboxLink('/docs/intro', available)).toEqual({
+      kind: 'external',
+    });
+  });
+
+  it('leaves in-page anchors alone', () => {
+    expect(resolveSandboxLink('#cite-2', available)).toEqual({
+      kind: 'external',
+    });
+  });
+
+  it('leaves other schemes alone', () => {
+    expect(
+      resolveSandboxLink('https://example.com/report.pdf', available),
+    ).toEqual({
+      kind: 'external',
+    });
+    expect(resolveSandboxLink('mailto:a@b.com', available)).toEqual({
+      kind: 'external',
+    });
+  });
+
+  it('renders an unresolvable file: href as plain text, never a dead href', () => {
+    expect(resolveSandboxLink('file:///mnt/data/nope.pdf', available)).toEqual({
+      kind: 'plain',
+    });
+  });
+});

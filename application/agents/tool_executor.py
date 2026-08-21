@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from application.agents.default_tools import (
     BUILTIN_AGENT_TOOLS,
     is_headless_excluded_tool,
+    is_synthesized_tool_id,
     resolve_tool_by_id,
     synthesized_default_tools,
 )
@@ -54,6 +55,18 @@ def _dedupable_tool_names() -> frozenset:
     from application.core.settings import settings
 
     return frozenset(BUILTIN_AGENT_TOOLS) | frozenset(getattr(settings, "DEFAULT_CHAT_TOOLS", None) or [])
+
+
+def _requires_approval(tool: Dict, action: Dict) -> bool:
+    """Effective approval gate for one action of a tool row.
+
+    Both sources live on the row: the cached ``actions[].require_approval``
+    snapshot and the deployment-level ``config.require_approval`` that
+    ``code_executor`` reads.
+    """
+    if bool(action.get("require_approval")):
+        return True
+    return bool((tool.get("config") or {}).get("require_approval"))
 
 
 def _sanitize_tool_prefix(tool_name: Optional[str]) -> str:
@@ -385,8 +398,10 @@ class ToolExecutor:
         self.attachments: List[Dict] = []
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
-        # Signatures of unresolvable calls that already failed this turn, so an
-        # invented tool name cannot be retried until MAX_TOOL_ITERATIONS.
+        # Per-signature failure counts for invented tool names this turn. After
+        # ``UNRESOLVABLE_CALL_LIMIT`` the model is handed a directive message
+        # instead of the generic error; this is a prompt-level nudge, not a hard
+        # bound — the loop bound remains ``MAX_TOOL_ITERATIONS``.
         self._unresolvable_calls: Dict[str, int] = {}
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
         # Filled by the LLMHandler.handle_tool_calls headless loop.
@@ -549,15 +564,23 @@ class ToolExecutor:
         # copies with mangled names (``artifact_generator_create_artifact`` +
         # ``…_1``). The two rows are NOT byte-identical — a stored row has been
         # through ``transform_actions``, which stamps ``active``/``filled_by_llm``
-        # onto every action — so the key is (tool name, action name) and the
-        # first occurrence wins, which is the stored row. Safe only for
-        # builtins: they carry no per-row config
-        # (``get_config_requirements() == {}``), while two MCP rows can
-        # legitimately share a name and must stay distinct.
-        seen_actions: set = set()
+        # onto every action — so the key is (tool name, action name).
+        #
+        # Which copy survives is load-bearing: a stored builtin row CAN carry
+        # per-row config even though ``get_config_requirements() == {}``, and
+        # ``code_executor`` keeps its approval gate there. Insertion order is
+        # the agent's ``tool_ids`` click order on the agent paths, so it must
+        # not decide this — stored rows are considered before synthesized ones,
+        # and a row that requires approval always beats one that does not. Safe
+        # only for builtins; two MCP rows can legitimately share a name and must
+        # stay distinct.
+        seen_actions: Dict[Tuple[str, str, bool], Tuple[int, bool]] = {}
         dedupable = _dedupable_tool_names()
 
-        for tool_id, tool in tools_dict.items():
+        # Stable sort: preserves the caller's order within each group.
+        ordered_tools = sorted(tools_dict.items(), key=lambda kv: is_synthesized_tool_id(kv[0]))
+
+        for tool_id, tool in ordered_tools:
             is_api = tool["name"] == "api_tool"
             is_client = tool.get("client_side", False)
 
@@ -574,13 +597,32 @@ class ToolExecutor:
                 tool_name = tool.get("name", "")
                 if tool_name in dedupable:
                     fingerprint = (tool_name, action["name"], is_client)
-                    if fingerprint in seen_actions:
-                        logger.debug(
-                            "duplicate_tool_registration_collapsed",
-                            extra={"tool_name": tool_name, "action_name": action["name"]},
-                        )
+                    requires_approval = _requires_approval(tool, action)
+                    kept = seen_actions.get(fingerprint)
+                    if kept is not None:
+                        kept_index, kept_approval = kept
+                        if requires_approval and not kept_approval:
+                            # Never let a duplicate registration drop an
+                            # approval gate the user configured.
+                            entries[kept_index] = (
+                                tool_id,
+                                tool_name,
+                                action["name"],
+                                action,
+                                is_client,
+                            )
+                            seen_actions[fingerprint] = (kept_index, True)
+                            logger.debug(
+                                "duplicate_tool_registration_promoted",
+                                extra={"tool_name": tool_name, "action_name": action["name"]},
+                            )
+                        else:
+                            logger.debug(
+                                "duplicate_tool_registration_collapsed",
+                                extra={"tool_name": tool_name, "action_name": action["name"]},
+                            )
                         continue
-                    seen_actions.add(fingerprint)
+                    seen_actions[fingerprint] = (len(entries), requires_approval)
                 entries.append((tool_id, tool_name, action["name"], action, is_client))
                 name_counts[action["name"]] += 1
 
@@ -845,7 +887,7 @@ class ToolExecutor:
             )
             return True
 
-    def _available_tool_names(self, tools_dict: Dict) -> str:
+    def _available_tool_names(self, tools_dict: Dict, exclude: Optional[str] = None) -> str:
         """Render the names the model can actually call, for a correctable error.
 
         Prefer the LLM-visible action names assigned by
@@ -859,7 +901,8 @@ class ToolExecutor:
             names = sorted(
                 {(tool or {}).get("name") or tool_id for tool_id, tool in (tools_dict or {}).items()}
             )
-        return ", ".join(str(name) for name in names) if names else "(none available)"
+        names = [str(name) for name in names if name != exclude]
+        return ", ".join(names) if names else "(none available)"
 
     @staticmethod
     def _call_signature(llm_name: str, call_args: Any) -> str:
@@ -883,16 +926,23 @@ class ToolExecutor:
         unresolvable = tool_id is None or action_name is None or tool_id not in tools_dict
 
         # A tool the model invented will never resolve, so re-running it just
-        # burns the turn's iteration budget on an identical failure. Answer the
-        # third attempt from here, without touching the tool layer.
-        if unresolvable:
-            signature = self._call_signature(llm_name, call_args)
+        # burns the turn's iteration budget on an identical failure. From the
+        # third attempt on, hand back a directive message instead of the generic
+        # error. Scoped to an unknown *name*: a registered tool whose arguments
+        # merely failed to decode is recoverable, and refusing it would strand a
+        # working tool for the rest of the turn. Keyed on the raw payload, so two
+        # different malformed bodies stay two different signatures.
+        if unresolvable and llm_name not in self._name_to_tool:
+            signature = self._call_signature(llm_name, getattr(call, "arguments", None))
             failures = self._unresolvable_calls.get(signature, 0)
+            # Count before refusing, so the message and the log escalate rather
+            # than freezing at the limit for the rest of the turn.
+            self._unresolvable_calls[signature] = failures + 1
             if failures >= self.UNRESOLVABLE_CALL_LIMIT:
                 repeated = (
                     f"'{llm_name}' has already failed {failures} times with these arguments and "
                     f"will keep failing. Stop calling it and either use a different tool "
-                    f"({self._available_tool_names(tools_dict)}) or answer without one."
+                    f"({self._available_tool_names(tools_dict, exclude=llm_name)}) or answer without one."
                 )
                 logger.warning(
                     "tool_call_repeated_failure",
@@ -926,7 +976,6 @@ class ToolExecutor:
                 yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
                 self.tool_calls.append(tool_call_data)
                 return repeated, call_id
-            self._unresolvable_calls[signature] = failures + 1
 
         if tool_id is None or action_name is None:
             # Say which half actually failed. Reporting a name problem for a
