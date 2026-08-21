@@ -926,7 +926,10 @@ class TestToolExecutorExecute:
                 result = e.value
                 break
 
-        assert result[0] == "Failed to parse tool call."
+        # The bare "Failed to parse tool call." gave the model nothing to act
+        # on, so it retried the same invented call until the iteration cap.
+        assert "Could not run 'bad'" in result[0]
+        assert "Available tools:" in result[0]
         assert len(executor.tool_calls) == 1
         assert events[0]["data"]["status"] == "error"
 
@@ -950,7 +953,10 @@ class TestToolExecutorExecute:
                 result = e.value
                 break
 
-        assert "not found" in result[0]
+        # The message must name the offending call and what can be called
+        # instead, so the model has something to correct against.
+        assert "no such tool" in result[0]
+        assert "Available tools:" in result[0]
         assert events[0]["data"]["status"] == "error"
 
     def test_execute_success(self, mock_tool_manager, monkeypatch):
@@ -1413,3 +1419,138 @@ class TestGetEnabledToolNames:
             },
         )
         assert executor.get_enabled_tool_names() == {"code_executor", "search"}
+
+
+@pytest.mark.unit
+class TestDuplicateRegistrationCollapses:
+    """The same builtin registered twice must not reach the model twice.
+
+    ``code_executor`` and ``artifact_generator`` are dual-registered (default
+    chat tool *and* builtin agent tool). When both rows resolve, the model is
+    handed two indistinguishable copies of every action and their names get
+    mangled — one production user's whole session ran on
+    ``artifact_generator_create_artifact_1`` and ``code_executor_run_code_1``.
+    """
+
+    ACTION = {
+        "name": "create_artifact",
+        "description": "Render a document.",
+        "active": True,
+        "parameters": {"properties": {}},
+    }
+
+    def test_identical_tool_registered_twice_yields_one_clean_name(self):
+        executor = ToolExecutor()
+        tools_dict = {
+            "id-default": {"name": "artifact_generator", "actions": [dict(self.ACTION)]},
+            "id-builtin": {"name": "artifact_generator", "actions": [dict(self.ACTION)]},
+        }
+        result = executor.prepare_tools_for_llm(tools_dict)
+
+        names = [entry["function"]["name"] for entry in result]
+        assert names == ["create_artifact"], names
+        assert executor._name_to_tool["create_artifact"][1] == "create_artifact"
+
+    def test_same_action_name_on_different_tools_still_disambiguates(self):
+        executor = ToolExecutor()
+        tools_dict = {
+            "t1": {
+                "name": "brave",
+                "actions": [
+                    {"name": "search", "description": "Brave.", "active": True, "parameters": {"properties": {}}}
+                ],
+            },
+            "t2": {
+                "name": "duckduckgo",
+                "actions": [
+                    {"name": "search", "description": "DDG.", "active": True, "parameters": {"properties": {}}}
+                ],
+            },
+        }
+        names = [entry["function"]["name"] for entry in executor.prepare_tools_for_llm(tools_dict)]
+        assert sorted(names) == ["brave_search", "duckduckgo_search"]
+
+    def test_a_builtin_collapses_even_when_the_metadata_differs(self):
+        """The two rows are never byte-identical, so the rule is name-based.
+
+        A stored row's actions have been through ``transform_actions`` and this
+        change set also edits the tool descriptions, so any stored row created
+        earlier has drifted from the synthesized one permanently.
+        """
+        executor = ToolExecutor()
+        tools_dict = {
+            "0": {
+                "name": "artifact_generator",
+                "actions": [
+                    {"name": "create_artifact", "description": "Old text.", "active": True,
+                     "parameters": {"properties": {}}}
+                ],
+            },
+            "id-synth": {
+                "name": "artifact_generator",
+                "actions": [
+                    {"name": "create_artifact", "description": "New text.", "active": True,
+                     "parameters": {"properties": {}}}
+                ],
+            },
+        }
+        names = [r["function"]["name"] for r in executor.prepare_tools_for_llm(tools_dict)]
+        assert names == ["create_artifact"], names
+
+
+@pytest.mark.unit
+class TestStoredAndSynthesizedBuiltinCollapse:
+    """The real duplicate is a stored row plus the synthesized default.
+
+    Both synthesizers mint the same uuid5, so two *synthesized* rows can never
+    coexist in a dict keyed by id. The duplicate that reached production is the
+    user's stored row (keyed by list index) alongside the synthesized default —
+    and a stored row has been through ``transform_actions``, so the two are not
+    byte-identical. A fingerprint over the action metadata therefore never
+    matched and the collapse was a no-op for the only case it was written for.
+    """
+
+    @staticmethod
+    def _stored_action():
+        # What transform_actions produces for a stored row.
+        return {
+            "name": "create_artifact",
+            "description": "Render a document.",
+            "active": True,
+            "parameters": {
+                "properties": {"kind": {"type": "string", "filled_by_llm": True, "value": ""}}
+            },
+        }
+
+    @staticmethod
+    def _synthesized_action():
+        return {
+            "name": "create_artifact",
+            "description": "Render a document.",
+            "active": True,
+            "parameters": {"properties": {"kind": {"type": "string"}}},
+        }
+
+    def test_stored_row_and_synthesized_default_collapse_to_one(self):
+        executor = ToolExecutor()
+        tools_dict = {
+            "0": {"name": "artifact_generator", "actions": [self._stored_action()]},
+            "981e1888-a32f-587b-a306-fba4f6f83e67": {
+                "name": "artifact_generator",
+                "actions": [self._synthesized_action()],
+            },
+        }
+        names = [r["function"]["name"] for r in executor.prepare_tools_for_llm(tools_dict)]
+        assert names == ["create_artifact"], names
+        # The stored row wins: it carries the real id and any config.
+        assert executor._name_to_tool["create_artifact"] == ("0", "create_artifact")
+
+    def test_non_builtin_duplicates_are_never_collapsed(self):
+        """Two MCP rows may legitimately share a name, identical metadata or not."""
+        executor = ToolExecutor()
+        action = {"name": "search", "description": "D", "active": True, "parameters": {"properties": {}}}
+        tools_dict = {
+            "t1": {"name": "mcp_tool", "actions": [dict(action)]},
+            "t2": {"name": "mcp_tool", "actions": [dict(action)]},
+        }
+        assert len(executor.prepare_tools_for_llm(tools_dict)) == 2

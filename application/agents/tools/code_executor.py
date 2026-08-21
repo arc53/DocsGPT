@@ -119,6 +119,8 @@ class CodeExecutorTool(Tool):
                     "Files written by the code are saved as downloadable artifacts (write throwaway "
                     "files under `tmp/`, or pass `outputs` to save only specific files); only a compact "
                     "summary (output tail + artifact references) is returned, never raw bytes. "
+                    "Each saved file appears to the user as a download button: name it in your answer, "
+                    "never write a link or sandbox path to it. "
                     "Each call is capped at ~60s of wall-clock; for longer work, start it in the "
                     "background and poll with additional run_code calls (use persist=true to keep state). "
                     + self._environment_note()
@@ -416,7 +418,9 @@ class CodeExecutorTool(Tool):
         if captured:
             self._last_artifact_id = captured[0]["artifact_id"]
             self._last_artifacts = [
-                {"id": a["artifact_id"], "filename": a.get("filename")}
+                # ``ref`` is the model-facing handle (``A1``); the UI needs it to
+                # resolve a ref the model typed into its answer.
+                {"id": a["artifact_id"], "filename": a.get("filename"), "ref": a.get("ref")}
                 for a in captured
                 if a.get("artifact_id")
             ]

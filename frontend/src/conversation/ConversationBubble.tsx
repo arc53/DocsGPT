@@ -132,10 +132,11 @@ const ConversationBubble = forwardRef<
       const produced = toolCall.artifacts?.length
         ? toolCall.artifacts
         : toolCall.artifact_id
-          ? [{ id: toolCall.artifact_id, filename: undefined }]
+          ? [{ id: toolCall.artifact_id, filename: undefined, ref: undefined }]
           : [];
       return produced.map((artifact) => ({
         id: artifact.id,
+        ref: artifact.ref ?? undefined,
         // The file's own name is what the user recognises; the tool that made
         // it ("Code Executor") tells them nothing about which file this is.
         label:
@@ -462,6 +463,8 @@ const ConversationBubble = forwardRef<
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
             suppressStatusLine={Boolean(research)}
+            artifacts={completedArtifacts}
+            onOpenArtifact={onOpenArtifact}
             renderApproval={(toolCall: ToolCallsType) => (
               <div className="fade-in mt-4 mr-5 ml-6">
                 <ToolCallApprovalBar
@@ -743,9 +746,8 @@ function ToolCallApprovalBar({
       (toolCall.arguments && (toolCall.arguments.command as string)) || '';
     if (command) {
       try {
-        const { default: devicesService } = await import(
-          '../api/services/devicesService'
-        );
+        const { default: devicesService } =
+          await import('../api/services/devicesService');
         await devicesService.addAutoApprovePattern(
           toolCall.device_id,
           command,

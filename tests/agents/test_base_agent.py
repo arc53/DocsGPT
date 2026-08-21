@@ -499,10 +499,7 @@ class TestBaseAgentToolExecution:
 
         assert results[0]["type"] == "tool_call"
         assert results[0]["data"]["status"] == "error"
-        assert (
-            "Failed to parse" in results[0]["data"]["result"]
-            or "not found" in results[0]["data"]["result"]
-        )
+        assert "Available tools:" in results[0]["data"]["result"]
 
     def test_execute_tool_action_tool_not_found(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
@@ -520,7 +517,9 @@ class TestBaseAgentToolExecution:
 
         assert results[0]["type"] == "tool_call"
         assert results[0]["data"]["status"] == "error"
-        assert "not found" in results[0]["data"]["result"]
+        assert "no such tool" in results[0]["data"]["result"]
+        # Tool *names*, not internal ids — the model never sees the ids.
+        assert "tool1" in results[0]["data"]["result"]
 
     def test_execute_tool_action_with_parameters(
         self,

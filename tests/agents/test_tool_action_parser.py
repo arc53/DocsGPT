@@ -301,3 +301,60 @@ class TestToolActionParserWithMapping:
         tool_id, action_name, call_args = parser.parse_args(call)
         assert tool_id == "123"
         assert action_name == "action"
+
+
+@pytest.mark.unit
+class TestZeroArgumentToolCalls:
+    """A registered tool with no parameters must survive an empty ``arguments``.
+
+    Providers send ``arguments`` as ``""`` (or omit it) for a zero-parameter
+    function. The parser decoded arguments *before* resolving the name, so the
+    JSON error discarded a perfectly valid, registered tool name and the caller
+    reported "Invalid tool name format" — a diagnosis that sent one production
+    investigation down the wrong path and gave the model nothing to correct
+    against. It then retried the same call 22 times in five minutes.
+    """
+
+    MAPPING = {"note_view": ("42", "note_view"), "memory_view": ("43", "memory_view")}
+
+    @pytest.mark.parametrize("arguments", ["", "   ", None])
+    def test_registered_zero_arg_call_resolves_with_empty_arguments(self, arguments):
+        parser = ToolActionParser("OpenAILLM", name_mapping=self.MAPPING)
+
+        call = Mock()
+        call.name = "note_view"
+        call.arguments = arguments
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+
+        assert (tool_id, action_name) == ("42", "note_view")
+        assert call_args == {}
+
+    def test_legacy_split_also_survives_empty_arguments(self):
+        parser = ToolActionParser("OpenAILLM")
+
+        call = Mock()
+        call.name = "action_123"
+        call.arguments = ""
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+
+        assert (tool_id, action_name, call_args) == ("123", "action", {})
+
+    def test_google_zero_arg_call_resolves(self):
+        parser = ToolActionParser("GoogleLLM", name_mapping=self.MAPPING)
+
+        call = Mock()
+        call.name = "note_view"
+        call.arguments = ""
+
+        assert parser.parse_args(call)[:2] == ("42", "note_view")
+
+    def test_genuinely_malformed_arguments_still_fail(self):
+        parser = ToolActionParser("OpenAILLM", name_mapping=self.MAPPING)
+
+        call = Mock()
+        call.name = "note_view"
+        call.arguments = "invalid json"
+
+        assert parser.parse_args(call) == (None, None, None)

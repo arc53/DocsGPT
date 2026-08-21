@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import uuid
@@ -7,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.exc import IntegrityError
 
 from application.agents.default_tools import (
+    BUILTIN_AGENT_TOOLS,
     is_headless_excluded_tool,
     resolve_tool_by_id,
     synthesized_default_tools,
@@ -39,6 +41,19 @@ def _is_foreign_key_violation(exc: BaseException) -> bool:
 
 # Tightest provider limit on function-call names (OpenAI: ^[a-zA-Z0-9_-]{1,64}$).
 _MAX_LLM_NAME_LEN = 64
+
+
+def _dedupable_tool_names() -> frozenset:
+    """Builtin tool names whose duplicate registrations may be collapsed.
+
+    A builtin can resolve through both the default-tool and the builtin-agent
+    registry, so the same row can arrive twice under different synthetic ids.
+    Only these are safe to collapse — an MCP or user-added tool may
+    legitimately appear more than once under a single name.
+    """
+    from application.core.settings import settings
+
+    return frozenset(BUILTIN_AGENT_TOOLS) | frozenset(getattr(settings, "DEFAULT_CHAT_TOOLS", None) or [])
 
 
 def _sanitize_tool_prefix(tool_name: Optional[str]) -> str:
@@ -370,6 +385,9 @@ class ToolExecutor:
         self.attachments: List[Dict] = []
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
+        # Signatures of unresolvable calls that already failed this turn, so an
+        # invented tool name cannot be retried until MAX_TOOL_ITERATIONS.
+        self._unresolvable_calls: Dict[str, int] = {}
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
         # Filled by the LLMHandler.handle_tool_calls headless loop.
         self.headless_denials: List[Dict] = []
@@ -525,6 +543,19 @@ class ToolExecutor:
         # (tool_id, tool_name, action_name, action, is_client)
         entries: List[Tuple[str, str, str, Dict, bool]] = []
         name_counts: Counter = Counter()
+        # A builtin can arrive twice: once as the user's stored row (keyed by
+        # list index in ``_get_user_tools``) and once as the synthesized default
+        # (keyed by uuid5). Pass 2 then hands the model two indistinguishable
+        # copies with mangled names (``artifact_generator_create_artifact`` +
+        # ``…_1``). The two rows are NOT byte-identical — a stored row has been
+        # through ``transform_actions``, which stamps ``active``/``filled_by_llm``
+        # onto every action — so the key is (tool name, action name) and the
+        # first occurrence wins, which is the stored row. Safe only for
+        # builtins: they carry no per-row config
+        # (``get_config_requirements() == {}``), while two MCP rows can
+        # legitimately share a name and must stay distinct.
+        seen_actions: set = set()
+        dedupable = _dedupable_tool_names()
 
         for tool_id, tool in tools_dict.items():
             is_api = tool["name"] == "api_tool"
@@ -540,7 +571,17 @@ class ToolExecutor:
             for action in actions:
                 if not action.get("active", True):
                     continue
-                entries.append((tool_id, tool.get("name", ""), action["name"], action, is_client))
+                tool_name = tool.get("name", "")
+                if tool_name in dedupable:
+                    fingerprint = (tool_name, action["name"], is_client)
+                    if fingerprint in seen_actions:
+                        logger.debug(
+                            "duplicate_tool_registration_collapsed",
+                            extra={"tool_name": tool_name, "action_name": action["name"]},
+                        )
+                        continue
+                    seen_actions.add(fingerprint)
+                entries.append((tool_id, tool_name, action["name"], action, is_client))
                 name_counts[action["name"]] += 1
 
         # Pass 2: assign LLM-visible names and build mappings
@@ -804,6 +845,34 @@ class ToolExecutor:
             )
             return True
 
+    def _available_tool_names(self, tools_dict: Dict) -> str:
+        """Render the names the model can actually call, for a correctable error.
+
+        Prefer the LLM-visible action names assigned by
+        :meth:`prepare_tools_for_llm` — those are the strings the model puts in
+        a tool call. Fall back to tool names when the mapping has not been built
+        (headless paths, tests). Never the internal tool ids: quoting those
+        tells the model nothing about what to call instead.
+        """
+        names = sorted(self._tool_to_name.values())
+        if not names:
+            names = sorted(
+                {(tool or {}).get("name") or tool_id for tool_id, tool in (tools_dict or {}).items()}
+            )
+        return ", ".join(str(name) for name in names) if names else "(none available)"
+
+    @staticmethod
+    def _call_signature(llm_name: str, call_args: Any) -> str:
+        """Stable key for "the model just made this exact call again"."""
+        try:
+            rendered = json.dumps(call_args, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            rendered = str(call_args)
+        return f"{llm_name}::{rendered}"
+
+    # After this many identical unresolvable calls, refuse rather than re-run.
+    UNRESOLVABLE_CALL_LIMIT = 2
+
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
         """Execute a tool call. Yields status events, returns (result, call_id)."""
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
@@ -811,8 +880,64 @@ class ToolExecutor:
         llm_name = getattr(call, "name", "unknown")
 
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
+        unresolvable = tool_id is None or action_name is None or tool_id not in tools_dict
+
+        # A tool the model invented will never resolve, so re-running it just
+        # burns the turn's iteration budget on an identical failure. Answer the
+        # third attempt from here, without touching the tool layer.
+        if unresolvable:
+            signature = self._call_signature(llm_name, call_args)
+            failures = self._unresolvable_calls.get(signature, 0)
+            if failures >= self.UNRESOLVABLE_CALL_LIMIT:
+                repeated = (
+                    f"'{llm_name}' has already failed {failures} times with these arguments and "
+                    f"will keep failing. Stop calling it and either use a different tool "
+                    f"({self._available_tool_names(tools_dict)}) or answer without one."
+                )
+                logger.warning(
+                    "tool_call_repeated_failure",
+                    extra={"llm_tool_name": llm_name, "call_id": call_id, "failures": failures},
+                )
+                tool_call_data = {
+                    "tool_name": "unknown",
+                    "call_id": call_id,
+                    "action_name": llm_name,
+                    "arguments": call_args if isinstance(call_args, dict) else {},
+                    "result": repeated,
+                    "status": "error",
+                }
+                # Journal it like the branches below, so a hallucination storm
+                # is not under-counted in the analytics used to size it.
+                if _record_proposed(
+                    call_id,
+                    "unknown",
+                    llm_name or "unknown",
+                    call_args if isinstance(call_args, dict) else {},
+                    message_id=self.message_id,
+                    user_id=self.user,
+                    agent_id=self.agent_id,
+                ):
+                    _mark_failed(
+                        call_id,
+                        repeated,
+                        message_id=self.message_id,
+                        user_id=self.user,
+                    )
+                yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
+                self.tool_calls.append(tool_call_data)
+                return repeated, call_id
+            self._unresolvable_calls[signature] = failures + 1
 
         if tool_id is None or action_name is None:
+            # Say which half actually failed. Reporting a name problem for a
+            # registered tool whose arguments were merely malformed is what sent
+            # one production investigation down the wrong path.
+            name_is_known = llm_name in self._name_to_tool
+            parse_reason = (
+                "its arguments were not a valid JSON object"
+                if name_is_known
+                else "the tool name could not be resolved and its arguments were not a JSON object"
+            )
             error_message = f"Error: Failed to parse LLM tool call. Tool name: {llm_name}"
             logger.error(
                 "tool_call_parse_failed",
@@ -828,7 +953,10 @@ class ToolExecutor:
                 "call_id": call_id,
                 "action_name": llm_name,
                 "arguments": call_args or {},
-                "result": f"Failed to parse tool call. Invalid tool name format: {llm_name}",
+                "result": (
+                    f"Could not run '{llm_name}': {parse_reason}. "
+                    f"Available tools: {self._available_tool_names(tools_dict)}."
+                ),
                 "status": "error",
             }
             # Journal the malformed call so it still shows up in tool analytics.
@@ -849,7 +977,7 @@ class ToolExecutor:
                 )
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
-            return "Failed to parse tool call.", call_id
+            return tool_call_data["result"], call_id
 
         if tool_id not in tools_dict:
             error_message = f"Error: Tool ID '{tool_id}' extracted from LLM call not found in available tools_dict. Available IDs: {list(tools_dict.keys())}"
@@ -868,7 +996,10 @@ class ToolExecutor:
                 "call_id": call_id,
                 "action_name": llm_name,
                 "arguments": call_args,
-                "result": f"Tool with ID {tool_id} not found. Available tools: {list(tools_dict.keys())}",
+                "result": (
+                    f"Could not run '{llm_name}': no such tool. "
+                    f"Available tools: {self._available_tool_names(tools_dict)}."
+                ),
                 "status": "error",
             }
             # Journal the unresolvable call so it still shows up in tool analytics.
@@ -883,13 +1014,13 @@ class ToolExecutor:
             ):
                 _mark_failed(
                     call_id,
-                    f"Tool with ID {tool_id} not found.",
+                    tool_call_data["result"],
                     message_id=self.message_id,
                     user_id=self.user,
                 )
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
-            return f"Tool with ID {tool_id} not found.", call_id
+            return tool_call_data["result"], call_id
 
         tool_call_data = {
             "tool_name": tools_dict[tool_id]["name"],
@@ -1059,7 +1190,11 @@ class ToolExecutor:
                 # Normalize inside the guard: a tool returning an unexpected
                 # shape must not break the call it just completed.
                 artifacts = [
-                    {"id": str(a["id"]).strip(), "filename": a.get("filename")}
+                    {
+                        "id": str(a["id"]).strip(),
+                        "filename": a.get("filename"),
+                        "ref": a.get("ref"),
+                    }
                     for a in (get_artifacts(action_name, **parameters) or [])
                     if isinstance(a, dict) and a.get("id")
                 ]
@@ -1213,9 +1348,25 @@ class ToolExecutor:
 
         return tool
 
+    # Keys the client needs that are not part of the fixed shape below. They are
+    # small and optional, and are copied only when present so an ordinary tool
+    # call does not grow null columns in every persisted row.
+    _PRESERVED_TOOL_CALL_KEYS = ("artifacts", "device_id")
+
     def get_truncated_tool_calls(self) -> List[Dict]:
-        return [
-            {
+        """Project tool calls into the shape that is streamed and persisted.
+
+        This is what the client reloads, so anything dropped here is live-only
+        and vanishes when the conversation is reopened. ``result_full`` and
+        ``resolved_arguments`` are shed deliberately — they are the untruncated
+        copies this projection exists to remove — but ``artifacts`` and
+        ``device_id`` were omitted by oversight, which cost a multi-file
+        ``run_code`` all but its first download chip on reload and left the
+        remote-device approval UI without the id it keys its sticky action on.
+        """
+        projected = []
+        for tool_call in self.tool_calls:
+            entry = {
                 "tool_name": tool_call.get("tool_name"),
                 "call_id": tool_call.get("call_id"),
                 "action_name": tool_call.get("action_name"),
@@ -1224,5 +1375,9 @@ class ToolExecutor:
                 "result": truncate_tool_result(tool_call.get("result")),
                 "status": tool_call.get("status", "completed"),
             }
-            for tool_call in self.tool_calls
-        ]
+            for key in self._PRESERVED_TOOL_CALL_KEYS:
+                value = tool_call.get(key)
+                if value:
+                    entry[key] = value
+            projected.append(entry)
+        return projected

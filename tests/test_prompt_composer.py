@@ -57,6 +57,19 @@ class TestComposedPresets:
             assert "## Producing documents and running code" not in composed
             assert "artifact_generator" not in composed
 
+    def test_forbids_inventing_a_download_link(self):
+        """The one file rule that cannot live in a tool description.
+
+        Models announce generated files with a ``sandbox:`` URL taken from
+        their own pretraining — including on turns that made no tool call at
+        all, where no tool description is even sent. That is a formatting rule
+        about the answer, so it belongs here.
+        """
+        for preset_id in PRESET_VARIANTS:
+            composed = compose_preset(preset_id)
+            assert "download link" in composed
+            assert "artifact_generator" not in composed
+
     def test_unknown_preset_is_not_composed(self):
         assert not is_composed_preset("reduce")
         assert not is_composed_preset("some-uuid")

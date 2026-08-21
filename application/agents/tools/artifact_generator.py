@@ -142,6 +142,10 @@ _SCHEMAS: Dict[str, Dict[str, Any]] = {
                     "properties": {
                         "type": {"type": "string", "enum": ["heading", "paragraph"]},
                         "text": {"type": "string"},
+                        # ``level`` is legal on an html heading and the synopsis
+                        # lists both block shapes side by side, so models carry
+                        # it over. Rejecting it cost the whole spec.
+                        "level": {"type": "integer", "minimum": 1, "maximum": 3},
                     },
                     "required": ["type", "text"],
                 },
@@ -226,7 +230,7 @@ _SPEC_SYNOPSIS = (
     'presentation {"title"?, "slides": [{"title"?, "bullets"?: [str], "notes"?}]} · '
     'document {"title"?, "sections": [{"heading"?, "paragraphs"?: [str]}]} · '
     'spreadsheet {"sheets": [{"name"?, "rows": [[cell, ...]]}]} · '
-    'pdf {"title"?, "blocks": [{"type": "heading"|"paragraph", "text"}]} · '
+    'pdf {"title"?, "blocks": [{"type": "heading"|"paragraph", "text", "level"?: 1-3}]} · '
     'html {"title"?, "blocks": [...]} where each block is '
     '{"type": "heading", "text", "level"?: 1-3} | {"type": "paragraph", "text"} | '
     '{"type": "list", "items": [str], "ordered"?: bool} | '
@@ -318,7 +322,14 @@ _RENDERERS: Dict[str, str] = {
         "    story.append(Paragraph(escape(str(title)), styles['Title']))\n"
         "    story.append(Spacer(1, 12))\n"
         "for block in spec.get('blocks', []):\n"
-        "    style = styles['Heading1'] if block.get('type') == 'heading' else styles['BodyText']\n"
+        "    if block.get('type') == 'heading':\n"
+        "        try:\n"
+        "            level = int(block.get('level') or 1)\n"
+        "        except (TypeError, ValueError):\n"
+        "            level = 1\n"
+        "        style = styles['Heading%d' % min(max(level, 1), 3)]\n"
+        "    else:\n"
+        "        style = styles['BodyText']\n"
         "    story.append(Paragraph(escape(str(block.get('text', ''))), style))\n"
         "    story.append(Spacer(1, 6))\n"
         "SimpleDocTemplate({out_path!r}, pagesize=letter).build(story)\n"
@@ -436,6 +447,7 @@ class ArtifactGeneratorTool(Tool):
         self.message_id: Optional[str] = self.config.get("message_id")
         self._last_artifact_id: Optional[str] = None
         self._last_filename: Optional[str] = None
+        self._last_ref: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -454,6 +466,10 @@ class ArtifactGeneratorTool(Tool):
                     "or HTML file: it gives them a downloadable, versioned file. Never paste a "
                     "whole file into the chat instead, and never claim a file was produced unless "
                     "this tool returned a ref.\n"
+                    "The file is surfaced to the user as a download button the moment this call "
+                    "returns: name it in your answer and say it is ready, but do NOT write a link "
+                    "or path to it. Any URL you write for it is dead and reads to the user as a "
+                    "failed download.\n"
                     "Do NOT use it for a short snippet the user only wants to read inline, or to "
                     "change a file you already made — use edit_artifact for that."
                 ),
@@ -538,10 +554,20 @@ class ArtifactGeneratorTool(Tool):
         return self._last_artifact_id
 
     def get_artifacts(self, action_name: str, **kwargs: Any) -> List[Dict[str, Any]]:
-        """Return the produced artifact with its filename, for UI labelling."""
+        """Return the produced artifact with its filename and ref, for the UI.
+
+        ``ref`` is the model-facing handle (``A1``); the UI needs it to resolve
+        a ref the model typed into its answer back to this artifact.
+        """
         if not self._last_artifact_id:
             return []
-        return [{"id": self._last_artifact_id, "filename": self._last_filename}]
+        return [
+            {
+                "id": self._last_artifact_id,
+                "filename": self._last_filename,
+                "ref": self._last_ref,
+            }
+        ]
 
     # ------------------------------------------------------------------
     # Dispatch
@@ -550,6 +576,7 @@ class ArtifactGeneratorTool(Tool):
         """Dispatch a create/edit/rewrite action."""
         self._last_artifact_id = None
         self._last_filename = None
+        self._last_ref = None
         if not self.user_id:
             return {"status": "error", "error": "artifact_generator requires a valid user_id."}
         if self.conversation_id is None and self.workflow_run_id is None:
@@ -570,7 +597,7 @@ class ArtifactGeneratorTool(Tool):
     def _create(self, **kwargs: Any) -> Dict[str, Any]:
         """Validate, render, and persist a new artifact at version 1."""
         kind = kwargs.get("kind")
-        spec = kwargs.get("spec")
+        spec = self._coerce_spec(kwargs.get("spec"))
         title = kwargs.get("title")
         if kind not in _KIND_INFO:
             return {"status": "error", "error": f"unsupported kind: {kind!r}; expected one of {sorted(_KIND_INFO)}."}
@@ -604,12 +631,16 @@ class ArtifactGeneratorTool(Tool):
             return {"status": "error", "error": "failed to persist artifact."}
         self._last_artifact_id = ref["artifact_id"]
         self._last_filename = ref.get("filename")
+        self._last_ref = ref.get("ref")
         return {"status": "ok", **ref}
 
     def _edit(self, **kwargs: Any) -> Dict[str, Any]:
         """Merge-patch and/or list-append the current spec, re-render, and append a version."""
-        spec_patch = kwargs.get("spec_patch")
-        spec_append = kwargs.get("spec_append")
+        # Same stringification as ``spec``: these are declared ``{"type":
+        # "object"}`` and sent without ``strict`` too, so a model that
+        # stringifies one stringifies all three.
+        spec_patch = self._coerce_spec(kwargs.get("spec_patch"))
+        spec_append = self._coerce_spec(kwargs.get("spec_append"))
         if spec_patch is None and spec_append is None:
             return {"status": "error", "error": "edit_artifact needs spec_patch and/or spec_append."}
         if spec_patch is not None and not isinstance(spec_patch, dict):
@@ -643,6 +674,7 @@ class ArtifactGeneratorTool(Tool):
         self, artifact_id: str, kind: str, spec: Any, action: str, title: Optional[str] = None
     ) -> Dict[str, Any]:
         """Validate the new spec, re-render, and append the next version of an existing artifact."""
+        spec = self._coerce_spec(spec)
         valid = self._validate(kind, spec)
         if valid is not None:
             return valid
@@ -671,13 +703,42 @@ class ArtifactGeneratorTool(Tool):
             return {"status": "error", "error": "failed to persist artifact version."}
         self._last_artifact_id = ref["artifact_id"]
         self._last_filename = ref.get("filename")
+        self._last_ref = ref.get("ref")
         return {"status": "ok", **ref}
 
     # ------------------------------------------------------------------
     # Spec / render helpers
     # ------------------------------------------------------------------
+    @staticmethod
+    def _coerce_spec(spec: Any) -> Any:
+        """Parse a JSON-encoded spec string into the object the schemas expect.
+
+        ``spec`` is declared ``{"type": "object"}`` in the action metadata, but
+        tool definitions go out without ``strict`` (many ``openai_compatible``
+        endpoints reject it, and the schemas are not strict-conformant), so
+        nothing makes a model honour that. Weaker models — DeepSeek-V4-Flash
+        most of all — send ``"spec": "{\"blocks\": [...]}"`` instead. Rejecting
+        that outright taught the model the artifact tool was broken and sent it
+        off to hand-write a renderer through ``code_executor``.
+
+        Args:
+            spec: The spec as received from the tool call.
+
+        Returns:
+            The parsed object when ``spec`` is a JSON string encoding one,
+            otherwise ``spec`` unchanged so the caller still rejects it.
+        """
+        if not isinstance(spec, str):
+            return spec
+        try:
+            parsed = json.loads(spec)
+        except (TypeError, ValueError):
+            return spec
+        return parsed if isinstance(parsed, dict) else spec
+
     def _validate(self, kind: str, spec: Any) -> Optional[Dict[str, Any]]:
         """Return an error payload when ``spec`` is invalid for ``kind``, else None."""
+        spec = self._coerce_spec(spec)
         if not isinstance(spec, dict):
             return {"status": "error", "error": "spec must be a JSON object."}
         try:

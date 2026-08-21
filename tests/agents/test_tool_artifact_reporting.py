@@ -46,12 +46,19 @@ class TestCodeExecutorArtifacts:
 
 @pytest.mark.unit
 class TestArtifactGeneratorArtifacts:
-    def test_carries_the_rendered_filename(self):
+    def test_carries_the_rendered_filename_and_ref(self):
+        """``ref`` travels with the artifact so the UI can resolve ``A1``.
+
+        The model announces a file by its ref; without this the UI could only
+        guess which artifact ``A1`` meant, and a conversation-scoped ref
+        resolved positionally within one turn opens the wrong file.
+        """
         tool = ArtifactGeneratorTool({})
         tool._last_artifact_id = "b1"
         tool._last_filename = "Mock_SaaS_Agreement.pdf"
+        tool._last_ref = "A2"
         assert tool.get_artifacts("create_artifact") == [
-            {"id": "b1", "filename": "Mock_SaaS_Agreement.pdf"}
+            {"id": "b1", "filename": "Mock_SaaS_Agreement.pdf", "ref": "A2"}
         ]
 
     def test_nothing_produced_is_empty(self):

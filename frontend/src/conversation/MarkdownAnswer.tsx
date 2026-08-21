@@ -16,6 +16,11 @@ import MermaidRenderer from '../components/MermaidRenderer';
 import { Button } from '../components/ui/button';
 import { useDarkTheme } from '../hooks';
 import classes from './ConversationBubble.module.css';
+import {
+  resolveSandboxLink,
+  type SandboxArtifact,
+  sandboxUrlTransform,
+} from './sandboxLinks';
 
 // Replaces block-level ``\[ \]`` and inline ``\( \)`` LaTeX delimiters with the
 // ``$$``/``$`` forms remark-math understands.
@@ -64,9 +69,14 @@ export function processMarkdownContent(content: string): ContentSegment[] {
 export default function MarkdownAnswer({
   content,
   isStreaming,
+  artifacts,
+  onOpenArtifact,
 }: {
   content: string;
   isStreaming?: boolean;
+  /** Artifacts produced on this turn, in creation order (``A1`` is the first). */
+  artifacts?: SandboxArtifact[];
+  onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
 }) {
   const [isDarkTheme] = useDarkTheme();
   // Re-runs on every streamed token otherwise.
@@ -87,8 +97,39 @@ export default function MarkdownAnswer({
                 [remarkMath, { singleDollarTextMath: false }],
               ]}
               rehypePlugins={[rehypeKatex]}
+              urlTransform={sandboxUrlTransform}
               components={{
                 a({ href, children }) {
+                  // A generated file is already on the turn as a download
+                  // chip, but the model links it with a `sandbox:`/`artifact:`
+                  // URL no browser can open. Point the link at the chip
+                  // instead, and never leave a dead anchor behind.
+                  const sandboxLink = resolveSandboxLink(href, artifacts);
+                  if (sandboxLink.kind === 'plain') {
+                    return <>{children}</>;
+                  }
+                  if (sandboxLink.kind === 'artifact') {
+                    const { artifact } = sandboxLink;
+                    if (!onOpenArtifact) return <>{children}</>;
+                    return (
+                      <Button
+                        type="button"
+                        variant="link"
+                        onClick={() =>
+                          onOpenArtifact({
+                            id: artifact.id,
+                            toolName: artifact.toolName ?? '',
+                          })
+                        }
+                        /* Sits mid-sentence: no pill background, no fixed
+                           height, and it must wrap with the surrounding text. */
+                        className="text-primary h-auto w-auto bg-transparent p-0 whitespace-normal underline underline-offset-2"
+                        title={artifact.label}
+                      >
+                        {children}
+                      </Button>
+                    );
+                  }
                   if (href?.startsWith('#cite-')) {
                     const num = href.replace('#cite-', '');
                     const sourceIdx = parseInt(num, 10) - 1;
