@@ -110,6 +110,16 @@ class TestGetApiKeyForProvider:
             assert get_api_key_for_provider("openrouter") == "sk-or"
 
     @pytest.mark.unit
+    def test_orcarouter_key(self):
+        with patch("application.core.settings.settings") as mock_settings:
+            mock_settings.ORCAROUTER_API_KEY = "sk-orca"
+            mock_settings.API_KEY = "sk-fallback"
+
+            from application.core.model_utils import get_api_key_for_provider
+
+            assert get_api_key_for_provider("orcarouter") == "sk-orca"
+
+    @pytest.mark.unit
     def test_novita_key(self):
         with patch("application.core.settings.settings") as mock_settings:
             mock_settings.NOVITA_API_KEY = "sk-novita"

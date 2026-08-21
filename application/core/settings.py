@@ -195,6 +195,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     HUGGINGFACE_API_KEY: Optional[str] = None
     OPEN_ROUTER_API_KEY: Optional[str] = None
+    ORCAROUTER_API_KEY: Optional[str] = None
     NOVITA_API_KEY: Optional[str] = None
 
     OPENAI_API_BASE: Optional[str] = None  # azure openai api base url
