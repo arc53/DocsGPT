@@ -1165,9 +1165,18 @@ class ConversationsRepository:
 
         Deleting is still correct — the user explicitly asked to replace these
         turns — so the rows go, but any non-terminal one is first stamped
-        terminal. That makes the owning stream's late ``finalize_message``
-        report ``ALREADY_FAILED`` (a known, quiet outcome) rather than
-        ``NOT_FOUND``, and leaves an audit trail of what was superseded.
+        terminal, which leaves an audit trail of what was superseded.
+
+        That stamp does NOT survive: the UPDATE and the DELETE below run the
+        same ``position > :pos`` predicate in one transaction, so every stamped
+        row is removed microseconds later and the owning stream's late
+        ``finalize_message`` correctly reports ``NOT_FOUND``, not
+        ``ALREADY_FAILED``. Do not rely on the stamp for anything but the
+        ``RETURNING id`` log line. A stream superseded less than
+        ``STREAM_HEARTBEAT_INTERVAL`` before it finishes is never cancelled
+        (the ticker in ``api/answer/routes/base.py`` is the only thing that
+        sets the cancel flag), so it runs to completion and raises
+        ``answer_persist_failed`` with an answer nothing can save.
 
         Args:
             conversation_id: Conversation whose tail is being trimmed.

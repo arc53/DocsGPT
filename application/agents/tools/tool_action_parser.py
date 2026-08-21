@@ -68,9 +68,22 @@ class ToolActionParser:
             # along with it. Only genuinely malformed arguments fail here.
             call_args = self._decode_arguments(call.arguments)
             if call_args is _MALFORMED_ARGUMENTS:
+                # Quote a bounded prefix of the payload: the shape is the only
+                # thing that tells "we concatenated two complete payloads"
+                # (``{}{}`` — the per-index merge in llm/handlers/base.py
+                # appends, so a provider that restates complete arguments on a
+                # second frame produces invalid JSON) apart from "the model
+                # emitted garbage". Both look identical without it, which cost
+                # a day of triage on 2026-08-19. Truncated because tool
+                # arguments carry user content.
+                raw = call.arguments
+                preview = raw[:120] if isinstance(raw, str) else repr(raw)[:120]
                 logger.error(
-                    "Error parsing OpenAI LLM call: arguments are not decodable JSON (%s)",
+                    "Error parsing OpenAI LLM call: arguments are not decodable "
+                    "JSON (%s); length=%s prefix=%r",
                     getattr(call, "name", "<unknown>"),
+                    len(raw) if isinstance(raw, (str, bytes)) else "n/a",
+                    preview,
                 )
                 return None, None, None
 

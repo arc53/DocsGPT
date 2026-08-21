@@ -60,6 +60,28 @@ def run_reconciliation() -> Dict[str, Any]:
     # ``(user_id, event_type, payload, scope)``.
     events: list[tuple] = []
 
+    # Each sweep below commits in its own transaction, but the queued
+    # user-facing events are fanned out once, at the end. Without the
+    # ``finally``, a transient DB error in a later sweep discards events whose
+    # writes already landed — and the loss is permanent, because every sweep
+    # filters out the rows it just made terminal (``find_and_lock_stalled_
+    # ingests`` looks only at ``status='active'``, ``find_and_lock_stuck_
+    # messages`` only at pending/streaming), so no later tick re-finds them to
+    # re-emit. The user is left with an upload toast spinning on "Training..."
+    # forever. Seen live on 2026-08-21 when an Azure DNS blip took Postgres
+    # unreachable mid-tick.
+    try:
+        return _run_sweeps(engine, summary, events)
+    finally:
+        _publish_events(events)
+
+
+def _run_sweeps(engine, summary: Dict[str, Any], events: list[tuple]) -> Dict[str, Any]:
+    """Run every reconciler sweep, appending user-facing events to ``events``.
+
+    Split out of :func:`run_reconciliation` so the caller can guarantee the
+    queued events are published even when a sweep raises partway through.
+    """
     with engine.begin() as conn:
         repo = ReconciliationRepository(conn)
         pt_repo = PendingToolStateRepository(conn)
@@ -121,8 +143,11 @@ def run_reconciliation() -> Dict[str, Any]:
             repo.mark_tool_call_failed(
                 row["call_id"],
                 error=(
-                    "reconciler: stuck in 'proposed' for >5 min; "
-                    "side effect status unknown"
+                    "reconciler: never advanced past 'proposed' for >5 min. "
+                    "The row is written immediately before the tool runs, so "
+                    "either the tool is still executing or the stream was "
+                    "abandoned before it reported back; in the abandoned case "
+                    "no side effect was committed."
                 ),
             )
             summary["tool_calls_failed"] += 1
@@ -142,8 +167,12 @@ def run_reconciliation() -> Dict[str, Any]:
             repo.mark_tool_call_failed(
                 row["call_id"],
                 error=(
-                    "reconciler: executed-not-confirmed; side effect "
-                    "assumed committed, manual cleanup required"
+                    "reconciler: executed but not confirmed within 15 min. "
+                    "The tool SUCCEEDED and its side effect is committed; "
+                    "confirmation only lands when the whole turn finalizes, "
+                    "so a long-running turn reaches this state while healthy. "
+                    "Check the parent message before assuming cleanup is "
+                    "needed."
                 ),
             )
             summary["tool_calls_failed"] += 1
@@ -328,7 +357,6 @@ def run_reconciliation() -> Dict[str, Any]:
                 },
             )
 
-    _publish_events(events)
     return summary
 
 

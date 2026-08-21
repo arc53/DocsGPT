@@ -28,12 +28,24 @@ logger = logging.getLogger(__name__)
 # durability story is grep-able next to the body. Combined with
 # ``autoretry_for=(Exception,)`` and a bounded ``max_retries`` so a poison
 # message can't loop forever.
+# ``retry_backoff`` is the factor, NOT a boolean toggle: celery's
+# ``add_autoretry_behaviour`` OVERWRITES ``retry_kwargs["countdown"]`` whenever
+# it is truthy (celery/app/autoretry.py). With the old ``retry_backoff=True``
+# the factor was ``int(max(1.0, True)) == 1``, so the declared 60 s countdown
+# never reached ``task.retry`` and the three waits were jittered 0-1 s, 0-2 s
+# and 0-4 s — a whole retry envelope of at most 7 seconds. A 3.5-minute network
+# blip (2026-08-21) therefore exhausted every attempt and published a terminal
+# ``source.ingest.failed`` / ``attachment.failed`` to the user.
+# Factor 30 gives 30 s / 60 s / 120 s (full-jittered, capped by celery's
+# ``retry_backoff_max`` default of 600 s), which actually spans an outage of
+# that length. ``countdown`` is deliberately absent: leaving it in only
+# documents a value the library discards.
 DURABLE_TASK = dict(
     bind=True,
     acks_late=True,
     autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": 3, "countdown": 60},
-    retry_backoff=True,
+    retry_kwargs={"max_retries": 3},
+    retry_backoff=30,
 )
 
 
@@ -681,10 +693,24 @@ def cleanup_idempotency_dedup(self):
 
 @celery.task(bind=True, acks_late=False)
 def reconciliation_task(self):
-    """Sweep stuck durability rows and escalate them to terminal status + alert."""
+    """Sweep stuck durability rows and escalate them to terminal status + alert.
+
+    Never retries: the task is on a 30 s beat, so the next tick IS the retry,
+    and ``acks_late=False`` keeps a failing run from being redelivered. It only
+    guards itself so a transient connectivity error emits one WARNING instead
+    of a full traceback on the same ERROR channel ``_emit_alert`` uses for real
+    reconciler findings — at 30 s cadence a multi-minute outage would otherwise
+    bury genuine alerts under dozens of identical stack traces.
+    """
     from application.api.user.reconciliation import run_reconciliation
 
-    return run_reconciliation()
+    try:
+        return run_reconciliation()
+    except Exception as exc:  # noqa: BLE001 - housekeeping must never crash the beat loop
+        logging.getLogger(__name__).warning(
+            "reconciliation_task failed; the next beat retries: %s", exc,
+        )
+        return {"messages_failed": 0, "tool_calls_failed": 0, "error": True}
 
 
 @celery.task(bind=True, acks_late=False)
