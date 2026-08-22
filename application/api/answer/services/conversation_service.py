@@ -340,6 +340,20 @@ class ConversationService:
                 message_id, status,
             )
 
+    def was_superseded(self, message_id: str) -> bool:
+        """True when a retry/edit truncation deleted this message's row.
+
+        Args:
+            message_id: The reserved message id the stream was writing to.
+
+        Returns:
+            True if the row was deliberately superseded rather than lost.
+        """
+        if not message_id:
+            return False
+        with db_readonly() as conn:
+            return ConversationsRepository(conn).was_superseded(message_id)
+
     def heartbeat_message(self, message_id: str) -> bool:
         """Bump ``message_metadata.last_heartbeat_at`` so the reconciler's
         staleness sweep counts the row as alive. No-ops on terminal rows.

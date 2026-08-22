@@ -119,6 +119,62 @@ class TestErrorNamesWhatTheModelCanCall:
         _events, (result, _call_id) = _drain(executor, _call("make_a_pdf"), tools=tools_dict)
         assert "create_artifact" in result
 
+    def test_only_advertises_tools_in_scope_for_this_call(self):
+        """A narrowed ``tools_dict`` must not be told about out-of-scope tools.
+
+        The error string is a tool RESULT handed straight back to the model, so
+        naming a tool it cannot call this round just buys another failed round.
+        """
+        executor = ToolExecutor()
+        wide = {
+            f"t{n}": {
+                "name": f"server_{n}",
+                "actions": [
+                    {
+                        "name": f"action_{n}",
+                        "description": "D",
+                        "active": True,
+                        "parameters": {"properties": {}},
+                    }
+                ],
+            }
+            for n in range(4)
+        }
+        executor.prepare_tools_for_llm(wide)
+        narrowed = {"t1": wide["t1"]}
+        _events, (result, _call_id) = _drain(
+            executor, _call("make_a_pdf"), tools=narrowed
+        )
+        assert "action_1" in result, result
+        for out_of_scope in ("action_0", "action_2", "action_3"):
+            assert out_of_scope not in result, (out_of_scope, result)
+
+    def test_the_advertised_list_is_capped(self):
+        """This string joins the message history and is re-sent every round.
+
+        Uncapped, a large MCP fleet turns a single failed call into kilobytes
+        of prose duplicating the tool schema the provider already has.
+        """
+        executor = ToolExecutor()
+        many = {
+            f"t{n}": {
+                "name": f"server_{n}",
+                "actions": [
+                    {
+                        "name": f"action_{n:03d}",
+                        "description": "D",
+                        "active": True,
+                        "parameters": {"properties": {}},
+                    }
+                ],
+            }
+            for n in range(150)
+        }
+        executor.prepare_tools_for_llm(many)
+        _events, (result, _call_id) = _drain(executor, _call("make_a_pdf"), tools=many)
+        assert "and 120 more" in result, result
+        assert len(result) < 1000, len(result)
+
 
 @pytest.mark.unit
 class TestThrottleScope:
@@ -167,14 +223,27 @@ class TestThrottleScope:
         assert "has already failed" in result, result
         assert "(none available)" in result, result
 
-    def test_distinct_payloads_for_an_invented_name_stay_distinct(self):
+    def test_varying_payloads_for_an_invented_name_still_trip_the_guard(self):
+        """Varying the arguments must not reset the count for an unknown name.
+
+        Told a call failed, a model's natural next move is to adjust its
+        arguments. Keying the counter on name+payload minted a fresh signature
+        every round, so the guard never fired and the turn ran to
+        ``MAX_TOOL_ITERATIONS``. Arguments cannot rescue an unknown name:
+        ``ToolActionParser`` resolves from ``call.name`` alone.
+        """
         executor = ToolExecutor()
+        results = []
         for index, body in enumerate(['{"a": 1}', '{"b": 2}', '{"c": 3}']):
             _events, (result, _call_id) = _drain(
                 executor, _call("note_view", arguments=body, call_id=f"c{index}")
             )
-            assert "has already failed" not in result, (index, result)
-        assert len(executor._unresolvable_calls) == 3
+            results.append(result)
+        assert "has already failed" not in results[0], results[0]
+        assert "has already failed" not in results[1], results[1]
+        assert "has already failed 2 times" in results[2], results[2]
+        # One counter for the name, not one per payload.
+        assert list(executor._unresolvable_calls) == ["note_view"]
 
     def test_the_failure_count_keeps_escalating(self):
         """A count frozen at the limit makes the message and the ops log useless."""

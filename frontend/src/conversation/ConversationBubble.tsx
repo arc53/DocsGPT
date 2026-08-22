@@ -65,6 +65,12 @@ const ConversationBubble = forwardRef<
       index?: number,
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
+    /**
+     * Every artifact in the conversation, for resolving inline links. Refs
+     * are conversation-scoped, so a link may point at an earlier turn's file.
+     * The chip RAIL still uses this turn's artifacts only.
+     */
+    conversationArtifacts?: ReturnType<typeof deriveArtifactChips>;
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
     onToolAction?: (
       callId: string,
@@ -92,6 +98,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
+    conversationArtifacts,
     onOpenArtifact,
     onToolAction,
     agentId,
@@ -431,7 +438,7 @@ const ConversationBubble = forwardRef<
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
             suppressStatusLine={Boolean(research)}
-            artifacts={completedArtifacts}
+            artifacts={conversationArtifacts ?? completedArtifacts}
             onOpenArtifact={onOpenArtifact}
             renderApproval={(toolCall: ToolCallsType) => (
               <div className="fade-in mt-4 mr-5 ml-6">

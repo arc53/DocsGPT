@@ -80,14 +80,20 @@ EMIT_DIRECTIVE = re.compile(r"\[\[MOCK_LLM_EMIT:([A-Za-z0-9_=\-]+)\]\]")
 #   ``repeat`` — TWO frames for the same ``index``, each carrying the COMPLETE
 #                arguments. Some OpenAI-compatible gateways restate a short
 #                argument payload on the finish frame rather than sending a
-#                delta; DocsGPT's per-index merge appends, so the two combine
-#                into invalid JSON (``{}`` + ``{}`` -> ``{}{}``).
+#                delta. The merge recognises the restatement and takes the
+#                latest, rather than appending into invalid JSON
+#                (``{}`` + ``{}`` -> ``{}{}``).
 #   ``delta``  — arguments split into genuine partial deltas, which is what the
 #                merge's ``+=`` exists to reassemble. The control case.
+#   ``truncated`` — a single frame carrying a PREFIX of the arguments, i.e. a
+#                provider that stopped mid-payload. Unlike ``repeat`` this is
+#                genuinely unrecoverable: nothing downstream can invent the
+#                missing bytes, so the turn runs to the iteration cap.
 # An optional 4th field is a base64url JSON object to send as the arguments;
 # it defaults to ``{}`` (a zero-parameter action such as ``note_view``).
 TOOLCALL_DIRECTIVE = re.compile(
-    r"\[\[MOCK_LLM_TOOLCALL:([A-Za-z0-9_\-]+):(once|repeat|delta)(?::([A-Za-z0-9_=\-]+))?\]\]"
+    r"\[\[MOCK_LLM_TOOLCALL:([A-Za-z0-9_\-]+):(once|repeat|delta|truncated)"
+    r"(?::([A-Za-z0-9_=\-]+))?\]\]"
 )
 
 app = Flask(__name__)
@@ -286,6 +292,13 @@ def _toolcall_arg_frames(arguments: str, mode: str) -> list[str]:
     if mode == "repeat":
         # The incident shape: the complete payload arrives twice for one index.
         return [arguments, arguments]
+    if mode == "truncated":
+        # A provider that stopped mid-payload. Strip the closing brace so the
+        # accumulator can never parse, however it is merged.
+        stripped = arguments.rstrip()
+        if len(stripped) < 2:
+            return ['{"']
+        return [stripped[:-1]]
     if mode == "delta":
         if len(arguments) < 2:
             return [arguments]

@@ -62,14 +62,17 @@ def test_durable_task_retry_envelope_spans_a_multi_minute_outage():
 
     from application.api.user.tasks import DURABLE_TASK
 
-    assert DURABLE_TASK["retry_backoff"] == 30
-    # Leaving a ``countdown`` in would only document a value celery discards.
-    assert "countdown" not in DURABLE_TASK["retry_kwargs"]
+    assert DURABLE_TASK["retry_backoff"] == 60
+    # ``retry_kwargs`` must stay absent: celery captures it by reference and
+    # writes ``countdown`` into it on every retry, so one dict shared across
+    # every decorator would race and would mutate the module constant.
+    assert "retry_kwargs" not in DURABLE_TASK
+    assert DURABLE_TASK["max_retries"] == 3
 
     seen: list[dict] = []
 
     class _Task:
-        max_retries = DURABLE_TASK["retry_kwargs"]["max_retries"]
+        max_retries = DURABLE_TASK["max_retries"]
 
         def __init__(self) -> None:
             self.request = MagicMock()
@@ -85,20 +88,43 @@ def test_durable_task_retry_envelope_spans_a_multi_minute_outage():
     add_autoretry_behaviour(
         task,
         autoretry_for=DURABLE_TASK["autoretry_for"],
-        retry_kwargs=dict(DURABLE_TASK["retry_kwargs"]),
+        retry_kwargs={"max_retries": DURABLE_TASK["max_retries"]},
         retry_backoff=DURABLE_TASK["retry_backoff"],
     )
 
     ceilings = []
-    for attempt in range(DURABLE_TASK["retry_kwargs"]["max_retries"]):
+    for attempt in range(DURABLE_TASK["max_retries"]):
         task.request.retries = attempt
         with pytest.raises(RuntimeError, match="retry-sentinel"):
             task.run()
-        ceilings.append(30 * 2**attempt)
+        ceilings.append(DURABLE_TASK["retry_backoff"] * 2**attempt)
         # full jitter: the wait is drawn from [0, factor * 2**retries].
         assert 0 <= seen[-1]["countdown"] <= ceilings[-1]
 
-    # 30 / 60 / 120 — an envelope that can actually outlast a multi-minute
-    # blip, versus the 1 / 2 / 4 the old settings produced.
-    assert ceilings == [30, 60, 120]
-    assert sum(ceilings) >= 200
+    # 60 / 120 / 240 ceilings, versus the 1 / 2 / 4 the old settings produced.
+    assert ceilings == [60, 120, 240]
+
+    # Full jitter means the ceilings are not the waits, so pin the
+    # DISTRIBUTION rather than the nominal sum: asserting only
+    # ``0 <= countdown <= ceiling`` passes even when every draw is 0.
+    import statistics
+
+    from celery.utils.time import get_exponential_backoff_interval
+
+    envelopes = [
+        sum(
+            get_exponential_backoff_interval(
+                factor=DURABLE_TASK["retry_backoff"],
+                retries=attempt,
+                maximum=600,
+                full_jitter=True,
+            )
+            for attempt in range(DURABLE_TASK["max_retries"])
+        )
+        for _ in range(2000)
+    ]
+    # Median envelope is half the 420 s nominal; a wide margin keeps this
+    # from flaking while still failing if the factor or jitter regresses.
+    assert 150 <= statistics.median(envelopes) <= 270
+    # A 60 s outage must be survivable in the large majority of retry runs.
+    assert sum(e >= 60 for e in envelopes) / len(envelopes) > 0.9

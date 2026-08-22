@@ -29,6 +29,15 @@ def _run_alembic(url: str, *args: str) -> None:
     )
 
 
+def _alembic_history(url: str) -> str:
+    return subprocess.check_output(
+        [sys.executable, "-m", "alembic", "-c", str(_alembic_ini()), "history"],
+        timeout=60,
+        env={**os.environ, "POSTGRES_URI": url},
+        text=True,
+    )
+
+
 def _alembic_heads(url: str) -> list[str]:
     out = subprocess.check_output(
         [sys.executable, "-m", "alembic", "-c", str(_alembic_ini()), "heads"],
@@ -61,10 +70,16 @@ def _table_exists(conn, table: str) -> bool:
 
 class TestMigration0029RoundTrip:
     def test_single_head(self, pg_engine):
+        """One head, and 0029 still on the path to it.
+
+        Deliberately does NOT assert 0029 *is* the head — every later
+        migration would break that — only that the chain stays linear and
+        0029 has not been orphaned off it.
+        """
         url = pg_engine.url.render_as_string(hide_password=False)
         heads = _alembic_heads(url)
         assert len(heads) == 1, f"expected one alembic head, got {heads}"
-        assert _0029 in heads[0]
+        assert _0029 in _alembic_history(url)
 
     def test_upgrade_creates_column_and_table(self, pg_engine):
         with pg_engine.connect() as conn:

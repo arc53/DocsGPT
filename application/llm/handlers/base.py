@@ -97,6 +97,31 @@ class LLMResponse:
         return bool(self.tool_calls) and self.finish_reason == "tool_calls"
 
 
+def _is_restated_payload(existing: str, incoming: str) -> bool:
+    """True when ``incoming`` restates an already-complete ``existing`` payload.
+
+    Genuine argument deltas are fragments: a strict prefix of a single
+    top-level JSON object can never parse, because the outer brace balances
+    only at the final character. So "``existing`` parses on its own" is a
+    reliable signal that it is finished and ``incoming`` is a restatement
+    rather than a continuation.
+
+    The character check runs first and is what keeps this O(1) per frame —
+    parsing the accumulator on every delta would be quadratic in the number
+    of frames, which is 100 ms+ of CPU for a large artifact spec streamed a
+    few characters at a time.
+    """
+    if not existing or not incoming:
+        return False
+    if existing.rstrip()[-1:] not in ("}", "]") or incoming.lstrip()[:1] not in ("{", "["):
+        return False
+    try:
+        json.loads(existing)
+    except ValueError:
+        return False
+    return True
+
+
 class LLMHandler(ABC):
     """Abstract base class for LLM handlers."""
 
@@ -1422,7 +1447,20 @@ class LLMHandler(ABC):
                             elif isinstance(existing.arguments, str) and isinstance(
                                 call.arguments, str
                             ):
-                                existing.arguments += call.arguments
+                                if _is_restated_payload(
+                                    existing.arguments, call.arguments
+                                ):
+                                    # Some OpenAI-compatible gateways restate
+                                    # the WHOLE argument payload on the finish
+                                    # frame for an index instead of streaming
+                                    # deltas. Appending produced '{...}{...}',
+                                    # which never parses, so the tool call
+                                    # failed on every one of the turn's
+                                    # MAX_TOOL_ITERATIONS rounds while the turn
+                                    # still reported status='complete'.
+                                    existing.arguments = call.arguments
+                                else:
+                                    existing.arguments += call.arguments
                             else:
                                 # Complete (non-delta) payloads: latest wins.
                                 existing.arguments = call.arguments

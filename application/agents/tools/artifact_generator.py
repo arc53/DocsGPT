@@ -15,7 +15,7 @@ import copy
 import json
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from application.agents.tools.artifact_ref import resolve_artifact_id
 from application.agents.tools.base import Tool
@@ -597,11 +597,10 @@ class ArtifactGeneratorTool(Tool):
     def _create(self, **kwargs: Any) -> Dict[str, Any]:
         """Validate, render, and persist a new artifact at version 1."""
         kind = kwargs.get("kind")
-        spec = self._coerce_spec(kwargs.get("spec"))
         title = kwargs.get("title")
         if kind not in _KIND_INFO:
             return {"status": "error", "error": f"unsupported kind: {kind!r}; expected one of {sorted(_KIND_INFO)}."}
-        valid = self._validate(kind, spec)
+        spec, valid = self._validate(kind, kwargs.get("spec"))
         if valid is not None:
             return valid
 
@@ -674,8 +673,7 @@ class ArtifactGeneratorTool(Tool):
         self, artifact_id: str, kind: str, spec: Any, action: str, title: Optional[str] = None
     ) -> Dict[str, Any]:
         """Validate the new spec, re-render, and append the next version of an existing artifact."""
-        spec = self._coerce_spec(spec)
-        valid = self._validate(kind, spec)
+        spec, valid = self._validate(kind, spec)
         if valid is not None:
             return valid
         rendered = self._render(kind, spec)
@@ -736,16 +734,30 @@ class ArtifactGeneratorTool(Tool):
             return spec
         return parsed if isinstance(parsed, dict) else spec
 
-    def _validate(self, kind: str, spec: Any) -> Optional[Dict[str, Any]]:
-        """Return an error payload when ``spec`` is invalid for ``kind``, else None."""
+    def _validate(self, kind: str, spec: Any) -> Tuple[Any, Optional[Dict[str, Any]]]:
+        """Validate ``spec`` for ``kind``, returning ``(spec, error_payload)``.
+
+        The coerced spec comes back with the verdict so a caller cannot
+        validate one value and then render another: returning only the error
+        left the caller holding the original, and a stringified spec that
+        passed validation here would be written to spec.json as a JSON
+        *string*, which the renderer cannot read.
+
+        Args:
+            kind: Artifact kind, a key of ``_SCHEMAS``.
+            spec: The spec as received, possibly JSON-encoded.
+
+        Returns:
+            ``(coerced_spec, None)`` when valid, else ``(coerced_spec, error)``.
+        """
         spec = self._coerce_spec(spec)
         if not isinstance(spec, dict):
-            return {"status": "error", "error": "spec must be a JSON object."}
+            return spec, {"status": "error", "error": "spec must be a JSON object."}
         try:
             jsonschema.validate(spec, _SCHEMAS[kind])
         except jsonschema.ValidationError as exc:
-            return {"status": "error", "error": f"invalid {kind} spec: {exc.message}"}
-        return None
+            return spec, {"status": "error", "error": f"invalid {kind} spec: {exc.message}"}
+        return spec, None
 
     def _load_current(self, raw_id: Any) -> Dict[str, Any]:
         """Resolve a short ref/uuid to its parent-scoped artifact and current-version spec for edit/rewrite."""
@@ -804,10 +816,9 @@ class ArtifactGeneratorTool(Tool):
 
     def _render(self, kind: str, spec: Any) -> Dict[str, Any]:
         """Run the fixed renderer in the sandbox and return the produced file bytes."""
-        # ``_validate`` coerces a stringified spec internally but returns only an
-        # error payload, so validating and rendering the same value is the
-        # caller's job. Coerce here too: a caller that skipped it would otherwise
-        # pass validation and then write a JSON *string* to spec.json.
+        # Callers reach here with the spec ``_validate`` handed back, which is
+        # already coerced. Kept as a cheap guard for direct callers: it is an
+        # ``isinstance`` check, not a re-parse, once the value is a dict.
         spec = self._coerce_spec(spec)
         session_id = self._resolve_session_id()
         if session_id is None:

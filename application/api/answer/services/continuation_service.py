@@ -174,6 +174,27 @@ class ContinuationService:
             )
         return deleted
 
+    def release_claim(self, conversation_id: str, user: str) -> bool:
+        """Return a claimed row to ``pending`` after a resume failed.
+
+        Returns:
+            True if a claim was released.
+        """
+        with db_session() as conn:
+            conv = ConversationsRepository(conn).get_by_legacy_id(conversation_id)
+            if conv is not None:
+                pg_conv_id = conv["id"]
+            elif looks_like_uuid(conversation_id):
+                pg_conv_id = conversation_id
+            else:
+                return False
+            released = PendingToolStateRepository(conn).release_claim(pg_conv_id, user)
+        if released:
+            logger.info(
+                f"Released resume claim for conversation {conversation_id}"
+            )
+        return released
+
     def mark_resuming(self, conversation_id: str, user: str) -> bool:
         """Flip the pending row to ``resuming`` so a crashed resume can be retried."""
         with db_session() as conn:

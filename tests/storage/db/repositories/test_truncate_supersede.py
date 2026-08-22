@@ -118,3 +118,86 @@ class TestTruncateAfterSupersede:
     def test_invalid_conversation_id_is_rejected(self, pg_conn):
         repo = ConversationsRepository(pg_conn)
         assert repo.truncate_after("not-a-uuid", keep_up_to=0) == 0
+
+
+class TestSupersedeTombstone:
+    """``NOT_FOUND`` alone cannot tell a replaced turn from a lost answer.
+
+    The cancel flag is a ``threading.Event`` in the superseding request's own
+    process, so a stream in another worker never sees it and runs to
+    completion. Its late finalize then hits a row that is gone — routine on the
+    retry/edit path, and previously logged as an ERROR indistinguishable from a
+    genuinely orphaned answer.
+    """
+
+    def test_truncate_tombstones_every_row_it_deletes(self, pg_conn):
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create("u", "tombstone")
+        live = _seed(pg_conn, conv["id"], 0, "streaming")
+        done = _seed(pg_conn, conv["id"], 1, "complete")
+
+        repo.truncate_after(conv["id"], keep_up_to=-1)
+
+        # Both, not just the in-flight one: the UPDATE's status filter is
+        # narrower than the DELETE's, so the stamp alone would miss `done`.
+        assert repo.was_superseded(live) is True
+        assert repo.was_superseded(done) is True
+
+    def test_tombstone_survives_the_delete_that_created_it(self, pg_conn):
+        """No FK to conversation_messages, or the CASCADE would take it."""
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create("u", "cascade")
+        live = _seed(pg_conn, conv["id"], 0, "streaming")
+
+        repo.truncate_after(conv["id"], keep_up_to=-1)
+
+        assert _row(pg_conn, live) is None
+        assert repo.was_superseded(live) is True
+
+    def test_an_untouched_message_has_no_tombstone(self, pg_conn):
+        """A genuinely orphaned answer must still reach the ERROR path."""
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create("u", "kept")
+        kept = _seed(pg_conn, conv["id"], 0, "streaming")
+        dropped = _seed(pg_conn, conv["id"], 1, "streaming")
+
+        repo.truncate_after(conv["id"], keep_up_to=0)
+
+        assert repo.was_superseded(kept) is False
+        assert repo.was_superseded(dropped) is True
+
+    def test_was_superseded_shrugs_off_a_non_uuid(self, pg_conn):
+        """Shape-gate: a legacy ObjectId must not poison the transaction."""
+        repo = ConversationsRepository(pg_conn)
+        assert repo.was_superseded("507f1f77bcf86cd799439011") is False
+        assert repo.was_superseded("") is False
+
+    def test_truncate_is_repeatable(self, pg_conn):
+        """A second truncate over the same range must not raise on the PK."""
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create("u", "twice")
+        first = _seed(pg_conn, conv["id"], 0, "streaming")
+        repo.truncate_after(conv["id"], keep_up_to=-1)
+        _seed(pg_conn, conv["id"], 0, "streaming")
+        repo.truncate_after(conv["id"], keep_up_to=-1)
+        assert repo.was_superseded(first) is True
+
+    def test_cleanup_sweeps_old_tombstones_only(self, pg_conn):
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create("u", "sweep")
+        recent = _seed(pg_conn, conv["id"], 0, "streaming")
+        repo.truncate_after(conv["id"], keep_up_to=-1)
+        stale = _seed(pg_conn, conv["id"], 0, "streaming")
+        repo.truncate_after(conv["id"], keep_up_to=-1)
+        pg_conn.execute(
+            text(
+                "UPDATE superseded_messages "
+                "SET superseded_at = clock_timestamp() - make_interval(days => 30) "
+                "WHERE message_id = CAST(:mid AS uuid)"
+            ),
+            {"mid": stale},
+        )
+
+        assert repo.cleanup_superseded_older_than(14) == 1
+        assert repo.was_superseded(stale) is False
+        assert repo.was_superseded(recent) is True

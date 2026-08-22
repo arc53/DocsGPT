@@ -414,8 +414,12 @@ class TestDurableTaskRetryPolicy:
         task = getattr(tasks_module, task_name)
         assert task.acks_late is True
         assert Exception in task.autoretry_for
-        assert task.retry_backoff is True
-        assert task.retry_kwargs == {"max_retries": 3, "countdown": 60}
+        assert task.retry_backoff == 60
+        assert task.max_retries == 3
+        # ``retry_kwargs`` is deliberately unset: celery mutates that dict in
+        # place on every retry, so sharing one across the decorators would
+        # race. See the DURABLE_TASK comment in application/api/user/tasks.py.
+        assert not getattr(task, "retry_kwargs", None)
 
     @pytest.mark.unit
     @pytest.mark.parametrize(
@@ -653,6 +657,8 @@ class TestCleanupMessageEventsTask:
 
         assert result == {
             "deleted": 1,
+            # Supersede tombstones ride the same retention beat.
+            "superseded_deleted": 0,
             "ttl_days": settings.MESSAGE_EVENTS_RETENTION_DAYS,
         }
         # Only the fresh row survives.

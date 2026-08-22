@@ -39,17 +39,17 @@ def _tool():
 
 
 def test_validate_accepts_minimal_presentation():
-    assert _tool()._validate("presentation", {"slides": [{"title": "x"}]}) is None
+    assert _tool()._validate("presentation", {"slides": [{"title": "x"}]})[1] is None
 
 
 def test_validate_rejects_missing_required_key():
-    err = _tool()._validate("presentation", {"title": "no slides"})
+    _spec, err = _tool()._validate("presentation", {"title": "no slides"})
     assert err["status"] == "error"
     assert "invalid presentation spec" in err["error"]
 
 
 def test_validate_rejects_unknown_key():
-    err = _tool()._validate("document", {"sections": [], "bogus": 1})
+    _spec, err = _tool()._validate("document", {"sections": [], "bogus": 1})
     assert err["status"] == "error"
 
 
@@ -97,12 +97,12 @@ def test_reversion_without_title_falls_back_to_generic(monkeypatch):
 
 
 def test_validate_rejects_wrong_type():
-    err = _tool()._validate("spreadsheet", {"sheets": "not-a-list"})
+    _spec, err = _tool()._validate("spreadsheet", {"sheets": "not-a-list"})
     assert err["status"] == "error"
 
 
 def test_validate_rejects_non_object_spec():
-    err = _tool()._validate("pdf", "just a string")
+    _spec, err = _tool()._validate("pdf", "just a string")
     assert err["status"] == "error"
     assert "spec must be a JSON object" in err["error"]
 
@@ -300,16 +300,16 @@ def test_validate_accepts_html_spec():
             {"type": "code", "text": "print(1)"},
         ],
     }
-    assert _tool()._validate("html", spec) is None
+    assert _tool()._validate("html", spec)[1] is None
 
 
 def test_validate_rejects_html_unknown_block_key():
-    err = _tool()._validate("html", {"blocks": [{"type": "paragraph", "text": "x", "bogus": 1}]})
+    _spec, err = _tool()._validate("html", {"blocks": [{"type": "paragraph", "text": "x", "bogus": 1}]})
     assert err["status"] == "error"
 
 
 def test_validate_rejects_html_bad_heading_level():
-    err = _tool()._validate("html", {"blocks": [{"type": "heading", "text": "x", "level": 9}]})
+    _spec, err = _tool()._validate("html", {"blocks": [{"type": "heading", "text": "x", "level": 9}]})
     assert err["status"] == "error"
 
 
@@ -480,19 +480,28 @@ def test_validate_accepts_a_json_encoded_spec_string():
     """
     tool = _tool()
     spec = json.dumps({"blocks": [{"type": "heading", "text": "Hi"}]})
-    assert tool._validate("pdf", spec) is None
+    assert tool._validate("pdf", spec)[1] is None
 
 
 def test_validate_coerces_the_string_spec_for_the_caller():
+    """The coerced spec must come back, not just the verdict.
+
+    Returning only the error left the caller holding the original string: it
+    passed validation and was then written to spec.json as a JSON *string*,
+    which the renderer cannot read.
+    """
     tool = _tool()
-    spec = json.dumps({"sections": [{"heading": "H", "paragraphs": ["p"]}]})
-    assert tool._coerce_spec(spec) == {"sections": [{"heading": "H", "paragraphs": ["p"]}]}
+    raw = json.dumps({"sections": [{"heading": "H", "paragraphs": ["p"]}]})
+    spec, err = tool._validate("document", raw)
+    assert err is None
+    assert spec == {"sections": [{"heading": "H", "paragraphs": ["p"]}]}
+    assert tool._coerce_spec(raw) == spec
 
 
 def test_validate_still_rejects_a_json_string_that_is_not_an_object():
     tool = _tool()
-    assert tool._validate("pdf", json.dumps(["not", "an", "object"]))["status"] == "error"
-    assert tool._validate("pdf", "not json at all")["status"] == "error"
+    assert tool._validate("pdf", json.dumps(["not", "an", "object"]))[1]["status"] == "error"
+    assert tool._validate("pdf", "not json at all")[1]["status"] == "error"
 
 
 def test_create_accepts_a_stringified_spec(monkeypatch):
@@ -525,12 +534,12 @@ def test_pdf_schema_accepts_heading_level():
             {"type": "paragraph", "text": "Body."},
         ],
     }
-    assert _tool()._validate("pdf", spec) is None
+    assert _tool()._validate("pdf", spec)[1] is None
 
 
 def test_pdf_schema_still_rejects_an_out_of_range_level():
     spec = {"blocks": [{"type": "heading", "text": "x", "level": 9}]}
-    assert _tool()._validate("pdf", spec)["status"] == "error"
+    assert _tool()._validate("pdf", spec)[1]["status"] == "error"
 
 
 def test_pdf_renderer_honours_heading_level():

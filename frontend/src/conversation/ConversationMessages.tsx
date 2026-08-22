@@ -3,6 +3,7 @@ import {
   ReactNode,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -19,6 +20,7 @@ import {
   MessageScrollerViewport,
 } from '../components/ui/message-scroller';
 import Hero from '../Hero';
+import { deriveArtifactChips } from './artifactChips';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
 import StreamingStatusLine from './StreamingStatusLine';
@@ -72,6 +74,15 @@ export default function ConversationMessages({
   agentId,
 }: ConversationMessagesProps) {
   const { t } = useTranslation();
+
+  // Artifact refs (A1, A2, ...) are CONVERSATION-scoped on the backend — a
+  // ref minted on turn 1 still resolves, and edit_artifact still accepts it,
+  // on turn 5. Resolving inline links against only the current turn's
+  // artifacts made "the CSV from earlier" render as dead plain text.
+  const conversationArtifacts = useMemo(
+    () => queries.flatMap((query) => deriveArtifactChips(query.tool_calls)),
+    [queries],
+  );
 
   const hasMessages = queries.length > 0;
   const lastQuery = queries[queries.length - 1];
@@ -212,6 +223,7 @@ export default function ConversationMessages({
             segments={query.segments}
             workflowRunId={query.workflow_run_id}
             research={query.research}
+            conversationArtifacts={conversationArtifacts}
             onOpenArtifact={onOpenArtifact}
             onToolAction={onToolAction}
             feedback={query.feedback}

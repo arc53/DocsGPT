@@ -222,3 +222,56 @@ class TestRevertStaleResuming:
         loaded = repo.load_state(conv["id"], "user-1")
         assert loaded is not None
         assert loaded["status"] == "pending"
+
+
+class TestReleaseClaim:
+    def test_returns_a_claimed_row_to_pending(self, pg_conn):
+        """A failed resume must hand the claim back immediately.
+
+        Without this the only way back is ``revert_stale_resuming``'s 600 s
+        grace, and ``load_state`` ignores ``resuming`` rows — so the paused
+        turn stays resumable but invisible and the user is locked out of their
+        own conversation for ten minutes.
+        """
+        conv = _conv(pg_conn)
+        repo = _repo(pg_conn)
+        repo.save_state(conv["id"], "user-1", **_sample_state())
+        assert repo.claim_state(conv["id"], "user-1") is not None
+        assert repo.load_state(conv["id"], "user-1") is None
+
+        assert repo.release_claim(conv["id"], "user-1") is True
+
+        reclaimed = repo.load_state(conv["id"], "user-1")
+        assert reclaimed is not None
+        assert reclaimed["status"] == "pending"
+        assert reclaimed["resumed_at"] is None
+        # ...and the next resume attempt can take it straight away.
+        assert repo.claim_state(conv["id"], "user-1") is not None
+
+    def test_noop_on_a_pending_row(self, pg_conn):
+        """Only a claim can be released; a live pending row is left alone."""
+        conv = _conv(pg_conn)
+        repo = _repo(pg_conn)
+        repo.save_state(conv["id"], "user-1", **_sample_state())
+        assert repo.release_claim(conv["id"], "user-1") is False
+        assert repo.load_state(conv["id"], "user-1")["status"] == "pending"
+
+    def test_noop_when_the_row_is_gone(self, pg_conn):
+        """Must not resurrect a row another request deleted."""
+        conv = _conv(pg_conn)
+        repo = _repo(pg_conn)
+        repo.save_state(conv["id"], "user-1", **_sample_state())
+        repo.claim_state(conv["id"], "user-1")
+        repo.delete_state(conv["id"], "user-1")
+
+        assert repo.release_claim(conv["id"], "user-1") is False
+        assert repo.load_state_any(conv["id"], "user-1") is None
+
+    def test_scoped_to_the_owning_user(self, pg_conn):
+        conv = _conv(pg_conn)
+        repo = _repo(pg_conn)
+        repo.save_state(conv["id"], "user-1", **_sample_state())
+        repo.claim_state(conv["id"], "user-1")
+
+        assert repo.release_claim(conv["id"], "someone-else") is False
+        assert repo.load_state_any(conv["id"], "user-1")["status"] == "resuming"

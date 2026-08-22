@@ -176,6 +176,37 @@ class PendingToolStateRepository:
         )
         return result.rowcount > 0
 
+    def release_claim(self, conversation_id: str, user_id: str) -> bool:
+        """Flip a ``resuming`` row back to ``pending`` so a retry can claim it.
+
+        The inverse of :meth:`mark_resuming`, for the process that TOOK the
+        claim to call when its resume fails. Without it the only way back is
+        :meth:`revert_stale_resuming`, whose 600 s grace leaves the user
+        locked out of their own conversation for ten minutes after a resume
+        that errored — the paused turn stays resumable but invisible, because
+        :meth:`load_state` only sees ``pending`` rows.
+
+        Deliberately narrow: it matches on ``status = 'resuming'`` only, so it
+        can never resurrect a row another request has since deleted, and it
+        does not touch ``expires_at`` (the TTL is unrelated to the claim).
+
+        Returns:
+            True when a claim was released.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE pending_tool_state
+                SET status = 'pending', resumed_at = NULL
+                WHERE conversation_id = CAST(:conv_id AS uuid)
+                  AND user_id = :user_id
+                  AND status = 'resuming'
+                """
+            ),
+            {"conv_id": conversation_id, "user_id": user_id},
+        )
+        return result.rowcount > 0
+
     def revert_stale_resuming(
         self,
         grace_seconds: int = 600,

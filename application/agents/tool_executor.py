@@ -1,4 +1,3 @@
-import json
 import logging
 import re
 import uuid
@@ -398,7 +397,7 @@ class ToolExecutor:
         self.attachments: List[Dict] = []
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
-        # Per-signature failure counts for invented tool names this turn. After
+        # Per-NAME failure counts for invented tool names this turn. After
         # ``UNRESOLVABLE_CALL_LIMIT`` the model is handed a directive message
         # instead of the generic error; this is a prompt-level nudge, not a hard
         # bound — the loop bound remains ``MAX_TOOL_ITERATIONS``.
@@ -895,26 +894,37 @@ class ToolExecutor:
         a tool call. Fall back to tool names when the mapping has not been built
         (headless paths, tests). Never the internal tool ids: quoting those
         tells the model nothing about what to call instead.
+
+        Narrowed to ``tools_dict`` so a call made with a restricted toolset is
+        never told to call something out of scope, and capped: this string is
+        returned as a tool RESULT, so it joins the message history and is
+        re-sent on every later round. Uncapped, a large MCP fleet turns one
+        failed call into kilobytes of prose duplicating the tool schema the
+        provider already received.
         """
-        names = sorted(self._tool_to_name.values())
+        scope = set(tools_dict or {})
+        names = sorted(
+            name
+            for (tool_id, _action), name in self._tool_to_name.items()
+            if not scope or tool_id in scope
+        )
         if not names:
             names = sorted(
                 {(tool or {}).get("name") or tool_id for tool_id, tool in (tools_dict or {}).items()}
             )
         names = [str(name) for name in names if name != exclude]
+        if len(names) > self.MAX_ADVERTISED_TOOL_NAMES:
+            hidden = len(names) - self.MAX_ADVERTISED_TOOL_NAMES
+            names = names[: self.MAX_ADVERTISED_TOOL_NAMES] + [f"and {hidden} more"]
         return ", ".join(names) if names else "(none available)"
 
-    @staticmethod
-    def _call_signature(llm_name: str, call_args: Any) -> str:
-        """Stable key for "the model just made this exact call again"."""
-        try:
-            rendered = json.dumps(call_args, sort_keys=True, default=str)
-        except (TypeError, ValueError):
-            rendered = str(call_args)
-        return f"{llm_name}::{rendered}"
-
-    # After this many identical unresolvable calls, refuse rather than re-run.
+    # After this many unresolvable calls to the same name, refuse rather than
+    # re-run.
     UNRESOLVABLE_CALL_LIMIT = 2
+
+    # Cap on names rendered into a failed-call result; see
+    # :meth:`_available_tool_names`.
+    MAX_ADVERTISED_TOOL_NAMES = 30
 
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
         """Execute a tool call. Yields status events, returns (result, call_id)."""
@@ -930,18 +940,26 @@ class ToolExecutor:
         # third attempt on, hand back a directive message instead of the generic
         # error. Scoped to an unknown *name*: a registered tool whose arguments
         # merely failed to decode is recoverable, and refusing it would strand a
-        # working tool for the rest of the turn. Keyed on the raw payload, so two
-        # different malformed bodies stay two different signatures.
+        # working tool for the rest of the turn.
+        #
+        # Keyed on the NAME ALONE. Keying on the payload too made the guard a
+        # no-op in the case it exists for: told a call failed, a model varies
+        # its arguments on the next attempt, minting a fresh counter every
+        # round and never reaching the limit. Arguments cannot rescue an
+        # unknown name anyway — ``ToolActionParser`` resolves from ``call.name``
+        # only — and the "two different malformed bodies" case this used to
+        # protect belongs to REGISTERED tools, which the
+        # ``llm_name not in self._name_to_tool`` gate already excludes.
         if unresolvable and llm_name not in self._name_to_tool:
-            signature = self._call_signature(llm_name, getattr(call, "arguments", None))
-            failures = self._unresolvable_calls.get(signature, 0)
+            failures = self._unresolvable_calls.get(llm_name, 0)
             # Count before refusing, so the message and the log escalate rather
             # than freezing at the limit for the rest of the turn.
-            self._unresolvable_calls[signature] = failures + 1
+            self._unresolvable_calls[llm_name] = failures + 1
             if failures >= self.UNRESOLVABLE_CALL_LIMIT:
                 repeated = (
-                    f"'{llm_name}' has already failed {failures} times with these arguments and "
-                    f"will keep failing. Stop calling it and either use a different tool "
+                    f"'{llm_name}' has already failed {failures} times and will keep "
+                    f"failing — it is not a tool that exists. Stop calling it and "
+                    f"either use a different tool "
                     f"({self._available_tool_names(tools_dict, exclude=llm_name)}) or answer without one."
                 )
                 logger.warning(
@@ -987,7 +1005,6 @@ class ToolExecutor:
                 if name_is_known
                 else "the tool name could not be resolved and its arguments were not a JSON object"
             )
-            error_message = f"Error: Failed to parse LLM tool call. Tool name: {llm_name}"
             logger.error(
                 "tool_call_parse_failed",
                 extra={
@@ -1029,7 +1046,6 @@ class ToolExecutor:
             return tool_call_data["result"], call_id
 
         if tool_id not in tools_dict:
-            error_message = f"Error: Tool ID '{tool_id}' extracted from LLM call not found in available tools_dict. Available IDs: {list(tools_dict.keys())}"
             logger.error(
                 "tool_id_not_found",
                 extra={

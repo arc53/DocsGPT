@@ -1167,16 +1167,23 @@ class ConversationsRepository:
         turns — so the rows go, but any non-terminal one is first stamped
         terminal, which leaves an audit trail of what was superseded.
 
-        That stamp does NOT survive: the UPDATE and the DELETE below run the
-        same ``position > :pos`` predicate in one transaction, so every stamped
-        row is removed microseconds later and the owning stream's late
-        ``finalize_message`` correctly reports ``NOT_FOUND``, not
-        ``ALREADY_FAILED``. Do not rely on the stamp for anything but the
-        ``RETURNING id`` log line. A stream superseded less than
-        ``STREAM_HEARTBEAT_INTERVAL`` before it finishes is never cancelled
-        (the ticker in ``api/answer/routes/base.py`` is the only thing that
-        sets the cancel flag), so it runs to completion and raises
-        ``answer_persist_failed`` with an answer nothing can save.
+        That stamp does NOT survive: the UPDATE's predicate is a subset of the
+        DELETE's (it also filters ``status NOT IN ('complete','failed')``), and
+        both run in one transaction, so every stamped row is removed
+        microseconds later and the owning stream's late ``finalize_message``
+        correctly reports ``NOT_FOUND``, not ``ALREADY_FAILED``. Do not rely on
+        the stamp for anything but the ``RETURNING id`` log line.
+
+        What DOES survive is the ``superseded_messages`` tombstone written
+        below. A stream superseded less than ``STREAM_HEARTBEAT_INTERVAL``
+        before it finishes is never cancelled — the ticker in
+        ``api/answer/routes/base.py`` is the only thing that sets the cancel
+        flag, and it cannot be set from here because it is a ``threading.Event``
+        in another worker process — so the stream runs to completion and
+        finalizes into a row that is gone. Without the tombstone that logged an
+        ERROR ``answer_persist_failed``, identical to a genuinely orphaned
+        answer, every time a user hit retry on an answer shorter than the
+        heartbeat interval.
 
         Args:
             conversation_id: Conversation whose tail is being trimmed.
@@ -1218,6 +1225,22 @@ class ConversationsRepository:
                 conversation_id,
                 ", ".join(str(r[0]) for r in superseded),
             )
+        # Tombstone before the delete, in the same transaction: the late
+        # finalize usually runs in a different worker process, so the signal
+        # has to be durable. No FK, or the CASCADE below would remove it.
+        self._conn.execute(
+            text(
+                """
+                INSERT INTO superseded_messages (message_id, conversation_id)
+                SELECT id, conversation_id
+                  FROM conversation_messages
+                 WHERE conversation_id = CAST(:conv_id AS uuid)
+                   AND position > :pos
+                ON CONFLICT (message_id) DO NOTHING
+                """
+            ),
+            {"conv_id": conversation_id, "pos": keep_up_to},
+        )
         result = self._conn.execute(
             text(
                 "DELETE FROM conversation_messages "
@@ -1227,6 +1250,52 @@ class ConversationsRepository:
             {"conv_id": conversation_id, "pos": keep_up_to},
         )
         return result.rowcount
+
+    def was_superseded(self, message_id: str) -> bool:
+        """True when ``message_id`` was deleted by a retry/edit truncation.
+
+        Lets a stream that outlived its own row tell an expected supersede from
+        a genuinely orphaned answer. See :meth:`truncate_after`.
+
+        Args:
+            message_id: The reserved message id the stream was writing to.
+
+        Returns:
+            True if a tombstone exists for that message.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        row = self._conn.execute(
+            text(
+                "SELECT 1 FROM superseded_messages "
+                "WHERE message_id = CAST(:mid AS uuid)"
+            ),
+            {"mid": message_id},
+        ).fetchone()
+        return row is not None
+
+    def cleanup_superseded_older_than(self, days: int) -> int:
+        """Delete ``superseded_messages`` tombstones older than ``days``.
+
+        The tombstone only has to outlive the stream that was superseded, which
+        is bounded by the request timeout — days of retention is already
+        generous, and the table has no other reader.
+
+        Args:
+            days: Retention window in days.
+
+        Returns:
+            Number of rows deleted.
+        """
+        result = self._conn.execute(
+            text(
+                "DELETE FROM superseded_messages "
+                "WHERE superseded_at < clock_timestamp() "
+                "- make_interval(days => :days)"
+            ),
+            {"days": days},
+        )
+        return result.rowcount or 0
 
     def set_feedback(
         self, conversation_id: str, position: int, feedback: dict | None,

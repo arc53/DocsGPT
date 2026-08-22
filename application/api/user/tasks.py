@@ -28,24 +28,44 @@ logger = logging.getLogger(__name__)
 # durability story is grep-able next to the body. Combined with
 # ``autoretry_for=(Exception,)`` and a bounded ``max_retries`` so a poison
 # message can't loop forever.
+#
 # ``retry_backoff`` is the factor, NOT a boolean toggle: celery's
 # ``add_autoretry_behaviour`` OVERWRITES ``retry_kwargs["countdown"]`` whenever
 # it is truthy (celery/app/autoretry.py). With the old ``retry_backoff=True``
-# the factor was ``int(max(1.0, True)) == 1``, so the declared 60 s countdown
-# never reached ``task.retry`` and the three waits were jittered 0-1 s, 0-2 s
-# and 0-4 s — a whole retry envelope of at most 7 seconds. A 3.5-minute network
-# blip (2026-08-21) therefore exhausted every attempt and published a terminal
-# ``source.ingest.failed`` / ``attachment.failed`` to the user.
-# Factor 30 gives 30 s / 60 s / 120 s (full-jittered, capped by celery's
-# ``retry_backoff_max`` default of 600 s), which actually spans an outage of
-# that length. ``countdown`` is deliberately absent: leaving it in only
-# documents a value the library discards.
+# the factor was ``int(max(1.0, True)) == 1``, so the three waits were jittered
+# 0-1 s, 0-2 s and 0-4 s — a whole retry envelope of at most 7 seconds. A
+# 3.5-minute network blip (2026-08-21) therefore exhausted every attempt and
+# published a terminal ``source.ingest.failed`` / ``attachment.failed``.
+#
+# celery applies FULL JITTER (``retry_jitter`` defaults to True), so each wait
+# is drawn uniformly from ``[0, factor * 2**retries]`` — the ceilings are NOT
+# the waits, and the envelope is a distribution, not a guarantee. Factor 60
+# gives ceilings 60/120/240 s: a median envelope of ~210 s, which covers a
+# 60 s blip ~98% of the time and a 120 s blip ~85%. Factor 30 would have
+# covered the 210 s incident 0% of the time, because its 210 s nominal
+# maximum was reachable only by drawing all three waits at their ceiling.
+# Raising ``max_retries`` would buy more headroom but is deliberately not
+# done here: attempt 6 would newly reach the ``MAX_TASK_ATTEMPTS=5``
+# poison-loop guard in ``idempotency.py``, which is a separate behaviour
+# change from widening the waits.
+#
+# Jitter is deliberately left ON. These nine task types share their
+# dependencies (Postgres, object storage, the embedding provider), so an
+# outage fails them all at once; ``retry_jitter=False`` would wake every
+# in-flight task at the same instant and stampede the service that just
+# recovered.
+#
+# ``max_retries`` is passed at the top level rather than inside
+# ``retry_kwargs``: celery captures that dict BY REFERENCE and writes
+# ``retry_kwargs["countdown"]`` into it on every retry, so one shared dict
+# spread across all the decorators below would let concurrent retries race
+# and would permanently mutate this module constant.
 DURABLE_TASK = dict(
     bind=True,
     acks_late=True,
     autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": 3},
-    retry_backoff=30,
+    max_retries=3,
+    retry_backoff=60,
 )
 
 
@@ -706,11 +726,21 @@ def reconciliation_task(self):
 
     try:
         return run_reconciliation()
-    except Exception as exc:  # noqa: BLE001 - housekeeping must never crash the beat loop
-        logging.getLogger(__name__).warning(
-            "reconciliation_task failed; the next beat retries: %s", exc,
-        )
-        return {"messages_failed": 0, "tool_calls_failed": 0, "error": True}
+    except Exception:  # noqa: BLE001 - housekeeping must never crash the beat loop
+        # ``exception`` not ``warning``: without the traceback a programming
+        # error in a sweep logs one context-free line every 30 s forever and
+        # there is no way to locate it. Celery still records the tick as
+        # SUCCESS because the exception is swallowed here, so this log is the
+        # only channel that carries the stack.
+        logger.exception("reconciliation_task failed; the next beat retries")
+        return {
+            "messages_failed": 0,
+            "tool_calls_failed": 0,
+            "ingests_stalled": 0,
+            "attachments_stalled": 0,
+            "schedule_runs_failed": 0,
+            "error": True,
+        }
 
 
 @celery.task(bind=True, acks_late=False)
@@ -732,11 +762,20 @@ def cleanup_message_events(self):
         MessageEventsRepository,
     )
 
+    from application.storage.db.repositories.conversations import (
+        ConversationsRepository,
+    )
+
     ttl_days = settings.MESSAGE_EVENTS_RETENTION_DAYS
     engine = get_engine()
     with engine.begin() as conn:
         deleted = MessageEventsRepository(conn).cleanup_older_than(ttl_days)
-    return {"deleted": deleted, "ttl_days": ttl_days}
+        # Supersede tombstones ride the same beat: both are per-stream
+        # bookkeeping with the same retention story.
+        tombstones = ConversationsRepository(conn).cleanup_superseded_older_than(
+            ttl_days
+        )
+    return {"deleted": deleted, "superseded_deleted": tombstones, "ttl_days": ttl_days}
 
 
 @celery.task(bind=True, acks_late=False)

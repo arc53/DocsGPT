@@ -48,7 +48,7 @@ const ACTION = 'memory_view';
 /** Directive understood by scripts/e2e/mock_llm.py. */
 function toolCallDirective(
   action: string,
-  mode: 'once' | 'repeat' | 'delta',
+  mode: 'once' | 'repeat' | 'delta' | 'truncated',
   args?: Record<string, unknown>,
 ): string {
   const base = `[[MOCK_LLM_TOOLCALL:${action}:${mode}`;
@@ -88,7 +88,7 @@ test.describe('streaming tool-call argument merge', () => {
     await resetDb();
   });
 
-  test('a provider that restates complete arguments makes the tool unrunnable, and the turn still reports success', async ({
+  test('a provider that restates complete arguments still runs the tool', async ({
     browser,
   }) => {
     const { sub, token } = await newUserContext(browser);
@@ -105,20 +105,19 @@ test.describe('streaming tool-call argument merge', () => {
       expect(res.ok()).toBeTruthy();
       const body = await res.text();
 
-      // ---- the failure is silent by every signal a user or a dashboard sees
       expect(body).toContain('"type": "end"');
       expect(await messageStatuses(sub)).toEqual(['complete']);
 
-      // ---- ...and total by the only signal that records it
+      // A restated payload is recognised as a restatement, not a delta, so
+      // the arguments still parse and the call resolves to the real tool.
+      // Before the fix these were appended into '{}{}', which never parsed:
+      // every attempt landed as tool_name='unknown' and the turn burned all
+      // of MAX_TOOL_ITERATIONS while still reporting status='complete'.
       const attempts = await attemptsFor(sub);
       expect(attempts.length).toBeGreaterThan(0);
-      expect(attempts.every((a) => a.status === 'failed')).toBe(true);
-      // `tool_name` is 'unknown' because parsing dies before the name is
-      // resolved — the production fingerprint.
-      expect(attempts.every((a) => a.tool_name === 'unknown')).toBe(true);
+      expect(attempts.some((a) => a.tool_name === 'unknown')).toBe(false);
+      expect(attempts[0].tool_name).toBe('memory');
       expect(attempts.every((a) => a.action_name === ACTION)).toBe(true);
-      // The tool itself never executed: not one attempt reached the registry.
-      expect(attempts.some((a) => a.tool_name === 'memory')).toBe(false);
     } finally {
       await api.dispose();
     }
@@ -176,7 +175,7 @@ test.describe('streaming tool-call argument merge', () => {
     }
   });
 
-  test('a registered tool with unparseable arguments is re-asked every round, up to the iteration cap', async ({
+  test('a registered tool with genuinely unparseable arguments is re-asked every round, up to the iteration cap', async ({
     browser,
   }) => {
     const { sub, token } = await newUserContext(browser);
@@ -185,7 +184,7 @@ test.describe('streaming tool-call argument merge', () => {
     try {
       const res = await api.post('/stream', {
         data: {
-          question: `check my memory ${toolCallDirective(ACTION, 'repeat')}`,
+          question: `check my memory ${toolCallDirective(ACTION, 'truncated')}`,
           save_conversation: true,
         },
         timeout: 180_000,
@@ -203,11 +202,10 @@ test.describe('streaming tool-call argument merge', () => {
       expect(body).toContain('its arguments were not a valid JSON object');
       expect(body).not.toContain('has already failed');
 
-      // That reasoning holds when the model can fix its own output. It cannot
-      // here — the arguments are mangled downstream of the model by the merge,
-      // so the retry is unwinnable and the only thing that ends the turn is
-      // MAX_TOOL_ITERATIONS (application/llm/handlers/base.py:17). Every one of
-      // these 25 rounds is a billed provider call that could never succeed.
+      // A genuinely truncated payload stays unwinnable — the model cannot fix
+      // what it never finished emitting — so the turn still runs to
+      // MAX_TOOL_ITERATIONS (application/llm/handlers/base.py:17). This is the
+      // cap doing its job, not the merge bug: `repeat` above now resolves.
       const attempts = await attemptsFor(sub);
       expect(attempts.length).toBe(25);
     } finally {

@@ -1293,6 +1293,80 @@ class TestHandleStreaming:
         executed_call = tool_call_args[0][1]
         assert executed_call.arguments == '{"q":"test"}'
 
+    @pytest.mark.parametrize(
+        "first,second,expected",
+        [
+            # A gateway that restates the whole payload on the finish frame
+            # instead of streaming deltas. Appending gave '{}{}' / the doubled
+            # object, which never parses.
+            ("{}", "{}", "{}"),
+            ('{"path": "/"}', '{"path": "/"}', '{"path": "/"}'),
+            # ...but genuine deltas must still concatenate.
+            ('{"q":', '"test"}', '{"q":"test"}'),
+            ('{"a": 1', ', "b": 2}', '{"a": 1, "b": 2}'),
+        ],
+    )
+    def test_restated_tool_arguments_replace_rather_than_append(
+        self, first, second, expected
+    ):
+        """A complete payload restated for the same index must not be appended.
+
+        A strict prefix of one top-level JSON object never parses, so
+        "the accumulator already parses" cleanly separates a restatement from
+        a continuation.
+        """
+        import json as _json
+
+        handler = ConcreteHandler()
+        agent = Mock()
+        agent.llm = Mock()
+        agent.model_id = "test"
+        agent.tools = []
+        agent._check_context_limit = Mock(return_value=False)
+        agent.context_limit_reached = False
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
+
+        chunk1 = LLMResponse(
+            content="",
+            tool_calls=[ToolCall(id="c1", name="search", arguments=first, index=0)],
+            finish_reason="",
+            raw_response={},
+        )
+        chunk2 = LLMResponse(
+            content="",
+            tool_calls=[ToolCall(id="", name="", arguments=second, index=0)],
+            finish_reason="tool_calls",
+            raw_response={},
+        )
+
+        handler.parse_response = lambda c: c
+
+        def fake_iterate(response):
+            yield from response
+
+        handler._iterate_stream = fake_iterate
+
+        def fake_execute(tools_dict, call):
+            yield {"type": "tool_call", "data": {"status": "pending"}}
+            return ("result", call.id)
+
+        agent._execute_tool_action = Mock(side_effect=fake_execute)
+        agent.llm.gen_stream = Mock(
+            return_value=[
+                LLMResponse(
+                    content="done", tool_calls=[], finish_reason="stop", raw_response={}
+                )
+            ]
+        )
+
+        list(handler.handle_streaming(agent, [chunk1, chunk2], {"1": {"name": "t"}}, []))
+
+        executed_call = agent._execute_tool_action.call_args[0][1]
+        assert executed_call.arguments == expected
+        # The whole point: the merged payload parses.
+        _json.loads(executed_call.arguments)
+
     def test_context_limit_adds_system_message(self):
         handler = ConcreteHandler()
         agent = Mock()
