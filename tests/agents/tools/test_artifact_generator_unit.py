@@ -39,17 +39,17 @@ def _tool():
 
 
 def test_validate_accepts_minimal_presentation():
-    assert _tool()._validate("presentation", {"slides": [{"title": "x"}]}) is None
+    assert _tool()._validate("presentation", {"slides": [{"title": "x"}]})[1] is None
 
 
 def test_validate_rejects_missing_required_key():
-    err = _tool()._validate("presentation", {"title": "no slides"})
+    _spec, err = _tool()._validate("presentation", {"title": "no slides"})
     assert err["status"] == "error"
     assert "invalid presentation spec" in err["error"]
 
 
 def test_validate_rejects_unknown_key():
-    err = _tool()._validate("document", {"sections": [], "bogus": 1})
+    _spec, err = _tool()._validate("document", {"sections": [], "bogus": 1})
     assert err["status"] == "error"
 
 
@@ -97,12 +97,12 @@ def test_reversion_without_title_falls_back_to_generic(monkeypatch):
 
 
 def test_validate_rejects_wrong_type():
-    err = _tool()._validate("spreadsheet", {"sheets": "not-a-list"})
+    _spec, err = _tool()._validate("spreadsheet", {"sheets": "not-a-list"})
     assert err["status"] == "error"
 
 
 def test_validate_rejects_non_object_spec():
-    err = _tool()._validate("pdf", "just a string")
+    _spec, err = _tool()._validate("pdf", "just a string")
     assert err["status"] == "error"
     assert "spec must be a JSON object" in err["error"]
 
@@ -300,16 +300,16 @@ def test_validate_accepts_html_spec():
             {"type": "code", "text": "print(1)"},
         ],
     }
-    assert _tool()._validate("html", spec) is None
+    assert _tool()._validate("html", spec)[1] is None
 
 
 def test_validate_rejects_html_unknown_block_key():
-    err = _tool()._validate("html", {"blocks": [{"type": "paragraph", "text": "x", "bogus": 1}]})
+    _spec, err = _tool()._validate("html", {"blocks": [{"type": "paragraph", "text": "x", "bogus": 1}]})
     assert err["status"] == "error"
 
 
 def test_validate_rejects_html_bad_heading_level():
-    err = _tool()._validate("html", {"blocks": [{"type": "heading", "text": "x", "level": 9}]})
+    _spec, err = _tool()._validate("html", {"blocks": [{"type": "heading", "text": "x", "level": 9}]})
     assert err["status"] == "error"
 
 
@@ -462,3 +462,138 @@ def test_edit_requires_patch_or_append():
     err = _tool()._edit(id="A1")
     assert err["status"] == "error"
     assert "spec_patch and/or spec_append" in err["error"]
+
+
+# ---------------------------------------------------------------------------
+# Weak models stringify the spec, and put `level` on pdf headings
+# ---------------------------------------------------------------------------
+
+
+def test_validate_accepts_a_json_encoded_spec_string():
+    """A JSON-string spec must be parsed, not rejected.
+
+    ``spec`` is declared ``{"type": "object"}`` in the tool metadata, but tool
+    definitions are not sent with ``strict``, so nothing forces a model to
+    honour it. DeepSeek-V4-Flash sends ``"spec": "{\\"blocks\\": ...}"`` on the
+    majority of its calls; rejecting it outright made the model abandon the
+    artifact tool and hand-write reportlab through ``code_executor`` instead.
+    """
+    tool = _tool()
+    spec = json.dumps({"blocks": [{"type": "heading", "text": "Hi"}]})
+    assert tool._validate("pdf", spec)[1] is None
+
+
+def test_validate_coerces_the_string_spec_for_the_caller():
+    """The coerced spec must come back, not just the verdict.
+
+    Returning only the error left the caller holding the original string: it
+    passed validation and was then written to spec.json as a JSON *string*,
+    which the renderer cannot read.
+    """
+    tool = _tool()
+    raw = json.dumps({"sections": [{"heading": "H", "paragraphs": ["p"]}]})
+    spec, err = tool._validate("document", raw)
+    assert err is None
+    assert spec == {"sections": [{"heading": "H", "paragraphs": ["p"]}]}
+    assert tool._coerce_spec(raw) == spec
+
+
+def test_validate_still_rejects_a_json_string_that_is_not_an_object():
+    tool = _tool()
+    assert tool._validate("pdf", json.dumps(["not", "an", "object"]))[1]["status"] == "error"
+    assert tool._validate("pdf", "not json at all")[1]["status"] == "error"
+
+
+def test_create_accepts_a_stringified_spec(monkeypatch):
+    """The coercion must reach ``_create``, not just ``_validate``."""
+    tool = _tool()
+    captured = {}
+
+    def fake_render(kind, spec):
+        captured["kind"], captured["spec"] = kind, spec
+        return {"error": "stop here"}
+
+    monkeypatch.setattr(tool, "_render", fake_render)
+    out = tool._create(kind="pdf", spec=json.dumps({"blocks": [{"type": "paragraph", "text": "x"}]}))
+    assert out["error"] == "stop here"
+    assert captured["spec"] == {"blocks": [{"type": "paragraph", "text": "x"}]}
+
+
+def test_pdf_schema_accepts_heading_level():
+    """``level`` is legal on html headings and was illegal on pdf headings.
+
+    The synopsis lists both block shapes in adjacent clauses, so a model that
+    has just read ``"level"?: 1-3`` carries it over and loses the whole spec to
+    ``Additional properties are not allowed ('level' was unexpected)``.
+    """
+    spec = {
+        "title": "Patch Notes",
+        "blocks": [
+            {"type": "heading", "text": "Hunter", "level": 1},
+            {"type": "heading", "text": "Birdhouses", "level": 3},
+            {"type": "paragraph", "text": "Body."},
+        ],
+    }
+    assert _tool()._validate("pdf", spec)[1] is None
+
+
+def test_pdf_schema_still_rejects_an_out_of_range_level():
+    spec = {"blocks": [{"type": "heading", "text": "x", "level": 9}]}
+    assert _tool()._validate("pdf", spec)[1]["status"] == "error"
+
+
+def test_pdf_renderer_honours_heading_level():
+    """A level must change the rendered style, not merely pass validation."""
+    same_text = "Chapter"
+    h1 = _render_in_process("pdf", {"blocks": [{"type": "heading", "text": same_text, "level": 1}]})
+    h3 = _render_in_process("pdf", {"blocks": [{"type": "heading", "text": same_text, "level": 3}]})
+    # reportlab stamps a creation date, so the bytes are never identical —
+    # compare sizes instead: Heading1 and Heading3 differ in font size, so the
+    # content stream length differs. Equal sizes would mean ``level`` was
+    # silently ignored (the pre-fix renderer used Heading1 for every heading).
+    assert os.path.getsize(h1) != os.path.getsize(h3)
+    assert os.path.getsize(h1) == os.path.getsize(
+        _render_in_process("pdf", {"blocks": [{"type": "heading", "text": same_text, "level": 1}]})
+    )
+
+
+def test_pdf_renderer_tolerates_a_junk_level():
+    out_path = _render_in_process(
+        "pdf", {"blocks": [{"type": "heading", "text": "x", "level": "two"}]}
+    )
+    assert os.path.getsize(out_path) > 0
+
+
+def test_edit_accepts_stringified_patch_and_append(monkeypatch):
+    """``spec_patch``/``spec_append`` are declared like ``spec`` and stringify the same way.
+
+    Without this, a model that has just had ``create_artifact`` accepted goes on
+    to hard-fail its first edit — straight back into the "the artifact tool is
+    broken, I'll hand-write a renderer" spiral the coercion exists to end.
+    """
+    tool = _tool()
+    monkeypatch.setattr(
+        tool,
+        "_load_current",
+        lambda _id: {
+            "artifact_id": "a-1",
+            "kind": "pdf",
+            "spec": {"title": "Old", "blocks": [{"type": "paragraph", "text": "a"}]},
+            "title": "Old",
+        },
+    )
+    captured = {}
+    monkeypatch.setattr(tool, "_reversion", lambda *a, **k: captured.update(spec=a[2]) or {"status": "ok"})
+
+    tool._edit(id="A1", spec_patch=json.dumps({"title": "New"}))
+    assert captured["spec"]["title"] == "New"
+
+    captured.clear()
+    tool._edit(id="A1", spec_append=json.dumps({"blocks": [{"type": "paragraph", "text": "b"}]}))
+    assert len(captured["spec"]["blocks"]) == 2
+
+
+def test_edit_still_rejects_a_non_object_patch():
+    tool = _tool()
+    assert tool._edit(id="A1", spec_patch="not json")["status"] == "error"
+    assert tool._edit(id="A1", spec_append=json.dumps(["a", "b"]))["status"] == "error"

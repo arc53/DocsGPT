@@ -14,6 +14,7 @@ import {
 } from '../utils/streamingStatusUtils';
 import { AnswerSegment, getAnswerSegments } from './answerSegments';
 import MarkdownAnswer from './MarkdownAnswer';
+import { type SandboxArtifact } from './sandboxLinks';
 import StreamingStatusLine from './StreamingStatusLine';
 import { ToolCallsType } from './types';
 import { isWikiWriteCall } from './wikiToolCall';
@@ -28,6 +29,11 @@ type AnswerFlowProps = {
   agentId?: string;
   /** Set when the bubble already carries its own progress UI (a research run). */
   suppressStatusLine?: boolean;
+  /** Every artifact in the conversation, so ``sandbox:`` links can reach them. */
+  artifacts?: SandboxArtifact[];
+  /** This turn's own artifacts, which win when a link names a bare filename. */
+  turnArtifacts?: SandboxArtifact[];
+  onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   renderApproval: (toolCall: ToolCallsType) => React.ReactNode;
   renderWikiWrite: (
     toolCall: ToolCallsType,
@@ -47,6 +53,9 @@ export default function AnswerFlow({
   isStreaming,
   agentId,
   suppressStatusLine,
+  artifacts,
+  turnArtifacts,
+  onOpenArtifact,
   renderApproval,
   renderWikiWrite,
 }: AnswerFlowProps) {
@@ -121,7 +130,13 @@ export default function AnswerFlow({
           {/* ``ml-6`` is the answer's text column: step labels sit at the same
               offset, with their icons in the gutter to its left. */}
           <div className="fade-in-bubble my-2 mr-5 ml-6 flex max-w-full flex-col">
-            <MarkdownAnswer content={message} isStreaming={isStreaming} />
+            <MarkdownAnswer
+              content={message}
+              isStreaming={isStreaming}
+              artifacts={artifacts}
+              turnArtifacts={turnArtifacts}
+              onOpenArtifact={onOpenArtifact}
+            />
           </div>
         </div>
       )}

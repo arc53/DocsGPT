@@ -30,6 +30,7 @@ import {
 import { isToolCallRunning } from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
 import { AnswerSegment } from './answerSegments';
+import { deriveArtifactChips } from './artifactChips';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import MarkdownAnswer from './MarkdownAnswer';
 import ResearchProgress from './ResearchProgress';
@@ -64,6 +65,12 @@ const ConversationBubble = forwardRef<
       index?: number,
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
+    /**
+     * Every artifact in the conversation, for resolving inline links. Refs
+     * are conversation-scoped, so a link may point at an earlier turn's file.
+     * The chip RAIL still uses this turn's artifacts only.
+     */
+    conversationArtifacts?: ReturnType<typeof deriveArtifactChips>;
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
     onToolAction?: (
       callId: string,
@@ -91,6 +98,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
+    conversationArtifacts,
     onOpenArtifact,
     onToolAction,
     agentId,
@@ -111,39 +119,7 @@ const ConversationBubble = forwardRef<
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
-  const formatToolName = (toolName: string | undefined): string => {
-    if (!toolName) return '';
-    // Display-name overrides for tools whose label differs from the formatted key.
-    const overrides: Record<string, string> = {
-      artifact_generator: 'Artifact',
-    };
-    if (overrides[toolName]) return overrides[toolName];
-    return toolName
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  };
-
-  // One entry per artifact, not per tool call: a single call (``run_code``)
-  // can write several files, and only the first was reachable before.
-  const completedArtifacts = (toolCalls ?? [])
-    .filter((toolCall) => toolCall.status === 'completed')
-    .flatMap((toolCall) => {
-      const produced = toolCall.artifacts?.length
-        ? toolCall.artifacts
-        : toolCall.artifact_id
-          ? [{ id: toolCall.artifact_id, filename: undefined }]
-          : [];
-      return produced.map((artifact) => ({
-        id: artifact.id,
-        // The file's own name is what the user recognises; the tool that made
-        // it ("Code Executor") tells them nothing about which file this is.
-        label:
-          artifact.filename || formatToolName(toolCall.tool_name) || 'Artifact',
-        toolName: toolCall.tool_name,
-        callId: toolCall.call_id,
-      }));
-    });
+  const completedArtifacts = deriveArtifactChips(toolCalls);
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
@@ -462,6 +438,12 @@ const ConversationBubble = forwardRef<
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
             suppressStatusLine={Boolean(research)}
+            artifacts={conversationArtifacts ?? completedArtifacts}
+            // The chip rail below renders from this turn's artifacts alone, so
+            // a bare-filename link has to resolve against the same set or the
+            // two controls in one bubble open different files.
+            turnArtifacts={completedArtifacts}
+            onOpenArtifact={onOpenArtifact}
             renderApproval={(toolCall: ToolCallsType) => (
               <div className="fade-in mt-4 mr-5 ml-6">
                 <ToolCallApprovalBar
@@ -743,9 +725,8 @@ function ToolCallApprovalBar({
       (toolCall.arguments && (toolCall.arguments.command as string)) || '';
     if (command) {
       try {
-        const { default: devicesService } = await import(
-          '../api/services/devicesService'
-        );
+        const { default: devicesService } =
+          await import('../api/services/devicesService');
         await devicesService.addAutoApprovePattern(
           toolCall.device_id,
           command,

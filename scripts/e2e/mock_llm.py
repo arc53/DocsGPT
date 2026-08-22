@@ -72,6 +72,30 @@ STREAM_CHUNK_COUNT = 5
 # module docstring for why hash fixtures cannot serve this purpose.
 EMIT_DIRECTIVE = re.compile(r"\[\[MOCK_LLM_EMIT:([A-Za-z0-9_=\-]+)\]\]")
 
+# In-band directive: ``[[MOCK_LLM_TOOLCALL:<action>:<mode>]]`` makes the stub
+# answer with a tool call instead of content, and controls how the call's
+# ``arguments`` are split across SSE frames. Modes:
+#   ``once``   — one frame carrying the complete arguments (a well-behaved
+#                provider).
+#   ``repeat`` — TWO frames for the same ``index``, each carrying the COMPLETE
+#                arguments. Some OpenAI-compatible gateways restate a short
+#                argument payload on the finish frame rather than sending a
+#                delta. The merge recognises the restatement and takes the
+#                latest, rather than appending into invalid JSON
+#                (``{}`` + ``{}`` -> ``{}{}``).
+#   ``delta``  — arguments split into genuine partial deltas, which is what the
+#                merge's ``+=`` exists to reassemble. The control case.
+#   ``truncated`` — a single frame carrying a PREFIX of the arguments, i.e. a
+#                provider that stopped mid-payload. Unlike ``repeat`` this is
+#                genuinely unrecoverable: nothing downstream can invent the
+#                missing bytes, so the turn runs to the iteration cap.
+# An optional 4th field is a base64url JSON object to send as the arguments;
+# it defaults to ``{}`` (a zero-parameter action such as ``note_view``).
+TOOLCALL_DIRECTIVE = re.compile(
+    r"\[\[MOCK_LLM_TOOLCALL:([A-Za-z0-9_\-]+):(once|repeat|delta|truncated)"
+    r"(?::([A-Za-z0-9_=\-]+))?\]\]"
+)
+
 app = Flask(__name__)
 
 
@@ -233,6 +257,56 @@ def _directive_content(messages: list[dict[str, Any]] | None) -> str | None:
     return found
 
 
+def _directive_toolcall(
+    messages: list[dict[str, Any]] | None,
+) -> tuple[str, str, str] | None:
+    """Decoded ``[[MOCK_LLM_TOOLCALL:...]]`` directive, or None.
+
+    Returns:
+        ``(action_name, frame_mode, arguments_json)`` for the last directive
+        found, or ``None`` when the conversation carries none.
+    """
+
+    found: tuple[str, str, str] | None = None
+    for match in TOOLCALL_DIRECTIVE.finditer(_messages_text(messages) or ""):
+        action, mode, raw_args = match.group(1), match.group(2), match.group(3)
+        arguments = "{}"
+        if raw_args:
+            try:
+                padded = raw_args + "=" * (-len(raw_args) % 4)
+                arguments = base64.urlsafe_b64decode(padded.encode("ascii")).decode(
+                    "utf-8"
+                )
+            except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+                sys.stderr.write(
+                    f"[mock-llm] bad MOCK_LLM_TOOLCALL args {raw_args!r}: {exc}\n"
+                )
+                sys.stderr.flush()
+        found = (action, mode, arguments)
+    return found
+
+
+def _toolcall_arg_frames(arguments: str, mode: str) -> list[str]:
+    """Split ``arguments`` into the per-frame payloads for ``mode``."""
+
+    if mode == "repeat":
+        # The incident shape: the complete payload arrives twice for one index.
+        return [arguments, arguments]
+    if mode == "truncated":
+        # A provider that stopped mid-payload. Strip the closing brace so the
+        # accumulator can never parse, however it is merged.
+        stripped = arguments.rstrip()
+        if len(stripped) < 2:
+            return ['{"']
+        return [stripped[:-1]]
+    if mode == "delta":
+        if len(arguments) < 2:
+            return [arguments]
+        midpoint = len(arguments) // 2
+        return [arguments[:midpoint], arguments[midpoint:]]
+    return [arguments]
+
+
 def _resolve_chat_response(
     payload: dict[str, Any], digest: str
 ) -> tuple[str, list[dict[str, Any]] | None, str, dict[str, int]]:
@@ -242,6 +316,32 @@ def _resolve_chat_response(
     fixture is looked up by digest; failing that the generic response is
     returned and the miss is logged so the dev can convert it.
     """
+
+    # A real provider can only answer with a tool call when the request
+    # actually offered tools. DocsGPT's finalize round deliberately sends
+    # ``tools=None`` to force a text answer, so honouring that here is what
+    # makes the loop terminate the way it does in production.
+    toolcall = _directive_toolcall(payload.get("messages"))
+    if toolcall is not None and payload.get("tools"):
+        action, _mode, arguments = toolcall
+        prompt_tokens = _estimate_tokens(_messages_text(payload.get("messages")))
+        return (
+            "",
+            [
+                {
+                    "index": 0,
+                    "id": f"call_e2e_{digest[:12]}",
+                    "type": "function",
+                    "function": {"name": action, "arguments": arguments},
+                }
+            ],
+            "tool_calls",
+            {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": 8,
+                "total_tokens": prompt_tokens + 8,
+            },
+        )
 
     directive = _directive_content(payload.get("messages"))
     if directive is not None:
@@ -344,6 +444,7 @@ def _stream_chat_response(
     tool_calls: list[dict[str, Any]] | None,
     finish_reason: str,
     chunk_delay_ms: int = 0,
+    toolcall_arg_mode: str | None = None,
 ):
     """Generator yielding SSE frames that match the OpenAI streaming protocol.
 
@@ -378,7 +479,42 @@ def _stream_chat_response(
     # Opening role delta — matches OpenAI's real behavior.
     yield _sse(_base_chunk({"role": "assistant", "content": ""}))
 
-    if tool_calls:
+    if tool_calls and toolcall_arg_mode:
+        # Frame-split mode: the call's ``arguments`` are spread over several
+        # deltas that all share one ``index``, which is what the client-side
+        # merge in application/llm/handlers/base.py reassembles.
+        call = tool_calls[0]
+        frames = _toolcall_arg_frames(call["function"]["arguments"], toolcall_arg_mode)
+        for position, piece in enumerate(frames):
+            _maybe_sleep()
+            if position == 0:
+                delta = {
+                    "tool_calls": [
+                        {
+                            "index": call.get("index", 0),
+                            "id": call.get("id"),
+                            "type": "function",
+                            "function": {
+                                "name": call["function"]["name"],
+                                "arguments": piece,
+                            },
+                        }
+                    ]
+                }
+            else:
+                # Continuation frames carry neither id nor name — only the
+                # index ties them to the call, exactly as OpenAI streams them.
+                delta = {
+                    "tool_calls": [
+                        {
+                            "index": call.get("index", 0),
+                            "function": {"arguments": piece},
+                        }
+                    ]
+                }
+            yield _sse(_base_chunk(delta))
+        yield _sse(_base_chunk({}, final=True))
+    elif tool_calls:
         # Emit tool calls in one delta; content streaming is skipped when
         # tool_calls are present, matching what RAG code paths expect.
         _maybe_sleep()
@@ -454,6 +590,11 @@ def chat_completions() -> Response:
             tool_calls=tool_calls,
             finish_reason=finish_reason,
             chunk_delay_ms=chunk_delay_ms,
+            toolcall_arg_mode=(
+                (_directive_toolcall(payload.get("messages")) or (None, None, None))[1]
+                if payload.get("tools")
+                else None
+            ),
         )
         response = Response(
             stream_with_context(generator),

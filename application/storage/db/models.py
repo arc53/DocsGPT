@@ -655,6 +655,28 @@ message_events_table = Table(
 )
 
 
+
+# One row per message deleted by ``truncate_after``. A stream that outlives its
+# own row — the SSE pump drains a disconnected generator to completion — reads
+# this to tell "the user replaced this turn" (expected) from "an answer was
+# genuinely orphaned" (an incident). Deliberately no FK to
+# ``conversation_messages``: the row it describes is deleted in the same
+# transaction, and a CASCADE would take the tombstone with it.
+superseded_messages_table = Table(
+    "superseded_messages",
+    metadata,
+    Column("message_id", UUID(as_uuid=True), primary_key=True, nullable=False),
+    Column("conversation_id", UUID(as_uuid=True), nullable=False),
+    Column(
+        "superseded_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.clock_timestamp(),
+        index=True,
+    ),
+)
+
+
 shared_conversations_table = Table(
     "shared_conversations",
     metadata,

@@ -1450,3 +1450,67 @@ class TestStreamingHeartbeatSeed:
             )
 
             resource.conversation_service.heartbeat_message.assert_not_called()
+
+
+class TestCompleteStreamSupersededLookupIsGuarded:
+    """A DB failure in the supersede lookup must not error a finished turn.
+
+    The ``NOT_FOUND`` branch used to only log. It now consults
+    ``was_superseded`` to tell a replaced turn from an orphaned answer — over
+    its own connection, inside the streaming ``try``. Unguarded, a blip there
+    (or a deploy where the app runs ahead of migration 0030 and the
+    ``superseded_messages`` table does not exist yet) escapes to the generic
+    handler: the client gets a terminal ``error`` after the whole answer, the
+    row is finalized a second time, a continuation's resume claim is released,
+    and the ``answer_persist_failed`` alert this branch exists to raise is
+    swallowed.
+    """
+
+    def test_lookup_failure_falls_back_instead_of_erroring_the_stream(
+        self, pg_conn, flask_app, caplog,
+    ):
+        import logging
+
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from application.storage.db.repositories.conversations import (
+            MessageUpdateOutcome,
+        )
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [{"type": "answer", "answer": "the answer"}]
+            )
+
+            with _patch_db_session(pg_conn), patch.object(
+                ConversationService,
+                "finalize_message",
+                return_value=MessageUpdateOutcome.NOT_FOUND,
+            ), patch.object(
+                ConversationService,
+                "was_superseded",
+                side_effect=RuntimeError("server closed the connection"),
+            ), caplog.at_level(logging.ERROR):
+                stream = list(
+                    resource.complete_stream(
+                        question="does the guard hold?",
+                        agent=mock_agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-superseded-guard"},
+                        should_persist=True,
+                        model_id="gpt-4",
+                    )
+                )
+
+        # The answer was already streamed; the row is gone either way. What
+        # must not happen is retracting it with a terminal error frame.
+        assert [s for s in stream if '"type": "error"' in s] == []
+        # And the alert must still fire, on the orphaned-answer path.
+        assert any(
+            "answer_persist_failed" in r.getMessage() for r in caplog.records
+        )

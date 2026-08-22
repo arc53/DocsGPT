@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, Iterator, Optional, TYPE_CHECKING
 
-from sqlalchemy import Connection
+from sqlalchemy import Connection, Engine
 
 from application.api.user.idempotency import MAX_TASK_ATTEMPTS
 from application.core.settings import settings
@@ -29,6 +30,21 @@ logger = logging.getLogger(__name__)
 MAX_MESSAGE_RECONCILE_ATTEMPTS = 3
 
 
+def zero_summary() -> Dict[str, int]:
+    """The counter keys every tick reports, all at zero.
+
+    Single source of truth so the early-return and the caller's error
+    fallback cannot drift from the sweeps that actually populate them.
+    """
+    return {
+        "messages_failed": 0,
+        "tool_calls_failed": 0,
+        "ingests_stalled": 0,
+        "idempotency_pending_failed": 0,
+        "schedule_runs_failed": 0,
+    }
+
+
 def run_reconciliation() -> Dict[str, Any]:
     """Single tick of the reconciler. Five sweeps, FOR UPDATE SKIP LOCKED.
 
@@ -41,26 +57,63 @@ def run_reconciliation() -> Dict[str, Any]:
     sitting in ``pending`` until 24 h TTL.
     """
     if not settings.POSTGRES_URI:
-        return {
-            "messages_failed": 0,
-            "tool_calls_failed": 0,
-            "skipped": "POSTGRES_URI not set",
-        }
+        return {**zero_summary(), "skipped": "POSTGRES_URI not set"}
 
     engine = get_engine()
-    summary = {
-        "messages_failed": 0,
-        "tool_calls_failed": 0,
-        "ingests_stalled": 0,
-        "idempotency_pending_failed": 0,
-        "schedule_runs_failed": 0,
-    }
+    summary: Dict[str, Any] = zero_summary()
     # User-facing events to fan out once their DB writes have committed
     # (publish-after-commit). Each item is
     # ``(user_id, event_type, payload, scope)``.
     events: list[tuple] = []
 
+    # Each sweep below commits in its own transaction, and the queued
+    # user-facing events are fanned out once, at the end. The ``finally`` is
+    # what makes a LATER sweep's failure non-destructive: without it, a
+    # transient DB error discards events whose writes already landed — and the
+    # loss is permanent, because every sweep filters out the rows it just made
+    # terminal (``find_and_lock_stalled_ingests`` looks only at
+    # ``status='active'``, ``find_and_lock_stuck_messages`` only at
+    # pending/streaming), so no later tick re-finds them to re-emit. The user
+    # is left with an upload toast spinning on "Training..." forever. Seen
+    # live on 2026-08-21 when an Azure DNS blip took Postgres unreachable
+    # mid-tick.
+    #
+    # Publish-after-commit is preserved by ``_sweep``: each sweep stages its
+    # own events and they only reach ``events`` once that sweep's transaction
+    # has committed. A sweep that raises PARTWAY THROUGH takes its staged
+    # events down with its rolled-back writes, which is the point — otherwise
+    # the ``finally`` would fan out terminal events for rows that are still
+    # active, and the next tick would re-find those rows and emit a duplicate.
+    try:
+        return _run_sweeps(engine, summary, events)
+    finally:
+        _publish_events(events)
+
+
+@contextmanager
+def _sweep(engine: Engine, events: list[tuple]) -> Iterator[tuple[Connection, list[tuple]]]:
+    """Open one sweep transaction, staging its events until it commits.
+
+    Yields ``(conn, staged)``. Append user-facing events to ``staged``, never
+    to ``events`` directly: ``staged`` is merged into ``events`` only after the
+    ``engine.begin()`` block exits cleanly, so a sweep that raises mid-loop
+    publishes nothing for the writes Postgres just rolled back.
+    """
+    staged: list[tuple] = []
     with engine.begin() as conn:
+        yield conn, staged
+    events.extend(staged)
+
+
+def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) -> Dict[str, Any]:
+    """Run every reconciler sweep, appending user-facing events to ``events``.
+
+    Split out of :func:`run_reconciliation` so the caller can guarantee that
+    events from sweeps that already COMMITTED are published even when a later
+    sweep raises. Each sweep stages into its own list via :func:`_sweep`; see
+    the comment in :func:`run_reconciliation` for why staging matters.
+    """
+    with _sweep(engine, events) as (conn, staged):
         repo = ReconciliationRepository(conn)
         pt_repo = PendingToolStateRepository(conn)
         for msg in repo.find_and_lock_stuck_messages():
@@ -93,7 +146,7 @@ def run_reconciliation() -> Dict[str, Any]:
                     # been told the approval was cleared, so landing an answer
                     # here would contradict what the user was shown.
                     repo.mark_message_approval_cleared(msg["id"])
-                    events.append(
+                    staged.append(
                         (
                             str(user_id),
                             "tool.approval.cleared",
@@ -115,14 +168,17 @@ def run_reconciliation() -> Dict[str, Any]:
                     },
                 )
 
-    with engine.begin() as conn:
+    with _sweep(engine, events) as (conn, staged):
         repo = ReconciliationRepository(conn)
         for row in repo.find_and_lock_proposed_tool_calls():
             repo.mark_tool_call_failed(
                 row["call_id"],
                 error=(
-                    "reconciler: stuck in 'proposed' for >5 min; "
-                    "side effect status unknown"
+                    "reconciler: never advanced past 'proposed' for >5 min. "
+                    "The row is written immediately before the tool runs, so "
+                    "either the tool is still executing or the stream was "
+                    "abandoned before it reported back; in the abandoned case "
+                    "no side effect was committed."
                 ),
             )
             summary["tool_calls_failed"] += 1
@@ -136,14 +192,18 @@ def run_reconciliation() -> Dict[str, Any]:
                 },
             )
 
-    with engine.begin() as conn:
+    with _sweep(engine, events) as (conn, staged):
         repo = ReconciliationRepository(conn)
         for row in repo.find_and_lock_executed_tool_calls():
             repo.mark_tool_call_failed(
                 row["call_id"],
                 error=(
-                    "reconciler: executed-not-confirmed; side effect "
-                    "assumed committed, manual cleanup required"
+                    "reconciler: executed but not confirmed within 15 min. "
+                    "The tool SUCCEEDED and its side effect is committed; "
+                    "confirmation only lands when the whole turn finalizes, "
+                    "so a long-running turn reaches this state while healthy. "
+                    "Check the parent message before assuming cleanup is "
+                    "needed."
                 ),
             )
             summary["tool_calls_failed"] += 1
@@ -163,7 +223,7 @@ def run_reconciliation() -> Dict[str, Any]:
     # worker kill, no rollback of the partial embed. The 'stalled' flag
     # ends the re-alert loop and drives the "indexing failed" badge the
     # sources list derives from this row.
-    with engine.begin() as conn:
+    with _sweep(engine, events) as (conn, staged):
         repo = ReconciliationRepository(conn)
         for row in repo.find_and_lock_stalled_ingests():
             summary["ingests_stalled"] += 1
@@ -185,7 +245,7 @@ def run_reconciliation() -> Dict[str, Any]:
             user_id = row.get("user_id")
             source_id = row.get("source_id")
             if user_id and source_id:
-                events.append(
+                staged.append(
                     (
                         str(user_id),
                         "source.ingest.failed",
@@ -206,7 +266,7 @@ def run_reconciliation() -> Dict[str, Any]:
     # via ``_lookup_completed`` returning None for the whole 24 h TTL.
     # Promote to ``failed`` so a retry can re-claim and either resume
     # or fail loudly.
-    with engine.begin() as conn:
+    with _sweep(engine, events) as (conn, staged):
         repo = ReconciliationRepository(conn)
         for row in repo.find_stuck_idempotency_pending(
             max_attempts=MAX_TASK_ATTEMPTS,
@@ -242,7 +302,7 @@ def run_reconciliation() -> Dict[str, Any]:
     stuck_age = max(
         15, int(_settings.SCHEDULE_RUN_TIMEOUT // 60) + 5,
     )
-    with engine.begin() as conn:
+    with _sweep(engine, events) as (conn, staged):
         runs_repo = ScheduleRunsRepository(conn)
         schedules_repo = SchedulesRepository(conn)
         for run in runs_repo.list_stuck_running(age_minutes=stuck_age):
@@ -263,7 +323,7 @@ def run_reconciliation() -> Dict[str, Any]:
                 schedules_repo, str(run["schedule_id"]),
             )
             summary["schedule_runs_failed"] += 1
-            events.extend(
+            staged.extend(
                 _schedule_terminal_events(
                     run,
                     error_type="timeout",
@@ -286,7 +346,7 @@ def run_reconciliation() -> Dict[str, Any]:
 
     # Q7: scheduler runs orphaned in 'pending' — dispatcher committed but
     # apply_async failed (broker outage / crash mid-dispatch).
-    with engine.begin() as conn:
+    with _sweep(engine, events) as (conn, staged):
         runs_repo = ScheduleRunsRepository(conn)
         schedules_repo = SchedulesRepository(conn)
         for run in runs_repo.list_stuck_pending(age_minutes=stuck_age):
@@ -307,7 +367,7 @@ def run_reconciliation() -> Dict[str, Any]:
                 schedules_repo, str(run["schedule_id"]),
             )
             summary["schedule_runs_failed"] += 1
-            events.extend(
+            staged.extend(
                 _schedule_terminal_events(
                     run,
                     error_type="internal",
@@ -328,7 +388,6 @@ def run_reconciliation() -> Dict[str, Any]:
                 },
             )
 
-    _publish_events(events)
     return summary
 
 

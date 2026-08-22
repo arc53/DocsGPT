@@ -1047,22 +1047,68 @@ class BaseAnswerResource:
                     # `ok`, because activity logging never observes the DB.
                     # Emit a distinct, countable signal instead.
                     if finalize_outcome is MessageUpdateOutcome.NOT_FOUND:
-                        logger.error(
-                            "answer_persist_failed: message row %s no longer "
-                            "exists; %d chars of answer were produced and "
-                            "could not be saved (conversation=%s)",
-                            reserved_message_id,
-                            len(response_full or ""),
-                            conversation_id,
-                            extra={
-                                "alert": "answer_persist_failed",
-                                "message_id": reserved_message_id,
-                                "conversation_id": (
-                                    str(conversation_id) if conversation_id else None
-                                ),
-                                "answer_length": len(response_full or ""),
-                            },
-                        )
+                        # The row can be gone for two very different reasons.
+                        # A retry/edit deliberately replaced this turn — the
+                        # user asked for the answer to be discarded, and the
+                        # cancel flag could not reach us because the ticker
+                        # that sets it lives in the superseding request's own
+                        # process. That is routine and must not page anyone.
+                        # Anything else is a genuinely orphaned answer.
+                        # Guarded: this opens its own DB connection, and an
+                        # unguarded raise here would escape to the generic
+                        # ``except`` below — which yields a terminal ``error``
+                        # frame, re-finalizes, and releases the resume claim,
+                        # all for a row that is already gone. It would also
+                        # swallow the very alert this branch exists to raise.
+                        # A missing ``superseded_messages`` table (code
+                        # deployed ahead of ``alembic upgrade head``) lands
+                        # here too, so the fallback is the pre-tombstone
+                        # behaviour rather than a user-visible failure.
+                        try:
+                            superseded = self.conversation_service.was_superseded(
+                                reserved_message_id
+                            )
+                        except Exception:
+                            logger.exception(
+                                "was_superseded lookup failed for %s; "
+                                "treating the row as orphaned",
+                                reserved_message_id,
+                            )
+                            superseded = False
+                        if superseded:
+                            logger.info(
+                                "stream superseded: message row %s was replaced "
+                                "by a newer turn after %d chars; discarding "
+                                "(conversation=%s)",
+                                reserved_message_id,
+                                len(response_full or ""),
+                                conversation_id,
+                                extra={
+                                    "alert": "stream_superseded",
+                                    "message_id": reserved_message_id,
+                                    "conversation_id": (
+                                        str(conversation_id) if conversation_id else None
+                                    ),
+                                    "answer_length": len(response_full or ""),
+                                },
+                            )
+                        else:
+                            logger.error(
+                                "answer_persist_failed: message row %s no longer "
+                                "exists; %d chars of answer were produced and "
+                                "could not be saved (conversation=%s)",
+                                reserved_message_id,
+                                len(response_full or ""),
+                                conversation_id,
+                                extra={
+                                    "alert": "answer_persist_failed",
+                                    "message_id": reserved_message_id,
+                                    "conversation_id": (
+                                        str(conversation_id) if conversation_id else None
+                                    ),
+                                    "answer_length": len(response_full or ""),
+                                },
+                            )
                 else:
                     conversation_id = self.conversation_service.save_conversation(
                         conversation_id,
@@ -1379,7 +1425,43 @@ class BaseAnswerResource:
             return
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)
+            # This process took the resume claim, so it owns releasing it. The
+            # only other way back is ``revert_stale_resuming``'s 600 s grace,
+            # which leaves the user locked out of their own conversation for
+            # ten minutes after a resume that errored: ``load_state`` sees
+            # only ``pending`` rows, so the paused turn is still resumable but
+            # invisible, and every retry inside the window gets another 409.
+            # Not on the ``StreamSuperseded`` path above — there the turn was
+            # deliberately replaced and the row is legitimately gone.
+            claim_released = False
+            if _continuation and conversation_id:
+                try:
+                    claim_released = ContinuationService().release_claim(
+                        str(conversation_id),
+                        decoded_token.get("sub", "local"),
+                    )
+                except Exception as release_err:
+                    logger.error(
+                        f"Failed to release resume claim after a failed "
+                        f"resume: {release_err}",
+                        exc_info=True,
+                    )
             if reserved_message_id is not None:
+                # Releasing the claim above says "this turn is retryable"; the
+                # row must not simultaneously be stamped terminally failed in a
+                # way the retry cannot overwrite. A resume reuses the SAME
+                # ``reserved_message_id`` (stream_processor stores it in the
+                # persisted ``agent_config``), so the retry's own
+                # ``finalize_message(status="complete")`` is gated by
+                # ``only_if_non_terminal`` and lands ``ALREADY_FAILED`` — the
+                # user watches a correct answer stream in and finds
+                # "Response was terminated prior to completion" on reload.
+                # Mark the failure retryable so the reclaim hole in
+                # ``update_message_by_id`` lets that second answer through,
+                # exactly as it already does for the reconciler's own marker.
+                failure_metadata = dict(query_metadata or {})
+                if claim_released:
+                    failure_metadata["resume_retryable"] = True
                 try:
                     self.conversation_service.finalize_message(
                         reserved_message_id,
@@ -1388,7 +1470,7 @@ class BaseAnswerResource:
                         sources=source_log_docs,
                         tool_calls=tool_calls,
                         model_id=model_id or self.default_model_id,
-                        metadata=query_metadata if query_metadata else None,
+                        metadata=failure_metadata or None,
                         status="failed",
                         error=e,
                     )

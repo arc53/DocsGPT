@@ -896,16 +896,23 @@ class ConversationsRepository:
         True, the update is gated so a late finalize cannot retract a
         reconciler-set ``failed`` (or a prior ``complete``).
 
-        ``reclaim_reconciler_failed`` punches one hole in that gate: a row
-        the **reconciler** failed for staleness may still be finalized by the
-        stream that owns it, because such a stream demonstrably was not dead.
-        Production showed a 20-minute tool loop swept at minute 6 and then
-        completing normally at minute 20, its answer refused and replaced by
-        "Response was terminated prior to completion". The hole is deliberately
-        narrow — it matches only the reconciler's own error string, so genuine
-        terminal failures (client disconnect, provider errors, the pending-tool
-        cleanup task) stay terminal, and it skips rows whose awaiting-approval
-        prompt the reconciler already revoked.
+        ``reclaim_reconciler_failed`` punches two narrow holes in that gate,
+        both for rows whose ``failed`` stamp a later successful answer
+        disproves:
+
+        1. A row the **reconciler** failed for staleness. Such a stream
+           demonstrably was not dead — production showed a 20-minute tool loop
+           swept at minute 6 and then completing normally at minute 20, its
+           answer refused and replaced by "Response was terminated prior to
+           completion". Matched on the reconciler's own error string, and
+           skipping rows whose awaiting-approval prompt it already revoked.
+        2. A row marked ``resume_retryable`` by the stream handler, which sets
+           it only when it also released the continuation claim — i.e. it
+           explicitly handed the turn back for a retry that reuses this same
+           row id.
+
+        Everything else stays terminal: genuine failures (client disconnect,
+        provider errors, the pending-tool cleanup task) are unaffected.
 
         Reclaiming also strips the reconciler's bookkeeping keys, which
         otherwise survive the metadata merge and leave a ``complete`` row
@@ -922,7 +929,7 @@ class ConversationsRepository:
             fields: Field/value pairs to write.
             only_if_non_terminal: Gate the write on a non-terminal status.
             reclaim_reconciler_failed: Also allow rows the reconciler failed
-                for staleness.
+                for staleness, and rows a failed resume marked retryable.
 
         Returns:
             MessageUpdateOutcome: What happened to the row.
@@ -946,6 +953,7 @@ class ConversationsRepository:
         # does this fire" query.
         reclaim_strip = (
             " - 'error' - 'reconcile_attempts' - 'last_reconcile_seen_heartbeat'"
+            " - 'resume_retryable'"
             if reclaim_reconciler_failed
             else ""
         )
@@ -1002,6 +1010,18 @@ class ConversationsRepository:
                     "AND COALESCE("
                     "(message_metadata->>'reconciler_cleared_approval')::boolean,"
                     " false) = false"
+                    ") OR ("
+                    # Second hole, same principle: the stream handler that
+                    # failed a resume also handed the turn back by releasing
+                    # the continuation claim, so it stamped the row
+                    # ``resume_retryable``. The retry reuses this very row
+                    # (the reserved id lives in the persisted agent_config);
+                    # without this it would land ALREADY_FAILED and the
+                    # user's second, successful answer would be discarded.
+                    "status = 'failed' "
+                    "AND COALESCE("
+                    "(message_metadata->>'resume_retryable')::boolean,"
+                    " false) = true"
                     "))"
                 )
             update_where.append(terminal_gate)
@@ -1165,9 +1185,25 @@ class ConversationsRepository:
 
         Deleting is still correct — the user explicitly asked to replace these
         turns — so the rows go, but any non-terminal one is first stamped
-        terminal. That makes the owning stream's late ``finalize_message``
-        report ``ALREADY_FAILED`` (a known, quiet outcome) rather than
-        ``NOT_FOUND``, and leaves an audit trail of what was superseded.
+        terminal, which leaves an audit trail of what was superseded.
+
+        That stamp does NOT survive: the UPDATE's predicate is a subset of the
+        DELETE's (it also filters ``status NOT IN ('complete','failed')``), and
+        both run in one transaction, so every stamped row is removed
+        microseconds later and the owning stream's late ``finalize_message``
+        correctly reports ``NOT_FOUND``, not ``ALREADY_FAILED``. Do not rely on
+        the stamp for anything but the ``RETURNING id`` log line.
+
+        What DOES survive is the ``superseded_messages`` tombstone written
+        below. A stream superseded less than ``STREAM_HEARTBEAT_INTERVAL``
+        before it finishes is never cancelled — the ticker in
+        ``api/answer/routes/base.py`` is the only thing that sets the cancel
+        flag, and it cannot be set from here because it is a ``threading.Event``
+        in another worker process — so the stream runs to completion and
+        finalizes into a row that is gone. Without the tombstone that logged an
+        ERROR ``answer_persist_failed``, identical to a genuinely orphaned
+        answer, every time a user hit retry on an answer shorter than the
+        heartbeat interval.
 
         Args:
             conversation_id: Conversation whose tail is being trimmed.
@@ -1209,6 +1245,22 @@ class ConversationsRepository:
                 conversation_id,
                 ", ".join(str(r[0]) for r in superseded),
             )
+        # Tombstone before the delete, in the same transaction: the late
+        # finalize usually runs in a different worker process, so the signal
+        # has to be durable. No FK, or the CASCADE below would remove it.
+        self._conn.execute(
+            text(
+                """
+                INSERT INTO superseded_messages (message_id, conversation_id)
+                SELECT id, conversation_id
+                  FROM conversation_messages
+                 WHERE conversation_id = CAST(:conv_id AS uuid)
+                   AND position > :pos
+                ON CONFLICT (message_id) DO NOTHING
+                """
+            ),
+            {"conv_id": conversation_id, "pos": keep_up_to},
+        )
         result = self._conn.execute(
             text(
                 "DELETE FROM conversation_messages "
@@ -1218,6 +1270,52 @@ class ConversationsRepository:
             {"conv_id": conversation_id, "pos": keep_up_to},
         )
         return result.rowcount
+
+    def was_superseded(self, message_id: str) -> bool:
+        """True when ``message_id`` was deleted by a retry/edit truncation.
+
+        Lets a stream that outlived its own row tell an expected supersede from
+        a genuinely orphaned answer. See :meth:`truncate_after`.
+
+        Args:
+            message_id: The reserved message id the stream was writing to.
+
+        Returns:
+            True if a tombstone exists for that message.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        row = self._conn.execute(
+            text(
+                "SELECT 1 FROM superseded_messages "
+                "WHERE message_id = CAST(:mid AS uuid)"
+            ),
+            {"mid": message_id},
+        ).fetchone()
+        return row is not None
+
+    def cleanup_superseded_older_than(self, days: int) -> int:
+        """Delete ``superseded_messages`` tombstones older than ``days``.
+
+        The tombstone only has to outlive the stream that was superseded, which
+        is bounded by the request timeout — days of retention is already
+        generous, and the table has no other reader.
+
+        Args:
+            days: Retention window in days.
+
+        Returns:
+            Number of rows deleted.
+        """
+        result = self._conn.execute(
+            text(
+                "DELETE FROM superseded_messages "
+                "WHERE superseded_at < clock_timestamp() "
+                "- make_interval(days => :days)"
+            ),
+            {"days": days},
+        )
+        return result.rowcount or 0
 
     def set_feedback(
         self, conversation_id: str, position: int, feedback: dict | None,

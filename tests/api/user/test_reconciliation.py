@@ -443,7 +443,10 @@ class TestStuckProposedToolCalls:
             {"id": "cp-1"},
         ).fetchone()
         assert row[0] == "failed"
-        assert "side effect status unknown" in (row[1] or "")
+        # The row is written immediately before the tool runs, so an abandoned
+        # stream leaves no side effect at all — the message must not imply one.
+        assert "never advanced past 'proposed'" in (row[1] or "")
+        assert "no side effect was committed" in (row[1] or "")
 
         assert any(
             getattr(rec, "alert", None) == "reconciler_tool_call_failed_proposed"
@@ -498,8 +501,11 @@ class TestStuckExecutedToolCalls:
             {"id": "ce-1"},
         ).fetchone()
         assert row[0] == "failed"
-        assert "executed-not-confirmed" in (row[1] or "")
-        assert "manual cleanup" in (row[1] or "")
+        # The tool SUCCEEDED here; confirmation only lands when the whole turn
+        # finalizes, so a healthy long turn reaches this state and the message
+        # must not assert that cleanup is required.
+        assert "executed but not confirmed" in (row[1] or "")
+        assert "The tool SUCCEEDED" in (row[1] or "")
         assert any(
             getattr(rec, "alert", None) == "reconciler_tool_call_failed_executed"
             for rec in caplog.records
@@ -939,14 +945,185 @@ class TestStalledIngestEvent:
 class TestPostgresUriMissing:
     @pytest.mark.unit
     def test_returns_skip_dict(self, monkeypatch):
-        from application.api.user.reconciliation import run_reconciliation
+        from application.api.user.reconciliation import (
+            run_reconciliation,
+            zero_summary,
+        )
         from application.core.settings import settings
 
         monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
 
         result = run_reconciliation()
-        assert result == {
-            "messages_failed": 0,
-            "tool_calls_failed": 0,
-            "skipped": "POSTGRES_URI not set",
-        }
+        # Same counters as any other tick, all zero, plus the reason. Pinning
+        # a hand-written literal here is what let the shapes drift apart: this
+        # path reported 3 of the 5 keys and the task's error fallback invented
+        # a sixth that no sweep produces.
+        assert result == {**zero_summary(), "skipped": "POSTGRES_URI not set"}
+
+
+# ---------------------------------------------------------------------------
+# Publish-after-commit durability — a sweep that raises must not swallow the
+# events whose DB writes already landed.
+# ---------------------------------------------------------------------------
+
+
+class TestEventsSurviveAFailedSweep:
+    """Regression: 2026-08-21, an Azure DNS blip took Postgres unreachable
+    mid-tick. ``run_reconciliation`` commits each sweep in its own transaction
+    but fans out queued user-facing events once, at the end — so an exception
+    in a later sweep used to discard events for rows that were already
+    terminal. The loss is permanent, because each sweep filters out the rows it
+    just escalated, so no later tick re-finds them.
+    """
+
+    def test_queued_events_are_published_when_a_later_sweep_raises(self, pg_conn):
+        from application.api.user.reconciliation import run_reconciliation
+
+        # A stalled ingest: escalated (and its event queued) by the sweep that
+        # runs before the one we blow up.
+        source_id = "1a000000-0000-0000-0000-0000000000e1"
+        _seed_source(pg_conn, source_id=source_id, user_id="u-blip")
+        _seed_ingest_progress(pg_conn, source_id=source_id, embedded=2, total=50)
+
+        published: list = []
+
+        def _capture(user_id, event_type, payload, *, scope=None):
+            published.append((user_id, event_type, payload, scope))
+            return "1-0"
+
+        calls = {"n": 0}
+
+        @contextmanager
+        def _fake_begin():
+            calls["n"] += 1
+            # Fail a sweep AFTER the ingest sweep has committed its row.
+            if calls["n"] == 6:
+                raise RuntimeError("connection is bad: Network is unreachable")
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+
+        with patch(
+            "application.api.user.reconciliation.get_engine",
+            return_value=fake_engine,
+        ), patch(
+            "application.events.publisher.publish_user_event", _capture
+        ):
+            with pytest.raises(RuntimeError):
+                run_reconciliation()
+
+        # The DB write landed...
+        status = pg_conn.execute(
+            text(
+                "SELECT status FROM ingest_chunk_progress "
+                "WHERE source_id = CAST(:sid AS uuid)"
+            ),
+            {"sid": source_id},
+        ).fetchone()[0]
+        assert status == "stalled"
+
+        # ...and so did its event. Without the ``finally`` the user's upload
+        # toast would spin on "Training..." forever.
+        assert [p[1] for p in published] == ["source.ingest.failed"]
+
+
+# ---------------------------------------------------------------------------
+# Publish-after-commit — a sweep that raises must not fan out its own events
+# ---------------------------------------------------------------------------
+
+
+class TestPublishAfterCommit:
+    """``run_reconciliation`` fans events out in a ``finally``; staging keeps
+    that from publishing events whose writes Postgres rolled back.
+
+    These use the real ``pg_engine`` rather than the ``_route_engine_to`` fake,
+    because the whole point is that ``engine.begin()`` is a genuine transaction
+    that genuinely rolls back.
+    """
+
+    @pytest.mark.unit
+    def test_rolled_back_sweep_publishes_nothing(self, pg_engine, monkeypatch):
+        """A sweep raising mid-loop must not emit events for reverted rows.
+
+        Without staging, rows 1 and 2 are marked stalled, queue a terminal
+        ``source.ingest.failed`` each, and then row 3 raises. The marks roll
+        back — the sources are still ``active`` and their workers may still be
+        embedding — but the queued events would still be fanned out, flipping
+        the user's upload toast to a terminal failure and leaving the next tick
+        to re-find the same rows and emit a duplicate.
+        """
+        from application.api.user import reconciliation as rec
+
+        # ``get_engine`` caches a process-wide global, so pin it to this
+        # test's ephemeral DB rather than whichever one was created first.
+        monkeypatch.setattr(rec, "get_engine", lambda: pg_engine)
+
+        source_ids = [
+            f"6ba7b81{n}-9dad-11d1-80b4-00c04fd430c8" for n in range(3)
+        ]
+        with pg_engine.begin() as conn:
+            for n, sid in enumerate(source_ids):
+                _seed_source(conn, source_id=sid, user_id=f"u-{n}", name=f"doc{n}.pdf")
+                _seed_ingest_progress(conn, source_id=sid, embedded=1, total=10)
+
+        # Blow up on the third row, after the first two have been marked and
+        # have queued their events.
+        real_mark = rec.ReconciliationRepository.mark_ingest_stalled
+        calls = {"n": 0}
+
+        def _boom(self, *args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 3:
+                raise RuntimeError("connection is bad: Network is unreachable")
+            return real_mark(self, *args, **kwargs)
+
+        publish_patch, captured = _capture_published(None)
+        with publish_patch, patch.object(
+            rec.ReconciliationRepository, "mark_ingest_stalled", _boom
+        ):
+            with pytest.raises(RuntimeError, match="Network is unreachable"):
+                rec.run_reconciliation()
+
+        ingest_events = [e for e in captured if e[1] == "source.ingest.failed"]
+        assert ingest_events == [], (
+            "events were published for a sweep whose writes rolled back: "
+            f"{ingest_events}"
+        )
+
+        # ...and the rows really did roll back, so a later tick can re-find them.
+        with pg_engine.connect() as conn:
+            statuses = [_ingest_status(conn, sid) for sid in source_ids]
+        assert statuses == ["active", "active", "active"]
+
+    @pytest.mark.unit
+    def test_committed_sweep_survives_a_later_failure(self, pg_engine, monkeypatch):
+        """The property the ``finally`` buys: an earlier sweep's events still
+        publish when a LATER sweep raises, because that sweep already committed.
+        """
+        from application.api.user import reconciliation as rec
+
+        # ``get_engine`` caches a process-wide global, so pin it to this
+        # test's ephemeral DB rather than whichever one was created first.
+        monkeypatch.setattr(rec, "get_engine", lambda: pg_engine)
+
+        sid = "6ba7b820-9dad-11d1-80b4-00c04fd430c8"
+        with pg_engine.begin() as conn:
+            _seed_source(conn, source_id=sid, user_id="u-late", name="late.pdf")
+            _seed_ingest_progress(conn, source_id=sid, embedded=1, total=10)
+
+        # Fail the idempotency sweep, which runs strictly after the ingest
+        # sweep has committed.
+        def _boom(self, *args, **kwargs):
+            raise RuntimeError("connection is bad: Network is unreachable")
+
+        publish_patch, captured = _capture_published(None)
+        with publish_patch, patch.object(
+            rec.ReconciliationRepository, "find_stuck_idempotency_pending", _boom
+        ):
+            with pytest.raises(RuntimeError, match="Network is unreachable"):
+                rec.run_reconciliation()
+
+        assert [e[1] for e in captured] == ["source.ingest.failed"]
+        with pg_engine.connect() as conn:
+            assert _ingest_status(conn, sid) == "stalled"

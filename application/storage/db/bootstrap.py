@@ -400,6 +400,10 @@ def _run_migrations(log: logging.Logger) -> None:
 
     cfg = Config(str(alembic_ini))
     cfg.set_main_option("script_location", str(alembic_ini.parent / "alembic"))
+    # We migrate in-process, after setup_logging() has configured the root
+    # logger. env.py honours this by skipping fileConfig, which would
+    # otherwise replace root's handlers and level for the rest of the process.
+    cfg.attributes["configure_logger"] = False
 
     # Cheap pre-check: if we're already at head, say so explicitly.
     try:

@@ -5,6 +5,7 @@ from retry import retry
 from tqdm import tqdm
 from application.core.settings import settings
 from application.events.publisher import publish_user_event
+from application.parser.file.base_parser import DocumentParseError
 from application.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
@@ -204,7 +205,12 @@ def embed_and_store_documents(
         if str(getattr(d, "text", getattr(d, "page_content", d)) or "").strip()
     ]
     if not docs:
-        raise ValueError(
+        # ``DocumentParseError``, not ``ValueError``: an empty or image-only
+        # file yields nothing on every attempt, so this must reach the Celery
+        # tasks' ``dont_autoretry_for`` and fail once. As a bare ``ValueError``
+        # it was swept up by ``autoretry_for=(Exception,)`` and re-failed
+        # identically across the whole backoff envelope.
+        raise DocumentParseError(
             "No text could be extracted from this file. It may be empty, "
             "image-only, or in an unsupported format."
         )

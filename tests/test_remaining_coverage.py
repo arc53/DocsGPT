@@ -862,10 +862,11 @@ class TestEmbeddingPipelineGaps:
                 assert os.path.exists(folder)
 
     def test_embed_and_store_raises_on_empty_docs(self):
-        """Cover line 69: raises ValueError when docs is empty."""
+        """Cover line 69: raises DocumentParseError when docs is empty."""
         from application.parser.embedding_pipeline import embed_and_store_documents
+        from application.parser.file.base_parser import DocumentParseError
 
-        with pytest.raises(ValueError, match="No text could be extracted"):
+        with pytest.raises(DocumentParseError, match="No text could be extracted"):
             embed_and_store_documents([], "/tmp/test", "source_id", MagicMock())
 
 
@@ -1042,10 +1043,11 @@ class TestEmbeddingPipelineCoverage:
         assert sanitize_content(None) is None
 
     def test_embed_and_store_empty_docs_raises(self, tmp_path):
-        """Cover line 69: empty docs raises ValueError."""
+        """Cover line 69: empty docs raises DocumentParseError."""
         from application.parser.embedding_pipeline import embed_and_store_documents
+        from application.parser.file.base_parser import DocumentParseError
 
-        with pytest.raises(ValueError, match="No text could be extracted"):
+        with pytest.raises(DocumentParseError, match="No text could be extracted"):
             embed_and_store_documents([], str(tmp_path / "test"), "src-1", None)
 
     def test_embed_and_store_creates_folder(self, tmp_path):
@@ -1241,10 +1243,11 @@ class TestBlankDocumentsAreRejected:
     @pytest.mark.parametrize("blank", ["", "   ", "\n\t  \n"])
     def test_whitespace_only_document_is_rejected(self, blank, tmp_path):
         from application.parser.embedding_pipeline import embed_and_store_documents
+        from application.parser.file.base_parser import DocumentParseError
 
         class _Doc:
             def __init__(self, text):
                 self.text = text
 
-        with pytest.raises(ValueError, match="No text could be extracted"):
+        with pytest.raises(DocumentParseError, match="No text could be extracted"):
             embed_and_store_documents([_Doc(blank)], str(tmp_path), "src-1", None)

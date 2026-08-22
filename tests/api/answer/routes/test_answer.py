@@ -143,6 +143,47 @@ class TestAnswerResourcePost:
             assert resp.status_code == 400
             assert resp.get_json()["error"] == "Stream error"
 
+    def test_resume_already_in_progress_returns_409(
+        self, answer_client, mock_stream_processor,
+    ):
+        """A raced resume is a conflict the caller can retry, not a 500.
+
+        ``ResumeInProgressError`` subclasses ``ValueError`` but reaches this
+        route through ``resume_from_tool_actions``, where the bare
+        ``except Exception`` reported it as an opaque 500 with a full
+        traceback on the ERROR channel. ``/stream`` and
+        ``/v1/chat/completions`` both answer 409 for the identical condition.
+        """
+        from application.api.answer.services.continuation_service import (
+            ResumeInProgressError,
+        )
+
+        mock_stream_processor.resume_from_tool_actions.side_effect = (
+            ResumeInProgressError("Resume already in progress for this conversation.")
+        )
+
+        with patch(
+            "application.api.answer.routes.answer.AnswerResource.validate_request",
+            return_value=None,
+        ):
+            resp = answer_client.post(
+                "/api/answer",
+                data=json.dumps({
+                    "question": "",
+                    "conversation_id": _CONV_ID,
+                    "tool_actions": [{"call_id": "call_1", "decision": "approved"}],
+                }),
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 409
+        body = resp.get_json()
+        assert body["code"] == "resume_in_progress"
+        assert "Resume already in progress" in body["error"]
+        # The generic handler's opaque text would tell the caller nothing
+        # about retryability.
+        assert body["error"] != "An error occurred processing your request"
+
     def test_exception_returns_500(self, answer_client, mock_stream_processor):
         with patch(
             "application.api.answer.routes.answer.AnswerResource.validate_request",

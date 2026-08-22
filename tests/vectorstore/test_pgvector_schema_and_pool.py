@@ -9,6 +9,8 @@ one-shot safety net for processes that never ran the boot hook.
 
 from __future__ import annotations
 
+import gc
+
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -266,6 +268,16 @@ class TestReadPathsCloseTheirTransaction:
 @pytest.mark.unit
 class TestConnectionPooling:
     def _pooled_store(self, monkeypatch):
+        # ``PGVectorStore.__del__`` releases into the module-global
+        # ``_POOLS``, and a store left holding a connection by an earlier test
+        # is only collectable through a MagicMock reference cycle — so its
+        # finalizer fires at an arbitrary later moment. If that moment lands
+        # inside a test that has patched ``_POOLS[dsn]`` to its own fake pool,
+        # the stale release is recorded against THIS test's mock and
+        # ``putconn.assert_called_once_with`` sees two calls. Drain pending
+        # finalizers here, before any patching, so the count is deterministic
+        # whatever ran before.
+        gc.collect()
         store, _, _, _ = _make_store()
         store._connection = None
         store._pool_max_size = 4

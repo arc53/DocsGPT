@@ -6,13 +6,13 @@
 
 set -euo pipefail
 
-PG_BIN="/Users/Shared/DBngin/postgresql/16.2/bin"
+PG_BIN="${PG_BIN:-/Users/Shared/DBngin/postgresql/16.2/bin}"
 PSQL="${PG_BIN}/psql"
 PG_ISREADY="${PG_BIN}/pg_isready"
 
 PG_HOST="127.0.0.1"
 PG_PORT="5432"
-PG_SUPERUSER="postgres"
+PG_SUPERUSER="${PG_SUPERUSER:-postgres}"
 
 TEMPLATE_DB="docsgpt_e2e_template"
 E2E_DB="docsgpt_e2e"

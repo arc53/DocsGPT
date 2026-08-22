@@ -28,13 +28,70 @@ logger = logging.getLogger(__name__)
 # durability story is grep-able next to the body. Combined with
 # ``autoretry_for=(Exception,)`` and a bounded ``max_retries`` so a poison
 # message can't loop forever.
+#
+# ``retry_backoff`` is the factor, NOT a boolean toggle: celery's
+# ``add_autoretry_behaviour`` OVERWRITES ``retry_kwargs["countdown"]`` whenever
+# it is truthy (celery/app/autoretry.py). With the old ``retry_backoff=True``
+# the factor was ``int(max(1.0, True)) == 1``, so the three waits were jittered
+# 0-1 s, 0-2 s and 0-4 s — a whole retry envelope of at most 7 seconds. A
+# 3.5-minute network blip (2026-08-21) therefore exhausted every attempt and
+# published a terminal ``source.ingest.failed`` / ``attachment.failed``.
+#
+# celery applies FULL JITTER (``retry_jitter`` defaults to True), so each wait
+# is drawn uniformly from ``[0, factor * 2**retries]`` — the ceilings are NOT
+# the waits, and the envelope is a distribution, not a guarantee. Factor 60
+# gives ceilings 60/120/240 s: a median envelope of ~210 s, which covers a
+# 60 s blip ~98% of the time and a 120 s blip ~85%. Factor 30 would have
+# covered the 210 s incident 0% of the time, because its 210 s nominal
+# maximum was reachable only by drawing all three waits at their ceiling.
+# Raising ``max_retries`` would buy more headroom but is deliberately not
+# done here: attempt 6 would newly reach the ``MAX_TASK_ATTEMPTS=5``
+# poison-loop guard in ``idempotency.py``, which is a separate behaviour
+# change from widening the waits.
+#
+# Jitter is deliberately left ON. These nine task types share their
+# dependencies (Postgres, object storage, the embedding provider), so an
+# outage fails them all at once; ``retry_jitter=False`` would wake every
+# in-flight task at the same instant and stampede the service that just
+# recovered.
+#
+# ``max_retries`` is passed at the top level rather than inside
+# ``retry_kwargs``: celery captures that dict BY REFERENCE and writes
+# ``retry_kwargs["countdown"]`` into it on every retry, so one shared dict
+# spread across all the decorators below would let concurrent retries race
+# and would permanently mutate this module constant.
+#
+# ``dont_autoretry_for`` is the necessary counterweight to that widened
+# envelope. ``autoretry_for=(Exception,)`` retries EVERYTHING, but a
+# ``DocumentParseError`` (unparseable, empty, or image-only file) fails
+# identically on every attempt — with factor 60 it now burns a median 3.5 min
+# and up to ~7 before reaching a terminal state, during which anything polling
+# ``/api/task_status`` (the wiki-convert and GraphRAG-enable modals) just keeps
+# reporting "pending". It is the DEFAULT here so a new durable task cannot
+# forget it; tasks needing a wider set pass their own via ``durable_task()``.
 DURABLE_TASK = dict(
     bind=True,
     acks_late=True,
     autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": 3, "countdown": 60},
-    retry_backoff=True,
+    dont_autoretry_for=(DocumentParseError,),
+    max_retries=3,
+    retry_backoff=60,
 )
+
+
+def durable_task(**overrides) -> Dict:
+    """Return ``DURABLE_TASK`` with per-task overrides applied.
+
+    Needed because ``@celery.task(**DURABLE_TASK, dont_autoretry_for=...)``
+    would be a duplicate keyword argument.
+
+    Args:
+        **overrides: Task options replacing the shared defaults.
+
+    Returns:
+        The merged options dict, for ``@celery.task(**durable_task(...))``.
+    """
+    return {**DURABLE_TASK, **overrides}
 
 
 # operation tag for the poison-path source.ingest.failed event, per task.
@@ -71,10 +128,11 @@ def _emit_ingest_poison_event(task_name, bound):
     )
 
 
-# ``dont_autoretry_for``: a file that cannot be converted to text fails
-# identically on every attempt, so retrying only multiplies the log noise
-# before the same failure — go straight to the poison/failure path.
-@celery.task(**DURABLE_TASK, dont_autoretry_for=(DocumentParseError,))
+# ``dont_autoretry_for=(DocumentParseError,)`` now comes from ``DURABLE_TASK``:
+# a file that cannot be converted to text fails identically on every attempt,
+# so retrying only multiplies the log noise before the same failure — go
+# straight to the poison/failure path.
+@celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="ingest", on_poison=_emit_ingest_poison_event)
 def ingest(
     self,
@@ -253,8 +311,9 @@ def _emit_attachment_poison_event(task_name, bound):
 # deterministic — retrying re-fails identically and multiplies log noise, so it
 # goes straight to the failure path.
 @celery.task(
-    **DURABLE_TASK,
-    dont_autoretry_for=(DataError, AttachmentRejectedError, DocumentParseError),
+    **durable_task(
+        dont_autoretry_for=(DataError, AttachmentRejectedError, DocumentParseError),
+    )
 )
 @with_idempotency(
     task_name="store_attachment", on_poison=_emit_attachment_poison_event,
@@ -681,10 +740,29 @@ def cleanup_idempotency_dedup(self):
 
 @celery.task(bind=True, acks_late=False)
 def reconciliation_task(self):
-    """Sweep stuck durability rows and escalate them to terminal status + alert."""
-    from application.api.user.reconciliation import run_reconciliation
+    """Sweep stuck durability rows and escalate them to terminal status + alert.
 
-    return run_reconciliation()
+    Never retries: the task is on a 30 s beat, so the next tick IS the retry,
+    and ``acks_late=False`` keeps a failing run from being redelivered. It only
+    guards itself so a transient connectivity error emits one WARNING instead
+    of a full traceback on the same ERROR channel ``_emit_alert`` uses for real
+    reconciler findings — at 30 s cadence a multi-minute outage would otherwise
+    bury genuine alerts under dozens of identical stack traces.
+    """
+    from application.api.user.reconciliation import run_reconciliation, zero_summary
+
+    try:
+        return run_reconciliation()
+    except Exception:  # noqa: BLE001 - housekeeping must never crash the beat loop
+        # ``exception`` not ``warning``: without the traceback a programming
+        # error in a sweep logs one context-free line every 30 s forever and
+        # there is no way to locate it. Celery still records the tick as
+        # SUCCESS because the exception is swallowed here, so this log is the
+        # only channel that carries the stack.
+        logger.exception("reconciliation_task failed; the next beat retries")
+        # Keys come from ``zero_summary`` so a failed tick reports the same
+        # shape as a successful one; hand-writing them drifted immediately.
+        return {**zero_summary(), "error": True}
 
 
 @celery.task(bind=True, acks_late=False)
@@ -706,11 +784,20 @@ def cleanup_message_events(self):
         MessageEventsRepository,
     )
 
+    from application.storage.db.repositories.conversations import (
+        ConversationsRepository,
+    )
+
     ttl_days = settings.MESSAGE_EVENTS_RETENTION_DAYS
     engine = get_engine()
     with engine.begin() as conn:
         deleted = MessageEventsRepository(conn).cleanup_older_than(ttl_days)
-    return {"deleted": deleted, "ttl_days": ttl_days}
+        # Supersede tombstones ride the same beat: both are per-stream
+        # bookkeeping with the same retention story.
+        tombstones = ConversationsRepository(conn).cleanup_superseded_older_than(
+            ttl_days
+        )
+    return {"deleted": deleted, "superseded_deleted": tombstones, "ttl_days": ttl_days}
 
 
 @celery.task(bind=True, acks_late=False)

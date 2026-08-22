@@ -176,6 +176,59 @@ class PendingToolStateRepository:
         )
         return result.rowcount > 0
 
+    def release_claim(
+        self,
+        conversation_id: str,
+        user_id: str,
+        ttl_extension_seconds: int = PENDING_STATE_TTL_SECONDS,
+    ) -> bool:
+        """Flip a ``resuming`` row back to ``pending`` so a retry can claim it.
+
+        The inverse of :meth:`mark_resuming`, for the process that TOOK the
+        claim to call when its resume fails. Without it the only way back is
+        :meth:`revert_stale_resuming`, whose 600 s grace leaves the user
+        locked out of their own conversation for ten minutes after a resume
+        that errored — the paused turn stays resumable but invisible, because
+        :meth:`load_state` only sees ``pending`` rows.
+
+        Deliberately narrow: it matches on ``status = 'resuming'`` only, so it
+        can never resurrect a row another request has since deleted.
+
+        Extends ``expires_at`` like :meth:`revert_stale_resuming` does. A
+        resume claimed near the end of the TTL that fails minutes later would
+        otherwise be handed back already expired: ``load_state`` and
+        ``mark_resuming`` both gate on ``expires_at > clock_timestamp()``, and
+        flipping to ``pending`` also hides the row from
+        :meth:`revert_stale_resuming`, which matches ``resuming`` only — so
+        releasing the claim would REMOVE the rescue instead of speeding it up.
+        ``GREATEST`` so a failed resume can never shorten a healthy TTL.
+
+        Returns:
+            True when a claim was released.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE pending_tool_state
+                SET status = 'pending',
+                    resumed_at = NULL,
+                    expires_at = GREATEST(
+                        expires_at,
+                        clock_timestamp() + make_interval(secs => :ttl)
+                    )
+                WHERE conversation_id = CAST(:conv_id AS uuid)
+                  AND user_id = :user_id
+                  AND status = 'resuming'
+                """
+            ),
+            {
+                "conv_id": conversation_id,
+                "user_id": user_id,
+                "ttl": ttl_extension_seconds,
+            },
+        )
+        return result.rowcount > 0
+
     def revert_stale_resuming(
         self,
         grace_seconds: int = 600,
