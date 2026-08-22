@@ -439,6 +439,10 @@ const ConversationBubble = forwardRef<
             // would be a second live indicator away from the point of action.
             suppressStatusLine={Boolean(research)}
             artifacts={conversationArtifacts ?? completedArtifacts}
+            // The chip rail below renders from this turn's artifacts alone, so
+            // a bare-filename link has to resolve against the same set or the
+            // two controls in one bubble open different files.
+            turnArtifacts={completedArtifacts}
             onOpenArtifact={onOpenArtifact}
             renderApproval={(toolCall: ToolCallsType) => (
               <div className="fade-in mt-4 mr-5 ml-6">

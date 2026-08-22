@@ -60,13 +60,38 @@ logger = logging.getLogger(__name__)
 # ``retry_kwargs["countdown"]`` into it on every retry, so one shared dict
 # spread across all the decorators below would let concurrent retries race
 # and would permanently mutate this module constant.
+#
+# ``dont_autoretry_for`` is the necessary counterweight to that widened
+# envelope. ``autoretry_for=(Exception,)`` retries EVERYTHING, but a
+# ``DocumentParseError`` (unparseable, empty, or image-only file) fails
+# identically on every attempt — with factor 60 it now burns a median 3.5 min
+# and up to ~7 before reaching a terminal state, during which anything polling
+# ``/api/task_status`` (the wiki-convert and GraphRAG-enable modals) just keeps
+# reporting "pending". It is the DEFAULT here so a new durable task cannot
+# forget it; tasks needing a wider set pass their own via ``durable_task()``.
 DURABLE_TASK = dict(
     bind=True,
     acks_late=True,
     autoretry_for=(Exception,),
+    dont_autoretry_for=(DocumentParseError,),
     max_retries=3,
     retry_backoff=60,
 )
+
+
+def durable_task(**overrides) -> Dict:
+    """Return ``DURABLE_TASK`` with per-task overrides applied.
+
+    Needed because ``@celery.task(**DURABLE_TASK, dont_autoretry_for=...)``
+    would be a duplicate keyword argument.
+
+    Args:
+        **overrides: Task options replacing the shared defaults.
+
+    Returns:
+        The merged options dict, for ``@celery.task(**durable_task(...))``.
+    """
+    return {**DURABLE_TASK, **overrides}
 
 
 # operation tag for the poison-path source.ingest.failed event, per task.
@@ -103,10 +128,11 @@ def _emit_ingest_poison_event(task_name, bound):
     )
 
 
-# ``dont_autoretry_for``: a file that cannot be converted to text fails
-# identically on every attempt, so retrying only multiplies the log noise
-# before the same failure — go straight to the poison/failure path.
-@celery.task(**DURABLE_TASK, dont_autoretry_for=(DocumentParseError,))
+# ``dont_autoretry_for=(DocumentParseError,)`` now comes from ``DURABLE_TASK``:
+# a file that cannot be converted to text fails identically on every attempt,
+# so retrying only multiplies the log noise before the same failure — go
+# straight to the poison/failure path.
+@celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="ingest", on_poison=_emit_ingest_poison_event)
 def ingest(
     self,
@@ -285,8 +311,9 @@ def _emit_attachment_poison_event(task_name, bound):
 # deterministic — retrying re-fails identically and multiplies log noise, so it
 # goes straight to the failure path.
 @celery.task(
-    **DURABLE_TASK,
-    dont_autoretry_for=(DataError, AttachmentRejectedError, DocumentParseError),
+    **durable_task(
+        dont_autoretry_for=(DataError, AttachmentRejectedError, DocumentParseError),
+    )
 )
 @with_idempotency(
     task_name="store_attachment", on_poison=_emit_attachment_poison_event,
@@ -722,7 +749,7 @@ def reconciliation_task(self):
     reconciler findings — at 30 s cadence a multi-minute outage would otherwise
     bury genuine alerts under dozens of identical stack traces.
     """
-    from application.api.user.reconciliation import run_reconciliation
+    from application.api.user.reconciliation import run_reconciliation, zero_summary
 
     try:
         return run_reconciliation()
@@ -733,14 +760,9 @@ def reconciliation_task(self):
         # SUCCESS because the exception is swallowed here, so this log is the
         # only channel that carries the stack.
         logger.exception("reconciliation_task failed; the next beat retries")
-        return {
-            "messages_failed": 0,
-            "tool_calls_failed": 0,
-            "ingests_stalled": 0,
-            "attachments_stalled": 0,
-            "schedule_runs_failed": 0,
-            "error": True,
-        }
+        # Keys come from ``zero_summary`` so a failed tick reports the same
+        # shape as a successful one; hand-writing them drifted immediately.
+        return {**zero_summary(), "error": True}
 
 
 @celery.task(bind=True, acks_late=False)

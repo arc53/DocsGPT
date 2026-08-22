@@ -8,6 +8,9 @@ from application.api import api
 
 from application.api.answer.routes.base import answer_ns, BaseAnswerResource
 
+from application.api.answer.services.continuation_service import (
+    ResumeInProgressError,
+)
 from application.api.answer.services.persistence_policy import resolve_persistence
 from application.api.answer.services.stream_processor import StreamProcessor
 
@@ -164,6 +167,20 @@ class AnswerResource(Resource, BaseAnswerResource):
             extra_info = stream_result.get("extra")
             if extra_info:
                 result.update(extra_info)
+        except ResumeInProgressError as e:
+            # Another request already owns this conversation's continuation
+            # claim. Same contract as ``/stream`` and ``/v1/chat/completions``:
+            # an expected concurrency outcome the caller can retry, not a
+            # server fault, so it must not land in the 500 handler below and
+            # fill the ERROR channel with tracebacks.
+            logger.warning(
+                "/api/answer - resume already in progress for conversation %s",
+                data.get("conversation_id"),
+                extra={"error": str(e)},
+            )
+            return make_response(
+                {"error": str(e), "code": "resume_in_progress"}, 409,
+            )
         except Exception as e:
             logger.error(
                 f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",

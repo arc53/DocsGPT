@@ -95,9 +95,9 @@ const SHORT_REF = /^a(\d+)$/i;
 const ANY_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
 /**
- * Last match wins. Within one turn the model's prose means the file as it
- * stands after the *last* write, so a rerun that overwrites ``report.pdf``
- * should open the new copy rather than the one it replaced.
+ * Last match wins: the model's prose means the file as it stands after the
+ * *last* write, so a rerun that overwrites ``report.pdf`` should open the new
+ * copy rather than the one it replaced.
  */
 function findLast<T>(
   items: T[],
@@ -122,8 +122,11 @@ function decodeSegment(segment: string): string {
  *
  * Args:
  *     href: The raw href from the markdown link, if any.
- *     artifacts: Artifacts this turn produced, in the order the tool made them
- *         (``A1`` is the first).
+ *     artifacts: Every artifact in the conversation, in creation order (``A1``
+ *         is the first). Refs are conversation-scoped, so a link may point at
+ *         a file an earlier turn produced.
+ *     turnArtifacts: The artifacts of the turn being rendered, when known.
+ *         Only the filename fallback consults it; see below.
  *
  * Returns:
  *     How the link should be rendered. ``external`` for ordinary URLs,
@@ -133,6 +136,7 @@ function decodeSegment(segment: string): string {
 export function resolveSandboxLink(
   href: string | undefined | null,
   artifacts: SandboxArtifact[] | undefined,
+  turnArtifacts?: SandboxArtifact[],
 ): SandboxLinkResolution {
   if (typeof href !== 'string' || !href) return { kind: 'external' };
   const scheme = matchedScheme(href);
@@ -177,11 +181,18 @@ export function resolveSandboxLink(
   // Fabricated paths (``/mnt/data/…``, ``/tmp/…``, a bare filename) — and
   // ``/artifact/<filename>``, which the model also writes — usually still name
   // a file that exists as an artifact on this turn.
-  const byName = findLast(
-    available,
-    (artifact) =>
-      !!artifact.label && artifact.label.toLowerCase() === last.toLowerCase(),
-  );
+  // This turn's own files win. An id or a ref names exactly one artifact, so
+  // those match conversation-wide above; a filename does not — two turns can
+  // each produce ``report.pdf``, and `_filename()` hands EVERY html artifact
+  // that same name. Resolving an old message's link to the newest copy made
+  // the prose link disagree with the download chip in its own bubble, which
+  // renders from that turn's artifacts alone. Falls back to the conversation
+  // so a link naming a file from an earlier turn still resolves.
+  const nameMatches = (artifact: SandboxArtifact) =>
+    !!artifact.label && artifact.label.toLowerCase() === last.toLowerCase();
+  const byName =
+    findLast(turnArtifacts ?? [], nameMatches) ??
+    findLast(available, nameMatches);
   if (byName) return { kind: 'artifact', artifact: byName };
 
   return miss;

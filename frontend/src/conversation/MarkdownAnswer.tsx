@@ -70,12 +70,19 @@ export default function MarkdownAnswer({
   content,
   isStreaming,
   artifacts,
+  turnArtifacts,
   onOpenArtifact,
 }: {
   content: string;
   isStreaming?: boolean;
-  /** Artifacts produced on this turn, in creation order (``A1`` is the first). */
+  /**
+   * Every artifact in the conversation, in creation order (``A1`` is the
+   * first) — refs are conversation-scoped, so a link may name an earlier turn's
+   * file.
+   */
   artifacts?: SandboxArtifact[];
+  /** This turn's own artifacts; the filename fallback prefers them. */
+  turnArtifacts?: SandboxArtifact[];
   onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
 }) {
   const [isDarkTheme] = useDarkTheme();
@@ -132,7 +139,11 @@ export default function MarkdownAnswer({
                   // chip, but the model links it with a `sandbox:`/`artifact:`
                   // URL no browser can open. Point the link at the chip
                   // instead, and never leave a dead anchor behind.
-                  const sandboxLink = resolveSandboxLink(href, artifacts);
+                  const sandboxLink = resolveSandboxLink(
+                    href,
+                    artifacts,
+                    turnArtifacts,
+                  );
                   if (sandboxLink.kind === 'plain') {
                     return <>{children}</>;
                   }
@@ -185,7 +196,11 @@ export default function MarkdownAnswer({
                   // scheme survives and renders a broken-image box beside the
                   // chip that opens the very same file.
                   const source = typeof src === 'string' ? src : undefined;
-                  const sandboxLink = resolveSandboxLink(source, artifacts);
+                  const sandboxLink = resolveSandboxLink(
+                    source,
+                    artifacts,
+                    turnArtifacts,
+                  );
                   if (sandboxLink.kind === 'artifact') {
                     const { artifact } = sandboxLink;
                     return renderArtifactChip(

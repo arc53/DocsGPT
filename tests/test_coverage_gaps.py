@@ -845,8 +845,9 @@ class TestEmbeddingPipeline:
 
     def test_embed_and_store_empty_docs(self):
         from application.parser.embedding_pipeline import embed_and_store_documents
+        from application.parser.file.base_parser import DocumentParseError
 
-        with pytest.raises(ValueError, match="No text could be extracted"):
+        with pytest.raises(DocumentParseError, match="No text could be extracted"):
             embed_and_store_documents([], "/tmp/test", "src1", MagicMock())
 
     def test_embed_and_store_creates_folder(self, tmp_path):

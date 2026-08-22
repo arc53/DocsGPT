@@ -900,3 +900,38 @@ class TestParseTimeoutForSize:
         assert limits["time_limit"] - limits["soft_time_limit"] == grace
         # Never zero/negative, whatever the caller computed.
         assert parse_task_time_limits(0)["soft_time_limit"] == 1
+
+
+class TestReconciliationTaskShape:
+    """The beat's error fallback must report the same counters as a good tick."""
+
+    @pytest.mark.unit
+    def test_error_fallback_matches_the_real_summary_keys(self):
+        from application.api.user import reconciliation
+        from application.api.user.tasks import reconciliation_task
+
+        with patch.object(
+            reconciliation, "run_reconciliation", side_effect=RuntimeError("db down")
+        ):
+            result = reconciliation_task.run()
+
+        assert result["error"] is True
+        # Hand-writing the fallback drifted immediately: it invented
+        # ``attachments_stalled`` (no sweep produces it) and dropped
+        # ``idempotency_pending_failed``, so a failed tick reported counters
+        # that could never appear and hid one that can.
+        counters = {k: v for k, v in result.items() if k != "error"}
+        assert counters == reconciliation.zero_summary()
+        assert all(v == 0 for v in counters.values())
+
+    @pytest.mark.unit
+    def test_skipped_tick_reports_the_same_counters(self, monkeypatch):
+        from application.api.user import reconciliation
+
+        monkeypatch.setattr(reconciliation.settings, "POSTGRES_URI", "", raising=False)
+        result = reconciliation.run_reconciliation()
+
+        assert result["skipped"] == "POSTGRES_URI not set"
+        assert {k: v for k, v in result.items() if k != "skipped"} == (
+            reconciliation.zero_summary()
+        )

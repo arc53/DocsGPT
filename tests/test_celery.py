@@ -128,3 +128,97 @@ def test_durable_task_retry_envelope_spans_a_multi_minute_outage():
     assert 150 <= statistics.median(envelopes) <= 270
     # A 60 s outage must be survivable in the large majority of retry runs.
     assert sum(e >= 60 for e in envelopes) / len(envelopes) > 0.9
+
+
+@pytest.mark.unit
+def test_durable_tasks_never_retry_a_deterministic_parse_failure():
+    """The widened envelope needs ``dont_autoretry_for`` as its counterweight.
+
+    ``autoretry_for=(Exception,)`` retries EVERYTHING, so raising the backoff
+    factor to 60 also stretched permanent failures — an empty, image-only or
+    unparseable file — from a ~7 s envelope to a median 3.5 min and up to ~7.
+    Anything polling ``/api/task_status`` (the wiki-convert and GraphRAG-enable
+    modals) reports "pending" for that whole time, and the work re-runs four
+    times to fail identically. ``e2e specs/tier-b/upload.spec.ts`` went red on
+    exactly this.
+    """
+    from unittest.mock import MagicMock
+
+    from celery.app.autoretry import add_autoretry_behaviour
+
+    from application.api.user.tasks import DURABLE_TASK
+    from application.parser.file.base_parser import DocumentParseError
+
+    assert DocumentParseError in DURABLE_TASK["dont_autoretry_for"]
+
+    retried: list[dict] = []
+
+    class _Task:
+        max_retries = DURABLE_TASK["max_retries"]
+
+        def __init__(self) -> None:
+            self.request = MagicMock()
+            self.request.retries = 0
+
+        def run(self):
+            raise DocumentParseError("No text could be extracted from this file.")
+
+        def retry(self, **kwargs):
+            retried.append(dict(kwargs))
+            return RuntimeError("retry-sentinel")
+
+    task = _Task()
+    add_autoretry_behaviour(
+        task,
+        autoretry_for=DURABLE_TASK["autoretry_for"],
+        dont_autoretry_for=DURABLE_TASK["dont_autoretry_for"],
+        retry_kwargs={"max_retries": DURABLE_TASK["max_retries"]},
+        retry_backoff=DURABLE_TASK["retry_backoff"],
+    )
+
+    # Propagates unchanged to the poison/failure path instead of being
+    # swallowed into a retry.
+    with pytest.raises(DocumentParseError):
+        task.run()
+    assert retried == []
+
+
+@pytest.mark.unit
+def test_every_durable_task_carries_the_parse_failure_guard():
+    """Registered tasks, not just the shared dict — a decorator can override it.
+
+    ``store_attachment`` passes a wider tuple through ``durable_task()``; the
+    point is that no durable task ends up with a NARROWER one, which is how
+    seven of the nine came to retry a permanent parse failure four times.
+    """
+    from application.api.user import tasks as user_tasks
+    from application.parser.file.base_parser import DocumentParseError
+
+    durable = (
+        "ingest",
+        "ingest_remote",
+        "reingest_source_task",
+        "reembed_wiki_page",
+        "convert_source_to_wiki",
+        "extract_graph",
+        "process_agent_webhook",
+        "ingest_connector_task",
+        "store_attachment",
+    )
+    for name in durable:
+        task = getattr(user_tasks, name)
+        assert DocumentParseError in getattr(task, "dont_autoretry_for", ()), name
+
+
+@pytest.mark.unit
+def test_unparseable_file_raises_the_non_retryable_type():
+    """The guard is only reachable if the pipeline raises the right class.
+
+    This used to be a bare ``ValueError``, which ``autoretry_for=(Exception,)``
+    swept up regardless of the ``dont_autoretry_for`` tuple.
+    """
+    from application.parser.embedding_pipeline import embed_and_store_documents
+    from application.parser.file.base_parser import DocumentParseError
+
+    with pytest.raises(DocumentParseError, match="No text could be extracted"):
+        embed_and_store_documents([], "/tmp", "src", None)

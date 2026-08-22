@@ -296,3 +296,63 @@ describe('scheme-less and file: hrefs', () => {
     });
   });
 });
+
+// Two turns each produced a file called `report.pdf`. That is not exotic:
+// `_filename()` in artifact_generator.py hands EVERY html artifact the name
+// `report.html`, and re-running a script that writes `chart.png` collides too.
+describe('a filename that two turns both produced', () => {
+  const turnOne: SandboxArtifact = {
+    id: 'id-old',
+    label: 'report.pdf',
+    ref: 'A1',
+    toolName: 'artifact_generator',
+  };
+  const turnTwo: SandboxArtifact = {
+    id: 'id-new',
+    label: 'report.pdf',
+    ref: 'A2',
+    toolName: 'artifact_generator',
+  };
+  // What ConversationMessages passes: the whole conversation, in order.
+  const conversation = [turnOne, turnTwo];
+
+  it("resolves turn one's link to turn one's file, not the newest copy", () => {
+    // Without the turn scope this returned `id-new`, so the prose link opened
+    // a different file from the download chip in the very same bubble.
+    expect(
+      resolveSandboxLink('sandbox:/mnt/data/report.pdf', conversation, [
+        turnOne,
+      ]),
+    ).toEqual({ kind: 'artifact', artifact: turnOne });
+  });
+
+  it("resolves turn two's link to turn two's file", () => {
+    expect(
+      resolveSandboxLink('sandbox:/mnt/data/report.pdf', conversation, [
+        turnTwo,
+      ]),
+    ).toEqual({ kind: 'artifact', artifact: turnTwo });
+  });
+
+  it('still reaches an earlier turn when this turn produced nothing', () => {
+    // The fallback that keeps "the CSV from earlier" working.
+    expect(
+      resolveSandboxLink('sandbox:/mnt/data/report.pdf', conversation, []),
+    ).toEqual({ kind: 'artifact', artifact: turnTwo });
+  });
+
+  it('matches a ref conversation-wide even when this turn owns a file', () => {
+    // Refs are unambiguous, so they must NOT be narrowed — this is the
+    // cross-turn resolution the conversation-wide list was added for.
+    expect(resolveSandboxLink('artifact:A1', conversation, [turnTwo])).toEqual({
+      kind: 'artifact',
+      artifact: turnOne,
+    });
+  });
+
+  it('matches an id conversation-wide even when this turn owns a file', () => {
+    expect(
+      resolveSandboxLink('sandbox:/artifact/id-old', conversation, [turnTwo]),
+    ).toEqual({ kind: 'artifact', artifact: turnOne });
+  });
+});

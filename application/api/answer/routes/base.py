@@ -1054,9 +1054,27 @@ class BaseAnswerResource:
                         # that sets it lives in the superseding request's own
                         # process. That is routine and must not page anyone.
                         # Anything else is a genuinely orphaned answer.
-                        superseded = self.conversation_service.was_superseded(
-                            reserved_message_id
-                        )
+                        # Guarded: this opens its own DB connection, and an
+                        # unguarded raise here would escape to the generic
+                        # ``except`` below — which yields a terminal ``error``
+                        # frame, re-finalizes, and releases the resume claim,
+                        # all for a row that is already gone. It would also
+                        # swallow the very alert this branch exists to raise.
+                        # A missing ``superseded_messages`` table (code
+                        # deployed ahead of ``alembic upgrade head``) lands
+                        # here too, so the fallback is the pre-tombstone
+                        # behaviour rather than a user-visible failure.
+                        try:
+                            superseded = self.conversation_service.was_superseded(
+                                reserved_message_id
+                            )
+                        except Exception:
+                            logger.exception(
+                                "was_superseded lookup failed for %s; "
+                                "treating the row as orphaned",
+                                reserved_message_id,
+                            )
+                            superseded = False
                         if superseded:
                             logger.info(
                                 "stream superseded: message row %s was replaced "
@@ -1415,9 +1433,10 @@ class BaseAnswerResource:
             # invisible, and every retry inside the window gets another 409.
             # Not on the ``StreamSuperseded`` path above — there the turn was
             # deliberately replaced and the row is legitimately gone.
+            claim_released = False
             if _continuation and conversation_id:
                 try:
-                    ContinuationService().release_claim(
+                    claim_released = ContinuationService().release_claim(
                         str(conversation_id),
                         decoded_token.get("sub", "local"),
                     )
@@ -1428,6 +1447,21 @@ class BaseAnswerResource:
                         exc_info=True,
                     )
             if reserved_message_id is not None:
+                # Releasing the claim above says "this turn is retryable"; the
+                # row must not simultaneously be stamped terminally failed in a
+                # way the retry cannot overwrite. A resume reuses the SAME
+                # ``reserved_message_id`` (stream_processor stores it in the
+                # persisted ``agent_config``), so the retry's own
+                # ``finalize_message(status="complete")`` is gated by
+                # ``only_if_non_terminal`` and lands ``ALREADY_FAILED`` — the
+                # user watches a correct answer stream in and finds
+                # "Response was terminated prior to completion" on reload.
+                # Mark the failure retryable so the reclaim hole in
+                # ``update_message_by_id`` lets that second answer through,
+                # exactly as it already does for the reconciler's own marker.
+                failure_metadata = dict(query_metadata or {})
+                if claim_released:
+                    failure_metadata["resume_retryable"] = True
                 try:
                     self.conversation_service.finalize_message(
                         reserved_message_id,
@@ -1436,7 +1470,7 @@ class BaseAnswerResource:
                         sources=source_log_docs,
                         tool_calls=tool_calls,
                         model_id=model_id or self.default_model_id,
-                        metadata=query_metadata if query_metadata else None,
+                        metadata=failure_metadata or None,
                         status="failed",
                         error=e,
                     )

@@ -896,16 +896,23 @@ class ConversationsRepository:
         True, the update is gated so a late finalize cannot retract a
         reconciler-set ``failed`` (or a prior ``complete``).
 
-        ``reclaim_reconciler_failed`` punches one hole in that gate: a row
-        the **reconciler** failed for staleness may still be finalized by the
-        stream that owns it, because such a stream demonstrably was not dead.
-        Production showed a 20-minute tool loop swept at minute 6 and then
-        completing normally at minute 20, its answer refused and replaced by
-        "Response was terminated prior to completion". The hole is deliberately
-        narrow — it matches only the reconciler's own error string, so genuine
-        terminal failures (client disconnect, provider errors, the pending-tool
-        cleanup task) stay terminal, and it skips rows whose awaiting-approval
-        prompt the reconciler already revoked.
+        ``reclaim_reconciler_failed`` punches two narrow holes in that gate,
+        both for rows whose ``failed`` stamp a later successful answer
+        disproves:
+
+        1. A row the **reconciler** failed for staleness. Such a stream
+           demonstrably was not dead — production showed a 20-minute tool loop
+           swept at minute 6 and then completing normally at minute 20, its
+           answer refused and replaced by "Response was terminated prior to
+           completion". Matched on the reconciler's own error string, and
+           skipping rows whose awaiting-approval prompt it already revoked.
+        2. A row marked ``resume_retryable`` by the stream handler, which sets
+           it only when it also released the continuation claim — i.e. it
+           explicitly handed the turn back for a retry that reuses this same
+           row id.
+
+        Everything else stays terminal: genuine failures (client disconnect,
+        provider errors, the pending-tool cleanup task) are unaffected.
 
         Reclaiming also strips the reconciler's bookkeeping keys, which
         otherwise survive the metadata merge and leave a ``complete`` row
@@ -922,7 +929,7 @@ class ConversationsRepository:
             fields: Field/value pairs to write.
             only_if_non_terminal: Gate the write on a non-terminal status.
             reclaim_reconciler_failed: Also allow rows the reconciler failed
-                for staleness.
+                for staleness, and rows a failed resume marked retryable.
 
         Returns:
             MessageUpdateOutcome: What happened to the row.
@@ -946,6 +953,7 @@ class ConversationsRepository:
         # does this fire" query.
         reclaim_strip = (
             " - 'error' - 'reconcile_attempts' - 'last_reconcile_seen_heartbeat'"
+            " - 'resume_retryable'"
             if reclaim_reconciler_failed
             else ""
         )
@@ -1002,6 +1010,18 @@ class ConversationsRepository:
                     "AND COALESCE("
                     "(message_metadata->>'reconciler_cleared_approval')::boolean,"
                     " false) = false"
+                    ") OR ("
+                    # Second hole, same principle: the stream handler that
+                    # failed a resume also handed the turn back by releasing
+                    # the continuation claim, so it stamped the row
+                    # ``resume_retryable``. The retry reuses this very row
+                    # (the reserved id lives in the persisted agent_config);
+                    # without this it would land ALREADY_FAILED and the
+                    # user's second, successful answer would be discarded.
+                    "status = 'failed' "
+                    "AND COALESCE("
+                    "(message_metadata->>'resume_retryable')::boolean,"
+                    " false) = true"
                     "))"
                 )
             update_where.append(terminal_gate)

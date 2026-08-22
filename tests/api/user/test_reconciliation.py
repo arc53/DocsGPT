@@ -945,17 +945,20 @@ class TestStalledIngestEvent:
 class TestPostgresUriMissing:
     @pytest.mark.unit
     def test_returns_skip_dict(self, monkeypatch):
-        from application.api.user.reconciliation import run_reconciliation
+        from application.api.user.reconciliation import (
+            run_reconciliation,
+            zero_summary,
+        )
         from application.core.settings import settings
 
         monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
 
         result = run_reconciliation()
-        assert result == {
-            "messages_failed": 0,
-            "tool_calls_failed": 0,
-            "skipped": "POSTGRES_URI not set",
-        }
+        # Same counters as any other tick, all zero, plus the reason. Pinning
+        # a hand-written literal here is what let the shapes drift apart: this
+        # path reported 3 of the 5 keys and the task's error fallback invented
+        # a sixth that no sweep produces.
+        assert result == {**zero_summary(), "skipped": "POSTGRES_URI not set"}
 
 
 # ---------------------------------------------------------------------------

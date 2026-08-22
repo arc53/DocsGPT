@@ -28,7 +28,13 @@ if settings.POSTGRES_URI:
     config.set_main_option("sqlalchemy.url", settings.POSTGRES_URI)
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # ``disable_existing_loggers`` defaults to True, which would switch off
+    # every ``application.*`` logger already imported by the time migrations
+    # run. ``app.py`` calls ``setup_logging()`` (line 16) BEFORE
+    # ``ensure_database_ready()`` (line 58), so the web tier never
+    # re-enables them and loses all application logging for the life of the
+    # process — on exactly the boot where a schema upgrade happened.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 
 def run_migrations_offline() -> None:

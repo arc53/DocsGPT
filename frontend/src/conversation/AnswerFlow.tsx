@@ -29,8 +29,10 @@ type AnswerFlowProps = {
   agentId?: string;
   /** Set when the bubble already carries its own progress UI (a research run). */
   suppressStatusLine?: boolean;
-  /** Artifacts produced on this turn, so ``sandbox:`` links can reach them. */
+  /** Every artifact in the conversation, so ``sandbox:`` links can reach them. */
   artifacts?: SandboxArtifact[];
+  /** This turn's own artifacts, which win when a link names a bare filename. */
+  turnArtifacts?: SandboxArtifact[];
   onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   renderApproval: (toolCall: ToolCallsType) => React.ReactNode;
   renderWikiWrite: (
@@ -52,6 +54,7 @@ export default function AnswerFlow({
   agentId,
   suppressStatusLine,
   artifacts,
+  turnArtifacts,
   onOpenArtifact,
   renderApproval,
   renderWikiWrite,
@@ -131,6 +134,7 @@ export default function AnswerFlow({
               content={message}
               isStreaming={isStreaming}
               artifacts={artifacts}
+              turnArtifacts={turnArtifacts}
               onOpenArtifact={onOpenArtifact}
             />
           </div>

@@ -102,3 +102,65 @@ class TestSetupLogging:
 
         handlers = logging.getLogger().handlers
         assert otel_handler not in handlers
+
+
+class TestAlembicDoesNotSilenceApplicationLoggers:
+    """A boot that applies a migration must not switch off app logging.
+
+    ``alembic/env.py`` calls ``logging.config.fileConfig``, whose
+    ``disable_existing_loggers`` defaults to True and whose ini names only
+    ``root``/``sqlalchemy``/``alembic`` — so every ``application.*`` logger
+    imported before it is disabled. ``app.py`` calls ``setup_logging()`` at
+    line 16 but ``ensure_database_ready()`` at line 58, so the web tier never
+    re-enables them: on the one boot where a schema upgrade happened, it
+    logs nothing for the rest of the process's life. k8s sets
+    ``AUTO_MIGRATE=false``, but every docker-compose variant leaves it on.
+    """
+
+    @pytest.mark.unit
+    def test_env_py_opts_out_of_disable_existing_loggers(self):
+        """AST, not a grep: the kwarg has to be on the real call."""
+        import ast
+        import pathlib
+
+        source = pathlib.Path("application/alembic/env.py").read_text()
+        calls = [
+            node
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) == "fileConfig"
+        ]
+        assert calls, "env.py no longer calls fileConfig"
+        for call in calls:
+            kwargs = {kw.arg: kw.value for kw in call.keywords}
+            assert "disable_existing_loggers" in kwargs
+            assert kwargs["disable_existing_loggers"].value is False
+
+    @pytest.mark.unit
+    def test_the_flag_is_what_keeps_application_loggers_alive(self, tmp_path):
+        """Pins the mechanism, in a subprocess so pytest's own logging survives.
+
+        ``fileConfig`` mutates global logging state, so this cannot run
+        in-process without wrecking every later test's log capture.
+        """
+        import subprocess
+        import sys
+
+        probe = tmp_path / "probe.py"
+        probe.write_text(
+            "import logging\n"
+            "from logging.config import fileConfig\n"
+            "log = logging.getLogger('application.api.answer.routes.stream')\n"
+            "fileConfig('application/alembic.ini', disable_existing_loggers=True)\n"
+            "kept = logging.getLogger('application.api.answer.routes.stream')\n"
+            "print('default_disables', kept.disabled)\n"
+            "kept.disabled = False\n"
+            "fileConfig('application/alembic.ini', disable_existing_loggers=False)\n"
+            "print('flag_preserves', not kept.disabled)\n"
+        )
+        out = subprocess.run(
+            [sys.executable, str(probe)],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert "default_disables True" in out
+        assert "flag_preserves True" in out

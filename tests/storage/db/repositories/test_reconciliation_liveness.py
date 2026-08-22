@@ -278,6 +278,56 @@ class TestFinalizeReclaim:
         assert "error" not in meta
         assert "reconcile_attempts" not in meta
 
+    def test_reclaims_a_resume_that_released_its_claim(self, pg_conn):
+        """A failed resume that handed the turn back must not block the retry.
+
+        The stream handler releases the continuation claim and stamps
+        ``resume_retryable`` in the same breath. The retry reuses this very row
+        (the reserved id lives in the persisted ``agent_config``), so without
+        the second reclaim hole its successful finalize lands ALREADY_FAILED
+        and the user's answer is discarded after they watched it stream in.
+        """
+        msg = _seed_message(
+            pg_conn,
+            status="failed",
+            metadata={"error": "KeyError: 'name'", "resume_retryable": True},
+        )
+        repo = ConversationsRepository(pg_conn)
+
+        outcome = repo.update_message_by_id(
+            msg["id"],
+            {"response": "the retry's answer", "status": "complete"},
+            only_if_non_terminal=True,
+            reclaim_reconciler_failed=True,
+        )
+
+        assert outcome is MessageUpdateOutcome.UPDATED
+        assert _status(pg_conn, msg["id"]) == "complete"
+        # The marker must not survive onto the finished row, or the API
+        # response carries a stale failure alongside a complete answer.
+        meta = _meta(pg_conn, msg["id"])
+        assert "resume_retryable" not in meta
+        assert "error" not in meta
+
+    def test_does_not_reclaim_a_failure_that_kept_its_claim(self, pg_conn):
+        """No marker means no release happened, so the row stays terminal."""
+        msg = _seed_message(
+            pg_conn,
+            status="failed",
+            metadata={"error": "KeyError: 'name'"},
+        )
+        repo = ConversationsRepository(pg_conn)
+
+        outcome = repo.update_message_by_id(
+            msg["id"],
+            {"response": "late answer", "status": "complete"},
+            only_if_non_terminal=True,
+            reclaim_reconciler_failed=True,
+        )
+
+        assert outcome is MessageUpdateOutcome.ALREADY_FAILED
+        assert _status(pg_conn, msg["id"]) == "failed"
+
     def test_does_not_reclaim_genuine_failure(self, pg_conn):
         """Client disconnect, provider errors etc. stay terminal."""
         msg = _seed_message(

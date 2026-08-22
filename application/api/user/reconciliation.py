@@ -30,6 +30,21 @@ logger = logging.getLogger(__name__)
 MAX_MESSAGE_RECONCILE_ATTEMPTS = 3
 
 
+def zero_summary() -> Dict[str, int]:
+    """The counter keys every tick reports, all at zero.
+
+    Single source of truth so the early-return and the caller's error
+    fallback cannot drift from the sweeps that actually populate them.
+    """
+    return {
+        "messages_failed": 0,
+        "tool_calls_failed": 0,
+        "ingests_stalled": 0,
+        "idempotency_pending_failed": 0,
+        "schedule_runs_failed": 0,
+    }
+
+
 def run_reconciliation() -> Dict[str, Any]:
     """Single tick of the reconciler. Five sweeps, FOR UPDATE SKIP LOCKED.
 
@@ -42,20 +57,10 @@ def run_reconciliation() -> Dict[str, Any]:
     sitting in ``pending`` until 24 h TTL.
     """
     if not settings.POSTGRES_URI:
-        return {
-            "messages_failed": 0,
-            "tool_calls_failed": 0,
-            "skipped": "POSTGRES_URI not set",
-        }
+        return {**zero_summary(), "skipped": "POSTGRES_URI not set"}
 
     engine = get_engine()
-    summary = {
-        "messages_failed": 0,
-        "tool_calls_failed": 0,
-        "ingests_stalled": 0,
-        "idempotency_pending_failed": 0,
-        "schedule_runs_failed": 0,
-    }
+    summary: Dict[str, Any] = zero_summary()
     # User-facing events to fan out once their DB writes have committed
     # (publish-after-commit). Each item is
     # ``(user_id, event_type, payload, scope)``.
