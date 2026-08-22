@@ -91,6 +91,10 @@ function matchedScheme(href: string | undefined | null): string | null {
 /** Short refs the artifact tool hands back, e.g. ``A1`` is the first artifact. */
 const SHORT_REF = /^a(\d+)$/i;
 
+// A trailing extension is what separates "this segment names a file" from
+// "this is an ordinary route". Only consulted for scheme-less hrefs.
+const HAS_EXTENSION = /\.[a-z0-9]{1,8}$/i;
+
 /** Any URL scheme, so ``https:`` and ``mailto:`` are left alone. */
 const ANY_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
@@ -161,6 +165,15 @@ export function resolveSandboxLink(
   if (segments.length === 0) return miss;
 
   const last = segments[segments.length - 1];
+
+  // A scheme-less href stays a link unless the segment names a FILE. The
+  // matchers below are deliberately loose because a `sandbox:` URL is already
+  // known to be ours; against an ordinary relative link they are far too
+  // eager. `[see the artifact](/artifact)` hits the `formatToolName` label an
+  // artifact carries when no filename was reported, and `[notes](/a1)` hits
+  // the ref pattern — and a chip REPLACES the anchor, so the user is left
+  // with a button onto an unrelated file and no link to fall back to.
+  if (!scheme && !HAS_EXTENSION.test(last)) return miss;
 
   // Try every identifier the segment could be, in order of certainty. A ref is
   // matched against the artifact's own ``ref``, never by position: ``A2`` is the

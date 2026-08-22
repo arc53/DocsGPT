@@ -10,8 +10,10 @@ when OTLP log export is enabled.
 from __future__ import annotations
 
 import logging
+import pathlib
 import sys
 import types
+from unittest.mock import Mock
 
 import pytest
 
@@ -164,3 +166,66 @@ class TestAlembicDoesNotSilenceApplicationLoggers:
         ).stdout
         assert "default_disables True" in out
         assert "flag_preserves True" in out
+
+
+@pytest.mark.unit
+class TestMigrationsDoNotClobberAppLogging:
+    """An in-process ``alembic upgrade`` must not take application logging down.
+
+    ``app.py`` calls ``setup_logging()`` before ``ensure_database_ready()``, so
+    ``env.py``'s ``fileConfig`` runs against an already-configured root logger.
+    ``fileConfig`` rebuilds root from ``[logger_root]`` (level WARNING, a stderr
+    handler), which drops every ``application.*`` INFO record and detaches the
+    OTEL handler and context filter for the life of the process —
+    ``disable_existing_loggers=False`` does not prevent it, since that flag only
+    governs whether existing loggers are switched off.
+    """
+
+    def test_bootstrap_tells_env_py_to_leave_logging_alone(self, monkeypatch):
+        from logging.config import fileConfig
+
+        from application.storage.db import bootstrap
+
+        # Skip the best-effort revision precheck; it needs a live DB. It is
+        # wrapped in try/except, so raising here lands on the "upgrade anyway"
+        # path we actually want to exercise.
+        monkeypatch.setattr(
+            "alembic.script.ScriptDirectory.from_config",
+            Mock(side_effect=RuntimeError("no db")),
+        )
+
+        root = logging.getLogger()
+        root.handlers = []
+        setup_logging()
+        marker = logging.NullHandler()
+        root.addHandler(marker)
+        before_level = root.level
+
+        seen = {}
+
+        def fake_upgrade(cfg, revision):
+            # Stand in for env.py, which guards its fileConfig on this key.
+            seen["configure_logger"] = cfg.attributes.get("configure_logger", True)
+            if seen["configure_logger"]:
+                fileConfig(cfg.config_file_name, disable_existing_loggers=False)
+
+        monkeypatch.setattr(
+            "alembic.command.upgrade", fake_upgrade, raising=False
+        )
+        bootstrap._run_migrations(logging.getLogger("test"))
+
+        assert seen["configure_logger"] is False
+        assert root.level == before_level
+        assert marker in root.handlers
+        assert logging.getLogger("application.probe").isEnabledFor(logging.INFO)
+
+    def test_env_py_honours_the_opt_out(self):
+        """The other half of the contract lives in env.py's module-level guard."""
+        env_py = (
+            pathlib.Path(__file__).resolve().parents[2]
+            / "application"
+            / "alembic"
+            / "env.py"
+        )
+        source = env_py.read_text()
+        assert 'config.attributes.get("configure_logger", True)' in source

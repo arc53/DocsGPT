@@ -248,6 +248,53 @@ class TestReleaseClaim:
         # ...and the next resume attempt can take it straight away.
         assert repo.claim_state(conv["id"], "user-1") is not None
 
+    def test_bumps_expires_at_to_protect_from_the_ttl_sweep(self, pg_conn):
+        """A claim released after a long resume must not come back expired.
+
+        ``claim_state``/``mark_resuming`` gate on ``expires_at``, and flipping
+        to ``pending`` also hides the row from ``revert_stale_resuming``, which
+        matches ``resuming`` only. Without the bump, releasing a claim on a row
+        whose TTL lapsed mid-resume DELETES the user's rescue instead of
+        speeding it up — the turn is reported retryable but can never be
+        re-claimed. This is the sibling of
+        ``TestRevertStaleResuming::test_bumps_expires_at_to_protect_from_ttl_sweep``.
+        """
+        conv = _conv(pg_conn)
+        repo = _repo(pg_conn)
+        repo.save_state(conv["id"], "user-1", **_sample_state())
+        repo.claim_state(conv["id"], "user-1")
+        # The resume outlived the row's TTL before it failed.
+        pg_conn.execute(
+            text(
+                """
+                UPDATE pending_tool_state
+                SET expires_at = clock_timestamp() - interval '1 minute'
+                WHERE conversation_id = CAST(:conv_id AS uuid)
+                """
+            ),
+            {"conv_id": conv["id"]},
+        )
+
+        assert repo.release_claim(conv["id"], "user-1") is True
+
+        reclaimed = repo.load_state(conv["id"], "user-1")
+        assert reclaimed is not None, "released claim came back already expired"
+        assert repo.claim_state(conv["id"], "user-1") is not None
+        assert repo.cleanup_expired() == []
+
+    def test_does_not_shorten_a_healthy_ttl(self, pg_conn):
+        """A failed resume must never cut short a row with time left."""
+        conv = _conv(pg_conn)
+        repo = _repo(pg_conn)
+        repo.save_state(conv["id"], "user-1", **_sample_state())
+        repo.claim_state(conv["id"], "user-1")
+        before = repo.load_state_any(conv["id"], "user-1")["expires_at"]
+
+        repo.release_claim(conv["id"], "user-1", ttl_extension_seconds=1)
+
+        after = repo.load_state_any(conv["id"], "user-1")["expires_at"]
+        assert after == before
+
     def test_noop_on_a_pending_row(self, pg_conn):
         """Only a claim can be released; a live pending row is left alone."""
         conv = _conv(pg_conn)

@@ -886,6 +886,31 @@ class ToolExecutor:
             )
             return True
 
+    @staticmethod
+    def _advertisable_action_names(tools_dict: Dict) -> set:
+        """Action names a ``tools_dict`` would expose, mirroring pass 1 of
+        :meth:`prepare_tools_for_llm`.
+
+        The model calls ACTION names (``run_code``), never tool names
+        (``code_executor``), so a fallback built from ``tool["name"]`` names
+        strings that cannot resolve — feeding the very retry loop the
+        correctable error exists to break.
+        """
+        names = set()
+        for tool in (tools_dict or {}).values():
+            tool = tool or {}
+            if tool.get("name") == "api_tool":
+                actions = (tool.get("config") or {}).get("actions") or {}
+                actions = actions.values() if isinstance(actions, dict) else actions
+            else:
+                actions = tool.get("actions") or []
+            for action in actions:
+                if not isinstance(action, dict) or not action.get("active", True):
+                    continue
+                if action.get("name"):
+                    names.add(str(action["name"]))
+        return names
+
     def _available_tool_names(self, tools_dict: Dict, exclude: Optional[str] = None) -> str:
         """Render the names the model can actually call, for a correctable error.
 
@@ -909,9 +934,7 @@ class ToolExecutor:
             if not scope or tool_id in scope
         )
         if not names:
-            names = sorted(
-                {(tool or {}).get("name") or tool_id for tool_id, tool in (tools_dict or {}).items()}
-            )
+            names = sorted(self._advertisable_action_names(tools_dict or {}))
         names = [str(name) for name in names if name != exclude]
         if len(names) > self.MAX_ADVERTISED_TOOL_NAMES:
             hidden = len(names) - self.MAX_ADVERTISED_TOOL_NAMES

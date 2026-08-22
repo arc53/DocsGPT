@@ -27,13 +27,17 @@ config = context.config
 if settings.POSTGRES_URI:
     config.set_main_option("sqlalchemy.url", settings.POSTGRES_URI)
 
-if config.config_file_name is not None:
-    # ``disable_existing_loggers`` defaults to True, which would switch off
-    # every ``application.*`` logger already imported by the time migrations
-    # run. ``app.py`` calls ``setup_logging()`` (line 16) BEFORE
-    # ``ensure_database_ready()`` (line 58), so the web tier never
-    # re-enables them and loses all application logging for the life of the
-    # process — on exactly the boot where a schema upgrade happened.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
+    # ``fileConfig`` reconfigures the ROOT logger from ``[logger_root]``
+    # (level WARNING, a stderr handler), which drops every ``application.*``
+    # INFO record, detaches the OTLP handler and the request/trace filter that
+    # ``setup_logging()`` installed, and cannot be undone by
+    # ``disable_existing_loggers=False`` — that flag only governs whether
+    # existing loggers are switched off. ``app.py`` calls ``setup_logging()``
+    # before ``ensure_database_ready()``, so an in-process migration would
+    # silence the web tier for the life of the process, on exactly the boot
+    # where a schema upgrade happened. In-process callers opt out via
+    # ``cfg.attributes``; the alembic CLI still gets its configured logging.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 

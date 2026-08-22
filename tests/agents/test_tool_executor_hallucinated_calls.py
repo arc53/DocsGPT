@@ -17,10 +17,16 @@ import pytest
 from application.agents.tool_executor import ToolExecutor
 
 
+def _action(name):
+    return {"name": name, "description": "D", "active": True, "parameters": {"properties": {}}}
+
+
 def _tools_dict():
+    # Rows carry actions, as every production row does: the model calls the
+    # ACTION name, so that is what an error may advertise.
     return {
-        "t1": {"name": "memory", "actions": [], "config": {}},
-        "t2": {"name": "read_webpage", "actions": [], "config": {}},
+        "t1": {"name": "memory", "actions": [_action("memory_view")], "config": {}},
+        "t2": {"name": "read_webpage", "actions": [_action("read_webpage")], "config": {}},
     }
 
 
@@ -118,6 +124,39 @@ class TestErrorNamesWhatTheModelCanCall:
         executor.prepare_tools_for_llm(tools_dict)
         _events, (result, _call_id) = _drain(executor, _call("make_a_pdf"), tools=tools_dict)
         assert "create_artifact" in result
+
+    def test_the_fallback_advertises_action_names_not_tool_names(self):
+        """With no name mapping built, the fallback must still name callables.
+
+        ``_tool_to_name`` is empty whenever a turn produced zero LLM schemas —
+        every action toggled off, an unsynced MCP row, an ``api_tool`` with no
+        ``config.actions``. Advertising ``code_executor`` there invites a call
+        named ``code_executor``, which cannot resolve: the error feeds the very
+        loop it exists to break.
+        """
+        executor = ToolExecutor()
+        tools_dict = {
+            "t1": {"name": "code_executor", "actions": [_action("run_code")]},
+            "t2": {
+                "name": "api_tool",
+                "config": {"actions": {"a": _action("fetch_invoice")}},
+            },
+        }
+        assert executor._tool_to_name == {}
+        _events, (result, _call_id) = _drain(executor, _call("bash"), tools=tools_dict)
+
+        assert "run_code" in result and "fetch_invoice" in result, result
+        assert "code_executor" not in result, result
+        assert "api_tool" not in result, result
+
+    def test_the_fallback_skips_inactive_actions(self):
+        """An action the user switched off is not callable, so it is not offered."""
+        executor = ToolExecutor()
+        off = _action("run_code")
+        off["active"] = False
+        tools_dict = {"t1": {"name": "code_executor", "actions": [off]}}
+        _events, (result, _call_id) = _drain(executor, _call("bash"), tools=tools_dict)
+        assert "(none available)" in result, result
 
     def test_only_advertises_tools_in_scope_for_this_call(self):
         """A narrowed ``tools_dict`` must not be told about out-of-scope tools.

@@ -1437,6 +1437,25 @@ class LLMHandler(ABC):
                         tool_calls[call.index] = call
                     else:
                         existing = tool_calls[call.index]
+                        # Decide BEFORE the id/name overwrite below: a gateway
+                        # that reuses one index for sequential DISTINCT calls
+                        # is indistinguishable from a restatement once the
+                        # identity is gone. Restatement frames carry neither
+                        # id nor name, so a differing one means a new call.
+                        is_new_call = bool(
+                            (call.id and existing.id and call.id != existing.id)
+                            or (call.name and existing.name and call.name != existing.name)
+                        )
+                        if is_new_call:
+                            logger.warning(
+                                "tool_call_index_reused_by_distinct_call",
+                                extra={
+                                    "index": call.index,
+                                    "previous_call": f"{existing.id}/{existing.name}",
+                                    "incoming_call": f"{call.id}/{call.name}",
+                                    "dropped_prefix": str(existing.arguments)[:120],
+                                },
+                            )
                         if call.id:
                             existing.id = call.id
                         if call.name:
@@ -1447,8 +1466,11 @@ class LLMHandler(ABC):
                             elif isinstance(existing.arguments, str) and isinstance(
                                 call.arguments, str
                             ):
-                                if _is_restated_payload(
-                                    existing.arguments, call.arguments
+                                if (
+                                    _is_restated_payload(
+                                        existing.arguments, call.arguments
+                                    )
+                                    and not is_new_call
                                 ):
                                     # Some OpenAI-compatible gateways restate
                                     # the WHOLE argument payload on the finish

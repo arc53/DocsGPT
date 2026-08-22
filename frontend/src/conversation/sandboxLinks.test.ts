@@ -297,6 +297,58 @@ describe('scheme-less and file: hrefs', () => {
   });
 });
 
+// A chip REPLACES the anchor, so a false positive here is worse than a miss:
+// the user clicks an in-app link, gets a viewer onto an unrelated file, and has
+// no href left to fall back to. In a shared conversation, where no
+// `onOpenArtifact` is wired, the link degrades to inert plain text instead.
+// The matchers are deliberately loose because a `sandbox:` URL is already known
+// to be ours; against an ordinary relative link they are far too eager, so a
+// scheme-less href must name a FILE before any of them may run.
+describe('an ordinary relative link is not an artifact reference', () => {
+  // `deriveArtifactChips` labels an artifact `formatToolName(tool_name)` when
+  // no filename was reported, so 'Artifact' and 'Code Executor' are real
+  // labels — and every conversation with one artifact has a ref of `A1`.
+  const available = [
+    { id: 'id-one', label: 'Artifact', ref: 'A1' },
+    { id: 'id-two', label: 'Code Executor', ref: 'A2' },
+  ];
+
+  it.each([
+    '/artifact',
+    '/artifact/',
+    '/Artifact?x=1',
+    '/code%20executor',
+    '/a1',
+    '/A2',
+    '/id-one',
+    '/settings/general',
+    'about',
+  ])('leaves %s as an ordinary link', (href) => {
+    expect(resolveSandboxLink(href, available)).toEqual({ kind: 'external' });
+  });
+
+  it('still resolves a scheme-less href that names a file', () => {
+    const withFile = [{ id: 'id-three', label: 'report.pdf', ref: 'A3' }];
+    expect(resolveSandboxLink('/mnt/data/report.pdf', withFile)).toEqual({
+      kind: 'artifact',
+      artifact: withFile[0],
+    });
+  });
+
+  it('still resolves those same forms under an explicit scheme', () => {
+    // The gate is scoped to scheme-less hrefs: `sandbox:` and `artifact:` are
+    // unambiguously ours, so a bare ref or label stays resolvable there.
+    expect(resolveSandboxLink('artifact:A1', available)).toEqual({
+      kind: 'artifact',
+      artifact: available[0],
+    });
+    expect(resolveSandboxLink('sandbox:/artifact/id-two', available)).toEqual({
+      kind: 'artifact',
+      artifact: available[1],
+    });
+  });
+});
+
 // Two turns each produced a file called `report.pdf`. That is not exotic:
 // `_filename()` in artifact_generator.py hands EVERY html artifact the name
 // `report.html`, and re-running a script that writes `chart.png` collides too.

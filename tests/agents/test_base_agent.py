@@ -511,15 +511,23 @@ class TestBaseAgentToolExecution:
         call.name = "action_999"
         call.arguments = "{}"
 
-        tools_dict = {"1": {"name": "tool1", "config": {}, "actions": []}}
+        tools_dict = {
+            "1": {
+                "name": "tool1",
+                "config": {},
+                "actions": [{"name": "tool1_read", "description": "D"}],
+            }
+        }
 
         results = list(agent._execute_tool_action(tools_dict, call))
 
         assert results[0]["type"] == "tool_call"
         assert results[0]["data"]["status"] == "error"
         assert "no such tool" in results[0]["data"]["result"]
-        # Tool *names*, not internal ids — the model never sees the ids.
-        assert "tool1" in results[0]["data"]["result"]
+        # LLM-visible ACTION names. Not the tool name and never the internal
+        # id: both name a string the model cannot actually call, which just
+        # buys another failed round.
+        assert "tool1_read" in results[0]["data"]["result"]
 
     def test_execute_tool_action_with_parameters(
         self,
