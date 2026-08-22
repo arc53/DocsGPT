@@ -297,7 +297,13 @@ export default function AgentCard({
   const handleExport = async () => {
     try {
       const response = await userService.exportAgent(agent.id ?? '', token);
-      if (!response.ok) throw new Error('Failed to export agent');
+      if (!response.ok) {
+        const message = await response
+          .json()
+          .then((data) => data?.message)
+          .catch(() => null);
+        throw new Error(message || t('agents.exportAgentFailed'));
+      }
       const yamlText = await response.text();
       const blob = new Blob([yamlText], { type: 'application/x-yaml' });
       const url = URL.createObjectURL(blob);
@@ -310,6 +316,9 @@ export default function AgentCard({
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error:', error);
+      alert(
+        error instanceof Error ? error.message : t('agents.exportAgentFailed'),
+      );
     }
   };
 

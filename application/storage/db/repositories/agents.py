@@ -160,6 +160,19 @@ class AgentsRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def count_by_workflow(self, workflow_id: str, user_id: str) -> int:
+        """Number of this user's agents linked to ``workflow_id``."""
+        if not looks_like_uuid(workflow_id):
+            return 0
+        result = self._conn.execute(
+            text(
+                "SELECT COUNT(*) FROM agents "
+                "WHERE workflow_id = CAST(:wf AS uuid) AND user_id = :user_id"
+            ),
+            {"wf": workflow_id, "user_id": user_id},
+        )
+        return int(result.scalar() or 0)
+
     def get_by_id(self, agent_id: str) -> Optional[dict]:
         """Fetch an agent by id with NO ownership scoping.
 

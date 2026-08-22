@@ -1030,6 +1030,8 @@
       "importError": "Import failed",
       "willCreate": "Creates a new agent.",
       "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
+      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
+      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
       "sources": "Sources",
       "tools": "Tools",
       "models": "Models",
@@ -1149,6 +1151,7 @@
     "newAgent": "新建代理",
     "importAgent": "Import",
     "exportAgent": "Export as YAML",
+    "exportAgentFailed": "Failed to export agent",
     "shareWithTeam": "與團隊分享",
     "backToAll": "返回所有代理",
     "pageHeader": {

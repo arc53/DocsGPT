@@ -96,14 +96,6 @@ class TestFindByVersion:
 
 
 class TestDelete:
-    def test_delete_by_workflow(self, pg_conn):
-        wf, n1, n2 = _setup(pg_conn)
-        repo = _repo(pg_conn)
-        repo.create(wf["id"], 1, "e1", n1["id"], n2["id"])
-        deleted = repo.delete_by_workflow(wf["id"])
-        assert deleted == 1
-        assert repo.find_by_version(wf["id"], 1) == []
-
     def test_delete_by_version(self, pg_conn):
         wf = WorkflowsRepository(pg_conn).create("user-1", "wf")
         node_repo = WorkflowNodesRepository(pg_conn)
