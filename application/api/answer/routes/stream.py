@@ -9,6 +9,7 @@ from application.api import api
 from application.api.answer.routes.base import answer_ns, BaseAnswerResource
 
 from application.api.answer.services.continuation_service import (
+    RESUME_IN_PROGRESS_MESSAGE,
     ResumeInProgressError,
 )
 from application.api.answer.services.persistence_policy import resolve_persistence
@@ -192,7 +193,7 @@ class StreamResource(Resource, BaseAnswerResource):
                 extra={"error": str(e)},
             )
             return Response(
-                self.error_stream_generate(str(e)),
+                self.error_stream_generate(RESUME_IN_PROGRESS_MESSAGE),
                 status=409,
                 mimetype="text/event-stream",
             )

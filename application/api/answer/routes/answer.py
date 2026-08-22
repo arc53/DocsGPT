@@ -9,6 +9,7 @@ from application.api import api
 from application.api.answer.routes.base import answer_ns, BaseAnswerResource
 
 from application.api.answer.services.continuation_service import (
+    RESUME_IN_PROGRESS_MESSAGE,
     ResumeInProgressError,
 )
 from application.api.answer.services.persistence_policy import resolve_persistence
@@ -179,7 +180,8 @@ class AnswerResource(Resource, BaseAnswerResource):
                 extra={"error": str(e)},
             )
             return make_response(
-                {"error": str(e), "code": "resume_in_progress"}, 409,
+                {"error": RESUME_IN_PROGRESS_MESSAGE, "code": "resume_in_progress"},
+                409,
             )
         except Exception as e:
             logger.error(

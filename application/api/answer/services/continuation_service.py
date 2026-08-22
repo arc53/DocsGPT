@@ -35,6 +35,12 @@ class ResumeInProgressError(ValueError):
     """Raised when another request already owns a continuation claim."""
 
 
+# The single wording every route answers this condition with. Handlers render
+# this constant rather than ``str(exc)`` so no exception text — and nothing an
+# exception might later be constructed from — can reach a response body.
+RESUME_IN_PROGRESS_MESSAGE = "Resume already in progress for this conversation."
+
+
 class ContinuationService:
     """Manages pending tool-call state in Postgres."""
 
@@ -147,9 +153,7 @@ class ContinuationService:
                 return claimed
             existing = repo.load_state_any(pg_conv_id, user)
             if existing and existing.get("status") == "resuming":
-                raise ResumeInProgressError(
-                    "Resume already in progress for this conversation."
-                )
+                raise ResumeInProgressError(RESUME_IN_PROGRESS_MESSAGE)
         return None
 
     def delete_state(self, conversation_id: str, user: str) -> bool:

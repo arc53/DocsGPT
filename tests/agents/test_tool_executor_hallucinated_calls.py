@@ -39,14 +39,19 @@ def _call(name, arguments="{}", call_id="c1"):
 
 
 def _drain(executor, call, tools=None):
-    """Run ``execute`` to completion and return (events, result)."""
+    """Run ``execute`` to completion and return the result string it produced.
+
+    The yielded status events are not asserted on anywhere in this module —
+    ``executor.tool_calls`` records the same outcome — so they are dropped
+    rather than accumulated into a binding every call site would discard.
+    """
     gen = executor.execute(tools if tools is not None else _tools_dict(), call, "OpenAILLM")
-    events = []
     while True:
         try:
-            events.append(next(gen))
+            next(gen)
         except StopIteration as stop:
-            return events, stop.value
+            result, _call_id = stop.value
+            return result
 
 
 @pytest.mark.unit
@@ -56,7 +61,7 @@ class TestHallucinatedToolCalls:
         executor = ToolExecutor()
         tools = _tools_dict()
         executor._name_to_tool = {"memory_view": ("t1", "memory_view")}
-        _events, (result, _call_id) = _drain(
+        result = _drain(
             executor, _call("memory_view", arguments="{not json"), tools=tools
         )
         assert "arguments were not a valid JSON object" in result, result
@@ -65,7 +70,7 @@ class TestHallucinatedToolCalls:
     def test_parse_failure_tells_the_model_which_tools_exist(self):
         executor = ToolExecutor()
         # Unresolvable name AND unusable arguments: the branch under test.
-        events, (result, _call_id) = _drain(executor, _call("bash", arguments="not json"))
+        result = _drain(executor, _call("bash", arguments="not json"))
 
         assert executor.tool_calls[0]["status"] == "error"
         reported = executor.tool_calls[0]["result"]
@@ -74,7 +79,7 @@ class TestHallucinatedToolCalls:
 
     def test_tool_not_found_still_lists_available_tools(self):
         executor = ToolExecutor()
-        _events, (result, _call_id) = _drain(executor, _call("note_view"))
+        result = _drain(executor, _call("note_view"))
         assert "memory" in result
 
     def test_repeated_identical_failure_is_cut_short(self):
@@ -92,14 +97,14 @@ class TestHallucinatedToolCalls:
         executor = ToolExecutor()
         for index in range(3):
             _drain(executor, _call("note_view", call_id=f"c{index}"))
-        _events, (result, _call_id) = _drain(executor, _call("todo_view", call_id="other"))
+        result = _drain(executor, _call("todo_view", call_id="other"))
         assert "has already failed" not in result, result
         assert "no such tool" in result, result
 
     def test_the_guard_does_not_fire_on_the_first_two_attempts(self):
         executor = ToolExecutor()
         for index in range(2):
-            _events, (result, _call_id) = _drain(executor, _call("note_view", call_id=f"c{index}"))
+            result = _drain(executor, _call("note_view", call_id=f"c{index}"))
             assert "has already failed" not in result, result
 
 
@@ -122,7 +127,7 @@ class TestErrorNamesWhatTheModelCanCall:
             }
         }
         executor.prepare_tools_for_llm(tools_dict)
-        _events, (result, _call_id) = _drain(executor, _call("make_a_pdf"), tools=tools_dict)
+        result = _drain(executor, _call("make_a_pdf"), tools=tools_dict)
         assert "create_artifact" in result
 
     def test_the_fallback_advertises_action_names_not_tool_names(self):
@@ -143,7 +148,7 @@ class TestErrorNamesWhatTheModelCanCall:
             },
         }
         assert executor._tool_to_name == {}
-        _events, (result, _call_id) = _drain(executor, _call("bash"), tools=tools_dict)
+        result = _drain(executor, _call("bash"), tools=tools_dict)
 
         assert "run_code" in result and "fetch_invoice" in result, result
         assert "code_executor" not in result, result
@@ -155,7 +160,7 @@ class TestErrorNamesWhatTheModelCanCall:
         off = _action("run_code")
         off["active"] = False
         tools_dict = {"t1": {"name": "code_executor", "actions": [off]}}
-        _events, (result, _call_id) = _drain(executor, _call("bash"), tools=tools_dict)
+        result = _drain(executor, _call("bash"), tools=tools_dict)
         assert "(none available)" in result, result
 
     def test_only_advertises_tools_in_scope_for_this_call(self):
@@ -181,7 +186,7 @@ class TestErrorNamesWhatTheModelCanCall:
         }
         executor.prepare_tools_for_llm(wide)
         narrowed = {"t1": wide["t1"]}
-        _events, (result, _call_id) = _drain(
+        result = _drain(
             executor, _call("make_a_pdf"), tools=narrowed
         )
         assert "action_1" in result, result
@@ -210,7 +215,7 @@ class TestErrorNamesWhatTheModelCanCall:
             for n in range(150)
         }
         executor.prepare_tools_for_llm(many)
-        _events, (result, _call_id) = _drain(executor, _call("make_a_pdf"), tools=many)
+        result = _drain(executor, _call("make_a_pdf"), tools=many)
         assert "and 120 more" in result, result
         assert len(result) < 1000, len(result)
 
@@ -232,7 +237,7 @@ class TestThrottleScope:
         bodies = ['{"a": 1', '{"b": 2', '{"c": 3', '{"d": 4']
 
         for index, body in enumerate(bodies):
-            _events, (result, _call_id) = _drain(
+            result = _drain(
                 executor, _call("memory_view", arguments=body, call_id=f"c{index}"), tools=tools
             )
             assert "has already failed" not in result, (index, result)
@@ -242,12 +247,12 @@ class TestThrottleScope:
     def test_invented_name_is_refused_on_the_third_attempt(self):
         executor = ToolExecutor()
         for index in range(2):
-            _events, (result, _call_id) = _drain(
+            result = _drain(
                 executor, _call("note_view", call_id=f"c{index}")
             )
             assert "has already failed" not in result, (index, result)
 
-        _events, (result, _call_id) = _drain(executor, _call("note_view", call_id="c2"))
+        result = _drain(executor, _call("note_view", call_id="c2"))
         assert "has already failed 2 times" in result, result
 
     def test_the_refusal_does_not_suggest_the_tool_it_refuses(self):
@@ -256,7 +261,7 @@ class TestThrottleScope:
         tools = _tools_dict()
         executor._tool_to_name = {("t1", "memory_view"): "memory_view"}
         for index in range(3):
-            _events, (result, _call_id) = _drain(
+            result = _drain(
                 executor, _call("memory_view", call_id=f"c{index}"), tools=tools
             )
         assert "has already failed" in result, result
@@ -274,7 +279,7 @@ class TestThrottleScope:
         executor = ToolExecutor()
         results = []
         for index, body in enumerate(['{"a": 1}', '{"b": 2}', '{"c": 3}']):
-            _events, (result, _call_id) = _drain(
+            result = _drain(
                 executor, _call("note_view", arguments=body, call_id=f"c{index}")
             )
             results.append(result)
@@ -289,7 +294,7 @@ class TestThrottleScope:
         executor = ToolExecutor()
         results = []
         for index in range(5):
-            _events, (result, _call_id) = _drain(
+            result = _drain(
                 executor, _call("note_view", call_id=f"c{index}")
             )
             results.append(result)
