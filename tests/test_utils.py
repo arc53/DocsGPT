@@ -675,6 +675,28 @@ class TestCleanTextForTts:
         result = clean_text_for_tts("_italic text_")
         assert "italic text" in result
 
+    @pytest.mark.unit
+    def test_em_dash_does_not_fuse_words(self):
+        result = clean_text_for_tts("This is great\u2014really useful.")
+        assert "greatreally" not in result
+        assert "great" in result and "really" in result
+
+    @pytest.mark.unit
+    def test_en_dash_does_not_fuse_numeric_range(self):
+        result = clean_text_for_tts("Prices range from $10\u201320.")
+        assert "1020" not in result
+        assert "10" in result and "20" in result
+
+    @pytest.mark.unit
+    def test_ellipsis_normalized_to_ascii_dots(self):
+        result = clean_text_for_tts("Ellipsis test\u2026 continues.")
+        assert "..." in result
+
+    @pytest.mark.unit
+    def test_smart_quotes_normalized_to_ascii(self):
+        result = clean_text_for_tts("It\u2019s a \u201csmart quote\u201d example.")
+        assert "It's a \"smart quote\" example." in result
+
 
 class TestLimitChatHistoryEdgeCases:
 
