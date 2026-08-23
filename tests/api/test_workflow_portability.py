@@ -408,3 +408,128 @@ def test_null_workflow_keeps_row_still_referenced_by_another_agent(pg_conn):
     assert updated["workflow_id"] is None
     # Still referenced — must not be deleted.
     assert WorkflowsRepository(pg_conn).get(str(wf["id"]), user) is not None
+
+
+def test_publish_guard_rejects_workflow_agent_with_no_graph(pg_conn):
+    """A file that makes a published agent a graph-less workflow agent is refused.
+
+    The create and update routes both reject that state; import must not
+    install it through the back door.
+    """
+    user = "u_wf_publish_guard"
+    agent = AgentsRepository(pg_conn).create(
+        user, "Probe Bot", "published", agent_type="classic", slug="probe-bot"
+    )
+    doc = {
+        "apiVersion": "docsgpt.arc53.com/v1",
+        "kind": "Agent",
+        "metadata": {"id": str(agent["id"]), "slug": "probe-bot"},
+        "spec": {"name": "Probe Bot", "agent_type": "workflow"},
+    }
+
+    # Key omitted entirely.
+    with pytest.raises(AgentImportError, match="published workflow agent needs a workflow"):
+        apply_import(pg_conn, user, doc)
+
+    # Explicit null, with no prior workflow to fall back on.
+    doc["spec"]["workflow"] = None
+    with pytest.raises(AgentImportError, match="published workflow agent needs a workflow"):
+        apply_import(pg_conn, user, doc)
+
+    unchanged = AgentsRepository(pg_conn).get(str(agent["id"]), user)
+    assert unchanged["agent_type"] == "classic"
+    assert unchanged["status"] == "published"
+
+
+def test_plan_distinguishes_absent_workflow_from_explicit_null(pg_conn):
+    """Omitting the key is a no-op; an explicit null destroys the graph.
+
+    The two used to produce an identical plan, so the modal showed nothing
+    either way while the outcomes differed completely.
+    """
+    user = "u_wf_plan_null"
+    agent, wf = _seed_workflow_agent(pg_conn, user)
+    AgentsRepository(pg_conn).update(str(agent["id"]), user, {"status": "draft"})
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, user)))
+
+    absent = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, user)))
+    del absent["spec"]["workflow"]
+    assert plan_import(pg_conn, user, absent)["workflow"] is None
+
+    doc["spec"]["workflow"] = None
+    assert plan_import(pg_conn, user, doc)["workflow"] == {
+        "action": "delete",
+        "nodes": 3,
+        "edges": 2,
+    }
+
+
+def test_plan_reports_no_removal_when_workflow_survives(pg_conn):
+    """No delete block when the row lives on — published, or still referenced."""
+    user = "u_wf_plan_keep"
+    agent, wf = _seed_workflow_agent(pg_conn, user)
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, user)))
+    doc["spec"]["workflow"] = None
+
+    # Published: _apply_workflow keeps the existing graph.
+    assert plan_import(pg_conn, user, doc)["workflow"] is None
+
+    # Draft, but a sibling agent still references the row.
+    AgentsRepository(pg_conn).update(str(agent["id"]), user, {"status": "draft"})
+    AgentsRepository(pg_conn).create(
+        user, "Sibling", "draft", agent_type="workflow", workflow_id=str(wf["id"])
+    )
+    assert plan_import(pg_conn, user, doc)["workflow"] is None
+
+
+def test_null_workflow_deletion_is_warned_about(pg_conn):
+    """The destructive reap must not be silent."""
+    user = "u_wf_null_warn"
+    agent, wf = _seed_workflow_agent(pg_conn, user)
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, user)))
+    doc["spec"]["workflow"] = None
+    AgentsRepository(pg_conn).update(str(agent["id"]), user, {"status": "draft"})
+
+    result = apply_import(pg_conn, user, doc)
+    assert WorkflowsRepository(pg_conn).get(str(wf["id"]), user) is None
+    assert any("was deleted" in w and "run history" in w for w in result["warnings"])
+
+
+def test_duplicate_source_names_warn_and_dedupe(pg_conn):
+    """Two sources sharing a name collapse onto the oldest — say so."""
+    user = "u_wf_dup_src"
+    repo = SourcesRepository(pg_conn)
+    older = repo.create("KB", user_id=user, type="file")
+    newer = repo.create("KB", user_id=user, type="file")
+    agent, _wf = _seed_workflow_agent(pg_conn, user, source_id=str(older["id"]))
+
+    # Point the node at both same-named sources.
+    version = 1
+    nodes_repo = WorkflowNodesRepository(pg_conn)
+    node = [n for n in nodes_repo.find_by_version(str(agent["workflow_id"]), version)
+            if n["node_type"] == "agent"][0]
+    config = dict(node["config"])
+    config["sources"] = [str(older["id"]), str(newer["id"])]
+    nodes_repo.bulk_create(
+        str(agent["workflow_id"]),
+        version,
+        [{
+            "node_id": node["node_id"],
+            "node_type": node["node_type"],
+            "title": node.get("title"),
+            "position": node.get("position"),
+            "config": config,
+        }],
+    )
+
+    doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, user)))
+    assert [s["name"] for s in doc["spec"]["sources"]] == ["KB", "KB"]
+
+    result = apply_import(pg_conn, user, doc)
+    assert any("share the name 'KB'" in w for w in result["warnings"])
+
+    updated = AgentsRepository(pg_conn).get(str(agent["id"]), user)
+    graph_nodes, _ = _graph(pg_conn, WorkflowsRepository(pg_conn).get(str(updated["workflow_id"]), user))
+    agent_node = [n for n in graph_nodes if n["node_type"] == "agent"][0]
+    # Collapsed onto the oldest match, and not stored twice.
+    assert agent_node["config"]["sources"] == [str(older["id"])]

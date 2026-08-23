@@ -1032,6 +1032,7 @@
       "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
       "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
       "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
+      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
       "sources": "Sources",
       "tools": "Tools",
       "models": "Models",
@@ -1152,6 +1153,7 @@
     "importAgent": "Import",
     "exportAgent": "Export as YAML",
     "exportAgentFailed": "Failed to export agent",
+    "close": "閉じる",
     "shareWithTeam": "チームと共有",
     "backToAll": "すべてのエージェントに戻る",
     "pageHeader": {

@@ -888,6 +888,38 @@ def _tool_key(index: int) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _plan_workflow_removal(conn, user: str, target: dict) -> Optional[dict]:
+    """Describe what an explicit ``workflow: null`` would destroy, if anything.
+
+    Returns a ``delete`` block sized with the current graph, or None when the
+    workflow survives — the target is new, published (``_apply_workflow``
+    keeps a published agent's graph), has no workflow, or another agent still
+    references it.
+    """
+    if target.get("action") != "update" or not target.get("agent_id"):
+        return None
+    if (target.get("status") or "") == "published":
+        return None
+    agent_row = AgentsRepository(conn).get(str(target["agent_id"]), user) or {}
+    existing_id = agent_row.get("workflow_id")
+    if not existing_id:
+        return None
+    row = WorkflowsRepository(conn).get(str(existing_id), user)
+    if row is None:
+        return None
+    if AgentsRepository(conn).count_by_workflow(str(existing_id), user) > 1:
+        return None
+    # Lazy import, same as _apply_workflow — keeps route modules decoupled at load.
+    from application.api.user.workflows.routes import get_workflow_graph_version
+
+    version = get_workflow_graph_version(row)
+    return {
+        "action": "delete",
+        "nodes": len(WorkflowNodesRepository(conn).find_by_version(str(row["id"]), version)),
+        "edges": len(WorkflowEdgesRepository(conn).find_by_version(str(row["id"]), version)),
+    }
+
+
 def plan_import(conn, user: str, doc: dict) -> dict:
     """Resolve every reference without writing; returns a resolution report."""
     spec = doc["spec"]
@@ -978,18 +1010,25 @@ def plan_import(conn, user: str, doc: dict) -> dict:
 
     workflow_plan = None
     wf_spec = spec.get("workflow")
-    if spec.get("agent_type") == "workflow" and isinstance(wf_spec, dict):
-        action = "create"
-        if target.get("action") == "update" and target.get("agent_id"):
-            agent_row = AgentsRepository(conn).get(str(target["agent_id"]), user)
-            existing_wf = (agent_row or {}).get("workflow_id")
-            if existing_wf and WorkflowsRepository(conn).get(str(existing_wf), user):
-                action = "update"
-        workflow_plan = {
-            "nodes": len(wf_spec.get("nodes") or []),
-            "edges": len(wf_spec.get("edges") or []),
-            "action": action,
-        }
+    if spec.get("agent_type") == "workflow":
+        if isinstance(wf_spec, dict):
+            action = "create"
+            if target.get("action") == "update" and target.get("agent_id"):
+                agent_row = AgentsRepository(conn).get(str(target["agent_id"]), user)
+                existing_wf = (agent_row or {}).get("workflow_id")
+                if existing_wf and WorkflowsRepository(conn).get(str(existing_wf), user):
+                    action = "update"
+            workflow_plan = {
+                "nodes": len(wf_spec.get("nodes") or []),
+                "edges": len(wf_spec.get("edges") or []),
+                "action": action,
+            }
+        elif "workflow" in spec:
+            # Explicit ``workflow: null`` (vs. an omitted key, which changes
+            # nothing). Apply clears the link and reaps the row when no other
+            # agent references it, destroying the graph, its run history and
+            # its artifacts — the dry-run has to say so before the user commits.
+            workflow_plan = _plan_workflow_removal(conn, user, target)
 
     return {
         "target": target,
@@ -1029,7 +1068,19 @@ def _apply_sources(conn, user: str, spec: dict, resolution: dict, warnings: list
         mapping = {}
     resolved: list[str] = []
     id_by_name: dict[str, Optional[str]] = {}
-    for src in spec.get("sources") or []:
+    entries = [src for src in spec.get("sources") or [] if isinstance(src, dict)]
+    # ``id_by_name`` (and a workflow node's source reference) keys on the name
+    # alone, but names aren't unique per user — ``find_by_name`` returns the
+    # oldest match, so duplicates collapse onto one source. Same hazard the
+    # custom-model display names carry below; surface it rather than silently
+    # rewiring a node to a different source.
+    names = [src.get("name") or "" for src in entries]
+    for dup in sorted({n for n in names if n and names.count(n) > 1}):
+        warnings.append(
+            f"Multiple sources share the name '{dup}'; references to it all "
+            "resolve to the oldest one"
+        )
+    for src in entries:
         name = src.get("name") or ""
         id_by_name.setdefault(name, None)
         mapped = mapping.get(name)
@@ -1338,7 +1389,9 @@ def _rewrite_node_refs(
             resolved_sources.append(ref)
         else:
             warnings.append(f"Workflow node source '{ref}' not resolved; removed")
-    cfg["sources"] = resolved_sources
+    # Distinct names can collapse onto one source (see ``_apply_sources``), so
+    # dedupe rather than storing the same id twice on the node.
+    cfg["sources"] = list(dict.fromkeys(resolved_sources))
 
     raw_model = cfg.get("model_id")
     if raw_model:
@@ -1536,6 +1589,12 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
                 "extra_source_ids": [],
             }
         )
+        prior_workflow_id = None
+        if is_update:
+            prior_workflow_id = (
+                agents_repo.get(str(target["agent_id"]), user) or {}
+            ).get("workflow_id")
+        published = (target.get("status") or "") == "published"
         workflow_result = _apply_workflow(
             conn,
             user,
@@ -1546,21 +1605,31 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
             model_ids_by_name,
             warnings,
         )
-        if workflow_result is not _WORKFLOW_UNCHANGED:
-            if workflow_result is None and (target.get("status") or "") == "published":
-                warnings.append(
-                    "File has no workflow; the published agent kept its existing one"
+        # A published workflow agent with no graph can't run — the create and
+        # update routes both reject that state, so import must not install it
+        # through the back door (e.g. a file that flips ``agent_type`` to
+        # workflow over a published classic agent).
+        if workflow_result is _WORKFLOW_UNCHANGED:
+            if published and not prior_workflow_id:
+                raise AgentImportError(
+                    "A published workflow agent needs a workflow; this file has none"
                 )
-            else:
-                authoritative["workflow_id"] = workflow_result
-                if workflow_result is None and is_update:
-                    # Explicit ``workflow: null`` on a draft: remember the old
-                    # link so the row can be reaped after the update — there is
-                    # no workflow-list API independent of agents, so an
-                    # unlinked workflow would be unreachable forever.
-                    prior = agents_repo.get(str(target["agent_id"]), user) or {}
-                    if prior.get("workflow_id"):
-                        orphaned_workflow_id = str(prior["workflow_id"])
+        elif workflow_result is None and published:
+            if not prior_workflow_id:
+                raise AgentImportError(
+                    "A published workflow agent needs a workflow; this file has none"
+                )
+            warnings.append(
+                "File has no workflow; the published agent kept its existing one"
+            )
+        else:
+            authoritative["workflow_id"] = workflow_result
+            if workflow_result is None and prior_workflow_id:
+                # Explicit ``workflow: null`` on a draft: remember the old
+                # link so the row can be reaped after the update — there is
+                # no workflow-list API independent of agents, so an
+                # unlinked workflow would be unreachable forever.
+                orphaned_workflow_id = str(prior_workflow_id)
 
     # Optional fields — applied only when present so a partial file doesn't wipe them.
     optional = {
@@ -1583,6 +1652,12 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
                 # Nothing references it anymore; delete (cascades nodes/edges
                 # and reaps run artifacts) rather than stranding the row.
                 WorkflowsRepository(conn).delete(orphaned_workflow_id, user)
+                # Destructive and irreversible — the graph, its run history and
+                # its artifacts (rows and stored bytes) all go. Say so.
+                warnings.append(
+                    "File has no workflow; the agent's workflow was deleted "
+                    "along with its run history and artifacts"
+                )
             return {
                 "agent_id": str(target["agent_id"]),
                 "action": "updated",

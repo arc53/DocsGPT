@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { type FileRejection, useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
@@ -73,19 +73,28 @@ export default function ImportSpecModal({
     setParsedResult(null);
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop: (acceptedFiles: File[]) => {
-      if (acceptedFiles[0]) processFile(acceptedFiles[0]);
-    },
-    multiple: false,
-    // Declared here (not via getInputProps) so drag-and-drop is filtered
-    // too; processFile's extension check stays as a backstop.
-    accept: {
-      'application/json': ['.json'],
-      'application/x-yaml': ['.yaml', '.yml'],
-      'text/yaml': ['.yaml', '.yml'],
-    },
-  });
+  const { getRootProps, getInputProps, isDragActive, isDragReject } =
+    useDropzone({
+      onDrop: (acceptedFiles: File[], fileRejections: FileRejection[]) => {
+        // A rejected file never reaches acceptedFiles, so without this the
+        // drop is a silent no-op and any previously picked file stays staged.
+        if (fileRejections.length > 0) {
+          setFile(null);
+          setParsedResult(null);
+          setError(t('modals.importSpec.invalidFileType'));
+          return;
+        }
+        if (acceptedFiles[0]) processFile(acceptedFiles[0]);
+      },
+      multiple: false,
+      // Declared here (not via getInputProps) so drag-and-drop is filtered
+      // too; processFile's extension check stays as a backstop.
+      accept: {
+        'application/json': ['.json'],
+        'application/x-yaml': ['.yaml', '.yml'],
+        'text/yaml': ['.yaml', '.yml'],
+      },
+    });
 
   const handleParse = async () => {
     if (!file) return;
@@ -209,7 +218,11 @@ export default function ImportSpecModal({
             <div
               {...getRootProps({
                 className: `border-border dark:border-border hover:border-primary dark:hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors ${
-                  isDragActive ? 'border-primary' : ''
+                  isDragReject
+                    ? 'border-destructive'
+                    : isDragActive
+                      ? 'border-primary'
+                      : ''
                 }`,
               })}
             >

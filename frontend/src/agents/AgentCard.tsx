@@ -17,12 +17,14 @@ import Trash from '../assets/red-trash.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import UnPin from '../assets/unpin.svg';
 import { Avatar } from '../components/ui/avatar';
+import { Button } from '../components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
+import { Modal } from '../components/ui/modal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MoveToFolderModal from '../modals/MoveToFolderModal';
 import { ActiveState } from '../models/misc';
@@ -67,6 +69,7 @@ export default function AgentCard({
     useState<ActiveState>('INACTIVE');
   const [moveModalState, setMoveModalState] = useState<ActiveState>('INACTIVE');
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const menuOptionsConfig: Record<string, AgentMenuOption[]> = {
     template: [
@@ -302,7 +305,12 @@ export default function AgentCard({
           .json()
           .then((data) => data?.message)
           .catch(() => null);
-        throw new Error(message || t('agents.exportAgentFailed'));
+        // Server-side refusals (e.g. a workflow referencing too many
+        // resources) carry an actionable message; flag it so the catch can
+        // tell it apart from a transport error like "Failed to fetch".
+        const error = new Error(message || t('agents.exportAgentFailed'));
+        error.name = 'ExportRefused';
+        throw error;
       }
       const yamlText = await response.text();
       const blob = new Blob([yamlText], { type: 'application/x-yaml' });
@@ -316,8 +324,10 @@ export default function AgentCard({
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error:', error);
-      alert(
-        error instanceof Error ? error.message : t('agents.exportAgentFailed'),
+      setExportError(
+        error instanceof Error && error.name === 'ExportRefused'
+          ? error.message
+          : t('agents.exportAgentFailed'),
       );
     }
   };
@@ -470,6 +480,25 @@ export default function AgentCard({
         cancelLabel="Cancel"
         variant="danger"
       />
+      <Modal
+        open={exportError !== null}
+        onOpenChange={(open) => {
+          if (!open) setExportError(null);
+        }}
+        title={t('agents.exportAgentFailed')}
+        size="sm"
+        footer={
+          <Button
+            type="button"
+            onClick={() => setExportError(null)}
+            className="rounded-3xl px-5"
+          >
+            {t('agents.close')}
+          </Button>
+        }
+      >
+        <p className="text-muted-foreground text-sm">{exportError}</p>
+      </Modal>
       <MoveToFolderModal
         modalState={moveModalState}
         setModalState={setMoveModalState}

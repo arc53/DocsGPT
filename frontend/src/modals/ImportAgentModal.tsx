@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { type FileRejection, useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -58,7 +58,7 @@ type ImportPlan = {
   workflow?: {
     nodes: number;
     edges: number;
-    action: 'create' | 'update';
+    action: 'create' | 'update' | 'delete';
   } | null;
 };
 
@@ -124,19 +124,28 @@ export default function ImportAgentModal({
     setYamlText(await selectedFile.text());
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop: (acceptedFiles: File[]) => {
-      if (acceptedFiles[0]) processFile(acceptedFiles[0]);
-    },
-    multiple: false,
-    // Declared here (not via getInputProps) so drag-and-drop is filtered
-    // too, with drag-over rejection feedback; processFile's extension check
-    // stays as a backstop for odd MIME reports.
-    accept: {
-      'application/x-yaml': ['.yaml', '.yml'],
-      'text/yaml': ['.yaml', '.yml'],
-    },
-  });
+  const { getRootProps, getInputProps, isDragActive, isDragReject } =
+    useDropzone({
+      onDrop: (acceptedFiles: File[], fileRejections: FileRejection[]) => {
+        // A rejected file never reaches acceptedFiles, so without this the
+        // drop is a silent no-op and any previously picked file stays staged.
+        if (fileRejections.length > 0) {
+          setFileName('');
+          setYamlText('');
+          setError(t('modals.importAgent.invalidFileType'));
+          return;
+        }
+        if (acceptedFiles[0]) processFile(acceptedFiles[0]);
+      },
+      multiple: false,
+      // Declared here (not via getInputProps) so drag-and-drop is filtered
+      // too; processFile's extension check stays as a backstop for odd MIME
+      // reports.
+      accept: {
+        'application/x-yaml': ['.yaml', '.yml'],
+        'text/yaml': ['.yaml', '.yml'],
+      },
+    });
 
   const handleAnalyze = async () => {
     if (!yamlText) return;
@@ -320,7 +329,11 @@ export default function ImportAgentModal({
             <div
               {...getRootProps({
                 className: `border-border hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors ${
-                  isDragActive ? 'border-primary' : ''
+                  isDragReject
+                    ? 'border-destructive'
+                    : isDragActive
+                      ? 'border-primary'
+                      : ''
                 }`,
               })}
             >
@@ -346,18 +359,28 @@ export default function ImportAgentModal({
                 : t('modals.importAgent.willCreate')}
             </div>
 
-            {plan.workflow && (
-              <p className="flex items-center gap-2 text-sm">
-                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-                {plan.workflow.action === 'update'
-                  ? t('modals.importAgent.workflowUpdate', {
-                      nodes: plan.workflow.nodes,
-                    })
-                  : t('modals.importAgent.workflowCreate', {
-                      nodes: plan.workflow.nodes,
-                    })}
-              </p>
-            )}
+            {plan.workflow &&
+              (plan.workflow.action === 'delete' ? (
+                // Irreversible: the graph, its run history and its artifacts
+                // all go. Warn rather than confirming with a green check.
+                <p className="text-destructive flex items-center gap-2 text-sm">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {t('modals.importAgent.workflowDelete', {
+                    nodes: plan.workflow.nodes,
+                  })}
+                </p>
+              ) : (
+                <p className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  {plan.workflow.action === 'update'
+                    ? t('modals.importAgent.workflowUpdate', {
+                        nodes: plan.workflow.nodes,
+                      })
+                    : t('modals.importAgent.workflowCreate', {
+                        nodes: plan.workflow.nodes,
+                      })}
+                </p>
+              ))}
 
             {plan.sources.length > 0 && (
               <Section title={t('modals.importAgent.sources')}>
