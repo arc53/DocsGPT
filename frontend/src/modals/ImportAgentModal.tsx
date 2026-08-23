@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import { type FileRejection, useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -54,6 +55,11 @@ type ImportPlan = {
   tools: PlanTool[];
   prompt: { status: string; name?: string };
   models: PlanModel[];
+  workflow?: {
+    nodes: number;
+    edges: number;
+    action: 'create' | 'update' | 'delete';
+  } | null;
 };
 
 interface ImportAgentModalProps {
@@ -69,7 +75,6 @@ export default function ImportAgentModal({
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
   const navigate = useNavigate();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [yamlText, setYamlText] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
@@ -85,7 +90,7 @@ export default function ImportAgentModal({
   const [modelKeys, setModelKeys] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<string[] | null>(null);
   const [importedStatus, setImportedStatus] = useState<string | null>(null);
-  const [goToAgentId, setGoToAgentId] = useState<string | null>(null);
+  const [goToEditPath, setGoToEditPath] = useState<string | null>(null);
 
   const reset = () => {
     setYamlText('');
@@ -99,7 +104,7 @@ export default function ImportAgentModal({
     setModelKeys({});
     setWarnings(null);
     setImportedStatus(null);
-    setGoToAgentId(null);
+    setGoToEditPath(null);
   };
 
   const handleClose = () => {
@@ -107,9 +112,7 @@ export default function ImportAgentModal({
     reset();
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
+  const processFile = async (selectedFile: File) => {
     const name = selectedFile.name.toLowerCase();
     if (!name.endsWith('.yaml') && !name.endsWith('.yml')) {
       setError(t('modals.importAgent.invalidFileType'));
@@ -120,6 +123,29 @@ export default function ImportAgentModal({
     setFileName(selectedFile.name);
     setYamlText(await selectedFile.text());
   };
+
+  const { getRootProps, getInputProps, isDragActive, isDragReject } =
+    useDropzone({
+      onDrop: (acceptedFiles: File[], fileRejections: FileRejection[]) => {
+        // A rejected file never reaches acceptedFiles, so without this the
+        // drop is a silent no-op and any previously picked file stays staged.
+        if (fileRejections.length > 0) {
+          setFileName('');
+          setYamlText('');
+          setError(t('modals.importAgent.invalidFileType'));
+          return;
+        }
+        if (acceptedFiles[0]) processFile(acceptedFiles[0]);
+      },
+      multiple: false,
+      // Declared here (not via getInputProps) so drag-and-drop is filtered
+      // too; processFile's extension check stays as a backstop for odd MIME
+      // reports.
+      accept: {
+        'application/x-yaml': ['.yaml', '.yml'],
+        'text/yaml': ['.yaml', '.yml'],
+      },
+    });
 
   const handleAnalyze = async () => {
     if (!yamlText) return;
@@ -187,16 +213,20 @@ export default function ImportAgentModal({
         return;
       }
       const agentId = data.agent_id as string;
+      const editPath =
+        data.agent_type === 'workflow'
+          ? `/agents/workflow/edit/${agentId}`
+          : `/agents/edit/${agentId}`;
       if (data.warnings && data.warnings.length > 0) {
         // Keep the modal open so the user sees what was skipped.
-        setGoToAgentId(agentId);
+        setGoToEditPath(editPath);
         setWarnings(data.warnings as string[]);
         setImportedStatus((data.status as string) || null);
         setPlan(null);
         return;
       }
       handleClose();
-      navigate(`/agents/edit/${agentId}`);
+      navigate(editPath);
     } catch {
       setError(t('modals.importAgent.importError'));
     } finally {
@@ -217,9 +247,9 @@ export default function ImportAgentModal({
         <Button
           type="button"
           onClick={() => {
-            const id = goToAgentId;
+            const path = goToEditPath;
             handleClose();
-            if (id) navigate(`/agents/edit/${id}`);
+            if (path) navigate(path);
           }}
           className="rounded-3xl px-5"
         >
@@ -297,8 +327,15 @@ export default function ImportAgentModal({
               {t('modals.importAgent.description')}
             </p>
             <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-border hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors"
+              {...getRootProps({
+                className: `border-border hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors ${
+                  isDragReject
+                    ? 'border-destructive'
+                    : isDragActive
+                      ? 'border-primary'
+                      : ''
+                }`,
+              })}
             >
               <img
                 src={Upload}
@@ -308,14 +345,8 @@ export default function ImportAgentModal({
               <p className="text-foreground text-sm font-medium">
                 {fileName || t('modals.importAgent.dropzoneText')}
               </p>
+              <input {...getInputProps()} />
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".yaml,.yml"
-              onChange={handleFileChange}
-              className="hidden"
-            />
             {error && <p className="text-destructive text-sm">{error}</p>}
           </div>
         ) : (
@@ -327,6 +358,29 @@ export default function ImportAgentModal({
                   })
                 : t('modals.importAgent.willCreate')}
             </div>
+
+            {plan.workflow &&
+              (plan.workflow.action === 'delete' ? (
+                // Irreversible: the graph, its run history and its artifacts
+                // all go. Warn rather than confirming with a green check.
+                <p className="text-destructive flex items-center gap-2 text-sm">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {t('modals.importAgent.workflowDelete', {
+                    nodes: plan.workflow.nodes,
+                  })}
+                </p>
+              ) : (
+                <p className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  {plan.workflow.action === 'update'
+                    ? t('modals.importAgent.workflowUpdate', {
+                        nodes: plan.workflow.nodes,
+                      })
+                    : t('modals.importAgent.workflowCreate', {
+                        nodes: plan.workflow.nodes,
+                      })}
+                </p>
+              ))}
 
             {plan.sources.length > 0 && (
               <Section title={t('modals.importAgent.sources')}>
