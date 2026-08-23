@@ -37,6 +37,11 @@ class TestNormalizePostgresUri:
                 "postgresql://u:p@h:5432/d",
                 "postgresql+psycopg://u:p@h:5432/d",
             ),
+            # URI schemes are case-insensitive, so normalize them too.
+            (
+                "POSTGRESQL://u:p@h:5432/d",
+                "postgresql+psycopg://u:p@h:5432/d",
+            ),
             # Legacy psycopg2 dialect is silently upgraded — psycopg2 is
             # no longer in requirements.txt, so there's no way it can work
             # as-is, and rewriting is friendlier than failing.
@@ -106,6 +111,10 @@ class TestNormalizePgvectorConnectionString:
             # Operators hit this when they copy POSTGRES_URI → PGVECTOR_CONNECTION_STRING.
             (
                 "postgresql+psycopg://u:p@h:5432/d",
+                "postgresql://u:p@h:5432/d",
+            ),
+            (
+                "POSTGRESQL+PSYCOPG://u:p@h:5432/d",
                 "postgresql://u:p@h:5432/d",
             ),
             (
