@@ -36,6 +36,34 @@ describe('citation rewriting spares code', () => {
     expect(text('inline ```code[0]``` end')).toBe('inline ```code[0]``` end');
   });
 
+  it('leaves a triple-backtick span that starts a line alone', () => {
+    // A backtick fence's info string cannot contain backticks, so this opens a
+    // code span, not an unclosed fence that swallows the rest of the answer.
+    expect(text('```code[0]``` and see [1]')).toBe(
+      '```code[0]``` and see [1](#cite-1)',
+    );
+  });
+
+  it('closes an inline span only on a run of its own length', () => {
+    // The `` run does not close the ` span, so `b[1]` is still code.
+    const source = 'Use `a`` b[1] more` end';
+    expect(text(source)).toBe(source);
+  });
+
+  it('recognises a fence closed on a CRLF line', () => {
+    expect(text('```js\r\nconst a = arr[0];\r\n```\r\nSee [1].')).toBe(
+      '```js\r\nconst a = arr[0];\r\n```\r\nSee [1](#cite-1).',
+    );
+  });
+
+  it('does not carry an inline span across a blank line', () => {
+    // The blank line ends the paragraph, so the backticks never pair and
+    // `bar[1]` is prose — which is how remark parses it too.
+    expect(text('a `foo\n\nbar[1]` end')).toBe(
+      'a `foo\n\nbar[1](#cite-1)` end',
+    );
+  });
+
   it('leaves an inline span that wraps a line alone', () => {
     expect(text('use `arr[0]\nnext` here')).toBe('use `arr[0]\nnext` here');
   });

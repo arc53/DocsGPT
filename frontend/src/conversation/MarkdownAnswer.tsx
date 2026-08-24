@@ -26,11 +26,13 @@ import {
 // ```` fence closes only on ```` and nested fences stay masked. The
 // unterminated alternatives keep an open span matched too: answers stream in,
 // so a fence is open for most of its life and needs protecting the whole time,
-// not just once the closing fence arrives. Four-space indented blocks are
-// deliberately not masked — list continuation lines are indented the same way,
-// and masking those would drop real citations out of nested lists.
+// not just once the closing fence arrives. A backtick fence's info string may
+// not itself contain backticks, so a line that opens with an inline span stays
+// an inline span. Four-space indented blocks are deliberately not masked —
+// list continuation lines are indented the same way, and masking those would
+// drop real citations out of nested lists.
 const CODE_SPAN =
-  /(?<![^\n])[ \t]*(`{3,})[^`\n]*(?:[\s\S]*?\n[ \t]*\1`*[ \t]*(?![^\n])|[\s\S]*$)|(?<![^\n])[ \t]*(~{3,})[^\n]*(?:[\s\S]*?\n[ \t]*\2~*[ \t]*(?![^\n])|[\s\S]*$)|(`+)(?:[^\n]|\n(?![ \t]*\n))*?\3(?!`)|`+[^`\n]*$/g;
+  /(?<![^\n])[ \t]*(`{3,})[^`\n]*(?![^\n])(?:[\s\S]*?\n[ \t]*\1`*[ \t]*\r?(?![^\n])|[\s\S]*$)|(?<![^\n])[ \t]*(~{3,})[^\n]*(?:[\s\S]*?\n[ \t]*\2~*[ \t]*\r?(?![^\n])|[\s\S]*$)|(`+)(?:[^\n]|\n(?![ \t\r]*\n))*?(?<!`)\3(?!`)|`+[^`\n]*$/g;
 
 // ``\[ \]`` and ``\( \)`` LaTeX, which remark-math does not recognise.
 const LATEX_SPAN = /\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)/g;
