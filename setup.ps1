@@ -434,7 +434,9 @@ function Configure-Auth {
             $jwt_key = Read-Host "Enter JWT secret key (leave empty to auto-generate)"
             if ([string]::IsNullOrEmpty($jwt_key)) {
                 $bytes = New-Object byte[] 32
-                [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
                 $jwt_key = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
                 Write-ColorText "Auto-generated JWT secret key." -ForegroundColor "Yellow"
             }
@@ -446,7 +448,9 @@ function Configure-Auth {
             $jwt_key = Read-Host "Enter JWT secret key (leave empty to auto-generate)"
             if ([string]::IsNullOrEmpty($jwt_key)) {
                 $bytes = New-Object byte[] 32
-                [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
                 $jwt_key = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
                 Write-ColorText "Auto-generated JWT secret key." -ForegroundColor "Yellow"
             }
@@ -547,7 +551,9 @@ function Ensure-InternalKey {
     $content = if (Test-Path $ENV_FILE) { Get-Content $ENV_FILE -Raw } else { "" }
     if ($content -notmatch "(?m)^INTERNAL_KEY=") {
         $bytes = New-Object byte[] 32
-        [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        $rng.GetBytes($bytes)
+        $rng.Dispose()
         $internal_key = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
         "INTERNAL_KEY=$internal_key" | Add-Content -Path $ENV_FILE -Encoding utf8
     }
