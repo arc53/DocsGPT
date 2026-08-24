@@ -22,30 +22,89 @@ import {
   sandboxUrlTransform,
 } from './sandboxLinks';
 
+// One fenced block or inline code span. Backtick runs are length-matched, so a
+// ```` fence closes only on ```` and nested fences stay masked. The
+// unterminated alternatives keep an open span matched too: answers stream in,
+// so a fence is open for most of its life and needs protecting the whole time,
+// not just once the closing fence arrives. A backtick fence's info string may
+// not itself contain backticks, so a line that opens with an inline span stays
+// an inline span. Four-space indented blocks are deliberately not masked —
+// list continuation lines are indented the same way, and masking those would
+// drop real citations out of nested lists.
+const CODE_SPAN =
+  /(?<![^\n])[ \t]*(`{3,})[^`\n]*(?![^\n])(?:[\s\S]*?\n[ \t]*\1`*[ \t]*\r?(?![^\n])|[\s\S]*$)|(?<![^\n])[ \t]*(~{3,})[^\n]*(?:[\s\S]*?\n[ \t]*\2~*[ \t]*\r?(?![^\n])|[\s\S]*$)|(`+)(?:[^\n]|\n(?![ \t\r]*\n))*?(?<!`)\3(?!`)|`+[^`\n]*$/g;
+
+// ``\[ \]`` and ``\( \)`` LaTeX, which remark-math does not recognise.
+const LATEX_SPAN = /\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)/g;
+
+// Applies `transform` to everything outside the regions `mask` matches, and
+// `onMasked` to those regions themselves.
+function transformOutside(
+  content: string,
+  mask: RegExp,
+  transform: (segment: string) => string,
+  onMasked: (segment: string) => string = (segment) => segment,
+): string {
+  const pattern = new RegExp(mask.source, mask.flags); // its own lastIndex
+  let result = '';
+  let index = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(content)) !== null) {
+    result += transform(content.slice(index, match.index)) + onMasked(match[0]);
+    index = pattern.lastIndex;
+  }
+  return result + transform(content.slice(index));
+}
+
+// Runs `transform` over the prose in `content`, leaving code untouched.
+//
+// The rewrites below are plain regex over the whole document, and both used to
+// corrupt the user's own code: `print(row[0])` rendered as
+// `print(row[0](#cite-0))`, and `PS1="\[\e[0m\]"` as `PS1="$$\e[0m$$"`. Neither
+// can move into a remark plugin: remark-math tokenises `$`/`$$` while parsing,
+// so the LaTeX pass has to run on the raw string before remark ever sees it.
+export function applyOutsideCode(
+  content: string,
+  transform: (segment: string) => string,
+): string {
+  return transformOutside(content, CODE_SPAN, transform);
+}
+
+// Rewrites one LaTeX span into the ``$$``/``$`` form remark-math parses.
+function toDollarMath(span: string): string {
+  const equation = span.slice(2, -2);
+  return span.startsWith('\\[') ? `$$${equation}$$` : `$${equation}$`;
+}
+
 // Replaces block-level ``\[ \]`` and inline ``\( \)`` LaTeX delimiters with the
 // ``$$``/``$`` forms remark-math understands.
 export function preprocessLaTeX(content: string): string {
-  const blockProcessedContent = content.replace(
-    /\\\[(.*?)\\\]/gs,
-    (_, equation) => `$$${equation}$$`,
+  return applyOutsideCode(content, (prose) =>
+    prose.replace(LATEX_SPAN, toDollarMath),
   );
-  return blockProcessedContent.replace(
-    /\\\((.*?)\\\)/gs,
-    (_, equation) => `$${equation}$`,
+}
+
+// Turns citation references ``[N]`` into ``[N](#cite-N)`` links so
+// ReactMarkdown renders them as <a> tags we can style. The lookarounds skip
+// references that are already links.
+function linkCitations(prose: string): string {
+  return prose.replace(
+    /(?<!\[)\[(\d+)\](?!\()/g,
+    (_, num) => `[${num}](#cite-${num})`,
   );
 }
 
 type ContentSegment = { type: 'text' | 'mermaid'; content: string };
 
 export function processMarkdownContent(content: string): ContentSegment[] {
-  let processedContent = preprocessLaTeX(content);
-
-  // Convert citation references [N] into markdown links [N](#cite-N)
-  // so ReactMarkdown renders them as <a> tags we can style.
-  // Avoid matching inside code blocks or existing links.
-  processedContent = processedContent.replace(
-    /(?<!\[)\[(\d+)\](?!\()/g,
-    (_, num) => `[${num}](#cite-${num})`,
+  // Citations are linked outside code — an index subscript like `row[0]` is not
+  // a citation — and outside the math this same pass produces. Math the answer
+  // already wrote as ``$…$`` stays unmasked, since ``$`` is also a currency
+  // sign. This has to run before the ```mermaid split below, so diagram source
+  // needs the same guard.
+  const processedContent = applyOutsideCode(content, (prose) =>
+    transformOutside(prose, LATEX_SPAN, linkCitations, toDollarMath),
   );
 
   const contentSegments: ContentSegment[] = [];
