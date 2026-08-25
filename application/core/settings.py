@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     EMBEDDINGS_BASE_URL: Optional[str] = None  # Remote embeddings API URL (OpenAI-compatible)
     EMBEDDINGS_KEY: Optional[str] = None  # api key for embeddings (if using openai, just copy API_KEY)
     EMBEDDINGS_MAX_INPUT_TOKENS: Optional[int] = None  # truncate each remote embed input to N tokens (overflow lost)
+    EMBEDDINGS_BATCH_SIZE: int = 32  # chunks per embed request during ingest (1 = legacy per-chunk behaviour)
+    GITHUB_INGEST_MAX_FILE_BYTES: int = 1048576  # skip repo blobs larger than this (0 = no cap)
+    GITHUB_INGEST_MAX_WORKERS: int = 8  # parallel file fetches per GitHub repo ingest
     # Optional directory of operator-supplied model YAMLs, loaded after the
     # built-in catalog under application/core/models/. Later wins on
     # duplicate model id. See application/core/models/README.md.

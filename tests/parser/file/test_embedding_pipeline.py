@@ -3,8 +3,11 @@ import logging
 from unittest.mock import patch, MagicMock
 
 from application.parser.embedding_pipeline import (
+    DEFAULT_EMBEDDINGS_BATCH_SIZE,
     EmbeddingPipelineError,
+    _resolve_batch_size,
     add_text_to_store_with_retry,
+    add_texts_to_store_with_retry,
     assert_index_complete,
     embed_and_store_documents,
     sanitize_content,
@@ -123,7 +126,7 @@ def test_embed_and_store_documents_progress_band(
     assert currents == sorted(currents)
 
 
-@patch("application.parser.embedding_pipeline.add_text_to_store_with_retry")
+@patch("application.parser.embedding_pipeline.add_texts_to_store_with_retry")
 def test_embed_and_store_documents_partial_failure_raises(
     mock_add_retry, tmp_path, mock_settings, mock_vector_creator, caplog
 ):
@@ -146,9 +149,11 @@ def test_embed_and_store_documents_partial_failure_raises(
     mock_vector_creator.create_vectorstore.return_value = mock_store
 
     # First document succeeds (FAISS init seeds with docs[0]; the loop
-    # picks up at idx=1 and raises on the bad chunk).
-    def side_effect(*args, **kwargs):
-        if "bad" in args[1].page_content:
+    # picks up at idx=1 and raises on the bad chunk). The batch entry point
+    # receives a list, and the per-chunk fallback re-runs it one at a time —
+    # both go through this mock, so "bad" raises either way.
+    def side_effect(store_arg, docs_arg, source_arg):
+        if any("bad" in d.page_content for d in docs_arg):
             raise RuntimeError("Embedding failed")
     mock_add_retry.side_effect = side_effect
 
@@ -165,7 +170,7 @@ def test_embed_and_store_documents_partial_failure_raises(
     mock_store.save_local.assert_called()
 
 
-@patch("application.parser.embedding_pipeline.add_text_to_store_with_retry")
+@patch("application.parser.embedding_pipeline.add_texts_to_store_with_retry")
 def test_embed_and_store_documents_all_chunks_succeed_no_raise(
     mock_add_retry, tmp_path, mock_settings, mock_vector_creator,
 ):
@@ -291,3 +296,143 @@ def test_embed_and_store_documents_save_fails_raises_oserror(
     with pytest.raises(OSError, match="Unable to save vector store"):
         embed_and_store_documents(docs, str(folder_name), source_id, task_status)
 
+
+
+# ── batched embed loop ─────────────────────────────────────────────────────
+
+
+def test_add_texts_to_store_with_retry_sends_one_call_per_batch():
+    """The batch entry point collapses N chunks into a single add_texts."""
+    store = MagicMock()
+    docs = [MagicMock(page_content=f"c{i}", metadata={}) for i in range(3)]
+
+    add_texts_to_store_with_retry(store, docs, "sid")
+
+    store.add_texts.assert_called_once_with(
+        ["c0", "c1", "c2"],
+        metadatas=[{"source_id": "sid"}] * 3,
+    )
+
+
+def test_add_texts_to_store_with_retry_sanitizes_and_skips_empty():
+    store = MagicMock()
+    docs = [MagicMock(page_content="a\x00b", metadata={})]
+
+    add_texts_to_store_with_retry(store, docs, "sid")
+    assert store.add_texts.call_args.args[0] == ["ab"]
+
+    store.reset_mock()
+    add_texts_to_store_with_retry(store, [], "sid")
+    store.add_texts.assert_not_called()
+
+
+def test_resolve_batch_size_falls_back_on_bad_setting(monkeypatch):
+    fake = MagicMock()  # attribute access yields a MagicMock, not an int
+    monkeypatch.setattr("application.parser.embedding_pipeline.settings", fake)
+    assert _resolve_batch_size() == DEFAULT_EMBEDDINGS_BATCH_SIZE
+
+    fake.EMBEDDINGS_BATCH_SIZE = 0
+    assert _resolve_batch_size() == 1  # never below 1
+    fake.EMBEDDINGS_BATCH_SIZE = 32
+    assert _resolve_batch_size() == 32
+
+
+def test_embed_loop_batches_chunks(tmp_path, mock_settings, mock_vector_creator):
+    """70 chunks at batch size 32 => 3 add_texts calls, not 70."""
+    mock_settings.VECTOR_STORE = "chromadb"
+    mock_settings.EMBEDDINGS_BATCH_SIZE = 32
+
+    docs = [MagicMock(page_content=f"d{i}", metadata={}) for i in range(70)]
+    store = MagicMock()
+    mock_vector_creator.create_vectorstore.return_value = store
+
+    with patch("application.parser.embedding_pipeline._record_progress") as rec:
+        embed_and_store_documents(
+            docs, str(tmp_path / "s"), "sid", MagicMock(),
+        )
+
+    assert store.add_texts.call_count == 3
+    assert [len(c.args[0]) for c in store.add_texts.call_args_list] == [32, 32, 6]
+    # One checkpoint per batch, and the final one accounts for every chunk.
+    assert rec.call_count == 3
+    assert rec.call_args.kwargs == {"last_index": 69, "embedded_chunks": 70}
+
+
+def test_embed_loop_batch_size_one_matches_legacy(
+    tmp_path, mock_settings, mock_vector_creator
+):
+    """batch_size=1 restores the pre-batching one-call-per-chunk behaviour."""
+    mock_settings.VECTOR_STORE = "chromadb"
+    mock_settings.EMBEDDINGS_BATCH_SIZE = 1
+
+    docs = [MagicMock(page_content=f"d{i}", metadata={}) for i in range(5)]
+    store = MagicMock()
+    mock_vector_creator.create_vectorstore.return_value = store
+
+    embed_and_store_documents(docs, str(tmp_path / "s"), "sid", MagicMock())
+
+    assert store.add_texts.call_count == 5
+
+
+def test_poison_chunk_isolated_by_per_chunk_fallback(
+    tmp_path, mock_settings, mock_vector_creator
+):
+    """A batch failure re-runs individually: good chunks land, and the
+    reported failure index is the real offender, not the batch head.
+
+    Patches the batch entry point so the ``@retry`` sleeps don't run — the
+    fallback, not the retry, is what's under test here.
+    """
+    mock_settings.VECTOR_STORE = "chromadb"
+    mock_settings.EMBEDDINGS_BATCH_SIZE = 32
+
+    docs = [MagicMock(page_content=f"d{i}", metadata={}) for i in range(10)]
+    docs[6].page_content = "poison"
+    mock_vector_creator.create_vectorstore.return_value = MagicMock()
+
+    def fake_add(store, batch, source_id):
+        if any(d.page_content == "poison" for d in batch):
+            raise RuntimeError("input too large")
+
+    with patch(
+        "application.parser.embedding_pipeline.add_texts_to_store_with_retry",
+        side_effect=fake_add,
+    ):
+        with patch("application.parser.embedding_pipeline._record_progress") as rec:
+            with pytest.raises(EmbeddingPipelineError) as exc:
+                embed_and_store_documents(
+                    docs, str(tmp_path / "s"), "sid", MagicMock(),
+                )
+
+    assert "chunk 6/10" in str(exc.value)
+    assert isinstance(exc.value.__cause__, RuntimeError)
+    # Chunks 0-5 were salvaged one at a time and checkpointed.
+    assert rec.call_args_list[-1].kwargs == {"last_index": 5, "embedded_chunks": 6}
+
+
+def test_batch_only_failure_recovers_via_fallback(
+    tmp_path, mock_settings, mock_vector_creator
+):
+    """When the *batch* is rejected but each chunk is fine on its own (e.g. a
+    request-size limit), the fallback completes the ingest without raising."""
+    mock_settings.VECTOR_STORE = "chromadb"
+    mock_settings.EMBEDDINGS_BATCH_SIZE = 32
+
+    docs = [MagicMock(page_content=f"d{i}", metadata={}) for i in range(4)]
+    mock_vector_creator.create_vectorstore.return_value = MagicMock()
+
+    seen = []
+
+    def fake_add(store, batch, source_id):
+        seen.append(len(batch))
+        if len(batch) > 1:
+            raise RuntimeError("payload too large")
+
+    with patch(
+        "application.parser.embedding_pipeline.add_texts_to_store_with_retry",
+        side_effect=fake_add,
+    ):
+        embed_and_store_documents(docs, str(tmp_path / "s"), "sid", MagicMock())
+
+    # One rejected batch of 4, then four successful singles.
+    assert seen == [4, 1, 1, 1, 1]

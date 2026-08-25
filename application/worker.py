@@ -75,6 +75,82 @@ RECURSION_DEPTH = 2
 INGEST_HEARTBEAT_INTERVAL_SECONDS = 30
 
 
+def count_structure_files(node: dict) -> int:
+    """Count leaf files in a nested ``directory_structure`` mapping.
+
+    Directories are plain dicts of children; files are dicts carrying a
+    ``token_count`` key. ``len()`` on the root only sees top-level entries,
+    which undercounts any repo with subdirectories.
+
+    Args:
+        node: A ``directory_structure`` mapping (or any subtree of one).
+
+    Returns:
+        Number of file leaves beneath ``node``.
+    """
+    if not isinstance(node, dict):
+        return 0
+    total = 0
+    for value in node.values():
+        if isinstance(value, dict):
+            if "token_count" in value and "size_bytes" in value:
+                total += 1
+            else:
+                total += count_structure_files(value)
+    return total
+
+
+def add_file_to_structure(
+    directory_structure: dict,
+    file_path: str,
+    file_type: str,
+    *,
+    size_bytes: int,
+    token_count: int,
+) -> None:
+    """Insert one chunk's stats into a nested ``directory_structure``.
+
+    Callers feed this *chunks*, so a file larger than one chunk arrives
+    several times. Stats are accumulated rather than overwritten — the
+    previous assignment kept only the final fragment, which made the
+    per-file sizes shown in the UI wrong for every multi-chunk file
+    (a 2.56M-token repo reported 733k).
+
+    Args:
+        directory_structure: Mapping mutated in place.
+        file_path: Repo-relative path, e.g. ``"guides/setup.md"``.
+        file_type: MIME type recorded on first insert.
+        size_bytes: Byte length of this chunk.
+        token_count: Token count of this chunk.
+
+    Returns:
+        None
+    """
+    path_parts = [p for p in file_path.split("/") if p]
+    if not path_parts:
+        return
+    current_level = directory_structure
+    for part in path_parts[:-1]:
+        # Intermediate parts are directories
+        child = current_level.get(part)
+        if not isinstance(child, dict) or "token_count" in child:
+            child = {}
+            current_level[part] = child
+        current_level = child
+
+    leaf = path_parts[-1]
+    existing = current_level.get(leaf)
+    if isinstance(existing, dict) and "token_count" in existing:
+        existing["size_bytes"] += size_bytes
+        existing["token_count"] += token_count
+    else:
+        current_level[leaf] = {
+            "type": file_type,
+            "size_bytes": size_bytes,
+            "token_count": token_count,
+        }
+
+
 def graph_extraction_key(source_id, updated_at) -> str:
     """Build the extract_graph idempotency key for a source's current state.
 
@@ -1264,24 +1340,18 @@ def remote_worker(
 
                 # Build nested directory structure from path
                 # e.g., "guides/setup.md" -> {"guides": {"setup.md": {...}}}
-                path_parts = file_path.split("/")
-                current_level = directory_structure
-                for i, part in enumerate(path_parts):
-                    if i == len(path_parts) - 1:
-                        # Last part is the file
-                        current_level[part] = {
-                            "type": file_type,
-                            "size_bytes": size_bytes,
-                            "token_count": token_count,
-                        }
-                    else:
-                        # Intermediate parts are directories
-                        if part not in current_level:
-                            current_level[part] = {}
-                        current_level = current_level[part]
+                add_file_to_structure(
+                    directory_structure, file_path, file_type,
+                    size_bytes=size_bytes, token_count=token_count,
+                )
 
+        # ``len(directory_structure)`` counts only top-level entries, so a
+        # 1,474-file repo logged "44 files". Count the leaves instead — this
+        # line is the operational signal that a remote ingest succeeded.
         logging.info(
-            f"Built directory structure with {len(directory_structure)} files: "
+            f"Built directory structure with "
+            f"{count_structure_files(directory_structure)} files across "
+            f"{len(directory_structure)} top-level entries: "
             f"{list(directory_structure.keys())}"
         )
 
