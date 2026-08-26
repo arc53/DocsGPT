@@ -17,11 +17,6 @@ RUN if [ -f /usr/bin/python3.12 ]; then \
         echo "Python 3.12 not found"; exit 1; \
     fi
 
-# Download and unzip the model
-RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip && \
-    unzip mpnet-base-v2.zip -d models && \
-    rm mpnet-base-v2.zip
-
 # Install Rust
 RUN wget -q -O - https://sh.rustup.rs | sh -s -- -y
 
@@ -41,6 +36,7 @@ ENV PATH="/venv/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir tiktoken && \
     pip install --no-cache-dir -r requirements.txt
+
 
 # Final Stage
 FROM ubuntu:24.04 as final
@@ -67,10 +63,16 @@ RUN groupadd -r appuser && \
 # Copy the virtual environment and model from the builder stage
 COPY --from=builder /venv /venv
 
-COPY --from=builder /models /app/models
-
 # Copy your application code
 COPY . /app/application
+
+# Pre-fetch the embedding models into FastEmbed's cache so a fresh container
+# does not download on first ingest and an air-gapped install works at all.
+# Both defaults are baked: an upgraded deployment keeps using mpnet until it
+# runs the re-embed script, while a new one starts on granite.
+ENV EMBEDDINGS_CACHE_DIR=/app/models
+ARG EMBEDDINGS_PREFETCH=""
+RUN PYTHONPATH=/app /venv/bin/python -m application.scripts.prefetch_models ${EMBEDDINGS_PREFETCH}
 
 # Change the ownership of the /app directory to the appuser
 

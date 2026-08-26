@@ -96,6 +96,20 @@ ruff check .
 python -m pytest
 ```
 
+On **macOS**, run the suite with `KMP_DUPLICATE_LIB_OK=TRUE`:
+
+```bash
+KMP_DUPLICATE_LIB_OK=TRUE python -m pytest
+```
+
+`faiss-cpu` and `torch` each ship their own LLVM OpenMP runtime, and loading
+both into one process makes `libomp.dylib` abort the interpreter
+(`OMP: Error #15`). It is a macOS-only packaging clash, not a code fault: Linux
+resolves both to `libgomp`, which tolerates duplicates, so CI (`ubuntu-latest`)
+and the Docker images are unaffected. Without the variable, whether the run
+aborts depends on which tests happen to load faiss and torch in the same
+process, so a green run on one selection and an abort on another is expected.
+
 ### Frontend changes
 
 ```bash

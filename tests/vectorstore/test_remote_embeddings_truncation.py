@@ -83,3 +83,48 @@ def test_query_path_is_truncated(monkeypatch):
 
     sent = captured["payload"]["input"]
     assert sent == enc.decode(enc.encode(long_text)[:10])
+
+
+class TestInputLimitResolution:
+    """The cap falls back to the model's own context window."""
+
+    def _remote(self, model_name):
+        from application.vectorstore.base import RemoteEmbeddings
+
+        return RemoteEmbeddings(
+            api_url="http://embeddings", model_name=model_name, api_key=None
+        )
+
+    def test_explicit_setting_wins(self, monkeypatch):
+        from application.vectorstore import base
+
+        monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", 123)
+        assert self._remote("granite-311m")._resolve_input_limit() == 123
+
+    def test_registered_model_supplies_its_own_ceiling(self, monkeypatch):
+        from application.vectorstore import base
+
+        monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
+        assert self._remote("granite-311m")._resolve_input_limit() == 32768
+        # mpnet genuinely stops at 384; sending more is paid for and discarded.
+        assert self._remote("all-mpnet-base-v2")._resolve_input_limit() == 384
+
+    def test_unknown_model_stays_unlimited(self, monkeypatch):
+        from application.vectorstore import base
+
+        monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
+        assert self._remote("some-org/mystery")._resolve_input_limit() is None
+
+    def test_non_positive_setting_falls_through_to_the_registry(self, monkeypatch):
+        from application.vectorstore import base
+
+        monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", 0)
+        assert self._remote("granite-97m")._resolve_input_limit() == 32768
+
+    def test_dimension_is_taken_from_the_registry(self):
+        assert self._remote("granite-97m").dimension == 384
+        assert self._remote("granite-311m").dimension == 768
+
+    def test_unknown_model_dimension_is_probed_not_assumed(self):
+        """The old hardcoded 768 made the probe below unreachable."""
+        assert self._remote("some-org/mystery").dimension is None

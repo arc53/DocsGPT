@@ -3,7 +3,7 @@ from typing import List, Tuple
 import logging
 from application.parser.chunking_creator import ChunkerCreator
 from application.parser.schema.base import Document
-from application.utils import get_encoding
+from application.parser.tokenization import get_token_counter
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,10 @@ class Chunker:
         self.max_tokens = max_tokens
         self.min_tokens = min_tokens
         self.duplicate_headers = duplicate_headers
-        self.encoding = get_encoding()
+        # Counted in the embedding model's tokenizer, not cl100k: ``max_tokens``
+        # is compared against a limit the embedding server enforces in its own
+        # units, so counting in any other unit is a guess.
+        self.counter = get_token_counter()
 
     def separate_header_and_body(self, text: str) -> Tuple[str, str]:
         header_pattern = r"^(.*?\n){3}"
@@ -42,28 +45,40 @@ class Chunker:
 
 
     def split_document(self, doc: Document) -> List[Document]:
-        split_docs = []
-        header, body = self.separate_header_and_body(doc.text)
-        header_tokens = self.encoding.encode_ordinary(header) if header else []
-        body_tokens = self.encoding.encode_ordinary(body)
+        """Split one oversized document into ``max_tokens``-sized chunks.
 
-        current_position = 0
-        part_index = 0
-        while current_position < len(body_tokens):
-            end_position = current_position + self.max_tokens - len(header_tokens)
-            chunk_tokens = (header_tokens + body_tokens[current_position:end_position]
-                            if self.duplicate_headers or part_index == 0 else body_tokens[current_position:end_position])
-            chunk_text = self.encoding.decode(chunk_tokens)
-            new_doc = Document(
-                text=chunk_text,
-                doc_id=f"{doc.doc_id}-{part_index}",
-                embedding=doc.embedding,
-                extra_info={**(doc.extra_info or {}), "token_count": len(chunk_tokens)}
+        Pieces are sliced out of the original text rather than decoded back
+        from token ids. WordPiece tokenizers normalise as they decode --
+        all-mpnet-base-v2 lowercases -- so a decode round-trip would rewrite
+        every stored document.
+        """
+        header, body = self.separate_header_and_body(doc.text)
+        header_tokens = self.counter.count(header) if header else 0
+
+        # A chunk carrying the header has that much less room for body text.
+        with_header_budget = max(1, self.max_tokens - header_tokens)
+        if self.duplicate_headers:
+            body_pieces = self.counter.split(body, with_header_budget)
+        else:
+            body_pieces = self.counter.split(
+                body, self.max_tokens, first_max_tokens=with_header_budget
             )
-            split_docs.append(new_doc)
-            current_position = end_position
-            part_index += 1
-            header_tokens = []
+
+        split_docs = []
+        for part_index, piece in enumerate(body_pieces):
+            include_header = bool(header) and (self.duplicate_headers or part_index == 0)
+            chunk_text = f"{header}{piece}" if include_header else piece
+            split_docs.append(
+                Document(
+                    text=chunk_text,
+                    doc_id=f"{doc.doc_id}-{part_index}",
+                    embedding=doc.embedding,
+                    extra_info={
+                        **(doc.extra_info or {}),
+                        "token_count": self.counter.count(chunk_text),
+                    },
+                )
+            )
         return split_docs
 
     def classic_chunk(self, documents: List[Document]) -> List[Document]:
@@ -71,8 +86,7 @@ class Chunker:
         i = 0
         while i < len(documents):
             doc = documents[i]
-            tokens = self.encoding.encode_ordinary(doc.text)
-            token_count = len(tokens)
+            token_count = self.counter.count(doc.text)
 
             if self.min_tokens <= token_count <= self.max_tokens:
                 doc.extra_info = doc.extra_info or {}

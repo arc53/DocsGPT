@@ -11,6 +11,45 @@ import { Callout } from 'nextra/components'
   **Upgrading from 0.16.x?** User data moved from MongoDB to Postgres in 0.17.0. Follow the [Postgres Migration guide](/Deploying/Postgres-Migration) before running `docker compose pull` or `git pull` — existing deployments will not start cleanly without it.
 </Callout>
 
+## Embedding models
+
+DocsGPT now runs embeddings through [FastEmbed](https://github.com/qdrant/fastembed) (ONNX Runtime) instead of SentenceTransformer. The models are the same and the vectors are identical, so **an existing deployment needs no action** — `all-mpnet-base-v2` keeps working exactly as before.
+
+New installs default to `ibm-granite/granite-embedding-311m-multilingual-r2`: multilingual, a 32k-token context, and the same 768 dimensions.
+
+### Switching an existing deployment to granite
+
+<Callout type="error">
+  Changing `EMBEDDINGS_NAME` on an index that already has vectors **breaks retrieval silently**. Both models are 768-dimensional, so nothing raises an error — queries are simply compared against vectors that mean something else, and answers quietly get worse. Always re-embed.
+</Callout>
+
+Set the model, then rebuild the vectors:
+
+```bash
+# 1. In your .env
+EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2
+
+# 2. Rebuild the vectors from the chunk text already in your index
+docker compose exec backend python -m application.scripts.reembed --dry-run
+docker compose exec backend python -m application.scripts.reembed
+```
+
+Re-embedding reads the chunk text already stored in your index. It does not re-download, re-parse or re-chunk your documents, so no source files are needed and the run is proportional to index size, not corpus size. Both `pgvector` and `faiss` are supported.
+
+Useful flags:
+
+| Flag | Effect |
+| --- | --- |
+| `--dry-run` | Report how many chunks would change, write nothing |
+| `--sources a,b` | Only these source ids — also how you retry a failed source |
+| `--batch-size N` | Chunks per embed call (default 64) |
+
+The script processes sources independently: one failing source is reported and skipped rather than aborting the run, and the exit code is non-zero if any failed. For `pgvector` it updates rows in place, so an interrupted run simply re-does its last batch. For `faiss` it builds the replacement index in memory and only writes once the whole rebuild succeeds, leaving the existing index untouched on failure.
+
+<Callout type="info">
+  Staying on `all-mpnet-base-v2` is a supported choice — it remains in the model registry and in `setup.sh`. You only need this section if you want to move to granite.
+</Callout>
+
 ## Check your version
 
 ```bash

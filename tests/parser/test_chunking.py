@@ -108,18 +108,24 @@ class TestSplitDocument:
 
         result = chunker.split_document(doc)
         assert len(result) > 1
-        # First chunk should contain header
         assert "h1" in result[0].text
+        # Only the first: this is what duplicate_headers=False means.
+        assert all("h1" not in chunk.text for chunk in result[1:])
 
     def test_split_duplicates_header(self):
+        """Every chunk carries the header when the flag is set.
+
+        Asserting only the first chunk passed even while the flag did nothing:
+        the implementation cleared the header after the first iteration, so
+        duplicate_headers was unreachable.
+        """
         chunker = Chunker(max_tokens=50, min_tokens=5, duplicate_headers=True)
         text = "h1\nh2\nh3\n" + "word " * 200
         doc = Document(text=text, doc_id="doc1")
 
         result = chunker.split_document(doc)
         assert len(result) > 1
-        # First chunk should contain header
-        assert "h1" in result[0].text
+        assert all("h1" in chunk.text for chunk in result)
 
     def test_split_preserves_embedding(self):
         chunker = Chunker(max_tokens=50, min_tokens=5)

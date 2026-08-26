@@ -16,7 +16,7 @@ from typing import List
 from application.parser.chunking import Chunker
 from application.parser.chunking_creator import ChunkerCreator
 from application.parser.schema.base import Document
-from application.utils import get_encoding
+from application.parser.tokenization import get_token_counter
 
 logger = logging.getLogger(__name__)
 
@@ -41,19 +41,16 @@ class _BaseStrategyChunker:
         self.max_tokens = max(1, int(max_tokens))
         self.min_tokens = max(0, int(min_tokens))
         self.duplicate_headers = duplicate_headers
-        self.encoding = get_encoding()
+        # Same unit as the embedding server counts in; see
+        # ``application.parser.tokenization``.
+        self.counter = get_token_counter()
 
     def _token_count(self, text: str) -> int:
-        return len(self.encoding.encode_ordinary(text))
+        return self.counter.count(text)
 
     def _split_by_tokens(self, text: str) -> List[str]:
         """Split ``text`` into pieces no larger than ``max_tokens`` tokens."""
-        tokens = self.encoding.encode_ordinary(text)
-        pieces = []
-        for start in range(0, len(tokens), self.max_tokens):
-            chunk_tokens = tokens[start:start + self.max_tokens]
-            pieces.append(self.encoding.decode(chunk_tokens))
-        return pieces
+        return self.counter.split(text, self.max_tokens)
 
     def _emit(self, base: Document, part_index: int, text: str) -> Document:
         """Build a child Document carrying token_count and inherited info."""
@@ -188,16 +185,11 @@ class ParentChildChunker(_BaseStrategyChunker):
         processed: List[Document] = []
         child_size = self._child_size()
         for doc in documents:
-            tokens = self.encoding.encode_ordinary(doc.text)
             part_index = 0
-            for p_start in range(0, len(tokens), self.max_tokens):
-                parent_tokens = tokens[p_start:p_start + self.max_tokens]
-                parent_text = self.encoding.decode(parent_tokens)
+            for parent_text in self.counter.split(doc.text, self.max_tokens):
                 if not parent_text.strip():
                     continue
-                for c_start in range(0, len(parent_tokens), child_size):
-                    child_tokens = parent_tokens[c_start:c_start + child_size]
-                    child_text = self.encoding.decode(child_tokens)
+                for child_text in self.counter.split(parent_text, child_size):
                     if not child_text.strip():
                         continue
                     child = Document(
@@ -208,7 +200,7 @@ class ParentChildChunker(_BaseStrategyChunker):
                         embedding=doc.embedding,
                         extra_info={
                             **(doc.extra_info or {}),
-                            "token_count": len(child_tokens),
+                            "token_count": self.counter.count(child_text),
                             "parent_text": parent_text,
                         },
                     )

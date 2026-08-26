@@ -185,15 +185,20 @@ class TestFaissStoreAssertEmbeddingDimensions:
             with pytest.raises(ValueError, match="Embedding dimension mismatch"):
                 populated.assert_embedding_dimensions(Mock(dimension=768))
 
-    def test_missing_dimension_attr_raises(self, populated):
+    def test_unknown_dimension_defers_rather_than_raising(self, populated):
+        """A remote model reports no width until its first call.
+
+        Refusing to open the index in that window would break startup for a
+        perfectly valid remote configuration, so an unknown width is deferred,
+        not treated as a mismatch.
+        """
         with patch("application.vectorstore.faiss.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = (
                 "huggingface_sentence-transformers/all-mpnet-base-v2"
             )
             embeddings = Mock()
-            del embeddings.dimension
-            with pytest.raises(AttributeError, match="'dimension' attribute not found"):
-                populated.assert_embedding_dimensions(embeddings)
+            embeddings.dimension = None
+            assert populated.assert_embedding_dimensions(embeddings) is None
 
     def test_dimension_match_passes(self, populated):
         with patch("application.vectorstore.faiss.settings") as mock_settings:
@@ -202,10 +207,22 @@ class TestFaissStoreAssertEmbeddingDimensions:
             )
             assert populated.assert_embedding_dimensions(Mock(dimension=3)) is None
 
-    def test_non_huggingface_skips_dimension_check(self, populated):
+    def test_mismatch_is_caught_for_every_model_not_just_mpnet(self, populated):
+        """The check used to run only when EMBEDDINGS_NAME was mpnet.
+
+        That skipped exactly the case it exists for: an index built with one
+        model being opened under a different one.
+        """
         with patch("application.vectorstore.faiss.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = "openai_text-embedding-ada-002"
-            assert populated.assert_embedding_dimensions(Mock(dimension=1536)) is None
+            with pytest.raises(ValueError, match="Embedding dimension mismatch"):
+                populated.assert_embedding_dimensions(Mock(dimension=1536))
+
+    def test_mismatch_message_points_at_the_reembed_script(self, populated):
+        with patch("application.vectorstore.faiss.settings") as mock_settings:
+            mock_settings.EMBEDDINGS_NAME = "granite-311m"
+            with pytest.raises(ValueError, match="application.scripts.reembed"):
+                populated.assert_embedding_dimensions(Mock(dimension=768))
 
 
 @pytest.mark.unit

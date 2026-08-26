@@ -301,24 +301,29 @@ class FaissStore(BaseVectorStore):
     # -- Introspection ---------------------------------------------------
 
     def assert_embedding_dimensions(self, embeddings) -> None:
-        """Check the index width matches the embedding model's width."""
-        if (
-            settings.EMBEDDINGS_NAME
-            == "huggingface_sentence-transformers/all-mpnet-base-v2"
-        ):
-            word_embedding_dimension = getattr(embeddings, "dimension", None)
-            if word_embedding_dimension is None:
-                raise AttributeError(
-                    "'dimension' attribute not found in embeddings instance."
-                )
-            if self.index is None:
-                return
-            if word_embedding_dimension != self.index.d:
-                raise ValueError(
-                    f"Embedding dimension mismatch: embeddings.dimension "
-                    f"({word_embedding_dimension}) != docsearch index dimension "
-                    f"({self.index.d})"
-                )
+        """Check the index width matches the embedding model's width.
+
+        This used to run only when ``EMBEDDINGS_NAME`` was mpnet, so every
+        other model skipped the check entirely -- exactly the models most
+        likely to differ from an index built earlier. It now runs for any
+        model that reports a width.
+        """
+        word_embedding_dimension = getattr(embeddings, "dimension", None)
+        if word_embedding_dimension is None:
+            # A remote model of unknown width reports None until its first
+            # call; there is nothing to compare yet.
+            return
+        if self.index is None:
+            return
+        if word_embedding_dimension != self.index.d:
+            raise ValueError(
+                f"Embedding dimension mismatch: {settings.EMBEDDINGS_NAME} produces "
+                f"{word_embedding_dimension}-dim vectors but this FAISS index is "
+                f"{self.index.d}-dim. The index was built with a different "
+                f"embedding model; re-embed it with "
+                f"`python -m application.scripts.reembed` or point "
+                f"EMBEDDINGS_NAME back at the original model."
+            )
 
     def get_chunks(self) -> List[Dict[str, Any]]:
         """Return every chunk held in the index."""

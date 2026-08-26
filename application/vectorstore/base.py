@@ -1,5 +1,4 @@
 import logging
-import os
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -7,7 +6,11 @@ import requests
 
 from application.core.settings import settings
 from application.vectorstore.embeddings_openai import OpenAIEmbeddings
-from application.utils import get_encoding
+from application.vectorstore.model_registry import (
+    dimension_for,
+    max_input_tokens_for,
+    resolve,
+)
 
 
 class RemoteEmbeddings:
@@ -23,45 +26,75 @@ class RemoteEmbeddings:
         self.headers = {"Content-Type": "application/json"}
         if api_key:
             self.headers["Authorization"] = f"Bearer {api_key}"
-        self.dimension = 768
+        # Width comes from the registry. This used to be a hardcoded 768 that
+        # ``embed_query`` claimed to correct on first use -- but the correction
+        # was guarded by ``if self.dimension is None``, which the hardcode made
+        # unreachable, so a remote model of any other width silently produced a
+        # ``vector(768)`` column. ``None`` here means "unknown", and the probe
+        # below now genuinely runs.
+        self.dimension = dimension_for(model_name)
+
+    def _token_counter(self):
+        """Counter matching the remote model's tokenizer, cached per process."""
+        from application.parser.tokenization import get_token_counter
+
+        return get_token_counter(self.model_name)
+
+    def _resolve_input_limit(self):
+        """Token ceiling for a single embed input, or ``None`` for no limit.
+
+        ``EMBEDDINGS_MAX_INPUT_TOKENS`` wins when set. Otherwise a registered
+        model contributes its own context window, so a request that the server
+        would reject -- or silently truncate -- is clipped here instead of
+        being sent and paid for.
+        """
+        configured = settings.EMBEDDINGS_MAX_INPUT_TOKENS
+        if configured and configured > 0:
+            return configured
+        model_limit = max_input_tokens_for(self.model_name)
+        return model_limit if model_limit and model_limit > 0 else None
 
     def _truncate_inputs(self, inputs):
-        """Clip each input to ``EMBEDDINGS_MAX_INPUT_TOKENS`` tokens.
+        """Clip each input to the resolved token limit.
 
         The remote server (e.g. llama.cpp) hard-rejects any single input
-        larger than its physical batch size with a 500. When the setting is
-        configured, each input is truncated to that many tokens before the
-        request and the overflow is dropped (lossy by design). Token counts
-        use the shared tiktoken encoding, which differs from the server's
-        tokenizer, so set the limit with headroom under the server's true
-        limit to absorb tokenizer skew.
+        larger than its physical batch size with a 500, so oversized inputs are
+        truncated before the request and the overflow is dropped (lossy by
+        design).
+
+        Counting uses the embedding model's own tokenizer where it is known, so
+        the limit and the count are in the same unit. When it is not -- an
+        unregistered model, or no tokenizer available -- this falls back to
+        tiktoken, and the limit should then carry headroom to absorb the skew
+        between the two tokenizers.
 
         Args:
             inputs: A single string or a list of strings to embed.
 
         Returns:
             The inputs with each string clipped to the token limit, or the
-            inputs unchanged when the limit is unset or non-positive.
+            inputs unchanged when no limit applies.
         """
-        limit = settings.EMBEDDINGS_MAX_INPUT_TOKENS
-        if not limit or limit <= 0:
+        limit = self._resolve_input_limit()
+        if not limit:
             return inputs
 
-        encoding = get_encoding()
+        counter = self._token_counter()
 
         def clip(text):
             if not isinstance(text, str):
                 return text
-            tokens = encoding.encode_ordinary(text)
-            if len(tokens) <= limit:
+            count = counter.count(text)
+            if count <= limit:
                 return text
             logging.warning(
                 "Truncating remote embeddings input from %d to %d tokens (%d dropped)",
-                len(tokens),
+                count,
                 limit,
-                len(tokens) - limit,
+                count - limit,
             )
-            return encoding.decode(tokens[:limit])
+            pieces = counter.split(text, limit)
+            return pieces[0] if pieces else text
 
         if isinstance(inputs, list):
             return [clip(text) for text in inputs]
@@ -129,7 +162,7 @@ class RemoteEmbeddings:
 
 
 def _get_embeddings_wrapper():
-    """Lazy import of EmbeddingsWrapper to avoid loading SentenceTransformer when using remote embeddings."""
+    """Lazy import of EmbeddingsWrapper, so a remote setup never loads ONNX."""
     from application.vectorstore.embeddings_local import EmbeddingsWrapper
 
     return EmbeddingsWrapper
@@ -178,36 +211,28 @@ class EmbeddingsSingleton:
 
     @staticmethod
     def _create_instance(embeddings_name, *args, **kwargs):
-        if embeddings_name == "openai_text-embedding-ada-002":
+        """Build the runner for ``embeddings_name``, per the model registry.
+
+        The registry replaced a hand-maintained factory dict whose entries
+        existed only to rewrite a configured name into a repository id. That
+        rewrite is now a registry field, so an unknown name needs no entry
+        here: it is passed through as a Hugging Face repository.
+        """
+        spec = resolve(embeddings_name)
+        if spec is not None and spec.provider == "openai":
             return OpenAIEmbeddings(*args, **kwargs)
 
-        # Lazy import EmbeddingsWrapper only when needed (avoids loading SentenceTransformer)
         EmbeddingsWrapper = _get_embeddings_wrapper()
-
-        embeddings_factory = {
-            "huggingface_sentence-transformers/all-mpnet-base-v2": lambda: EmbeddingsWrapper(
-                "sentence-transformers/all-mpnet-base-v2"
-            ),
-            "huggingface_sentence-transformers-all-mpnet-base-v2": lambda: EmbeddingsWrapper(
-                "sentence-transformers/all-mpnet-base-v2"
-            ),
-            "huggingface_hkunlp/instructor-large": lambda: EmbeddingsWrapper(
-                "hkunlp/instructor-large"
-            ),
-        }
-
-        if embeddings_name in embeddings_factory:
-            if args or kwargs:
-                logging.debug(
-                    "Dropping %d positional and %d keyword argument(s) for pinned "
-                    "embeddings model %s: its factory takes none.",
-                    len(args),
-                    len(kwargs),
-                    embeddings_name,
-                )
-            return embeddings_factory[embeddings_name]()
-        else:
-            return EmbeddingsWrapper(embeddings_name, *args, **kwargs)
+        if spec is not None and (args or kwargs):
+            logging.debug(
+                "Dropping %d positional and %d keyword argument(s) for registered "
+                "embeddings model %s: the registry supplies its configuration.",
+                len(args),
+                len(kwargs),
+                embeddings_name,
+            )
+            return EmbeddingsWrapper(embeddings_name)
+        return EmbeddingsWrapper(embeddings_name, *args, **kwargs)
 
 
 def _azure_configured() -> bool:
@@ -225,11 +250,8 @@ def get_embeddings(
     """Resolve the configured embeddings instance. The single entry point.
 
     Callers that reach for :meth:`EmbeddingsSingleton.get_instance` directly
-    reproduce neither the bundled local-model path (the Docker image ships
-    ``/app/models/all-mpnet-base-v2``) nor the OpenAI/Azure key handling: they
-    download a second copy of the model from the hub, and passing the key
-    positionally to the pinned HuggingFace names raises ``TypeError`` because
-    those factories take no arguments. Route every caller through here.
+    skip the remote dispatch and the OpenAI/Azure key handling. Route every
+    caller through here.
 
     Args:
         embeddings_name: Model name; defaults to ``settings.EMBEDDINGS_NAME``.
@@ -259,31 +281,10 @@ def get_embeddings(
             embedding_instance = EmbeddingsSingleton.get_instance(
                 embeddings_name, openai_api_key=embeddings_key
             )
-    elif embeddings_name == "huggingface_sentence-transformers/all-mpnet-base-v2":
-        possible_paths = [
-            "/app/models/all-mpnet-base-v2",  # Docker absolute path
-            "./models/all-mpnet-base-v2",  # Relative path
-        ]
-        local_model_path = None
-        for path in possible_paths:
-            if os.path.exists(path):
-                local_model_path = path
-                logging.info(f"Found local model at path: {path}")
-                break
-            else:
-                logging.info(f"Path does not exist: {path}")
-        if local_model_path:
-            embedding_instance = EmbeddingsSingleton.get_instance(
-                local_model_path,
-            )
-        else:
-            logging.warning(
-                f"Local model not found in any of the paths: {possible_paths}. Falling back to HuggingFace download."
-            )
-            embedding_instance = EmbeddingsSingleton.get_instance(
-                embeddings_name,
-            )
     else:
+        # No per-model branching: the registry resolves names and FastEmbed
+        # caches artifacts under EMBEDDINGS_CACHE_DIR, which is where the
+        # image warms them at build time.
         embedding_instance = EmbeddingsSingleton.get_instance(embeddings_name)
     return embedding_instance
 

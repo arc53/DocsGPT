@@ -263,11 +263,11 @@ class TestEmbeddingsSingleton:
     def test_get_instance_hf_ignores_positional_key(
         self, mock_get_wrapper, mock_settings
     ):
-        """A stray key must not reach the zero-arg HuggingFace factory.
+        """A stray key must not reach the wrapper for a registered model.
 
-        The factories are ``lambda: EmbeddingsWrapper(...)``, so a caller that
-        passed ``settings.EMBEDDINGS_KEY`` positionally used to blow up with
-        ``TypeError: <lambda>() takes 0 positional arguments``.
+        Registered models take their whole configuration from the registry, so
+        a caller that passes ``settings.EMBEDDINGS_KEY`` positionally (as the
+        vector stores do) must have it dropped rather than forwarded.
         """
         mock_settings.EMBEDDINGS_BASE_URL = None
         mock_wrapper_cls = Mock()
@@ -278,9 +278,8 @@ class TestEmbeddingsSingleton:
         result = EmbeddingsSingleton.get_instance(HF_MPNET, None)
 
         assert result is mock_instance
-        mock_wrapper_cls.assert_called_once_with(
-            "sentence-transformers/all-mpnet-base-v2"
-        )
+        # The configured name is passed through; the registry maps it to a repo.
+        mock_wrapper_cls.assert_called_once_with(HF_MPNET)
 
     @patch("application.vectorstore.base.settings")
     @patch("application.vectorstore.base._get_embeddings_wrapper")
@@ -293,9 +292,7 @@ class TestEmbeddingsSingleton:
 
         EmbeddingsSingleton.get_instance(HF_MPNET, openai_api_key="sk-nope")
 
-        mock_wrapper_cls.assert_called_once_with(
-            "sentence-transformers/all-mpnet-base-v2"
-        )
+        mock_wrapper_cls.assert_called_once_with(HF_MPNET)
 
 
 # --- BaseVectorStore ---
@@ -401,12 +398,15 @@ class TestBaseVectorStore:
 
     @patch("application.vectorstore.base.settings")
     @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
-    @patch("os.path.exists")
-    def test_get_embeddings_huggingface_local_model(
-        self, mock_exists, mock_get_instance, mock_settings
+    def test_get_embeddings_registered_model_passes_configured_name(
+        self, mock_get_instance, mock_settings
     ):
+        """No bundled-path branch any more: the name goes straight through.
+
+        FastEmbed resolves artifacts through its own cache (warmed in the
+        image), so the old ``/app/models/...`` probe has no job to do.
+        """
         mock_settings.EMBEDDINGS_BASE_URL = None
-        mock_exists.side_effect = lambda p: p == "/app/models/all-mpnet-base-v2"
         mock_emb = Mock()
         mock_get_instance.return_value = mock_emb
 
@@ -415,7 +415,9 @@ class TestBaseVectorStore:
             "huggingface_sentence-transformers/all-mpnet-base-v2"
         )
         assert result is mock_emb
-        mock_get_instance.assert_called_with("/app/models/all-mpnet-base-v2")
+        mock_get_instance.assert_called_with(
+            "huggingface_sentence-transformers/all-mpnet-base-v2"
+        )
 
     @patch("application.vectorstore.base.settings")
     @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
@@ -518,18 +520,18 @@ class TestGetEmbeddingsResolver:
 
     @patch("application.vectorstore.base.settings")
     @patch("application.vectorstore.base._get_embeddings_wrapper")
-    @patch("os.path.exists")
-    def test_uses_local_model_path_and_caches_it(
-        self, mock_exists, mock_get_wrapper, mock_settings
+    def test_repeated_resolution_loads_one_model(
+        self, mock_get_wrapper, mock_settings
     ):
-        """With the bundled model present, the instance is keyed by its path.
+        """A second call must not load a second copy of the model.
 
-        A second call must not load a second copy of the model.
+        The instance is keyed by the configured name. It used to be keyed by a
+        bundled filesystem path when one happened to exist, which meant the
+        same model could be cached twice under two keys.
         """
         mock_settings.EMBEDDINGS_BASE_URL = None
         mock_settings.EMBEDDINGS_NAME = HF_MPNET
         mock_settings.EMBEDDINGS_KEY = None
-        mock_exists.side_effect = lambda path: path == LOCAL_MPNET
         mock_wrapper_cls = Mock()
         mock_wrapper_cls.return_value = Mock()
         mock_get_wrapper.return_value = mock_wrapper_cls
@@ -538,8 +540,8 @@ class TestGetEmbeddingsResolver:
         second = get_embeddings()
 
         assert first is second
-        assert set(EmbeddingsSingleton._instances) == {LOCAL_MPNET}
-        mock_wrapper_cls.assert_called_once_with(LOCAL_MPNET)
+        assert set(EmbeddingsSingleton._instances) == {HF_MPNET}
+        mock_wrapper_cls.assert_called_once_with(HF_MPNET)
 
     @patch("application.vectorstore.base.settings")
     def test_remote_when_base_url_configured(self, mock_settings):

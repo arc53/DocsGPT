@@ -45,11 +45,23 @@ class Settings(BaseSettings):
 
     LLM_PROVIDER: str = "docsgpt"
     LLM_NAME: Optional[str] = None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo
+    # Deliberately the legacy model, not the current recommendation. An
+    # existing deployment that never pinned EMBEDDINGS_NAME falls through to
+    # this default, and its stored vectors were produced by this model --
+    # changing the default here would silently retrieve against a different
+    # vector space (both are 768-dimensional, so no dimension check fires).
+    # New installs get granite from .env-template / setup.sh; existing ones
+    # switch by setting this and running application.scripts.reembed.
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
     EMBEDDINGS_BASE_URL: Optional[str] = None  # Remote embeddings API URL (OpenAI-compatible)
     EMBEDDINGS_KEY: Optional[str] = None  # api key for embeddings (if using openai, just copy API_KEY)
     EMBEDDINGS_MAX_INPUT_TOKENS: Optional[int] = None  # truncate each remote embed input to N tokens (overflow lost)
     EMBEDDINGS_BATCH_SIZE: int = 32  # chunks per embed request during ingest (1 = legacy per-chunk behaviour)
+    # Intra-op threads for the local ONNX runner. None = every core. ONNX Runtime
+    # scales sub-linearly across threads, so several single-threaded worker
+    # processes beat one many-threaded process on the same cores.
+    EMBEDDINGS_THREADS: Optional[int] = None
+    EMBEDDINGS_CACHE_DIR: Optional[str] = None  # where FastEmbed caches model artifacts
     GITHUB_INGEST_MAX_FILE_BYTES: int = 1048576  # skip repo blobs larger than this (0 = no cap)
     GITHUB_INGEST_MAX_WORKERS: int = 8  # parallel file fetches per GitHub repo ingest
     # Optional directory of operator-supplied model YAMLs, loaded after the
