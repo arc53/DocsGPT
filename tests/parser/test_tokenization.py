@@ -42,7 +42,7 @@ class TestSplittingPreservesText:
 
     @pytest.mark.parametrize("text", SAMPLES)
     def test_tiktoken_split_reassembles_exactly(self, text, monkeypatch):
-        monkeypatch.setattr(tokenization, "get_encoding", lambda: _StubEncoding())
+        monkeypatch.setattr(tokenization, "get_encoding", _StubEncoding)
         counter = TiktokenCounter()
         pieces = counter.split(text, 7)
         assert "".join(pieces) == text
@@ -80,7 +80,7 @@ class TestSplittingPreservesText:
 class TestCounting:
     def test_counts_differ_between_tokenizers(self, hf_counter, monkeypatch):
         """The whole point: mpnet and cl100k disagree, so units matter."""
-        monkeypatch.setattr(tokenization, "get_encoding", lambda: _StubEncoding())
+        monkeypatch.setattr(tokenization, "get_encoding", _StubEncoding)
         text = "internationalisation tokenization"
         assert hf_counter.count(text) != TiktokenCounter().count(text)
 
@@ -105,3 +105,100 @@ class TestSelection:
     def test_counter_is_cached_per_model(self):
         first = get_token_counter("granite-311m")
         assert get_token_counter("granite-311m") is first
+
+
+class TestTiktokenCounterEdges:
+    """The cl100k path is the fallback, so its edges matter as much."""
+
+    @pytest.fixture
+    def counter(self, monkeypatch):
+        monkeypatch.setattr(tokenization, "get_encoding", _StubEncoding)
+        return TiktokenCounter()
+
+    def test_empty_text_counts_zero_and_splits_to_nothing(self, counter):
+        assert counter.count("") == 0
+        assert counter.split("", 10) == []
+
+    def test_text_within_budget_is_returned_whole(self, counter):
+        assert counter.split("abc", 10) == ["abc"]
+
+    def test_first_window_can_be_smaller_than_the_rest(self, counter):
+        """A header eats into the first chunk's budget only."""
+        pieces = counter.split("abcdefghij", 4, first_max_tokens=2)
+        assert pieces[0] == "ab"
+        assert "".join(pieces) == "abcdefghij"
+
+
+class TestCounterContract:
+    def test_base_class_requires_an_implementation(self):
+        base = tokenization.TokenCounter()
+        with pytest.raises(NotImplementedError):
+            base.count("x")
+        with pytest.raises(NotImplementedError):
+            base.split("x", 1)
+
+
+class TestFallbackWhenTokenizerUnavailable:
+    def test_load_failure_returns_none_rather_than_raising(self, monkeypatch, caplog):
+        """Chunking must survive an offline host or a bad repo name."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def boom(name, *args, **kwargs):
+            if name == "tokenizers":
+                raise ImportError("no tokenizers here")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", boom)
+        assert tokenization._load_hf_counter("some/repo") is None
+
+    def test_selection_falls_back_to_cl100k_on_failure(self, monkeypatch):
+        monkeypatch.setattr(tokenization, "_load_hf_counter", lambda repo: None)
+        assert isinstance(get_token_counter("granite-97m"), TiktokenCounter)
+
+    def test_reset_cache_forces_reselection(self, monkeypatch):
+        first = get_token_counter("granite-311m")
+        tokenization.reset_cache()
+        monkeypatch.setattr(tokenization, "_load_hf_counter", lambda repo: None)
+        assert get_token_counter("granite-311m") is not first
+
+
+class TestOffsetsWithoutSpans:
+    """Some tokenizers emit ``(0, 0)`` for specials or normalised-away chars.
+
+    Those tokens consume budget but point at no text, so the splitter has to
+    skip the window rather than emit an empty piece or lose the tail.
+    """
+
+    class _Encoded:
+        def __init__(self, offsets):
+            self.offsets = offsets
+            self.ids = list(range(len(offsets)))
+
+    class _Tokenizer:
+        def __init__(self, offsets):
+            self._offsets = offsets
+
+        def encode(self, text, add_special_tokens=False):
+            return TestOffsetsWithoutSpans._Encoded(self._offsets)
+
+    def _counter(self, offsets):
+        return HuggingFaceCounter(self._Tokenizer(offsets), "stub")
+
+    def test_span_less_windows_are_skipped_not_emitted_empty(self):
+        # Two real tokens, then a window of pure (0, 0) padding-like entries.
+        counter = self._counter([(0, 2), (2, 4), (0, 0), (0, 0)])
+        pieces = counter.split("abcd", 2)
+        assert "" not in pieces
+        assert "".join(pieces) == "abcd"
+
+    def test_trailing_text_is_never_dropped(self):
+        """Offsets that stop short of the string must not lose the remainder."""
+        counter = self._counter([(0, 1), (1, 2), (2, 3)])
+        pieces = counter.split("abcdef", 2)
+        assert "".join(pieces) == "abcdef"
+
+    def test_all_span_less_offsets_still_return_the_text(self):
+        counter = self._counter([(0, 0), (0, 0), (0, 0)])
+        assert "".join(counter.split("abc", 1)) == "abc"

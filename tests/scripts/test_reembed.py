@@ -122,3 +122,112 @@ class TestFaissRebuild:
             reembed.VectorCreator, "create_vectorstore", return_value=existing
         ):
             assert reembed.reembed_faiss("s1", batch_size=8, dry_run=False) == (0, 0)
+
+
+class TestPgvectorWithoutTheExtension:
+    """Mocked pgvector paths.
+
+    The live tests in ``test_reembed_pgvector_live`` skip wherever the cluster
+    has no pgvector build -- which includes CI -- so the SQL shape and the
+    batching contract are pinned here too.
+    """
+
+    @pytest.fixture
+    def store(self):
+        store = MagicMock()
+        store._table_name = "documents"
+        store._vector_column = "embedding"
+        cursor = MagicMock()
+        cursor.fetchall.return_value = [(1, "alpha"), (2, "beta"), (3, "gamma")]
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        store._get_connection.return_value = conn
+        store._embedding.embed_documents.side_effect = lambda texts: [
+            [0.5] * 4 for _ in texts
+        ]
+        with patch.object(
+            reembed.VectorCreator, "create_vectorstore", return_value=store
+        ):
+            yield store, conn, cursor
+
+    def test_reads_and_rewrites_every_chunk(self, store):
+        _, conn, cursor = store
+        seen, written = reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
+        assert (seen, written) == (3, 3)
+        cursor.executemany.assert_called_once()
+        conn.commit.assert_called()
+
+    def test_dry_run_neither_embeds_nor_writes(self, store):
+        fake_store, conn, cursor = store
+        seen, written = reembed.reembed_pgvector("s1", batch_size=64, dry_run=True)
+        assert (seen, written) == (3, 0)
+        fake_store._embedding.embed_documents.assert_not_called()
+        cursor.executemany.assert_not_called()
+
+    def test_batches_commit_separately(self, store):
+        _, conn, cursor = store
+        reembed.reembed_pgvector("s1", batch_size=2, dry_run=False)
+        # 3 rows at batch 2 is two write transactions.
+        assert cursor.executemany.call_count == 2
+        assert conn.commit.call_count == 2
+
+    def test_failed_batch_rolls_back_and_raises(self, store):
+        fake_store, conn, cursor = store
+        cursor.executemany.side_effect = RuntimeError("write failed")
+        with pytest.raises(RuntimeError):
+            reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
+        conn.rollback.assert_called_once()
+
+    def test_connection_is_returned_even_on_failure(self, store):
+        fake_store, _, cursor = store
+        cursor.executemany.side_effect = RuntimeError("boom")
+        with pytest.raises(RuntimeError):
+            reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
+        fake_store.close.assert_called_once()
+
+    def test_null_text_does_not_crash_the_embed_call(self, store):
+        fake_store, _, cursor = store
+        cursor.fetchall.return_value = [(1, None), (2, "beta")]
+        seen, written = reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
+        assert (seen, written) == (2, 2)
+        assert fake_store._embedding.embed_documents.call_args.args[0] == ["", "beta"]
+
+    def test_empty_source_is_a_no_op(self, store):
+        fake_store, _, cursor = store
+        cursor.fetchall.return_value = []
+        assert reembed.reembed_pgvector("s1", batch_size=64, dry_run=False) == (0, 0)
+        fake_store._embedding.embed_documents.assert_not_called()
+
+    def test_source_discovery_returns_sorted_ids(self, store):
+        _, _, cursor = store
+        cursor.fetchall.return_value = [("b",), ("a",)]
+        assert reembed.list_source_ids("pgvector") == ["b", "a"]
+
+
+class TestFaissSourceDiscovery:
+    def test_source_ids_come_from_index_directories(self):
+        storage = MagicMock()
+        storage.list_files.return_value = [
+            "indexes/src-a/index.faiss",
+            "indexes/src-a/index.pkl",
+            "indexes/src-b/index.faiss",
+        ]
+        with patch(
+            "application.storage.storage_creator.StorageCreator.get_storage",
+            return_value=storage,
+        ):
+            assert reembed.list_source_ids("faiss") == ["src-a", "src-b"]
+
+    def test_storage_failure_is_reported_as_a_usable_error(self):
+        storage = MagicMock()
+        storage.list_files.side_effect = OSError("permission denied")
+        with patch(
+            "application.storage.storage_creator.StorageCreator.get_storage",
+            return_value=storage,
+        ):
+            with pytest.raises(reembed.ReembedError, match="permission denied"):
+                reembed.list_source_ids("faiss")
+
+    def test_unsupported_store_error_names_the_alternatives(self):
+        with patch.object(reembed.settings, "VECTOR_STORE", "milvus", create=True):
+            assert reembed.main([]) == 2

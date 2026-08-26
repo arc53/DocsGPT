@@ -26,6 +26,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from psycopg import sql
+
 from application.core.settings import settings
 from application.vectorstore.model_registry import resolve
 from application.vectorstore.vector_creator import VectorCreator
@@ -84,9 +86,15 @@ def _pgvector_source_ids() -> List[str]:
     conn = store._get_connection()
     cursor = conn.cursor()
     try:
+        # Table and column names cannot be bound as parameters, so they go
+        # through ``sql.Identifier``, which quotes them. They are internal
+        # constants rather than user input, but composing SQL by f-string is
+        # the habit worth not having.
         cursor.execute(
-            f"SELECT DISTINCT source_id FROM {store._table_name} "
-            f"WHERE source_id IS NOT NULL ORDER BY source_id"
+            sql.SQL(
+                "SELECT DISTINCT source_id FROM {table} "
+                "WHERE source_id IS NOT NULL ORDER BY source_id"
+            ).format(table=sql.Identifier(store._table_name))
         )
         return [row[0] for row in cursor.fetchall()]
     finally:
@@ -135,7 +143,9 @@ def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[in
     cursor = conn.cursor()
     try:
         cursor.execute(
-            f"SELECT id, text FROM {table} WHERE source_id = %s ORDER BY id",
+            sql.SQL("SELECT id, text FROM {table} WHERE source_id = %s ORDER BY id").format(
+                table=sql.Identifier(table)
+            ),
             (source_id,),
         )
         rows = cursor.fetchall()
@@ -153,7 +163,12 @@ def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[in
             cursor = conn.cursor()
             try:
                 cursor.executemany(
-                    f"UPDATE {table} SET {vector_column} = %s::vector WHERE id = %s",
+                    sql.SQL(
+                        "UPDATE {table} SET {column} = %s::vector WHERE id = %s"
+                    ).format(
+                        table=sql.Identifier(table),
+                        column=sql.Identifier(vector_column),
+                    ),
                     [
                         (str(list(vector)), row[0])
                         for vector, row in zip(vectors, batch)

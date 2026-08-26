@@ -44,11 +44,15 @@ def _dsn(info) -> str:
 
 @pytest.fixture(autouse=True)
 def _close_pools():
+    """Never leak a pool into another test; the DSN dies with the test DB."""
     yield
     for dsn, pool in list(pgvector_module._POOLS.items()):
         try:
             pool.close()
         except Exception:
+            # Teardown only: the ephemeral cluster may already be gone, and a
+            # failure to close a pool for a dead DSN must not fail the test
+            # that just passed. Dropping the entry below is what matters.
             pass
         pgvector_module._POOLS.pop(dsn, None)
 
