@@ -105,9 +105,30 @@ class TestInputLimitResolution:
         from application.vectorstore import base
 
         monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
+        monkeypatch.setattr(base, "_embeddings_name_is_explicit", lambda: True)
         assert self._remote("granite-311m")._resolve_input_limit() == 32768
         # mpnet genuinely stops at 384; sending more is paid for and discarded.
         assert self._remote("all-mpnet-base-v2")._resolve_input_limit() == 384
+
+    def test_default_model_name_lends_the_server_no_ceiling(self, monkeypatch):
+        """An unset EMBEDDINGS_NAME describes nothing about the remote server.
+
+        The name is only forwarded as the ``model`` field. Letting the
+        settings default contribute mpnet's 384-token window would clip every
+        chunk on a server that may well serve a 32k-context model.
+        """
+        from application.vectorstore import base
+
+        monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
+        monkeypatch.setattr(base, "_embeddings_name_is_explicit", lambda: False)
+        assert self._remote("all-mpnet-base-v2")._resolve_input_limit() is None
+
+    def test_explicit_setting_still_wins_over_an_unset_name(self, monkeypatch):
+        from application.vectorstore import base
+
+        monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", 512)
+        monkeypatch.setattr(base, "_embeddings_name_is_explicit", lambda: False)
+        assert self._remote("all-mpnet-base-v2")._resolve_input_limit() == 512
 
     def test_unknown_model_stays_unlimited(self, monkeypatch):
         from application.vectorstore import base
@@ -119,6 +140,7 @@ class TestInputLimitResolution:
         from application.vectorstore import base
 
         monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", 0)
+        monkeypatch.setattr(base, "_embeddings_name_is_explicit", lambda: True)
         assert self._remote("granite-97m")._resolve_input_limit() == 32768
 
     def test_dimension_is_taken_from_the_registry(self):

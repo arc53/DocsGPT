@@ -165,3 +165,54 @@ class TestLengthSortedBatching:
             wrapper, _ = self._wrapper(fake_fastembed, 2)
             out = wrapper.embed_documents(["aa", "b", "aa", "ccc"])
         assert out == [[2.0], [1.0], [2.0], [3.0]]
+
+
+class TestTokenizerPadding:
+    """A fixed padding width in ``tokenizer.json`` makes mixed batches ragged.
+
+    FastEmbed calls ``enable_padding`` only when the tokenizer declares none,
+    so mpnet's fixed ``length: 128`` survives loading. Any batch mixing an
+    input longer than 128 tokens with a shorter one then produces rows of
+    different widths and ONNX rejects the tensor.
+    """
+
+    def _tokenizer(self, padding):
+        tokenizer = MagicMock()
+        tokenizer.padding = padding
+        return tokenizer
+
+    def test_fixed_width_padding_is_reset_to_batch_longest(self, fake_fastembed):
+        _, instance = fake_fastembed
+        tokenizer = self._tokenizer(
+            {
+                "length": 128,
+                "pad_id": 1,
+                "pad_token": "<pad>",
+                "pad_type_id": 0,
+                "direction": "right",
+                "pad_to_multiple_of": None,
+            }
+        )
+        instance.model.tokenizer = tokenizer
+
+        EmbeddingsWrapper(MPNET.name)
+
+        kwargs = tokenizer.enable_padding.call_args.kwargs
+        assert kwargs["length"] is None, "padding must follow the longest input"
+        # The model's own pad token must survive the reset.
+        assert kwargs["pad_id"] == 1
+        assert kwargs["pad_token"] == "<pad>"
+
+    def test_dynamic_padding_is_left_alone(self, fake_fastembed):
+        _, instance = fake_fastembed
+        tokenizer = self._tokenizer({"length": None, "pad_id": 0, "pad_token": "<pad>"})
+        instance.model.tokenizer = tokenizer
+
+        EmbeddingsWrapper(GRANITE_97M.name)
+
+        tokenizer.enable_padding.assert_not_called()
+
+    def test_tokenizer_that_cannot_be_reached_is_not_fatal(self, fake_fastembed):
+        _, instance = fake_fastembed
+        instance.model = None
+        EmbeddingsWrapper(GRANITE_97M.name)

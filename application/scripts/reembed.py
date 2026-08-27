@@ -202,7 +202,7 @@ def reembed_faiss(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, 
         ``(chunks_seen, chunks_written)``.
     """
     store = VectorCreator.create_vectorstore(
-        "faiss", source_id=source_id, embeddings_key="embeddings"
+        "faiss", source_id=source_id, embeddings_key=settings.EMBEDDINGS_KEY
     )
     chunks: List[Dict[str, Any]] = store.get_chunks() or []
     if dry_run or not chunks:
@@ -217,7 +217,10 @@ def reembed_faiss(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, 
     # index and touches nothing on disk. The existing index is only replaced by
     # ``save_local`` below, so a failure while embedding leaves it intact.
     rebuilt = VectorCreator.create_vectorstore(
-        "faiss", source_id=source_id, embeddings_key="embeddings", docs_init=docs
+        "faiss",
+        source_id=source_id,
+        embeddings_key=settings.EMBEDDINGS_KEY,
+        docs_init=docs,
     )
     rebuilt.save_local()
     return len(chunks), len(docs)

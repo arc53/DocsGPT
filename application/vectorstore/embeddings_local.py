@@ -94,6 +94,27 @@ def _spec_for(model_name: str) -> EmbeddingModel:
     )
 
 
+def _pad_to_longest_in_batch(model: Any) -> None:
+    """Undo a fixed padding width baked into a model's ``tokenizer.json``."""
+    # FastEmbed enables padding only when the tokenizer declares none, so a
+    # fixed ``length`` survives loading. Shorter inputs are then padded to that
+    # width while longer ones keep their own, the batch is ragged, and the ONNX
+    # tensor build fails. mpnet ships ``length: 128``; granite does not.
+    # Mean pooling masks pad tokens, so the vectors are unaffected.
+    tokenizer = getattr(getattr(model, "model", None), "tokenizer", None)
+    padding = getattr(tokenizer, "padding", None)
+    if not isinstance(padding, dict) or padding.get("length") is None:
+        return
+    tokenizer.enable_padding(
+        direction=padding.get("direction", "right"),
+        pad_id=padding.get("pad_id", 0),
+        pad_type_id=padding.get("pad_type_id", 0),
+        pad_token=padding.get("pad_token", "<pad>"),
+        length=None,
+        pad_to_multiple_of=padding.get("pad_to_multiple_of"),
+    )
+
+
 class EmbeddingsWrapper:
     """Runs an embedding model locally through FastEmbed.
 
@@ -131,6 +152,7 @@ class EmbeddingsWrapper:
                 f"{exc}. Known models: {', '.join(known_names())}."
             ) from exc
 
+        _pad_to_longest_in_batch(self.model)
         self.dimension = self.spec.dimension or self._probe_dimension()
         logger.info("Embeddings model ready (dimension=%d)", self.dimension)
 

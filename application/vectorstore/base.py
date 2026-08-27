@@ -13,6 +13,11 @@ from application.vectorstore.model_registry import (
 )
 
 
+def _embeddings_name_is_explicit() -> bool:
+    """True when ``EMBEDDINGS_NAME`` was configured rather than defaulted."""
+    return "EMBEDDINGS_NAME" in getattr(settings, "model_fields_set", set())
+
+
 class RemoteEmbeddings:
     """
     Wrapper for remote embeddings API (OpenAI-compatible).
@@ -47,10 +52,18 @@ class RemoteEmbeddings:
         model contributes its own context window, so a request that the server
         would reject -- or silently truncate -- is clipped here instead of
         being sent and paid for.
+
+        That fallback needs the name to mean something. For a remote server it
+        is only a label forwarded as the ``model`` field, so the settings
+        default must not lend the server mpnet's 384-token window: a name
+        nobody chose describes nothing, and clipping on it would silently
+        discard most of every chunk.
         """
         configured = settings.EMBEDDINGS_MAX_INPUT_TOKENS
         if configured and configured > 0:
             return configured
+        if not _embeddings_name_is_explicit():
+            return None
         model_limit = max_input_tokens_for(self.model_name)
         return model_limit if model_limit and model_limit > 0 else None
 

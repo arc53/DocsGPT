@@ -99,6 +99,14 @@ class TestFaissRebuild:
         assert [d.page_content for d in docs] == ["alpha", "beta"]
         assert [d.metadata for d in docs] == [{"i": 0}, {"i": 1}]
 
+    def test_embeddings_key_comes_from_settings(self, stores):
+        """A placeholder here is sent as the server's bearer token."""
+        _, _, factory = stores
+        with patch.object(reembed.settings, "EMBEDDINGS_KEY", "sk-real", create=True):
+            reembed.reembed_faiss("s1", batch_size=8, dry_run=False)
+        keys = [call.kwargs.get("embeddings_key") for call in factory.call_args_list]
+        assert keys == ["sk-real", "sk-real"]
+
     def test_existing_index_is_not_deleted(self, stores):
         """The rebuild must not destroy the old index before the new one exists."""
         existing, rebuilt, _ = stores
