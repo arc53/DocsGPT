@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     # processes beat one many-threaded process on the same cores.
     EMBEDDINGS_THREADS: Optional[int] = None
     EMBEDDINGS_CACHE_DIR: Optional[str] = None  # where FastEmbed caches model artifacts
+    # How a local model turns token vectors into one vector, and whether the
+    # result is L2-normalised. Both are normally read from the model's own
+    # repository; set these only for a repository that declares neither, or to
+    # override what it declares. "cls" or "mean".
+    EMBEDDINGS_POOLING: Optional[str] = None
+    EMBEDDINGS_NORMALIZE: Optional[bool] = None
     GITHUB_INGEST_MAX_FILE_BYTES: int = 1048576  # skip repo blobs larger than this (0 = no cap)
     GITHUB_INGEST_MAX_WORKERS: int = 8  # parallel file fetches per GitHub repo ingest
     # Optional directory of operator-supplied model YAMLs, loaded after the

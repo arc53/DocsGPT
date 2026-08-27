@@ -50,6 +50,27 @@ The script processes sources independently: one failing source is reported and s
   Running [GraphRAG](/Sources/GraphRAG)? The script also rewrites `graph_nodes.name_embedding`, which seeds every graph traversal. Those vectors are written once at extraction time and share the chunk vectors' width, so leaving them in the old model's space degrades graph retrieval just as silently as the chunk vectors would — and needs no LLM re-extraction to fix.
 </Callout>
 
+### Custom local models
+
+A local model now runs through ONNX Runtime, so its repository must ship an ONNX
+export (`onnx/model.onnx`) or be one of FastEmbed's built-in models. Repositories
+with PyTorch weights only no longer load; `hkunlp/instructor-large`, previously
+supported by name, is one of them. Serve such a model over `EMBEDDINGS_BASE_URL`
+instead, or switch to a model with an export.
+
+How to run the model — pooling, and whether outputs are L2-normalised — is read
+from the repository's own `1_Pooling/config.json` and `modules.json`. Two cases
+need attention:
+
+- **Models with a Dense projection layer** (`sentence-transformers/LaBSE`,
+  `distiluse-base-multilingual-cased-v1`) are now **refused at startup**.
+  FastEmbed cannot apply the projection, so it would have produced vectors of the
+  wrong width in a different space. If you were running one, its stored vectors
+  were already wrong; move it to `EMBEDDINGS_BASE_URL` or pick another model.
+- **Repositories that declare nothing** fall back to mean pooling with
+  normalisation and log a warning. Pin the real values with `EMBEDDINGS_POOLING`
+  (`cls` or `mean`) and `EMBEDDINGS_NORMALIZE`.
+
 <Callout type="info">
   Staying on `all-mpnet-base-v2` is a supported choice — it remains in the model registry and in `setup.sh`. You only need this section if you want to move to granite.
 </Callout>

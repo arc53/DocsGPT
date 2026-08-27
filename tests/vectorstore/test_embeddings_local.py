@@ -18,6 +18,19 @@ def _clear_registration():
     embeddings_local._registered.clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_hub_reads():
+    """Keep unit tests off the network.
+
+    ``_spec_for`` now asks a repository how it pools; without this every test
+    naming an unregistered model would reach the Hugging Face hub. ``None`` is
+    the "declares nothing" answer, which is the behaviour these tests were
+    written against. Tests that exercise the metadata patch it themselves.
+    """
+    with patch.object(embeddings_local, "_read_repo_json", return_value=None):
+        yield
+
+
 @pytest.fixture
 def fake_fastembed():
     """Patch FastEmbed so no model is downloaded or run."""
@@ -263,3 +276,118 @@ class TestTokenizerPadding:
         _, instance = fake_fastembed
         instance.model = None
         EmbeddingsWrapper(GRANITE_97M.name)
+
+
+def _repo_json(pooling_file, modules_file):
+    """Stub ``_read_repo_json`` returning canned repository metadata."""
+
+    def read(repo, filename):
+        return pooling_file if filename == embeddings_local._POOLING_CONFIG else modules_file
+
+    return read
+
+
+class TestPoolingReadFromTheRepository:
+    """A model's pooling is a fact its repository states, not a default.
+
+    Assuming mean pooling for a CLS model returns vectors at cosine ~0.95 to
+    the correct ones: no error, no dimension mismatch, just quietly worse
+    retrieval. These cover the shapes seen on the hub.
+    """
+
+    def test_cls_pooling_is_read_rather_than_assumed(self):
+        with patch.object(
+            embeddings_local,
+            "_read_repo_json",
+            _repo_json(
+                {"pooling_mode_cls_token": True, "word_embedding_dimension": 384},
+                [{"type": "sentence_transformers.models.Transformer"},
+                 {"type": "sentence_transformers.models.Pooling"},
+                 {"type": "sentence_transformers.models.Normalize"}],
+            ),
+        ):
+            spec = embeddings_local._spec_for("BAAI/bge-small-en-v1.5")
+        assert spec.pooling == "cls"
+        assert spec.normalize is True
+        # Declared width, so no probe run is needed to learn it.
+        assert spec.dimension == 384
+
+    def test_missing_normalize_module_means_unnormalised(self):
+        """multi-qa-mpnet-base-dot-v1 is trained on unnormalised vectors."""
+        with patch.object(
+            embeddings_local,
+            "_read_repo_json",
+            _repo_json(
+                {"pooling_mode_cls_token": True, "word_embedding_dimension": 768},
+                [{"type": "sentence_transformers.models.Transformer"},
+                 {"type": "sentence_transformers.models.Pooling"}],
+            ),
+        ):
+            spec = embeddings_local._spec_for("sentence-transformers/multi-qa-mpnet-base-dot-v1")
+        assert spec.pooling == "cls"
+        assert spec.normalize is False
+
+    def test_dense_projection_head_is_refused(self):
+        """FastEmbed would skip the projection and emit the wrong vectors."""
+        with patch.object(
+            embeddings_local,
+            "_read_repo_json",
+            _repo_json(
+                {"pooling_mode_cls_token": True, "word_embedding_dimension": 768},
+                [{"type": "sentence_transformers.models.Transformer"},
+                 {"type": "sentence_transformers.models.Pooling"},
+                 {"type": "sentence_transformers.models.Dense"},
+                 {"type": "sentence_transformers.models.Normalize"}],
+            ),
+        ):
+            with pytest.raises(RuntimeError) as excinfo:
+                embeddings_local._spec_for("sentence-transformers/LaBSE")
+        message = str(excinfo.value)
+        assert "LaBSE" in message
+        assert "Dense" in message
+
+    def test_unsupported_pooling_mode_falls_back_rather_than_lying(self):
+        with patch.object(
+            embeddings_local,
+            "_read_repo_json",
+            _repo_json({"pooling_mode_max_tokens": True}, []),
+        ):
+            spec = embeddings_local._spec_for("some-org/max-pooled")
+        assert spec.pooling == embeddings_local._FALLBACK_POOLING
+        assert spec.dimension == 0
+
+    def test_repository_without_metadata_keeps_the_assumption(self):
+        spec = embeddings_local._spec_for("some-org/plain-onnx-export")
+        assert spec.pooling == embeddings_local._FALLBACK_POOLING
+        assert spec.normalize is True
+        assert spec.dimension == 0
+
+    def test_registry_wins_over_the_repository(self):
+        """A described model is never re-read; the registry is the answer."""
+        read = MagicMock()
+        with patch.object(embeddings_local, "_read_repo_json", read):
+            spec = embeddings_local._spec_for(MPNET.name)
+        assert spec is MPNET
+        read.assert_not_called()
+
+
+class TestPoolingOverrides:
+    def test_settings_override_what_the_repository_declares(self):
+        with patch.object(
+            embeddings_local,
+            "_read_repo_json",
+            _repo_json(
+                {"pooling_mode_mean_tokens": True, "word_embedding_dimension": 768},
+                [{"type": "sentence_transformers.models.Normalize"}],
+            ),
+        ):
+            with patch.object(embeddings_local.settings, "EMBEDDINGS_POOLING", "cls"), \
+                 patch.object(embeddings_local.settings, "EMBEDDINGS_NORMALIZE", False):
+                spec = embeddings_local._spec_for("some-org/mislabelled")
+        assert spec.pooling == "cls"
+        assert spec.normalize is False
+
+    def test_a_meaningless_override_is_ignored(self):
+        with patch.object(embeddings_local.settings, "EMBEDDINGS_POOLING", "banana"):
+            spec = embeddings_local._spec_for("some-org/plain-onnx-export")
+        assert spec.pooling == embeddings_local._FALLBACK_POOLING

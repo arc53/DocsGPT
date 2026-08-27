@@ -1,5 +1,7 @@
 """The registry is the single source of truth for embedding-model facts."""
 
+import os
+
 import pytest
 
 from application.vectorstore import model_registry as reg
@@ -86,3 +88,30 @@ class TestHelpers:
             for key in (model.name, *model.aliases):
                 assert key.lower() not in seen, f"{key} claimed twice"
                 seen[key.lower()] = model
+
+
+class TestRegistryMatchesTheHub:
+    """Every registry entry restates facts the model's repository already holds.
+
+    Restating them is what makes an offline install work, but a restatement can
+    drift from its source and nothing else would notice: wrong pooling is not a
+    crash, only worse retrieval. Opt in with ``DOCSGPT_HUB_TESTS=1``; needs
+    network.
+    """
+
+    @pytest.mark.skipif(
+        os.environ.get("DOCSGPT_HUB_TESTS") != "1",
+        reason="set DOCSGPT_HUB_TESTS=1 to check the registry against the hub",
+    )
+    @pytest.mark.parametrize(
+        "model", [m for m in reg.MODELS if m.provider == "fastembed"]
+    )
+    def test_entry_matches_repository_metadata(self, model):
+        from application.vectorstore.embeddings_local import _describe_from_repo
+
+        described = _describe_from_repo(model.repo)
+        assert described is not None, f"{model.repo} declares no pooling metadata"
+        assert described.pooling == model.pooling
+        assert described.normalize == model.normalize
+        if described.dimension:
+            assert described.dimension == model.dimension
