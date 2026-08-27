@@ -10,6 +10,8 @@ import importlib.util
 import logging
 import os
 import re
+import shutil
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -69,6 +71,112 @@ def _apply_inference_settings() -> None:
     inference = getattr(docling_settings, "inference", None)
     if inference is not None and hasattr(inference, "compile_torch_models"):
         inference.compile_torch_models = settings.DOCLING_COMPILE_TORCH_MODELS
+
+
+_VALID_OCR_ENGINES = ("tesseract", "auto", "ocrmac", "rapidocr", "deepseek")
+
+
+def _resolve_ocr_engine(requested: Optional[str]) -> str:
+    """Resolve the OCR engine to build, degrading to ``auto`` when unavailable.
+
+    ``auto`` is docling's own selection (ocrmac on macOS, rapidocr on a
+    typical Linux server). The degradation is deliberate: OCR is switched on
+    by deployments that expect scans to work, so a missing engine must warn
+    and OCR with what exists rather than fail every parse.
+
+    Args:
+        requested: Engine name, or None to read ``settings.OCR_ENGINE``.
+
+    Returns:
+        One of ``_VALID_OCR_ENGINES``, guaranteed buildable here.
+    """
+    from application.core.settings import settings
+    from application.parser.file.base_parser import module_available
+
+    engine = str(requested or settings.OCR_ENGINE or "auto").strip().lower()
+    if engine not in _VALID_OCR_ENGINES:
+        logger.warning(
+            f"Unknown OCR_ENGINE {engine!r}; using docling auto-selection"
+        )
+        return "auto"
+    if engine == "tesseract" and shutil.which("tesseract") is None:
+        logger.warning(
+            "OCR_ENGINE=tesseract but no tesseract binary is on PATH (install "
+            "tesseract-ocr plus language packs, or build the Docker image with "
+            "INSTALL_DOCLING=true); using docling auto-selection"
+        )
+        return "auto"
+    if engine == "ocrmac" and (
+        sys.platform != "darwin" or not module_available("ocrmac")
+    ):
+        logger.warning(
+            "OCR_ENGINE=ocrmac needs macOS with the ocrmac package; "
+            "using docling auto-selection"
+        )
+        return "auto"
+    if engine == "rapidocr" and not module_available("rapidocr"):
+        logger.warning(
+            "OCR_ENGINE=rapidocr but rapidocr is not installed; "
+            "using docling auto-selection"
+        )
+        return "auto"
+    return engine
+
+
+def _build_ocr_options(
+    engine: str, languages: Optional[List[str]], force_full_page_ocr: bool
+):
+    """docling OCR options for a resolved classic engine.
+
+    Returns None for ``auto`` (docling's default pipeline options already run
+    auto-selection) and on any build failure — the parse then proceeds on the
+    default engine rather than failing; the caller re-applies
+    ``force_full_page_ocr`` onto whatever options end up active.
+
+    Args:
+        engine: A ``_resolve_ocr_engine`` result other than ``deepseek``.
+        languages: Engine-specific language list; None uses the engine's
+            default (tesseract reads ``settings.OCR_LANGS``).
+        force_full_page_ocr: OCR whole pages instead of only bitmap regions.
+    """
+    if engine == "auto":
+        return None
+    from application.core.settings import settings
+
+    try:
+        if engine == "tesseract":
+            from docling.datamodel.pipeline_options import TesseractCliOcrOptions
+
+            langs = (
+                languages
+                or [lang.strip() for lang in settings.OCR_LANGS.split("+") if lang.strip()]
+                or ["eng"]
+            )
+            return TesseractCliOcrOptions(
+                lang=langs, force_full_page_ocr=force_full_page_ocr
+            )
+        if engine == "rapidocr":
+            from docling.datamodel.pipeline_options import RapidOcrOptions
+
+            return RapidOcrOptions(
+                lang=languages or ["english"],
+                force_full_page_ocr=force_full_page_ocr,
+            )
+        if engine == "ocrmac":
+            from docling.datamodel.pipeline_options import OcrMacOptions
+
+            if languages:
+                return OcrMacOptions(
+                    lang=languages, force_full_page_ocr=force_full_page_ocr
+                )
+            return OcrMacOptions(force_full_page_ocr=force_full_page_ocr)
+    except ImportError as e:
+        logger.warning(f"Failed to build {engine} OCR options: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error building {engine} OCR options: {e}")
+        return None
+    return None
 
 
 def _tabular_content_size(file: Path) -> int:
@@ -303,7 +411,7 @@ class DoclingParser(BaseParser):
     - Advanced PDF layout analysis
     - Table structure recognition
     - Reading order detection
-    - OCR for scanned documents (supports RapidOCR)
+    - OCR for scanned documents (engine chosen by ``OCR_ENGINE``)
     - Unified DoclingDocument format
     - Export to Markdown
 
@@ -317,7 +425,7 @@ class DoclingParser(BaseParser):
         ocr_enabled: bool = True,
         table_structure: bool = True,
         export_format: str = "markdown",
-        use_rapidocr: bool = True,
+        ocr_engine: Optional[str] = None,
         ocr_languages: Optional[List[str]] = None,
         force_full_page_ocr: bool = False,
     ):
@@ -327,29 +435,33 @@ class DoclingParser(BaseParser):
             ocr_enabled: Enable OCR for bitmap/image regions in documents
             table_structure: Enable table structure recognition
             export_format: Output format ('markdown', 'text', 'html')
-            use_rapidocr: Use RapidOCR engine (default True, works well in Docker)
-            ocr_languages: List of OCR languages (default: ['english'])
+            ocr_engine: OCR engine when OCR is enabled — one of
+                ``tesseract | auto | ocrmac | rapidocr | deepseek``. None
+                reads ``settings.OCR_ENGINE`` at converter build time; an
+                unavailable engine degrades to docling's auto-selection with
+                a warning.
+            ocr_languages: Engine-specific language list; None keeps the
+                engine's own default (tesseract reads ``settings.OCR_LANGS``).
             force_full_page_ocr: Force OCR on entire page (False = smart hybrid OCR)
         """
         super().__init__()
         self.ocr_enabled = ocr_enabled
         self.table_structure = table_structure
         self.export_format = export_format
-        self.use_rapidocr = use_rapidocr
-        self.ocr_languages = ocr_languages or ["english"]
+        self.ocr_engine = ocr_engine
+        self.ocr_languages = ocr_languages
         self.force_full_page_ocr = force_full_page_ocr
         self._converter = None
 
     def _create_converter(self):
-        """Create a docling converter with hybrid OCR configuration.
+        """Create a docling converter for the configured OCR engine.
 
-        Uses smart OCR approach:
-        - When ocr_enabled=True and force_full_page_ocr=False (default):
-          Layout model detects text vs bitmap regions, OCR only runs on bitmaps
-        - When ocr_enabled=True and force_full_page_ocr=True:
-          OCR runs on entire page (for scanned documents/images)
-        - When ocr_enabled=False:
-          No OCR, only native text extraction
+        - ``ocr_enabled=False``: no OCR, native text extraction only.
+        - Classic engines (tesseract / auto / ocrmac / rapidocr): the standard
+          PDF pipeline (layout + TableFormer) with that engine's OCR options.
+          ``force_full_page_ocr=False`` (default) OCRs only the bitmap regions
+          the layout model finds; True routes whole pages through OCR.
+        - ``deepseek``: the VLM pipeline instead (``_create_vlm_converter``).
 
         Returns:
             DocumentConverter instance
@@ -364,6 +476,10 @@ class DoclingParser(BaseParser):
 
         _apply_inference_settings()
 
+        engine = _resolve_ocr_engine(self.ocr_engine) if self.ocr_enabled else None
+        if engine == "deepseek":
+            return self._create_vlm_converter()
+
         pipeline_options = PdfPipelineOptions(
             do_ocr=self.ocr_enabled,
             do_table_structure=self.table_structure,
@@ -371,13 +487,15 @@ class DoclingParser(BaseParser):
         _apply_pipeline_caps(pipeline_options)
 
         if self.ocr_enabled:
-            ocr_options = self._get_ocr_options()
+            ocr_options = _build_ocr_options(
+                engine, self.ocr_languages, self.force_full_page_ocr
+            )
             if ocr_options is not None:
                 pipeline_options.ocr_options = ocr_options
             # Docling's *default* OCR options carry their own flag, so without
-            # this the setting was silently dropped whenever `_get_ocr_options`
-            # returned None (use_rapidocr=False) — including the dropout retry,
-            # whose whole point is forcing full-page OCR.
+            # this the setting was silently dropped whenever no explicit
+            # options were built (engine=auto, or a build failure) — including
+            # the dropout retry, whose whole point is forcing full-page OCR.
             active_ocr_options = getattr(pipeline_options, "ocr_options", None)
             if hasattr(active_ocr_options, "force_full_page_ocr"):
                 active_ocr_options.force_full_page_ocr = self.force_full_page_ocr
@@ -393,12 +511,55 @@ class DoclingParser(BaseParser):
             }
         )
 
+    def _create_vlm_converter(self):
+        """DeepSeek-OCR converter via docling's VLM pipeline.
+
+        Each page goes to an OpenAI-compatible endpoint (Ollama or vLLM;
+        ``OCR_DEEPSEEK_URL`` / ``OCR_DEEPSEEK_MODEL``) and the grounded output
+        is parsed back into a DoclingDocument. This replaces the *entire*
+        classic pipeline — no layout/TableFormer/OCR models load in the worker
+        (~370 MB RSS vs 1.0-1.6 GB measured), the compute lives in the model
+        server. Bench trade-offs (2026-08): best table/CJK/degraded-scan
+        quality of every engine tried, ~10-20 s/page on modest hardware, and
+        occasional silent drops of page-level elements (titles).
+        """
+        from docling.datamodel import vlm_model_specs
+        from docling.datamodel.pipeline_options import VlmPipelineOptions
+        from docling.document_converter import (
+            DocumentConverter,
+            ImageFormatOption,
+            InputFormat,
+            PdfFormatOption,
+        )
+        from docling.pipeline.vlm_pipeline import VlmPipeline
+
+        from application.core.settings import settings
+
+        vlm_options = vlm_model_specs.DEEPSEEKOCR_OLLAMA.model_copy(deep=True)
+        vlm_options.url = settings.OCR_DEEPSEEK_URL
+        vlm_options.params["model"] = settings.OCR_DEEPSEEK_MODEL
+        pipeline_options = VlmPipelineOptions(
+            vlm_options=vlm_options, enable_remote_services=True
+        )
+        return DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_cls=VlmPipeline, pipeline_options=pipeline_options
+                ),
+                InputFormat.IMAGE: ImageFormatOption(
+                    pipeline_cls=VlmPipeline, pipeline_options=pipeline_options
+                ),
+            }
+        )
+
     def _init_parser(self) -> Dict:
         """Initialize the docling converter with hybrid OCR."""
+        from application.core.settings import settings
+
         logger.info("Initializing DoclingParser...")
         logger.info(f"  ocr_enabled={self.ocr_enabled}")
         logger.info(f"  force_full_page_ocr={self.force_full_page_ocr}")
-        logger.info(f"  use_rapidocr={self.use_rapidocr}")
+        logger.info(f"  ocr_engine={self.ocr_engine or settings.OCR_ENGINE}")
 
         if importlib.util.find_spec("docling.document_converter") is None:
             raise ImportError(
@@ -414,33 +575,10 @@ class DoclingParser(BaseParser):
             "ocr_enabled": self.ocr_enabled,
             "table_structure": self.table_structure,
             "export_format": self.export_format,
-            "use_rapidocr": self.use_rapidocr,
+            "ocr_engine": self.ocr_engine,
             "ocr_languages": self.ocr_languages,
             "force_full_page_ocr": self.force_full_page_ocr,
         }
-
-    def _get_ocr_options(self):
-        """Get OCR options based on configuration.
-
-        Returns RapidOcrOptions if use_rapidocr is True and available,
-        otherwise returns None to use docling defaults.
-        """
-        if not self.use_rapidocr:
-            return None
-
-        try:
-            from docling.datamodel.pipeline_options import RapidOcrOptions
-
-            return RapidOcrOptions(
-                lang=self.ocr_languages,
-                force_full_page_ocr=self.force_full_page_ocr,
-            )
-        except ImportError as e:
-            logger.warning(f"Failed to import RapidOcrOptions: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Error creating RapidOcrOptions: {e}")
-            return None
 
     def _export_content(self, document) -> str:
         """Export document content in the configured format.
@@ -651,7 +789,7 @@ class DoclingParser(BaseParser):
 
 
 class DoclingPDFParser(DoclingParser):
-    """Docling-based PDF parser with advanced features and RapidOCR support.
+    """Docling-based PDF parser with advanced features and configurable OCR.
 
     Uses hybrid OCR approach by default:
     - Text regions: Direct PDF text extraction (fast)
@@ -664,7 +802,7 @@ class DoclingPDFParser(DoclingParser):
         self,
         ocr_enabled: bool = True,
         table_structure: bool = True,
-        use_rapidocr: bool = True,
+        ocr_engine: Optional[str] = None,
         ocr_languages: Optional[List[str]] = None,
         force_full_page_ocr: bool = False,
     ):
@@ -672,7 +810,7 @@ class DoclingPDFParser(DoclingParser):
             ocr_enabled=ocr_enabled,
             table_structure=table_structure,
             export_format="markdown",
-            use_rapidocr=use_rapidocr,
+            ocr_engine=ocr_engine,
             ocr_languages=ocr_languages,
             force_full_page_ocr=force_full_page_ocr,
         )
@@ -723,7 +861,7 @@ class DoclingHTMLParser(DoclingParser):
 
 
 class DoclingImageParser(DoclingParser):
-    """Docling-based image parser with OCR and RapidOCR support.
+    """Docling-based image parser with configurable OCR.
 
     For images, force_full_page_ocr=True is used since images are entirely
     visual and require full OCR to extract any text.
@@ -732,14 +870,14 @@ class DoclingImageParser(DoclingParser):
     def __init__(
         self,
         ocr_enabled: bool = True,
-        use_rapidocr: bool = True,
+        ocr_engine: Optional[str] = None,
         ocr_languages: Optional[List[str]] = None,
         force_full_page_ocr: bool = True,
     ):
         super().__init__(
             ocr_enabled=ocr_enabled,
             export_format="markdown",
-            use_rapidocr=use_rapidocr,
+            ocr_engine=ocr_engine,
             ocr_languages=ocr_languages,
             force_full_page_ocr=force_full_page_ocr,
         )

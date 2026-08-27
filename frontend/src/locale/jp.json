@@ -765,7 +765,7 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
-      "info": "25MBまでの.pdf、.txt、.rst、.csv、.xlsx、.docx、.md、.html、.epub、.json、.pptx、.zipファイルをアップロードしてください",
+      "info": "25MBまでの.pdf、.txt、.rst、.csv、.xlsx、.xls、.ods、.docx、.doc、.odt、.rtf、.md、.html、.epub、.json、.pptx、.ppt、.odp、.zipファイルをアップロードしてください",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "トレーニング",

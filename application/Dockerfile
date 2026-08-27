@@ -66,6 +66,16 @@ RUN apt-get update && \
     ln -s /usr/bin/python3.12 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
+# The recommended OCR engine (OCR_ENGINE=tesseract) shells out to the system
+# tesseract binary, so ship it alongside the optional docling engine. Extra
+# language packs are a deployment concern (apt: tesseract-ocr-<lang>).
+ARG INSTALL_DOCLING=false
+RUN if [ "$INSTALL_DOCLING" = "true" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
 # Set working directory
 WORKDIR /app
 

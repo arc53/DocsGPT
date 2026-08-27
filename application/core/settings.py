@@ -129,6 +129,40 @@ class Settings(BaseSettings):
     # and the upload cap is 100 MB, so the gate is what keeps one upload from
     # taking the ingest worker down. 0 disables it.
     MARKUP_MAX_BYTES: int = 8_000_000
+    # Trust-check anydoc's PDF output (application/parser/file/pdf_trust.py):
+    # flag composite (Type0) fonts without a ToUnicode map, and CJK-declaring
+    # PDFs whose extracted text has almost no CJK — the two classes where
+    # anydoc drops text silently. A flagged file re-parses on the docling
+    # fallback when docling is installed; otherwise the anydoc output is kept
+    # and the document gets extra_info["parse_warnings"]. ~30 ms per scanned MB.
+    PDF_TRUST_CHECK: bool = True
+    # Rewrite dot-leader / whitespace-aligned table runs in anydoc's PDF
+    # markdown into GFM tables (application/parser/file/tableize.py). Off by
+    # default: it rewrites content on a heuristic (>=3 uniform label+numbers
+    # lines) validated only on a small corpus so far.
+    ANYDOC_TABLEIZE: bool = False
+    # OCR engine used by the docling parsers when OCR is on
+    # (DOCLING_OCR_ENABLED / DOCLING_OCR_ATTACHMENTS_ENABLED). Benched 2026-08
+    # on EN/ZH/table/degraded scans (docs/Guides/ocr has the menu):
+    #   tesseract — recommended: best classic-engine accuracy (perfect EN word
+    #     recall, 0.000 bilingual CER, 100% table cells), ~35 MB, CPU-only.
+    #     Needs the system binary + language packs (the Docker image installs
+    #     them when built with INSTALL_DOCLING=true).
+    #   auto — docling's pick: ocrmac on macOS (excellent), rapidocr on Linux
+    #     (silently shreds some long text lines — avoid as a server default).
+    #   ocrmac | rapidocr — force one of those.
+    #   deepseek — DeepSeek-OCR through docling's VLM pipeline against an
+    #     Ollama/vLLM endpoint (OCR_DEEPSEEK_*). Best table/CJK quality; the
+    #     worker stays light (~370 MB, no layout models) but each page costs
+    #     seconds on the model server.
+    # An engine that is not installed degrades to "auto" with a warning
+    # instead of failing the parse.
+    OCR_ENGINE: str = "tesseract"
+    # Tesseract language packs, "+"-separated (e.g. "eng+chi_sim+deu"). Other
+    # engines keep their own defaults — their language codes differ.
+    OCR_LANGS: str = "eng"
+    OCR_DEEPSEEK_URL: str = "http://localhost:11434/v1/chat/completions"
+    OCR_DEEPSEEK_MODEL: str = "deepseek-ocr:3b"
     # Chars-per-page floor below which an OCR'd PDF/image parse is treated as a docling
     # pipeline dropout (long-running workers were observed returning zero characters for
     # every scanned page after a long scanned PDF, with no error) rather than as content.

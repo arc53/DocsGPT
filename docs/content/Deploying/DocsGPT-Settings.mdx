@@ -213,6 +213,12 @@ for the engines and flows.
 | `DOCLING_TABULAR_MAX_BYTES` | `2000000` | Docling engine: CSV/XLSX larger than this (by content) use the lightweight tabular parsers. |
 | `DOCLING_MARKUP_MAX_BYTES` | `8000000` | Docling engine: HTML/VTT larger than this are head-truncated before parsing. |
 | `MARKUP_MAX_BYTES` | `8000000` | anydoc engine: HTML/XHTML larger than this are head-truncated before the `markdownify` parser runs (its tree costs ~50x the input). `0` disables the gate. |
+| `PDF_TRUST_CHECK` | `true` | Trust-check anydoc's PDF output for the two silent-loss classes (Type0 fonts without ToUnicode, CJK-declaring PDFs with CJK-less text). Flagged files re-parse on Docling when installed, else carry `parse_warnings` metadata. |
+| `ANYDOC_TABLEIZE` | `false` | Rewrite dot-leader / whitespace-aligned table runs in anydoc's PDF markdown into GFM tables. |
+| `OCR_ENGINE` | `tesseract` | OCR engine when OCR is on: `tesseract` (recommended), `auto`, `ocrmac`, `rapidocr`, or `deepseek` (VLM endpoint). Unavailable engines degrade to `auto` with a warning. See the [OCR guide](/Guides/ocr). |
+| `OCR_LANGS` | `eng` | Tesseract language packs, `+`-separated (e.g. `eng+chi_sim+deu`). |
+| `OCR_DEEPSEEK_URL` | `http://localhost:11434/v1/chat/completions` | OpenAI-compatible endpoint for `OCR_ENGINE=deepseek` (Ollama or vLLM). |
+| `OCR_DEEPSEEK_MODEL` | `deepseek-ocr:3b` | Model name at that endpoint. |
 
 ## Speech-to-Text Settings
 

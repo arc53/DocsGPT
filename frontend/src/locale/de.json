@@ -765,7 +765,7 @@
       "start": "Chat starten",
       "name": "Name",
       "choose": "Dateien auswählen",
-      "info": "Bitte lade .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip hoch (max. 25 MB)",
+      "info": "Bitte lade .pdf, .txt, .rst, .csv, .xlsx, .xls, .ods, .docx, .doc, .odt, .rtf, .md, .html, .epub, .json, .pptx, .ppt, .odp, .zip hoch (max. 25 MB)",
       "uploadedFiles": "Hochgeladene Dateien",
       "cancel": "Abbrechen",
       "train": "Trainieren",

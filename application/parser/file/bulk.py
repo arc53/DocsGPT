@@ -49,6 +49,25 @@ def _wrap_pdf_fast_path(pdf_parser: BaseParser) -> BaseParser:
     )
 
 
+def _gained_format_entries() -> Dict[str, BaseParser]:
+    """Anydoc-only formats (legacy/macro Office, OpenDocument, RTF) for every map.
+
+    anydoc is a core dependency, so these suffixes are parseable under both
+    engines. When anydoc is somehow missing the entries are omitted, and such
+    files fall to ``SimpleDirectoryReader``'s plain-text read — the
+    pre-existing behaviour for unmapped suffixes.
+    """
+    from application.parser.file.anydoc_parser import (
+        ANYDOC_GAINED_SUFFIXES,
+        AnydocParser,
+        anydoc_available,
+    )
+
+    if not anydoc_available():
+        return {}
+    return {suffix: AnydocParser() for suffix in ANYDOC_GAINED_SUFFIXES}
+
+
 def _legacy_file_extractor(pdf_text_fast_path: bool = False) -> Dict[str, BaseParser]:
     """Parser map that needs neither docling nor anydoc.
 
@@ -79,6 +98,7 @@ def _legacy_file_extractor(pdf_text_fast_path: bool = False) -> Dict[str, BasePa
         ".jpg": ImageParser(),
         ".jpeg": ImageParser(),
         **_build_audio_parser_mapping(),
+        **_gained_format_entries(),
     }
 
 
@@ -165,6 +185,8 @@ def _docling_file_extractor(
         ".xml": DoclingXMLParser(),
         # Formats docling doesn't support - use standard parsers
         ".epub": EpubParser(),
+        # Formats only anydoc reads (legacy/macro Office, OpenDocument, RTF)
+        **_gained_format_entries(),
     }
 
 
@@ -211,7 +233,13 @@ def _anydoc_file_extractor(ocr_enabled: bool, pdf_text_fast_path: bool = False) 
     )
     extractor = dict(base)
     for suffix in ANYDOC_SUFFIXES:
-        extractor[suffix] = AnydocParser(fallback_parser=base.get(suffix))
+        fallback = base.get(suffix)
+        if isinstance(fallback, AnydocParser):
+            # A gained-format entry from the base map is already a
+            # fallback-less AnydocParser — anydoc delegating to anydoc would
+            # just repeat the same failure.
+            continue
+        extractor[suffix] = AnydocParser(fallback_parser=fallback)
     extractor[".html"] = HTMLMarkdownParser()
     extractor[".xhtml"] = HTMLMarkdownParser()
     return extractor

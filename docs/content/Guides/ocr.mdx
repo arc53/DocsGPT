@@ -66,15 +66,52 @@ docling is picked up as the fallback engine as soon as it is importable, and
 
 ## Docling OCR
 
-OCR is optional, Docling-only, and controlled by two settings:
+OCR is optional, Docling-only, and controlled by two on/off settings plus an
+engine choice:
 
 ```env
 DOCLING_OCR_ENABLED=false
 DOCLING_OCR_ATTACHMENTS_ENABLED=false
+OCR_ENGINE=tesseract
 ```
 
 - `DOCLING_OCR_ENABLED`: OCR behavior for Source Docs ingestion.
 - `DOCLING_OCR_ATTACHMENTS_ENABLED`: OCR behavior for chat attachments uploaded from the message box.
+- `OCR_ENGINE`: which engine performs the OCR when it is on (next section).
+
+Under the default anydoc engine, a scanned PDF reaches OCR through anydoc's
+own detection: anydoc refuses it ("OCR is required") and the docling fallback
+takes over. If that fallback also extracts almost nothing — OCR off, or no
+docling installed — the upload now fails with a clear message instead of
+silently indexing an empty document.
+
+## Choosing the OCR engine
+
+Benchmarked 2026-08 on English, bilingual EN/ZH, table-heavy and degraded
+scans (all engines driven through docling so layout handling is identical):
+
+| `OCR_ENGINE` | Role | Notes |
+|---|---|---|
+| `tesseract` | **recommended default** | Best classic-engine accuracy in the bench: perfect EN word recall on all docs, 0.000 CER on the bilingual page, 100% table cells, robust to mild degradation. ~35 MB of *system* packages, CPU-only. Needs the `tesseract` binary + language packs in the image — installed automatically when the Docker image is built with `INSTALL_DOCLING=true`; set languages via `OCR_LANGS` (e.g. `eng+chi_sim`). |
+| `auto` | convenience | docling picks: `ocrmac` on macOS (excellent, ~1 s/page), `rapidocr` on Linux — see below before relying on it server-side. Also the automatic fallback whenever the selected engine is not installed. |
+| `ocrmac` | macOS only | Best raw accuracy and fastest of all classic engines; irrelevant for Linux deploys. |
+| `rapidocr` | pip-only fallback | No system packages needed, perfect on tables/CJK — but it silently shreds some long text lines into garbage at every setting tried, which is content loss for RAG ingestion. Avoid as a server default until fixed upstream. |
+| `deepseek` | best quality, heavy on the *server* | DeepSeek-OCR through docling's VLM pipeline. Only engine that reconstructs totals rows as table rows; near-perfect CJK; barely affected by degradation. The ingestion worker gets *lighter* (~370 MB RSS — no layout models); the model runs in Ollama or vLLM. Costs: a GPU/Apple-Silicon endpoint, ~seconds per page, and occasional silent drops of page-level elements (titles). |
+
+For `deepseek`, point the worker at an OpenAI-compatible endpoint:
+
+```env
+OCR_ENGINE=deepseek
+OCR_DEEPSEEK_URL=http://localhost:11434/v1/chat/completions  # Ollama default
+OCR_DEEPSEEK_MODEL=deepseek-ocr:3b
+```
+
+Ollama works out of the box (`ollama pull deepseek-ocr:3b`); for real
+throughput serve `deepseek-ai/DeepSeek-OCR` with vLLM on a GPU and set the
+URL accordingly.
+
+A selected engine that is not available (no tesseract binary, no macOS for
+ocrmac) degrades to `auto` with a warning rather than failing parses.
 
 ## Processing Flow
 
@@ -104,10 +141,17 @@ Docling OCR behavior is different for PDFs vs images:
   - bitmap/image regions: OCR only where needed
 - Image parser defaults to full-page OCR (the whole image is visual content).
 
-By default, Docling parser classes use RapidOCR options (language default: `english`).
+The engine and its languages come from `OCR_ENGINE` and `OCR_LANGS` (see the
+table above). The Docker image ships only the English tesseract pack; for
+other languages install their packs in the image (e.g.
+`apt-get install tesseract-ocr-chi-sim`) and list them in `OCR_LANGS`
+(`eng+chi_sim`).
 
-<Callout type="info" emoji="ℹ️">
-Parser internals like OCR language and force-full-page OCR are currently set by code defaults, not separate `.env` settings.
+<Callout type="warning" emoji="⚠️">
+Upgrading from a RapidOCR-based deployment? RapidOCR covered English *and*
+Chinese with no configuration. The tesseract default only OCRs the languages
+in `OCR_LANGS` (`eng` out of the box), so CJK scans stop ingesting until
+their packs are installed and listed.
 </Callout>
 
 ### Model compilation

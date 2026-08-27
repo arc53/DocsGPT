@@ -27,10 +27,14 @@ from application.parser.file.anydoc_parser import (  # noqa: E402 — after impo
 )
 
 
+# Long enough to clear the scanned-PDF near-empty guard (_MIN_SCAN_FALLBACK_CHARS).
+FALLBACK_TEXT = "fallback parser text output, long enough to clear the scanned-PDF guard."
+
+
 class _RecordingFallback(BaseParser):
     """Stands in for docling / a legacy parser so delegation is observable."""
 
-    def __init__(self, result="fallback text"):
+    def __init__(self, result=FALLBACK_TEXT):
         super().__init__(parser_config={})
         self.calls = []
         self._result = result
@@ -146,7 +150,7 @@ def test_scanned_pdf_delegates_to_fallback(tmp_path):
 
     out = parser.parse_file(path)
 
-    assert out == "fallback text"
+    assert out == FALLBACK_TEXT
     assert fallback.calls == [path]
     assert parser.last_engine == "_RecordingFallback"
 
@@ -229,7 +233,7 @@ def test_typed_convert_error_delegates(tmp_path, monkeypatch):
     path = tmp_path / "x.pdf"
     path.write_bytes(b"%PDF-1.4")
 
-    assert AnydocParser(fallback_parser=fallback).parse_file(path) == "fallback text"
+    assert AnydocParser(fallback_parser=fallback).parse_file(path) == FALLBACK_TEXT
 
 
 def test_typed_convert_error_message_reaches_the_user(tmp_path, monkeypatch):
@@ -311,3 +315,222 @@ def test_init_parser_imports_for_real_not_just_find_spec(monkeypatch):
 
     with pytest.raises(ImportError, match="firecrawl-anydoc"):
         AnydocParser().init_parser()
+
+
+# --- PDF trust check + tableize wiring (PR 3) -----------------------------------
+
+from pathlib import Path as _Path
+
+FIXTURES = _Path(__file__).parent / "fixtures"
+CID_PDF = FIXTURES / "nda_en_zh_cid_font.pdf"
+
+
+# Long enough to clear the near-empty guard a trust-check re-parse must pass.
+_REROUTE_TEXT = "docling reroute text, long enough to clear the near-empty reroute guard"
+
+
+class _FakeDoclingFallback:
+    """Registered as a DoclingParser subclass so ``_is_docling_backed`` is True."""
+
+    def __new__(cls):
+        from application.parser.file.docling_parser import DoclingParser
+
+        class _Inner(DoclingParser):
+            def __init__(self):
+                self._parser_config = {}
+                self.calls = []
+                self.last_engine = None
+
+            def parse_file(self, file, errors="ignore"):
+                self.calls.append(file)
+                return _REROUTE_TEXT
+
+        return _Inner()
+
+
+def test_trust_flagged_pdf_reroutes_to_docling_fallback():
+    fallback = _FakeDoclingFallback()
+    parser = AnydocParser(fallback_parser=fallback)
+
+    out = parser.parse_file(CID_PDF)
+
+    assert out == _REROUTE_TEXT
+    assert fallback.calls == [CID_PDF]
+    assert parser.last_engine == "_Inner"
+    assert parser.get_file_metadata(CID_PDF) == {}  # rerouted, nothing to warn about
+
+
+def test_trust_flagged_pdf_without_docling_keeps_output_and_warns():
+    parser = AnydocParser(fallback_parser=_RecordingFallback())  # not docling-backed
+
+    out = parser.parse_file(CID_PDF)
+
+    assert "NON-DISCLOSURE" in out.upper() or len(out) > 50  # anydoc's own output kept
+    meta = parser.get_file_metadata(CID_PDF)
+    assert "parse_warnings" in meta
+    assert any("ToUnicode" in w for w in meta["parse_warnings"])
+    assert any("CJK" in w for w in meta["parse_warnings"])
+    assert parser.last_engine == "anydoc"
+
+
+def test_trust_check_disabled_stamps_nothing(monkeypatch):
+    from application.parser.file import anydoc_parser as ap
+
+    monkeypatch.setattr(ap.settings, "PDF_TRUST_CHECK", False)
+    parser = AnydocParser()
+
+    parser.parse_file(CID_PDF)
+
+    assert parser.get_file_metadata(CID_PDF) == {}
+
+
+def test_trust_reroute_failure_keeps_anydoc_output():
+    fallback = _FakeDoclingFallback()
+
+    def _boom(file, errors="ignore"):
+        raise RuntimeError("docling exploded")
+
+    fallback.parse_file = _boom
+    parser = AnydocParser(fallback_parser=fallback)
+
+    out = parser.parse_file(CID_PDF)
+
+    assert "docling" not in out
+    assert "parse_warnings" in parser.get_file_metadata(CID_PDF)
+    assert parser.last_engine == "anydoc"
+
+
+def test_trust_reroute_near_empty_keeps_anydoc_output():
+    """A docling pipeline dropout ('' / '<!-- image -->') returns without
+    raising; adopting it would swap anydoc's real text for an empty document."""
+    fallback = _FakeDoclingFallback()
+    fallback.parse_file = lambda file, errors="ignore": "<!-- image -->"
+    parser = AnydocParser(fallback_parser=fallback)
+
+    out = parser.parse_file(CID_PDF)
+
+    assert "<!-- image -->" not in out
+    assert "parse_warnings" in parser.get_file_metadata(CID_PDF)
+    assert parser.last_engine == "anydoc"
+
+
+def test_warnings_reset_between_files(tmp_path):
+    parser = AnydocParser()
+    parser.parse_file(CID_PDF)
+    assert parser.get_file_metadata(CID_PDF) != {}
+
+    clean = tmp_path / "clean.csv"
+    clean.write_text("a,b\n1,2\n")
+    parser.parse_file(clean)
+
+    assert parser.get_file_metadata(clean) == {}
+    assert parser.get_file_metadata(CID_PDF) == {}
+
+
+def test_trust_check_errors_never_fail_the_parse(monkeypatch, tmp_path):
+    def _explode(path, markdown):
+        raise RuntimeError("scanner bug")
+
+    import application.parser.file.pdf_trust as pt
+
+    monkeypatch.setattr(pt, "verify_pdf_file", _explode)
+    _fake_anydoc(monkeypatch, lambda path: "# converted fine")
+    path = tmp_path / "x.pdf"
+    path.write_bytes(b"%PDF-1.4 irrelevant")
+
+    assert AnydocParser().parse_file(path) == "# converted fine"
+
+
+def test_tableize_applied_when_enabled(monkeypatch, tmp_path):
+    from application.parser.file import anydoc_parser as ap
+
+    monkeypatch.setattr(ap.settings, "ANYDOC_TABLEIZE", True)
+    monkeypatch.setattr(ap.settings, "PDF_TRUST_CHECK", False)
+    _fake_anydoc(
+        monkeypatch,
+        lambda path: "Cash ..... 1,234 900\nDebt ..... 2,000 1,500\nEquity ..... 900 800",
+    )
+    path = tmp_path / "x.pdf"
+    path.write_bytes(b"%PDF-1.4 irrelevant")
+
+    out = AnydocParser().parse_file(path)
+
+    assert "| Cash | 1,234 | 900 |" in out
+
+
+def test_tableize_disabled_by_default(monkeypatch, tmp_path):
+    from application.parser.file import anydoc_parser as ap
+
+    monkeypatch.setattr(ap.settings, "PDF_TRUST_CHECK", False)
+    flat = "Cash ..... 1,234 900\nDebt ..... 2,000 1,500\nEquity ..... 900 800"
+    _fake_anydoc(monkeypatch, lambda path: flat)
+    path = tmp_path / "x.pdf"
+    path.write_bytes(b"%PDF-1.4 irrelevant")
+
+    assert AnydocParser().parse_file(path) == flat
+
+
+def test_tableize_never_touches_docling_reroute(monkeypatch):
+    from application.parser.file import anydoc_parser as ap
+
+    monkeypatch.setattr(ap.settings, "ANYDOC_TABLEIZE", True)
+    fallback = _FakeDoclingFallback()
+    parser = AnydocParser(fallback_parser=fallback)
+
+    out = parser.parse_file(CID_PDF)
+
+    assert out == _REROUTE_TEXT  # verbatim, not post-processed
+
+
+# --- scanned-PDF near-empty guard (the OCR_ENGINE seam's loud-failure side) ------
+
+
+def test_scanned_pdf_with_near_empty_fallback_fails_loudly_when_ocr_off(tmp_path):
+    """A scan whose fallback (OCR off) extracts almost nothing must fail with
+    an actionable message, not be stored as an empty document."""
+    path = _scanned_pdf(tmp_path / "scan.pdf")
+    fallback = _RecordingFallback(result="   ")
+    fallback.ocr_enabled = False
+    parser = AnydocParser(fallback_parser=fallback)
+
+    with pytest.raises(DocumentParseError, match="DOCLING_OCR_ENABLED"):
+        parser.parse_file(path)
+    assert parser.last_engine is None
+
+
+def test_scanned_pdf_with_near_empty_fallback_and_ocr_on_reports_it(tmp_path):
+    path = _scanned_pdf(tmp_path / "scan.pdf")
+    fallback = _RecordingFallback(result="x")
+    fallback.ocr_enabled = True
+
+    with pytest.raises(DocumentParseError, match="even with OCR enabled"):
+        AnydocParser(fallback_parser=fallback).parse_file(path)
+
+
+def test_scanned_pdf_with_substantial_fallback_output_passes(tmp_path):
+    """docling extracting a text layer anydoc refused (the HK-bill case) must
+    keep working — the guard only fires on near-empty results."""
+    path = _scanned_pdf(tmp_path / "scan.pdf")
+    out = AnydocParser(fallback_parser=_RecordingFallback()).parse_file(path)
+    assert out == FALLBACK_TEXT
+
+
+def test_non_scan_refusals_do_not_trigger_the_guard(tmp_path, monkeypatch):
+    """Only the OCR-required refusal implies 'content exists but needs OCR';
+    a malformed file with a short fallback result stays a successful parse."""
+    fake = _fake_anydoc(monkeypatch, None)
+
+    class MalformedError(fake.ConvertError):
+        pass
+
+    fake.MalformedError = MalformedError
+
+    def _refuse(path):
+        raise MalformedError("structurally unusable")
+
+    fake.to_markdown = _refuse
+    path = tmp_path / "x.docx"
+    path.write_bytes(b"irrelevant")
+
+    out = AnydocParser(fallback_parser=_RecordingFallback(result="tiny")).parse_file(path)
+    assert out == "tiny"
