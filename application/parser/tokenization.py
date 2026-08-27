@@ -49,6 +49,37 @@ def _windows(total: int, first: int, rest: int) -> Iterator[Tuple[int, int]]:
         budget = max(1, rest)
 
 
+# A token spanning more characters than this collapsed a run the tokenizer
+# could not break up: WordPiece emits a single ``[UNK]`` for any word longer
+# than ``max_input_chars_per_word``. Charging that once makes a base64 blob or
+# a minified bundle look tiny, so nothing splits it and an oversized chunk
+# reaches the embedding server. Real tokens are a few characters, so prose
+# never reaches this bound.
+_MAX_CHARS_PER_TOKEN = 16
+
+
+def _token_weight(start: int, end: int) -> int:
+    """Tokens a span costs, charging a collapsed run by its length."""
+    span = end - start
+    return max(1, -(-span // _MAX_CHARS_PER_TOKEN))
+
+
+def _cap_piece_chars(pieces: List[str], first: int, rest: int) -> List[str]:
+    """Cut any piece holding more characters than its budget can cover."""
+    capped: List[str] = []
+    budget = first
+    for piece in pieces:
+        limit = max(1, budget * _MAX_CHARS_PER_TOKEN)
+        while len(piece) > limit:
+            capped.append(piece[:limit])
+            piece = piece[limit:]
+            budget = rest
+            limit = max(1, budget * _MAX_CHARS_PER_TOKEN)
+        capped.append(piece)
+        budget = rest
+    return capped
+
+
 class TokenCounter:
     """Counts and splits text in one tokenizer's units.
 
@@ -123,7 +154,10 @@ class HuggingFaceCounter(TokenCounter):
     def count(self, text: str) -> int:
         if not text:
             return 0
-        return len(self._encode(text).ids)
+        encoding = self._encode(text)
+        if not encoding.offsets:
+            return len(encoding.ids)
+        return sum(_token_weight(start, end) for start, end in encoding.offsets)
 
     def split(
         self, text: str, max_tokens: int, first_max_tokens: Optional[int] = None
@@ -133,7 +167,7 @@ class HuggingFaceCounter(TokenCounter):
         rest = max(1, max_tokens)
         first = max(1, first_max_tokens if first_max_tokens is not None else rest)
         offsets = self._encode(text).offsets
-        if len(offsets) <= first:
+        if self.count(text) <= first:
             return [text]
 
         pieces: List[str] = []
@@ -155,7 +189,7 @@ class HuggingFaceCounter(TokenCounter):
                 pieces[-1] = pieces[-1] + text[cursor:]
             else:
                 pieces.append(text[cursor:])
-        return pieces
+        return _cap_piece_chars(pieces, first, rest)
 
 
 def _load_hf_counter(repo: str) -> Optional[HuggingFaceCounter]:

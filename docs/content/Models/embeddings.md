@@ -89,13 +89,29 @@ Some remote servers (notably llama.cpp) reject any single input larger than thei
 EMBEDDINGS_MAX_INPUT_TOKENS=512
 ```
 
-When set, each input string is truncated to that many tokens and the overflow is dropped (lossy by design). Token counts use DocsGPT's shared tiktoken encoding, which differs from your server's tokenizer, so choose a limit with some headroom below the server's true limit to absorb tokenizer skew. Leave the setting unset (or `0`) to disable truncation.
+When set, each input string is truncated to that many tokens and the overflow is dropped (lossy by design).
+
+You usually do not need to set it. When `EMBEDDINGS_NAME` names a model DocsGPT knows, its context window is used automatically, and counting uses that model's own tokenizer, so the limit and the count are in the same unit. Set `EMBEDDINGS_MAX_INPUT_TOKENS` when your server serves a model DocsGPT does not know, or when you deliberately want a limit below the model's own.
+
+Leaving `EMBEDDINGS_NAME` unset imposes no limit: the name is only forwarded as the `model` field in each request, so a default nobody chose is not taken as a description of your server. When no model tokenizer is available, counting falls back to tiktoken — pick a limit with headroom below the server's true limit to absorb the skew between the two tokenizers.
 
 ## Important: Embedding Dimensions Must Stay Consistent
 
 Each embedding model produces vectors of a fixed dimension, and your vector store is created with that dimension. **Changing `EMBEDDINGS_NAME` to a model with a different dimension is not compatible with an existing index** — FAISS and LanceDB will raise a dimension-mismatch error, and pgvector/Qdrant tables are sized to the original dimension.
 
 If you need to switch embedding models, you must re-ingest your sources so the index is rebuilt with the new dimension. This also applies to the [GraphRAG](/Sources/GraphRAG) graph tables, which are sized to the embedding dimension at creation time.
+
+### A matching dimension is not a matching model
+
+The dimension check is a guard against a corrupt index, not a guarantee that a swap is safe. Two models of the *same* width — `all-mpnet-base-v2` and `granite-embedding-311m-multilingual-r2` are both 768 — raise nothing at all, and every query is then embedded by a different model than the stored vectors were. Nothing fails; retrieval quality simply degrades.
+
+Switching between same-width models therefore still requires re-embedding:
+
+```bash
+python -m application.scripts.reembed
+```
+
+Run it after changing `EMBEDDINGS_NAME` and before serving queries. See [Upgrading](/upgrading) for the granite migration specifically. Changing to a model of a *different* width is not supported by the script — re-ingest those sources instead.
 
 ## Adding Support for Other Embedding Models
 

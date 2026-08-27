@@ -107,6 +107,22 @@ class TestFaissRebuild:
         keys = [call.kwargs.get("embeddings_key") for call in factory.call_args_list]
         assert keys == ["sk-real", "sk-real"]
 
+    def test_chunk_ids_are_preserved(self, stores):
+        """Re-embedding must not renumber chunks.
+
+        Fresh ids orphan every GraphRAG ``graph_node_chunks`` row for the
+        source and invalidate any id a client already holds.
+        """
+        _, _, factory = stores
+        reembed.reembed_faiss("s1", batch_size=8, dry_run=False)
+        assert factory.call_args_list[1].kwargs["ids"] == ["1", "2"]
+
+    def test_batch_size_is_forwarded_to_the_rebuild(self, stores):
+        """On a remote embeddings server the whole index is otherwise one POST."""
+        _, _, factory = stores
+        reembed.reembed_faiss("s1", batch_size=8, dry_run=False)
+        assert factory.call_args_list[1].kwargs["batch_size"] == 8
+
     def test_existing_index_is_not_deleted(self, stores):
         """The rebuild must not destroy the old index before the new one exists."""
         existing, rebuilt, _ = stores

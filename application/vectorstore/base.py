@@ -285,7 +285,11 @@ def get_embeddings(
         )
         return EmbeddingsSingleton._remote_instance(embeddings_name, embeddings_key)
 
-    if embeddings_name == "openai_text-embedding-ada-002":
+    # Match through the registry, not on the canonical string: the bare
+    # ``text-embedding-ada-002`` alias resolves here too, and skipping this
+    # branch would drop the Azure deployment name and the API key.
+    spec = resolve(embeddings_name)
+    if spec is not None and spec.provider == "openai":
         if _azure_configured():
             embedding_instance = EmbeddingsSingleton.get_instance(
                 embeddings_name, model=settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME

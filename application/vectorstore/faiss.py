@@ -81,7 +81,14 @@ class FaissStore(BaseVectorStore):
     # and must not be shown as one.
     score_kind = "l2_distance"
 
-    def __init__(self, source_id: str, embeddings_key: str, docs_init=None):
+    def __init__(
+        self,
+        source_id: str,
+        embeddings_key: str,
+        docs_init=None,
+        ids=None,
+        batch_size=None,
+    ):
         super().__init__()
         self.source_id = source_id
         self.path = get_vectorstore(source_id)
@@ -94,7 +101,7 @@ class FaissStore(BaseVectorStore):
 
         try:
             if docs_init:
-                self._build_from_documents(docs_init)
+                self._build_from_documents(docs_init, ids=ids, batch_size=batch_size)
             else:
                 self._load_from_storage()
         except Exception as e:
@@ -104,17 +111,36 @@ class FaissStore(BaseVectorStore):
 
     # -- Construction ----------------------------------------------------
 
-    def _build_from_documents(self, docs_init) -> None:
-        """Create a fresh index seeded with ``docs_init``."""
+    def _build_from_documents(self, docs_init, ids=None, batch_size=None) -> None:
+        """Create a fresh index seeded with ``docs_init``.
+
+        Args:
+            docs_init: Documents to embed.
+            ids: Chunk ids to keep. Generated when omitted, which renumbers
+                every chunk and orphans anything referencing the old ids.
+            batch_size: Documents per embed call. Without it the whole index
+                goes out in one call, which a remote embeddings server rejects
+                or times out on.
+        """
         texts, metadatas = [], []
         for doc in docs_init:
             texts.append(getattr(doc, "page_content", None) or getattr(doc, "text", "") or "")
             metadatas.append(getattr(doc, "metadata", None) or getattr(doc, "extra_info", None) or {})
 
         faiss = _dependable_faiss_import()
-        vectors = self.embeddings.embed_documents(texts)
-        self.index = faiss.IndexFlatL2(len(vectors[0]))
-        self._append(texts, metadatas, vectors)
+        ids = list(ids) if ids else None
+        step = batch_size if batch_size and batch_size > 0 else len(texts)
+        for start in range(0, len(texts), max(1, step)):
+            stop = start + max(1, step)
+            vectors = self.embeddings.embed_documents(texts[start:stop])
+            if self.index is None:
+                self.index = faiss.IndexFlatL2(len(vectors[0]))
+            self._append(
+                texts[start:stop],
+                metadatas[start:stop],
+                vectors,
+                ids[start:stop] if ids else None,
+            )
 
     def _load_from_storage(self) -> None:
         """Load the index and its sidecar, preferring JSON over the pickle."""

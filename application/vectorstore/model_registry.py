@@ -70,6 +70,12 @@ MPNET = EmbeddingModel(
 
 #: Default for new installs: same 768 dimensions as mpnet, an 8x wider
 #: effective input, and multilingual retrieval.
+#:
+#: Runs the int8-quantised graph, which is ~4x smaller than the fp32 one
+#: (313 MB against 1247 MB) and keeps the image shippable now that both
+#: defaults are baked in. It costs some numeric fidelity against fp32 --
+#: measured at cosine 0.96 on short texts, with retrieval rank order
+#: unchanged -- so it is not bit-comparable to a fp32 granite index.
 GRANITE_311M = EmbeddingModel(
     name="ibm-granite/granite-embedding-311m-multilingual-r2",
     dimension=768,
@@ -82,6 +88,7 @@ GRANITE_311M = EmbeddingModel(
 )
 
 #: Smaller granite. Half the vector width, roughly three times the speed.
+#: Int8-quantised on the same terms as GRANITE_311M above.
 GRANITE_97M = EmbeddingModel(
     name="ibm-granite/granite-embedding-97m-multilingual-r2",
     dimension=384,

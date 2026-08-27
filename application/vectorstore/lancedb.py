@@ -2,6 +2,7 @@ from typing import List, Optional
 import importlib
 from application.vectorstore.base import BaseVectorStore
 from application.core.settings import settings
+from application.vectorstore.model_registry import DEFAULT_EMBEDDING_DIMENSION
 
 class LanceDBVectorStore(BaseVectorStore):
     """Class for LanceDB Vector Store integration."""
@@ -54,8 +55,11 @@ class LanceDBVectorStore(BaseVectorStore):
         """Ensure the table exists before performing operations."""
         if self.table is None:
             embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, self.embeddings_key)
+            # A model outside the registry reports no width until it has run;
+            # ``list_size=None`` is a TypeError, not a permissive schema.
+            dimension = getattr(embeddings, "dimension", None) or DEFAULT_EMBEDDING_DIMENSION
             schema = self.pa.schema([
-                self.pa.field("vector", self.pa.list_(self.pa.float32(), list_size=embeddings.dimension)),
+                self.pa.field("vector", self.pa.list_(self.pa.float32(), list_size=dimension)),
                 self.pa.field("text", self.pa.string()),
                 self.pa.field("metadata", self.pa.struct([
                     self.pa.field("key", self.pa.string()),

@@ -593,6 +593,49 @@ class TestGetEmbeddingsResolver:
 
     @patch("application.vectorstore.base.settings")
     @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    def test_openai_alias_also_reaches_the_azure_deployment(
+        self, mock_get_instance, mock_settings
+    ):
+        """The registry accepts the bare alias, so the key handling must too.
+
+        Matching on the canonical string alone sent the alias down the generic
+        branch, where the deployment name is never passed and Azure answers
+        every embed with DeploymentNotFound.
+        """
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.OPENAI_API_BASE = "https://azure.openai.com"
+        mock_settings.OPENAI_API_VERSION = "2023-05-15"
+        mock_settings.AZURE_DEPLOYMENT_NAME = "deploy"
+        mock_settings.AZURE_EMBEDDINGS_DEPLOYMENT_NAME = "embed-deploy"
+        mock_settings.EMBEDDINGS_NAME = "text-embedding-ada-002"
+        mock_settings.EMBEDDINGS_KEY = "sk-key"
+
+        get_embeddings()
+
+        mock_get_instance.assert_called_once_with(
+            "text-embedding-ada-002", model="embed-deploy"
+        )
+
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    def test_openai_name_is_matched_case_insensitively(
+        self, mock_get_instance, mock_settings
+    ):
+        mock_settings.EMBEDDINGS_BASE_URL = None
+        mock_settings.OPENAI_API_BASE = None
+        mock_settings.OPENAI_API_VERSION = None
+        mock_settings.AZURE_DEPLOYMENT_NAME = None
+        mock_settings.EMBEDDINGS_NAME = "OpenAI_Text-Embedding-Ada-002"
+        mock_settings.EMBEDDINGS_KEY = "sk-from-settings"
+
+        get_embeddings()
+
+        mock_get_instance.assert_called_once_with(
+            "OpenAI_Text-Embedding-Ada-002", openai_api_key="sk-from-settings"
+        )
+
+    @patch("application.vectorstore.base.settings")
+    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
     def test_explicit_arguments_win_over_settings(
         self, mock_get_instance, mock_settings
     ):

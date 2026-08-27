@@ -216,11 +216,16 @@ def reembed_faiss(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, 
     # Constructing with ``docs_init`` embeds everything into a fresh in-memory
     # index and touches nothing on disk. The existing index is only replaced by
     # ``save_local`` below, so a failure while embedding leaves it intact.
+    # Keep the existing ids: GraphRAG's ``graph_node_chunks`` rows and any id a
+    # client already holds point at them.
+    ids = [chunk.get("doc_id") for chunk in chunks]
     rebuilt = VectorCreator.create_vectorstore(
         "faiss",
         source_id=source_id,
         embeddings_key=settings.EMBEDDINGS_KEY,
         docs_init=docs,
+        ids=ids if all(ids) else None,
+        batch_size=batch_size,
     )
     rebuilt.save_local()
     return len(chunks), len(docs)

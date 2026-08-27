@@ -70,7 +70,12 @@ COPY . /app/application
 # does not download on first ingest and an air-gapped install works at all.
 # Both defaults are baked: an upgraded deployment keeps using mpnet until it
 # runs the re-embed script, while a new one starts on granite.
-ENV EMBEDDINGS_CACHE_DIR=/app/models
+# The prefetch writes hub-layout snapshots (including tokenizer.json) here, so
+# HF_HUB_CACHE has to point at the same directory: chunking loads the tokenizer
+# through ``tokenizers``, which reads the hub cache and would otherwise fetch
+# over the network on first ingest -- and fall back to cl100k when offline.
+ENV EMBEDDINGS_CACHE_DIR=/app/models \
+    HF_HUB_CACHE=/app/models
 ARG EMBEDDINGS_PREFETCH=""
 RUN PYTHONPATH=/app /venv/bin/python -m application.scripts.prefetch_models ${EMBEDDINGS_PREFETCH}
 

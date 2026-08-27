@@ -5,11 +5,13 @@ than asserting that calls were forwarded to a mock.
 """
 
 import json
-from unittest.mock import Mock, patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 from application.storage.local import LocalStorage
+from application.vectorstore.faiss import FaissStore
 
 
 class _FakeEmbeddings:
@@ -243,3 +245,45 @@ class TestGetVectorstore:
 
         with pytest.raises(ValueError, match="Invalid source_id path"):
             get_vectorstore(bad)
+
+
+class TestBuildFromDocumentsBatching:
+    """The full rebuild path: honour caller ids and embed in batches."""
+
+    def _docs(self, n):
+        return [
+            SimpleNamespace(page_content=f"chunk {i}", metadata={"i": i})
+            for i in range(n)
+        ]
+
+    def _store(self, embed):
+        store = FaissStore.__new__(FaissStore)
+        store.embeddings = MagicMock()
+        store.embeddings.embed_documents.side_effect = embed
+        store.documents = {}
+        store.index_to_docstore_id = {}
+        store.index = None
+        return store
+
+    def test_supplied_ids_are_used(self):
+        store = self._store(lambda texts: [[float(len(texts))] * 2 for _ in texts])
+        store._build_from_documents(self._docs(3), ids=["a", "b", "c"])
+        assert list(store.documents) == ["a", "b", "c"]
+
+    def test_embedding_is_split_into_batches(self):
+        sizes = []
+
+        def embed(texts):
+            sizes.append(len(texts))
+            return [[1.0, 2.0] for _ in texts]
+
+        store = self._store(embed)
+        store._build_from_documents(self._docs(5), batch_size=2)
+        assert sizes == [2, 2, 1]
+        assert len(store.index_to_docstore_id) == 5
+
+    def test_defaults_are_unchanged(self):
+        store = self._store(lambda texts: [[1.0, 2.0] for _ in texts])
+        store._build_from_documents(self._docs(3))
+        assert len(store.documents) == 3
+        assert all(len(k) == 36 for k in store.documents), "uuid4 ids by default"

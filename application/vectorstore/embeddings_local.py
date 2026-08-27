@@ -6,9 +6,11 @@ removes torch, transformers and sentence-transformers from the dependency set
 and measurably reduces both resident memory and import cost.
 
 The swap is numerically transparent for existing indexes: embedding the same
-text with SentenceTransformer and with FastEmbed's ONNX graph of the same
-model returns vectors at cosine 1.0, so an mpnet index built before this
-change keeps working unchanged.
+text with SentenceTransformer and with FastEmbed's fp32 ONNX graph of mpnet
+returns vectors at cosine 1.0, so an mpnet index built before this change
+keeps working unchanged. That result is specific to the fp32 graph -- the
+granite entries run an int8-quantised one and are not bit-comparable to a
+fp32 index of the same model.
 
 Models are described in :mod:`application.vectorstore.model_registry`. A name
 the registry does not know is treated as a Hugging Face repository, which is

@@ -202,3 +202,50 @@ class TestOffsetsWithoutSpans:
     def test_all_span_less_offsets_still_return_the_text(self):
         counter = self._counter([(0, 0), (0, 0), (0, 0)])
         assert "".join(counter.split("abc", 1)) == "abc"
+
+
+class TestUnknownTokenCollapse:
+    """A tokenizer that folds a long unbroken run into one ``[UNK]``.
+
+    WordPiece gives up on any word longer than ``max_input_chars_per_word``
+    and emits a single unknown token for it. Counting that as one token makes
+    a base64 blob or a minified bundle look tiny, so the chunker never splits
+    it and an oversized chunk reaches the embedding server.
+    """
+
+    class _CollapsingEncoding:
+        """One token per whitespace-separated word, however long the word."""
+
+        def __init__(self, text):
+            self.ids = []
+            self.offsets = []
+            cursor = 0
+            for word in text.split(" "):
+                if word:
+                    self.ids.append(0)
+                    self.offsets.append((cursor, cursor + len(word)))
+                cursor += len(word) + 1
+
+    class _CollapsingTokenizer:
+        def encode(self, text, add_special_tokens=False):
+            return TestUnknownTokenCollapse._CollapsingEncoding(text)
+
+    def _counter(self):
+        return tokenization.HuggingFaceCounter(self._CollapsingTokenizer(), "stub")
+
+    def test_long_unbroken_run_is_charged_by_its_span(self):
+        counter = self._counter()
+        assert counter.count("a" * 9000) > 100
+
+    def test_ordinary_prose_is_unaffected(self):
+        counter = self._counter()
+        text = "the quick brown fox jumps over the lazy dog"
+        assert counter.count(text) == 9
+
+    def test_split_bounds_a_collapsed_run(self):
+        counter = self._counter()
+        text = "a" * 9000
+        pieces = counter.split(text, 20)
+        assert "".join(pieces) == text, "split must not lose or alter text"
+        assert len(pieces) > 1, "a collapsed run must still be cut into pieces"
+        assert all(counter.count(p) <= 20 for p in pieces)
