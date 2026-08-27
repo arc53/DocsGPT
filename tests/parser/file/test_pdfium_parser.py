@@ -158,6 +158,10 @@ def test_threshold_sends_sparse_text_to_fallback(tmp_path, parser_cls):
 
 @pytest.fixture
 def docling_engine(monkeypatch):
+    # The wiring assertions below expect the docling map; on a base install
+    # (docling is an optional extra) the engine degrades to the legacy
+    # parsers and these tests do not apply.
+    pytest.importorskip("docling")
     from application.core.settings import settings
 
     monkeypatch.setattr(settings, "DOC_PARSER_ENGINE", "docling")

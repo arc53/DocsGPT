@@ -365,7 +365,10 @@ configure_doc_processing() {
     read -p "$(echo -e "${DEFAULT_FG}Enable OCR for document processing (Docling)? (y/N): ${NC}")" ocr_enabled
     if [[ "$ocr_enabled" =~ ^[yY]$ ]]; then
         echo "DOCLING_OCR_ENABLED=true" >> "$ENV_FILE"
-        echo -e "${GREEN}Docling OCR enabled.${NC}"
+        # OCR needs the optional docling engine; locally built images include
+        # it via this build arg (hub images must be published with it baked in).
+        echo "INSTALL_DOCLING=true" >> "$ENV_FILE"
+        echo -e "${GREEN}Docling OCR enabled (locally built images will include the docling engine).${NC}"
     fi
 }
 

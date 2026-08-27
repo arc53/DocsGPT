@@ -1,0 +1,14 @@
+# Optional docling parser engine.
+#
+# Needed only for: DOC_PARSER_ENGINE=docling, OCR of scanned PDFs and images
+# (DOCLING_OCR_ENABLED / DOCLING_OCR_ATTACHMENTS_ENABLED), .adoc/.vtt/.xml
+# source parsing, and the read_document tool's `structured` output. The
+# default anydoc engine needs none of this.
+#
+# Install ON TOP of requirements.txt (torch/transformers stay pinned there,
+# shared with sentence-transformers):
+#   pip install -r requirements.txt -r requirements-docling.txt
+# Docker: build with --build-arg INSTALL_DOCLING=true
+docling==2.119.0
+rapidocr==3.9.2
+onnxruntime==1.28.0

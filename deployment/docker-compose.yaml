@@ -15,7 +15,12 @@ services:
 
   backend:
     user: root
-    build: ../application
+    build:
+      context: ../application
+      args:
+        # Bake the optional docling engine (OCR, structured output) into the
+        # image: set INSTALL_DOCLING=true in ../.env or the shell.
+        INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
     env_file:
       - ../.env
     environment:
@@ -38,7 +43,10 @@ services:
 
   worker:
     user: root
-    build: ../application
+    build:
+      context: ../application
+      args:
+        INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
     # Consumes the default queue AND the dedicated `parsing` queue (read_document /
     # parse_document). Without `parsing` here the read_document await never resolves.
     # For heavy/OCR parsing run a separate worker with `-Q parsing`.

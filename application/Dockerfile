@@ -28,8 +28,8 @@ RUN wget -q -O - https://sh.rustup.rs | sh -s -- -y
 # Clean up to reduce container size
 RUN apt-get remove --purge -y wget unzip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements.txt
-COPY requirements.txt .
+# Copy requirements manifests
+COPY requirements.txt requirements-docling.txt ./
 
 # Setup Python virtual environment
 RUN python3.12 -m venv /venv
@@ -41,6 +41,15 @@ ENV PATH="/venv/bin:$PATH"
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir tiktoken && \
     pip install --no-cache-dir -r requirements.txt
+
+# Optional docling parser engine (DOC_PARSER_ENGINE=docling, OCR for scanned
+# PDFs/images, read_document's structured output) — OFF by default: it pulls
+# the layout/OCR model stack and adds gigabytes to the image. anydoc (in
+# requirements.txt) is the default parser and needs none of it.
+ARG INSTALL_DOCLING=false
+RUN if [ "$INSTALL_DOCLING" = "true" ]; then \
+        pip install --no-cache-dir -r requirements-docling.txt; \
+    fi
 
 # Final Stage
 FROM ubuntu:24.04 as final

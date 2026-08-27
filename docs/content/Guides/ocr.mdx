@@ -41,6 +41,29 @@ sources, and the fallback for files anydoc rejects. Without Docling those
 formats use the standard parsers, and images are only read when
 `PARSE_IMAGE_REMOTE=true`.
 
+## Installing the docling engine
+
+docling is not part of the base install. Add it when you need OCR,
+`.adoc`/`.vtt`/`.xml` source parsing, or `read_document`'s `structured`
+output:
+
+```bash
+pip install -r application/requirements-docling.txt
+```
+
+Docker images build without it by default; opt in with the build argument:
+
+```bash
+docker build --build-arg INSTALL_DOCLING=true ./application
+```
+
+`deployment/docker-compose.yaml` forwards the same switch, so setting
+`INSTALL_DOCLING=true` in `.env` (or the shell) bakes docling into locally
+built backend and worker images. `setup.sh` writes it automatically when you
+answer yes to the OCR question. Either way no code changes are needed —
+docling is picked up as the fallback engine as soon as it is importable, and
+`DOC_PARSER_ENGINE=docling` makes it the primary one.
+
 ## Docling OCR
 
 OCR is optional, Docling-only, and controlled by two settings:

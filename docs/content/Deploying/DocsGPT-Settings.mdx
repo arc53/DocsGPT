@@ -206,7 +206,7 @@ for the engines and flows.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `DOC_PARSER_ENGINE` | `anydoc` | Parser engine: `anydoc` (fast Rust converter, no ML models) or `docling` (layout/table models, OCR, structured output; heavy optional install). Files anydoc cannot read fall back to Docling when installed. |
+| `DOC_PARSER_ENGINE` | `anydoc` | Parser engine: `anydoc` (fast Rust converter, no ML models) or `docling` (layout/table models, OCR, structured output). Files anydoc cannot read fall back to Docling when installed. Docling is an optional extra: `pip install -r application/requirements-docling.txt`, or Docker builds with `--build-arg INSTALL_DOCLING=true`. |
 | `DOCLING_OCR_ENABLED` | `false` | OCR for source ingestion (Docling only). |
 | `DOCLING_OCR_ATTACHMENTS_ENABLED` | `false` | OCR for chat attachments (Docling only). |
 | `ATTACHMENT_PDF_TEXT_FAST_PATH` | `true` | Under the `docling` engine, read PDF attachments through their text layer (pypdfium2) and only hand scans to Docling. Not needed under `anydoc`. |

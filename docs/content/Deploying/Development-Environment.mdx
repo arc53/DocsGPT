@@ -96,6 +96,13 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     pip install -r application/requirements.txt
     ```
 
+    Optionally add the docling parser engine (OCR, `structured` output for
+    `read_document`; the default anydoc engine does not need it):
+
+    ```bash
+    pip install -r application/requirements-docling.txt
+    ```
+
 5.  **Run the Backend:**
 
     For local development, run the ASGI composition under uvicorn. It serves the **whole** application, hot-reloads on source changes, and matches the production runtime:

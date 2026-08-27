@@ -910,6 +910,12 @@ class TestApplyInferenceSettings:
     and buys nothing for one-shot parses.
     """
 
+    @pytest.fixture(autouse=True)
+    def _requires_docling(self):
+        # These tests reach into docling.datamodel.settings for real; a base
+        # install (docling is an optional extra) skips them.
+        pytest.importorskip("docling")
+
     def test_disables_torch_compile_by_default(self, monkeypatch):
         from application.parser.file.docling_parser import _apply_inference_settings
 
@@ -1411,6 +1417,12 @@ class TestOCRDropoutHelpers:
 @pytest.mark.unit
 class TestForceFullPageOCRWiring:
     """``force_full_page_ocr`` must reach the pipeline for any OCR engine."""
+
+    @pytest.fixture(autouse=True)
+    def _requires_docling(self):
+        # Builds real ``docling.datamodel.pipeline_options``; a base install
+        # (docling is an optional extra) skips these.
+        pytest.importorskip("docling")
 
     def _pipeline_options(self, monkeypatch, **kwargs):
         import docling.datamodel.pipeline_options as dpo
