@@ -25,8 +25,55 @@ def fake_fastembed():
     instance = MagicMock()
     instance.embed.return_value = iter([np.array([0.1, 0.2, 0.3])])
     text_embedding.return_value = instance
+    # Registration checks this before calling ``add_custom_model``; an empty
+    # list means "no built-in collides", which is the case for every name in
+    # our registry.
+    text_embedding.list_supported_models.return_value = []
     with patch("fastembed.TextEmbedding", text_embedding):
         yield text_embedding, instance
+
+
+class TestBuiltinModelRegistration:
+    """FastEmbed ships ~30 models of its own and refuses to re-register any of
+    them, so registering unconditionally broke every natively-supported name."""
+
+    def test_builtin_name_is_not_re_registered(self, fake_fastembed):
+        text_embedding, _ = fake_fastembed
+        text_embedding.list_supported_models.return_value = [
+            {"model": "BAAI/bge-small-en-v1.5"}
+        ]
+        EmbeddingsWrapper("BAAI/bge-small-en-v1.5")
+        text_embedding.add_custom_model.assert_not_called()
+        assert text_embedding.call_args.kwargs["model_name"] == "BAAI/bge-small-en-v1.5"
+
+    def test_builtin_match_ignores_case(self, fake_fastembed):
+        text_embedding, _ = fake_fastembed
+        text_embedding.list_supported_models.return_value = [
+            {"model": "baai/BGE-Small-EN-v1.5"}
+        ]
+        EmbeddingsWrapper("BAAI/bge-small-en-v1.5")
+        text_embedding.add_custom_model.assert_not_called()
+
+    def test_unknown_name_is_still_registered(self, fake_fastembed):
+        text_embedding, _ = fake_fastembed
+        text_embedding.list_supported_models.return_value = [
+            {"model": "BAAI/bge-small-en-v1.5"}
+        ]
+        EmbeddingsWrapper("some-org/custom-embedder")
+        text_embedding.add_custom_model.assert_called_once()
+
+    def test_real_fastembed_accepts_its_own_builtin(self):
+        """Runs against the installed FastEmbed, not the MagicMock.
+
+        The mocked tests above cannot catch this: the failure was
+        ``add_custom_model`` raising, and a MagicMock never raises.
+        """
+        fastembed = pytest.importorskip("fastembed")
+        builtins = [m["model"] for m in fastembed.TextEmbedding.list_supported_models()]
+        assert builtins, "expected FastEmbed to ship built-in models"
+        spec = embeddings_local._spec_for(builtins[0])
+        # Must not raise ValueError("... is already registered ...").
+        embeddings_local._register(spec)
 
 
 class TestRegistryDrivenLoading:

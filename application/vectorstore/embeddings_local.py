@@ -44,6 +44,17 @@ def _pooling_type(pooling: str):
     return {"cls": PoolingType.CLS, "mean": PoolingType.MEAN}[pooling]
 
 
+def _is_builtin(repo: str) -> bool:
+    """True when FastEmbed already ships a description for ``repo``."""
+    from fastembed import TextEmbedding
+
+    lowered = repo.lower()
+    return any(
+        str(entry.get("model", "")).lower() == lowered
+        for entry in TextEmbedding.list_supported_models()
+    )
+
+
 def _register(model: EmbeddingModel) -> None:
     """Teach FastEmbed about a model, exactly once per process."""
     from fastembed import TextEmbedding
@@ -51,6 +62,14 @@ def _register(model: EmbeddingModel) -> None:
 
     with _register_lock:
         if model.repo in _registered:
+            return
+        if _is_builtin(model.repo):
+            # ``add_custom_model`` refuses a name FastEmbed already ships, and
+            # its own description carries the pooling, width and graph file we
+            # would be supplying, so there is nothing to add. Without this,
+            # configuring any of FastEmbed's ~30 built-in models (bge, e5,
+            # MiniLM, gte, ...) fails every embed call.
+            _registered.add(model.repo)
             return
         TextEmbedding.add_custom_model(
             model=model.repo,
@@ -161,11 +180,6 @@ class EmbeddingsWrapper:
     def _probe_dimension(self) -> int:
         """Determine the vector width of a model the registry does not describe."""
         return len(self.embed_query("dimension probe"))
-
-    @property
-    def tokenizer(self):
-        """The model's own tokenizer, so chunking can count in its units."""
-        return self.model.model.tokenizer
 
     def embed_query(self, query: str) -> List[float]:
         """Embed a single query string."""

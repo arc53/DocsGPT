@@ -14,8 +14,21 @@ from application.vectorstore.model_registry import (
 
 
 def _embeddings_name_is_explicit() -> bool:
-    """True when ``EMBEDDINGS_NAME`` was configured rather than defaulted."""
-    return "EMBEDDINGS_NAME" in getattr(settings, "model_fields_set", set())
+    """True when ``EMBEDDINGS_NAME`` names a model somebody actually chose.
+
+    Not ``model_fields_set``: pydantic marks a field as set for any value that
+    reached it, including one read from ``.env``, and every setup script has
+    always written ``EMBEDDINGS_NAME`` unconditionally. An install carrying the
+    legacy name a script wrote years ago would read as a deliberate choice and
+    lend a remote server that model's context window.
+    """
+    fields = getattr(type(settings), "model_fields", None)
+    if not isinstance(fields, dict):
+        return False
+    field = fields.get("EMBEDDINGS_NAME")
+    if field is None:
+        return False
+    return settings.EMBEDDINGS_NAME != field.default
 
 
 class RemoteEmbeddings:

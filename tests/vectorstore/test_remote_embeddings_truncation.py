@@ -150,3 +150,48 @@ class TestInputLimitResolution:
     def test_unknown_model_dimension_is_probed_not_assumed(self):
         """The old hardcoded 768 made the probe below unreachable."""
         assert self._remote("some-org/mystery").dimension is None
+
+
+class TestEmbeddingsNameIsExplicit:
+    """Which names count as chosen decides whether a remote server inherits a
+    context window it may not have.
+
+    The tests above monkeypatch the predicate, so they cannot see it being
+    wrong. These drive the real one.
+    """
+
+    def _default(self):
+        from application.core.settings import Settings
+
+        return Settings.model_fields["EMBEDDINGS_NAME"].default
+
+    def test_the_default_name_is_not_a_choice(self, monkeypatch):
+        """Every setup script has always written this value unconditionally.
+
+        Reading it as deliberate lends the server mpnet's 384-token window and
+        clips ~80% off every chunk, silently, on upgrade. ``model_fields_set``
+        could not tell the difference: pydantic marks a field set for anything
+        that reached it, ``.env`` included.
+        """
+        monkeypatch.setattr(base.settings, "EMBEDDINGS_NAME", self._default())
+        assert base._embeddings_name_is_explicit() is False
+
+    def test_a_different_name_is_a_choice(self, monkeypatch):
+        monkeypatch.setattr(
+            base.settings,
+            "EMBEDDINGS_NAME",
+            "ibm-granite/granite-embedding-311m-multilingual-r2",
+        )
+        assert base._embeddings_name_is_explicit() is True
+
+    def test_dotenv_written_default_does_not_clip(self, monkeypatch):
+        """End to end: the common upgrade path must send the full chunk."""
+        monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
+        monkeypatch.setattr(base.settings, "EMBEDDINGS_NAME", self._default())
+        captured = _capture_post(monkeypatch)
+
+        long_text = " ".join(["word"] * 1000)
+        emb = RemoteEmbeddings(api_url="http://embeddings", model_name=self._default())
+        emb.embed_documents([long_text])
+
+        assert captured["payload"]["input"][0] == long_text

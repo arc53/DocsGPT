@@ -29,6 +29,10 @@ class _StubEncoding:
     def decode(self, ids):
         return "".join(chr(i) for i in ids)
 
+    def decode_with_offsets(self, ids):
+        # One token per character, so each token starts where the last ended.
+        return self.decode(ids), list(range(len(ids)))
+
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
@@ -105,6 +109,51 @@ class TestSelection:
     def test_counter_is_cached_per_model(self):
         first = get_token_counter("granite-311m")
         assert get_token_counter("granite-311m") is first
+
+
+class TestTiktokenSplitAgainstRealCl100k:
+    """The stub above is one token per character, so it can never place a cut
+    inside a character. Real cl100k can, and that is the case that corrupted
+    text: decoding each window on its own turns a straddled multi-byte
+    character into U+FFFD on both sides of the cut."""
+
+    @pytest.fixture
+    def real_counter(self):
+        try:
+            counter = TiktokenCounter()
+            counter.count("probe")
+        except Exception as exc:  # offline CI, same policy as the HF fixture
+            pytest.skip(f"cl100k encoding unavailable: {exc}")
+        return counter
+
+    # 2000 is the shipped default max_tokens, 384 mpnet's window; the small
+    # values place many more cuts per unit of text.
+    @pytest.mark.parametrize("window", [1, 2, 3, 7, 128, 384, 2000])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "日本語のテキストです。絵文字も🎉あります。",
+            "検索は自然言語でできます。" * 200,
+            "Здравствуйте, как настроить аутентификацию?",
+            "🎉🎊✨🚀🔥💡📚🧠" * 50,
+            "Ünïcödé — em-dashes, curly “quotes”, and 日本語 text.",
+        ],
+        ids=["ja-short", "ja-long", "ru", "emoji", "mixed"],
+    )
+    def test_split_reassembles_exactly(self, real_counter, text, window):
+        pieces = real_counter.split(text, window)
+        assert "".join(pieces) == text
+
+    @pytest.mark.parametrize("window", [1, 3, 128, 2000])
+    def test_split_never_emits_a_replacement_character(self, real_counter, window):
+        text = "検索は自然言語でできます。絵文字も🎉あります。" * 100
+        assert "�" not in "".join(real_counter.split(text, window))
+
+    def test_first_window_budget_is_honoured_and_lossless(self, real_counter):
+        text = "日本語のテキストです。" * 50
+        pieces = real_counter.split(text, 20, first_max_tokens=5)
+        assert "".join(pieces) == text
+        assert real_counter.count(pieces[0]) <= 5
 
 
 class TestTiktokenCounterEdges:

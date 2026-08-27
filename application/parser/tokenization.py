@@ -135,10 +135,34 @@ class TiktokenCounter(TokenCounter):
         tokens = self._encoding.encode_ordinary(text)
         if len(tokens) <= first:
             return [text]
-        return [
-            self._encoding.decode(tokens[start:end])
-            for start, end in _windows(len(tokens), first, rest)
-        ]
+
+        # Cut the original string at the character offsets the tokenizer
+        # reports, the way :class:`HuggingFaceCounter` does. Decoding each
+        # window on its own instead splits any multi-byte character that
+        # straddles a boundary across two byte sequences, and each half decodes
+        # to U+FFFD -- roughly one boundary in five on CJK text, silently
+        # destroying a character per cut.
+        offsets = self._encoding.decode_with_offsets(tokens)[1]
+        end_of_text = len(text)
+        pieces: List[str] = []
+        cursor = 0
+        for _, end in _windows(len(tokens), first, rest):
+            # Offsets index into the decoded string. ``encode_ordinary``
+            # round-trips for anything cl100k can represent, so it is ``text``;
+            # clamping keeps the cuts in range if it ever is not, and slicing
+            # ``text`` monotonically keeps the pieces reassembling exactly
+            # either way.
+            end_char = end_of_text if end >= len(offsets) else min(offsets[end], end_of_text)
+            if end_char <= cursor:
+                continue
+            pieces.append(text[cursor:end_char])
+            cursor = end_char
+        if cursor < end_of_text:
+            if pieces:
+                pieces[-1] = pieces[-1] + text[cursor:]
+            else:
+                pieces.append(text[cursor:])
+        return pieces
 
 
 class HuggingFaceCounter(TokenCounter):

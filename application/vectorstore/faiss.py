@@ -88,7 +88,22 @@ class FaissStore(BaseVectorStore):
         docs_init=None,
         ids=None,
         batch_size=None,
+        skip_dimension_check: bool = False,
     ):
+        """Open or build one source's FAISS index.
+
+        Args:
+            source_id: Source whose index to open.
+            embeddings_key: API key handed to the embeddings provider.
+            docs_init: Documents to build a fresh index from. Loads the stored
+                index instead when omitted.
+            ids: Chunk ids to keep when building. Generated when omitted.
+            batch_size: Documents per embed call when building.
+            skip_dimension_check: Open an index whose width does not match the
+                configured model. Only for a caller that is about to replace
+                that index, such as the re-embed script, which otherwise cannot
+                read the chunks it needs to rebuild from.
+        """
         super().__init__()
         self.source_id = source_id
         self.path = get_vectorstore(source_id)
@@ -107,7 +122,8 @@ class FaissStore(BaseVectorStore):
         except Exception as e:
             raise Exception(f"Error loading FAISS index: {str(e)}")
 
-        self.assert_embedding_dimensions(self.embeddings)
+        if not skip_dimension_check:
+            self.assert_embedding_dimensions(self.embeddings)
 
     # -- Construction ----------------------------------------------------
 

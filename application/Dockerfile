@@ -63,9 +63,6 @@ RUN groupadd -r appuser && \
 # Copy the virtual environment and model from the builder stage
 COPY --from=builder /venv /venv
 
-# Copy your application code
-COPY . /app/application
-
 # Pre-fetch the embedding models into FastEmbed's cache so a fresh container
 # does not download on first ingest and an air-gapped install works at all.
 # Both defaults are baked: an upgraded deployment keeps using mpnet until it
@@ -76,8 +73,19 @@ COPY . /app/application
 # over the network on first ingest -- and fall back to cl100k when offline.
 ENV EMBEDDINGS_CACHE_DIR=/app/models \
     HF_HUB_CACHE=/app/models
+
+# Only the modules the prefetch imports are copied first. It reaches nothing
+# beyond model_registry, which is stdlib-only, so keeping the full source copy
+# below this layer stops an unrelated edit from re-downloading ~780 MB of model
+# artifacts on every build.
+COPY __init__.py /app/application/__init__.py
+COPY scripts/__init__.py scripts/prefetch_models.py /app/application/scripts/
+COPY vectorstore/__init__.py vectorstore/model_registry.py /app/application/vectorstore/
 ARG EMBEDDINGS_PREFETCH=""
 RUN PYTHONPATH=/app /venv/bin/python -m application.scripts.prefetch_models ${EMBEDDINGS_PREFETCH}
+
+# Copy your application code
+COPY . /app/application
 
 # Change the ownership of the /app directory to the appuser
 

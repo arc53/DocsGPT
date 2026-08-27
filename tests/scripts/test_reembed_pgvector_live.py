@@ -189,3 +189,109 @@ class TestReembedPgvectorLive:
         _seed(live_dsn, "src-f", TEXTS, _Embeddings(1.0))
         _seed(live_dsn, "src-g", TEXTS, _Embeddings(1.0))
         assert reembed.list_source_ids("pgvector") == ["src-f", "src-g"]
+
+
+GRAPH_SOURCE = "11111111-2222-3333-4444-555555555555"
+
+
+def _seed_graph_node(dsn, source_id, name, seed):
+    """Insert one graph node carrying a name embedding at ``seed``."""
+    from application.graphrag.store import GraphStore
+
+    store = PGVectorStore(source_id=source_id, connection_string=dsn)
+    conn = store._get_connection()
+    GraphStore.create_schema(conn, dimension=DIM)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO graph_nodes (id, source_id, name, normalized_name, type, "
+            "description, degree, doc_freq, name_embedding) "
+            "VALUES (gen_random_uuid(), %s, %s, %s, 'ENTITY', '', 0, 0, %s::vector)",
+            (source_id, name, name.lower(), str([seed] + [0.0] * (DIM - 1))),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        store.close()
+
+
+def _node_vectors(dsn, source_id):
+    store = PGVectorStore(source_id=source_id, connection_string=dsn)
+    conn = store._get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT name, name_embedding FROM graph_nodes "
+            "WHERE source_id = %s ORDER BY name",
+            (source_id,),
+        )
+        return [(name, _as_list(vector)) for name, vector in cursor.fetchall()]
+    finally:
+        cursor.close()
+        store.close()
+
+
+class TestGraphNodeReembedLive:
+    """``graph_nodes.name_embedding`` seeds every graph traversal.
+
+    Rewriting only the chunk table leaves it in the previous model's space,
+    and because mpnet and granite-311m share a width the column accepts the
+    mismatch silently -- exactly the failure the script exists to prevent.
+    """
+
+    def test_node_names_are_re_embedded(self, live_dsn, monkeypatch):
+        from application.core import settings as settings_module
+
+        monkeypatch.setattr(
+            settings_module.settings, "GRAPHRAG_ENABLED", True, raising=False
+        )
+        _seed(live_dsn, GRAPH_SOURCE, TEXTS, _Embeddings(1.0))
+        _seed_graph_node(live_dsn, GRAPH_SOURCE, "Alpha", 1.0)
+
+        assert all(v[0] == pytest.approx(1.0) for _, v in _node_vectors(live_dsn, GRAPH_SOURCE))
+
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            return_value=_Embeddings(9.0),
+        ):
+            reembed.reembed_pgvector(GRAPH_SOURCE, batch_size=64, dry_run=False)
+
+        after = _node_vectors(live_dsn, GRAPH_SOURCE)
+        assert [name for name, _ in after] == ["Alpha"]
+        assert all(v[0] == pytest.approx(9.0) for _, v in after), (
+            "graph node names must move with the chunk vectors"
+        )
+
+    def test_graph_is_left_alone_when_graphrag_is_off(self, live_dsn, monkeypatch):
+        from application.core import settings as settings_module
+
+        monkeypatch.setattr(
+            settings_module.settings, "GRAPHRAG_ENABLED", False, raising=False
+        )
+        _seed(live_dsn, GRAPH_SOURCE, TEXTS, _Embeddings(1.0))
+        _seed_graph_node(live_dsn, GRAPH_SOURCE, "Alpha", 1.0)
+
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            return_value=_Embeddings(9.0),
+        ):
+            reembed.reembed_pgvector(GRAPH_SOURCE, batch_size=64, dry_run=False)
+
+        assert all(v[0] == pytest.approx(1.0) for _, v in _node_vectors(live_dsn, GRAPH_SOURCE))
+
+    def test_dry_run_leaves_node_vectors_untouched(self, live_dsn, monkeypatch):
+        from application.core import settings as settings_module
+
+        monkeypatch.setattr(
+            settings_module.settings, "GRAPHRAG_ENABLED", True, raising=False
+        )
+        _seed(live_dsn, GRAPH_SOURCE, TEXTS, _Embeddings(1.0))
+        _seed_graph_node(live_dsn, GRAPH_SOURCE, "Alpha", 1.0)
+
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            return_value=_Embeddings(9.0),
+        ):
+            reembed.reembed_pgvector(GRAPH_SOURCE, batch_size=64, dry_run=True)
+
+        assert all(v[0] == pytest.approx(1.0) for _, v in _node_vectors(live_dsn, GRAPH_SOURCE))

@@ -8,7 +8,9 @@ answers rather than as an error.
 
 This script rebuilds the vectors from the chunk text already held in the store,
 so it never re-downloads, re-parses or re-chunks anything: no source files, no
-crawl, no docling. It works against pgvector and FAISS.
+crawl, no docling. It works against pgvector and FAISS. With ``GRAPHRAG_ENABLED``
+it also rewrites ``graph_nodes.name_embedding``, which seeds graph traversal and
+would otherwise be left behind in the previous model's space.
 
 Usage::
 
@@ -122,6 +124,79 @@ def _faiss_source_ids() -> List[str]:
     return sorted(set(ids))
 
 
+def _graph_nodes_exist(conn) -> bool:
+    """True when the GraphRAG node table is present in this database."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT to_regclass('public.graph_nodes')")
+        row = cursor.fetchone()
+        return bool(row and row[0])
+    finally:
+        cursor.close()
+
+
+def reembed_graph_nodes(store, conn, source_id: str, batch_size: int, dry_run: bool) -> int:
+    """Rewrite one source's GraphRAG node name vectors.
+
+    ``graph_nodes.name_embedding`` is what every graph traversal starts from:
+    the retriever embeds the query and takes the nearest node names as seeds.
+    It is written once at extraction time and never revisited, so re-embedding
+    only the chunk table leaves the graph seeding against the previous model.
+    Nothing errors -- mpnet and granite-311m are both 768-dimensional, so the
+    column accepts the mismatch -- the graph just walks from the wrong nodes.
+
+    The embedded text is ``graph_nodes.name``, which is already stored, so this
+    needs no LLM re-extraction.
+
+    Args:
+        store: The pgvector store, for its embeddings client.
+        conn: Open connection to the same database.
+        source_id: Source whose nodes to re-embed.
+        batch_size: Names per embed call and per transaction.
+        dry_run: When true, count the work and change nothing.
+
+    Returns:
+        Number of node rows seen (dry run) or rewritten.
+    """
+    if not _graph_nodes_exist(conn):
+        return 0
+
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id, name FROM graph_nodes "
+            "WHERE source_id = %s AND name_embedding IS NOT NULL ORDER BY id",
+            (source_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        cursor.close()
+
+    if dry_run or not rows:
+        return len(rows)
+
+    written = 0
+    for batch in _batched(rows, batch_size):
+        vectors = store._embedding.embed_documents([row[1] or "" for row in batch])
+        cursor = conn.cursor()
+        try:
+            cursor.executemany(
+                "UPDATE graph_nodes SET name_embedding = %s::vector WHERE id = %s",
+                [
+                    (str(list(vector)), row[0])
+                    for vector, row in zip(vectors, batch)
+                ],
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+        written += len(batch)
+    return written
+
+
 def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, int]:
     """Rewrite one source's vectors in place.
 
@@ -152,35 +227,45 @@ def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[in
     finally:
         cursor.close()
 
-    if dry_run or not rows:
-        store.close()
-        return len(rows), 0
-
     written = 0
     try:
-        for batch in _batched(rows, batch_size):
-            vectors = store._embedding.embed_documents([row[1] or "" for row in batch])
-            cursor = conn.cursor()
-            try:
-                cursor.executemany(
-                    sql.SQL(
-                        "UPDATE {table} SET {column} = %s::vector WHERE id = %s"
-                    ).format(
-                        table=sql.Identifier(table),
-                        column=sql.Identifier(vector_column),
-                    ),
-                    [
-                        (str(list(vector)), row[0])
-                        for vector, row in zip(vectors, batch)
-                    ],
+        if not dry_run:
+            for batch in _batched(rows, batch_size):
+                vectors = store._embedding.embed_documents([row[1] or "" for row in batch])
+                cursor = conn.cursor()
+                try:
+                    cursor.executemany(
+                        sql.SQL(
+                            "UPDATE {table} SET {column} = %s::vector WHERE id = %s"
+                        ).format(
+                            table=sql.Identifier(table),
+                            column=sql.Identifier(vector_column),
+                        ),
+                        [
+                            (str(list(vector)), row[0])
+                            for vector, row in zip(vectors, batch)
+                        ],
+                    )
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+                finally:
+                    cursor.close()
+                written += len(batch)
+
+        # The graph seeds every traversal from its own vectors, so leaving them
+        # in the old model's space is the same silent mismatch this script
+        # exists to remove -- and at equal widths nothing would report it.
+        if getattr(settings, "GRAPHRAG_ENABLED", False):
+            nodes = reembed_graph_nodes(store, conn, source_id, batch_size, dry_run)
+            if nodes:
+                logger.info(
+                    "  %s: %d graph node name(s)%s",
+                    source_id,
+                    nodes,
+                    "" if dry_run else " re-embedded",
                 )
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                cursor.close()
-            written += len(batch)
     finally:
         store.close()
     return len(rows), written
@@ -201,8 +286,15 @@ def reembed_faiss(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, 
     Returns:
         ``(chunks_seen, chunks_written)``.
     """
+    # A width change is the main reason to run this, and it is exactly what
+    # ``assert_embedding_dimensions`` refuses to open. The chunk text lives in
+    # the sidecar rather than the index, so reading it needs no matching width,
+    # and the index this reads is replaced below.
     store = VectorCreator.create_vectorstore(
-        "faiss", source_id=source_id, embeddings_key=settings.EMBEDDINGS_KEY
+        "faiss",
+        source_id=source_id,
+        embeddings_key=settings.EMBEDDINGS_KEY,
+        skip_dimension_check=True,
     )
     chunks: List[Dict[str, Any]] = store.get_chunks() or []
     if dry_run or not chunks:

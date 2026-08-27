@@ -117,6 +117,20 @@ class TestFaissRebuild:
         reembed.reembed_faiss("s1", batch_size=8, dry_run=False)
         assert factory.call_args_list[1].kwargs["ids"] == ["1", "2"]
 
+    def test_existing_index_is_opened_past_the_dimension_check(self, stores):
+        """A width change is the main reason to run this script.
+
+        ``assert_embedding_dimensions`` refuses to open an index whose width
+        differs from the configured model -- and its error message recommends
+        this script, so without the opt-out the advice failed on every source.
+        The chunk text lives in the sidecar, so reading it needs no match.
+        """
+        _, _, factory = stores
+        reembed.reembed_faiss("s1", batch_size=8, dry_run=False)
+        assert factory.call_args_list[0].kwargs["skip_dimension_check"] is True
+        # The rebuild writes the new width, so it must still be checked.
+        assert "skip_dimension_check" not in factory.call_args_list[1].kwargs
+
     def test_batch_size_is_forwarded_to_the_rebuild(self, stores):
         """On a remote embeddings server the whole index is otherwise one POST."""
         _, _, factory = stores
@@ -171,7 +185,7 @@ class TestPgvectorWithoutTheExtension:
         ]
         with patch.object(
             reembed.VectorCreator, "create_vectorstore", return_value=store
-        ):
+        ), patch.object(reembed.settings, "GRAPHRAG_ENABLED", False):
             yield store, conn, cursor
 
     def test_reads_and_rewrites_every_chunk(self, store):
@@ -255,3 +269,108 @@ class TestFaissSourceDiscovery:
     def test_unsupported_store_error_names_the_alternatives(self):
         with patch.object(reembed.settings, "VECTOR_STORE", "milvus", create=True):
             assert reembed.main([]) == 2
+
+
+class TestGraphNodeReembedding:
+    """``graph_nodes.name_embedding`` seeds every graph traversal.
+
+    It is written once at extraction time and never revisited, so rewriting
+    only the chunk table leaves the graph seeding from the previous model --
+    and since mpnet and granite-311m are both 768-dimensional, the column
+    accepts the mismatch and nothing reports it.
+    """
+
+    @pytest.fixture
+    def graph(self):
+        store = MagicMock()
+        store._embedding.embed_documents.side_effect = lambda texts: [
+            [0.5] * 4 for _ in texts
+        ]
+        cursor = MagicMock()
+        cursor.fetchone.return_value = ("graph_nodes",)
+        cursor.fetchall.return_value = [
+            ("n1", "Alpha"),
+            ("n2", "Beta"),
+            ("n3", "Gamma"),
+        ]
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        return store, conn, cursor
+
+    def test_rewrites_every_node_name(self, graph):
+        store, conn, cursor = graph
+        written = reembed.reembed_graph_nodes(
+            store, conn, "s1", batch_size=64, dry_run=False
+        )
+        assert written == 3
+        store._embedding.embed_documents.assert_called_once_with(
+            ["Alpha", "Beta", "Gamma"]
+        )
+        statement = cursor.executemany.call_args.args[0]
+        assert "graph_nodes" in statement and "name_embedding" in statement
+        conn.commit.assert_called()
+
+    def test_dry_run_counts_without_embedding(self, graph):
+        store, conn, cursor = graph
+        assert reembed.reembed_graph_nodes(store, conn, "s1", 64, dry_run=True) == 3
+        store._embedding.embed_documents.assert_not_called()
+        cursor.executemany.assert_not_called()
+
+    def test_missing_table_is_a_no_op(self, graph):
+        store, conn, cursor = graph
+        cursor.fetchone.return_value = (None,)
+        assert reembed.reembed_graph_nodes(store, conn, "s1", 64, dry_run=False) == 0
+        store._embedding.embed_documents.assert_not_called()
+
+    def test_batches_commit_separately(self, graph):
+        store, conn, cursor = graph
+        reembed.reembed_graph_nodes(store, conn, "s1", batch_size=2, dry_run=False)
+        assert cursor.executemany.call_count == 2
+        assert conn.commit.call_count == 2
+
+    def test_failed_batch_rolls_back_and_raises(self, graph):
+        store, conn, cursor = graph
+        cursor.executemany.side_effect = RuntimeError("write failed")
+        with pytest.raises(RuntimeError, match="write failed"):
+            reembed.reembed_graph_nodes(store, conn, "s1", 64, dry_run=False)
+        conn.rollback.assert_called_once()
+
+    def test_pgvector_run_skips_the_graph_when_disabled(self):
+        store, conn, cursor = self._pgvector_mocks()
+        with patch.object(
+            reembed.VectorCreator, "create_vectorstore", return_value=store
+        ), patch.object(reembed.settings, "GRAPHRAG_ENABLED", False):
+            reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
+        assert not self._graph_statements(cursor)
+
+    def test_pgvector_run_reembeds_the_graph_when_enabled(self):
+        store, conn, cursor = self._pgvector_mocks()
+        with patch.object(
+            reembed.VectorCreator, "create_vectorstore", return_value=store
+        ), patch.object(reembed.settings, "GRAPHRAG_ENABLED", True):
+            reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
+        assert self._graph_statements(cursor)
+
+    @staticmethod
+    def _pgvector_mocks():
+        store = MagicMock()
+        store._table_name = "documents"
+        store._vector_column = "embedding"
+        cursor = MagicMock()
+        cursor.fetchone.return_value = ("graph_nodes",)
+        cursor.fetchall.return_value = [(1, "alpha"), (2, "beta")]
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        store._get_connection.return_value = conn
+        store._embedding.embed_documents.side_effect = lambda texts: [
+            [0.5] * 4 for _ in texts
+        ]
+        return store, conn, cursor
+
+    @staticmethod
+    def _graph_statements(cursor):
+        return [
+            call
+            for call in cursor.executemany.call_args_list
+            if "graph_nodes" in str(call.args[0])
+        ]

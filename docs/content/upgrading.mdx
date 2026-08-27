@@ -47,6 +47,10 @@ Useful flags:
 The script processes sources independently: one failing source is reported and skipped rather than aborting the run, and the exit code is non-zero if any failed. For `pgvector` it updates rows in place, so an interrupted run simply re-does its last batch. For `faiss` it builds the replacement index in memory and only writes once the whole rebuild succeeds, leaving the existing index untouched on failure.
 
 <Callout type="info">
+  Running [GraphRAG](/Sources/GraphRAG)? The script also rewrites `graph_nodes.name_embedding`, which seeds every graph traversal. Those vectors are written once at extraction time and share the chunk vectors' width, so leaving them in the old model's space degrades graph retrieval just as silently as the chunk vectors would — and needs no LLM re-extraction to fix.
+</Callout>
+
+<Callout type="info">
   Staying on `all-mpnet-base-v2` is a supported choice — it remains in the model registry and in `setup.sh`. You only need this section if you want to move to granite.
 </Callout>
 

@@ -111,7 +111,11 @@ Switching between same-width models therefore still requires re-embedding:
 python -m application.scripts.reembed
 ```
 
-Run it after changing `EMBEDDINGS_NAME` and before serving queries. See [Upgrading](/upgrading) for the granite migration specifically. Changing to a model of a *different* width is not supported by the script — re-ingest those sources instead.
+Run it after changing `EMBEDDINGS_NAME` and before serving queries. See [Upgrading](/upgrading) for the granite migration specifically.
+
+Changing to a model of a *different* width is supported for FAISS: the script rebuilds the index at the new width and keeps the existing chunk ids. For `pgvector` the vector column is sized at creation time, so a width change there still means re-ingesting those sources.
+
+With `GRAPHRAG_ENABLED`, the script also rewrites `graph_nodes.name_embedding` on `pgvector`. Those vectors seed every graph traversal, and they share the chunk vectors' width, so leaving them behind degrades graph retrieval just as silently.
 
 ## Adding Support for Other Embedding Models
 
