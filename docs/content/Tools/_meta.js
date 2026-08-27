@@ -7,6 +7,10 @@ export default {
     "title": "🗝️ API Tool",
     "href": "/Tools/api-tool"
   },
+  "xquik": {
+    "title": "Xquik Search",
+    "href": "/Tools/xquik"
+  },
   "remote-device": {
     "title": "🖥️ Remote Device",
     "href": "/Tools/remote-device"

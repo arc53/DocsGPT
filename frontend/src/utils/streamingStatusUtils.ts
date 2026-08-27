@@ -6,6 +6,7 @@ const WEB_SEARCH_ACTIONS = new Set([
   'brave_web_search',
   'ddg_web_search',
   'ddg_news_search',
+  'xquik_search_posts',
 ]);
 const IMAGE_SEARCH_ACTIONS = new Set([
   'brave_image_search',

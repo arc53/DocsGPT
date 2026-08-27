@@ -44,6 +44,19 @@ describe('getToolChipLabel', () => {
     );
   });
 
+  it('labels Xquik post searches as web searches', () => {
+    expect(
+      getToolChipLabel(
+        call({
+          tool_name: 'xquik',
+          action_name: 'xquik_search_posts',
+          arguments: { query: 'DocsGPT release' },
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.searchingWeb|DocsGPT release');
+  });
+
   it('treats a status-less call as settled, matching the non-shimmer row', () => {
     expect(
       getToolChipLabel(
