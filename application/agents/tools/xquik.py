@@ -11,6 +11,7 @@ API_URL = "https://xquik.com/api/v1/x/tweets/search"
 API_CONTRACT = "2026-04-29"
 DEFAULT_TIMEOUT = 30
 MAX_RESULTS = 100
+SEARCH_ARGUMENTS = frozenset({"query", "query_type", "max_results", "cursor"})
 
 
 def _bounded_integer(value: Any, default: int, minimum: int, maximum: int) -> int:
@@ -54,6 +55,11 @@ class XquikSearchTool(Tool):
 
         if action_name != "xquik_search_posts":
             raise ValueError(f"Unknown action: {action_name}")
+        if set(kwargs) - SEARCH_ARGUMENTS:
+            return _error_result(
+                400,
+                "Unsupported search parameter. Remove extra fields.",
+            )
         return self._search_posts(**kwargs)
 
     @staticmethod
@@ -75,7 +81,7 @@ class XquikSearchTool(Tool):
 
     def _search_posts(
         self,
-        query: str,
+        query: str = "",
         query_type: str = "Latest",
         max_results: int = 20,
         cursor: str | None = None,
@@ -183,6 +189,7 @@ class XquikSearchTool(Tool):
                         "query": {
                             "type": "string",
                             "description": ("X search query, post ID, or status URL. Send the user's query unchanged."),
+                            "required": True,
                         },
                         "query_type": {
                             "type": "string",

@@ -27,6 +27,17 @@ class TestXquikExecuteAction:
         with pytest.raises(ValueError, match="Unknown action"):
             tool.execute_action("invalid")
 
+    @pytest.mark.parametrize(
+        ("arguments", "message"),
+        [({}, "Search query required"), ({"query": "DocsGPT", "extra": True}, "Unsupported search parameter")],
+    )
+    def test_invalid_action_arguments_return_structured_errors(self, arguments, message, tool):
+        result = tool.execute_action("xquik_search_posts", **arguments)
+
+        assert result["status"] == "error"
+        assert result["status_code"] == 400
+        assert message in result["message"]
+
     @patch("application.agents.tools.xquik.requests.get")
     def test_missing_api_key_fails_before_request(self, mock_get):
         result = XquikSearchTool(config={}).execute_action("xquik_search_posts", query="DocsGPT")
@@ -271,6 +282,7 @@ class TestXquikMetadata:
         action = metadata[0]
         assert action["name"] == "xquik_search_posts"
         assert action["parameters"]["required"] == ["query"]
+        assert action["parameters"]["properties"]["query"]["required"] is True
         assert action["parameters"]["properties"]["query_type"]["enum"] == [
             "Latest",
             "Top",
