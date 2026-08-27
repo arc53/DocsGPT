@@ -32,6 +32,7 @@ class TestXquikExecuteAction:
         result = XquikSearchTool(config={}).execute_action("xquik_search_posts", query="DocsGPT")
 
         assert result == {
+            "status": "error",
             "status_code": 401,
             "results": [],
             "message": "Xquik API key required. Configure the tool first.",
@@ -149,6 +150,7 @@ class TestXquikExecuteAction:
         result = tool.execute_action("xquik_search_posts", query="DocsGPT")
 
         assert result == {
+            "status": "error",
             "status_code": 502,
             "results": [],
             "message": "Xquik returned an invalid search response. Try again.",
@@ -198,6 +200,7 @@ class TestXquikExecuteAction:
         result = tool.execute_action("xquik_search_posts", query="DocsGPT")
 
         assert result == {
+            "status": "error",
             "status_code": 429,
             "results": [],
             "message": "Rate limit reached. Retry later.",
@@ -245,6 +248,7 @@ class TestXquikExecuteAction:
         result = tool.execute_action("xquik_search_posts", query="DocsGPT")
 
         assert result == {
+            "status": "error",
             "status_code": 503,
             "results": [],
             "message": "Xquik search is unavailable. Try again.",
@@ -254,6 +258,12 @@ class TestXquikExecuteAction:
 
 @pytest.mark.unit
 class TestXquikMetadata:
+    def test_docstring_exposes_catalog_name_and_description(self):
+        name, description = XquikSearchTool.__doc__.strip().split("\n", 1)
+
+        assert name == "Xquik Search"
+        assert description.strip() == "Search current X posts through the Xquik API."
+
     def test_actions_metadata_declares_search_contract(self, tool):
         metadata = tool.get_actions_metadata()
 

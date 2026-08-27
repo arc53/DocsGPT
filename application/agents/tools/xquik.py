@@ -23,8 +23,23 @@ def _bounded_integer(value: Any, default: int, minimum: int, maximum: int) -> in
     return max(minimum, min(parsed, maximum))
 
 
+def _error_result(status_code: int, message: str, **details: str) -> dict[str, Any]:
+    """Return a failure payload recognized by the tool executor."""
+
+    return {
+        "status": "error",
+        "status_code": status_code,
+        "results": [],
+        "message": message,
+        **details,
+    }
+
+
 class XquikSearchTool(Tool):
-    """Search current X posts through the Xquik API."""
+    """Xquik Search
+
+    Search current X posts through the Xquik API.
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Configure the API credential and request timeout."""
@@ -68,31 +83,21 @@ class XquikSearchTool(Tool):
         """Search X posts and return normalized DocsGPT tool output."""
 
         if not self.api_key:
-            return {
-                "status_code": 401,
-                "results": [],
-                "message": "Xquik API key required. Configure the tool first.",
-            }
+            return _error_result(
+                401,
+                "Xquik API key required. Configure the tool first.",
+            )
         if not isinstance(query, str) or not query.strip():
-            return {
-                "status_code": 400,
-                "results": [],
-                "message": "Search query required. Enter a query first.",
-            }
+            return _error_result(400, "Search query required. Enter a query first.")
 
         normalized_query_type = str(query_type).strip().title()
         if normalized_query_type not in {"Latest", "Top"}:
-            return {
-                "status_code": 400,
-                "results": [],
-                "message": "Invalid result order. Use Latest or Top.",
-            }
+            return _error_result(400, "Invalid result order. Use Latest or Top.")
         if cursor is not None and not isinstance(cursor, str):
-            return {
-                "status_code": 400,
-                "results": [],
-                "message": "Invalid cursor. Use the cursor returned by Xquik.",
-            }
+            return _error_result(
+                400,
+                "Invalid cursor. Use the cursor returned by Xquik.",
+            )
 
         params: dict[str, str | int] = {
             "q": query,
@@ -119,11 +124,7 @@ class XquikSearchTool(Tool):
                 "Xquik X post search request failed: %s",
                 error.__class__.__name__,
             )
-            return {
-                "status_code": 503,
-                "results": [],
-                "message": "Xquik search is unavailable. Try again.",
-            }
+            return _error_result(503, "Xquik search is unavailable. Try again.")
 
         try:
             payload = response.json()
@@ -131,35 +132,30 @@ class XquikSearchTool(Tool):
             payload = None
 
         if response.status_code != 200:
-            result = {
-                "status_code": response.status_code,
-                "results": [],
-                "message": self._error_message(payload, response.status_code),
-            }
             retry_after = response.headers.get("Retry-After")
-            if retry_after:
-                result["retry_after"] = retry_after
-            return result
+            return _error_result(
+                response.status_code,
+                self._error_message(payload, response.status_code),
+                **({"retry_after": retry_after} if retry_after else {}),
+            )
 
         if (
             not isinstance(payload, dict)
             or not isinstance(payload.get("tweets"), list)
             or not all(isinstance(tweet, dict) for tweet in payload["tweets"])
         ):
-            return {
-                "status_code": 502,
-                "results": [],
-                "message": "Xquik returned an invalid search response. Try again.",
-            }
+            return _error_result(
+                502,
+                "Xquik returned an invalid search response. Try again.",
+            )
 
         has_next_page = payload.get("has_next_page", False)
         next_cursor = payload.get("next_cursor", "")
         if not isinstance(has_next_page, bool) or not isinstance(next_cursor, str):
-            return {
-                "status_code": 502,
-                "results": [],
-                "message": "Xquik returned an invalid search response. Try again.",
-            }
+            return _error_result(
+                502,
+                "Xquik returned an invalid search response. Try again.",
+            )
 
         return {
             "status_code": 200,
