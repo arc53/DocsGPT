@@ -508,3 +508,123 @@ class TestGetDefaultFileExtractor:
             mock_fn.return_value = {".pdf": MagicMock(), ".md": MagicMock()}
             result = mock_fn()
             assert ".pdf" in result
+
+
+# =====================================================================
+# DOC_PARSER_ENGINE switch
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestParserEngineSwitch:
+    """``get_default_file_extractor`` honours ``DOC_PARSER_ENGINE`` / ``engine``."""
+
+    @pytest.fixture
+    def settings(self):
+        from application.core.settings import settings
+
+        return settings
+
+    def test_default_engine_is_anydoc(self, settings, monkeypatch):
+        pytest.importorskip("anydoc")
+        from application.parser.file.anydoc_parser import ANYDOC_SUFFIXES, AnydocParser
+        from application.parser.file.bulk import get_default_file_extractor
+        from application.parser.file.html_parser import HTMLMarkdownParser
+
+        monkeypatch.setattr(settings, "DOC_PARSER_ENGINE", "anydoc")
+        extractor = get_default_file_extractor()
+
+        for suffix in ANYDOC_SUFFIXES:
+            assert isinstance(extractor[suffix], AnydocParser), suffix
+        assert isinstance(extractor[".html"], HTMLMarkdownParser)
+        assert isinstance(extractor[".xhtml"], HTMLMarkdownParser)
+        # Specialised parsers are untouched by the engine choice.
+        assert type(extractor[".md"]).__name__ == "MarkdownParser"
+        assert type(extractor[".json"]).__name__ == "JSONParser"
+        assert type(extractor[".epub"]).__name__ == "EpubParser"
+
+    def test_anydoc_falls_back_to_docling_when_installed(self):
+        pytest.importorskip("anydoc")
+        pytest.importorskip("docling")
+        from application.parser.file.bulk import get_default_file_extractor
+
+        extractor = get_default_file_extractor(engine="anydoc")
+
+        assert type(extractor[".pdf"].fallback_parser).__name__ == "DoclingPDFParser"
+        assert type(extractor[".csv"].fallback_parser).__name__ == "DoclingCSVParser"
+        assert extractor[".doc"].fallback_parser is None  # nothing else reads .doc
+        # docling keeps the formats anydoc cannot read.
+        assert type(extractor[".vtt"]).__name__ == "DoclingVTTParser"
+
+    def test_anydoc_fallback_honours_ocr_flag(self):
+        pytest.importorskip("anydoc")
+        pytest.importorskip("docling")
+        from application.parser.file.bulk import get_default_file_extractor
+
+        extractor = get_default_file_extractor(engine="anydoc", ocr_enabled=True)
+
+        assert extractor[".pdf"].fallback_parser.ocr_enabled is True
+        assert type(extractor[".png"]).__name__ == "DoclingImageParser"
+
+    def test_anydoc_falls_back_to_legacy_without_docling(self, monkeypatch):
+        pytest.importorskip("anydoc")
+        import sys
+
+        from application.parser.file.bulk import get_default_file_extractor
+
+        monkeypatch.setitem(sys.modules, "docling", None)
+        extractor = get_default_file_extractor(engine="anydoc")
+
+        assert type(extractor[".pdf"].fallback_parser).__name__ == "PDFParser"
+        assert type(extractor[".xlsx"].fallback_parser).__name__ == "ExcelParser"
+        assert type(extractor[".png"]).__name__ == "ImageParser"
+
+    def test_docling_engine_keeps_docling_map(self):
+        pytest.importorskip("docling")
+        from application.parser.file.bulk import get_default_file_extractor
+
+        extractor = get_default_file_extractor(engine="docling")
+
+        assert type(extractor[".pdf"]).__name__ == "DoclingPDFParser"
+        assert type(extractor[".html"]).__name__ == "DoclingHTMLParser"
+
+    def test_setting_selects_docling(self, settings, monkeypatch):
+        pytest.importorskip("docling")
+        from application.parser.file.bulk import get_default_file_extractor
+
+        monkeypatch.setattr(settings, "DOC_PARSER_ENGINE", "docling")
+        assert type(get_default_file_extractor()[".pdf"]).__name__ == "DoclingPDFParser"
+
+    def test_unknown_engine_uses_anydoc(self):
+        pytest.importorskip("anydoc")
+        from application.parser.file.anydoc_parser import AnydocParser
+        from application.parser.file.bulk import get_default_file_extractor
+
+        assert isinstance(get_default_file_extractor(engine="ghost")[".pdf"], AnydocParser)
+
+    def test_missing_anydoc_degrades_to_base_engine(self, monkeypatch):
+        import sys
+
+        from application.parser.file.bulk import get_default_file_extractor
+
+        monkeypatch.setitem(sys.modules, "anydoc", None)
+        extractor = get_default_file_extractor(engine="anydoc")
+
+        assert type(extractor[".pdf"]).__name__ in ("DoclingPDFParser", "PDFParser")
+        assert type(extractor[".html"]).__name__ in ("DoclingHTMLParser", "HTMLParser")
+
+    def test_missing_docling_map_is_usable(self, monkeypatch):
+        """Regression: with docling absent the map handed out docling parsers whose
+        ``init_parser`` raised ``ImportError`` — not a ``DocumentParseError`` — so
+        the first file aborted the whole ingest instead of degrading."""
+        import sys
+
+        from application.parser.file.bulk import get_default_file_extractor
+
+        monkeypatch.setitem(sys.modules, "docling", None)
+        extractor = get_default_file_extractor(engine="docling")
+
+        assert type(extractor[".pdf"]).__name__ == "PDFParser"
+        assert ".xhtml" in extractor
+        for suffix in (".pdf", ".docx", ".csv", ".xlsx", ".html", ".xhtml", ".pptx"):
+            extractor[suffix].init_parser()

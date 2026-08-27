@@ -1,13 +1,49 @@
 ---
-title: OCR for Sources and Attachments
-description: How OCR works in DocsGPT, how to configure it, and what changes for source ingestion vs chat attachments.
+title: Document Parsing and OCR
+description: Which engine parses uploaded documents, how OCR works in DocsGPT, how to configure it, and what changes for source ingestion vs chat attachments.
 ---
 
 import { Callout } from 'nextra/components'
 
-# Docling OCR for Sources and Attachments
+# Document Parsing and OCR for Sources and Attachments
 
-DocsGPT uses Docling as the default parser layer for many document formats. OCR is optional and controlled by two settings:
+## Parser engine
+
+DocsGPT converts uploaded documents to Markdown before chunking, embedding or
+handing them to a model. The engine is selected with one setting:
+
+```env
+DOC_PARSER_ENGINE=anydoc
+```
+
+- `anydoc` (default): [firecrawl-anydoc](https://github.com/firecrawl/anydoc),
+  a Rust converter with no ML models. It reads PDF, DOCX, PPTX, XLSX and CSV
+  in milliseconds with ~100 MB peak memory; HTML/XHTML is converted with
+  `markdownify`, head-truncated at `MARKUP_MAX_BYTES`. Source uploads and the
+  `read_document` tool accept the same file types as before (the
+  `SUPPORTED_SOURCE_EXTENSIONS` whitelist is unchanged); chat attachments,
+  which are not whitelisted by extension, can additionally be parsed from
+  anydoc's other formats (DOC, PPT/PPS/POT, XLS, ODT/ODS/ODP, RTF and the
+  macro-enabled Office variants). It never performs OCR:
+  a scanned or image-only PDF is *detected* and handed to the fallback
+  parser — Docling when it is installed, the legacy text parsers otherwise —
+  and if nothing can read the file the upload fails with a clear error
+  instead of storing an empty document.
+- `docling`: the previous default. Docling's layout and table models produce
+  structured Markdown, support OCR, and back the `read_document` tool's
+  `structured` output, at the cost of a large dependency tree (torch,
+  transformers, ONNX models) and seconds to minutes per PDF. Switching back is
+  this one variable; nothing else changes.
+
+With `DOC_PARSER_ENGINE=anydoc`, Docling still handles what anydoc cannot when
+it is installed: image OCR (`DOCLING_OCR_ENABLED`), `.adoc`, `.vtt` and `.xml`
+sources, and the fallback for files anydoc rejects. Without Docling those
+formats use the standard parsers, and images are only read when
+`PARSE_IMAGE_REMOTE=true`.
+
+## Docling OCR
+
+OCR is optional, Docling-only, and controlled by two settings:
 
 ```env
 DOCLING_OCR_ENABLED=false
@@ -24,7 +60,7 @@ DOCLING_OCR_ATTACHMENTS_ENABLED=false
 1. Files are uploaded through `/api/upload`.
 2. Ingestion runs asynchronously in Celery (`ingest_worker`).
 3. `SimpleDirectoryReader` parses files with `get_default_file_extractor`.
-4. For PDFs and image formats, Docling parsers are used. OCR in this path is controlled by `DOCLING_OCR_ENABLED`.
+4. Documents are parsed by the `DOC_PARSER_ENGINE` engine; images (and, under `anydoc`, scanned PDFs) reach Docling when it is installed. OCR in this path is controlled by `DOCLING_OCR_ENABLED`.
 5. Parsed text is chunked, embedded, and stored in the vector store.
 6. Retrieval during chat uses this indexed text and returns source citations.
 
@@ -90,7 +126,7 @@ After changing these settings, restart the API and Celery worker.
 
 ## Legacy Fallback Notes
 
-- If Docling is unavailable, DocsGPT falls back to legacy parsers.
+- If Docling is unavailable, DocsGPT falls back to legacy parsers for the formats anydoc does not cover, and anydoc's own refusals become upload errors.
 - With OCR disabled, text-based PDFs can still parse, but scanned/image-heavy content may produce little text.
 - For image parsing without Docling OCR, the legacy image parser only extracts text when `PARSE_IMAGE_REMOTE=true`.
 

@@ -106,6 +106,15 @@ class Settings(BaseSettings):
     UPLOAD_MAX_ARCHIVE_DEPTH: int = Field(default=3, ge=0)
     PARSE_PDF_AS_IMAGE: bool = False
     PARSE_IMAGE_REMOTE: bool = False
+    # Document parser for source ingestion, chat attachments and the
+    # read_document tool. "anydoc" (default): firecrawl-anydoc, a Rust
+    # converter with no ML models — milliseconds per file, ~100 MB peak RSS.
+    # "docling": the layout/table-model pipeline (optional install; needed
+    # for OCR and for read_document's structured output). Files anydoc
+    # cannot convert (scanned PDFs, malformed input) fall back to docling
+    # when it is installed, otherwise to the legacy parsers. Rollback to the
+    # previous behaviour is this one variable.
+    DOC_PARSER_ENGINE: str = "anydoc"
     DOCLING_OCR_ENABLED: bool = False  # Enable OCR for docling parsers (PDF, images)
     DOCLING_OCR_ATTACHMENTS_ENABLED: bool = False  # Enable OCR for docling when parsing attachments
     # Pages docling's threaded pipeline buffers in flight; the library
@@ -114,6 +123,12 @@ class Settings(BaseSettings):
     DOCLING_COMPILE_TORCH_MODELS: bool = False
     DOCLING_TABULAR_MAX_BYTES: int = 2_000_000
     DOCLING_MARKUP_MAX_BYTES: int = 8_000_000
+    # HTML/XHTML larger than this (bytes) are head-truncated before the
+    # markdownify parser runs (the anydoc engine's HTML path). The tree that
+    # path builds costs ~50x the input — 30 MB of HTML measured at 1.6 GB RSS —
+    # and the upload cap is 100 MB, so the gate is what keeps one upload from
+    # taking the ingest worker down. 0 disables it.
+    MARKUP_MAX_BYTES: int = 8_000_000
     # Chars-per-page floor below which an OCR'd PDF/image parse is treated as a docling
     # pipeline dropout (long-running workers were observed returning zero characters for
     # every scanned page after a long scanned PDF, with no error) rather than as content.

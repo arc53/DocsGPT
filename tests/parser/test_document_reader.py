@@ -51,6 +51,19 @@ def test_zip_bomb_declared_size_over_cap_is_rejected(monkeypatch):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "suffix", [".docm", ".xlsm", ".xlsb", ".pptm", ".ppsx", ".ppsm", ".odt", ".ods", ".odp"]
+)
+def test_zip_bomb_guard_covers_every_anydoc_zip_format(monkeypatch, suffix):
+    """Chat attachments have no extension whitelist, so every zip-packaged format
+    the anydoc map routes must be gated the same way as .docx."""
+    monkeypatch.setattr(dr.settings, "DOCUMENT_MAX_DECOMPRESSED_BYTES", 1000, raising=False)
+    data = _make_zip({"content.xml": b"A" * 50_000})
+    reason = dr._reject_zip_bomb(data, suffix)
+    assert reason is not None and "too much data" in reason
+
+
+@pytest.mark.unit
 def test_zip_too_many_entries_is_rejected(monkeypatch):
     monkeypatch.setattr(dr.settings, "DOCUMENT_MAX_ARCHIVE_ENTRIES", 3, raising=False)
     data = _make_zip({f"f{i}.xml": b"x" for i in range(10)})
@@ -186,7 +199,7 @@ class _FakeParser:
 @pytest.mark.unit
 def test_engine_picks_parser_and_coerces_list(monkeypatch):
     fake = _FakeParser(["chunk A", "chunk B"])
-    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None: {".pdf": fake})
+    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None, **kwargs: {".pdf": fake})
     out = parse_document_bytes(b"%PDF-1.4", "doc.pdf", output="text", engine="docling", include_tables=False)
     assert out["content"] == "chunk A\n\nchunk B"
 
@@ -212,6 +225,9 @@ def test_default_markdown_with_tables_converts_docling_once(monkeypatch):
     """
     import sys
     import types
+
+    # engine=auto resolves to the server default; this test is about the docling path.
+    monkeypatch.setattr(dr.settings, "DOC_PARSER_ENGINE", "docling")
 
     from application.parser.file.docling_parser import DoclingParser
 
@@ -272,7 +288,7 @@ def test_default_markdown_with_tables_converts_docling_once(monkeypatch):
             # Only reached if the collapse path fails; the test asserts it doesn't.
             return "# parse-file content"
 
-    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None: {".pdf": _FakeDoclingParser()})
+    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None, **kwargs: {".pdf": _FakeDoclingParser()})
 
     # Defaults: output=markdown, engine=auto, include_tables=True -> the double-parse path.
     out = parse_document_bytes(b"%PDF-1.4", "doc.pdf")
@@ -293,7 +309,7 @@ def test_default_markdown_with_tables_converts_docling_once(monkeypatch):
 @pytest.mark.unit
 def test_pages_slices_form_feed_blob(monkeypatch):
     fake = _FakeParser("page1\fpage2\fpage3")
-    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None: {".pdf": fake})
+    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None, **kwargs: {".pdf": fake})
     out = parse_document_bytes(b"%PDF", "doc.pdf", output="text", pages="2", engine="docling", include_tables=False)
     assert out["content"] == "page2"
 
@@ -443,7 +459,7 @@ def test_temp_file_cleaned_up_on_parser_error(monkeypatch):
 
     fake = _FakeParser("x")
     fake.parse_file = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
-    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None: {".pdf": fake})
+    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None, **kwargs: {".pdf": fake})
 
     out = parse_document_bytes(b"%PDF", "doc.pdf", output="text", engine="docling", include_tables=False)
     assert "error" in out and "parsing failed" in out["error"]
@@ -622,3 +638,72 @@ def test_structured_tables_render_blank_cells_as_strings(monkeypatch, tmp_path):
     assert all(isinstance(c, str) for c in cells), f"non-string cells: {cells!r}"
     assert "1001" in cells and "1001.0" not in cells
     assert "" in cells  # blank cell renders as empty string, not "nan"/"None"
+
+
+# ---------------------------------------------------------------------------
+# engine=anydoc / auto: the default engine must never trigger a docling pass
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_anydoc_engine_is_accepted_and_passed_through(monkeypatch):
+    fake = _FakeParser("anydoc text")
+    seen = {}
+
+    def _extractor(ocr_enabled=None, **kwargs):
+        seen.update(kwargs)
+        return {".pdf": fake}
+
+    monkeypatch.setattr(dr, "get_default_file_extractor", _extractor)
+    out = parse_document_bytes(b"%PDF-1.4", "doc.pdf", output="text", engine="anydoc", include_tables=False)
+    assert out["content"] == "anydoc text"
+    assert seen == {"engine": "anydoc"}
+
+
+@pytest.mark.unit
+def test_auto_engine_under_anydoc_skips_docling_table_pass(monkeypatch):
+    """Default read (markdown, engine=auto, include_tables) must not run a docling conversion
+    just to harvest tables when the configured engine is anydoc — that pass would cost more
+    than the whole read and re-import the stack anydoc exists to avoid."""
+    monkeypatch.setattr(dr.settings, "DOC_PARSER_ENGINE", "anydoc")
+    fake = _FakeParser("# md body")
+    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None, **kwargs: {".pdf": fake})
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("docling conversion attempted under the anydoc engine")
+
+    monkeypatch.setattr(dr, "_docling_structured", _boom)
+
+    out = parse_document_bytes(b"%PDF-1.4", "doc.pdf")  # markdown, auto, include_tables=True
+
+    assert out["content"] == "# md body"
+    assert "tables" not in out
+
+
+@pytest.mark.unit
+def test_explicit_docling_engine_still_collects_tables(monkeypatch):
+    monkeypatch.setattr(dr.settings, "DOC_PARSER_ENGINE", "anydoc")
+    fake = _FakeParser("body")
+    monkeypatch.setattr(dr, "get_default_file_extractor", lambda ocr_enabled=None, **kwargs: {".pdf": fake})
+    monkeypatch.setattr(
+        dr,
+        "_docling_structured",
+        lambda *a, **k: {"markdown": "body", "tables": [{"markdown": "| t |"}], "structured": {}, "page_count": 1},
+    )
+
+    out = parse_document_bytes(b"%PDF-1.4", "doc.pdf", engine="docling")
+
+    assert out["tables"] == [{"markdown": "| t |"}]
+
+
+@pytest.mark.unit
+def test_structured_output_stays_docling_under_anydoc(monkeypatch):
+    monkeypatch.setattr(dr.settings, "DOC_PARSER_ENGINE", "anydoc")
+    calls = []
+
+    def _fake_structured(path, *, ocr_enabled, include_tables, parser=None):
+        calls.append(path)
+        return {"markdown": "# s", "tables": [], "structured": {"texts": []}, "page_count": 1}
+
+    monkeypatch.setattr(dr, "_docling_structured", _fake_structured)
+    out = parse_document_bytes(b"%PDF-1.4", "doc.pdf", output="structured")
+    assert out["output"] == "structured"
+    assert len(calls) == 1

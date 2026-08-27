@@ -15,7 +15,11 @@ import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
-from application.parser.file.base_parser import BaseParser, DocumentParseError
+from application.parser.file.base_parser import (
+    BaseParser,
+    DocumentParseError,
+    delegate_parse as _delegate,
+)
 from application.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
@@ -116,46 +120,6 @@ def _exceeds_tabular_gate(file: Path) -> bool:
     if max_bytes <= 0:
         return False
     return _tabular_content_size(file) > max_bytes
-
-
-def _delegate(
-    parser: BaseParser, file: Path, errors: str
-) -> Union[str, List[str]]:
-    """Run a lightweight fallback parser, normalizing its failures.
-
-    Anything the fallback raises is converted to ``DocumentParseError``,
-    which matters twice over. The Celery tasks that own these paths list
-    ``DocumentParseError`` in ``dont_autoretry_for``, so a deterministic
-    content error now fails once instead of retrying four times (each retry
-    re-downloading the file from S3); and ``SimpleDirectoryReader.load_data``
-    catches only ``DocumentParseError``, so one poison spreadsheet is skipped
-    into ``failed_files`` instead of aborting an entire multi-file ingest.
-
-    This restores the symmetry with ``DoclingParser.parse_file``, whose own
-    failures are already wrapped — the delegation branch bypassed that.
-
-    Args:
-        parser: The lightweight parser to delegate to.
-        file: Path to the file being parsed.
-        errors: Decoding error policy, forwarded to the parser.
-
-    Returns:
-        The parsed text, or list of row strings.
-
-    Raises:
-        DocumentParseError: If the fallback parser fails for any reason.
-    """
-    try:
-        return parser.parse_file(file, errors)
-    except DocumentParseError:
-        raise
-    except Exception as e:
-        logger.error(
-            f"Lightweight parse of {file.name} failed: {e}", exc_info=True
-        )
-        raise DocumentParseError(
-            f"Failed to parse {file.name}: the file could not be read."
-        ) from e
 
 
 def _capped_markup_copy(file: Path) -> Optional[str]:

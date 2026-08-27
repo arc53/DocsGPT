@@ -13,6 +13,9 @@ dataclasses-json==0.6.7
 daytona==0.205.1
 defusedxml==0.7.1
 docling==2.119.0
+# Default document converter (DOC_PARSER_ENGINE=anydoc); docling above is
+# the optional heavy engine for OCR/structured output.
+firecrawl-anydoc==0.2.3
 rapidocr==3.9.2
 onnxruntime==1.28.0
 docx2txt==0.9

@@ -198,6 +198,22 @@ These byte/count limits and the non-negative nesting depth can be overridden in 
 The request limit intentionally applies only to public upload routes; internal
 worker index transfers use their own trusted service boundary.
 
+## Document Parsing
+
+Uploaded sources and chat attachments are converted to Markdown before
+chunking or prompting. See the [Document Parsing and OCR](/Guides/ocr) guide
+for the engines and flows.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `DOC_PARSER_ENGINE` | `anydoc` | Parser engine: `anydoc` (fast Rust converter, no ML models) or `docling` (layout/table models, OCR, structured output; heavy optional install). Files anydoc cannot read fall back to Docling when installed. |
+| `DOCLING_OCR_ENABLED` | `false` | OCR for source ingestion (Docling only). |
+| `DOCLING_OCR_ATTACHMENTS_ENABLED` | `false` | OCR for chat attachments (Docling only). |
+| `ATTACHMENT_PDF_TEXT_FAST_PATH` | `true` | Under the `docling` engine, read PDF attachments through their text layer (pypdfium2) and only hand scans to Docling. Not needed under `anydoc`. |
+| `DOCLING_TABULAR_MAX_BYTES` | `2000000` | Docling engine: CSV/XLSX larger than this (by content) use the lightweight tabular parsers. |
+| `DOCLING_MARKUP_MAX_BYTES` | `8000000` | Docling engine: HTML/VTT larger than this are head-truncated before parsing. |
+| `MARKUP_MAX_BYTES` | `8000000` | anydoc engine: HTML/XHTML larger than this are head-truncated before the `markdownify` parser runs (its tree costs ~50x the input). `0` disables the gate. |
+
 ## Speech-to-Text Settings
 
 DocsGPT can transcribe audio in two places:

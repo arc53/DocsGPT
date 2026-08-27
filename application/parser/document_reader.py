@@ -1,10 +1,11 @@
 """In-process document parsing for the ``read_document`` tool, run on the Celery parsing worker.
 
 ``parse_document_bytes`` turns untrusted document bytes into a bounded, shaped
-result (markdown/text/structured/chunks) using the BACKEND parsers (Docling by
-default). It applies the same untrusted-content safeguards as uploads — an
-extension whitelist, a byte cap, ``safe_filename`` staging into a temp file, and
-temp cleanup — so a hostile filename or document is treated as inert data.
+result (markdown/text/structured/chunks) using the BACKEND parsers (the engine
+selected by ``DOC_PARSER_ENGINE``; ``structured`` output always needs Docling).
+It applies the same untrusted-content safeguards as uploads — an extension
+whitelist, a byte cap, ``safe_filename`` staging into a temp file, and temp
+cleanup — so a hostile filename or document is treated as inert data.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ _MAX_PAGE_SELECTOR_TOKENS = 20_000
 
 _VALID_OUTPUTS = ("markdown", "text", "structured", "chunks")
 _VALID_OCR = ("auto", "on", "off")
-_VALID_ENGINES = ("auto", "docling", "fast")
+_VALID_ENGINES = ("auto", "docling", "anydoc", "fast")
 
 
 def truncate_text_head_tail(text: str, max_bytes: Optional[int] = None) -> str:
@@ -102,7 +103,13 @@ def _max_input_bytes() -> int:
     return int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 25 * 1024 * 1024))
 
 
-_ZIP_CONTAINER_EXTENSIONS = frozenset({".docx", ".xlsx", ".pptx", ".epub"})
+# Every zip-packaged format a parser map can route: OOXML and its macro/
+# binary variants, OpenDocument, EPUB. Chat attachments have no extension
+# whitelist, so the anydoc engine can receive any of these.
+_ZIP_CONTAINER_EXTENSIONS = frozenset({
+    ".docx", ".docm", ".xlsx", ".xlsm", ".xlsb", ".pptx", ".pptm", ".ppsx", ".ppsm",
+    ".odt", ".ods", ".odp", ".epub",
+})
 
 
 def _zip_bomb_reason(source: Union[bytes, str, Path], suffix: str) -> Optional[str]:
@@ -165,13 +172,24 @@ def _resolve_ocr_enabled(ocr: str) -> bool:
     return bool(getattr(settings, "DOCLING_OCR_ENABLED", False))
 
 
+def _effective_engine(engine: str) -> str:
+    """Resolve ``auto`` to the server's ``DOC_PARSER_ENGINE``; other values pass through."""
+    if engine != "auto":
+        return engine
+    configured = getattr(settings, "DOC_PARSER_ENGINE", None) or "anydoc"
+    return str(configured).strip().lower()
+
+
 def _pick_parser(suffix: str, *, ocr_enabled: bool, engine: str):
     """Select the parser for ``suffix`` honoring the requested engine; None when unsupported."""
     if engine == "fast":
         legacy = _legacy_parser_for(suffix)
         if legacy is not None:
             return legacy
-    extractor = get_default_file_extractor(ocr_enabled=ocr_enabled)
+    if engine in ("docling", "anydoc"):
+        extractor = get_default_file_extractor(ocr_enabled=ocr_enabled, engine=engine)
+    else:
+        extractor = get_default_file_extractor(ocr_enabled=ocr_enabled)
     return extractor.get(suffix)
 
 
@@ -491,7 +509,12 @@ def _shape(
         }
 
     parser = _pick_parser(suffix, ocr_enabled=ocr_enabled, engine=engine)
-    wants_tables = include_tables and engine != "fast" and output != "chunks"
+    # Tables come from a Docling conversion, so they are only collected when
+    # Docling is the engine in play: under anydoc/fast a table pass would be
+    # a second, full docling conversion that costs more than the whole read.
+    wants_tables = (
+        include_tables and output != "chunks" and _effective_engine(engine) == "docling"
+    )
 
     # A Docling-backed parser already converts the whole document to produce its text.
     # When tables are also requested, reuse that single conversion for both the markdown
