@@ -390,3 +390,41 @@ class TestEmbedsInProcess:
         ) or 0):
             assert reembed.main(["--dry-run"]) == 0
         assert seen["delegating"] is False
+
+
+class TestRecordsTheModel:
+    """``sources.model`` is what the boot mismatch check reads."""
+
+    def test_a_re_embedded_source_is_stamped(self, monkeypatch):
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "EMBEDDINGS_NAME", "new/model", raising=False)
+        conn = MagicMock()
+        session = MagicMock()
+        session.__enter__ = MagicMock(return_value=conn)
+        session.__exit__ = MagicMock(return_value=False)
+        with patch("application.storage.db.session.db_session", return_value=session):
+            reembed.record_source_model("src-1")
+        params = conn.execute.call_args.args[1]
+        assert params == {"model": "new/model", "id": "src-1"}
+
+    def test_a_dry_run_stamps_nothing(self, monkeypatch):
+        with patch.object(reembed, "record_source_model") as record, patch.object(
+            reembed, "list_source_ids", return_value=["a"]
+        ), patch.object(reembed, "reembed_pgvector", return_value=(3, 0)):
+            reembed.run("pgvector", None, 64, True)
+        record.assert_not_called()
+
+    def test_a_real_run_stamps_each_source(self, monkeypatch):
+        with patch.object(reembed, "record_source_model") as record, patch.object(
+            reembed, "list_source_ids", return_value=["a", "b"]
+        ), patch.object(reembed, "reembed_pgvector", return_value=(3, 3)):
+            reembed.run("pgvector", None, 64, False)
+        assert [c.args[0] for c in record.call_args_list] == ["a", "b"]
+
+    def test_a_failed_source_is_not_stamped(self):
+        with patch.object(reembed, "record_source_model") as record, patch.object(
+            reembed, "list_source_ids", return_value=["a"]
+        ), patch.object(reembed, "reembed_pgvector", side_effect=RuntimeError("boom")):
+            assert reembed.run("pgvector", None, 64, False) == 1
+        record.assert_not_called()

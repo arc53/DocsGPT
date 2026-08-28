@@ -323,6 +323,33 @@ def reembed_faiss(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, 
     return len(chunks), len(docs)
 
 
+def record_source_model(source_id: str) -> None:
+    """Stamp ``sources.model`` with the model these vectors were just built by.
+
+    ``sources`` lives in the user-data database while the vectors may not, so
+    this takes its own session. Left unwritten, the column keeps naming the old
+    model and every consumer that trusts it -- the boot mismatch check above
+    all -- reports a source as stale immediately after it was migrated.
+    """
+    from sqlalchemy import text
+
+    from application.storage.db.session import db_session
+
+    try:
+        with db_session() as conn:
+            conn.execute(
+                text("UPDATE sources SET model = :model WHERE id = :id"),
+                {"model": settings.EMBEDDINGS_NAME, "id": source_id},
+            )
+    except Exception as exc:  # noqa: BLE001 — the vectors are already rewritten
+        logger.warning(
+            "  %s: re-embedded, but could not update sources.model (%s). Retrieval "
+            "is correct; the mismatch warning may persist until it is.",
+            source_id,
+            exc,
+        )
+
+
 def run(
     store_type: str,
     source_ids: Optional[Sequence[str]],
@@ -355,6 +382,8 @@ def run(
     for position, source_id in enumerate(ids, start=1):
         try:
             seen, written = handler(source_id, batch_size, dry_run)
+            if written and not dry_run:
+                record_source_model(source_id)
             total_seen += seen
             total_written += written
             logger.info(
