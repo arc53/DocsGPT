@@ -29,7 +29,7 @@ serves only the WSGI Flask app — it omits `/mcp` and the reconnect reader
 ### Celery (Task Queue)
 
 ```bash
-celery -A application.app.celery worker -l INFO -Q docsgpt,parsing
+celery -A application.app.celery worker -l INFO -Q docsgpt,parsing,embeddings
 ```
 
 The `parsing` queue serves document parsing (the `read_document` tool / workflow

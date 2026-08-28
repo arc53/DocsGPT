@@ -440,6 +440,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     _log_setup(args.verbose)
 
+    # Which model this installation uses may live in ``app_metadata`` rather
+    # than the environment -- ``application.app`` resolves it at boot, and this
+    # script never imports that. Without this, an install pinned to granite
+    # with no EMBEDDINGS_NAME set (every stock Kubernetes deployment: the
+    # manifests carry no embedding config at all) would re-embed its whole
+    # index with the *legacy* code default and stamp ``sources.model`` to
+    # match -- the silent cross-model index this script exists to repair.
+    from application.storage.db.embeddings_pin import resolve_embeddings_pin
+
+    resolve_embeddings_pin(logger)
+
     # Embed in this process. ``EMBEDDINGS_DELEGATE_TO_WORKER`` exists to keep a
     # model out of the API, which serves one query at a time and holds the
     # model for nothing in between. This is the opposite case: a batch job that

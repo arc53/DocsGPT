@@ -128,3 +128,110 @@ class TestGetEmbeddingsDispatch:
         with patch.object(base.settings, "EMBEDDINGS_BASE_URL", None):
             with patch.object(base.settings, "EMBEDDINGS_DELEGATE_TO_WORKER", True):
                 assert base.get_embeddings("some/model") is base.get_embeddings("some/model")
+
+
+class TestFailureCooldown:
+    """One dead-worker timeout per retrieval, not one per source.
+
+    ``fanout.embed_questions`` swallows a dispatch failure and lets every store
+    embed its own query, so without a latch a single chat request pays
+    ``EMBEDDINGS_DELEGATE_TIMEOUT`` once in the fan-out and again per source.
+    A missing worker is a property of the deployment, not of the call.
+    """
+
+    @staticmethod
+    def _celery(side_effect):
+        result = MagicMock()
+        result.get.side_effect = side_effect
+        celery = MagicMock()
+        celery.send_task.return_value = result
+        return celery, result
+
+    def test_only_the_first_call_waits_out_the_timeout(self, not_in_worker):
+        celery, _ = self._celery(TimeoutError("no worker"))
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch.dict("sys.modules", {"application.celery_init": MagicMock(celery=celery)}):
+            for _ in range(4):
+                with pytest.raises(RuntimeError):
+                    embeddings.embed_query("q")
+        assert celery.send_task.call_count == 1
+
+    def test_the_fast_failure_still_names_the_remedy(self, not_in_worker):
+        celery, _ = self._celery(TimeoutError("no worker"))
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch.dict("sys.modules", {"application.celery_init": MagicMock(celery=celery)}):
+            with pytest.raises(RuntimeError):
+                embeddings.embed_query("q")
+            with pytest.raises(RuntimeError, match="EMBEDDINGS_DELEGATE_TO_WORKER=false"):
+                embeddings.embed_query("q")
+
+    def test_the_latch_clears_once_the_worker_answers(self, not_in_worker):
+        celery, result = self._celery(TimeoutError("no worker"))
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch.dict("sys.modules", {"application.celery_init": MagicMock(celery=celery)}):
+            with pytest.raises(RuntimeError):
+                embeddings.embed_query("q")
+            embeddings._failed_at = None  # stand in for the cooldown elapsing
+            result.get.side_effect = None
+            result.get.return_value = [[0.5, 0.5]]
+            assert embeddings.embed_query("q") == [0.5, 0.5]
+        assert embeddings._cooldown_remaining() == 0.0
+
+    def test_a_healthy_worker_is_never_latched(self, not_in_worker):
+        celery, result = self._celery(None)
+        result.get.return_value = [[0.1, 0.2]]
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch.dict("sys.modules", {"application.celery_init": MagicMock(celery=celery)}):
+            for _ in range(3):
+                assert embeddings.embed_query("q") == [0.1, 0.2]
+        assert celery.send_task.call_count == 3
+
+
+class TestTheResultIsForgotten:
+    """A query vector must not outlive the query that asked for it.
+
+    ``result_expires`` is 7 days and ``embed_texts`` stores its result, but the
+    key is ``celery-task-meta-<uuid>`` -- minted per dispatch, never derived
+    from the text -- so nothing reads it back and a repeated query mints
+    another. Without ``forget()`` every search leaks ~17 KB into the Redis the
+    broker shares for a week.
+    """
+
+    @staticmethod
+    def _celery(side_effect=None, value=None):
+        result = MagicMock()
+        result.get.side_effect = side_effect
+        result.get.return_value = value
+        celery = MagicMock()
+        celery.send_task.return_value = result
+        return celery, result
+
+    def test_a_successful_embed_forgets_its_result(self, not_in_worker):
+        celery, result = self._celery(value=[[0.1, 0.2]])
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch.dict("sys.modules", {"application.celery_init": MagicMock(celery=celery)}):
+            assert embeddings.embed_query("q") == [0.1, 0.2]
+        result.forget.assert_called_once()
+
+    def test_a_failed_embed_still_forgets(self, not_in_worker):
+        celery, result = self._celery(side_effect=TimeoutError("no worker"))
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch.dict("sys.modules", {"application.celery_init": MagicMock(celery=celery)}):
+            with pytest.raises(RuntimeError):
+                embeddings.embed_query("q")
+        result.forget.assert_called_once()
+
+    def test_a_backend_that_cannot_delete_does_not_fail_the_query(self, not_in_worker):
+        celery, result = self._celery(value=[[0.3, 0.4]])
+        result.forget.side_effect = ConnectionError("backend down")
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch.dict("sys.modules", {"application.celery_init": MagicMock(celery=celery)}):
+            assert embeddings.embed_query("q") == [0.3, 0.4]
+
+    def test_forgetting_does_not_mask_the_dispatch_failure(self, not_in_worker):
+        celery, result = self._celery(side_effect=TimeoutError("no worker"))
+        result.forget.side_effect = ConnectionError("backend down")
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch.dict("sys.modules", {"application.celery_init": MagicMock(celery=celery)}):
+            with pytest.raises(RuntimeError, match="timed out or failed"):
+                embeddings.embed_query("q")

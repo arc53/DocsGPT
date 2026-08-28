@@ -22,6 +22,7 @@ network hop rather than a broker round trip.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, List, Optional
 
 from application.core.settings import settings
@@ -32,6 +33,41 @@ logger = logging.getLogger(__name__)
 #: Dispatched by name so the API never imports the task module -- and through
 #: it ``application.worker``, which pulls in the whole parsing stack.
 EMBED_TASK = "application.vectorstore.embeddings_tasks.embed_texts"
+
+#: How long after a failed dispatch to fail fast instead of waiting out another
+#: full ``EMBEDDINGS_DELEGATE_TIMEOUT``. Short enough that a worker restart is
+#: picked up within one query, long enough to collapse the retries inside a
+#: single retrieval into one timeout rather than one per source.
+_FAILURE_COOLDOWN = 30.0
+
+_NO_WORKER_HINT = (
+    "Start a worker consuming it, point EMBEDDINGS_BASE_URL at an embedding "
+    "service, or set EMBEDDINGS_DELEGATE_TO_WORKER=false to load the model in "
+    "this process instead."
+)
+
+
+def _forget(result) -> None:
+    """Drop the task's stored vector from the result backend.
+
+    Nothing ever reads it back. The key is ``celery-task-meta-<uuid>``, minted
+    per dispatch rather than derived from the text, so a repeated query is a new
+    task and a new key -- the value is written once, read once by the ``get()``
+    already waiting on it, then dead. Left alone it occupies ~17 KB for
+    ``result_expires`` (7 days), in the Redis the broker also runs on.
+
+    Also releases the backend's pub/sub subscription for the task, which
+    ``get()`` alone does not.
+
+    Never raises: the vector is already in hand, and a backend that cannot
+    delete must not fail the search. On the timeout path the worker may still
+    store its result afterwards, leaving one orphaned key -- no worse than not
+    forgetting at all, and bounded by the same expiry.
+    """
+    try:
+        result.forget()
+    except Exception as exc:  # noqa: BLE001 — cleanup must never fail a query
+        logger.debug("Could not forget the embed task result: %s", exc)
 
 
 def _in_worker() -> bool:
@@ -52,6 +88,13 @@ class DelegatedEmbeddings:
         self.embeddings_key = embeddings_key
         self._local: Any = None
         self._dimension: Optional[int] = dimension_for(embeddings_name)
+        self._failed_at: Optional[float] = None
+
+    def _cooldown_remaining(self) -> float:
+        """Seconds left of the fail-fast window after a failed dispatch."""
+        if self._failed_at is None:
+            return 0.0
+        return max(0.0, _FAILURE_COOLDOWN - (time.monotonic() - self._failed_at))
 
     def _local_embeddings(self):
         """The in-process model, built once, for use inside a worker task."""
@@ -67,17 +110,34 @@ class DelegatedEmbeddings:
 
         queue = getattr(settings, "EMBEDDINGS_QUEUE", "embeddings")
         timeout = getattr(settings, "EMBEDDINGS_DELEGATE_TIMEOUT", 60)
+
+        # A missing worker is a property of the deployment, not of this call,
+        # so once one dispatch has timed out the next is not worth another full
+        # timeout. Without this latch a single retrieval pays the timeout twice
+        # -- once in ``fanout.embed_questions``, then again per source when it
+        # falls back to letting each store embed its own query.
+        remaining = self._cooldown_remaining()
+        if remaining > 0:
+            raise RuntimeError(
+                f"Skipping the embed dispatch: a previous request to the {queue!r} "
+                f"queue failed and the {_FAILURE_COOLDOWN}s cooldown has "
+                f"{remaining:.0f}s left. {_NO_WORKER_HINT}"
+            )
+
         result = celery.send_task(EMBED_TASK, args=[texts, self.embeddings_name], queue=queue)
         try:
-            return result.get(timeout=timeout)
+            vectors = result.get(timeout=timeout)
         except Exception as exc:
+            self._failed_at = time.monotonic()
             raise RuntimeError(
                 f"Embedding request to the Celery worker timed out or failed ({exc}). "
                 f"A worker must be consuming the {queue!r} queue for retrieval to "
-                "work. Start one, point EMBEDDINGS_BASE_URL at an embedding "
-                "service, or set EMBEDDINGS_DELEGATE_TO_WORKER=false to load the "
-                "model in this process instead."
+                f"work. {_NO_WORKER_HINT}"
             ) from exc
+        finally:
+            _forget(result)
+        self._failed_at = None
+        return vectors
 
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Embed a list of texts, preserving order."""

@@ -428,3 +428,34 @@ class TestRecordsTheModel:
         ), patch.object(reembed, "reembed_pgvector", side_effect=RuntimeError("boom")):
             assert reembed.run("pgvector", None, 64, False) == 1
         record.assert_not_called()
+
+
+class TestThePinIsResolved:
+    """The script must embed with the model the installation is pinned to.
+
+    ``resolve_embeddings_pin`` runs in ``application.app``, which this script
+    never imports. An install pinned in ``app_metadata`` with no
+    ``EMBEDDINGS_NAME`` in the environment -- every stock Kubernetes
+    deployment, whose manifests carry no embedding config -- would otherwise
+    rewrite its whole index with the legacy code default and stamp
+    ``sources.model`` to match, creating the cross-model index this script
+    exists to repair.
+    """
+
+    def test_main_resolves_the_pin_before_reading_the_store(self):
+        order = []
+        with patch(
+            "application.storage.db.embeddings_pin.resolve_embeddings_pin",
+            side_effect=lambda *a, **k: order.append("pin"),
+        ), patch.object(reembed.settings, "VECTOR_STORE", "pgvector", create=True), patch.object(
+            reembed, "run", side_effect=lambda *a, **k: (order.append("run"), 0)[1]
+        ):
+            assert reembed.main([]) == 0
+        assert order == ["pin", "run"], "the pin must resolve before anything embeds"
+
+    def test_an_unsupported_store_still_resolved_the_pin_first(self):
+        with patch(
+            "application.storage.db.embeddings_pin.resolve_embeddings_pin"
+        ) as pin, patch.object(reembed.settings, "VECTOR_STORE", "qdrant", create=True):
+            assert reembed.main([]) == 2
+        pin.assert_called_once()
