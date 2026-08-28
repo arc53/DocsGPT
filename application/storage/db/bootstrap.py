@@ -142,12 +142,21 @@ def ensure_vector_schema(*, logger: Optional[logging.Logger] = None) -> None:
         try:
             from application.vectorstore.base import build_local_embeddings
 
-            dim = getattr(build_local_embeddings(), "dimension", None)
+            embedding = build_local_embeddings()
+            dim = getattr(embedding, "dimension", None)
+            if not dim:
+                # A remote client knows nothing about its server until it has
+                # called it, so ask once. Without this the table is sized at the
+                # default and the check below is skipped -- which is how a remote
+                # model of any other width silently got a vector(768) column, the
+                # exact failure this hook exists to catch. Milvus and Qdrant probe
+                # the same way.
+                dim = len(embedding.embed_query("dimension probe"))
         except Exception as exc:  # noqa: BLE001 — never block boot on the model
             log.warning(
-                "ensure_vector_schema: could not load the embeddings model (%s); "
-                "creating the table with %d dimensions and skipping the dimension "
-                "check.",
+                "ensure_vector_schema: could not determine the embedding width "
+                "(%s); creating the table with %d dimensions and skipping the "
+                "dimension check.",
                 exc,
                 DEFAULT_EMBEDDING_DIM,
             )

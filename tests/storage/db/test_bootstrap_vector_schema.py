@@ -265,3 +265,64 @@ class TestBootDoesNotLoadTheModel:
         vector_schema = self._run(None, loader)
         loader.assert_called_once()
         assert vector_schema.call_args.kwargs["dimension"] == 1024
+
+
+@pytest.mark.unit
+class TestUnknownWidthIsProbed:
+    """A remote server's width is only knowable by asking it.
+
+    ``RemoteEmbeddings`` reports ``None`` until its first call, so sizing the
+    table from the attribute alone fell back to 768 and skipped the mismatch
+    check — the silent ``vector(768)`` column this hook exists to prevent.
+    """
+
+    def _run(self, remote, table_dimension=1024):
+        conn = MagicMock()
+        conn.cursor.return_value = MagicMock()
+        with patch("psycopg.connect", return_value=conn), patch(
+            "application.vectorstore.model_registry.dimension_for", return_value=None
+        ), patch(
+            "application.vectorstore.base.build_local_embeddings", return_value=remote
+        ), patch(
+            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+        ) as vector_schema, patch(
+            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            return_value=table_dimension,
+        ):
+            try:
+                ensure_vector_schema()
+                raised = False
+            except RuntimeError:
+                raised = True
+        return vector_schema, raised
+
+    @staticmethod
+    def _remote(width=None, error=None):
+        remote = MagicMock()
+        remote.dimension = None
+        remote.embed_query.side_effect = error or (lambda _text: [0.0] * width)
+        return remote
+
+    def test_the_table_is_sized_from_the_probe(self, vector_settings):
+        remote = self._remote(width=1024)
+        vector_schema, _ = self._run(remote, table_dimension=1024)
+        remote.embed_query.assert_called_once()
+        assert vector_schema.call_args.kwargs["dimension"] == 1024
+
+    def test_the_probe_restores_the_mismatch_check(self, vector_settings):
+        _, raised = self._run(self._remote(width=768), table_dimension=1024)
+        assert raised, "a 768-dim model against a vector(1024) table must fail loudly"
+
+    def test_an_unreachable_server_does_not_block_boot(self, vector_settings):
+        vector_schema, raised = self._run(
+            self._remote(error=ConnectionError("server down")), table_dimension=1024
+        )
+        assert not raised
+        assert vector_schema.call_args.kwargs["dimension"] == 768
+
+    def test_a_model_that_knows_its_width_is_not_probed(self, vector_settings):
+        local = MagicMock()
+        local.dimension = 384
+        vector_schema, _ = self._run(local, table_dimension=384)
+        local.embed_query.assert_not_called()
+        assert vector_schema.call_args.kwargs["dimension"] == 384
