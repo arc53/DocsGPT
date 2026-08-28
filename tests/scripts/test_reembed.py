@@ -7,6 +7,46 @@ import pytest
 from application.scripts import reembed
 
 
+def paginating_cursor(chunk_rows, *, graph_rows=(), graph_table=("graph_nodes",)):
+    """A cursor answering the reads ``reembed_pgvector`` issues, from memory.
+
+    The chunk read is paginated by keyset, so a cursor that returns the same
+    page for every ``fetchall`` never terminates. Returns the cursor and the
+    mutable table backing it.
+
+    Args:
+        chunk_rows: ``(id, text)`` rows for the source's chunk table.
+        graph_rows: ``(id, name)`` rows for ``graph_nodes``.
+        graph_table: What ``to_regclass`` reports; ``(None,)`` for absent.
+
+    Returns:
+        ``(cursor, tables)``, where ``tables["chunks"]`` and
+        ``tables["graph"]`` can be reassigned to change what is served.
+    """
+    tables = {"chunks": list(chunk_rows), "graph": list(graph_rows)}
+    pending = {"rows": []}
+    cursor = MagicMock()
+
+    def execute(query, params=None):
+        text = str(query)
+        if "to_regclass" in text:
+            pending["rows"] = [graph_table]
+        elif "FROM graph_nodes" in text:
+            pending["rows"] = list(tables["graph"])
+        elif "count(*)" in text:
+            pending["rows"] = [(len(tables["chunks"]),)]
+        elif "id > %s" in text:
+            _, after_id, limit = params
+            pending["rows"] = [r for r in tables["chunks"] if r[0] > after_id][:limit]
+        else:
+            pending["rows"] = list(tables["chunks"])[: params[1]]
+
+    cursor.execute.side_effect = execute
+    cursor.fetchall.side_effect = lambda: pending["rows"]
+    cursor.fetchone.side_effect = lambda: pending["rows"][0] if pending["rows"] else None
+    return cursor, tables
+
+
 class TestCLI:
     def test_defaults(self):
         args = reembed.build_parser().parse_args([])
@@ -172,11 +212,18 @@ class TestPgvectorWithoutTheExtension:
 
     @pytest.fixture
     def store(self):
+        """A store whose cursor serves the paginated reads, not a fixed page.
+
+        ``reembed_pgvector`` walks the source by keyset, so a cursor that
+        returns the same rows for every ``fetchall`` never terminates. The fake
+        answers each of the three queries the function issues from one in-memory
+        table, which tests mutate through ``rows``.
+        """
+        cursor, table = paginating_cursor([(1, "alpha"), (2, "beta"), (3, "gamma")])
+
         store = MagicMock()
         store._table_name = "documents"
         store._vector_column = "embedding"
-        cursor = MagicMock()
-        cursor.fetchall.return_value = [(1, "alpha"), (2, "beta"), (3, "gamma")]
         conn = MagicMock()
         conn.cursor.return_value = cursor
         store._get_connection.return_value = conn
@@ -186,60 +233,85 @@ class TestPgvectorWithoutTheExtension:
         with patch.object(
             reembed.VectorCreator, "create_vectorstore", return_value=store
         ), patch.object(reembed.settings, "GRAPHRAG_ENABLED", False):
-            yield store, conn, cursor
+            yield store, conn, cursor, table
 
     def test_reads_and_rewrites_every_chunk(self, store):
-        _, conn, cursor = store
+        _, conn, cursor, _ = store
         seen, written = reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
         assert (seen, written) == (3, 3)
         cursor.executemany.assert_called_once()
         conn.commit.assert_called()
 
-    def test_dry_run_neither_embeds_nor_writes(self, store):
-        fake_store, conn, cursor = store
+    def test_pages_are_bounded_by_batch_size(self, store):
+        """The read is paginated, so a huge source never lands in memory at once."""
+        _, _, cursor, table = store
+        table["chunks"] = [(i, f"chunk-{i}") for i in range(1, 11)]
+        seen, written = reembed.reembed_pgvector("s1", batch_size=3, dry_run=False)
+        assert (seen, written) == (10, 10)
+        selects = [
+            call for call in cursor.execute.call_args_list
+            if "SELECT id, text" in str(call.args[0])
+        ]
+        # Four pages of at most 3, then one empty page to end the walk.
+        assert len(selects) == 5
+        assert all(call.args[1][-1] == 3 for call in selects)
+
+    def test_dry_run_counts_without_reading_the_text(self, store):
+        fake_store, _, cursor, _ = store
         seen, written = reembed.reembed_pgvector("s1", batch_size=64, dry_run=True)
         assert (seen, written) == (3, 0)
         fake_store._embedding.embed_documents.assert_not_called()
         cursor.executemany.assert_not_called()
+        assert any(
+            "count(*)" in str(call.args[0]) for call in cursor.execute.call_args_list
+        )
 
     def test_batches_commit_separately(self, store):
-        _, conn, cursor = store
+        _, conn, cursor, _ = store
         reembed.reembed_pgvector("s1", batch_size=2, dry_run=False)
         # 3 rows at batch 2 is two write transactions.
         assert cursor.executemany.call_count == 2
         assert conn.commit.call_count == 2
 
     def test_failed_batch_rolls_back_and_raises(self, store):
-        fake_store, conn, cursor = store
+        _, conn, cursor, _ = store
         cursor.executemany.side_effect = RuntimeError("write failed")
         with pytest.raises(RuntimeError):
             reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
         conn.rollback.assert_called_once()
 
     def test_connection_is_returned_even_on_failure(self, store):
-        fake_store, _, cursor = store
+        fake_store, _, cursor, _ = store
         cursor.executemany.side_effect = RuntimeError("boom")
         with pytest.raises(RuntimeError):
             reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
         fake_store.close.assert_called_once()
 
     def test_null_text_does_not_crash_the_embed_call(self, store):
-        fake_store, _, cursor = store
-        cursor.fetchall.return_value = [(1, None), (2, "beta")]
+        fake_store, _, _, table = store
+        table["chunks"] = [(1, None), (2, "beta")]
         seen, written = reembed.reembed_pgvector("s1", batch_size=64, dry_run=False)
         assert (seen, written) == (2, 2)
         assert fake_store._embedding.embed_documents.call_args.args[0] == ["", "beta"]
 
     def test_empty_source_is_a_no_op(self, store):
-        fake_store, _, cursor = store
-        cursor.fetchall.return_value = []
+        fake_store, _, _, table = store
+        table["chunks"] = []
         assert reembed.reembed_pgvector("s1", batch_size=64, dry_run=False) == (0, 0)
         fake_store._embedding.embed_documents.assert_not_called()
 
-    def test_source_discovery_returns_sorted_ids(self, store):
-        _, _, cursor = store
+    def test_source_discovery_returns_sorted_ids(self):
+        store = MagicMock()
+        store._table_name = "documents"
+        cursor = MagicMock()
         cursor.fetchall.return_value = [("b",), ("a",)]
-        assert reembed.list_source_ids("pgvector") == ["b", "a"]
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        store._get_connection.return_value = conn
+        with patch.object(
+            reembed.VectorCreator, "create_vectorstore", return_value=store
+        ):
+            assert reembed.list_source_ids("pgvector") == ["b", "a"]
 
 
 class TestFaissSourceDiscovery:
@@ -353,12 +425,13 @@ class TestGraphNodeReembedding:
 
     @staticmethod
     def _pgvector_mocks():
+        cursor, _ = paginating_cursor(
+            [(1, "alpha"), (2, "beta")],
+            graph_rows=[("n1", "Alpha"), ("n2", "Beta")],
+        )
         store = MagicMock()
         store._table_name = "documents"
         store._vector_column = "embedding"
-        cursor = MagicMock()
-        cursor.fetchone.return_value = ("graph_nodes",)
-        cursor.fetchall.return_value = [(1, "alpha"), (2, "beta")]
         conn = MagicMock()
         conn.cursor.return_value = cursor
         store._get_connection.return_value = conn

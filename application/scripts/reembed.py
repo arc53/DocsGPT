@@ -197,15 +197,89 @@ def reembed_graph_nodes(store, conn, source_id: str, batch_size: int, dry_run: b
     return written
 
 
+def _count_source_chunks(conn, table: str, source_id: str) -> int:
+    """How many chunk rows one source holds."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            sql.SQL("SELECT count(*) FROM {table} WHERE source_id = %s").format(
+                table=sql.Identifier(table)
+            ),
+            (source_id,),
+        )
+        return int(cursor.fetchone()[0])
+    finally:
+        cursor.close()
+
+
+def _fetch_chunk_page(
+    conn, table: str, source_id: str, after_id: Optional[Any], limit: int
+) -> List[Tuple[Any, str]]:
+    """One page of ``(id, text)`` ordered by id, starting after ``after_id``.
+
+    Keyed off ``id`` rather than ``OFFSET`` so each page costs an index seek,
+    and the page boundaries stay stable across the updates the caller makes
+    between pages -- only the vector column changes, never ``id``.
+    """
+    cursor = conn.cursor()
+    try:
+        if after_id is None:
+            cursor.execute(
+                sql.SQL(
+                    "SELECT id, text FROM {table} WHERE source_id = %s "
+                    "ORDER BY id LIMIT %s"
+                ).format(table=sql.Identifier(table)),
+                (source_id, limit),
+            )
+        else:
+            cursor.execute(
+                sql.SQL(
+                    "SELECT id, text FROM {table} WHERE source_id = %s AND id > %s "
+                    "ORDER BY id LIMIT %s"
+                ).format(table=sql.Identifier(table)),
+                (source_id, after_id, limit),
+            )
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+
+
+def _write_chunk_page(conn, table: str, vector_column: str, store, page) -> None:
+    """Embed one page and commit its vectors."""
+    vectors = store._embedding.embed_documents([row[1] or "" for row in page])
+    cursor = conn.cursor()
+    try:
+        cursor.executemany(
+            sql.SQL("UPDATE {table} SET {column} = %s::vector WHERE id = %s").format(
+                table=sql.Identifier(table),
+                column=sql.Identifier(vector_column),
+            ),
+            [(str(list(vector)), row[0]) for vector, row in zip(vectors, page)],
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+
+
 def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, int]:
     """Rewrite one source's vectors in place.
 
     Rows are updated, never deleted and re-inserted, so an interrupted run
     leaves every chunk present and simply re-does its batch next time.
 
+    Chunks are read a page at a time rather than all at once. A source's text is
+    the whole corpus: at the default chunk size 200k chunks materialise to about
+    1.6 GB of Python strings, several times that for non-Latin scripts, and the
+    result set is held alongside them until the cursor closes. That is enough to
+    be OOM-killed inside a 4 GiB container while also holding the model -- and a
+    kill here is what a torn index costs the most.
+
     Args:
         source_id: Source whose chunks to re-embed.
-        batch_size: Chunks per embed call and per transaction.
+        batch_size: Chunks per page, per embed call and per transaction.
         dry_run: When true, count the work and change nothing.
 
     Returns:
@@ -215,44 +289,22 @@ def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[in
     table, vector_column = store._table_name, store._vector_column
     conn = store._get_connection()
 
-    cursor = conn.cursor()
+    seen = written = 0
     try:
-        cursor.execute(
-            sql.SQL("SELECT id, text FROM {table} WHERE source_id = %s ORDER BY id").format(
-                table=sql.Identifier(table)
-            ),
-            (source_id,),
-        )
-        rows = cursor.fetchall()
-    finally:
-        cursor.close()
-
-    written = 0
-    try:
-        if not dry_run:
-            for batch in _batched(rows, batch_size):
-                vectors = store._embedding.embed_documents([row[1] or "" for row in batch])
-                cursor = conn.cursor()
-                try:
-                    cursor.executemany(
-                        sql.SQL(
-                            "UPDATE {table} SET {column} = %s::vector WHERE id = %s"
-                        ).format(
-                            table=sql.Identifier(table),
-                            column=sql.Identifier(vector_column),
-                        ),
-                        [
-                            (str(list(vector)), row[0])
-                            for vector, row in zip(vectors, batch)
-                        ],
-                    )
-                    conn.commit()
-                except Exception:
-                    conn.rollback()
-                    raise
-                finally:
-                    cursor.close()
-                written += len(batch)
+        if dry_run:
+            seen = _count_source_chunks(conn, table, source_id)
+        else:
+            after_id: Optional[Any] = None
+            while True:
+                page = _fetch_chunk_page(
+                    conn, table, source_id, after_id, batch_size
+                )
+                if not page:
+                    break
+                _write_chunk_page(conn, table, vector_column, store, page)
+                after_id = page[-1][0]
+                seen += len(page)
+                written += len(page)
 
         # The graph seeds every traversal from its own vectors, so leaving them
         # in the old model's space is the same silent mismatch this script
@@ -268,7 +320,7 @@ def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[in
                 )
     finally:
         store.close()
-    return len(rows), written
+    return seen, written
 
 
 def reembed_faiss(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, int]:
@@ -276,7 +328,9 @@ def reembed_faiss(source_id: str, batch_size: int, dry_run: bool) -> Tuple[int, 
 
     A FAISS index is a flat array, so this rebuilds rather than updates. Every
     new vector is computed *before* the old index is touched, so an interrupt
-    during embedding leaves the existing index intact.
+    during embedding leaves the existing index intact -- and ``save_local``
+    writes each file to a temporary path and moves it into place, so an
+    interrupt during the write does too.
 
     Args:
         source_id: Source whose index to rebuild.

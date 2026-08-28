@@ -1,5 +1,7 @@
 """Query embedding runs on the worker so the API holds no model."""
 
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -185,6 +187,106 @@ class TestFailureCooldown:
             for _ in range(3):
                 assert embeddings.embed_query("q") == [0.1, 0.2]
         assert celery.send_task.call_count == 3
+
+
+class TestTheConcurrentFirstWave:
+    """The latch cannot cover requests already in flight beside the first one.
+
+    Nothing is latched until that first ``get()`` returns, so every thread in
+    the opening wave would otherwise block for the full
+    ``EMBEDDINGS_DELEGATE_TIMEOUT`` at once -- at the shipped 60s across a 96
+    thread WSGI pool, an API that serves nothing at all.
+    """
+
+    @staticmethod
+    def _blocking_celery(release, outcome):
+        """A worker whose ``get`` blocks until ``release`` is set."""
+        def get(timeout=None):
+            release.wait(5)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        result = MagicMock()
+        result.get.side_effect = get
+        celery = MagicMock()
+        celery.send_task.return_value = result
+        return celery
+
+    def _race(self, celery, embeddings, release, threads=8):
+        """Start ``threads`` embeds, let them pile up, then unblock the prober."""
+        errors, values = [], []
+        started = threading.Barrier(threads + 1)
+
+        def call():
+            started.wait(5)
+            try:
+                values.append(embeddings.embed_query("q"))
+            except Exception as exc:  # noqa: BLE001 -- recorded for the assertions
+                errors.append(exc)
+
+        with patch.dict("sys.modules", {"application.celery_init": MagicMock(celery=celery)}):
+            workers = [threading.Thread(target=call) for _ in range(threads)]
+            for worker in workers:
+                worker.start()
+            started.wait(5)
+            time.sleep(0.1)  # let the followers reach the probe gate
+            release.set()
+            for worker in workers:
+                worker.join(10)
+        return values, errors
+
+    def test_only_one_caller_waits_on_an_unproven_worker(self, not_in_worker):
+        release = threading.Event()
+        celery = self._blocking_celery(release, TimeoutError("no worker"))
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch(
+            "application.vectorstore.embeddings_delegated._PROBE_WAIT", 0.05
+        ):
+            values, errors = self._race(celery, embeddings, release)
+
+        assert values == []
+        assert len(errors) == 8
+        # One probe published; the rest gave up without their own round trip.
+        assert celery.send_task.call_count == 1
+        assert sum("still unanswered" in str(e) for e in errors) == 7
+
+    def test_the_fast_failure_still_names_the_remedy(self, not_in_worker):
+        release = threading.Event()
+        celery = self._blocking_celery(release, TimeoutError("no worker"))
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch("application.vectorstore.embeddings_delegated._PROBE_WAIT", 0.05):
+            _, errors = self._race(celery, embeddings, release, threads=3)
+        assert all("EMBEDDINGS_DELEGATE_TO_WORKER=false" in str(e) for e in errors)
+
+    def test_a_healthy_worker_serves_the_whole_wave(self, not_in_worker):
+        release = threading.Event()
+        celery = self._blocking_celery(release, [[0.1, 0.2]])
+        embeddings = DelegatedEmbeddings("granite-311m")
+        values, errors = self._race(celery, embeddings, release)
+
+        assert errors == []
+        assert values == [[0.1, 0.2]] * 8
+        # The probe proves the worker, then every follower dispatches for real.
+        assert celery.send_task.call_count == 8
+        assert embeddings._verified is True
+
+    def test_a_proven_worker_adds_no_gate(self, not_in_worker):
+        """After one success the probe is out of the path entirely."""
+        release = threading.Event()
+        release.set()
+        celery = self._blocking_celery(release, [[0.3]])
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch.dict("sys.modules", {"application.celery_init": MagicMock(celery=celery)}):
+            embeddings.embed_query("warm")
+        assert embeddings._verified is True
+
+        with patch.object(embeddings, "_state_lock") as lock:
+            with patch.dict(
+                "sys.modules", {"application.celery_init": MagicMock(celery=celery)}
+            ):
+                embeddings.embed_query("q")
+            lock.__enter__.assert_not_called()
 
 
 class TestTheResultIsForgotten:

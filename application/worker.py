@@ -2523,6 +2523,14 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
 
         with db_session() as conn:
             WikiPagesRepository(conn).set_embed_status(source_id, path, "embedded")
+            # These chunks were just embedded with the configured model, so the
+            # source now names it. Wiki sources created before this was recorded
+            # carry NULL, which the boot mismatch check reads as the legacy
+            # model and reports as stale; stamping here heals them on the next
+            # page edit.
+            SourcesRepository(conn).update(
+                source_id, user, {"model": settings.EMBEDDINGS_NAME}
+            )
     except Exception:
         with db_session() as conn:
             WikiPagesRepository(conn).set_embed_status(source_id, path, "failed")

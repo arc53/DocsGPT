@@ -59,7 +59,7 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`EMBEDDINGS_NAME`**: This setting defines which embedding model DocsGPT will use to generate vector embeddings for your documents. Embeddings are numerical representations of text that allow DocsGPT to understand the semantic meaning of your documents for efficient search and retrieval.
 
-  - **Default value:** `huggingface_sentence-transformers/all-mpnet-base-v2`, kept so an existing index stays readable. New installs are pointed at `ibm-granite/granite-embedding-311m-multilingual-r2` (multilingual, 32k context, same 768 dimensions) by `.env-template` and `setup.sh`.
+  - **Default value:** leave it unset and DocsGPT picks for you at first boot, recording the choice so it never changes underneath you: a fresh install is pinned to `ibm-granite/granite-embedding-311m-multilingual-r2` (multilingual, 32k context, same 768 dimensions), and an install that already has sources is pinned to `huggingface_sentence-transformers/all-mpnet-base-v2` so its index stays readable. Setting it here overrides that pin.
   - **Other options:** Any FastEmbed built-in model, or any Hugging Face repository shipping an ONNX export. See [Embeddings](/Models/embeddings).
   - **Changing it on an existing index requires re-embedding** — same-width models swap without any error and silently degrade retrieval. Run `python -m application.scripts.reembed`.
 

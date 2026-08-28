@@ -22,6 +22,7 @@ network hop rather than a broker round trip.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any, List, Optional
 
@@ -39,6 +40,13 @@ EMBED_TASK = "application.vectorstore.embeddings_tasks.embed_texts"
 #: picked up within one query, long enough to collapse the retries inside a
 #: single retrieval into one timeout rather than one per source.
 _FAILURE_COOLDOWN = 30.0
+
+#: How long a caller waits for the outcome of the dispatch already in flight
+#: before giving up on its own. Only applies while the worker is unproven --
+#: once one dispatch has succeeded, every caller goes straight to the broker.
+#: Comfortably above a healthy round trip (~60 ms on a prefork worker) and far
+#: below ``EMBEDDINGS_DELEGATE_TIMEOUT``, which is the point.
+_PROBE_WAIT = 2.0
 
 _NO_WORKER_HINT = (
     "Start a worker consuming it, point EMBEDDINGS_BASE_URL at an embedding "
@@ -89,12 +97,21 @@ class DelegatedEmbeddings:
         self._local: Any = None
         self._dimension: Optional[int] = dimension_for(embeddings_name)
         self._failed_at: Optional[float] = None
+        # A dispatch has completed successfully, so the worker is known to be
+        # consuming the queue and callers need not take turns proving it.
+        self._verified = False
+        self._probing = False
+        self._state_lock = threading.Lock()
+        self._probe_done = threading.Event()
 
     def _cooldown_remaining(self) -> float:
         """Seconds left of the fail-fast window after a failed dispatch."""
-        if self._failed_at is None:
+        # One load: a concurrent success clearing the latch between two reads
+        # would otherwise subtract from None.
+        failed_at = self._failed_at
+        if failed_at is None:
             return 0.0
-        return max(0.0, _FAILURE_COOLDOWN - (time.monotonic() - self._failed_at))
+        return max(0.0, _FAILURE_COOLDOWN - (time.monotonic() - failed_at))
 
     def _local_embeddings(self):
         """The in-process model, built once, for use inside a worker task."""
@@ -104,25 +121,9 @@ class DelegatedEmbeddings:
             self._local = build_local_embeddings(self.embeddings_name, self.embeddings_key)
         return self._local
 
-    def _dispatch(self, texts: List[str]) -> List[List[float]]:
-        """Run the embed task on the worker and wait for its vectors."""
+    def _send(self, texts: List[str], queue: str, timeout: int) -> List[List[float]]:
+        """Publish the embed task and wait for its vectors."""
         from application.celery_init import celery
-
-        queue = getattr(settings, "EMBEDDINGS_QUEUE", "embeddings")
-        timeout = getattr(settings, "EMBEDDINGS_DELEGATE_TIMEOUT", 60)
-
-        # A missing worker is a property of the deployment, not of this call,
-        # so once one dispatch has timed out the next is not worth another full
-        # timeout. Without this latch a single retrieval pays the timeout twice
-        # -- once in ``fanout.embed_questions``, then again per source when it
-        # falls back to letting each store embed its own query.
-        remaining = self._cooldown_remaining()
-        if remaining > 0:
-            raise RuntimeError(
-                f"Skipping the embed dispatch: a previous request to the {queue!r} "
-                f"queue failed and the {_FAILURE_COOLDOWN}s cooldown has "
-                f"{remaining:.0f}s left. {_NO_WORKER_HINT}"
-            )
 
         result = celery.send_task(EMBED_TASK, args=[texts, self.embeddings_name], queue=queue)
         try:
@@ -137,7 +138,75 @@ class DelegatedEmbeddings:
         finally:
             _forget(result)
         self._failed_at = None
+        self._verified = True
         return vectors
+
+    def _cooldown_error(self, queue: str, remaining: float) -> RuntimeError:
+        return RuntimeError(
+            f"Skipping the embed dispatch: a previous request to the {queue!r} "
+            f"queue failed and the {_FAILURE_COOLDOWN}s cooldown has "
+            f"{remaining:.0f}s left. {_NO_WORKER_HINT}"
+        )
+
+    def _dispatch(self, texts: List[str]) -> List[List[float]]:
+        """Run the embed task on the worker and wait for its vectors.
+
+        A missing worker is a property of the deployment, not of this call, so
+        at most one caller waits out ``EMBEDDINGS_DELEGATE_TIMEOUT`` to discover
+        it. Two guards do that:
+
+        The cooldown latch covers requests arriving *after* a failure -- without
+        it a single retrieval pays the timeout twice, once in
+        ``fanout.embed_questions`` and again per source when it falls back to
+        letting each store embed its own query.
+
+        The probe covers requests already in flight *alongside* the first one,
+        which the latch cannot: nothing is latched until that first ``get()``
+        returns, so every thread in the opening wave would otherwise block for
+        the full timeout at once -- at the shipped 60s and 96 WSGI threads, an
+        API that serves nothing at all, health checks included.
+        """
+        queue = getattr(settings, "EMBEDDINGS_QUEUE", "embeddings")
+        timeout = getattr(settings, "EMBEDDINGS_DELEGATE_TIMEOUT", 60)
+
+        remaining = self._cooldown_remaining()
+        if remaining > 0:
+            raise self._cooldown_error(queue, remaining)
+
+        if self._verified:
+            return self._send(texts, queue, timeout)
+
+        with self._state_lock:
+            # "send" -- proven while we waited for the lock, just go.
+            # "wait" -- another caller is already finding out; don't pay a
+            #           second full timeout to learn the same thing.
+            # "probe" -- nobody is; this call is the one that finds out.
+            role = "send" if self._verified else "wait" if self._probing else "probe"
+            if role == "probe":
+                self._probing = True
+                self._probe_done.clear()
+
+        if role == "probe":
+            try:
+                return self._send(texts, queue, timeout)
+            finally:
+                with self._state_lock:
+                    self._probing = False
+                self._probe_done.set()
+
+        if role == "wait":
+            self._probe_done.wait(_PROBE_WAIT)
+            remaining = self._cooldown_remaining()
+            if remaining > 0:
+                raise self._cooldown_error(queue, remaining)
+            if not self._verified:
+                raise RuntimeError(
+                    f"Skipping the embed dispatch: an earlier request to the "
+                    f"{queue!r} queue is still unanswered after {_PROBE_WAIT}s, so "
+                    f"no worker appears to be consuming it. {_NO_WORKER_HINT}"
+                )
+
+        return self._send(texts, queue, timeout)
 
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Embed a list of texts, preserving order."""

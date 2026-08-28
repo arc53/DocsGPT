@@ -325,7 +325,13 @@ class FaissStore(BaseVectorStore):
             f.write(dump_pickle_sidecar(self.documents, self.index_to_docstore_id))
 
     def _save_to_storage(self) -> bool:
-        """Persist the index through the configured storage backend."""
+        """Persist the index through the configured storage backend.
+
+        Each file is replaced atomically by the backend, so an interrupted save
+        leaves the previous one readable. The three are still written in
+        sequence: a crash between them pairs a new index with an older sidecar,
+        which stays consistent because the ids and row order are preserved.
+        """
         with tempfile.TemporaryDirectory() as temp_dir:
             self._write_index_files(temp_dir)
             storage_path = get_vectorstore(self.source_id)
