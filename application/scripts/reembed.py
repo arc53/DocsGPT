@@ -411,6 +411,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     _log_setup(args.verbose)
 
+    # Embed in this process. ``EMBEDDINGS_DELEGATE_TO_WORKER`` exists to keep a
+    # model out of the API, which serves one query at a time and holds the
+    # model for nothing in between. This is the opposite case: a batch job that
+    # embeds every chunk in the index, where a broker round trip per batch adds
+    # latency and a dependency on a worker running. Loading the model here also
+    # means the script reports a real failure for a model it cannot load,
+    # instead of timing out against an empty queue.
+    if getattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False):
+        logger.info("Embedding in-process; worker delegation does not apply here.")
+        settings.EMBEDDINGS_DELEGATE_TO_WORKER = False
+
     store_type = (settings.VECTOR_STORE or "").lower()
     if store_type not in SUPPORTED_STORES:
         logger.error(

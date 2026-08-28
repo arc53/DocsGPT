@@ -197,7 +197,7 @@ class TestLengthSortedBatching:
         return wrapper, instance
 
     def test_output_order_matches_input_order(self, fake_fastembed):
-        with patch.object(embeddings_local.settings, "EMBEDDINGS_BATCH_SIZE", 2, create=True):
+        with patch.object(embeddings_local.settings, "EMBEDDINGS_MODEL_BATCH_SIZE", 2, create=True):
             wrapper, _ = self._wrapper(fake_fastembed, 2)
             texts = ["dddd", "a", "ccc", "bb", "eeeee"]
             out = wrapper.embed_documents(texts)
@@ -206,14 +206,14 @@ class TestLengthSortedBatching:
         assert out == [[4.0], [1.0], [3.0], [2.0], [5.0]]
 
     def test_inputs_are_grouped_by_length_before_batching(self, fake_fastembed):
-        with patch.object(embeddings_local.settings, "EMBEDDINGS_BATCH_SIZE", 2, create=True):
+        with patch.object(embeddings_local.settings, "EMBEDDINGS_MODEL_BATCH_SIZE", 2, create=True):
             wrapper, instance = self._wrapper(fake_fastembed, 2)
             wrapper.embed_documents(["dddd", "a", "ccc", "bb", "eeeee"])
         sent = instance.embed.call_args.args[0]
         assert [len(t) for t in sent] == [1, 2, 3, 4, 5]
 
     def test_single_batch_is_not_reordered(self, fake_fastembed):
-        with patch.object(embeddings_local.settings, "EMBEDDINGS_BATCH_SIZE", 32, create=True):
+        with patch.object(embeddings_local.settings, "EMBEDDINGS_MODEL_BATCH_SIZE", 32, create=True):
             wrapper, instance = self._wrapper(fake_fastembed, 32)
             texts = ["dddd", "a", "ccc"]
             out = wrapper.embed_documents(texts)
@@ -221,7 +221,7 @@ class TestLengthSortedBatching:
         assert out == [[4.0], [1.0], [3.0]]
 
     def test_duplicate_texts_are_handled(self, fake_fastembed):
-        with patch.object(embeddings_local.settings, "EMBEDDINGS_BATCH_SIZE", 2, create=True):
+        with patch.object(embeddings_local.settings, "EMBEDDINGS_MODEL_BATCH_SIZE", 2, create=True):
             wrapper, _ = self._wrapper(fake_fastembed, 2)
             out = wrapper.embed_documents(["aa", "b", "aa", "ccc"])
         assert out == [[2.0], [1.0], [2.0], [3.0]]

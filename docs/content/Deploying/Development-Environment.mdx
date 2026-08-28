@@ -76,17 +76,15 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
          venv/Scripts/activate
         ```
 
-3.  **Download Embedding Model:**
+3.  **Embedding Model (no action needed):**
 
-    The backend requires an embedding model. Download the `mpnet-base-v2` model and place it in the `models/` directory within the project root. You can use the following script:
+    The embedding model is downloaded automatically the first time you ingest a document, and cached for subsequent runs. Set `EMBEDDINGS_CACHE_DIR` to control where.
+
+    For an offline or air-gapped machine, fetch it ahead of time instead:
 
     ```bash
-    wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip
-    unzip mpnet-base-v2.zip -d model
-    rm mpnet-base-v2.zip
+    python -m application.scripts.prefetch_models
     ```
-
-    Alternatively, you can manually download the zip file from [here](https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip), unzip it, and place the extracted folder in `models/`.
 
 4.  **Install Backend Dependencies:**
 

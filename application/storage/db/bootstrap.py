@@ -127,21 +127,30 @@ def ensure_vector_schema(*, logger: Optional[logging.Logger] = None) -> None:
         PGVectorStore,
     )
 
-    # Loading the model here is deliberate: the process loads it on first
-    # retrieval anyway, and EmbeddingsSingleton caches it.
-    dim: Optional[int] = None
-    try:
-        from application.vectorstore.base import get_embeddings
+    # All this needs is an integer, and for a model the registry describes that
+    # is a lookup. It used to construct the embeddings instance, which loaded
+    # ~800 MB of ONNX into every API and worker process at import purely to
+    # read ``.dimension`` off it.
+    from application.vectorstore.model_registry import dimension_for
 
-        dim = getattr(get_embeddings(), "dimension", None)
-    except Exception as exc:  # noqa: BLE001 — never block boot on the model
-        log.warning(
-            "ensure_vector_schema: could not load the embeddings model (%s); "
-            "creating the table with %d dimensions and skipping the dimension "
-            "check.",
-            exc,
-            DEFAULT_EMBEDDING_DIM,
-        )
+    dim: Optional[int] = dimension_for(settings.EMBEDDINGS_NAME)
+    if dim is None:
+        # An unregistered model only reports its width once something has run
+        # it. Build it in-process rather than through ``get_embeddings``: at
+        # boot there is no Celery task in flight, so a delegating client would
+        # dispatch to a worker that may not be up yet.
+        try:
+            from application.vectorstore.base import build_local_embeddings
+
+            dim = getattr(build_local_embeddings(), "dimension", None)
+        except Exception as exc:  # noqa: BLE001 — never block boot on the model
+            log.warning(
+                "ensure_vector_schema: could not load the embeddings model (%s); "
+                "creating the table with %d dimensions and skipping the dimension "
+                "check.",
+                exc,
+                DEFAULT_EMBEDDING_DIM,
+            )
     if dim is None:
         log.warning(
             "ensure_vector_schema: the embeddings model exposes no dimension; "

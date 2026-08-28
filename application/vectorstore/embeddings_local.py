@@ -312,20 +312,21 @@ class EmbeddingsWrapper:
     def embed_documents(self, documents: List[str]) -> List[List[float]]:
         """Embed a list of documents, preserving input order.
 
-        Inputs are grouped by length before batching. ONNX needs a rectangular
-        tensor, so every input in a batch is padded up to the longest one in
-        it; with mixed lengths that padding is most of the work. Grouping
-        similar lengths together measured 19% faster and 45% lower peak memory
-        on production-sized chunks, and at full context an unsorted batch of 4
-        was slower than no batching at all.
+        Batched by ``EMBEDDINGS_MODEL_BATCH_SIZE``, not by the pipeline's
+        ``EMBEDDINGS_BATCH_SIZE``: one is documents per forward pass, the other
+        is chunks per store transaction, and sizing the forward pass from the
+        transaction is what made ingest peak at 6.6 GB.
 
-        The original order is restored before returning, so callers zipping
-        these against their texts are unaffected.
+        Inputs are grouped by length first. ONNX needs a rectangular tensor, so
+        every input in a pass is padded up to the longest one in it; with mixed
+        lengths that padding is most of the work. The original order is
+        restored before returning, so callers zipping these against their texts
+        are unaffected.
         """
         if not documents:
             return []
         batch_size: Optional[int] = None
-        raw = getattr(settings, "EMBEDDINGS_BATCH_SIZE", None)
+        raw = getattr(settings, "EMBEDDINGS_MODEL_BATCH_SIZE", None)
         if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
             batch_size = raw
 

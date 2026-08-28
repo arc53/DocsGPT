@@ -270,6 +270,16 @@ def _azure_configured() -> bool:
     )
 
 
+def _delegation_enabled() -> bool:
+    """True when this process should embed on the worker rather than locally.
+
+    Compared against ``True`` rather than coerced: tests patch ``settings``
+    with a ``MagicMock``, whose every attribute is a truthy object, and
+    ``bool()`` on that would silently route them through the broker.
+    """
+    return getattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False) is True
+
+
 def get_embeddings(
     embeddings_name: Optional[str] = None, embeddings_key: Optional[str] = None
 ):
@@ -279,12 +289,45 @@ def get_embeddings(
     skip the remote dispatch and the OpenAI/Azure key handling. Route every
     caller through here.
 
+    With ``EMBEDDINGS_DELEGATE_TO_WORKER`` this returns a client that runs the
+    model on the Celery worker, so an API process never loads one. The client
+    embeds locally when it finds itself inside a worker task, so the worker is
+    unaffected.
+
     Args:
         embeddings_name: Model name; defaults to ``settings.EMBEDDINGS_NAME``.
         embeddings_key: API key; defaults to ``settings.EMBEDDINGS_KEY``.
 
     Returns:
         The shared embeddings instance for the resolved model.
+    """
+    embeddings_name = embeddings_name or settings.EMBEDDINGS_NAME
+    if not settings.EMBEDDINGS_BASE_URL and _delegation_enabled():
+        cache_key = f"delegated_{embeddings_name}"
+        if cache_key not in EmbeddingsSingleton._instances:
+            from application.vectorstore.embeddings_delegated import DelegatedEmbeddings
+
+            EmbeddingsSingleton._instances[cache_key] = DelegatedEmbeddings(
+                embeddings_name, embeddings_key
+            )
+        return EmbeddingsSingleton._instances[cache_key]
+    return build_local_embeddings(embeddings_name, embeddings_key)
+
+
+def build_local_embeddings(
+    embeddings_name: Optional[str] = None, embeddings_key: Optional[str] = None
+):
+    """Resolve the embeddings instance that runs in *this* process.
+
+    Bypasses worker delegation, so it is what the worker's embed task and the
+    boot hook use. Everything else should call :func:`get_embeddings`.
+
+    Args:
+        embeddings_name: Model name; defaults to ``settings.EMBEDDINGS_NAME``.
+        embeddings_key: API key; defaults to ``settings.EMBEDDINGS_KEY``.
+
+    Returns:
+        The shared in-process embeddings instance for the resolved model.
     """
     embeddings_name = embeddings_name or settings.EMBEDDINGS_NAME
     embeddings_key = (

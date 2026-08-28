@@ -374,3 +374,19 @@ class TestGraphNodeReembedding:
             for call in cursor.executemany.call_args_list
             if "graph_nodes" in str(call.args[0])
         ]
+
+
+class TestEmbedsInProcess:
+    """A batch job should not round-trip every chunk through the broker."""
+
+    def test_delegation_is_turned_off_for_the_run(self, monkeypatch):
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", True, raising=False)
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector", raising=False)
+        seen = {}
+        with patch.object(reembed, "run", side_effect=lambda *a, **k: seen.setdefault(
+            "delegating", settings.EMBEDDINGS_DELEGATE_TO_WORKER
+        ) or 0):
+            assert reembed.main(["--dry-run"]) == 0
+        assert seen["delegating"] is False

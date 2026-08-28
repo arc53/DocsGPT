@@ -158,6 +158,21 @@ def _no_real_redis(monkeypatch):
     """
     monkeypatch.setattr("application.cache._redis_instance", None)
     monkeypatch.setattr("application.cache._redis_creation_failed", True)
+
+
+@pytest.fixture(autouse=True)
+def _no_worker_delegation(monkeypatch):
+    """Embed in-process during tests, the way CI has no worker to embed on.
+
+    ``EMBEDDINGS_DELEGATE_TO_WORKER`` ships on, so an unmocked embed would
+    publish to a broker nobody is consuming and block for
+    ``EMBEDDINGS_DELEGATE_TIMEOUT`` before failing -- a minute per call, and a
+    pass/fail that depends on whether the developer happens to have a worker
+    running. Tests covering delegation patch the setting back on themselves.
+    """
+    from application.core.settings import settings
+
+    monkeypatch.setattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False, raising=False)
     monkeypatch.setattr("application.cache._pubsub_redis_instance", None)
     monkeypatch.setattr("application.cache._pubsub_redis_creation_failed", True)
 

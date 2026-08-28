@@ -21,12 +21,9 @@ else
 fi
 
 
-mkdir -p model
-if [ ! -d model/all-mpnet-base-v2 ]; then
-    wget -q https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip -O model/mpnet-base-v2.zip
-    unzip -q model/mpnet-base-v2.zip -d model
-    rm model/mpnet-base-v2.zip
-fi
+# The embedding model is fetched on first use and cached, so nothing to download
+# here. For an offline container, run `python -m application.scripts.prefetch_models`
+# after the install below.
 pip install -r application/requirements.txt
 cd frontend
 npm install --include=dev

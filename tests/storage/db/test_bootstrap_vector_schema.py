@@ -74,8 +74,8 @@ class TestEnsureVectorSchemaCreates:
         cursor = MagicMock()
         conn.cursor.return_value = cursor
         with patch("psycopg.connect", return_value=conn) as connect, patch(
-            "application.vectorstore.base.get_embeddings",
-            return_value=_embeddings(dimension),
+            "application.vectorstore.model_registry.dimension_for",
+            return_value=dimension,
         ), patch(
             "application.vectorstore.pgvector.PGVectorStore.create_schema"
         ) as vector_schema, patch(
@@ -130,8 +130,8 @@ class TestEnsureVectorSchemaDimensionCheck:
     ):
         conn = MagicMock()
         with patch("psycopg.connect", return_value=conn), patch(
-            "application.vectorstore.base.get_embeddings",
-            return_value=_embeddings(1536),
+            "application.vectorstore.model_registry.dimension_for",
+            return_value=1536,
         ), patch("application.vectorstore.pgvector.PGVectorStore.create_schema"), patch(
             "application.vectorstore.pgvector.PGVectorStore.table_dimension",
             return_value=768,
@@ -226,3 +226,42 @@ class TestBootGating:
         assert 'os.environ.setdefault("AUTO_VECTOR_SCHEMA", "false")' in (
             conftest.read_text()
         )
+
+
+@pytest.mark.unit
+class TestBootDoesNotLoadTheModel:
+    """The hook needs an integer, not an inference session.
+
+    It used to build the embeddings instance to read ``.dimension`` off it,
+    loading several hundred MB of ONNX into every API and worker process at
+    import. For a model the registry describes that is a lookup.
+    """
+
+    def _run(self, registry_dim, loader):
+        conn = MagicMock()
+        conn.cursor.return_value = MagicMock()
+        with patch("psycopg.connect", return_value=conn), patch(
+            "application.vectorstore.model_registry.dimension_for",
+            return_value=registry_dim,
+        ), patch(
+            "application.vectorstore.base.build_local_embeddings", loader
+        ), patch(
+            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+        ) as vector_schema, patch(
+            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            return_value=None,
+        ):
+            ensure_vector_schema()
+        return vector_schema
+
+    def test_a_registered_model_is_never_constructed(self, vector_settings):
+        loader = MagicMock()
+        vector_schema = self._run(768, loader)
+        loader.assert_not_called()
+        assert vector_schema.call_args.kwargs["dimension"] == 768
+
+    def test_an_unregistered_model_still_falls_back_to_loading(self, vector_settings):
+        loader = MagicMock(return_value=_embeddings(1024))
+        vector_schema = self._run(None, loader)
+        loader.assert_called_once()
+        assert vector_schema.call_args.kwargs["dimension"] == 1024
