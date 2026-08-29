@@ -130,6 +130,13 @@ class DelegatedEmbeddings:
             vectors = result.get(timeout=timeout)
         except Exception as exc:
             self._failed_at = time.monotonic()
+            # Drop the proof with the worker that supplied it. ``_verified``
+            # short-circuits ahead of the probe gate, so leaving it set means
+            # the gate only ever covers a worker that was never healthy --
+            # while the case that actually happens is a healthy one being
+            # redeployed or OOM-killed. Every caller would then pay the full
+            # timeout, together, on every wave once the cooldown lapses.
+            self._verified = False
             raise RuntimeError(
                 f"Embedding request to the Celery worker timed out or failed ({exc}). "
                 f"A worker must be consuming the {queue!r} queue for retrieval to "

@@ -288,6 +288,47 @@ class TestTheConcurrentFirstWave:
                 embeddings.embed_query("q")
             lock.__enter__.assert_not_called()
 
+    def test_a_proven_worker_that_dies_is_gated_again(self, not_in_worker):
+        """The proof must not outlive the worker that supplied it.
+
+        A worker that is redeployed or OOM-killed is the failure that actually
+        happens in production, and it is the one the probe gate stopped
+        covering: ``_verified`` short-circuits ahead of it. The wave in flight
+        when the worker dies cannot be saved -- every caller is already past
+        the check -- but every wave after it must be gated again.
+        """
+        warm = threading.Event()
+        warm.set()
+        healthy = self._blocking_celery(warm, [[0.4]])
+        embeddings = DelegatedEmbeddings("granite-311m")
+        with patch.dict(
+            "sys.modules", {"application.celery_init": MagicMock(celery=healthy)}
+        ):
+            embeddings.embed_query("warm")
+        assert embeddings._verified is True
+
+        # No cooldown, so anything that gates the second wave can only be the
+        # probe -- which engages only because the failure cleared _verified.
+        with patch(
+            "application.vectorstore.embeddings_delegated._FAILURE_COOLDOWN", 0.0
+        ), patch("application.vectorstore.embeddings_delegated._PROBE_WAIT", 0.05):
+            dying = threading.Event()
+            died = self._blocking_celery(dying, TimeoutError("worker went away"))
+            self._race(died, embeddings, dying)
+            # The wave that was already in flight all dispatched, as it must.
+            assert died.send_task.call_count == 8
+            assert embeddings._verified is False
+
+            again = threading.Event()
+            still_dead = self._blocking_celery(again, TimeoutError("still gone"))
+            values, errors = self._race(still_dead, embeddings, again)
+
+        assert values == []
+        assert len(errors) == 8
+        # One probe pays the timeout; the other seven fail fast.
+        assert still_dead.send_task.call_count == 1
+        assert sum("still unanswered" in str(e) for e in errors) == 7
+
 
 class TestTheResultIsForgotten:
     """A query vector must not outlive the query that asked for it.
