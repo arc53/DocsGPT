@@ -78,6 +78,9 @@ class LocalStorage(BaseStorage):
             try:
                 os.unlink(temp_path)
             except OSError:
+                # Best-effort: the write already failed, and that exception is
+                # the one worth raising. A temp file we cannot remove must not
+                # mask it.
                 pass
             raise
 
