@@ -1854,6 +1854,85 @@ class TestTextToSpeech:
             assert _get_response_status(response) == 400
             assert _get_response_json(response)["success"] is False
 
+    def test_tts_rejects_missing_text(self, flask_app):
+        from application.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+
+        with app.test_request_context(
+             "/api/tts",
+             method="POST",
+            json={},
+        ):
+             resource = TextToSpeech()
+             response = resource.post()
+
+             assert _get_response_status(response) == 400
+             assert _get_response_json(response) == {
+                  "success": False,
+                "message": "Field 'text' must be a non-empty string",
+             }
+
+
+    def test_tts_rejects_empty_text(self, flask_app):
+        from application.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+
+        with app.test_request_context(
+              "/api/tts",
+               method="POST",
+            json={"text": ""},
+         ):
+             resource = TextToSpeech()
+             response = resource.post()
+
+             assert _get_response_status(response) == 400
+             assert _get_response_json(response) == {
+                 "success": False,
+                 "message": "Field 'text' must be a non-empty string",
+             }
+
+
+    def test_tts_rejects_whitespace_text(self, flask_app):
+         from application.api.user.attachments.routes import TextToSpeech
+
+         app = Flask(__name__)
+
+         with app.test_request_context(
+            "/api/tts",
+             method="POST",
+             json={"text": "     "},
+         ):
+             resource = TextToSpeech()
+             response = resource.post()
+
+             assert _get_response_status(response) == 400
+             assert _get_response_json(response) == {
+                 "success": False,
+                 "message": "Field 'text' must be a non-empty string",
+             }
+
+
+    def test_tts_rejects_non_string_text(self, flask_app):
+        from application.api.user.attachments.routes import TextToSpeech
+
+        app = Flask(__name__)
+
+        with app.test_request_context(
+            "/api/tts",
+            method="POST",
+            json={"text": 123},
+     ):
+            resource = TextToSpeech()
+            response = resource.post()
+
+            assert _get_response_status(response) == 400
+            assert _get_response_json(response) == {
+                "success": False,
+                "message": "Field 'text' must be a non-empty string",
+             }
+ 
 
 # =====================================================================
 # Coverage gap tests  (lines 136, 256, 330, 337, 443, 457, 560, 590)
