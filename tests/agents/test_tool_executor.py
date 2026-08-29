@@ -493,6 +493,31 @@ class TestToolExecutorPrepare:
         assert "filled_by_llm" not in result["properties"]["query"]
         assert "value" not in result["properties"]["query"]
 
+    def test_build_tool_parameters_skips_non_dict_properties(self):
+        """A stored schema leaked into ``properties`` must not break the turn."""
+        executor = ToolExecutor()
+        action = {
+            "parameters": {
+                "properties": {
+                    "type": "object",
+                    "query": {"type": "string", "filled_by_llm": True},
+                }
+            }
+        }
+
+        result = executor._build_tool_parameters(action)
+        assert result["properties"] == {"query": {"type": "string"}}
+
+    def test_build_tool_parameters_skips_non_dict_param_block(self):
+        executor = ToolExecutor()
+        action = {"parameters": "object"}
+
+        assert executor._build_tool_parameters(action) == {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
+
 
 @pytest.mark.unit
 class TestCheckPause:

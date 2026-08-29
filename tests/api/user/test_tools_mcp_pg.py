@@ -243,6 +243,38 @@ class TestTestMCPServerConfig:
         assert response.status_code == 200
         assert response.json["requires_oauth"] is True
 
+    def test_oauth_required_passes_through_task_id(self, app):
+        """The frontend only opens the consent popup when ``task_id`` is present."""
+        from application.api.user.tools.mcp import TestMCPServerConfig
+
+        fake_tool = MagicMock()
+        fake_tool.test_connection.return_value = {
+            "success": False,
+            "requires_oauth": True,
+            "task_id": "celery-task-1",
+            "message": "OAuth authorization required.",
+            "tools_count": 0,
+        }
+
+        with patch(
+            "application.api.user.tools.mcp.MCPTool",
+            return_value=fake_tool,
+        ), app.test_request_context(
+            "/api/mcp_server/test", method="POST",
+            json={
+                "config": {
+                    "transport_type": "http",
+                    "server_url": "https://example.com/mcp",
+                    "auth_type": "oauth",
+                },
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = TestMCPServerConfig().post()
+        assert response.status_code == 200
+        assert response.json["task_id"] == "celery-task-1"
+
     def test_unexpected_exception_returns_500(self, app):
         from application.api.user.tools.mcp import TestMCPServerConfig
 

@@ -32,6 +32,23 @@ logger = logging.getLogger(__name__)
 _mcp_clients_cache = {}
 
 
+def _is_json_schema_object(schema: Dict) -> bool:
+    """Tell a JSON Schema apart from a bare map of property definitions.
+
+    Some MCP servers send ``inputSchema`` as a flat ``{name: definition}`` map
+    instead of a JSON Schema. A real schema declares ``type`` as a string
+    (``"object"``), whereas in a flat map a ``type`` key would hold a property
+    definition, i.e. a mapping.
+
+    Args:
+        schema: The raw ``inputSchema`` mapping reported by the server.
+
+    Returns:
+        True when the mapping looks like a JSON Schema object.
+    """
+    return isinstance(schema.get("type"), str) or "$schema" in schema
+
+
 class MCPTool(Tool):
     """
     MCP Tool
@@ -563,11 +580,13 @@ class MCPTool(Tool):
 
             if input_schema:
                 if isinstance(input_schema, dict):
-                    if "properties" in input_schema:
+                    if "properties" in input_schema or _is_json_schema_object(input_schema):
+                        properties = input_schema.get("properties")
+                        required = input_schema.get("required")
                         parameters_schema = {
                             "type": input_schema.get("type", "object"),
-                            "properties": input_schema.get("properties", {}),
-                            "required": input_schema.get("required", []),
+                            "properties": properties if isinstance(properties, dict) else {},
+                            "required": required if isinstance(required, list) else [],
                         }
 
                         for key in ["additionalProperties", "description"]:
@@ -713,14 +732,22 @@ class DocsGPTOAuth(OAuthClientProvider):
             **(additional_client_metadata or {}),
         )
 
+        # Tokens stay keyed by origin: ``MCPAuthStatus`` and ``DBTokenStorage``
+        # both look sessions up by ``scheme://netloc``.
         storage = DBTokenStorage(
             server_url=self.server_base_url,
             user_id=self.user_id,
             expected_redirect_uri=None if skip_redirect_validation else redirect_uri,
         )
 
+        # The full endpoint URL, not the origin: per RFC 8707 the SDK derives
+        # the resource indicator from ``server_url`` and requires it to sit at
+        # or below the ``resource`` published in the server's Protected
+        # Resource Metadata. The origin is a *parent* of a path-scoped
+        # resource, so passing it fails the check before the consent URL is
+        # ever issued.
         super().__init__(
-            server_url=self.server_base_url,
+            server_url=mcp_url,
             client_metadata=client_metadata,
             storage=storage,
             redirect_handler=self.redirect_handler,

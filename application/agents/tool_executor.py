@@ -672,10 +672,25 @@ class ToolExecutor:
         return result
 
     def _build_tool_parameters(self, action: Dict) -> Dict:
+        """Build the JSON Schema advertised to the LLM for one action.
+
+        Property entries that are not mappings are skipped: a stored tool may
+        carry a schema this method cannot translate, and dropping the entry is
+        preferable to failing the whole turn.
+
+        Args:
+            action: The stored action document.
+
+        Returns:
+            A JSON Schema object with the LLM-filled properties.
+        """
         params = {"type": "object", "properties": {}, "required": []}
         for param_type in ["query_params", "headers", "body", "parameters"]:
-            if param_type in action and action[param_type].get("properties"):
+            block = action.get(param_type)
+            if isinstance(block, dict) and isinstance(block.get("properties"), dict):
                 for k, v in action[param_type]["properties"].items():
+                    if not isinstance(v, dict):
+                        continue
                     if v.get("filled_by_llm", True):
                         params["properties"][k] = {
                             key: value for key, value in v.items() if key not in ("filled_by_llm", "value", "required")

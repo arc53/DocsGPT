@@ -119,10 +119,12 @@ class TestMCPServerConfig(Resource):
             result = mcp_tool.test_connection()
 
             if result.get("requires_oauth"):
+                # ``task_id`` is what the client subscribes to for the
+                # authorization URL, so it has to survive the allowlist.
                 safe_result = {
                     k: v
                     for k, v in result.items()
-                    if k in ("success", "requires_oauth", "auth_url")
+                    if k in ("success", "requires_oauth", "auth_url", "task_id")
                 }
                 return make_response(jsonify(safe_result), 200)
 

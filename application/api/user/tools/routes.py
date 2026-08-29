@@ -165,20 +165,33 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
     return storage_config
 
 
-def transform_actions(actions_metadata):
+def transform_actions(actions_metadata: list[dict]) -> list[dict]:
     """Set default flags on action metadata for storage.
 
     Marks each action as active, sets ``filled_by_llm`` and ``value`` on every
     parameter property. Used by both the generic create_tool and MCP save routes.
+
+    Entries that are not mappings are left untouched: a third-party tool may
+    report a schema this function cannot annotate, and that must not fail the
+    whole save.
+
+    Args:
+        actions_metadata: Action documents as reported by the tool.
+
+    Returns:
+        The same action documents, annotated in place.
     """
     transformed = []
     for action in actions_metadata:
         action["active"] = True
-        if "parameters" in action:
-            props = action["parameters"].get("properties", {})
-            for param_details in props.values():
-                param_details["filled_by_llm"] = True
-                param_details["value"] = ""
+        if isinstance(action.get("parameters"), dict):
+            props = action["parameters"].get("properties")
+            if isinstance(props, dict):
+                for param_details in props.values():
+                    if not isinstance(param_details, dict):
+                        continue
+                    param_details["filled_by_llm"] = True
+                    param_details["value"] = ""
         transformed.append(action)
     return transformed
 

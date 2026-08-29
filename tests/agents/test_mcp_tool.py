@@ -447,6 +447,46 @@ class TestGetActionsMetadata:
         assert meta[0]["parameters"]["properties"] == {}
 
     @patch("application.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_schema_object_without_properties(self, mock_setup, mcp_config):
+        """``{"type": "object"}`` is a valid schema meaning "takes no arguments"."""
+        from application.agents.tools.mcp_tool import MCPTool
+
+        tool = MCPTool(mcp_config)
+        tool.available_tools = [
+            {
+                "name": "list_profiles",
+                "description": "Takes no arguments",
+                "inputSchema": {"type": "object"},
+            }
+        ]
+        meta = tool.get_actions_metadata()
+        assert meta[0]["parameters"]["properties"] == {}
+        assert meta[0]["parameters"]["required"] == []
+
+    @patch("application.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_schema_object_with_null_properties(self, mock_setup, mcp_config):
+        from application.agents.tools.mcp_tool import MCPTool
+
+        tool = MCPTool(mcp_config)
+        tool.available_tools = [
+            {"name": "noop", "inputSchema": {"type": "object", "properties": None}}
+        ]
+        meta = tool.get_actions_metadata()
+        assert meta[0]["parameters"]["properties"] == {}
+
+    @patch("application.agents.tools.mcp_tool.MCPTool._setup_client")
+    def test_legacy_flat_property_map(self, mock_setup, mcp_config):
+        """Servers sending a bare property map (no ``type``) keep working."""
+        from application.agents.tools.mcp_tool import MCPTool
+
+        tool = MCPTool(mcp_config)
+        tool.available_tools = [
+            {"name": "search", "inputSchema": {"query": {"type": "string"}}}
+        ]
+        meta = tool.get_actions_metadata()
+        assert meta[0]["parameters"]["properties"] == {"query": {"type": "string"}}
+
+    @patch("application.agents.tools.mcp_tool.MCPTool._setup_client")
     def test_config_requirements(self, mock_setup, mcp_config):
         from application.agents.tools.mcp_tool import MCPTool
 
@@ -519,3 +559,47 @@ class TestDBTokenStorage:
         key = storage.get_db_key()
         assert key["server_url"] == "https://mcp.example.com"
         assert key["user_id"] == "user1"
+
+
+@pytest.mark.unit
+class TestDocsGPTOAuthResourceUrl:
+    """RFC 8707: the OAuth resource must be the MCP endpoint, not its origin.
+
+    ``OAuthClientProvider._validate_resource_match`` requires the resource
+    derived from ``server_url`` to sit at or below the ``resource`` published
+    in the server's Protected Resource Metadata. Passing only the origin makes
+    it a *parent* of the advertised resource, which the check rejects.
+    """
+
+    @staticmethod
+    def _build(mcp_url: str):
+        from application.agents.tools.mcp_tool import DocsGPTOAuth
+
+        return DocsGPTOAuth(
+            mcp_url=mcp_url,
+            redirect_uri="https://docsgpt.example.com/api/mcp_oauth_callback",
+            user_id="user1",
+        )
+
+    def test_provider_server_url_keeps_endpoint_path(self):
+        provider = self._build("https://mcp.example.com/mcp")
+        assert str(provider.context.server_url) == "https://mcp.example.com/mcp"
+
+    def test_token_storage_still_keyed_by_origin(self):
+        """Token rows stay keyed by origin so ``MCPAuthStatus`` lookups match."""
+        provider = self._build("https://mcp.example.com/mcp")
+        assert provider.server_base_url == "https://mcp.example.com"
+        assert provider.context.storage.server_url == "https://mcp.example.com"
+
+    def test_resource_match_accepts_path_scoped_metadata(self):
+        from mcp.shared.auth_utils import (
+            check_resource_allowed,
+            resource_url_from_server_url,
+        )
+
+        provider = self._build("https://mcp.example.com/mcp")
+        derived = resource_url_from_server_url(provider.context.server_url)
+        assert check_resource_allowed(
+            requested_resource=derived,
+            configured_resource="https://mcp.example.com/mcp",
+        )
