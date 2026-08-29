@@ -1,0 +1,52 @@
+---
+title: Search X posts with Xquik
+description: Configure Xquik Search in DocsGPT for current X and Twitter search results with authors, engagement, and cursor pagination.
+---
+
+import { Callout } from 'nextra/components';
+
+# Search X posts with Xquik
+
+Xquik Search is a built-in DocsGPT tool for current X post search. It returns
+post text, authors, engagement fields, and cursor pagination through Xquik's
+published API.
+
+Use this tool when an agent needs live discussions or account activity. Keep
+document retrieval enabled for facts already stored in your knowledge base.
+
+## Before you start
+
+Create an API key in [Xquik API settings](https://xquik.com/settings/api-keys).
+The tool stores it through DocsGPT's encrypted tool-credential path.
+
+<Callout type="warning">
+  Keep the API key in the tool configuration. Never paste it into a prompt.
+</Callout>
+
+## Configure the tool
+
+1. Open **Settings**, then select **Tools**.
+2. Add **Xquik Search**.
+3. Enter a display name and your Xquik API key.
+4. Keep the 30-second timeout or choose a value from 1 to 300 seconds.
+5. Save the tool and attach it to an agent or chat.
+
+The agent can now call `xquik_search_posts` with these fields:
+
+| Field         | Required | Purpose                                                                 |
+| ------------- | -------- | ----------------------------------------------------------------------- |
+| `query`       | Yes      | X query, post ID, or status URL. The tool sends it unchanged.           |
+| `query_type`  | No       | Use `Latest` for chronological results or `Top` for engagement ranking. |
+| `max_results` | No       | Return 1 to 100 posts. The default is 20.                               |
+| `cursor`      | No       | Continue from a cursor returned by the previous page.                   |
+
+Try a request such as:
+
+> Search X for recent DocsGPT release discussions. Summarize the main themes
+> and cite the relevant post URLs.
+
+The tool uses Xquik's [search tweets API](https://docs.xquik.com/api-reference/x/search-tweets).
+Start with the default limit. Request more results only when the task needs them.
+
+Xquik is an independent third-party service. Not affiliated with X Corp.
+"Twitter" and "X" are trademarks of X Corp.

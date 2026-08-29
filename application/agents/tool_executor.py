@@ -675,6 +675,8 @@ class ToolExecutor:
         params = {"type": "object", "properties": {}, "required": []}
         for param_type in ["query_params", "headers", "body", "parameters"]:
             if param_type in action and action[param_type].get("properties"):
+                if action[param_type].get("additionalProperties") is False:
+                    params["additionalProperties"] = False
                 for k, v in action[param_type]["properties"].items():
                     if v.get("filled_by_llm", True):
                         params["properties"][k] = {

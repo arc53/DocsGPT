@@ -469,6 +469,7 @@ class TestToolExecutorPrepare:
         executor = ToolExecutor()
         action = {
             "parameters": {
+                "additionalProperties": False,
                 "properties": {
                     "query": {
                         "type": "string",
@@ -492,6 +493,19 @@ class TestToolExecutorPrepare:
         # filled_by_llm, value, required stripped from schema
         assert "filled_by_llm" not in result["properties"]["query"]
         assert "value" not in result["properties"]["query"]
+        assert result["additionalProperties"] is False
+
+    def test_prepared_xquik_schema_requires_query_and_rejects_extra_arguments(self):
+        from application.agents.tools.xquik import XquikSearchTool
+
+        action = XquikSearchTool({"api_key": "test"}).get_actions_metadata()[0]
+        result = ToolExecutor().prepare_tools_for_llm(
+            {"xquik-id": {"name": "xquik", "actions": [action]}}
+        )
+
+        schema = result[0]["function"]["parameters"]
+        assert schema["required"] == ["query"]
+        assert schema["additionalProperties"] is False
 
 
 @pytest.mark.unit
