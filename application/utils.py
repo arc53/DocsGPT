@@ -498,6 +498,17 @@ def clean_text_for_tts(text: str) -> str:
     )  ## --- *** ___ rules
     text = re.sub(r"<[^>]*>", "", text)  ## <html> tags
 
+    # Normalize typographic punctuation LLMs commonly emit (em/en dashes,
+    # curly quotes, ellipsis) to ASCII *before* the non-ASCII strip below.
+    # Without this, e.g. an em dash between two words is deleted outright
+    # rather than replaced, silently fusing them together for the TTS
+    # engine: "great—really" -> "greatreally", "$10–20" -> "$1020".
+    text = text.replace("\u2014", ", ")  ## — em dash
+    text = text.replace("\u2013", "-")  ## – en dash
+    text = text.replace("\u2026", "...")  ## … ellipsis
+    text = text.replace("\u2018", "'").replace("\u2019", "'")  ## ‘ ’ smart single quotes
+    text = text.replace("\u201c", '"').replace("\u201d", '"')  ## “ ” smart double quotes
+
     # Remove non-ASCII (emojis, special Unicode)
 
     text = re.sub(r"[^\x20-\x7E\n\r\t]", "", text)
