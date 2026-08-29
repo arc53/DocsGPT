@@ -62,12 +62,18 @@ from sqlalchemy import create_engine
 _ALEMBIC_INI = Path(__file__).resolve().parent.parent / "application" / "alembic.ini"
 
 
-def _migrate_template_db(host, port, user, dbname, password) -> None:
+def _migrate_template_db(host, port, user, dbname, password, **kwargs) -> None:
     """Run alembic ``upgrade head`` into the session's template database.
 
     Called once per session by pytest-postgresql's ``load=`` hook (against
     the template DB, before any test runs). Runs in a subprocess so the
     parent process never imports application settings with this URI cached.
+
+    ``**kwargs`` swallows keywords newer plugin releases hand to loaders --
+    9.0.0 added ``autocommit``, which broke every DB test on a plugin bump
+    alone. They describe the connection the caller already gave us, so
+    ignoring them keeps one signature working across versions instead of
+    pinning the plugin back.
     """
     url = (
         f"postgresql+psycopg://{user}:{password or ''}@{host}:{port}/{dbname}"
