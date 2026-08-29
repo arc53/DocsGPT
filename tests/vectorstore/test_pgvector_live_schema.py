@@ -103,9 +103,20 @@ def live_dsn(postgresql, monkeypatch):
 
 @pytest.fixture
 def stub_embeddings():
+    """Stand in for the configured model everywhere its width is read.
+
+    ``ensure_vector_schema`` takes the width from the registry rather than by
+    constructing the model, so patching only the constructors would leave the
+    boot hook sizing the table from whatever EMBEDDINGS_NAME happens to be.
+    """
     stub = _StubEmbeddings()
     with patch(
         "application.vectorstore.base.get_embeddings", return_value=stub
+    ), patch(
+        "application.vectorstore.base.build_local_embeddings", return_value=stub
+    ), patch(
+        "application.vectorstore.model_registry.dimension_for",
+        return_value=STUB_DIM,
     ), patch(
         "application.vectorstore.base.BaseVectorStore._get_embeddings",
         return_value=stub,
@@ -140,6 +151,9 @@ class TestBootHookCreatesTheSchema:
         wide = _WideStubEmbeddings()
         with patch(
             "application.vectorstore.base.get_embeddings", return_value=wide
+        ), patch(
+            "application.vectorstore.model_registry.dimension_for",
+            return_value=wide.dimension,
         ):
             with pytest.raises(RuntimeError) as excinfo:
                 ensure_vector_schema()

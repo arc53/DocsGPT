@@ -76,6 +76,43 @@ def ensure_database_ready(
         _run_migrations(log)
 
 
+def _release_boot_only_embeddings(log: logging.Logger) -> None:
+    """Drop a model this hook loaded that the process will never use again.
+
+    ``ensure_vector_schema`` has to run the model to learn the width of a model
+    the registry does not describe. ``EmbeddingsSingleton`` then caches it for
+    the life of the process -- correct when this process embeds, pure waste in
+    an API that delegates every embed to the worker, where it costs ~400 MB for
+    a small model and ~800 MB for a granite-sized one that is never called.
+
+    Only the local-ONNX case is dropped. A ``RemoteEmbeddings`` is cheap and is
+    exactly what the process goes on to use, and with delegation off the model
+    would only be rebuilt on the first query.
+
+    Bounds retention, not the transient peak: the load still happens, and the
+    ONNX Runtime arena may not return every page to the OS.
+    """
+    from application.core.settings import settings
+
+    if settings.EMBEDDINGS_BASE_URL:
+        return
+    if getattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False) is not True:
+        return
+
+    import gc
+
+    from application.vectorstore.base import EmbeddingsSingleton
+
+    if EmbeddingsSingleton._instances.pop(settings.EMBEDDINGS_NAME, None) is None:
+        return
+    gc.collect()
+    log.info(
+        "ensure_vector_schema: released the embeddings model loaded to read its "
+        "width; this process delegates embedding to the worker and would never "
+        "have used it."
+    )
+
+
 def ensure_vector_schema(*, logger: Optional[logging.Logger] = None) -> None:
     """Create the pgvector schema once at boot and verify its dimension.
 
@@ -127,27 +164,13 @@ def ensure_vector_schema(*, logger: Optional[logging.Logger] = None) -> None:
         PGVectorStore,
     )
 
-    # Loading the model here is deliberate: the process loads it on first
-    # retrieval anyway, and EmbeddingsSingleton caches it.
-    dim: Optional[int] = None
-    try:
-        from application.vectorstore.base import get_embeddings
+    # All this needs is an integer, and for a model the registry describes that
+    # is a lookup. It used to construct the embeddings instance, which loaded
+    # ~800 MB of ONNX into every API and worker process at import purely to
+    # read ``.dimension`` off it.
+    from application.vectorstore.model_registry import dimension_for
 
-        dim = getattr(get_embeddings(), "dimension", None)
-    except Exception as exc:  # noqa: BLE001 — never block boot on the model
-        log.warning(
-            "ensure_vector_schema: could not load the embeddings model (%s); "
-            "creating the table with %d dimensions and skipping the dimension "
-            "check.",
-            exc,
-            DEFAULT_EMBEDDING_DIM,
-        )
-    if dim is None:
-        log.warning(
-            "ensure_vector_schema: the embeddings model exposes no dimension; "
-            "using %d and skipping the dimension check.",
-            DEFAULT_EMBEDDING_DIM,
-        )
+    dim: Optional[int] = dimension_for(settings.EMBEDDINGS_NAME)
 
     graph_enabled = bool(getattr(settings, "GRAPHRAG_ENABLED", False))
     started = time.monotonic()
@@ -165,6 +188,46 @@ def ensure_vector_schema(*, logger: Optional[logging.Logger] = None) -> None:
             )
         finally:
             cursor.close()
+
+        if dim is None:
+            # An unregistered model only reports its width once something has
+            # run it. Build it in-process rather than through
+            # ``get_embeddings``: at boot there is no Celery task in flight, so
+            # a delegating client would dispatch to a worker that may not be up
+            # yet. The width must come from the model and not from the existing
+            # table -- reading the table would make the check below compare a
+            # value against itself, which is how a model of a different width
+            # silently inherits a table it does not fit.
+            try:
+                from application.vectorstore.base import build_local_embeddings
+
+                embedding = build_local_embeddings()
+                dim = getattr(embedding, "dimension", None)
+                if not dim:
+                    # A remote client knows nothing about its server until it
+                    # has called it, so ask once. Without this the table is
+                    # sized at the default and the check below is skipped --
+                    # which is how a remote model of any other width silently
+                    # got a vector(768) column, the exact failure this hook
+                    # exists to catch. Milvus and Qdrant probe the same way.
+                    dim = len(embedding.embed_query("dimension probe"))
+            except Exception as exc:  # noqa: BLE001 — never block boot on the model
+                log.warning(
+                    "ensure_vector_schema: could not determine the embedding width "
+                    "(%s); creating the table with %d dimensions and skipping the "
+                    "dimension check.",
+                    exc,
+                    DEFAULT_EMBEDDING_DIM,
+                )
+            finally:
+                _release_boot_only_embeddings(log)
+
+        if dim is None:
+            log.warning(
+                "ensure_vector_schema: the embeddings model exposes no dimension; "
+                "using %d and skipping the dimension check.",
+                DEFAULT_EMBEDDING_DIM,
+            )
 
         PGVectorStore.create_schema(conn, dimension=dim or DEFAULT_EMBEDDING_DIM)
         if graph_enabled:

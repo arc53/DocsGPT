@@ -15,11 +15,13 @@ from application.parser.chunking_strategies import (
     SemanticChunker,
 )
 from application.parser.schema.base import Document
-from application.utils import get_encoding
+from application.parser.tokenization import get_token_counter
 
 
 def _tok(text: str) -> int:
-    return len(get_encoding().encode(text))
+    # Chunk budgets are enforced in the embedding model's tokenizer, so a
+    # test that measures them in cl100k measures the wrong thing.
+    return get_token_counter().count(text)
 
 
 @pytest.mark.unit

@@ -115,9 +115,24 @@ def _trim_native_heap() -> None:
         pass
 
 
+# Tasks that allocate almost nothing and run on a latency-sensitive path, so
+# the reclaim below costs far more than it recovers. Query embedding is one:
+# measured at ~86 ms for the collect against ~8 ms for the embed itself on a
+# worker holding the ONNX model, i.e. a 9x slowdown of the whole round trip.
+_NO_RECLAIM_TASKS = frozenset({"application.vectorstore.embeddings_tasks.embed_texts"})
+
+
 @task_postrun.connect
-def _reclaim_memory_after_task(*args, **kwargs):
-    """Drop per-task allocations so the prefork child's RSS doesn't ratchet."""
+def _reclaim_memory_after_task(task=None, **kwargs):
+    """Drop per-task allocations so the prefork child's RSS doesn't ratchet.
+
+    Skipped for the tasks in :data:`_NO_RECLAIM_TASKS`. This exists for the
+    large transient allocations docling/torch parsing makes; running a full
+    generational collect after a task that allocated a few kilobytes just
+    charges the next task for walking the whole heap.
+    """
+    if getattr(task, "name", None) in _NO_RECLAIM_TASKS:
+        return
     gc.collect()
     torch = sys.modules.get("torch")
     if torch is not None:

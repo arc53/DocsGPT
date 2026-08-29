@@ -800,6 +800,12 @@ class CreateWikiSource(Resource):
                     config={"kind": "wiki"},
                     directory_structure={},
                     tokens=0,
+                    # Wiki pages are embedded like any other source, so record
+                    # which model did it. Left unset, the column reads as NULL,
+                    # which the boot mismatch check takes to mean "pre-dates the
+                    # column, therefore the legacy model" -- and reports a
+                    # correctly-embedded source as stale on every startup.
+                    model=settings.EMBEDDINGS_NAME,
                 )
                 if initial_content:
                     WikiPagesRepository(conn).upsert(

@@ -81,7 +81,29 @@ class FaissStore(BaseVectorStore):
     # and must not be shown as one.
     score_kind = "l2_distance"
 
-    def __init__(self, source_id: str, embeddings_key: str, docs_init=None):
+    def __init__(
+        self,
+        source_id: str,
+        embeddings_key: str,
+        docs_init=None,
+        ids=None,
+        batch_size=None,
+        skip_dimension_check: bool = False,
+    ):
+        """Open or build one source's FAISS index.
+
+        Args:
+            source_id: Source whose index to open.
+            embeddings_key: API key handed to the embeddings provider.
+            docs_init: Documents to build a fresh index from. Loads the stored
+                index instead when omitted.
+            ids: Chunk ids to keep when building. Generated when omitted.
+            batch_size: Documents per embed call when building.
+            skip_dimension_check: Open an index whose width does not match the
+                configured model. Only for a caller that is about to replace
+                that index, such as the re-embed script, which otherwise cannot
+                read the chunks it needs to rebuild from.
+        """
         super().__init__()
         self.source_id = source_id
         self.path = get_vectorstore(source_id)
@@ -94,27 +116,47 @@ class FaissStore(BaseVectorStore):
 
         try:
             if docs_init:
-                self._build_from_documents(docs_init)
+                self._build_from_documents(docs_init, ids=ids, batch_size=batch_size)
             else:
                 self._load_from_storage()
         except Exception as e:
             raise Exception(f"Error loading FAISS index: {str(e)}")
 
-        self.assert_embedding_dimensions(self.embeddings)
+        if not skip_dimension_check:
+            self.assert_embedding_dimensions(self.embeddings)
 
     # -- Construction ----------------------------------------------------
 
-    def _build_from_documents(self, docs_init) -> None:
-        """Create a fresh index seeded with ``docs_init``."""
+    def _build_from_documents(self, docs_init, ids=None, batch_size=None) -> None:
+        """Create a fresh index seeded with ``docs_init``.
+
+        Args:
+            docs_init: Documents to embed.
+            ids: Chunk ids to keep. Generated when omitted, which renumbers
+                every chunk and orphans anything referencing the old ids.
+            batch_size: Documents per embed call. Without it the whole index
+                goes out in one call, which a remote embeddings server rejects
+                or times out on.
+        """
         texts, metadatas = [], []
         for doc in docs_init:
             texts.append(getattr(doc, "page_content", None) or getattr(doc, "text", "") or "")
             metadatas.append(getattr(doc, "metadata", None) or getattr(doc, "extra_info", None) or {})
 
         faiss = _dependable_faiss_import()
-        vectors = self.embeddings.embed_documents(texts)
-        self.index = faiss.IndexFlatL2(len(vectors[0]))
-        self._append(texts, metadatas, vectors)
+        ids = list(ids) if ids else None
+        step = batch_size if batch_size and batch_size > 0 else len(texts)
+        for start in range(0, len(texts), max(1, step)):
+            stop = start + max(1, step)
+            vectors = self.embeddings.embed_documents(texts[start:stop])
+            if self.index is None:
+                self.index = faiss.IndexFlatL2(len(vectors[0]))
+            self._append(
+                texts[start:stop],
+                metadatas[start:stop],
+                vectors,
+                ids[start:stop] if ids else None,
+            )
 
     def _load_from_storage(self) -> None:
         """Load the index and its sidecar, preferring JSON over the pickle."""
@@ -283,7 +325,13 @@ class FaissStore(BaseVectorStore):
             f.write(dump_pickle_sidecar(self.documents, self.index_to_docstore_id))
 
     def _save_to_storage(self) -> bool:
-        """Persist the index through the configured storage backend."""
+        """Persist the index through the configured storage backend.
+
+        Each file is replaced atomically by the backend, so an interrupted save
+        leaves the previous one readable. The three are still written in
+        sequence: a crash between them pairs a new index with an older sidecar,
+        which stays consistent because the ids and row order are preserved.
+        """
         with tempfile.TemporaryDirectory() as temp_dir:
             self._write_index_files(temp_dir)
             storage_path = get_vectorstore(self.source_id)
@@ -301,24 +349,29 @@ class FaissStore(BaseVectorStore):
     # -- Introspection ---------------------------------------------------
 
     def assert_embedding_dimensions(self, embeddings) -> None:
-        """Check the index width matches the embedding model's width."""
-        if (
-            settings.EMBEDDINGS_NAME
-            == "huggingface_sentence-transformers/all-mpnet-base-v2"
-        ):
-            word_embedding_dimension = getattr(embeddings, "dimension", None)
-            if word_embedding_dimension is None:
-                raise AttributeError(
-                    "'dimension' attribute not found in embeddings instance."
-                )
-            if self.index is None:
-                return
-            if word_embedding_dimension != self.index.d:
-                raise ValueError(
-                    f"Embedding dimension mismatch: embeddings.dimension "
-                    f"({word_embedding_dimension}) != docsearch index dimension "
-                    f"({self.index.d})"
-                )
+        """Check the index width matches the embedding model's width.
+
+        This used to run only when ``EMBEDDINGS_NAME`` was mpnet, so every
+        other model skipped the check entirely -- exactly the models most
+        likely to differ from an index built earlier. It now runs for any
+        model that reports a width.
+        """
+        word_embedding_dimension = getattr(embeddings, "dimension", None)
+        if word_embedding_dimension is None:
+            # A remote model of unknown width reports None until its first
+            # call; there is nothing to compare yet.
+            return
+        if self.index is None:
+            return
+        if word_embedding_dimension != self.index.d:
+            raise ValueError(
+                f"Embedding dimension mismatch: {settings.EMBEDDINGS_NAME} produces "
+                f"{word_embedding_dimension}-dim vectors but this FAISS index is "
+                f"{self.index.d}-dim. The index was built with a different "
+                f"embedding model; re-embed it with "
+                f"`python -m application.scripts.reembed` or point "
+                f"EMBEDDINGS_NAME back at the original model."
+            )
 
     def get_chunks(self) -> List[Dict[str, Any]]:
         """Return every chunk held in the index."""

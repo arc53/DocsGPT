@@ -95,6 +95,12 @@ class TestCreateWikiSource:
         assert row["type"] == "wiki"
         assert row["config"]["kind"] == "wiki"
         assert int(row["tokens"]) == 0
+        # Wiki pages get embedded like any other source, so the row has to name
+        # the model that did it. NULL reads as "the legacy model" to the boot
+        # mismatch check, which then reports the source as stale forever.
+        from application.core.settings import settings
+
+        assert row["model"] == settings.EMBEDDINGS_NAME
         # No seed content → no re-embed, and never any ingest/reingest task.
         mock_reembed.assert_not_called()
         mock_ingest.assert_not_called()
