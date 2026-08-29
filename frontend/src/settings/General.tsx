@@ -38,6 +38,7 @@ export default function General() {
     { label: '普通话', value: 'zh' },
     { label: '繁體中文（臺灣）', value: 'zhTW' },
     { label: 'Русский', value: 'ru' },
+    { label: '한국어', value: 'ko' },
   ];
   const prompts = useSelector(selectPrompts);
   const [isDarkTheme, toggleTheme] = useDarkTheme();
