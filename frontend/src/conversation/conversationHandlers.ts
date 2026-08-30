@@ -927,17 +927,13 @@ export function handleFetchSharedAnswerStreaming(
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
-        let counterrr = 0;
         const processStream = ({
           done,
           value,
         }: ReadableStreamReadResult<Uint8Array>) => {
           if (done) {
-            console.log(counterrr);
             return;
           }
-
-          counterrr += 1;
 
           const chunk = decoder.decode(value);
 

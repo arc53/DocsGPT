@@ -12,8 +12,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint ./src --ext .jsx,.js,.ts,.tsx",
-    "lint-fix": "eslint ./src --ext .jsx,.js,.ts,.tsx --fix",
+    "lint": "eslint src",
+    "lint-fix": "eslint src --fix",
     "format": "prettier ./src --write",
     "prepare": "cd .. && husky install frontend/.husky"
   },
