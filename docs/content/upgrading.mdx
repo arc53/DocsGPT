@@ -11,6 +11,85 @@ import { Callout } from 'nextra/components'
   **Upgrading from 0.16.x?** User data moved from MongoDB to Postgres in 0.17.0. Follow the [Postgres Migration guide](/Deploying/Postgres-Migration) before running `docker compose pull` or `git pull` — existing deployments will not start cleanly without it.
 </Callout>
 
+## Embedding models
+
+DocsGPT now runs embeddings through [FastEmbed](https://github.com/qdrant/fastembed) (ONNX Runtime) instead of SentenceTransformer. The models are the same and the vectors are identical, so **your existing index needs no action** — `all-mpnet-base-v2` keeps working exactly as before.
+
+<Callout type="warning">
+  **Your worker command does need one change.** Query embedding now runs on the Celery worker (`EMBEDDINGS_DELEGATE_TO_WORKER`, on by default), which keeps the API from loading a model of its own. If you start your worker with an explicit `-Q`, add the `embeddings` queue:
+
+  ```diff
+  - celery -A application.app.celery worker -l INFO -Q docsgpt,parsing
+  + celery -A application.app.celery worker -l INFO -Q docsgpt,parsing,embeddings
+  ```
+
+  The bundled Compose and Kubernetes manifests already do this — pull them along with the code. Without it, every search blocks for `EMBEDDINGS_DELEGATE_TIMEOUT` (60s) and then answers with no retrieved context rather than raising, so the symptom is bad answers, not an error. To keep the model out of the worker too, set `EMBEDDINGS_BASE_URL`; to run the API on its own, set `EMBEDDINGS_DELEGATE_TO_WORKER=false`.
+</Callout>
+
+New installs default to `ibm-granite/granite-embedding-311m-multilingual-r2`: multilingual, a 32k-token context, and the same 768 dimensions.
+
+### Switching an existing deployment to granite
+
+<Callout type="error">
+  Changing `EMBEDDINGS_NAME` on an index that already has vectors **breaks retrieval silently**. Both models are 768-dimensional, so nothing raises an error — queries are simply compared against vectors that mean something else, and answers quietly get worse. Always re-embed.
+</Callout>
+
+Set the model, then rebuild the vectors:
+
+```bash
+# 1. In your .env
+EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2
+
+# 2. Rebuild the vectors from the chunk text already in your index
+docker compose exec backend python -m application.scripts.reembed --dry-run
+docker compose exec backend python -m application.scripts.reembed
+```
+
+Re-embedding reads the chunk text already stored in your index. It does not re-download, re-parse or re-chunk your documents, so no source files are needed and the run is proportional to index size, not corpus size. Both `pgvector` and `faiss` are supported.
+
+Useful flags:
+
+| Flag | Effect |
+| --- | --- |
+| `--dry-run` | Report how many chunks would change, write nothing |
+| `--sources a,b` | Only these source ids — also how you retry a failed source |
+| `--batch-size N` | Chunks per embed call (default 64) |
+
+The script processes sources independently: one failing source is reported and skipped rather than aborting the run, and the exit code is non-zero if any failed. For `pgvector` it reads a page of chunks at a time and updates rows in place, so memory stays flat on a large index and an interrupted run simply re-does its last batch. For `faiss` it builds the replacement index in memory, writes each file to a temporary path, and moves it into place — so an interrupt during either the rebuild or the write leaves the existing index intact rather than truncated.
+
+<Callout type="warning">
+  Stop ingest before you run this. It reads each source's chunks and writes the vectors back; anything ingested while it runs can be overwritten by the rebuild (`faiss`) or missed by it (`pgvector`).
+</Callout>
+
+<Callout type="info">
+  Running [GraphRAG](/Sources/GraphRAG)? The script also rewrites `graph_nodes.name_embedding`, which seeds every graph traversal. Those vectors are written once at extraction time and share the chunk vectors' width, so leaving them in the old model's space degrades graph retrieval just as silently as the chunk vectors would — and needs no LLM re-extraction to fix.
+</Callout>
+
+### Custom local models
+
+A local model now runs through ONNX Runtime, so its repository must ship an ONNX
+export (`onnx/model.onnx`) or be one of FastEmbed's built-in models. Repositories
+with PyTorch weights only no longer load; `hkunlp/instructor-large`, previously
+supported by name, is one of them. Serve such a model over `EMBEDDINGS_BASE_URL`
+instead, or switch to a model with an export.
+
+How to run the model — pooling, and whether outputs are L2-normalised — is read
+from the repository's own `1_Pooling/config.json` and `modules.json`. Two cases
+need attention:
+
+- **Models with a Dense projection layer** (`sentence-transformers/LaBSE`,
+  `distiluse-base-multilingual-cased-v1`) are now **refused at startup**.
+  FastEmbed cannot apply the projection, so it would have produced vectors of the
+  wrong width in a different space. If you were running one, its stored vectors
+  were already wrong; move it to `EMBEDDINGS_BASE_URL` or pick another model.
+- **Repositories that declare nothing** fall back to mean pooling with
+  normalisation and log a warning. Pin the real values with `EMBEDDINGS_POOLING`
+  (`cls` or `mean`) and `EMBEDDINGS_NORMALIZE`.
+
+<Callout type="info">
+  Staying on `all-mpnet-base-v2` is a supported choice — it remains in the model registry and in `setup.sh`. You only need this section if you want to move to granite.
+</Callout>
+
 ## Check your version
 
 ```bash

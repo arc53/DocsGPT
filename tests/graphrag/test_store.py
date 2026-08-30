@@ -514,6 +514,27 @@ class TestEmbeddingDim:
         store = GraphStore.__new__(GraphStore)
         assert store._embedding_dim() == 1536
 
+    def test_none_dimension_falls_back_to_default(self, monkeypatch):
+        """A remote model outside the registry reports ``None``, not nothing.
+
+        ``getattr`` with a default cannot catch that -- the attribute exists --
+        so the width reached the DDL as ``vector(None)``.
+        """
+        from application.vectorstore import base as base_module
+
+        monkeypatch.setattr(base_module.settings, "EMBEDDINGS_BASE_URL", None)
+        fake_embedding = MagicMock()
+        fake_embedding.dimension = None
+        monkeypatch.setattr(
+            base_module.EmbeddingsSingleton,
+            "get_instance",
+            staticmethod(lambda *a, **k: fake_embedding),
+        )
+        monkeypatch.setattr(GraphStore, "_embedding_dim", _REAL_EMBEDDING_DIM)
+
+        store = GraphStore.__new__(GraphStore)
+        assert store._embedding_dim() == store_module.DEFAULT_NAME_EMBEDDING_DIM
+
     def test_falls_back_to_default_dimension(self, monkeypatch):
         from application.vectorstore import base as base_module
 

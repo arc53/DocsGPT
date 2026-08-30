@@ -16,6 +16,13 @@ def local_storage(temp_base_dir):
     return LocalStorage(base_dir=temp_base_dir)
 
 
+@pytest.fixture
+def real_storage(tmp_path):
+    """Storage over a real directory, for the write paths worth exercising."""
+    base = os.path.realpath(str(tmp_path))
+    return LocalStorage(base_dir=base), base
+
+
 @pytest.mark.unit
 class TestLocalStorageInitialization:
 
@@ -37,49 +44,86 @@ class TestLocalStorageInitialization:
         with pytest.raises(ValueError, match="Path traversal detected"):
             local_storage._get_full_path("/absolute/path/test.txt")
 
-    @patch("os.makedirs")
-    @patch("builtins.open", new_callable=mock_open)
-    @patch("shutil.copyfileobj")
-    def test_save_file_creates_directory_and_saves(
-        self, mock_copyfileobj, mock_file, mock_makedirs, local_storage
-    ):
-        file_data = io.BytesIO(b"test content")
-        path = "documents/test.txt"
+    def test_save_file_creates_directory_and_saves(self, real_storage):
+        storage, base = real_storage
+        result = storage.save_file(io.BytesIO(b"test content"), "documents/test.txt")
 
-        result = local_storage.save_file(file_data, path)
-
-        expected_dir = os.path.join(os.path.realpath("/tmp/test_storage"), "documents")
-        expected_file = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt")
-
-        assert mock_makedirs.call_count == 1
-        assert os.path.normpath(mock_makedirs.call_args[0][0]) == os.path.normpath(
-            expected_dir
-        )
-        assert mock_makedirs.call_args[1] == {"exist_ok": True}
-
-        assert mock_file.call_count == 1
-        assert os.path.normpath(mock_file.call_args[0][0]) == os.path.normpath(
-            expected_file
-        )
-        assert mock_file.call_args[0][1] == "wb"
-
-        mock_copyfileobj.assert_called_once_with(file_data, mock_file())
+        written = os.path.join(base, "documents/test.txt")
+        assert os.path.isfile(written)
+        with open(written, "rb") as f:
+            assert f.read() == b"test content"
         assert result == {"storage_type": "local"}
 
-    @patch("os.makedirs")
-    def test_save_file_with_save_method(self, mock_makedirs, local_storage):
-        file_data = MagicMock()
-        file_data.save = MagicMock()
-        path = "documents/test.txt"
+    def test_save_file_with_save_method(self, real_storage):
+        """Werkzeug's ``FileStorage.save`` accepts the destination handle."""
+        storage, base = real_storage
 
-        result = local_storage.save_file(file_data, path)
+        class _Uploaded:
+            def save(self, dst):
+                dst.write(b"from save()")
 
-        expected_file = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt")
-        assert file_data.save.call_count == 1
-        assert os.path.normpath(file_data.save.call_args[0][0]) == os.path.normpath(
-            expected_file
-        )
+        result = storage.save_file(_Uploaded(), "documents/test.txt")
+
+        with open(os.path.join(base, "documents/test.txt"), "rb") as f:
+            assert f.read() == b"from save()"
         assert result == {"storage_type": "local"}
+
+    def test_save_file_replaces_existing_content(self, real_storage):
+        storage, base = real_storage
+        storage.save_file(io.BytesIO(b"first"), "a/b.bin")
+        storage.save_file(io.BytesIO(b"second"), "a/b.bin")
+
+        with open(os.path.join(base, "a/b.bin"), "rb") as f:
+            assert f.read() == b"second"
+
+    def test_failed_write_leaves_the_previous_file_intact(self, real_storage):
+        """The whole point of writing through a temp file.
+
+        ``reembed`` rewrites an index in place; a half-written ``index.faiss``
+        loads at neither the old width nor the new one, so an interrupted write
+        must leave the previous bytes untouched rather than truncate them.
+        """
+        storage, base = real_storage
+        storage.save_file(io.BytesIO(b"the good index"), "indexes/s1/index.faiss")
+
+        class _DiesHalfway:
+            def __init__(self):
+                self._served = False
+
+            def read(self, size=-1):
+                if self._served:
+                    raise OSError("connection reset")
+                self._served = True
+                return b"corrupt"
+
+        with pytest.raises(OSError, match="connection reset"):
+            storage.save_file(_DiesHalfway(), "indexes/s1/index.faiss")
+
+        with open(os.path.join(base, "indexes/s1/index.faiss"), "rb") as f:
+            assert f.read() == b"the good index"
+
+    def test_failed_write_leaves_no_temp_file_behind(self, real_storage):
+        storage, base = real_storage
+
+        class _Explodes:
+            def read(self, size=-1):
+                raise OSError("boom")
+
+        with pytest.raises(OSError):
+            storage.save_file(_Explodes(), "indexes/s1/index.faiss")
+
+        assert os.listdir(os.path.join(base, "indexes/s1")) == []
+
+    def test_save_file_keeps_the_existing_permissions(self, real_storage):
+        """``mkstemp`` is 0600; the replacement must not silently narrow access."""
+        storage, base = real_storage
+        storage.save_file(io.BytesIO(b"one"), "a/b.bin")
+        target = os.path.join(base, "a/b.bin")
+        os.chmod(target, 0o640)
+
+        storage.save_file(io.BytesIO(b"two"), "a/b.bin")
+
+        assert os.stat(target).st_mode & 0o777 == 0o640
 
     def test_save_file_with_absolute_path_outside_base_raises(self, local_storage):
         file_data = io.BytesIO(b"test content")
