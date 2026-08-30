@@ -11,6 +11,7 @@ interface FetchAnswerStreamingProps {
   conversationId?: string | null;
   apiHost?: string;
   onEvent?: (event: MessageEvent) => void;
+  signal?: AbortSignal;
 }
 
 export interface FeedbackPayload {
@@ -31,13 +32,17 @@ export function fetchAnswerStreaming({
   onEvent = () => {
     console.log('Event triggered, but no handler provided.');
   },
+  signal,
 }: FetchAnswerStreamingProps): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const body = {
       question: question,
-      history: JSON.stringify(history),
+      history: JSON.stringify(
+        history
+          .filter((item) => item.prompt && item.response)
+          .map(({ prompt, response }) => ({ prompt, response })),
+      ),
       conversation_id: conversationId,
-      model: 'default',
       api_key: apiKey,
     };
     fetch(apiHost + '/stream', {
@@ -46,49 +51,61 @@ export function fetchAnswerStreaming({
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal,
     })
       .then((response) => {
         if (!response.body) throw Error('No response body');
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
-        let counter = 0; // eslint-disable-line @typescript-eslint/no-unused-vars
+    
+        let buffer = '';
+
+        const emit = (rawLine: string) => {
+          const line = rawLine.trim();
+          if (line === '') return;
+          if (!line.startsWith('data:')) return;
+
+          const payload = line.substring(5).trim();
+          if (payload === '' || payload === '[DONE]') return;
+
+          onEvent(new MessageEvent('message', { data: payload }));
+        };
+
         const processStream = ({
           done,
           value,
         }: ReadableStreamReadResult<Uint8Array>) => {
           if (done) {
+            if (buffer.trim() !== '') emit(buffer);
+            buffer = '';
             resolve();
             return;
           }
+          buffer += decoder.decode(value, { stream: true });
 
-          counter += 1;
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) emit(line);
 
-          const chunk = decoder.decode(value);
-
-          const lines = chunk.split('\n');
-
-          for (let line of lines) {
-            if (line.trim() == '') {
-              continue;
-            }
-            if (line.startsWith('data:')) {
-              line = line.substring(5);
-            }
-
-            const messageEvent = new MessageEvent('message', {
-              data: line,
-            });
-
-            onEvent(messageEvent); // handle each message
-          }
-
-          reader.read().then(processStream).catch(reject);
+          reader.read().then(processStream).catch(onReadError);
         };
 
-        reader.read().then(processStream).catch(reject);
+        const onReadError = (error: unknown) => {
+          if (signal?.aborted || (error as Error)?.name === 'AbortError') {
+            resolve();
+            return;
+          }
+          reject(error);
+        };
+
+        reader.read().then(processStream).catch(onReadError);
       })
       .catch((error) => {
+        if (signal?.aborted || (error as Error)?.name === 'AbortError') {
+          resolve();
+          return;
+        }
         console.error('Connection failed:', error);
         reject(error);
       });
