@@ -1,5 +1,5 @@
 'use client';
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import DOMPurify from 'dompurify';
 import styled, { keyframes, css } from 'styled-components';
 import {
@@ -19,6 +19,12 @@ import {
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
 import { ThemeProvider } from 'styled-components';
 import MarkdownIt from 'markdown-it';
+import {
+  prettifyName,
+  toolNames,
+  workflowStepLabel,
+  type StreamEvent,
+} from '../utils/streamEvents';
 
 const LikeIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -62,6 +68,89 @@ const DislikeIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+const CopyIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    xmlns="http://www.w3.org/2000/svg"
+    {...props}
+  >
+    <rect x="5.5" y="5.5" width="9" height="9" rx="1.5" />
+    <path d="M10.5 5.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h2.5" />
+  </svg>
+);
+
+const CheckIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    xmlns="http://www.w3.org/2000/svg"
+    {...props}
+  >
+    <path d="M2.5 8.5 6 12l7.5-8" />
+  </svg>
+);
+
+const RetryIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    xmlns="http://www.w3.org/2000/svg"
+    {...props}
+  >
+    <path d="M14 8a6 6 0 1 1-1.76-4.24" />
+    <path d="M14 2v4h-4" />
+  </svg>
+);
+
+const StopIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 16 16"
+    fill="currentColor"
+    xmlns="http://www.w3.org/2000/svg"
+    {...props}
+  >
+    <rect x="4" y="4" width="8" height="8" rx="1.5" />
+  </svg>
+);
+
+const ArrowDownIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    xmlns="http://www.w3.org/2000/svg"
+    {...props}
+  >
+    <path d="M8 3v10M3.5 8.5 8 13l4.5-4.5" />
+  </svg>
+);
+
 const themes = {
   dark: {
     bg: '#222327',
@@ -74,6 +163,10 @@ const themes = {
       text: '#A1A1AA',
       bg: '#38383b',
     },
+    shimmer: {
+      base: '#A1A1AA',
+      highlight: '#FAFAFA',
+    },
   },
   light: {
     bg: '#fff',
@@ -85,6 +178,10 @@ const themes = {
     secondary: {
       text: '#A1A1AA',
       bg: '#F6F6F6',
+    },
+    shimmer: {
+      base: '#71717A',
+      highlight: '#D4D4D8',
     },
   },
 };
@@ -185,6 +282,16 @@ const scaleAnimation = keyframes`
       to {
       transform: scale(1);
       }
+`;
+const settleIn = keyframes`
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 `;
 const Overlay = styled.div`
   position: fixed;
@@ -344,20 +451,47 @@ const Description = styled.p`
 `;
 
 const Conversation = styled.div`
-  height: 70%;
+  height: 100%;
   border-radius: 6px;
   text-align: left;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: ${(props) => props.theme.secondary.bg} transparent; /* thumb color track color */
 `;
-const Feedback = styled.div`
-  background-color: transparent;
-  font-weight: normal;
-  gap: 12px;
+const ActionsRow = styled.div`
   display: flex;
-  padding: 6px;
+  align-items: center;
+  gap: 2px;
   clear: both;
+  padding: 0 2px 2px 2px;
+`;
+const ActionButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background-color: transparent;
+  color: ${(props) => props.theme.secondary.text};
+  font-size: 11px;
+  font-family: sans-serif;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    background-color: ${(props) => props.theme.secondary.bg};
+    color: ${(props) => props.theme.primary.text};
+  }
+
+  &:focus-visible {
+    outline: 2px solid #8860db;
+    outline-offset: 1px;
+  }
 `;
 const MessageBubble = styled.div<{ $type: MESSAGE_TYPE }>`
   display: block;
@@ -366,8 +500,16 @@ const MessageBubble = styled.div<{ $type: MESSAGE_TYPE }>`
   width: 100%;
   float: right;
   margin: 0px;
-  &:hover ${Feedback} * {
-    visibility: visible;
+  animation: ${settleIn} 0.22s ease-out;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+  /* Contains the floated Message so the bubble keeps its height. */
+  &::after {
+    content: '';
+    display: table;
+    clear: both;
   }
 `;
 const Message = styled.div<{ $type: MESSAGE_TYPE }>`
@@ -389,6 +531,16 @@ const Message = styled.div<{ $type: MESSAGE_TYPE }>`
   overflow-wrap: break-word;
 `;
 const Markdown = styled.div`
+  a {
+    color: #9971ec;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  a:hover {
+    color: #8860db;
+  }
+
   pre {
     padding: 8px;
     width: 90%;
@@ -503,37 +655,144 @@ const ErrorAlert = styled.div`
   border-radius: 6px;
   justify-content: space-evenly;
 `;
-//dot loading animation
-const dotBounce = keyframes`
-  0%, 80%, 100% {
-    transform: translateY(0);
-  }
-  40% {
-    transform: translateY(-5px);
+const shimmerSweep = keyframes`
+  to {
+    background-position: -200% 0;
   }
 `;
+const statusPulse = keyframes`
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+`;
+const StatusLine = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  /* Message floats; without this the row wraps beside it. */
+  clear: both;
+  margin: 4px;
+  font-size: 12px;
+  font-family: sans-serif;
+  color: ${(props) => props.theme.secondary.text};
+`;
+const StatusDot = styled.span`
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-color: ${(props) => props.theme.secondary.text};
+  opacity: 0.5;
+  animation: ${statusPulse} 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 
-const DotAnimation = styled.div`
-  display: inline-block;
-  animation: ${dotBounce} 1s infinite ease-in-out;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 `;
-// delay classes as styled components
-const Delay = styled(DotAnimation)<{ $delay: number }>`
-  animation-delay: ${(props) => props.$delay + 'ms'};
+// Gradient clipped to the glyphs and swept across them.
+const ShimmerText = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background-image: ${(props) => {
+    const { base, highlight } = props.theme.shimmer!;
+    return `linear-gradient(90deg, ${base} 0%, ${base} 40%, ${highlight} 50%, ${base} 60%, ${base} 100%)`;
+  }};
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ${shimmerSweep} 2s linear infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    background-image: none;
+    color: ${(props) => props.theme.secondary.text};
+  }
+`;
+// Reasoning trace from `thought` events.
+const Thought = styled.div`
+  clear: both;
+  margin: 4px;
+  padding-left: 8px;
+  border-left: 2px solid ${(props) => props.theme.secondary.bg};
+  font-size: 12px;
+  font-family: sans-serif;
+  font-style: italic;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: ${(props) => props.theme.secondary.text};
+`;
+const RetryButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid #b91c1c33;
+  border-radius: 8px;
+  background-color: transparent;
+  color: #b91c1c;
+  font-size: 12px;
+  font-family: sans-serif;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background-color: #b91c1c14;
+  }
+`;
+// Shown only while scrolled away from the latest turn.
+const ScrollToLatest = styled.button`
+  position: absolute;
+  /* Auto-margin centring, not translateX: settleIn owns transform. */
+  left: 0;
+  right: 0;
+  bottom: 12px;
+  margin: 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 9999px;
+  background-color: #8860db;
+  color: #fff;
+  line-height: 0;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  animation: ${settleIn} 0.18s ease-out;
+  z-index: 2;
+`;
+const ConversationArea = styled.div`
+  position: relative;
+  flex: 1;
+  min-height: 0;
 `;
 const PromptContainer = styled.form`
-  background-color: transparent;
+  /* Sole source of the gap above the composer. */
+  margin: 16px 12px 0 12px;
+  padding: 5px 5px 5px 4px;
+  background-color: ${(props) => props.theme.secondary.bg};
+  border: none;
+  border-radius: 14px;
   min-height: ${(props) =>
     props.theme.dimensions!.size == 'large' ? '40px' : '23px'};
   max-height: 150px;
   display: flex;
   align-items: end;
-  justify-content: space-evenly;
 `;
 const StyledTextarea = styled.textarea`
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid #686877;
+  border: none;
   padding: ${(props) =>
     props.theme.dimensions!.size === 'large'
       ? '18px 12px 14px 12px'
@@ -792,7 +1051,7 @@ export const WidgetCore = ({
   description = "DocsGPT's AI Chatbot is here to help",
   heroTitle = 'Welcome to DocsGPT !',
   heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
-  size = 'small',
+  size = 'medium',
   theme = 'dark',
   collectFeedback = true,
   isOpen = false,
@@ -807,8 +1066,10 @@ export const WidgetCore = ({
   const [conversationId, setConversationId] = React.useState<string | null>(
     null,
   );
-  const [eventInterrupt, setEventInterrupt] = React.useState<boolean>(false); //click or scroll by user while autoScrolling
-  const [, setHasScrolledToLast] = useState(true);
+  // Auto-follow the stream only while already near the bottom.
+  const [isPinnedToLatest, setIsPinnedToLatest] = React.useState(true);
+  const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const isBubbleHovered = useRef<boolean>(false);
   const conversationRef = useRef<HTMLDivElement | null>(null);
@@ -837,43 +1098,38 @@ export const WidgetCore = ({
     }
   }, [isOpen]);
 
-  const handleUserInterrupt = () => {
-    if (!eventInterrupt && status === 'loading') setEventInterrupt(true);
-  };
+  // Beyond this the reader is deliberately looking away.
+  const STICK_THRESHOLD_PX = 48;
 
-  const scrollIntoView = () => {
-    if (!conversationRef?.current || eventInterrupt) return;
+  const distanceFromBottom = (el: HTMLDivElement) =>
+    el.scrollHeight - el.scrollTop - el.clientHeight;
 
-    if (
-      status === 'idle' ||
-      !queries.length ||
-      !queries[queries.length - 1].response
-    ) {
-      conversationRef.current.scrollTo({
-        behavior: 'smooth',
-        top: conversationRef.current.scrollHeight,
-      });
-    } else {
-      conversationRef.current.scrollTop = conversationRef.current.scrollHeight;
-    }
-    setHasScrolledToLast(true);
-  };
-
-  const checkScroll = () => {
+  const scrollToLatest = (smooth = true) => {
     const el = conversationRef.current;
     if (!el) return;
-    const isBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
-    setHasScrolledToLast(isBottom);
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: smooth ? 'smooth' : 'auto',
+    });
+    setIsPinnedToLatest(true);
+  };
+
+  // Explicit request: land immediately rather than easing.
+  const jumpToLatest = () => scrollToLatest(false);
+
+  const handleConversationScroll = () => {
+    const el = conversationRef.current;
+    if (!el) return;
+    setIsPinnedToLatest(distanceFromBottom(el) < STICK_THRESHOLD_PX);
   };
 
   React.useEffect(() => {
-    if (!eventInterrupt) scrollIntoView();
-
-    conversationRef.current?.addEventListener('scroll', checkScroll);
-    return () => {
-      conversationRef.current?.removeEventListener('scroll', checkScroll);
-    };
-  }, [queries.length, queries[queries.length - 1]?.response]);
+    const el = conversationRef.current;
+    if (!el || !isPinnedToLatest) return;
+    // Easing per token never catches up, so jump while streaming.
+    if (status === 'loading') el.scrollTop = el.scrollHeight;
+    else scrollToLatest();
+  }, [queries.length, queries[queries.length - 1]?.response, status]);
 
   async function handleFeedback(feedback: FEEDBACK, index: number) {
     let query = queries[index];
@@ -940,41 +1196,112 @@ export const WidgetCore = ({
     }
   }
 
+  const stopGenerating = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStatus('idle');
+  };
+
   async function stream(question: string) {
     setStatus('loading');
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       await fetchAnswerStreaming({
+        signal: controller.signal,
         question: question,
         apiKey: apiKey,
         apiHost: apiHost,
         history: queries,
         conversationId: conversationId,
         onEvent: (event: MessageEvent) => {
-          const data = JSON.parse(event.data);
-          // check if the 'end' event has been received
-          if (data.type === 'end') {
-            setStatus('idle');
-          } else if (data.type === 'id') {
-            setConversationId(data.id);
-          } else if (data.type === 'error') {
-            const updatedQueries = [...queries];
-            updatedQueries[updatedQueries.length - 1].error = data.error;
-            setQueries(updatedQueries);
-            setStatus('idle');
-          } else if (data.type === 'source' && showSources) {
-            const updatedQueries = [...queries];
-            updatedQueries[updatedQueries.length - 1].sources = data.source;
-            setQueries(updatedQueries);
-          } else {
-            const result = data.answer ? data.answer : ''; //Fallback to an empty string if data.answer is undefined
-            const streamingResponse = queries[queries.length - 1].response
-              ? queries[queries.length - 1].response
-              : '';
-            const updatedQueries = [...queries];
-            updatedQueries[updatedQueries.length - 1].response =
-              streamingResponse + result;
-            setQueries(updatedQueries);
+          let data: StreamEvent;
+          try {
+            data = JSON.parse(event.data);
+          } catch {
+            // One malformed frame must not fail the whole turn.
+            return;
           }
+
+          const patch = (change: (query: Query) => void) => {
+            setQueries((prev: Query[]) => {
+              if (prev.length === 0) return prev;
+              const updated = [...prev];
+              const current = { ...updated[updated.length - 1] };
+              change(current);
+              updated[updated.length - 1] = current;
+              return updated;
+            });
+          };
+
+          const appendAnswer = (d: StreamEvent) => {
+            if (typeof d.answer !== 'string') return;
+            patch((query) => {
+              query.response = (query.response ?? '') + d.answer;
+            });
+          };
+
+          const noteToolCalls = (calls: unknown) => {
+            const names = toolNames(calls);
+            if (names.length === 0) return;
+            patch((query) => {
+              query.toolCalls = [
+                ...new Set([...(query.toolCalls ?? []), ...names]),
+              ];
+            });
+          };
+
+          const handlers: Record<string, (d: StreamEvent) => void> = {
+            answer: appendAnswer,
+            end: () => setStatus('idle'),
+            id: (d) => setConversationId(d.id as string),
+            error: (d) => {
+              patch((query) => {
+                query.error = d.error as string;
+              });
+              setStatus('idle');
+            },
+            source: (d) => {
+              if (!showSources) return;
+              patch((query) => {
+                query.sources = d.source as Query['sources'];
+              });
+            },
+            thought: (d) =>
+              patch((query) => {
+                query.thought =
+                  (query.thought ?? '') + ((d.thought as string) ?? '');
+              }),
+            notice: (d) =>
+              patch((query) => {
+                query.notice = (d.notice as string) ?? '';
+              }),
+            // Workflow agents report progress per node instead of `notice`.
+            workflow_step: (d) => {
+              const label = workflowStepLabel(d);
+              if (label) {
+                patch((query) => {
+                  query.notice = label;
+                });
+              }
+            },
+            tool_calls: (d) => noteToolCalls(d.tool_calls),
+            tool_call: (d) => noteToolCalls([d.data]),
+            // Blocked content must leave the screen, reasoning included.
+            guardrail: (d) => {
+              if (!d.retract) return;
+              patch((query) => {
+                query.response = '';
+                query.thought = '';
+              });
+            },
+            // Recorded server-side; nothing to render.
+            message_id: () => undefined,
+          };
+
+          // Unknown types are ignored; untyped frames are answer deltas.
+          const handle = (data.type && handlers[data.type]) || appendAnswer;
+          handle(data);
         },
       });
     } catch {
@@ -990,11 +1317,38 @@ export const WidgetCore = ({
   const appendQuery = async (userQuery: string) => {
     if (!userQuery) return;
 
-    setEventInterrupt(false);
+    setIsPinnedToLatest(true);
     queries.push({ prompt: userQuery });
     setPrompt('');
     await stream(userQuery);
   };
+  const handleCopy = async (text: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIndex(index);
+      setTimeout(
+        () => setCopiedIndex((cur) => (cur === index ? null : cur)),
+        1600,
+      );
+    } catch (err) {
+      console.error('Copy failed:', err);
+    }
+  };
+
+  // Re-runs the turn in place instead of appending a duplicate prompt.
+  const handleRetry = async (index: number) => {
+    if (status === 'loading') return;
+    const prompt = queries[index]?.prompt;
+    if (!prompt) return;
+    setQueries((prev: Query[]) => {
+      const updated = [...prev];
+      updated[index] = { prompt };
+      return updated.slice(0, index + 1);
+    });
+    setIsPinnedToLatest(true);
+    await stream(prompt);
+  };
+
   // submit handler
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -1053,6 +1407,21 @@ export const WidgetCore = ({
       'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png';
   };
 
+  const renderStatusLine = (query: Query, index: number) => {
+    if (status !== 'loading' || index !== queries.length - 1) return null;
+    // A notice/node title is more specific than "Thinking", but goes stale
+    // once tokens arrive.
+    const label = query.response
+      ? 'Generating\u2026'
+      : (query.notice ?? 'Thinking\u2026');
+    return (
+      <StatusLine role="status" aria-live="polite">
+        <StatusDot />
+        <ShimmerText>{label}</ShimmerText>
+      </StatusLine>
+    );
+  };
+
   const dimensions =
     typeof size === 'object' && 'custom' in size
       ? sizesConfig.getCustom(size.custom)
@@ -1093,162 +1462,195 @@ export const WidgetCore = ({
                 </ContentWrapper>
               </Header>
             </div>
-            <Conversation
-              ref={conversationRef}
-              onWheel={handleUserInterrupt}
-              onTouchMove={handleUserInterrupt}
-            >
-              {queries.length > 0 ? (
-                queries?.map((query, index) => {
-                  return (
-                    <React.Fragment key={index}>
-                      {query.prompt && (
-                        <MessageBubble $type="QUESTION">
-                          <Message
-                            $type="QUESTION"
-                            ref={
-                              !(query.response || query.error) &&
-                              index === queries.length - 1
-                                ? endMessageRef
-                                : null
-                            }
-                          >
-                            {query.prompt}
-                          </Message>
-                        </MessageBubble>
-                      )}
-                      {query.response ? (
-                        <MessageBubble
-                          onMouseOver={() => {
-                            isBubbleHovered.current = true;
-                          }}
-                          $type="ANSWER"
-                        >
-                          {showSources &&
-                            query.sources &&
-                            query.sources.length > 0 &&
-                            query.sources.some(
-                              (source) => source.source !== 'local',
-                            ) && (
-                              <SourcesComponent
-                                sources={query.sources.filter(
-                                  (source) => source.source !== 'local',
-                                )}
-                              />
-                            )}
-                          <Message
+            <ConversationArea>
+              <Conversation
+                ref={conversationRef}
+                onScroll={handleConversationScroll}
+              >
+                {queries.length > 0 ? (
+                  queries?.map((query, index) => {
+                    return (
+                      <React.Fragment key={index}>
+                        {query.prompt && (
+                          <MessageBubble $type="QUESTION">
+                            <Message
+                              $type="QUESTION"
+                              ref={
+                                !(query.response || query.error) &&
+                                index === queries.length - 1
+                                  ? endMessageRef
+                                  : null
+                              }
+                            >
+                              {query.prompt}
+                            </Message>
+                          </MessageBubble>
+                        )}
+                        {query.response ? (
+                          <MessageBubble
+                            onMouseOver={() => {
+                              isBubbleHovered.current = true;
+                            }}
                             $type="ANSWER"
-                            ref={
-                              index === queries.length - 1
-                                ? endMessageRef
-                                : null
-                            }
                           >
-                            <Markdown
-                              dangerouslySetInnerHTML={{
-                                __html: DOMPurify.sanitize(
-                                  md.render(query.response),
-                                ),
-                              }}
-                            />
-                          </Message>
-
-                          {collectFeedback && (
-                            <Feedback>
-                              <button
-                                style={{
-                                  backgroundColor: 'transparent',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleFeedback('LIKE', index);
-                                }}
-                              >
-                                <LikeIcon
-                                  style={{
-                                    stroke:
-                                      query.feedback == 'LIKE'
-                                        ? '#8860DB'
-                                        : '#c0c0c0',
-                                    visibility:
-                                      query.feedback == 'LIKE'
-                                        ? 'visible'
-                                        : 'hidden',
-                                  }}
-                                  fill="none"
+                            {showSources &&
+                              query.sources &&
+                              query.sources.length > 0 &&
+                              query.sources.some(
+                                (source) => source.source !== 'local',
+                              ) && (
+                                <SourcesComponent
+                                  sources={query.sources.filter(
+                                    (source) => source.source !== 'local',
+                                  )}
                                 />
-                              </button>
-                              <button
-                                style={{
-                                  backgroundColor: 'transparent',
-                                  border: 'none',
-                                  cursor: 'pointer',
+                              )}
+                            {query.toolCalls && query.toolCalls.length > 0 && (
+                              <StatusLine>
+                                Used{' '}
+                                {query.toolCalls.map(prettifyName).join(', ')}
+                              </StatusLine>
+                            )}
+                            {query.thought && (
+                              <Thought>{query.thought}</Thought>
+                            )}
+                            <Message
+                              $type="ANSWER"
+                              ref={
+                                index === queries.length - 1
+                                  ? endMessageRef
+                                  : null
+                              }
+                            >
+                              <Markdown
+                                dangerouslySetInnerHTML={{
+                                  __html: DOMPurify.sanitize(
+                                    md.render(query.response),
+                                  ),
                                 }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleFeedback('DISLIKE', index);
-                                }}
-                              >
-                                <DislikeIcon
-                                  style={{
-                                    stroke:
-                                      query.feedback == 'DISLIKE'
-                                        ? '#ed8085'
-                                        : '#c0c0c0',
-                                    visibility:
-                                      query.feedback == 'DISLIKE'
-                                        ? 'visible'
-                                        : 'hidden',
-                                  }}
-                                  fill="none"
-                                />
-                              </button>
-                            </Feedback>
-                          )}
-                        </MessageBubble>
-                      ) : (
-                        <div>
-                          {query.error ? (
-                            <ErrorAlert>
-                              <ExclamationTriangleIcon
-                                width={22}
-                                height={22}
-                                color="#b91c1c"
                               />
-                              <div>
-                                <h5 style={{ margin: 2 }}>Network Error</h5>
-                                <span style={{ margin: 2, fontSize: '13px' }}>
-                                  {query.error}
-                                </span>
-                              </div>
-                            </ErrorAlert>
-                          ) : (
-                            <MessageBubble $type="ANSWER">
-                              <Message
-                                $type="ANSWER"
-                                style={{ fontWeight: 600 }}
+                            </Message>
+                            {renderStatusLine(query, index)}
+
+                            <ActionsRow>
+                              <ActionButton
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopy(query.response ?? '', index);
+                                }}
+                                aria-label={
+                                  copiedIndex === index
+                                    ? 'Copied'
+                                    : 'Copy answer'
+                                }
                               >
-                                <DotAnimation>.</DotAnimation>
-                                <Delay $delay={200}>.</Delay>
-                                <Delay $delay={400}>.</Delay>
-                              </Message>
-                            </MessageBubble>
-                          )}
-                        </div>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              ) : (
-                <Hero
-                  title={heroTitle}
-                  description={heroDescription}
-                  theme={theme}
-                />
+                                {copiedIndex === index ? (
+                                  <CheckIcon />
+                                ) : (
+                                  <CopyIcon />
+                                )}
+                              </ActionButton>
+
+                              {collectFeedback && (
+                                <>
+                                  <ActionButton
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleFeedback('LIKE', index);
+                                    }}
+                                    aria-label="Good response"
+                                    aria-pressed={query.feedback === 'LIKE'}
+                                  >
+                                    <LikeIcon
+                                      style={{
+                                        stroke:
+                                          query.feedback === 'LIKE'
+                                            ? '#8860DB'
+                                            : 'currentColor',
+                                      }}
+                                      fill="none"
+                                    />
+                                  </ActionButton>
+                                  <ActionButton
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleFeedback('DISLIKE', index);
+                                    }}
+                                    aria-label="Bad response"
+                                    aria-pressed={query.feedback === 'DISLIKE'}
+                                  >
+                                    <DislikeIcon
+                                      style={{
+                                        stroke:
+                                          query.feedback === 'DISLIKE'
+                                            ? '#ed8085'
+                                            : 'currentColor',
+                                      }}
+                                      fill="none"
+                                    />
+                                  </ActionButton>
+                                </>
+                              )}
+                            </ActionsRow>
+                          </MessageBubble>
+                        ) : (
+                          <div>
+                            {query.error ? (
+                              <ErrorAlert>
+                                <ExclamationTriangleIcon
+                                  width={22}
+                                  height={22}
+                                  color="#b91c1c"
+                                />
+                                <div>
+                                  <h5 style={{ margin: 2 }}>Network Error</h5>
+                                  <span style={{ margin: 2, fontSize: '13px' }}>
+                                    {query.error}
+                                  </span>
+                                  <RetryButton
+                                    type="button"
+                                    onClick={() => handleRetry(index)}
+                                    disabled={status === 'loading'}
+                                  >
+                                    <RetryIcon />
+                                    Try again
+                                  </RetryButton>
+                                </div>
+                              </ErrorAlert>
+                            ) : (
+                              <MessageBubble $type="ANSWER">
+                                {query.thought && (
+                                  <Thought>{query.thought}</Thought>
+                                )}
+                                {renderStatusLine(query, index)}
+                              </MessageBubble>
+                            )}
+                          </div>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                ) : (
+                  <Hero
+                    title={heroTitle}
+                    description={heroDescription}
+                    theme={theme}
+                  />
+                )}
+              </Conversation>
+              {!isPinnedToLatest && queries.length > 0 && (
+                <ScrollToLatest
+                  type="button"
+                  onClick={jumpToLatest}
+                  aria-label="Scroll to latest message"
+                >
+                  <ArrowDownIcon />
+                </ScrollToLatest>
               )}
-            </Conversation>
+            </ConversationArea>
             <div>
               <PromptContainer onSubmit={handleSubmit}>
                 <StyledTextarea
@@ -1263,11 +1665,22 @@ export const WidgetCore = ({
                   rows={1}
                   wrap="soft"
                 />
-                <StyledButton
-                  disabled={prompt.trim().length == 0 || status !== 'idle'}
-                >
-                  <PaperPlaneIcon width={18} height={18} color="white" />
-                </StyledButton>
+                {status === 'loading' ? (
+                  <StyledButton
+                    type="button"
+                    onClick={stopGenerating}
+                    aria-label="Stop generating"
+                  >
+                    <StopIcon width={18} height={18} color="white" />
+                  </StyledButton>
+                ) : (
+                  <StyledButton
+                    disabled={prompt.trim().length == 0}
+                    aria-label="Send message"
+                  >
+                    <PaperPlaneIcon width={18} height={18} color="white" />
+                  </StyledButton>
+                )}
               </PromptContainer>
               <Tagline>
                 Powered by&nbsp;
