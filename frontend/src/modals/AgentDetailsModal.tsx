@@ -11,9 +11,11 @@ import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import { getEnv } from '@/utils/envUtils';
 import ConfirmationModal from './ConfirmationModal';
 
-const baseURL = import.meta.env.VITE_BASE_URL;
+
+const baseURL = getEnv('VITE_BASE_URL');
 
 type AgentDetailsModalProps = {
   agent: Agent;

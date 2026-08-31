@@ -25,6 +25,7 @@ import PageNotFound from './PageNotFound';
 import Setting from './settings';
 import Teams from './settings/Teams';
 import Notification from './components/Notification';
+import { getEnv } from './utils/envUtils';
 import ToolApprovalToast from './notifications/ToolApprovalToast';
 import TeamNotificationToast from './notifications/TeamNotificationToast';
 
@@ -108,13 +109,15 @@ export default function App() {
     const saved = localStorage.getItem('showNotification');
     return saved ? JSON.parse(saved) : true;
   });
-  const notificationText = import.meta.env.VITE_NOTIFICATION_TEXT;
-  const notificationLink = import.meta.env.VITE_NOTIFICATION_LINK;
+  
+  const notificationText = getEnv('VITE_NOTIFICATION_TEXT');
+  const notificationLink = getEnv('VITE_NOTIFICATION_LINK');
   // Hide the changelog banner on public share routes — those pages are
   // embedded / shared externally and shouldn't carry product chrome.
   const isPublicShareRoute =
     location.pathname.startsWith('/share/') ||
     location.pathname.startsWith('/shared/');
+  
   if (!componentMounted) {
     return <div />;
   }

@@ -16,6 +16,7 @@ import {
   removeSessionToken,
   validateProviderSession,
 } from '../utils/providerUtils';
+import { getEnv } from '@/utils/envUtils';
 import SkeletonLoader from './SkeletonLoader';
 import { Button } from './ui/button';
 
@@ -121,9 +122,8 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     }
 
     try {
-      const clientId: string = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-      const developerKey: string =
-        import.meta.env.VITE_GOOGLE_PICKER_API_KEY ?? '';
+      const clientId: string = getEnv('VITE_GOOGLE_CLIENT_ID')!;
+      const developerKey: string = getEnv('VITE_GOOGLE_PICKER_API_KEY') ?? '';
 
       // Derive appId from clientId (extract numeric part before first dash)
       const appId = clientId ? clientId.split('-')[0] : null;

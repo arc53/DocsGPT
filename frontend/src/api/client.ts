@@ -1,7 +1,7 @@
+import { getEnv } from '@/utils/envUtils';
 import { withThrottle, type FetchLike } from './throttle';
 
-export const baseURL =
-  import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+export const baseURL = getEnv('VITE_API_HOST') || 'https://docsapi.arc53.com';
 
 const getHeaders = (
   token: string | null,

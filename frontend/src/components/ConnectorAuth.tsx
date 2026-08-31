@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import { getEnv } from '@/utils/envUtils';
 import { Button } from './ui/button';
 
 interface ConnectorAuthProps {

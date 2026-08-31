@@ -34,6 +34,7 @@ import {
   Status,
 } from './conversationModels';
 import { ToolCallsType } from './types';
+import { getEnv } from '@/utils/envUtils';
 
 // Maps a server message dict into the client ``Query`` shape. Only
 // terminal ``complete`` rows expose ``response``; non-terminal rows
@@ -90,8 +91,8 @@ const initialState: ConversationState = {
   conversationId: null,
 };
 
-const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
-const USE_V1_API = import.meta.env.VITE_USE_V1_API === 'true';
+const API_STREAMING = getEnv('VITE_API_STREAMING') === 'true';
+const USE_V1_API = getEnv('VITE_USE_V1_API') === 'true';
 
 let abortController: AbortController | null = null;
 export function handleAbort() {

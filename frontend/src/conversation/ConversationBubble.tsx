@@ -35,9 +35,10 @@ import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import MarkdownAnswer from './MarkdownAnswer';
 import ResearchProgress from './ResearchProgress';
 import { ToolCallsType } from './types';
+import { getEnv } from '@/utils/envUtils';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
-const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
+const DisableSourceFE = getEnv('VITE_DISABLE_SOURCE_FE') || false;
 
 const ConversationBubble = forwardRef<
   HTMLDivElement,
