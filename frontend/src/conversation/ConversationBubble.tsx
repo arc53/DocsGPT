@@ -64,7 +64,12 @@ const ConversationBubble = forwardRef<
       updated?: boolean,
       index?: number,
     ) => void;
-    filesAttached?: { id: string; fileName: string }[];
+    filesAttached?: {
+      id: string;
+      fileName: string;
+      previewUrl?: string;
+      mimeType?: string;
+    }[];
     /**
      * Every artifact in the conversation, for resolving inline links. Refs
      * are conversation-scoped, so a link may point at an earlier turn's file.
@@ -143,24 +148,37 @@ const ConversationBubble = forwardRef<
         <div className="flex flex-col items-end">
           {filesAttached && filesAttached.length > 0 && (
             <div className="mr-5 mb-4 flex flex-wrap justify-end gap-2">
-              {filesAttached.map((file, index) => (
-                <div
-                  key={index}
-                  title={file.fileName}
-                  className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-sm"
-                >
-                  <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
-                    <img
-                      src={DocumentationDark}
-                      alt="Attachment"
-                      className="h-3.75 w-3.75 object-fill"
-                    />
+              {filesAttached.map((file, index) => {
+                const hasPreview = Boolean(file.previewUrl);
+                return (
+                  <div
+                    key={index}
+                    title={file.fileName}
+                    className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-sm"
+                  >
+                    {hasPreview ? (
+                      <div className="bg-muted mr-2 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg">
+                        <img
+                          src={file.previewUrl}
+                          alt={file.fileName || 'Attachment'}
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
+                        <img
+                          src={DocumentationDark}
+                          alt="Attachment"
+                          className="h-3.75 w-3.75 object-fill"
+                        />
+                      </div>
+                    )}
+                    <span className="max-w-37.5 truncate font-normal">
+                      {file.fileName}
+                    </span>
                   </div>
-                  <span className="max-w-37.5 truncate font-normal">
-                    {file.fileName}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           <div

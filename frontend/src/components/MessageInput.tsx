@@ -510,6 +510,10 @@ export default function MessageInput({
           formData.append('file', file);
           const uiId = generateId();
           indexToUiId[i] = uiId;
+          const isImage =
+            file.type.startsWith('image/') ||
+            /\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i.test(file.name);
+          const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
           dispatch(
             addAttachment({
               id: uiId,
@@ -517,6 +521,8 @@ export default function MessageInput({
               progress: 0,
               status: 'uploading' as const,
               taskId: '',
+              mimeType: file.type || undefined,
+              previewUrl,
             }),
           );
         });
@@ -783,6 +789,10 @@ export default function MessageInput({
         formData.append('file', file);
         const xhr = new XMLHttpRequest();
         const uniqueId = generateId();
+        const isImage =
+          file.type.startsWith('image/') ||
+          /\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i.test(file.name);
+        const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
 
         const newAttachment = {
           id: uniqueId,
@@ -790,6 +800,8 @@ export default function MessageInput({
           progress: 0,
           status: 'uploading' as const,
           taskId: '',
+          mimeType: file.type || undefined,
+          previewUrl,
         };
 
         dispatch(addAttachment(newAttachment));

@@ -46,6 +46,8 @@ export interface Attachment {
    */
   attachmentId?: string;
   token_count?: number;
+  mimeType?: string;
+  previewUrl?: string;
 }
 
 export type UploadTaskStatus =

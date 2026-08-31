@@ -15,6 +15,26 @@ type AttachmentChipListProps = {
   onDropOn: (e: React.DragEvent, targetId: string) => void;
 };
 
+export function isImageAttachment(attachment: {
+  mimeType?: string;
+  fileName?: string;
+  previewUrl?: string;
+}): boolean {
+  if (attachment.previewUrl) return true;
+  if (
+    attachment.mimeType &&
+    attachment.mimeType.toLowerCase().startsWith('image/')
+  ) {
+    return true;
+  }
+  if (attachment.fileName) {
+    return /\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i.test(
+      attachment.fileName,
+    );
+  }
+  return false;
+}
+
 export default function AttachmentChipList({
   attachments,
   draggingId,
@@ -28,6 +48,9 @@ export default function AttachmentChipList({
   return (
     <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
       {attachments.map((attachment) => {
+        const isImage = isImageAttachment(attachment);
+        const hasPreview = isImage && Boolean(attachment.previewUrl);
+
         return (
           <div
             key={attachment.id}
@@ -44,38 +67,36 @@ export default function AttachmentChipList({
             }`}
             title={attachment.fileName}
           >
-            <div className="bg-primary mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
-              {attachment.status === 'completed' && (
+            {hasPreview && attachment.status === 'completed' ? (
+              <div className="bg-muted mr-2 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md">
                 <img
-                  src={DocumentationDark}
-                  alt="Attachment"
-                  className="h-[15px] w-[15px] object-fill"
+                  src={attachment.previewUrl}
+                  alt={attachment.fileName}
+                  className="h-full w-full object-cover"
                 />
-              )}
-
-              {attachment.status === 'failed' && (
+              </div>
+            ) : hasPreview &&
+              (attachment.status === 'uploading' ||
+                attachment.status === 'processing') ? (
+              <div className="bg-muted relative mr-2 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md">
                 <img
-                  src={AlertIcon}
-                  alt="Failed"
-                  className="h-[15px] w-[15px] object-fill"
+                  src={attachment.previewUrl}
+                  alt={attachment.fileName}
+                  className="h-full w-full object-cover opacity-50"
                 />
-              )}
-
-              {(attachment.status === 'uploading' ||
-                attachment.status === 'processing') && (
-                <div className="flex h-[15px] w-[15px] items-center justify-center">
-                  <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24">
                     <circle
-                      className="opacity-0"
+                      className="opacity-20"
                       cx="12"
                       cy="12"
                       r="10"
-                      stroke="transparent"
+                      stroke="currentColor"
                       strokeWidth="4"
                       fill="none"
                     />
                     <circle
-                      className="text-[#ECECF1]"
+                      className="text-primary"
                       cx="12"
                       cy="12"
                       r="10"
@@ -88,8 +109,57 @@ export default function AttachmentChipList({
                     />
                   </svg>
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="bg-primary mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md p-1">
+                {attachment.status === 'completed' && (
+                  <img
+                    src={DocumentationDark}
+                    alt="Attachment"
+                    className="h-[15px] w-[15px] object-fill"
+                  />
+                )}
+
+                {attachment.status === 'failed' && (
+                  <img
+                    src={AlertIcon}
+                    alt="Failed"
+                    className="h-[15px] w-[15px] object-fill"
+                  />
+                )}
+
+                {(attachment.status === 'uploading' ||
+                  attachment.status === 'processing') && (
+                  <div className="flex h-[15px] w-[15px] items-center justify-center">
+                    <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-0"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="transparent"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <circle
+                        className="text-[#ECECF1]"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                        strokeDasharray="62.83"
+                        strokeDashoffset={
+                          62.83 * (1 - attachment.progress / 100)
+                        }
+                        transform="rotate(-90 12 12)"
+                      />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            )}
 
             <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
               {attachment.fileName}

@@ -1,10 +1,11 @@
 import base64
 
 import pytest
-from application.security import encryption
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+from application.security import encryption
 
 
 def _fake_os_urandom_factory(values):
@@ -41,8 +42,8 @@ def test_derive_key_uses_secret_and_user(monkeypatch):
 def test_encrypt_and_decrypt_round_trip(monkeypatch):
     monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
     salt = bytes(range(16))
-    iv = bytes(range(16, 32))
-    monkeypatch.setattr(encryption.os, "urandom", _fake_os_urandom_factory([salt, iv]))
+    nonce = bytes(range(16, 28))
+    monkeypatch.setattr(encryption.os, "urandom", _fake_os_urandom_factory([salt, nonce]))
 
     credentials = {"token": "abc123", "refresh": "xyz789"}
 
@@ -50,7 +51,7 @@ def test_encrypt_and_decrypt_round_trip(monkeypatch):
 
     decoded = base64.b64decode(encrypted)
     assert decoded[:16] == salt
-    assert decoded[16:32] == iv
+    assert decoded[16:28] == nonce
 
     decrypted = encryption.decrypt_credentials(encrypted, "user-123")
 
@@ -90,38 +91,6 @@ def test_decrypt_credentials_returns_empty_for_invalid_input(monkeypatch):
 
 
 @pytest.mark.unit
-def test_pad_and_unpad_are_inverse():
-    original = b"secret-data"
-
-    padded = encryption._pad_data(original)
-
-    assert len(padded) % 16 == 0
-    assert encryption._unpad_data(padded) == original
-
-
-@pytest.mark.unit
-def test_pad_data_exact_block_size():
-    # When input is exactly 16 bytes, a full block of padding is added
-    original = b"0123456789abcdef"
-    assert len(original) == 16
-
-    padded = encryption._pad_data(original)
-
-    # Should be 32 bytes (16 + 16 padding)
-    assert len(padded) == 32
-    assert encryption._unpad_data(padded) == original
-
-
-@pytest.mark.unit
-def test_pad_data_various_sizes():
-    for size in range(1, 33):
-        data = b"x" * size
-        padded = encryption._pad_data(data)
-        assert len(padded) % 16 == 0
-        assert encryption._unpad_data(padded) == data
-
-
-@pytest.mark.unit
 def test_encrypt_decrypt_complex_credentials(monkeypatch):
     monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "complex-secret")
 
@@ -146,7 +115,7 @@ def test_decrypt_with_wrong_user_returns_empty(monkeypatch):
     credentials = {"token": "abc123"}
     encrypted = encryption.encrypt_credentials(credentials, "user-1")
 
-    # Decrypting with wrong user should fail gracefully
+    # Decrypting with wrong user should fail gracefully due to auth tag verification failure
     result = encryption.decrypt_credentials(encrypted, "user-2")
     assert result == {}
 
@@ -172,8 +141,36 @@ def test_encrypt_credentials_empty_dict(monkeypatch):
 @pytest.mark.unit
 def test_decrypt_credentials_truncated_payload(monkeypatch):
     monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
-    # base64 of only 10 bytes - not enough for salt+iv
-    import base64
-
+    # base64 of only 10 bytes - not enough for salt + nonce + tag
     short = base64.b64encode(b"0123456789").decode()
     assert encryption.decrypt_credentials(short, "user-1") == {}
+
+
+@pytest.mark.unit
+def test_tampered_ciphertext_fails_integrity_verification(monkeypatch):
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+    credentials = {"api_key": "sk-secret-12345", "service": "openai"}
+    encrypted = encryption.encrypt_credentials(credentials, "user-1")
+
+    raw_bytes = bytearray(base64.b64decode(encrypted.encode("utf-8")))
+
+    # Tamper with the last byte (part of authentication tag / ciphertext)
+    raw_bytes[-1] ^= 0x01
+    tampered_encrypted = base64.b64encode(raw_bytes).decode("utf-8")
+
+    assert encryption.decrypt_credentials(tampered_encrypted, "user-1") == {}
+
+
+@pytest.mark.unit
+def test_tampered_nonce_fails_integrity_verification(monkeypatch):
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+    credentials = {"api_key": "sk-secret-12345"}
+    encrypted = encryption.encrypt_credentials(credentials, "user-1")
+
+    raw_bytes = bytearray(base64.b64decode(encrypted.encode("utf-8")))
+
+    # Tamper with nonce byte (index 16-27)
+    raw_bytes[18] ^= 0xFF
+    tampered_encrypted = base64.b64encode(raw_bytes).decode("utf-8")
+
+    assert encryption.decrypt_credentials(tampered_encrypted, "user-1") == {}

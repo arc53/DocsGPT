@@ -19,6 +19,8 @@ export interface Attachment {
   progress: number;
   taskId?: string;
   token_count?: number;
+  mimeType?: string;
+  previewUrl?: string;
 }
 
 export interface ResearchStep {
@@ -74,7 +76,12 @@ export interface Query {
   // Non-fatal notice (e.g. some workflow input documents were dropped). Shown
   // alongside the answer; unlike ``error`` it does not fail the turn or end the stream.
   notice?: string;
-  attachments?: { id: string; fileName: string }[];
+  attachments?: {
+    id: string;
+    fileName: string;
+    mimeType?: string;
+    previewUrl?: string;
+  }[];
   structured?: boolean;
   schema?: object;
   research?: ResearchState;
