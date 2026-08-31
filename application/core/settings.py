@@ -185,6 +185,20 @@ class Settings(BaseSettings):
     # Public base URL for user-facing endpoint references in prompts
     PUBLIC_API_BASE_URL: Optional[str] = None
     MCP_OAUTH_REDIRECT_URI: Optional[str] = None  # public callback URL for MCP OAuth
+    # Pre-execution MCP trust verification (issue #2501). Opt-in: when False,
+    # MCP tool calls behave as before. When True (or a custom verifier is
+    # registered via application.security.mcp_trust.set_trust_verifier), every
+    # MCP execute_action runs a trust check first.
+    MCP_TRUST_VERIFICATION_ENABLED: bool = False
+    # Comma-separated server URIs / hostnames allowed when verification is on.
+    # Matching is case-insensitive against full URI, origin, netloc, or host.
+    MCP_TRUST_ALLOWED_SERVERS: Optional[str] = None
+    # Comma-separated denylist (always enforced when verification is on).
+    MCP_TRUST_BLOCKED_SERVERS: Optional[str] = None
+    # How to treat TrustVerdict.WARNED: "proceed" (log only) or "block".
+    MCP_TRUST_ON_WARN: str = "proceed"
+    # If the custom/allowlist verifier raises, allow the call (True) or block.
+    MCP_TRUST_FAIL_OPEN: bool = True
     INTERNAL_KEY: Optional[str] = None  # internal api key for worker-to-backend auth
 
     API_KEY: Optional[str] = None  # LLM api key (used by LLM_PROVIDER)
