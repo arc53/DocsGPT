@@ -67,6 +67,44 @@ def test_reject_zip_bomb_ignores_non_zip_formats():
 
 
 @pytest.mark.unit
+def test_reject_zip_bomb_path_matches_the_bytes_variant(tmp_path, monkeypatch):
+    # The path-taking sibling (used by the attachment worker, which has a file
+    # rather than bytes) must reach the same verdict as the bytes variant.
+    monkeypatch.setattr(dr.settings, "DOCUMENT_MAX_DECOMPRESSED_BYTES", 1000, raising=False)
+    data = _make_zip({"word/document.xml": b"A" * 50_000})
+    path = tmp_path / "bomb.docx"
+    path.write_bytes(data)
+
+    reason = dr.reject_zip_bomb_path(str(path))
+
+    assert reason is not None and "too much data" in reason
+    assert reason == dr._reject_zip_bomb(data, ".docx")
+
+
+@pytest.mark.unit
+def test_reject_zip_bomb_path_allows_reasonable_archive(tmp_path, monkeypatch):
+    monkeypatch.setattr(dr.settings, "DOCUMENT_MAX_DECOMPRESSED_BYTES", 300 * 1024 * 1024, raising=False)
+    monkeypatch.setattr(dr.settings, "DOCUMENT_MAX_ARCHIVE_ENTRIES", 10000, raising=False)
+    path = tmp_path / "fine.docx"
+    path.write_bytes(_make_zip({"word/document.xml": b"hello"}))
+
+    assert dr.reject_zip_bomb_path(path) is None
+
+
+@pytest.mark.unit
+def test_reject_zip_bomb_path_ignores_non_container_and_corrupt_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(dr.settings, "DOCUMENT_MAX_DECOMPRESSED_BYTES", 1, raising=False)
+    text = tmp_path / "notes.txt"
+    text.write_bytes(b"x" * 5000)
+    broken = tmp_path / "broken.xlsx"
+    broken.write_bytes(b"not a real zip")
+
+    # Non-container suffix is never inspected; a corrupt zip is left to the parser.
+    assert dr.reject_zip_bomb_path(str(text)) is None
+    assert dr.reject_zip_bomb_path(str(broken)) is None
+
+
+@pytest.mark.unit
 def test_size_cap_rejects_oversize(monkeypatch):
     monkeypatch.setattr(dr.settings, "DOCUMENT_PARSE_MAX_BYTES", 8, raising=False)
     out = parse_document_bytes(b"P" * 64, "note.txt", output="text")
@@ -478,3 +516,109 @@ def test_bound_parse_payload_small_content_not_flagged():
     out = bound_parse_payload({"output": "text", "content": "hi"}, max_chars=10)
     assert out["content"] == "hi"
     assert out["truncated"] is False
+
+
+# ---------------------------------------------------------------------------
+# vanilla-converter fallback honors the torch.compile toggle
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_vanilla_converter_applies_inference_settings(monkeypatch, tmp_path):
+    """The fallback builds its own DocumentConverter, so it must disable
+    torch.compile itself — the configured-parser path can't do it for it."""
+    import sys
+    import types
+
+    called = []
+    monkeypatch.setattr(
+        "application.parser.file.docling_parser._apply_inference_settings",
+        lambda: called.append(True),
+    )
+
+    class _Doc:
+        texts = []
+        tables = []
+        pages = {}
+
+        def export_to_markdown(self):
+            return "# md"
+
+        def export_to_dict(self):
+            return {"texts": []}
+
+    class _Converter:
+        def convert(self, *a, **k):
+            assert called == [True], "converter built before torch.compile was disabled"
+            return types.SimpleNamespace(document=_Doc())
+
+    fake_docling = types.ModuleType("docling")
+    fake_dc_module = types.ModuleType("docling.document_converter")
+    fake_dc_module.DocumentConverter = _Converter
+    fake_docling.document_converter = fake_dc_module
+    monkeypatch.setitem(sys.modules, "docling", fake_docling)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", fake_dc_module)
+
+    path = tmp_path / "doc.pdf"
+    path.write_bytes(b"%PDF")
+
+    out = dr._docling_structured(path, ocr_enabled=False, include_tables=False, parser=None)
+
+    assert out["markdown"] == "# md"
+    assert called == [True]
+
+
+# ---------------------------------------------------------------------------
+# _docling_structured tables: blank cells must not leak NaN or mangle ints
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_structured_tables_render_blank_cells_as_strings(monkeypatch, tmp_path):
+    """pandas 3 preserves missing values through ``astype(str)``, so a blank
+    spreadsheet cell leaked a float NaN into the tables payload and a blank
+    in an integer column mangled every id to ``1001.0``. Cells must come out
+    as join-safe strings (same contract as the tabular parser's
+    ``cell_to_text``)."""
+    import sys
+    import types
+
+    import pandas as pd
+
+    df = pd.DataFrame({"id": [1001, None, 1003], "name": ["a", "b", None]})
+
+    class _Table:
+        def export_to_dataframe(self):
+            return df
+
+    class _Doc:
+        tables = [_Table()]
+        pages = {"1": {}}
+
+        def export_to_markdown(self):
+            return "# md"
+
+        def export_to_dict(self):
+            return {"texts": [], "tables": [{}], "pages": {"1": {}}}
+
+    class _Converter:
+        def convert(self, *a, **k):
+            return types.SimpleNamespace(document=_Doc())
+
+    monkeypatch.setattr(
+        "application.parser.file.docling_parser._apply_inference_settings",
+        lambda: None,
+    )
+    fake_docling = types.ModuleType("docling")
+    fake_dc_module = types.ModuleType("docling.document_converter")
+    fake_dc_module.DocumentConverter = _Converter
+    fake_docling.document_converter = fake_dc_module
+    monkeypatch.setitem(sys.modules, "docling", fake_docling)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", fake_dc_module)
+
+    path = tmp_path / "doc.xlsx"
+    path.write_bytes(b"stub")
+
+    out = dr._docling_structured(path, ocr_enabled=False, include_tables=True, parser=None)
+
+    [table] = out["tables"]
+    cells = [c for row in table["rows"] for c in row]
+    assert all(isinstance(c, str) for c in cells), f"non-string cells: {cells!r}"
+    assert "1001" in cells and "1001.0" not in cells
+    assert "" in cells  # blank cell renders as empty string, not "nan"/"None"

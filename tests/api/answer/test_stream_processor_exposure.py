@@ -166,9 +166,14 @@ class TestNonAgentSourceConfig:
         with patch(
             "application.api.answer.services.stream_processor.db_readonly"
         ), patch(
+            "application.api.answer.services.stream_processor.can_access",
+            return_value=True,
+        ), patch(
             "application.api.answer.services.stream_processor.SourcesRepository"
         ) as repo:
-            repo.return_value.get.return_value = fake_source
+            # Read unscoped after the access check, so a team grantee gets the
+            # source's real config instead of silently falling back to defaults.
+            repo.return_value.get_by_id.return_value = fake_source
             sp._configure_source()
         assert sp.source == {"active_docs": "s1"}
         assert len(sp.all_sources) == 1

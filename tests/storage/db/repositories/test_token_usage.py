@@ -36,6 +36,31 @@ class TestInsert:
         assert total == 30
 
 
+class TestReassignApiKey:
+    def test_rewrites_and_preserves_rate_limit_window(self, pg_conn):
+        # Rotating an agent key must carry the running 24h usage window over
+        # to the new key so rotation cannot be used to reset the limit.
+        repo = _repo(pg_conn)
+        repo.insert(api_key="tu-old", prompt_tokens=20, generated_tokens=10)
+        repo.insert(api_key="tu-other", prompt_tokens=1, generated_tokens=1)
+
+        moved = repo.reassign_api_key(old_key="tu-old", new_key="tu-new")
+        assert moved == 1
+
+        window = dict(
+            start=_now() - timedelta(minutes=1), end=_now() + timedelta(minutes=1)
+        )
+        assert repo.sum_tokens_in_range(api_key="tu-old", **window) == 0
+        assert repo.sum_tokens_in_range(api_key="tu-new", **window) == 30
+        # Unrelated key untouched.
+        assert repo.sum_tokens_in_range(api_key="tu-other", **window) == 2
+
+    def test_noop_on_blank_keys(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.reassign_api_key(old_key="", new_key="x") == 0
+        assert repo.reassign_api_key(old_key="x", new_key="") == 0
+
+
 class TestModelId:
     def _latest_model_id(self, conn, user_id):
         return conn.execute(

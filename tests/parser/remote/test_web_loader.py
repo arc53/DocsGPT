@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from application.core.url_validation import SSRFError
 from application.parser.remote.web_loader import WebLoader, headers
 from application.parser.schema.base import Document
-from langchain_core.documents import Document as LCDocument
+from application.vectorstore.document_class import Document as LCDocument
 
 
 def _mock_validate_url(url):
@@ -301,13 +301,13 @@ class TestWebLoaderIntegration:
 
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
     @patch("application.parser.remote.web_loader.pinned_request")
-    def test_load_langchain_documents_method(self, mock_pinned_request, mock_validate, web_loader):
+    def test_load_vector_documents_method(self, mock_pinned_request, mock_validate, web_loader):
         mock_pinned_request.return_value = _fake_response(
             "<html><head><title>Test Page</title></head>"
             "<body><p>Test web page content</p></body></html>"
         )
 
-        result = web_loader.load_langchain_documents(inputs="https://example.com")
+        result = web_loader.load_vector_documents(inputs="https://example.com")
 
         assert len(result) == 1
         assert isinstance(result[0], LCDocument)

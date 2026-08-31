@@ -146,6 +146,96 @@ def test_execute_agent_node_falls_back_to_text_when_schema_not_configured(monkey
     assert engine.state["result"] == "plain text answer"
 
 
+def _state_workflow(operations, nested=True):
+    """Start → state → end, with state config in either accepted shape."""
+    data = {"config": {"operations": operations}} if nested else {
+        "operations": operations
+    }
+    nodes = [
+        {"id": "start", "type": "start", "title": "Start", "data": {}},
+        {"id": "state", "type": "state", "title": "Build reply", "data": data},
+        {"id": "end", "type": "end", "title": "End", "data": {}},
+    ]
+    edges = [
+        {"id": "edge_1", "source": "start", "target": "state"},
+        {"id": "edge_2", "source": "state", "target": "end"},
+    ]
+    return nodes, edges
+
+
+@pytest.mark.parametrize("nested", [True, False])
+def test_validate_workflow_structure_rejects_template_syntax_in_state_node(nested):
+    """``{{query}}`` compiles nowhere but used to save and publish clean.
+
+    It then aborted the run on the first message with a bare caret dump that
+    ``sanitize_api_error`` collapsed into "try again later" — the 2026-08-01
+    report, where a new user retried eight times over seven hours.
+    """
+    nodes, edges = _state_workflow(
+        [{"expression": "{{query}}", "target_variable": "reply"}], nested=nested
+    )
+
+    errors = validate_workflow_structure(nodes, edges)
+
+    assert any(
+        "Set State node 'Build reply'" in err and "invalid expression" in err
+        for err in errors
+    ), errors
+    # The message must teach the correction, not just report a failure.
+    assert any("CEL" in err for err in errors), errors
+
+
+def test_validate_workflow_structure_accepts_valid_state_expression():
+    nodes, edges = _state_workflow(
+        [{"expression": 'query + "!"', "target_variable": "reply"}]
+    )
+    assert validate_workflow_structure(nodes, edges) == []
+
+
+def test_validate_workflow_structure_accepts_runtime_only_state_reference():
+    """Names resolve from run state, so they cannot be checked at save time."""
+    nodes, edges = _state_workflow(
+        [{"expression": "node_agent_1_output", "target_variable": "reply"}]
+    )
+    assert validate_workflow_structure(nodes, edges) == []
+
+
+def test_validate_workflow_structure_rejects_half_configured_state_operation():
+    """The engine skips these silently, so downstream reads an unset var."""
+    nodes, edges = _state_workflow(
+        [{"expression": "query", "target_variable": ""}]
+    )
+    errors = validate_workflow_structure(nodes, edges)
+    assert any("no target variable" in err for err in errors), errors
+
+
+def test_validate_workflow_structure_rejects_invalid_condition_expression():
+    nodes = [
+        {"id": "start", "type": "start", "title": "Start", "data": {}},
+        {
+            "id": "cond",
+            "type": "condition",
+            "title": "Route",
+            "data": {
+                "cases": [
+                    {"expression": "{{query}}", "sourceHandle": "case_0"},
+                    {"expression": "true", "sourceHandle": "else"},
+                ]
+            },
+        },
+        {"id": "end", "type": "end", "title": "End", "data": {}},
+    ]
+    edges = [
+        {"id": "e1", "source": "start", "target": "cond"},
+        {"id": "e2", "source": "cond", "target": "end", "sourceHandle": "case_0"},
+        {"id": "e3", "source": "cond", "target": "end", "sourceHandle": "else"},
+    ]
+
+    errors = validate_workflow_structure(nodes, edges)
+
+    assert any("invalid expression" in err for err in errors), errors
+
+
 def test_validate_workflow_structure_rejects_invalid_agent_json_schema():
     nodes = [
         {"id": "start", "type": "start", "title": "Start", "data": {}},
@@ -507,3 +597,96 @@ class TestWorkflowEngineAdditionalCoverage:
         # A non-dict schema triggers JsonSchemaValidationError
         with pytest.raises(ValueError, match="Invalid JSON schema"):
             engine._normalize_node_json_schema("not_a_dict", "TestNode")
+
+
+class TestAgentNodeProviderResolution:
+    """``llm_name`` stored on a node is a *display* label, not a dispatch name.
+
+    ``/api/models`` reports ``display_provider`` (e.g. ``foundry``,
+    ``azure_foundry``, ``cloudflare``) and the builder stores that string on
+    the node. Handing it to ``LLMCreator`` raises ``No LLM class found for
+    type <label>``, which fails the node before any LLM call and returns a
+    blank answer to the user. The engine must resolve the real dispatch
+    provider from the model registry instead.
+    """
+
+    @staticmethod
+    def _run(monkeypatch, node, *, registry_provider="openai_compatible"):
+        """Execute one agent node, returning the kwargs the factory saw."""
+        engine = create_engine()
+        engine.state["query"] = "test"
+        captured = {}
+
+        def _capture(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(
+            WorkflowNodeAgentFactory, "create", staticmethod(_capture)
+        )
+        monkeypatch.setattr(
+            "application.core.model_utils.get_api_key_for_provider",
+            lambda name: f"key-for-{name}",
+        )
+        monkeypatch.setattr(
+            "application.core.model_utils.get_provider_from_model_id",
+            lambda _, **_kwargs: registry_provider,
+        )
+        monkeypatch.setattr(
+            "application.core.model_utils.get_model_capabilities",
+            lambda _, **_kwargs: None,
+        )
+        list(engine._execute_agent_node(node))
+        return captured
+
+    @pytest.mark.parametrize(
+        "display_label", ["azure_foundry", "cloudflare", "foundry"]
+    )
+    def test_display_provider_label_resolves_to_dispatch_provider(
+        self, monkeypatch, display_label
+    ):
+        """A display label must not reach LLMCreator (err#33)."""
+        node = create_agent_node(node_id="n1")
+        node.config["model_id"] = "Kimi-K2.6"
+        node.config["llm_name"] = display_label
+
+        captured = self._run(monkeypatch, node)
+
+        assert captured["llm_name"] == "openai_compatible"
+        # The api_key must follow the *normalized* name: resolving against the
+        # display label silently falls through to settings.API_KEY.
+        assert captured["api_key"] == "key-for-openai_compatible"
+
+    def test_real_provider_name_is_preserved(self, monkeypatch):
+        """A node storing a genuine dispatch name keeps it."""
+        node = create_agent_node(node_id="n2")
+        node.config["model_id"] = "gpt-4o"
+        node.config["llm_name"] = "openai"
+
+        captured = self._run(monkeypatch, node, registry_provider="openai")
+
+        assert captured["llm_name"] == "openai"
+
+    def test_unresolvable_label_falls_back_to_parent_agent(self, monkeypatch):
+        """No registry hit: inherit the parent agent rather than dispatching junk."""
+        node = create_agent_node(node_id="n3")
+        node.config["model_id"] = "mystery-model"
+        node.config["llm_name"] = "some_unknown_label"
+
+        captured = self._run(monkeypatch, node, registry_provider=None)
+
+        # create_engine()'s parent agent is llm_name="openai"
+        assert captured["llm_name"] == "openai"
+
+    def test_retriever_config_uses_normalized_provider(self, monkeypatch):
+        """The agentic retriever path builds its own kwargs — normalize there too."""
+        node = create_agent_node(node_id="n4")
+        node.config["model_id"] = "Kimi-K2.6"
+        node.config["llm_name"] = "azure_foundry"
+        node.config["agent_type"] = "agentic"
+        node.config["sources"] = ["src-1"]
+
+        captured = self._run(monkeypatch, node)
+
+        assert captured["retriever_config"]["llm_name"] == "openai_compatible"
+        assert captured["retriever_config"]["api_key"] == "key-for-openai_compatible"

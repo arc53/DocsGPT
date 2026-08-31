@@ -5,6 +5,10 @@ from typing import Any, Dict, List, Optional, Set
 from flask import current_app, request
 from flask_restx import Namespace, Resource
 
+from application.agents.workflows.cel_evaluator import (
+    CelEvaluationError,
+    validate_cel_expression,
+)
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
 from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
@@ -323,6 +327,14 @@ def validate_workflow_structure(
                 errors.append(
                     f"Condition node '{cnode_title}' case '{handle}' has an outgoing edge but no expression"
                 )
+            if has_expression:
+                try:
+                    validate_cel_expression(raw_expression)
+                except CelEvaluationError as exc:
+                    errors.append(
+                        f"Condition node '{cnode_title}' case '{handle}' "
+                        f"has an invalid expression: {exc}"
+                    )
 
         for handle, handle_edges in outgoing_by_handle.items():
             if not handle:
@@ -333,6 +345,55 @@ def validate_workflow_structure(
                     errors.append(
                         f"Branch '{handle}' of condition '{cnode_title}' "
                         f"must eventually reach an end node"
+                    )
+
+    # Set State nodes were validated nowhere. A node whose CEL does not compile
+    # saves and publishes clean, then aborts the run on first execution — the
+    # user only finds out as a failed answer, with no pointer to the node.
+    state_nodes = [n for n in nodes if n.get("type") == "state"]
+    for snode in state_nodes:
+        snode_title = snode.get("title", snode.get("id"))
+        node_data = snode.get("data", {}) or {}
+        # The builder writes state config under ``data.config`` but other
+        # payloads keep it flat on ``data``; the engine reads
+        # ``node.config.get("config", node.config)`` for exactly this reason,
+        # so accept both rather than silently validating nothing.
+        nested = node_data.get("config")
+        source = nested if isinstance(nested, dict) else node_data
+        operations = source.get("operations", [])
+        if not isinstance(operations, list):
+            continue
+        for index, operation in enumerate(operations):
+            if not isinstance(operation, dict):
+                continue
+            raw_expression = operation.get("expression", "")
+            target_variable = operation.get("target_variable", "")
+            has_expression = isinstance(raw_expression, str) and bool(
+                raw_expression.strip()
+            )
+            has_target = isinstance(target_variable, str) and bool(
+                target_variable.strip()
+            )
+            # The engine silently skips an operation missing either half
+            # (workflow_engine._execute_state_node), so downstream nodes read a
+            # variable that never gets set. Surface it at save time instead.
+            if has_expression and not has_target:
+                errors.append(
+                    f"Set State node '{snode_title}' operation {index + 1} "
+                    f"has an expression but no target variable"
+                )
+            if has_target and not has_expression:
+                errors.append(
+                    f"Set State node '{snode_title}' operation {index + 1} "
+                    f"has a target variable but no expression"
+                )
+            if has_expression:
+                try:
+                    validate_cel_expression(raw_expression)
+                except CelEvaluationError as exc:
+                    errors.append(
+                        f"Set State node '{snode_title}' operation {index + 1} "
+                        f"has an invalid expression: {exc}"
                     )
 
     agent_nodes = [n for n in nodes if n.get("type") == "agent"]

@@ -55,7 +55,7 @@ class _FakeFS:
         self.tree = {}
         self.list_files = mock.Mock(side_effect=self._list_files)
 
-    def _list_files(self, path):
+    def _list_files(self, path, depth=None, request_timeout=None):
         if self.tree:
             return self.tree.get(path, [])
         return [_FakeFileInfo("a.txt")]
@@ -84,7 +84,7 @@ class _FakeDaytonaClient:
         self.start = mock.Mock(side_effect=self._start)
         self.get = mock.Mock(side_effect=self._get)
 
-    def _get(self, sandbox_id_or_name):
+    def _get(self, sandbox_id_or_name, request_timeout=None):
         for _, sandbox in self.created:
             if sandbox.id == sandbox_id_or_name:
                 return sandbox
@@ -102,7 +102,7 @@ class _FakeDaytonaClient:
     def _delete(self, sandbox, timeout=60):
         self.deleted.append(sandbox)
 
-    def _list(self, query=None):
+    def _list(self, query=None, request_timeout=None):
         wanted = getattr(query, "labels", None) or {}
         for sandbox in self.existing:
             labels = getattr(sandbox, "labels", {})
@@ -435,6 +435,28 @@ def test_put_file_uploads_under_workspace(sandbox):
     data, remote = created.fs.upload_file.call_args.args
     assert data == b"a,b\n"
     assert remote.endswith("/docsgpt-sandbox/out/data.csv")
+
+
+def test_put_file_bounds_the_upload(sandbox):
+    # Every other fs.* call is bounded at default_timeout; without this the
+    # upload falls back to the SDK's 30-minute default and a toolbox proxy that
+    # accepts but never answers pins the chat stream for that long.
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    sandbox.put_file("conv-1", "out/data.csv", b"a,b\n")
+    assert created.fs.upload_file.call_args.kwargs["timeout"] == 60
+
+
+def test_get_file_bounds_the_download(sandbox):
+    # download_file takes its timeout positionally and dispatches on
+    # isinstance(arg, int) -- a float would be read as a local destination path.
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.fs.download_file.return_value = b"hello"
+    sandbox.get_file("conv-1", "out/data.csv")
+    args = created.fs.download_file.call_args.args
+    assert args[1] == 60
+    assert isinstance(args[1], int)
 
 
 def test_put_file_creates_parent_dirs(sandbox):
@@ -822,3 +844,214 @@ def test_manager_cold_starts_after_daytona_sandbox_deleted(fake_sdk):
 
     mgr.open("conv-1")  # recovery
     assert backend._client.create.call_count == 2  # a NEW sandbox, not the tombstone
+
+
+# --- #46: bounded toolbox calls + gone-sandbox hygiene --------------------
+# Prod evidence (2026-08-19): the Daytona toolbox proxy can accept a request
+# for a just-created/woken sandbox and never answer (no container IP yet), and
+# the SDK's fs metadata calls default to NO client timeout — one hung
+# create_folder pinned a stream for ~16 min until auto-stop dropped the
+# connection. Every toolbox/control-plane call must carry request_timeout, and
+# an operation against a deleted-but-still-listed sandbox must invalidate the
+# handle instead of burning a failed round per call.
+
+
+def test_prime_passes_request_timeout(sandbox):
+    """The workspace prime (the exact call seen hanging in prod) is bounded."""
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    assert created.fs.create_folder.call_args.kwargs.get("request_timeout") == 60.0
+
+
+def test_prime_retries_once_after_transport_error(sandbox):
+    """A hung/failed prime is retried once (bounded) instead of being dropped."""
+    from application.sandbox.daytona import DaytonaSandbox  # noqa: F401 - fixture import parity
+
+    client_cls = type(sandbox._client)
+    orig_create = client_cls._create
+
+    def _create(client_self, params=None, timeout=60):
+        sb = orig_create(client_self, params, timeout)
+        sb.fs.create_folder.side_effect = [RuntimeError("read timed out"), None]
+        return sb
+
+    with mock.patch.object(client_cls, "_create", _create):
+        sandbox._client.create = mock.Mock(side_effect=lambda p=None, timeout=60: _create(sandbox._client, p, timeout))
+        sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    assert created.fs.create_folder.call_count == 2
+
+
+def test_upload_parent_folder_passes_request_timeout(sandbox):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.fs.create_folder.reset_mock()
+    sandbox.put_file("conv-1", "out/data.csv", b"x")
+    assert created.fs.create_folder.call_args.kwargs.get("request_timeout") == 60.0
+
+
+def test_download_metadata_passes_request_timeout(sandbox):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    sandbox.get_file("conv-1", "a.txt")
+    assert created.fs.get_file_info.call_args.kwargs.get("request_timeout") == 60.0
+
+
+def test_list_files_walk_passes_request_timeout(sandbox):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    sandbox.list_files("conv-1")
+    assert created.fs.list_files.call_args.kwargs.get("request_timeout") == 60.0
+
+
+def test_remove_path_delete_passes_request_timeout(sandbox):
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    sandbox.remove_path("conv-1", "artifacts/tok")
+    assert created.fs.delete_file.call_args.kwargs.get("request_timeout") == 60.0
+
+
+def test_ensure_started_get_passes_request_timeout(sandbox):
+    sandbox.open("conv-1")
+    handle = sandbox._handles["conv-1"]
+    sandbox._ensure_started(handle)
+    assert sandbox._client.get.call_args.kwargs.get("request_timeout") == 60.0
+
+
+def test_reattach_list_passes_request_timeout(fake_sdk):
+    from application.sandbox.daytona import DaytonaSandbox
+
+    box = DaytonaSandbox(api_key="dtn_test", language="python")
+    existing = _FakeSandbox("sbx-old", labels={"docsgpt_session_id": "conv-1"})
+    box._client.existing.append(existing)
+    box.open("conv-1")
+    assert box._client.list.call_args.kwargs.get("request_timeout") == 60.0
+
+
+def test_open_reattach_gone_falls_through_to_fresh_create(fake_sdk):
+    """A labelled-but-deleted sandbox (prod: 404 'it has been deleted') must not
+    win reattach: prime detects it is gone and open() creates a fresh one."""
+    from application.sandbox.daytona import DaytonaSandbox
+
+    box = DaytonaSandbox(api_key="dtn_test", language="python")
+    ghost = _FakeSandbox("sbx-ghost", labels={"docsgpt_session_id": "conv-1"})
+    ghost.fs.create_folder = mock.Mock(side_effect=RuntimeError("not found: sandbox sbx-ghost"))
+    box._client.existing.append(ghost)
+    box._client.get = mock.Mock(side_effect=KeyError("gone"))  # control plane: deleted
+
+    handle_id = box.open("conv-1")
+
+    assert handle_id == "sbx-1"  # the fresh create, not the ghost
+    assert box._client.create.call_count == 1
+    assert box._handles["conv-1"].sandbox_id == "sbx-1"
+
+
+def test_open_does_not_cache_a_fresh_sandbox_that_vanished_during_prime(fake_sdk):
+    """A just-created sandbox confirmed gone must not be handed back as live.
+
+    ``_prime`` returns False only after ``_sandbox_gone`` confirms the sandbox
+    is gone, and its contract is that the caller discards the handle. The
+    reattach path obeys that; the fresh-create path must too -- ``open()``
+    returns cached handles without revalidating them, so a dead id parked in
+    ``_handles`` is replayed by every later ``open()`` for that session.
+    """
+    from application.sandbox.base import SandboxGoneError
+    from application.sandbox.daytona import DaytonaSandbox
+
+    box = DaytonaSandbox(api_key="dtn_test", language="python")
+
+    def _create_doomed(params=None, timeout=60):
+        sandbox = _FakeSandbox(
+            sandbox_id="sbx-dead", labels=getattr(params, "labels", None) or {}
+        )
+        sandbox.fs.create_folder = mock.Mock(
+            side_effect=RuntimeError("not found (it has been deleted)")
+        )
+        box._client.created.append((params, sandbox))
+        return sandbox
+
+    box._client.create = mock.Mock(side_effect=_create_doomed)
+    box._client.get = mock.Mock(side_effect=KeyError("gone"))  # control plane: deleted
+
+    with pytest.raises(SandboxGoneError):
+        box.open("conv-1")
+
+    assert "conv-1" not in box._handles
+    # The in-flight slot is released, so the next open cold-starts rather than
+    # blocking on a create that already finished.
+    assert "conv-1" not in box._creating
+
+
+def test_open_keeps_a_live_sandbox_whose_prime_merely_failed(fake_sdk):
+    """A prime that fails on a still-live sandbox is degraded, not fatal.
+
+    ``exec`` prepends makedirs and ``put_file`` creates parent dirs, so the
+    workspace materializes on first use; failing the open here would reject a
+    perfectly usable sandbox.
+    """
+    from application.sandbox.daytona import DaytonaSandbox
+
+    box = DaytonaSandbox(api_key="dtn_test", language="python")
+
+    def _create_degraded(params=None, timeout=60):
+        sandbox = _FakeSandbox(
+            sandbox_id="sbx-live", labels=getattr(params, "labels", None) or {}
+        )
+        sandbox.fs.create_folder = mock.Mock(side_effect=RuntimeError("read timed out"))
+        box._client.created.append((params, sandbox))
+        return sandbox
+
+    box._client.create = mock.Mock(side_effect=_create_degraded)
+
+    # ``get`` resolves and reports "started", so _sandbox_gone stays False.
+    assert box.open("conv-1") == "sbx-live"
+    assert box._handles["conv-1"].sandbox_id == "sbx-live"
+
+
+def test_put_file_gone_sandbox_raises_sandbox_gone_and_forgets(sandbox):
+    from application.sandbox.base import SandboxGoneError
+
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.fs.upload_file.side_effect = RuntimeError("not found (it has been deleted)")
+    sandbox._client.get = mock.Mock(side_effect=KeyError("gone"))
+    with pytest.raises(SandboxGoneError):
+        sandbox.put_file("conv-1", "data.csv", b"x")
+    assert "conv-1" not in sandbox._handles
+
+
+def test_get_file_gone_sandbox_raises_sandbox_gone_and_forgets(sandbox):
+    from application.sandbox.base import SandboxGoneError
+
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.fs.get_file_info.side_effect = RuntimeError("not found (it has been deleted)")
+    sandbox._client.get = mock.Mock(side_effect=KeyError("gone"))
+    with pytest.raises(SandboxGoneError):
+        sandbox.get_file("conv-1", "a.txt")
+    assert "conv-1" not in sandbox._handles
+
+
+def test_list_files_gone_sandbox_raises_sandbox_gone_and_forgets(sandbox):
+    from application.sandbox.base import SandboxGoneError
+
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.fs.list_files.side_effect = RuntimeError("not found (it has been deleted)")
+    sandbox._client.get = mock.Mock(side_effect=KeyError("gone"))
+    with pytest.raises(SandboxGoneError):
+        sandbox.list_files("conv-1")
+    assert "conv-1" not in sandbox._handles
+
+
+def test_put_file_alive_sandbox_keeps_plain_ioerror_and_handle(sandbox):
+    """A transport error on a LIVE sandbox stays a plain IOError; handle kept."""
+    from application.sandbox.base import SandboxGoneError
+
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.fs.upload_file.side_effect = RuntimeError("transient")
+    with pytest.raises(IOError) as exc:
+        sandbox.put_file("conv-1", "data.csv", b"x")
+    assert not isinstance(exc.value, SandboxGoneError)
+    assert "conv-1" in sandbox._handles

@@ -2,8 +2,8 @@
 from abc import abstractmethod
 from typing import Any, List
 
-from langchain_core.documents import Document as LCDocument
 from application.parser.schema.base import Document
+from application.vectorstore.document_class import Document as VectorDocument
 
 
 class BaseReader:
@@ -13,7 +13,7 @@ class BaseReader:
     def load_data(self, *args: Any, **load_kwargs: Any) -> List[Document]:
         """Load data from the input directory."""
 
-    def load_langchain_documents(self, **load_kwargs: Any) -> List[LCDocument]:
-        """Load data in LangChain document format."""
+    def load_vector_documents(self, **load_kwargs: Any) -> List[VectorDocument]:
+        """Load data in the vector-store document format."""
         docs = self.load_data(**load_kwargs)
-        return [d.to_langchain_format() for d in docs]
+        return [d.to_vector_format() for d in docs]

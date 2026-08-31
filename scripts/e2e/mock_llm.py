@@ -14,6 +14,18 @@ exists under ``mock_llm_fixtures/<hash>.json`` it wins; otherwise a generic
 "I don't know" fallback is returned and the hash + request is logged to stderr
 so a developer can promote it into a fixture later.
 
+**In-band reply directive.** A spec that needs to pin the assistant's exact
+words cannot use a hash fixture, because DocsGPT's system prompt embeds
+``Today's date is <YYYY-MM-DD>`` — the digest of the same question changes
+every midnight, so a committed ``<hash>.json`` rots within a day. Instead, a
+spec may embed ``[[MOCK_LLM_EMIT:<base64url>]]`` anywhere in the question; the
+stub decodes it and returns exactly that text as the assistant's content.
+The payload is base64 so a spec can drive the model into emitting secrets,
+PII, or banned terms without those literals appearing in the request itself
+(which would otherwise be scanned by an input-stage guardrail, and persisted
+verbatim as the conversation's prompt). See
+``tests/e2e/specs/tier-b/guardrails*.spec.ts``.
+
 Run standalone (does NOT import anything from ``application/``). Python 3.11+.
 Flask is the only non-stdlib dependency and is already in
 ``application/requirements.txt``.
@@ -28,10 +40,13 @@ Defaults to ``127.0.0.1:7899`` to match the ``OPENAI_BASE_URL`` referenced in
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import os
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -51,6 +66,35 @@ GENERIC_FALLBACK_TEXT = (
     "I don't have enough information to answer that from the provided sources."
 )
 STREAM_CHUNK_COUNT = 5
+
+# In-band directive: ``[[MOCK_LLM_EMIT:<base64url payload>]]`` anywhere in the
+# request messages pins the assistant's reply to the decoded payload. See the
+# module docstring for why hash fixtures cannot serve this purpose.
+EMIT_DIRECTIVE = re.compile(r"\[\[MOCK_LLM_EMIT:([A-Za-z0-9_=\-]+)\]\]")
+
+# In-band directive: ``[[MOCK_LLM_TOOLCALL:<action>:<mode>]]`` makes the stub
+# answer with a tool call instead of content, and controls how the call's
+# ``arguments`` are split across SSE frames. Modes:
+#   ``once``   — one frame carrying the complete arguments (a well-behaved
+#                provider).
+#   ``repeat`` — TWO frames for the same ``index``, each carrying the COMPLETE
+#                arguments. Some OpenAI-compatible gateways restate a short
+#                argument payload on the finish frame rather than sending a
+#                delta. The merge recognises the restatement and takes the
+#                latest, rather than appending into invalid JSON
+#                (``{}`` + ``{}`` -> ``{}{}``).
+#   ``delta``  — arguments split into genuine partial deltas, which is what the
+#                merge's ``+=`` exists to reassemble. The control case.
+#   ``truncated`` — a single frame carrying a PREFIX of the arguments, i.e. a
+#                provider that stopped mid-payload. Unlike ``repeat`` this is
+#                genuinely unrecoverable: nothing downstream can invent the
+#                missing bytes, so the turn runs to the iteration cap.
+# An optional 4th field is a base64url JSON object to send as the arguments;
+# it defaults to ``{}`` (a zero-parameter action such as ``note_view``).
+TOOLCALL_DIRECTIVE = re.compile(
+    r"\[\[MOCK_LLM_TOOLCALL:([A-Za-z0-9_\-]+):(once|repeat|delta|truncated)"
+    r"(?::([A-Za-z0-9_=\-]+))?\]\]"
+)
 
 app = Flask(__name__)
 
@@ -192,14 +236,127 @@ def _split_into_chunks(text: str, count: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _directive_content(messages: list[dict[str, Any]] | None) -> str | None:
+    """Decoded ``[[MOCK_LLM_EMIT:...]]`` payload from ``messages``, or None.
+
+    The whole conversation is searched (not just the last turn) because
+    DocsGPT wraps the user's question inside a composed turn and may replay
+    history; the last directive seen wins so a follow-up turn can override an
+    earlier one.
+    """
+
+    found: str | None = None
+    for match in EMIT_DIRECTIVE.finditer(_messages_text(messages) or ""):
+        raw = match.group(1)
+        try:
+            padded = raw + "=" * (-len(raw) % 4)
+            found = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+            sys.stderr.write(f"[mock-llm] bad MOCK_LLM_EMIT payload {raw!r}: {exc}\n")
+            sys.stderr.flush()
+    return found
+
+
+def _directive_toolcall(
+    messages: list[dict[str, Any]] | None,
+) -> tuple[str, str, str] | None:
+    """Decoded ``[[MOCK_LLM_TOOLCALL:...]]`` directive, or None.
+
+    Returns:
+        ``(action_name, frame_mode, arguments_json)`` for the last directive
+        found, or ``None`` when the conversation carries none.
+    """
+
+    found: tuple[str, str, str] | None = None
+    for match in TOOLCALL_DIRECTIVE.finditer(_messages_text(messages) or ""):
+        action, mode, raw_args = match.group(1), match.group(2), match.group(3)
+        arguments = "{}"
+        if raw_args:
+            try:
+                padded = raw_args + "=" * (-len(raw_args) % 4)
+                arguments = base64.urlsafe_b64decode(padded.encode("ascii")).decode(
+                    "utf-8"
+                )
+            except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+                sys.stderr.write(
+                    f"[mock-llm] bad MOCK_LLM_TOOLCALL args {raw_args!r}: {exc}\n"
+                )
+                sys.stderr.flush()
+        found = (action, mode, arguments)
+    return found
+
+
+def _toolcall_arg_frames(arguments: str, mode: str) -> list[str]:
+    """Split ``arguments`` into the per-frame payloads for ``mode``."""
+
+    if mode == "repeat":
+        # The incident shape: the complete payload arrives twice for one index.
+        return [arguments, arguments]
+    if mode == "truncated":
+        # A provider that stopped mid-payload. Strip the closing brace so the
+        # accumulator can never parse, however it is merged.
+        stripped = arguments.rstrip()
+        if len(stripped) < 2:
+            return ['{"']
+        return [stripped[:-1]]
+    if mode == "delta":
+        if len(arguments) < 2:
+            return [arguments]
+        midpoint = len(arguments) // 2
+        return [arguments[:midpoint], arguments[midpoint:]]
+    return [arguments]
+
+
 def _resolve_chat_response(
     payload: dict[str, Any], digest: str
 ) -> tuple[str, list[dict[str, Any]] | None, str, dict[str, int]]:
     """Return ``(content, tool_calls, finish_reason, usage)`` for ``payload``.
 
-    Looks up a fixture by digest first; falls back to the generic response if
-    no fixture is present, and logs the miss so the dev can convert it.
+    An in-band ``[[MOCK_LLM_EMIT:...]]`` directive wins outright. Otherwise a
+    fixture is looked up by digest; failing that the generic response is
+    returned and the miss is logged so the dev can convert it.
     """
+
+    # A real provider can only answer with a tool call when the request
+    # actually offered tools. DocsGPT's finalize round deliberately sends
+    # ``tools=None`` to force a text answer, so honouring that here is what
+    # makes the loop terminate the way it does in production.
+    toolcall = _directive_toolcall(payload.get("messages"))
+    if toolcall is not None and payload.get("tools"):
+        action, _mode, arguments = toolcall
+        prompt_tokens = _estimate_tokens(_messages_text(payload.get("messages")))
+        return (
+            "",
+            [
+                {
+                    "index": 0,
+                    "id": f"call_e2e_{digest[:12]}",
+                    "type": "function",
+                    "function": {"name": action, "arguments": arguments},
+                }
+            ],
+            "tool_calls",
+            {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": 8,
+                "total_tokens": prompt_tokens + 8,
+            },
+        )
+
+    directive = _directive_content(payload.get("messages"))
+    if directive is not None:
+        prompt_tokens = _estimate_tokens(_messages_text(payload.get("messages")))
+        completion_tokens = _estimate_tokens(directive)
+        return (
+            directive,
+            None,
+            "stop",
+            {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        )
 
     fixture = _load_fixture(digest)
     if fixture is None:
@@ -287,6 +444,7 @@ def _stream_chat_response(
     tool_calls: list[dict[str, Any]] | None,
     finish_reason: str,
     chunk_delay_ms: int = 0,
+    toolcall_arg_mode: str | None = None,
 ):
     """Generator yielding SSE frames that match the OpenAI streaming protocol.
 
@@ -321,7 +479,42 @@ def _stream_chat_response(
     # Opening role delta — matches OpenAI's real behavior.
     yield _sse(_base_chunk({"role": "assistant", "content": ""}))
 
-    if tool_calls:
+    if tool_calls and toolcall_arg_mode:
+        # Frame-split mode: the call's ``arguments`` are spread over several
+        # deltas that all share one ``index``, which is what the client-side
+        # merge in application/llm/handlers/base.py reassembles.
+        call = tool_calls[0]
+        frames = _toolcall_arg_frames(call["function"]["arguments"], toolcall_arg_mode)
+        for position, piece in enumerate(frames):
+            _maybe_sleep()
+            if position == 0:
+                delta = {
+                    "tool_calls": [
+                        {
+                            "index": call.get("index", 0),
+                            "id": call.get("id"),
+                            "type": "function",
+                            "function": {
+                                "name": call["function"]["name"],
+                                "arguments": piece,
+                            },
+                        }
+                    ]
+                }
+            else:
+                # Continuation frames carry neither id nor name — only the
+                # index ties them to the call, exactly as OpenAI streams them.
+                delta = {
+                    "tool_calls": [
+                        {
+                            "index": call.get("index", 0),
+                            "function": {"arguments": piece},
+                        }
+                    ]
+                }
+            yield _sse(_base_chunk(delta))
+        yield _sse(_base_chunk({}, final=True))
+    elif tool_calls:
         # Emit tool calls in one delta; content streaming is skipped when
         # tool_calls are present, matching what RAG code paths expect.
         _maybe_sleep()
@@ -397,6 +590,11 @@ def chat_completions() -> Response:
             tool_calls=tool_calls,
             finish_reason=finish_reason,
             chunk_delay_ms=chunk_delay_ms,
+            toolcall_arg_mode=(
+                (_directive_toolcall(payload.get("messages")) or (None, None, None))[1]
+                if payload.get("tools")
+                else None
+            ),
         )
         response = Response(
             stream_with_context(generator),

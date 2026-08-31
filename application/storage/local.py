@@ -1,6 +1,7 @@
 """Local file system implementation."""
 import os
 import shutil
+import tempfile
 from typing import BinaryIO, List, Callable
 
 from application.storage.base import BaseStorage
@@ -36,16 +37,52 @@ class LocalStorage(BaseStorage):
         return resolved
 
     def save_file(self, file_data: BinaryIO, path: str, **kwargs) -> dict:
-        """Save a file to local storage."""
+        """Save a file, replacing any existing one atomically.
+
+        The bytes land on a temporary file beside the destination and are moved
+        into place with ``os.replace``, so an interrupted write leaves the
+        previous file intact instead of a truncated one. Streaming straight onto
+        the destination is unrecoverable for a file that is rewritten in place:
+        a half-written ``index.faiss`` loads at neither the old width nor the
+        new one, and ``application.scripts.reembed`` rewrites every index it
+        touches.
+        """
         full_path = self._get_full_path(path)
+        directory = os.path.dirname(full_path)
+        os.makedirs(directory, exist_ok=True)
 
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-        if hasattr(file_data, 'save'):
-            file_data.save(full_path)
-        else:
-            with open(full_path, 'wb') as f:
-                shutil.copyfileobj(file_data, f)
+        # Same directory as the destination, so the replace below is a rename
+        # within one filesystem rather than a copy.
+        fd, temp_path = tempfile.mkstemp(
+            dir=directory, prefix=f".{os.path.basename(full_path)}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "wb") as f:
+                if hasattr(file_data, "save"):
+                    file_data.save(f)
+                else:
+                    shutil.copyfileobj(file_data, f)
+                f.flush()
+                os.fsync(f.fileno())
+            # mkstemp is 0600; keep whatever the file already had, or fall back
+            # to what a plain open() would have produced.
+            try:
+                mode = os.stat(full_path).st_mode & 0o777
+            except FileNotFoundError:
+                mode = 0o644
+            os.chmod(temp_path, mode)
+            os.replace(temp_path, full_path)
+        except BaseException:
+            # A successful replace consumes the temp file; every other exit
+            # leaves it behind.
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                # Best-effort: the write already failed, and that exception is
+                # the one worth raising. A temp file we cannot remove must not
+                # mask it.
+                pass
+            raise
 
         return {
             'storage_type': 'local'
@@ -59,6 +96,14 @@ class LocalStorage(BaseStorage):
             raise FileNotFoundError(f"File not found: {full_path}")
 
         return open(full_path, 'rb')
+
+    def get_file_size(self, path: str) -> int:
+        """Return the size of a local file without opening and buffering it."""
+        full_path = self._get_full_path(path)
+        try:
+            return os.path.getsize(full_path)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"File not found: {full_path}") from exc
 
     def delete_file(self, path: str) -> bool:
         """Delete a file from local storage."""

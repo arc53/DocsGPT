@@ -1001,7 +1001,9 @@
       "webhookUrl": "Webhook URL",
       "generate": "Generate",
       "test": "Test",
-      "learnMore": "Learn more"
+      "learnMore": "Learn more",
+      "resetKey": "Сбросить ключ",
+      "resetKeyConfirm": "Вы уверены, что хотите сбросить API-ключ? Текущий ключ немедленно перестанет работать, и это действие нельзя отменить."
     },
     "importSpec": {
       "title": "Импорт спецификации API",
@@ -1028,6 +1030,9 @@
       "importError": "Import failed",
       "willCreate": "Creates a new agent.",
       "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
+      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
+      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
+      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
       "sources": "Sources",
       "tools": "Tools",
       "models": "Models",
@@ -1098,6 +1103,45 @@
       "insert": "Отредактирована страница вики",
       "delete": "Удалена страница вики",
       "rename": "Переименована страница вики",
+      "failed": "не удалось",
+      "active": {
+        "edited": "Редактирую вики…",
+        "create": "Создаю страницу вики…",
+        "str_replace": "Редактирую страницу вики…",
+        "insert": "Редактирую страницу вики…",
+        "delete": "Удаляю страницу вики…",
+        "rename": "Переименовываю страницу вики…"
+      }
+    },
+    "streamingStatus": {
+      "thinking": "Думаю…",
+      "generating": "Генерирую…",
+      "searchingWeb": "Ищу в интернете «{{query}}»…",
+      "searchingWebGeneric": "Ищу в интернете…",
+      "searchingImages": "Ищу изображения «{{query}}»…",
+      "readingPage": "Читаю {{target}}…",
+      "searchingKnowledge": "Ищу в базе знаний…",
+      "accessingMemory": "Обращаюсь к памяти…",
+      "runningCode": "Выполняю код…",
+      "creatingArtifact": "Создаю артефакт…",
+      "usingTool": "Использую {{tool}}…"
+    },
+    "toolChip": {
+      "searchingWeb": "Поиск в интернете · «{{query}}»",
+      "searchedWebGeneric": "Выполнен поиск в интернете",
+      "searchingImages": "Поиск изображений · «{{query}}»",
+      "readingPage": "Прочитано {{target}}",
+      "searchingKnowledge": "Выполнен поиск в базе знаний",
+      "accessingMemory": "Обращение к памяти выполнено",
+      "runningCode": "Код выполнен",
+      "creatingArtifact": "Артефакт создан",
+      "usingTool": "Использован {{tool}}"
+    },
+    "inlineSteps": {
+      "arguments": "Аргументы",
+      "response": "Ответ",
+      "running": "Выполняется…",
+      "denied": "Отклонено пользователем",
       "failed": "не удалось"
     }
   },
@@ -1108,6 +1152,8 @@
     "newAgent": "Новый Агент",
     "importAgent": "Import",
     "exportAgent": "Export as YAML",
+    "exportAgentFailed": "Failed to export agent",
+    "close": "Закрыть",
     "shareWithTeam": "Поделиться с командой",
     "backToAll": "Вернуться ко всем агентам",
     "pageHeader": {
@@ -1184,6 +1230,7 @@
         "agentType": "Тип агента",
         "models": "Модели",
         "advanced": "Расширенные",
+        "guardrails": "Guardrails",
         "preview": "Предпросмотр"
       },
       "placeholders": {
@@ -1247,7 +1294,62 @@
         "description": "Удаление этого агента необратимо и удалит все его расписания и историю запусков.",
         "deleteButton": "Удалить агента"
       },
-      "externalKb": "Внешняя БЗ"
+      "externalKb": "Внешняя БЗ",
+      "errors": {
+        "publishFailed": "Не удалось опубликовать агента. Попробуйте ещё раз.",
+        "saveDraftFailed": "Не удалось сохранить черновик. Попробуйте ещё раз."
+      },
+      "guardrails": {
+        "enable": "Enable guardrails",
+        "enableDescription": "Run the selected checks on this agent's runs",
+        "mode": "Enforcement mode",
+        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
+        "checks": "Checks",
+        "latencyHint": "Approximate added latency when this check runs",
+        "notConfigured": "Not configured",
+        "lockedByFloor": "Required by the instance policy and cannot be removed",
+        "configure": "Configure",
+        "blockMessage": "Blocked-response message",
+        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
+        "failOpen": "Continue if a check fails",
+        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
+        "timeout": "Check timeout (ms)",
+        "loadError": "Could not load the guardrail catalog",
+        "terms": "Banned terms (one per line)",
+        "termsPlaceholder": "competitor name\ninternal codename",
+        "allowHosts": "Allowed hosts (one per line)",
+        "blockHosts": "Blocked hosts (one per line)",
+        "policyText": "Policy",
+        "minOverlap": "Minimum source overlap",
+        "minWords": "Minimum answer length (words)",
+        "confidence": "Confidence threshold",
+        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
+        "activeCount": "{{count}} active",
+        "needsSetup": "{{count}} need setup",
+        "setupRequired": "Fill in this check's settings before saving.",
+        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
+        "remove": "Remove",
+        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
+        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
+        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
+        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
+        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "stages": {
+          "input": "User input",
+          "retrieval": "Retrieved sources",
+          "toolResult": "Tool result",
+          "output": "Answer"
+        },
+        "actions": {
+          "flag": "Flag only",
+          "redact": "Redact",
+          "block": "Block"
+        },
+        "modes": {
+          "monitorOnly": "Monitor only",
+          "scanAll": "Enforce everywhere"
+        }
+      }
     },
     "logs": {
       "title": "Логи Агента",
@@ -1347,6 +1449,29 @@
       "currentFolder": "Эта папка",
       "noSubfolders": "Нет подпапок",
       "noFolders": "Пока нет папок"
+    },
+    "guardrailEvents": {
+      "heading": "Guardrail activity",
+      "description": "Every control that fired on this agent, and every one that could not run.",
+      "lastDays": "Last {{count}} days",
+      "blocked": "Blocked",
+      "redacted": "Redacted",
+      "flagged": "Flagged",
+      "notEvaluated": "Not evaluated",
+      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
+      "byCheck": "By check",
+      "allChecks": "All checks",
+      "allOutcomes": "All outcomes",
+      "tableHeader": "Guardrail decisions",
+      "when": "When",
+      "check": "Check",
+      "stage": "Stage",
+      "outcome": "Outcome",
+      "detail": "Detail",
+      "empty": "No guardrail has fired on this agent yet.",
+      "emptyForFilter": "No decisions match this filter.",
+      "truncated": "Showing the most recent {{count}} decisions.",
+      "loadError": "Could not load guardrail activity"
     }
   },
   "components": {

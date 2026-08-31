@@ -66,8 +66,8 @@ def test_pandas_csv_parser_concat_rows(pandas_csv_parser):
     mock_df = MagicMock()
     mock_df.columns.tolist.return_value = ["col1", "col2"]
     mock_df.iterrows.return_value = [
-        (0, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["value1", "value2"]))),
-        (1, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["value3", "value4"])))
+        (0, MagicMock(tolist=lambda: ["value1", "value2"])),
+        (1, MagicMock(tolist=lambda: ["value3", "value4"]))
     ]
 
     with patch("pandas.read_csv", return_value=mock_df):
@@ -92,9 +92,9 @@ def test_pandas_csv_parser_header_period(pandas_csv_parser):
     mock_df = MagicMock()
     mock_df.columns.tolist.return_value = ["col1", "col2"]
     mock_df.iterrows.return_value = [
-        (0, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["value1", "value2"]))),
-        (1, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["value3", "value4"]))),
-        (2, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["value5", "value6"])))
+        (0, MagicMock(tolist=lambda: ["value1", "value2"])),
+        (1, MagicMock(tolist=lambda: ["value3", "value4"])),
+        (2, MagicMock(tolist=lambda: ["value5", "value6"]))
     ]
     mock_df.__len__.return_value = 3
 
@@ -108,8 +108,8 @@ def test_excel_parser_concat_rows(excel_parser):
     mock_df = MagicMock()
     mock_df.columns.tolist.return_value = ["col1", "col2"]
     mock_df.iterrows.return_value = [
-        (0, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["value1", "value2"]))),
-        (1, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["value3", "value4"])))
+        (0, MagicMock(tolist=lambda: ["value1", "value2"])),
+        (1, MagicMock(tolist=lambda: ["value3", "value4"]))
     ]
 
     with patch("pandas.read_excel", return_value=mock_df):
@@ -134,8 +134,8 @@ def test_excel_parser_header_period(excel_parser):
     mock_df = MagicMock()
     mock_df.columns.tolist.return_value = ["col1", "col2"]
     mock_df.iterrows.return_value = [
-        (0, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["value1", "value2"]))),
-        (1, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["value3", "value4"])))
+        (0, MagicMock(tolist=lambda: ["value1", "value2"])),
+        (1, MagicMock(tolist=lambda: ["value3", "value4"]))
     ]
     mock_df.__len__.return_value = 2
 
@@ -163,8 +163,8 @@ def test_pandas_csv_parser_header_period_zero(pandas_csv_parser):
     mock_df = MagicMock()
     mock_df.columns.tolist.return_value = ["c1", "c2"]
     mock_df.iterrows.return_value = [
-        (0, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["v1", "v2"]))),
-        (1, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["v3", "v4"]))),
+        (0, MagicMock(tolist=lambda: ["v1", "v2"])),
+        (1, MagicMock(tolist=lambda: ["v3", "v4"])),
     ]
     with patch("pandas.read_csv", return_value=mock_df):
         result = pandas_csv_parser.parse_file(Path("f.csv"))
@@ -176,8 +176,8 @@ def test_pandas_csv_parser_header_period_one(pandas_csv_parser):
     mock_df = MagicMock()
     mock_df.columns.tolist.return_value = ["a", "b"]
     mock_df.iterrows.return_value = [
-        (0, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["x", "y"]))),
-        (1, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["m", "n"]))),
+        (0, MagicMock(tolist=lambda: ["x", "y"])),
+        (1, MagicMock(tolist=lambda: ["m", "n"])),
     ]
     mock_df.__len__.return_value = 2
     with patch("pandas.read_csv", return_value=mock_df):
@@ -202,7 +202,7 @@ def test_excel_parser_custom_joiners_and_prefix(excel_parser):
     mock_df = MagicMock()
     mock_df.columns.tolist.return_value = ["A", "B"]
     mock_df.iterrows.return_value = [
-        (0, MagicMock(astype=lambda _: MagicMock(tolist=lambda: ["x", "y"]))),
+        (0, MagicMock(tolist=lambda: ["x", "y"])),
     ]
     with patch("pandas.read_excel", return_value=mock_df):
         result = excel_parser.parse_file(Path("t.xlsx"))
@@ -213,3 +213,23 @@ def test_excel_parser_import_error(excel_parser):
     with patch.dict(sys.modules, {"pandas": None}):
         with pytest.raises(ValueError, match="pandas module is required to read Excel files"):
             excel_parser.parse_file(Path("test.xlsx"))
+
+def test_excel_numeric_headers_do_not_crash(tmp_path):
+    """Regression: a headerless/numeric xlsx gives integer column labels, and
+    ``", ".join(headers)`` used to raise TypeError. The XLSX size-gate delegates
+    to this parser, so it must handle numeric headers."""
+    from openpyxl import Workbook
+
+    from application.parser.file.tabular_parser import ExcelParser
+
+    wb = Workbook()
+    ws = wb.active
+    for i in range(5):
+        ws.append([i, i * 2, i * 3])
+    path = tmp_path / "numeric.xlsx"
+    wb.save(str(path))
+
+    out = ExcelParser().parse_file(path)
+
+    assert isinstance(out, str)
+    assert len(out) > 0

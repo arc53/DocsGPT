@@ -43,6 +43,7 @@ import os
 # opt back in by setting the env var explicitly.
 os.environ.setdefault("AUTO_MIGRATE", "false")
 os.environ.setdefault("AUTO_CREATE_DB", "false")
+os.environ.setdefault("AUTO_VECTOR_SCHEMA", "false")
 
 import subprocess
 import sys
@@ -61,12 +62,18 @@ from sqlalchemy import create_engine
 _ALEMBIC_INI = Path(__file__).resolve().parent.parent / "application" / "alembic.ini"
 
 
-def _migrate_template_db(host, port, user, dbname, password) -> None:
+def _migrate_template_db(host, port, user, dbname, password, **kwargs) -> None:
     """Run alembic ``upgrade head`` into the session's template database.
 
     Called once per session by pytest-postgresql's ``load=`` hook (against
     the template DB, before any test runs). Runs in a subprocess so the
     parent process never imports application settings with this URI cached.
+
+    ``**kwargs`` swallows keywords newer plugin releases hand to loaders --
+    9.0.0 added ``autocommit``, which broke every DB test on a plugin bump
+    alone. They describe the connection the caller already gave us, so
+    ignoring them keeps one signature working across versions instead of
+    pinning the plugin back.
     """
     url = (
         f"postgresql+psycopg://{user}:{password or ''}@{host}:{port}/{dbname}"
@@ -157,6 +164,21 @@ def _no_real_redis(monkeypatch):
     """
     monkeypatch.setattr("application.cache._redis_instance", None)
     monkeypatch.setattr("application.cache._redis_creation_failed", True)
+
+
+@pytest.fixture(autouse=True)
+def _no_worker_delegation(monkeypatch):
+    """Embed in-process during tests, the way CI has no worker to embed on.
+
+    ``EMBEDDINGS_DELEGATE_TO_WORKER`` ships on, so an unmocked embed would
+    publish to a broker nobody is consuming and block for
+    ``EMBEDDINGS_DELEGATE_TIMEOUT`` before failing -- a minute per call, and a
+    pass/fail that depends on whether the developer happens to have a worker
+    running. Tests covering delegation patch the setting back on themselves.
+    """
+    from application.core.settings import settings
+
+    monkeypatch.setattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False, raising=False)
     monkeypatch.setattr("application.cache._pubsub_redis_instance", None)
     monkeypatch.setattr("application.cache._pubsub_redis_creation_failed", True)
 

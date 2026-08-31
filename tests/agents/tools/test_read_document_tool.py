@@ -8,6 +8,10 @@ validation, and the surfaced action params.
 
 from __future__ import annotations
 
+import logging
+import signal
+import threading
+import time
 import uuid
 from typing import Any, Dict, Optional
 
@@ -22,7 +26,10 @@ _ART_ID = str(uuid.uuid4())
 # ---------------------------------------------------------------------------
 # Run-scoped input resolution (mocks the repo gate)
 # ---------------------------------------------------------------------------
-def _stub_repo(monkeypatch, *, found: bool, conv: Optional[str], run: Optional[str]):
+def _stub_repo(
+    monkeypatch, *, found: bool, conv: Optional[str], run: Optional[str],
+    size: Optional[int] = None,
+):
     class _Repo:
         def __init__(self, conn):
             pass
@@ -44,6 +51,9 @@ def _stub_repo(monkeypatch, *, found: bool, conv: Optional[str], run: Optional[s
             if run is not None and workflow_run_id != run:
                 return None
             return {"id": artifact_id, "current_version": 1, "title": "statement.pdf"}
+
+        def get_version(self, artifact_id, version):
+            return {"storage_path": "s/1", "mime_type": "application/pdf", "size": size}
 
     class _Conn:
         def __enter__(self):
@@ -83,6 +93,7 @@ def _patch_task(monkeypatch, *, payload=None, exc=None):
     def _apply_async(args=None, queue=None, **kw):
         captured["args"] = args
         captured["queue"] = queue
+        captured["limits"] = kw
         result = _FakeAsyncResult(payload=payload, exc=exc)
         captured["result"] = result
         return result
@@ -206,6 +217,42 @@ def test_artifact_ref_sets_last_artifact_id(monkeypatch):
     out = tool.execute_action("read_document", input=_ART_ID)
     assert out["artifact"]["artifact_id"] == "new-art"
     assert tool.get_artifact_id("read_document") == "new-art"
+
+
+# ---------------------------------------------------------------------------
+# Size-scaled parse window
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_parse_window_scales_with_the_input_size(monkeypatch):
+    """A large input widens the await AND the task's per-call Celery time limits."""
+    from application.api.user.tasks import parse_task_time_limits, parse_timeout_for_size
+
+    size = 8 * 1024 * 1024
+    _stub_repo(monkeypatch, found=True, conv="conv-1", run=None, size=size)
+    captured = _patch_task(monkeypatch, payload={"status": "ok", "content": "x"})
+
+    out = _tool().execute_action("read_document", input=_ART_ID, persist=False)
+
+    expected = parse_timeout_for_size(size)
+    assert out["status"] == "ok"
+    assert captured["result"].get_kwargs["timeout"] == expected
+    # The task's import-time soft limit is the BASE timeout, so the per-call limits
+    # must be raised too or the worker kills the parse the caller is still awaiting.
+    assert captured["limits"] == parse_task_time_limits(expected)
+    assert captured["limits"]["soft_time_limit"] > rd.settings.DOCUMENT_PARSE_TIMEOUT
+
+
+@pytest.mark.unit
+def test_parse_window_falls_back_to_the_base_timeout_without_a_size(monkeypatch):
+    """An unknown input size keeps the configured base timeout as the floor."""
+    _stub_repo(monkeypatch, found=True, conv="conv-1", run=None, size=None)
+    captured = _patch_task(monkeypatch, payload={"status": "ok", "content": "x"})
+
+    _tool().execute_action("read_document", input=_ART_ID, persist=False)
+
+    base = float(rd.settings.DOCUMENT_PARSE_TIMEOUT)
+    assert captured["result"].get_kwargs["timeout"] == base
+    assert captured["limits"]["soft_time_limit"] == int(base)
 
 
 # ---------------------------------------------------------------------------
@@ -354,3 +401,289 @@ def test_dispatch_enqueues_when_not_in_worker(monkeypatch):
     assert out["status"] == "ok" and out["content"] == "queued"
     assert captured["args"][0] == _ART_ID
     assert captured["args"][1] == {"conversation_id": "conv-1"}
+
+
+# ---------------------------------------------------------------------------
+# The inline (in-worker) parse is time-bounded too
+#
+# The inline branch has no Celery time limit of its own, so an unbounded parse
+# would pin the agent's worker slot until the OUTER task's limit (if any) kills
+# the whole run. It must degrade on the SAME window the dispatch branch awaits.
+# ---------------------------------------------------------------------------
+_TIMED_OUT = "document parsing timed out after"
+
+
+def _inline(monkeypatch, run_parse, *, timeout=0.2) -> ReadDocumentTool:
+    """Drive the inline branch (current_task truthy) with a patched parse window."""
+    _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
+    monkeypatch.setattr(rd, "current_task", object())
+
+    import application.api.user.tasks as tasks
+    monkeypatch.setattr(
+        tasks.parse_document, "apply_async",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not enqueue inside a worker")),
+    )
+    monkeypatch.setattr(tasks, "parse_timeout_for_size", lambda size: timeout)
+
+    import application.worker as worker
+    monkeypatch.setattr(worker, "run_parse_document", run_parse)
+    return _tool()
+
+
+@pytest.mark.unit
+def test_inline_parse_within_the_window_returns_its_result(monkeypatch):
+    seen: Dict[str, Any] = {}
+
+    def _run(artifact_id, parent, user_id, options):
+        seen["thread"] = threading.current_thread()
+        seen["armed"] = signal.getitimer(signal.ITIMER_REAL)
+        time.sleep(0.05)
+        return {"status": "ok", "content": "inline", "truncated": False}
+
+    before = signal.getsignal(signal.SIGALRM)
+    tool = _inline(monkeypatch, _run, timeout=0.5)
+    out = tool.execute_action("read_document", input=_ART_ID, persist=False)
+
+    assert out["status"] == "ok" and out["content"] == "inline"
+    # Signal strategy: the parse runs on the calling (main) thread under an armed timer,
+    assert seen["thread"] is threading.main_thread()
+    assert seen["armed"][0] > 0
+    # and the handler + timer are restored even though the parse returned early.
+    assert signal.getsignal(signal.SIGALRM) is before
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+
+
+@pytest.mark.unit
+def test_inline_parse_times_out_on_the_signal_path(monkeypatch, caplog):
+    seen: Dict[str, Any] = {}
+
+    def _run(*args, **kwargs):
+        seen["thread"] = threading.current_thread()
+        time.sleep(0.5)
+        seen["finished"] = True
+        return {"status": "ok", "content": "too late"}
+
+    before = signal.getsignal(signal.SIGALRM)
+    tool = _inline(monkeypatch, _run, timeout=0.2)
+    started = time.monotonic()
+    with caplog.at_level(logging.WARNING, logger="application.agents.tools.read_document"):
+        out = tool.execute_action("read_document", input=_ART_ID, persist=False)
+    elapsed = time.monotonic() - started
+
+    # Same error shape the worker returns on its soft limit.
+    assert out == {"status": "error", "error": f"{_TIMED_OUT} {int(0.2)}s."}
+    # SIGALRM actually INTERRUPTS the parse, freeing the slot (it does not merely abandon it).
+    assert elapsed < 0.45
+    assert seen["thread"] is threading.main_thread()
+    assert "finished" not in seen
+    assert signal.getsignal(signal.SIGALRM) is before
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    assert any("timed out" in rec.getMessage() for rec in caplog.records if rec.levelname == "WARNING")
+
+
+@pytest.mark.unit
+def test_a_straggler_alarm_does_not_discard_a_finished_parse(monkeypatch):
+    """The alarm can land between ``fn()`` returning and the disarm call.
+
+    ``_InlineParseTimeout`` is a BaseException, so nothing catches it locally:
+    raised from the ``finally`` it replaces the return value, and the caller
+    reports a timeout for a document that parsed correctly.
+    """
+    real_setitimer = signal.setitimer
+
+    def _fire_on_disarm(which, seconds, *rest):
+        # Reproduce the race deterministically: deliver SIGALRM at the exact
+        # instant the timer is being cancelled.
+        if seconds == 0:
+            handler = signal.getsignal(signal.SIGALRM)
+            if callable(handler):
+                handler(signal.SIGALRM, None)
+        return real_setitimer(which, seconds, *rest)
+
+    monkeypatch.setattr(signal, "setitimer", _fire_on_disarm)
+
+    parsed = {"status": "ok", "content": "the document really did parse"}
+    assert rd.ReadDocumentTool._run_with_sigalrm(lambda: parsed, 30.0) == parsed
+
+
+@pytest.mark.unit
+def test_a_genuine_sigalrm_timeout_still_raises(monkeypatch):
+    """The completion flag must not disarm the guard itself."""
+    with pytest.raises(rd._InlineParseTimeout):
+        rd.ReadDocumentTool._run_with_sigalrm(lambda: time.sleep(1.0), 0.15)
+
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+
+
+@pytest.mark.unit
+def test_the_inline_helper_thread_is_a_daemon():
+    """A timed-out parse is abandoned, so its thread must not outlive the process.
+
+    ``concurrent.futures`` registers its (non-daemon) workers with an atexit
+    hook that joins them, which is exactly why application/guardrails/engine.py
+    uses raw daemon threads for the same abandon-on-timeout shape.
+    """
+    seen: Dict[str, Any] = {}
+
+    def _capture():
+        seen["thread"] = threading.current_thread()
+        return {"status": "ok"}
+
+    assert rd.ReadDocumentTool._run_in_thread(_capture, 5.0) == {"status": "ok"}
+    assert seen["thread"].name.startswith("read-document-inline")
+    assert seen["thread"].daemon is True
+
+
+@pytest.mark.unit
+def test_the_thread_path_propagates_a_parse_failure():
+    """An error raised by ``fn`` surfaces as itself, not as a timeout."""
+    def _boom():
+        raise RuntimeError("parser exploded")
+
+    with pytest.raises(RuntimeError, match="parser exploded"):
+        rd.ReadDocumentTool._run_in_thread(_boom, 5.0)
+
+
+@pytest.mark.unit
+def test_the_thread_path_does_not_mistake_a_parse_timeout_for_its_own():
+    """``fn`` raising TimeoutError is a failure, not the deadline elapsing."""
+    def _raises_timeout():
+        raise TimeoutError("the parser's own network timeout")
+
+    with pytest.raises(TimeoutError, match="own network timeout"):
+        rd.ReadDocumentTool._run_in_thread(_raises_timeout, 5.0)
+
+
+@pytest.mark.unit
+def test_inline_parse_times_out_on_the_thread_path(monkeypatch, caplog):
+    """Off the main thread (gevent/threads pools, Windows) the timer is unusable."""
+    seen: Dict[str, Any] = {}
+
+    def _run(*args, **kwargs):
+        seen["thread"] = threading.current_thread()
+        time.sleep(0.5)
+        seen["finished"] = True
+        return {"status": "ok", "content": "too late"}
+
+    tool = _inline(monkeypatch, _run, timeout=0.2)
+    main_handler = signal.getsignal(signal.SIGALRM)
+    box: Dict[str, Any] = {}
+
+    def _call():
+        box["out"] = tool.execute_action("read_document", input=_ART_ID, persist=False)
+
+    with caplog.at_level(logging.WARNING, logger="application.agents.tools.read_document"):
+        caller = threading.Thread(target=_call, name="fake-worker-pool-thread")
+        caller.start()
+        caller.join(2.0)
+
+    assert not caller.is_alive()
+    assert box["out"] == {"status": "error", "error": f"{_TIMED_OUT} {int(0.2)}s."}
+    # The parse ran in the helper executor, not on the caller's thread...
+    assert seen["thread"].name.startswith("read-document-inline")
+    assert "finished" not in seen
+    # ...and the orphan cannot be interrupted, which the warning must say.
+    assert any("keeps running" in rec.getMessage() for rec in caplog.records if rec.levelname == "WARNING")
+    # The main thread's signal state was never touched from the worker thread.
+    assert signal.getsignal(signal.SIGALRM) is main_handler
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+
+
+@pytest.mark.unit
+def test_inline_parse_falls_back_to_a_thread_when_sigalrm_is_taken(monkeypatch):
+    """A foreign SIGALRM handler must not be clobbered; use the thread strategy instead."""
+    seen: Dict[str, Any] = {}
+
+    def _run(*args, **kwargs):
+        seen["thread"] = threading.current_thread()
+        return {"status": "ok", "content": "threaded", "truncated": False}
+
+    def _foreign(signum, frame):  # pragma: no cover - must never be invoked
+        raise AssertionError("foreign SIGALRM handler fired")
+
+    tool = _inline(monkeypatch, _run, timeout=0.5)
+    previous = signal.signal(signal.SIGALRM, _foreign)
+    try:
+        out = tool.execute_action("read_document", input=_ART_ID, persist=False)
+        still_installed = signal.getsignal(signal.SIGALRM)
+    finally:
+        signal.signal(signal.SIGALRM, previous)
+
+    assert out["status"] == "ok" and out["content"] == "threaded"
+    assert seen["thread"].name.startswith("read-document-inline")
+    assert still_installed is _foreign
+
+
+@pytest.mark.unit
+def test_inline_signal_timer_does_not_fire_after_a_fast_parse(monkeypatch):
+    before = signal.getsignal(signal.SIGALRM)
+    tool = _inline(monkeypatch, lambda *a, **k: {"status": "ok", "content": "fast"}, timeout=0.2)
+    out = tool.execute_action("read_document", input=_ART_ID, persist=False)
+
+    assert out["status"] == "ok" and out["content"] == "fast"
+    # A leaked timer would raise inside this sleep, well past the window.
+    time.sleep(0.3)
+    assert signal.getsignal(signal.SIGALRM) is before
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+
+
+@pytest.mark.unit
+def test_inline_parse_failure_still_degrades_to_error(monkeypatch):
+    def _boom(*args, **kwargs):
+        raise RuntimeError("docling blew up")
+
+    tool = _inline(monkeypatch, _boom, timeout=0.5)
+    out = tool.execute_action("read_document", input=_ART_ID, persist=False)
+
+    assert out["status"] == "error"
+    assert "document parsing failed" in out["error"] and "docling blew up" in out["error"]
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("window", [0, None])
+def test_inline_parse_runs_unbounded_without_a_positive_window(monkeypatch, window):
+    seen: Dict[str, Any] = {}
+
+    def _run(*args, **kwargs):
+        seen["thread"] = threading.current_thread()
+        seen["armed"] = signal.getitimer(signal.ITIMER_REAL)
+        seen["handler"] = signal.getsignal(signal.SIGALRM)
+        return {"status": "ok", "content": "unbounded", "truncated": False}
+
+    before = signal.getsignal(signal.SIGALRM)
+    tool = _inline(monkeypatch, _run, timeout=window)
+    out = tool.execute_action("read_document", input=_ART_ID, persist=False)
+
+    assert out["status"] == "ok" and out["content"] == "unbounded"
+    # Called directly: no timer armed, no handler swapped, no helper thread.
+    assert seen["armed"] == (0.0, 0.0)
+    assert seen["handler"] is before
+    assert seen["thread"] is threading.main_thread()
+
+
+@pytest.mark.unit
+def test_inline_timeout_is_not_swallowed_by_the_parser_catch_all(monkeypatch, caplog):
+    """``parse_document_bytes`` wraps the parse in ``except Exception`` and returns an error dict.
+
+    The interrupt must fly straight through that catch-all (and still run its ``finally``
+    cleanup) so the caller reports the shared timed-out shape, not "parsing failed: ...".
+    """
+    seen: Dict[str, Any] = {}
+
+    def _run(*args, **kwargs):
+        try:
+            time.sleep(0.5)
+            return {"status": "ok", "content": "too late"}
+        except Exception as exc:  # mirrors parser/document_reader.py's catch-all
+            return {"status": "error", "error": f"parsing failed: {type(exc).__name__}: {exc}"}
+        finally:
+            seen["cleaned_up"] = True
+
+    tool = _inline(monkeypatch, _run, timeout=0.2)
+    with caplog.at_level(logging.WARNING, logger="application.agents.tools.read_document"):
+        out = tool.execute_action("read_document", input=_ART_ID, persist=False)
+
+    assert out == {"status": "error", "error": f"{_TIMED_OUT} {int(0.2)}s."}
+    assert seen["cleaned_up"] is True
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)

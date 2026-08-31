@@ -8,7 +8,6 @@ import string
 import tempfile
 import threading
 from typing import Any, Dict
-import zipfile
 
 import uuid
 from collections import Counter
@@ -31,6 +30,14 @@ from application.parser.remote.remote_creator import (
     normalize_remote_data,
 )
 from application.parser.schema.base import Document
+from application.security.zip_archive import (
+    extract_zip_safely,
+    safe_zip_error_message,
+    validate_zip_archive,
+    ZipExtractionBudget,
+    ZipExtractionError,
+    ZipExtractionLimits,
+)
 
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
@@ -48,15 +55,100 @@ from application.storage.db.repositories.wiki_pages import (
 from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
-from application.utils import count_tokens_docs, num_tokens_from_string, safe_filename
+from application.utils import (
+    count_tokens_docs,
+    get_encoding,
+    num_tokens_from_string,
+    safe_filename,
+    truncate_to_line_boundary,
+)
 
 # Constants
 
 
 MIN_TOKENS = 150
 MAX_TOKENS = 1250
+# Attachment content stored for prompting is capped in tokens — the same
+# unit the gate is expressed in — so a stored row can never exceed the cap.
+ATTACHMENT_MAX_TOKENS = 100_000
 RECURSION_DEPTH = 2
 INGEST_HEARTBEAT_INTERVAL_SECONDS = 30
+
+
+def count_structure_files(node: dict) -> int:
+    """Count leaf files in a nested ``directory_structure`` mapping.
+
+    Directories are plain dicts of children; files are dicts carrying a
+    ``token_count`` key. ``len()`` on the root only sees top-level entries,
+    which undercounts any repo with subdirectories.
+
+    Args:
+        node: A ``directory_structure`` mapping (or any subtree of one).
+
+    Returns:
+        Number of file leaves beneath ``node``.
+    """
+    if not isinstance(node, dict):
+        return 0
+    total = 0
+    for value in node.values():
+        if isinstance(value, dict):
+            if "token_count" in value and "size_bytes" in value:
+                total += 1
+            else:
+                total += count_structure_files(value)
+    return total
+
+
+def add_file_to_structure(
+    directory_structure: dict,
+    file_path: str,
+    file_type: str,
+    *,
+    size_bytes: int,
+    token_count: int,
+) -> None:
+    """Insert one chunk's stats into a nested ``directory_structure``.
+
+    Callers feed this *chunks*, so a file larger than one chunk arrives
+    several times. Stats are accumulated rather than overwritten — the
+    previous assignment kept only the final fragment, which made the
+    per-file sizes shown in the UI wrong for every multi-chunk file
+    (a 2.56M-token repo reported 733k).
+
+    Args:
+        directory_structure: Mapping mutated in place.
+        file_path: Repo-relative path, e.g. ``"guides/setup.md"``.
+        file_type: MIME type recorded on first insert.
+        size_bytes: Byte length of this chunk.
+        token_count: Token count of this chunk.
+
+    Returns:
+        None
+    """
+    path_parts = [p for p in file_path.split("/") if p]
+    if not path_parts:
+        return
+    current_level = directory_structure
+    for part in path_parts[:-1]:
+        # Intermediate parts are directories
+        child = current_level.get(part)
+        if not isinstance(child, dict) or "token_count" in child:
+            child = {}
+            current_level[part] = child
+        current_level = child
+
+    leaf = path_parts[-1]
+    existing = current_level.get(leaf)
+    if isinstance(existing, dict) and "token_count" in existing:
+        existing["size_bytes"] += size_bytes
+        existing["token_count"] += token_count
+    else:
+        current_level[leaf] = {
+            "type": file_type,
+            "size_bytes": size_bytes,
+            "token_count": token_count,
+        }
 
 
 def graph_extraction_key(source_id, updated_at) -> str:
@@ -288,15 +380,11 @@ current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 
-# Zip extraction security limits
-MAX_UNCOMPRESSED_SIZE = 500 * 1024 * 1024  # 500 MB max uncompressed size
-MAX_FILE_COUNT = 10000  # Maximum number of files to extract
-MAX_COMPRESSION_RATIO = 100  # Maximum compression ratio (to detect zip bombs)
-
-
-class ZipExtractionError(Exception):
-    """Raised when zip extraction fails due to security constraints."""
-    pass
+# Zip extraction security limits. Kept as module constants for backward
+# compatibility with worker callers/tests; values come from operator settings.
+MAX_UNCOMPRESSED_SIZE = settings.UPLOAD_MAX_ARCHIVE_BYTES
+MAX_FILE_COUNT = settings.UPLOAD_MAX_ARCHIVE_FILES
+MAX_COMPRESSION_RATIO = settings.UPLOAD_MAX_ARCHIVE_RATIO
 
 
 def _is_path_safe(base_path: str, target_path: str) -> bool:
@@ -332,58 +420,26 @@ def _validate_zip_safety(zip_path: str, extract_to: str) -> None:
     Raises:
         ZipExtractionError: If the zip file fails security validation.
     """
-    try:
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            # Get compressed size
-            compressed_size = os.path.getsize(zip_path)
-
-            # Calculate total uncompressed size and file count
-            total_uncompressed = 0
-            file_count = 0
-
-            for info in zip_ref.infolist():
-                file_count += 1
-
-                # Check file count limit
-                if file_count > MAX_FILE_COUNT:
-                    raise ZipExtractionError(
-                        f"Zip file contains too many files (>{MAX_FILE_COUNT}). "
-                        "This may be a zip bomb attack."
-                    )
-
-                # Accumulate uncompressed size
-                total_uncompressed += info.file_size
-
-                # Check total uncompressed size
-                if total_uncompressed > MAX_UNCOMPRESSED_SIZE:
-                    raise ZipExtractionError(
-                        f"Zip file uncompressed size exceeds limit "
-                        f"({total_uncompressed / (1024*1024):.1f} MB > "
-                        f"{MAX_UNCOMPRESSED_SIZE / (1024*1024):.1f} MB). "
-                        "This may be a zip bomb attack."
-                    )
-
-                # Check for path traversal (zip slip)
-                target_path = os.path.join(extract_to, info.filename)
-                if not _is_path_safe(extract_to, target_path):
-                    raise ZipExtractionError(
-                        f"Zip file contains path traversal attempt: {info.filename}"
-                    )
-
-            # Check compression ratio (only if compressed size is meaningful)
-            if compressed_size > 0 and total_uncompressed > 0:
-                compression_ratio = total_uncompressed / compressed_size
-                if compression_ratio > MAX_COMPRESSION_RATIO:
-                    raise ZipExtractionError(
-                        f"Zip file has suspicious compression ratio ({compression_ratio:.1f}:1 > "
-                        f"{MAX_COMPRESSION_RATIO}:1). This may be a zip bomb attack."
-                    )
-
-    except zipfile.BadZipFile as e:
-        raise ZipExtractionError(f"Invalid or corrupted zip file: {e}")
+    del extract_to  # Path checks are platform-independent inside the validator.
+    validate_zip_archive(
+        zip_path,
+        ZipExtractionLimits(
+            max_uncompressed_bytes=MAX_UNCOMPRESSED_SIZE,
+            max_files=MAX_FILE_COUNT,
+            max_compression_ratio=MAX_COMPRESSION_RATIO,
+            max_member_bytes=settings.UPLOAD_MAX_FILE_BYTES,
+            max_depth=RECURSION_DEPTH,
+        ),
+    )
 
 
-def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
+def extract_zip_recursive(
+    zip_path: str,
+    extract_to: str,
+    current_depth: int = 0,
+    max_depth: int = 5,
+    _budget: ZipExtractionBudget | None = None,
+) -> None:
     """
     Recursively extract zip files with security protections.
 
@@ -399,39 +455,51 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
         extract_to (str): Destination path for extracted files.
         current_depth (int): Current depth of recursion.
         max_depth (int): Maximum allowed depth of recursion to prevent infinite loops.
+
+    Raises:
+        ZipExtractionError: If the archive fails safety validation, so ingestion
+            fails loudly instead of indexing an empty directory.
     """
     if current_depth > max_depth:
         logging.warning(f"Reached maximum recursion depth of {max_depth}")
         return
 
     try:
-        # Validate zip file safety before extraction
-        _validate_zip_safety(zip_path, extract_to)
-
-        # Safe to extract
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(extract_to)
+        budget = _budget or ZipExtractionBudget()
+        extract_zip_safely(
+            zip_path,
+            extract_to,
+            ZipExtractionLimits(
+                max_uncompressed_bytes=MAX_UNCOMPRESSED_SIZE,
+                max_files=MAX_FILE_COUNT,
+                max_compression_ratio=MAX_COMPRESSION_RATIO,
+                max_member_bytes=settings.UPLOAD_MAX_FILE_BYTES,
+                max_depth=max_depth - current_depth,
+            ),
+            budget,
+        )
         os.remove(zip_path)  # Remove the zip file after extracting
 
     except ZipExtractionError as e:
-        logging.error(f"Zip security validation failed for {zip_path}: {e}")
+        logging.error(
+            "Zip security validation failed for %s: %s",
+            safe_zip_error_message(zip_path),
+            safe_zip_error_message(e),
+        )
         # Remove the potentially malicious zip file
         try:
             os.remove(zip_path)
         except OSError:
             pass
-        return
+        raise
     except Exception as e:
-        logging.error(f"Error extracting zip file {zip_path}: {e}", exc_info=True)
-        return
-
-    # Check for nested zip files and extract them
-    for root, dirs, files in os.walk(extract_to):
-        for file in files:
-            if file.endswith(".zip"):
-                # If a nested zip file is found, extract it recursively
-                file_path = os.path.join(root, file)
-                extract_zip_recursive(file_path, root, current_depth + 1, max_depth)
+        logging.error(
+            "Error extracting zip file %s: %s",
+            safe_zip_error_message(zip_path),
+            safe_zip_error_message(e),
+            exc_info=True,
+        )
+        raise
 
 
 def download_file(url, params, dest_path):
@@ -618,7 +686,7 @@ def ingest_worker(
                     f.write(file_data.read())
 
                 # Handle zip files
-                if temp_filename.endswith(".zip"):
+                if temp_filename.lower().endswith(".zip"):
                     logging.info(f"Extracting zip file: {temp_filename}")
                     extract_zip_recursive(
                         temp_file_path,
@@ -674,7 +742,7 @@ def ingest_worker(
             )
             raw_docs = chunker.chunk(documents=raw_docs)
 
-            docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+            docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
 
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
@@ -1219,7 +1287,7 @@ def remote_worker(
             duplicate_headers=cfg.chunking.duplicate_headers,
         )
         raw_docs = chunker.chunk(documents=raw_docs)
-        docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+        docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
         tokens = count_tokens_docs(docs)
         logging.info("Total tokens calculated: %d", tokens)
 
@@ -1272,24 +1340,18 @@ def remote_worker(
 
                 # Build nested directory structure from path
                 # e.g., "guides/setup.md" -> {"guides": {"setup.md": {...}}}
-                path_parts = file_path.split("/")
-                current_level = directory_structure
-                for i, part in enumerate(path_parts):
-                    if i == len(path_parts) - 1:
-                        # Last part is the file
-                        current_level[part] = {
-                            "type": file_type,
-                            "size_bytes": size_bytes,
-                            "token_count": token_count,
-                        }
-                    else:
-                        # Intermediate parts are directories
-                        if part not in current_level:
-                            current_level[part] = {}
-                        current_level = current_level[part]
+                add_file_to_structure(
+                    directory_structure, file_path, file_type,
+                    size_bytes=size_bytes, token_count=token_count,
+                )
 
+        # ``len(directory_structure)`` counts only top-level entries, so a
+        # 1,474-file repo logged "44 files". Count the leaves instead — this
+        # line is the operational signal that a remote ingest succeeded.
         logging.info(
-            f"Built directory structure with {len(directory_structure)} files: "
+            f"Built directory structure with "
+            f"{count_structure_files(directory_structure)} files across "
+            f"{len(directory_structure)} top-level entries: "
             f"{list(directory_structure.keys())}"
         )
 
@@ -1469,6 +1531,177 @@ def sync_worker(self, frequency):
     }
 
 
+# Line-oriented text formats that stay parseable after a head-truncation.
+# Structured/binary formats (pdf, docx, xlsx, json, html, ...) are excluded —
+# cutting them mid-stream would break their parsers entirely.
+_TRUNCATABLE_ATTACHMENT_SUFFIXES = {
+    ".csv",
+    ".tsv",
+    ".txt",
+    ".log",
+    ".md",
+    ".mdx",
+    ".rst",
+    ".jsonl",
+}
+
+
+class AttachmentRejectedError(Exception):
+    """A deterministic reason an attachment must not be parsed (e.g. zip bomb).
+
+    Raised before parsing and marked non-retryable on the Celery task so a
+    poison upload fails once instead of retrying identically.
+    """
+
+
+def _reject_attachment_zip_bomb(local_path: str) -> None:
+    """Reject a zip-container attachment that decompresses to too much.
+
+    Applies the shared guard (``document_reader.reject_zip_bomb_path``) on the
+    attachment path, which previously had no such check.
+
+    Args:
+        local_path: Filesystem path of the attachment about to be parsed.
+
+    Raises:
+        AttachmentRejectedError: If the archive exceeds the entry-count or
+            inner-uncompressed-size caps.
+    """
+    from application.parser.document_reader import reject_zip_bomb_path
+
+    reason = reject_zip_bomb_path(local_path)
+    if reason is not None:
+        raise AttachmentRejectedError(reason)
+
+
+def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
+    """Bound how much of a text attachment reaches the parser.
+
+    Attachment content is capped at ~250k chars after parsing, so bytes past
+    ``ATTACHMENT_TEXT_MAX_BYTES`` only cost parse time and memory. Oversized
+    line-oriented text files are head-truncated on a line boundary into a
+    temp copy; the stored original is never modified (local storage hands the
+    canonical file path to ``process_file`` callbacks).
+
+    Args:
+        local_path: Filesystem path handed to the parse callback.
+
+    Returns:
+        Tuple of (path to parse, whether it is a temp copy the caller must
+        delete).
+    """
+    max_bytes = settings.ATTACHMENT_TEXT_MAX_BYTES
+    if max_bytes <= 0:
+        return local_path, False
+    suffix = os.path.splitext(local_path)[1].lower()
+    if suffix not in _TRUNCATABLE_ATTACHMENT_SUFFIXES:
+        return local_path, False
+    try:
+        if os.path.getsize(local_path) <= max_bytes:
+            return local_path, False
+        with open(local_path, "rb") as src:
+            head = src.read(max_bytes)
+    except OSError:
+        return local_path, False
+    head = truncate_to_line_boundary(head)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(head)
+    logging.warning(
+        f"Attachment {os.path.basename(local_path)} exceeds "
+        f"ATTACHMENT_TEXT_MAX_BYTES ({max_bytes}); parsing first {len(head)} bytes"
+    )
+    return tmp.name, True
+
+
+def _upsert_attachment_row(
+    user, filename, relative_path, *, mime_type, content, token_count, metadata, attachment_id
+):
+    """Create or update the attachment row for one upload handle.
+
+    The upload route mints a UUID-shaped ``attachment_id`` (stored in the
+    storage path); the PG ``attachments.id`` is DB-generated, so the handle
+    lives in ``legacy_mongo_id``. Task retries share the handle — an earlier
+    attempt's failure row is updated in place, never duplicated.
+    """
+    with db_session() as conn:
+        repo = AttachmentsRepository(conn)
+        existing = repo.get_by_legacy_id(str(attachment_id), user)
+        if existing:
+            repo.update(
+                existing["id"],
+                user,
+                {
+                    "filename": filename,
+                    "upload_path": relative_path,
+                    "mime_type": mime_type,
+                    "content": content,
+                    "token_count": token_count,
+                    "metadata": metadata,
+                },
+            )
+        else:
+            repo.create(
+                user,
+                filename,
+                relative_path,
+                mime_type=mime_type,
+                content=content,
+                token_count=token_count,
+                metadata=metadata,
+                legacy_mongo_id=str(attachment_id),
+            )
+
+
+def record_attachment_failure(user, file_info, error, parser=None):
+    """Persist a failure row so a broken parse is visible to a DB scan.
+
+    Called on the worker's error path and by the poison guard; never raises —
+    the original exception must keep propagating, and the parser's error text
+    goes into ``metadata.extraction``, never into ``content``.
+    """
+    attachment_id = file_info.get("attachment_id")
+    filename = file_info.get("filename") or ""
+    if not attachment_id:
+        return
+    try:
+        metadata = {
+            **(file_info.get("metadata") or {}),
+            "extraction": {
+                "status": "failed",
+                "parser": parser,
+                "truncated": False,
+                "error": str(error)[:1024],
+            },
+        }
+        with db_session() as conn:
+            repo = AttachmentsRepository(conn)
+            # The conditional update carries the no-clobber guard in its own
+            # WHERE clause: a success row committed by a concurrent duplicate
+            # execution (broker redelivery, the poison guard racing a live
+            # attempt) or earlier in this attempt is never overwritten with a
+            # NULL-content failure.
+            if repo.update_metadata_if_content_null(str(attachment_id), user, metadata):
+                return
+            if repo.get_by_legacy_id(str(attachment_id), user) is not None:
+                return
+            repo.create(
+                user,
+                filename,
+                file_info.get("path") or "",
+                mime_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
+                content=None,
+                token_count=None,
+                metadata=metadata,
+                legacy_mongo_id=str(attachment_id),
+            )
+    except Exception:
+        logging.error(
+            f"Failed to record failure row for attachment {attachment_id}",
+            extra={"user": user},
+            exc_info=True,
+        )
+
+
 def attachment_worker(self, file_info, user):
     """
     Process and store a single attachment without vectorization.
@@ -1478,6 +1711,7 @@ def attachment_worker(self, file_info, user):
     attachment_id = file_info["attachment_id"]
     relative_path = file_info["path"]
     metadata = file_info.get("metadata", {})
+    parser_name = None
 
     publish_user_event(
         user,
@@ -1505,21 +1739,40 @@ def attachment_worker(self, file_info, user):
             scope={"kind": "attachment", "id": str(attachment_id)},
         )
 
+        # Attachments only: PDFs are read via their text layer where one
+        # exists (see ``ATTACHMENT_PDF_TEXT_FAST_PATH``). Source ingestion
+        # calls SimpleDirectoryReader without a ``file_extractor`` and so keeps
+        # the docling default, which is what retrieval quality depends on.
         file_extractor = get_default_file_extractor(
-            ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED
+            ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED,
+            pdf_text_fast_path=settings.ATTACHMENT_PDF_TEXT_FAST_PATH,
         )
-        attachment_document = storage.process_file(
-            relative_path,
-            lambda local_path, **kwargs: SimpleDirectoryReader(
-                input_files=[local_path],
-                exclude_hidden=True,
-                errors="ignore",
-                file_extractor=file_extractor,
-                file_metadata=metadata_from_filename,
-            )
-            .load_data()[0],
-        )
+        _parser = file_extractor.get(os.path.splitext(filename)[1].lower())
+        parser_name = type(_parser).__name__ if _parser is not None else "SimpleDirectoryReader"
+
+        def _parse_local_file(local_path: str, **kwargs) -> Document:
+            _reject_attachment_zip_bomb(local_path)
+            parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
+            try:
+                return SimpleDirectoryReader(
+                    input_files=[parse_path],
+                    exclude_hidden=True,
+                    errors="ignore",
+                    file_extractor=file_extractor,
+                    file_metadata=metadata_from_filename,
+                ).load_data()[0]
+            finally:
+                if is_temp_copy:
+                    try:
+                        os.unlink(parse_path)
+                    except OSError:
+                        pass
+
+        attachment_document = storage.process_file(relative_path, _parse_local_file)
         content = attachment_document.text
+        # A fast-path parser may have delegated to its fallback for this file,
+        # so record the engine that actually ran rather than the one selected.
+        parser_name = getattr(_parser, "last_engine", None) or parser_name
         parser_metadata = {
             key: value
             for key, value in (attachment_document.extra_info or {}).items()
@@ -1528,10 +1781,29 @@ def attachment_worker(self, file_info, user):
         if parser_metadata:
             metadata = {**metadata, **parser_metadata}
 
-        token_count = num_tokens_from_string(content)
-        if token_count > 100000:
-            content = content[:250000]
-            token_count = num_tokens_from_string(content)
+        # Gate and cut in the same unit. The old form gated on tokens but cut
+        # at 250k *chars*, which for dense scripts (CJK ~1.4 tokens/char)
+        # stored 300k+ tokens while looking like a clean extraction.
+        encoding = get_encoding()
+        tokens = encoding.encode_ordinary(content)
+        original_tokens = len(tokens)
+        truncated = original_tokens > ATTACHMENT_MAX_TOKENS
+        if truncated:
+            content = encoding.decode(tokens[:ATTACHMENT_MAX_TOKENS])
+            token_count = ATTACHMENT_MAX_TOKENS
+        else:
+            token_count = original_tokens
+
+        metadata = {
+            **metadata,
+            "extraction": {
+                "status": "ok",
+                "parser": parser_name,
+                "truncated": truncated,
+                "original_tokens": original_tokens,
+                "stored_tokens": token_count,
+            },
+        }
 
         self.update_state(
             state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
@@ -1550,20 +1822,16 @@ def attachment_worker(self, file_info, user):
 
         mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
-        # The upload route produces a UUID-shaped ``attachment_id`` (stored
-        # in the storage path) but the PG ``attachments.id`` is generated
-        # by the DB. Keep ``attachment_id`` as the caller-visible handle
-        # used for the storage path, and stash it in ``legacy_mongo_id``
-        # so the attachment row is resolvable via that handle too.
-        with db_session() as conn:
-            AttachmentsRepository(conn).create(
-                user, filename, relative_path,
-                mime_type=mime_type,
-                content=content,
-                token_count=token_count,
-                metadata=metadata,
-                legacy_mongo_id=str(attachment_id),
-            )
+        _upsert_attachment_row(
+            user,
+            filename,
+            relative_path,
+            mime_type=mime_type,
+            content=content,
+            token_count=token_count,
+            metadata=metadata,
+            attachment_id=attachment_id,
+        )
 
         logging.info(
             f"Stored attachment with ID: {attachment_id}", extra={"user": user}
@@ -1597,6 +1865,7 @@ def attachment_worker(self, file_info, user):
             extra={"user": user},
             exc_info=True,
         )
+        record_attachment_failure(user, file_info, e, parser=parser_name)
         publish_user_event(
             user,
             "attachment.failed",
@@ -1973,7 +2242,7 @@ def ingest_connector(
                             source, start=temp_dir
                         )
 
-            docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
+            docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
 
             # Validate operation_mode here too (the source_uuid path
             # at the top of the function only branches on the
@@ -2254,6 +2523,14 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
 
         with db_session() as conn:
             WikiPagesRepository(conn).set_embed_status(source_id, path, "embedded")
+            # These chunks were just embedded with the configured model, so the
+            # source now names it. Wiki sources created before this was recorded
+            # carry NULL, which the boot mismatch check reads as the legacy
+            # model and reports as stale; stamping here heals them on the next
+            # page edit.
+            SourcesRepository(conn).update(
+                source_id, user, {"model": settings.EMBEDDINGS_NAME}
+            )
     except Exception:
         with db_session() as conn:
             WikiPagesRepository(conn).set_embed_status(source_id, path, "failed")

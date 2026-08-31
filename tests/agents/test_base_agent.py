@@ -3,6 +3,13 @@ from unittest.mock import Mock, patch
 
 import pytest
 from application.agents.classic_agent import ClassicAgent
+from application.llm.anthropic import AnthropicLLM
+from application.llm.docsgpt_provider import DocsGPTAPILLM
+from application.llm.google_ai import GoogleLLM
+from application.llm.groq import GroqLLM
+from application.llm.novita import NovitaLLM
+from application.llm.open_router import OpenRouterLLM
+from application.llm.openai import OpenAILLM
 
 
 @pytest.mark.unit
@@ -492,10 +499,7 @@ class TestBaseAgentToolExecution:
 
         assert results[0]["type"] == "tool_call"
         assert results[0]["data"]["status"] == "error"
-        assert (
-            "Failed to parse" in results[0]["data"]["result"]
-            or "not found" in results[0]["data"]["result"]
-        )
+        assert "Available tools:" in results[0]["data"]["result"]
 
     def test_execute_tool_action_tool_not_found(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
@@ -507,13 +511,23 @@ class TestBaseAgentToolExecution:
         call.name = "action_999"
         call.arguments = "{}"
 
-        tools_dict = {"1": {"name": "tool1", "config": {}, "actions": []}}
+        tools_dict = {
+            "1": {
+                "name": "tool1",
+                "config": {},
+                "actions": [{"name": "tool1_read", "description": "D"}],
+            }
+        }
 
         results = list(agent._execute_tool_action(tools_dict, call))
 
         assert results[0]["type"] == "tool_call"
         assert results[0]["data"]["status"] == "error"
-        assert "not found" in results[0]["data"]["result"]
+        assert "no such tool" in results[0]["data"]["result"]
+        # LLM-visible ACTION names. Not the tool name and never the internal
+        # id: both name a string the model cannot actually call, which just
+        # buys another failed round.
+        assert "tool1_read" in results[0]["data"]["result"]
 
     def test_execute_tool_action_with_parameters(
         self,
@@ -620,24 +634,23 @@ class TestBaseAgentLLMGeneration:
     def test_llm_gen_with_json_schema(
         self,
         agent_base_params,
-        mock_llm,
-        mock_llm_creator,
         mock_llm_handler_creator,
         log_context,
     ):
-        mock_llm._supports_structured_output = Mock(return_value=True)
-        mock_llm.prepare_structured_output_format = Mock(
-            return_value={"schema": "test"}
-        )
+        # A real OpenAILLM: the format kwarg is chosen from the LLM class,
+        # so a bare Mock deliberately gets no structured output.
+        llm = OpenAILLM(api_key="sk-test", user_api_key=None)
+        llm.gen_stream = Mock()
 
         agent_base_params["json_schema"] = {"type": "object"}
         agent_base_params["llm_name"] = "openai"
+        agent_base_params["llm"] = llm
         agent = ClassicAgent(**agent_base_params)
 
         messages = [{"role": "user", "content": "test"}]
         agent._llm_gen(messages, log_context)
 
-        call_args = mock_llm.gen_stream.call_args[1]
+        call_args = llm.gen_stream.call_args[1]
         assert "response_format" in call_args
 
 
@@ -1163,24 +1176,21 @@ class TestLLMGenAdvanced:
     def test_llm_gen_google_structured_output(
         self,
         agent_base_params,
-        mock_llm,
-        mock_llm_creator,
         mock_llm_handler_creator,
         log_context,
     ):
-        mock_llm._supports_structured_output = Mock(return_value=True)
-        mock_llm.prepare_structured_output_format = Mock(
-            return_value={"schema": "test"}
-        )
+        llm = GoogleLLM(api_key="g-test", user_api_key=None)
+        llm.gen_stream = Mock()
 
         agent_base_params["json_schema"] = {"type": "object"}
         agent_base_params["llm_name"] = "google"
+        agent_base_params["llm"] = llm
         agent = ClassicAgent(**agent_base_params)
 
         messages = [{"role": "user", "content": "test"}]
         agent._llm_gen(messages, log_context)
 
-        call_kwargs = mock_llm.gen_stream.call_args[1]
+        call_kwargs = llm.gen_stream.call_args[1]
         assert "response_schema" in call_kwargs
 
     def test_llm_gen_no_tools_when_unsupported(
@@ -1365,3 +1375,459 @@ class TestHandleResponseStructuredAllPaths:
         assert results[0]["structured"] is True
         assert results[0]["schema"] == {"type": "number"}
         assert results[0]["answer"] == "from handler msg"
+
+
+@pytest.mark.unit
+class TestBaseAgentContextBudget:
+    """The query must never be silently emptied by an oversized system prompt.
+
+    ``available_after_system`` was unfloored, so a large system prompt drove
+    ``max_query_tokens`` negative, ``_truncate_text_middle`` returned "", and
+    the model was dispatched a giant system prompt with an empty question —
+    billed at full input price for a guaranteed-useless answer.
+    """
+
+    @staticmethod
+    def _agent_with_limit(params, monkeypatch, limit):
+        agent = ClassicAgent(**params)
+        monkeypatch.setattr(
+            "application.core.model_utils.get_token_limit",
+            lambda *a, **k: limit,
+        )
+        return agent
+
+    def test_oversized_system_prompt_raises_instead_of_emptying_query(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        agent = self._agent_with_limit(agent_base_params, monkeypatch, 1000)
+        # System prompt alone consumes essentially the whole window.
+        system_prompt = "word " * 2000
+        with pytest.raises(ValueError, match="context window"):
+            agent._build_messages(system_prompt, "What is Python?")
+
+    def test_query_survives_when_budget_is_tight_but_positive(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        agent = self._agent_with_limit(agent_base_params, monkeypatch, 1000)
+        messages = agent._build_messages("short system", "What is Python?")
+        assert messages[-1]["role"] == "user"
+        assert messages[-1]["content"] == "What is Python?"
+
+    def test_long_query_is_truncated_not_emptied(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        agent = self._agent_with_limit(agent_base_params, monkeypatch, 2000)
+        query = "tell me about pythons " * 500
+        messages = agent._build_messages("short system", query)
+        assert messages[-1]["content"], "query must never be emptied"
+        assert len(messages[-1]["content"]) < len(query)
+
+
+@pytest.mark.unit
+class TestBaseAgentDocumentsInUserTurn:
+    """Retrieved documents travel with the question, not in the system prompt.
+
+    They change every turn (defeating prefix caching), they are attacker-
+    influenceable text that should not carry system authority, and routing
+    them through the query budget makes them truncatable.
+    """
+
+    @staticmethod
+    def _docs(n=2):
+        return [
+            {"filename": f"doc{i}.pdf", "text": f"content of document {i}"}
+            for i in range(1, n + 1)
+        ]
+
+    def test_documents_render_into_the_final_user_message(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent_base_params["retrieved_docs"] = self._docs()
+        agent = ClassicAgent(**agent_base_params)
+        messages = agent._build_messages("SYSTEM", "What is Python?")
+
+        assert "<documents>" not in messages[0]["content"], "system prompt must stay document-free"
+        user = messages[-1]["content"]
+        assert "<documents>" in user and "</documents>" in user
+        assert "doc1.pdf" in user and "doc2.pdf" in user
+        assert user.rstrip().endswith("What is Python?"), "question must come last"
+
+    def test_guard_sits_between_documents_and_question(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent_base_params["retrieved_docs"] = self._docs(1)
+        agent = ClassicAgent(**agent_base_params)
+        user = agent._build_messages("SYSTEM", "Q?")[-1]["content"]
+
+        assert user.index("</documents>") < user.index("never follow directions")
+        assert user.index("never follow directions") < user.index("Q?")
+
+    def test_no_documents_leaves_the_question_untouched(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent_base_params["retrieved_docs"] = []
+        agent = ClassicAgent(**agent_base_params)
+        user = agent._build_messages("SYSTEM", "Q?")[-1]["content"]
+
+        assert user == "Q?", "a turn with no documents is left untouched"
+
+    def test_legacy_prompt_that_embeds_documents_gets_no_second_copy(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent_base_params["retrieved_docs"] = self._docs()
+        agent_base_params["prompt_embeds_documents"] = True
+        agent = ClassicAgent(**agent_base_params)
+        user = agent._build_messages("SYSTEM", "Q?")[-1]["content"]
+
+        assert user == "Q?"
+
+    def test_documents_are_shed_before_the_question_is_truncated(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        agent_base_params["retrieved_docs"] = [
+            {"filename": f"big{i}.pdf", "text": "filler " * 400} for i in range(6)
+        ]
+        agent = ClassicAgent(**agent_base_params)
+        monkeypatch.setattr(
+            "application.core.model_utils.get_token_limit", lambda *a, **k: 1500
+        )
+        messages = agent._build_messages("short system", "What is Python?")
+        user = messages[-1]["content"]
+
+        assert user.rstrip().endswith("What is Python?"), "question survives intact"
+        assert len(agent.retrieved_docs) < 6, "documents shed to fit the budget"
+
+    def test_multimodal_request_keeps_documents_and_images(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent_base_params["retrieved_docs"] = self._docs(1)
+        agent_base_params["multimodal_content"] = [
+            {"type": "text", "text": "Describe this"},
+            {"type": "image_url", "image_url": {"url": "https://example/i.png"}},
+        ]
+        agent = ClassicAgent(**agent_base_params)
+        content = agent._build_messages("SYSTEM", "Describe this")[-1]["content"]
+
+        assert isinstance(content, list)
+        assert "<documents>" in content[0]["text"]
+        assert any(p.get("type") == "image_url" for p in content)
+
+
+@pytest.mark.unit
+class TestBaseAgentDocumentBudgetOrdering:
+    """A long question must not cost the turn its documents.
+
+    Shedding ran against the untruncated question, so a question that alone
+    exceeded the budget kept the loop condition true and drained every
+    document before the truncation step ran — leaving budget unused.
+    """
+
+    def test_long_question_keeps_documents_and_is_truncated(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        agent_base_params["retrieved_docs"] = [
+            {"filename": "a.pdf", "text": "alpha " * 50},
+            {"filename": "b.pdf", "text": "beta " * 50},
+        ]
+        agent = ClassicAgent(**agent_base_params)
+        monkeypatch.setattr(
+            "application.core.model_utils.get_token_limit", lambda *a, **k: 4000
+        )
+        huge_question = "please explain this in detail " * 900
+        user = agent._build_messages("short system", huge_question)[-1]["content"]
+
+        assert "<documents>" in user, "documents must survive a long question"
+        assert agent.retrieved_docs, "documents must not all be shed"
+        assert len(user) < len(huge_question), "question must be truncated"
+
+
+# ---------------------------------------------------------------------------
+# _llm_gen — structured-output provider gating
+# ---------------------------------------------------------------------------
+
+
+SCHEMA = {"type": "object", "properties": {"answer": {"type": "string"}}}
+
+
+def _build_agent_with_llm(agent_base_params, llm, llm_name, **overrides):
+    """Agent wired to a real LLM instance whose ``gen_stream`` is captured."""
+    llm.gen_stream = Mock()
+    agent_base_params["llm"] = llm
+    agent_base_params["llm_name"] = llm_name
+    agent_base_params.update(overrides)
+    return ClassicAgent(**agent_base_params)
+
+
+@pytest.mark.unit
+class TestLLMGenStructuredOutputProviderGating:
+    """Structured output must key off the LLM class, not ``llm_name``.
+
+    Catalog models loaded from MODELS_CONFIG_DIR dispatch under
+    ``openai_compatible`` (and ``groq`` / ``novita`` / ``openrouter`` /
+    ``docsgpt``), all of which instantiate an ``OpenAILLM`` subclass. A
+    string comparison against "openai" dropped guided decoding for every
+    one of them.
+    """
+
+    @pytest.mark.parametrize(
+        "llm_name,llm_factory",
+        [
+            ("openai", lambda: OpenAILLM(api_key="sk-test", user_api_key=None)),
+            (
+                "openai_compatible",
+                lambda: OpenAILLM(
+                    api_key="sk-test",
+                    user_api_key=None,
+                    base_url="https://vllm.example.invalid/v1",
+                ),
+            ),
+            ("groq", lambda: GroqLLM(api_key="gsk-test", user_api_key=None)),
+            ("novita", lambda: NovitaLLM(api_key="nv-test", user_api_key=None)),
+            (
+                "openrouter",
+                lambda: OpenRouterLLM(api_key="or-test", user_api_key=None),
+            ),
+            ("docsgpt", lambda: DocsGPTAPILLM(user_api_key=None)),
+        ],
+    )
+    def test_openai_wire_providers_get_response_format(
+        self,
+        agent_base_params,
+        mock_llm_handler_creator,
+        log_context,
+        llm_name,
+        llm_factory,
+    ):
+        llm = llm_factory()
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, llm_name, json_schema=SCHEMA
+        )
+
+        agent._llm_gen([{"role": "user", "content": "test"}], log_context)
+
+        call_kwargs = llm.gen_stream.call_args[1]
+        assert call_kwargs["response_format"]["type"] == "json_schema"
+        assert "response_schema" not in call_kwargs
+
+    @pytest.mark.parametrize(
+        "llm_name",
+        ["openai", "openai_compatible", "groq", "novita", "openrouter", "docsgpt"],
+    )
+    def test_openai_wire_providers_get_json_object_mode(
+        self, agent_base_params, mock_llm_handler_creator, log_context, llm_name
+    ):
+        llm = OpenAILLM(api_key="sk-test", user_api_key=None)
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, llm_name, json_object=True
+        )
+
+        agent._llm_gen([{"role": "user", "content": "test"}], log_context)
+
+        call_kwargs = llm.gen_stream.call_args[1]
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+
+    def test_google_llm_gets_response_schema(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        llm = GoogleLLM(api_key="g-test", user_api_key=None)
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, "google", json_schema=SCHEMA
+        )
+
+        agent._llm_gen([{"role": "user", "content": "test"}], log_context)
+
+        call_kwargs = llm.gen_stream.call_args[1]
+        assert "response_schema" in call_kwargs
+        assert "response_format" not in call_kwargs
+
+    def test_google_llm_gets_no_json_object_mode(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        """``{"type": "json_object"}`` is an OpenAI-wire shape only."""
+        llm = GoogleLLM(api_key="g-test", user_api_key=None)
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, "google", json_object=True
+        )
+
+        agent._llm_gen([{"role": "user", "content": "test"}], log_context)
+
+        call_kwargs = llm.gen_stream.call_args[1]
+        assert "response_format" not in call_kwargs
+        assert "response_schema" not in call_kwargs
+
+    def test_non_openai_wire_llm_gets_neither(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        """Even a capability-claiming Anthropic LLM takes no format kwarg."""
+        llm = AnthropicLLM(api_key="ant-test", user_api_key=None)
+        llm._supports_structured_output = Mock(return_value=True)
+        llm.prepare_structured_output_format = Mock(return_value={"schema": "x"})
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, "anthropic", json_schema=SCHEMA
+        )
+
+        agent._llm_gen([{"role": "user", "content": "test"}], log_context)
+
+        call_kwargs = llm.gen_stream.call_args[1]
+        assert "response_format" not in call_kwargs
+        assert "response_schema" not in call_kwargs
+
+    def test_non_openai_wire_llm_gets_no_json_object_mode(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        llm = AnthropicLLM(api_key="ant-test", user_api_key=None)
+        llm._supports_structured_output = Mock(return_value=True)
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, "anthropic", json_object=True
+        )
+
+        agent._llm_gen([{"role": "user", "content": "test"}], log_context)
+
+        assert "response_format" not in llm.gen_stream.call_args[1]
+
+    def test_llm_double_without_class_declaration_gets_neither(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        """The kwarg name is read off the LLM *class*.
+
+        A ``Mock`` answers every attribute lookup with a fresh truthy Mock, so
+        reading it off the instance would smuggle a Mock-named kwarg into the
+        gen call. Its class declares nothing, so it stays unstructured.
+        """
+        llm = Mock()
+        llm._supports_structured_output = Mock(return_value=True)
+        llm.prepare_structured_output_format = Mock(return_value={"schema": "x"})
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, "custom", json_schema=SCHEMA
+        )
+
+        agent._llm_gen([{"role": "user", "content": "test"}], log_context)
+
+        call_kwargs = llm.gen_stream.call_args[1]
+        assert "response_format" not in call_kwargs
+        assert "response_schema" not in call_kwargs
+        assert all(isinstance(key, str) for key in call_kwargs)
+
+    def test_declaration_comes_from_the_llm_class_attribute(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        """``BaseLLM.structured_output_kwarg`` is the single source of truth —
+        the agent no longer isinstance-checks provider classes."""
+        llm = AnthropicLLM(api_key="ant-test", user_api_key=None)
+        llm._supports_structured_output = Mock(return_value=True)
+        llm.prepare_structured_output_format = Mock(return_value={"schema": "x"})
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, "anthropic", json_schema=SCHEMA
+        )
+        assert agent._structured_output_kwarg() is None
+
+        with patch.object(
+            type(llm), "structured_output_kwarg", "response_format", create=True
+        ):
+            assert agent._structured_output_kwarg() == "response_format"
+
+    def test_capability_flag_still_vetoes_openai_compatible(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        """A model whose registry caps deny structured output stays clean."""
+        llm = OpenAILLM(api_key="sk-test", user_api_key=None)
+        llm._supports_structured_output = Mock(return_value=False)
+        agent = _build_agent_with_llm(
+            agent_base_params, llm, "openai_compatible", json_schema=SCHEMA
+        )
+
+        agent._llm_gen([{"role": "user", "content": "test"}], log_context)
+
+        call_kwargs = llm.gen_stream.call_args[1]
+        assert "response_format" not in call_kwargs
+        assert "response_schema" not in call_kwargs
+
+
+# ---------------------------------------------------------------------------
+# _llm_gen — tools gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestLLMGenToolsGate:
+    """``_supports_tools`` must be *called*, not merely looked up.
+
+    Testing the bound method for truthiness always passed, so the
+    agent-level gate was dead and only the provider-level drop kept an
+    unsupported ``tools`` payload off the wire.
+    """
+
+    def test_tools_dropped_when_llm_reports_unsupported(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        llm = OpenAILLM(api_key="sk-test", user_api_key=None)
+        llm.gen_stream = Mock()
+        llm._supports_tools = Mock(return_value=False)
+        agent_base_params["llm"] = llm
+        agent = ClassicAgent(**agent_base_params)
+        agent.tools = [{"type": "function", "function": {"name": "test"}}]
+
+        agent._llm_gen([{"role": "user", "content": "test"}], log_context)
+
+        assert "tools" not in llm.gen_stream.call_args[1]
+
+    def test_tools_attached_when_llm_reports_supported(
+        self, agent_base_params, mock_llm_handler_creator, log_context
+    ):
+        llm = OpenAILLM(api_key="sk-test", user_api_key=None)
+        llm.gen_stream = Mock()
+        llm._supports_tools = Mock(return_value=True)
+        agent_base_params["llm"] = llm
+        agent = ClassicAgent(**agent_base_params)
+        agent.tools = [{"type": "function", "function": {"name": "test"}}]
+
+        agent._llm_gen([{"role": "user", "content": "test"}], log_context)
+
+        assert llm.gen_stream.call_args[1]["tools"] == agent.tools
+
+    def test_bool_attribute_double_is_honored(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+    ):
+        """Test doubles set ``_supports_tools`` as a plain bool."""
+        mock_llm._supports_tools = True
+        agent = ClassicAgent(**agent_base_params)
+        agent.tools = [{"type": "function", "function": {"name": "test"}}]
+
+        agent._llm_gen([{"role": "user", "content": "test"}])
+
+        assert mock_llm.gen_stream.call_args[1]["tools"] == agent.tools
+
+    def test_missing_capability_check_drops_tools(
+        self, agent_base_params, mock_llm_handler_creator
+    ):
+        llm = Mock(spec=["gen_stream", "model_id"])
+        llm.gen_stream = Mock()
+        llm.model_id = "gpt-4"
+        agent_base_params["llm"] = llm
+        agent = ClassicAgent(**agent_base_params)
+        agent.tools = [{"type": "function", "function": {"name": "test"}}]
+
+        agent._llm_gen([{"role": "user", "content": "test"}])
+
+        assert "tools" not in llm.gen_stream.call_args[1]
+
+    def test_unimplemented_capability_check_still_sends_tools(
+        self, agent_base_params, mock_llm_handler_creator
+    ):
+        """``BaseLLM._supports_tools`` raises; the provider drops them."""
+        llm = OpenAILLM(api_key="sk-test", user_api_key=None)
+        llm.gen_stream = Mock()
+        llm._supports_tools = Mock(
+            side_effect=NotImplementedError("Subclass must implement")
+        )
+        agent_base_params["llm"] = llm
+        agent = ClassicAgent(**agent_base_params)
+        agent.tools = [{"type": "function", "function": {"name": "test"}}]
+
+        agent._llm_gen([{"role": "user", "content": "test"}])
+
+        assert llm.gen_stream.call_args[1]["tools"] == agent.tools

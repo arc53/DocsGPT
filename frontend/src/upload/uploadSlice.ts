@@ -49,11 +49,7 @@ export interface Attachment {
 }
 
 export type UploadTaskStatus =
-  | 'preparing'
-  | 'uploading'
-  | 'training'
-  | 'completed'
-  | 'failed';
+  'preparing' | 'uploading' | 'training' | 'completed' | 'failed';
 
 export interface UploadTask {
   id: string;
@@ -192,6 +188,31 @@ export const uploadSlice = createSlice({
             ...state.tasks[index],
             ...updates,
           };
+        }
+
+        // Absorb an SSE auto-created duplicate. When ``source.ingest.*``
+        // events arrive before this update binds the sourceId (worker
+        // beats the upload XHR's onload), the SSE reducer cannot match
+        // the client row and auto-creates a second row keyed by
+        // sourceId — the "two docs at once" toast. Merge whatever state
+        // the orphan accumulated during the race window and drop it.
+        if (incomingSourceId) {
+          const dupIndex = state.tasks.findIndex(
+            (t, i) => i !== index && t.sourceId === incomingSourceId,
+          );
+          if (dupIndex !== -1) {
+            const dup = state.tasks[dupIndex];
+            const row = state.tasks[index];
+            if (dup.progress > row.progress) row.progress = dup.progress;
+            if (dup.stage) row.stage = dup.stage;
+            if (dup.status === 'completed' || dup.status === 'failed') {
+              row.status = dup.status;
+              row.errorMessage = dup.errorMessage;
+              row.tokenLimitReached = dup.tokenLimitReached;
+              if (!sourceWasDismissed) row.dismissed = false;
+            }
+            state.tasks.splice(dupIndex, 1);
+          }
         }
       }
     },

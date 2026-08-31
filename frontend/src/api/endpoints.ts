@@ -15,6 +15,12 @@ const endpoints = {
     DELETE_API_KEY: '/api/delete_api_key',
     AGENT: (id: string) => `/api/get_agent?id=${id}`,
     AGENTS: '/api/get_agents',
+    GUARDRAIL_CATALOG: '/api/guardrails/catalog',
+    GUARDRAIL_EVENTS: (agentId: string, limit = 100, offset = 0) =>
+      `/api/guardrails/events?agent_id=${agentId}&limit=${limit}&offset=${offset}`,
+    GUARDRAIL_SUMMARY: (agentId?: string, days = 30) =>
+      `/api/guardrails/summary?days=${days}` +
+      (agentId ? `&agent_id=${agentId}` : ''),
     CREATE_AGENT: '/api/create_agent',
     UPDATE_AGENT: (agent_id: string) => `/api/update_agent/${agent_id}`,
     DELETE_AGENT: (id: string) => `/api/delete_agent?id=${id}`,
@@ -27,6 +33,7 @@ const endpoints = {
     TEMPLATE_AGENTS: '/api/template_agents',
     ADOPT_AGENT: (id: string) => `/api/adopt_agent?id=${id}`,
     AGENT_WEBHOOK: (id: string) => `/api/agent_webhook?id=${id}`,
+    REGENERATE_AGENT_KEY: (id: string) => `/api/regenerate_agent_key/${id}`,
     EXPORT_AGENT: (id: string) => `/api/export_agent?id=${id}`,
     IMPORT_AGENT_PLAN: '/api/import_agent/plan',
     IMPORT_AGENT: '/api/import_agent',

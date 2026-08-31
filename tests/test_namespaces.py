@@ -3,6 +3,8 @@ from unittest.mock import patch
 
 import pytest
 
+from application.prompts.composer import compose_preset
+
 from application.templates.namespaces import (
     ArtifactsNamespace,
     AttachmentsNamespace,
@@ -520,12 +522,12 @@ class TestEnabledToolGate:
 @pytest.mark.unit
 class TestSystemNamespacePlatform:
     PRESETS = [
-        "chat_combine_default.txt",
-        "chat_combine_creative.txt",
-        "chat_combine_strict.txt",
-        "agentic/default.txt",
-        "agentic/creative.txt",
-        "agentic/strict.txt",
+        "default",
+        "creative",
+        "strict",
+        "agentic_default",
+        "agentic_creative",
+        "agentic_strict",
     ]
 
     def test_platform_block_uses_public_base_url(self):
@@ -571,28 +573,24 @@ class TestSystemNamespacePlatform:
         assert result["api_base_url"] == "https://api.example.com"
 
     def test_presets_render_platform_section(self):
-        from pathlib import Path
 
         from application.templates.template_engine import TemplateEngine
 
-        prompts_dir = Path(__file__).resolve().parents[1] / "application" / "prompts"
         engine = TemplateEngine()
         context = NamespaceManager().build_context()
         for preset in self.PRESETS:
-            rendered = engine.render((prompts_dir / preset).read_text(), context)
+            rendered = engine.render(compose_preset(preset), context)
             assert "## The DocsGPT platform" in rendered, preset
             assert "https://docs.docsgpt.cloud" in rendered, preset
 
     def test_presets_omit_section_when_platform_empty(self):
-        from pathlib import Path
 
         from application.templates.template_engine import TemplateEngine
 
-        prompts_dir = Path(__file__).resolve().parents[1] / "application" / "prompts"
         engine = TemplateEngine()
         context = NamespaceManager().build_context()
         context["system"]["platform"] = ""
         rendered = engine.render(
-            (prompts_dir / "chat_combine_default.txt").read_text(), context
+            compose_preset("default"), context
         )
         assert "The DocsGPT platform" not in rendered

@@ -1,0 +1,10 @@
+{% if tools.memory.memory_view %}
+
+## Memory
+Your memory directory (saved in previous conversations):
+<memory_directory>
+{{ tools.memory.memory_view }}
+</memory_directory>
+Read relevant memory files with memory_view before answering questions that may depend on them; save new durable facts and preferences with memory_create.
+{% endif %}
+

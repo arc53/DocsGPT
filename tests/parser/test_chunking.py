@@ -108,18 +108,89 @@ class TestSplitDocument:
 
         result = chunker.split_document(doc)
         assert len(result) > 1
-        # First chunk should contain header
         assert "h1" in result[0].text
+        # Only the first: this is what duplicate_headers=False means.
+        assert all("h1" not in chunk.text for chunk in result[1:])
 
     def test_split_duplicates_header(self):
+        """Every chunk carries the header when the flag is set.
+
+        Asserting only the first chunk passed even while the flag did nothing:
+        the implementation cleared the header after the first iteration, so
+        duplicate_headers was unreachable.
+        """
         chunker = Chunker(max_tokens=50, min_tokens=5, duplicate_headers=True)
         text = "h1\nh2\nh3\n" + "word " * 200
         doc = Document(text=text, doc_id="doc1")
 
         result = chunker.split_document(doc)
         assert len(result) > 1
-        # First chunk should contain header
-        assert "h1" in result[0].text
+        assert all("h1" in chunk.text for chunk in result)
+
+    def test_oversized_header_does_not_multiply_chunks(self):
+        """A header past the budget used to leave a one-token body budget.
+
+        ``max(1, max_tokens - header_tokens)`` bottomed out at 1, so the body
+        was cut into one chunk per token -- each still over ``max_tokens``,
+        since the whole header was prepended to it.
+        """
+        chunker = Chunker(max_tokens=50, min_tokens=5, duplicate_headers=True)
+        header = ("verylongheaderword " * 40) + "h2\nh3\n"
+        body = "word " * 100
+        doc = Document(text=f"{header}\n{body}", doc_id="doc1")
+
+        result = chunker.split_document(doc)
+
+        body_tokens = chunker.counter.count(body)
+        assert len(result) <= body_tokens // 10, "chunk count must track the budget"
+        for chunk in result:
+            assert chunk.extra_info["token_count"] <= chunker.max_tokens
+        assert "".join(chunk.text for chunk in result) == doc.text
+
+    def test_header_taking_most_of_the_budget_is_not_duplicated(self):
+        """Duplication is dropped when it would leave almost no room for body.
+
+        Below a quarter of the budget every chunk is mostly repeated header,
+        which multiplies the chunk count without adding retrievable text.
+        """
+        chunker = Chunker(max_tokens=50, min_tokens=5, duplicate_headers=True)
+        header = ("headerword " * 20) + "h2\nh3\n"
+        doc = Document(text=f"{header}\n" + "word " * 200, doc_id="doc1")
+
+        result = chunker.split_document(doc)
+
+        assert len(result) > 1
+        assert "headerword" in result[0].text
+        assert all("headerword" not in chunk.text for chunk in result[1:])
+
+    def test_header_only_document_is_not_dropped(self):
+        """The loop only ever emitted the header attached to a body piece.
+
+        With no body there was no piece, so an entire document disappeared
+        from the index with no error and no log line.
+        """
+        chunker = Chunker(max_tokens=50, min_tokens=1, duplicate_headers=False)
+        text = "h1\nh2\nh3\n"
+        doc = Document(text=text, doc_id="doc1")
+
+        result = chunker.split_document(doc)
+
+        assert len(result) == 1
+        assert result[0].text == text
+
+    def test_header_only_document_keeps_its_text_through_chunk(self):
+        """The reachable shape: three lines that alone exceed the budget."""
+        chunker = Chunker(max_tokens=5, min_tokens=1, duplicate_headers=False)
+        text = "h1\nh2\nh3\n"
+
+        result = chunker.chunk([Document(text=text, doc_id="doc1")])
+
+        assert result, "the document must not vanish"
+        assert "".join(chunk.text for chunk in result) == text
+
+    def test_zero_max_tokens_does_not_split_per_token(self):
+        chunker = Chunker(max_tokens=0, min_tokens=1)
+        assert chunker.max_tokens == 1
 
     def test_split_preserves_embedding(self):
         chunker = Chunker(max_tokens=50, min_tokens=5)
@@ -281,3 +352,24 @@ class TestChunkerIntegration:
             assert doc.extra_info is not None
             assert "token_count" in doc.extra_info
             assert doc.extra_info["token_count"] > 0
+
+
+# =====================================================================
+# Special-token text must chunk as ordinary text, not raise
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestSpecialTokenText:
+
+    def test_chunking_document_containing_special_token_markers(self):
+        # A document ABOUT LLMs contains literal <|endoftext|>; plain
+        # ``encode()`` raises ValueError on it and destroyed the ingest.
+        chunker = Chunker(chunking_strategy="classic_chunk", max_tokens=50, min_tokens=0)
+        doc = Document(
+            text="The <|endoftext|> marker separates documents. " * 30,
+            doc_id="d1",
+        )
+        chunks = chunker.chunk([doc])
+        assert chunks
+        assert all("<|endoftext|>" in c.text for c in chunks[:1])

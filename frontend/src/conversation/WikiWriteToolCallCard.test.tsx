@@ -4,7 +4,8 @@ import { I18nextProvider, initReactI18next } from 'react-i18next';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import en from '../locale/en.json';
-import { ToolCalls, WikiWriteToolCallCard } from './ConversationBubble';
+import AnswerFlow from './AnswerFlow';
+import { WikiWriteToolCallCard } from './ConversationBubble';
 import { ToolCallsType } from './types';
 
 const testI18n = i18n.createInstance();
@@ -17,10 +18,10 @@ beforeAll(async () => {
   });
 });
 
-const render = (toolCall: ToolCallsType): string =>
+const render = (toolCall: ToolCallsType, isLive?: boolean): string =>
   renderToStaticMarkup(
     <I18nextProvider i18n={testI18n}>
-      <WikiWriteToolCallCard toolCall={toolCall} />
+      <WikiWriteToolCallCard toolCall={toolCall} isLive={isLive} />
     </I18nextProvider>,
   );
 
@@ -33,9 +34,47 @@ describe('WikiWriteToolCallCard', () => {
       arguments: { path: '/policy.md', old_str: 'a', new_str: 'b' },
       status: 'completed',
     });
-    expect(html).toContain('✏️');
     expect(html).toContain('Edited wiki page');
     expect(html).toContain('/policy.md');
+  });
+
+  it('reads in the present tense while the write is still running', () => {
+    const html = render(
+      {
+        tool_name: 'wiki',
+        action_name: 'wiki_create',
+        call_id: 'c1',
+        arguments: { path: '/policy.md' },
+        status: 'pending',
+      },
+      true,
+    );
+    expect(html).toContain('Creating wiki page…');
+    expect(html).toContain('shimmer-text');
+  });
+
+  it('drops the shimmer once the write has settled', () => {
+    const html = render({
+      tool_name: 'wiki',
+      action_name: 'wiki_create',
+      call_id: 'c1',
+      arguments: { path: '/policy.md' },
+      status: 'completed',
+    });
+    expect(html).not.toContain('shimmer-text');
+  });
+
+  it('marks a failed write', () => {
+    const html = render({
+      tool_name: 'wiki',
+      action_name: 'wiki_delete',
+      call_id: 'c1',
+      arguments: { path: '/policy.md' },
+      status: 'error',
+      error: 'boom',
+    });
+    expect(html).toContain('Deleted wiki page');
+    expect(html).toContain('failed');
   });
 
   it('uses the new path for a rename', () => {
@@ -63,11 +102,17 @@ describe('WikiWriteToolCallCard', () => {
   });
 });
 
-describe('ToolCalls placement', () => {
+describe('tool call placement in the answer flow', () => {
   const renderToolCalls = (toolCalls: ToolCallsType[]): string =>
     renderToStaticMarkup(
       <I18nextProvider i18n={testI18n}>
-        <ToolCalls toolCalls={toolCalls} />
+        <AnswerFlow
+          toolCalls={toolCalls}
+          renderApproval={() => null}
+          renderWikiWrite={(toolCall) => (
+            <WikiWriteToolCallCard toolCall={toolCall} />
+          )}
+        />
       </I18nextProvider>,
     );
 
@@ -87,14 +132,14 @@ describe('ToolCalls placement', () => {
     status: 'completed',
   };
 
-  it('renders wiki write cards outside the collapsed accordion (default closed)', () => {
+  it('shows wiki write cards inline and keeps other call arguments collapsed', () => {
     const html = renderToolCalls([wikiWrite, otherCall]);
     expect(html).toContain('Edited wiki page');
     expect(html).toContain('/policy.md');
     expect(html).not.toContain('secret-arg');
   });
 
-  it('does not double-render wiki write cards inside the accordion', () => {
+  it('renders each wiki write card exactly once', () => {
     const html = renderToolCalls([wikiWrite]);
     const occurrences = html.split('Edited wiki page').length - 1;
     expect(occurrences).toBe(1);

@@ -261,17 +261,18 @@ configure_vector_store() {
 configure_embeddings() {
     echo -e "\n${DEFAULT_FG}${BOLD}Embeddings Configuration${NC}"
     echo -e "${DEFAULT_FG}Choose your embeddings provider:${NC}"
-    echo -e "${YELLOW}1) HuggingFace (default, local)${NC}"
+    echo -e "${YELLOW}1) Granite multilingual (default, local)${NC}"
     echo -e "${YELLOW}2) OpenAI Embeddings${NC}"
     echo -e "${YELLOW}3) Custom Remote Embeddings (OpenAI-compatible API)${NC}"
+    echo -e "${YELLOW}4) all-mpnet-base-v2 (legacy local, English-only)${NC}"
     echo -e "${YELLOW}b) Back${NC}"
     echo
-    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-3, or b): ${NC}")" emb_choice
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-4, or b): ${NC}")" emb_choice
 
     case "$emb_choice" in
         1)
-            echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> "$ENV_FILE"
-            echo -e "${GREEN}Embeddings set to HuggingFace (local).${NC}"
+            echo "EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2" >> "$ENV_FILE"
+            echo -e "${GREEN}Embeddings set to granite-311m-multilingual-r2 (local).${NC}"
             ;;
         2)
             echo "EMBEDDINGS_NAME=openai_text-embedding-ada-002" >> "$ENV_FILE"
@@ -287,6 +288,10 @@ configure_embeddings() {
             read -p "$(echo -e "${DEFAULT_FG}Enter embeddings API key (leave empty if none): ${NC}")" emb_key
             [ -n "$emb_key" ] && echo "EMBEDDINGS_KEY=$emb_key" >> "$ENV_FILE"
             echo -e "${GREEN}Custom remote embeddings configured.${NC}"
+            ;;
+        4)
+            echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> "$ENV_FILE"
+            echo -e "${GREEN}Embeddings set to all-mpnet-base-v2 (legacy local).${NC}"
             ;;
         b|B) return ;;
         *) echo -e "\n${RED}Invalid choice.${NC}" ; sleep 1 ;;
@@ -526,7 +531,7 @@ serve_local_ollama() {
     echo "LLM_NAME=$model_name" >> "$ENV_FILE"
     echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
     echo "OPENAI_BASE_URL=http://ollama:11434/v1" >> "$ENV_FILE"
-    echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> "$ENV_FILE"
+    echo "EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for Ollama ($(echo "$docker_compose_file_suffix" | tr '[:lower:]' '[:upper:]')${NC}${GREEN}).${NC}"
 
     prompt_advanced_settings
@@ -639,7 +644,7 @@ connect_local_inference_engine() {
     echo "LLM_NAME=$model_name" >> "$ENV_FILE"
     echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
     echo "OPENAI_BASE_URL=$openai_base_url" >> "$ENV_FILE"
-    echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> "$ENV_FILE"
+    echo "EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for ${BOLD}${engine_name}${NC}${GREEN} with OpenAI API format.${NC}"
     echo -e "${YELLOW}Note: MODEL_NAME is set to '${BOLD}$model_name${NC}${YELLOW}'. You can change it later in the .env file.${NC}"
 

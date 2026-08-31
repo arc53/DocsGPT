@@ -257,10 +257,11 @@ class DeleteOldIndexes(Resource):
         try:
             if settings.VECTOR_STORE == "faiss":
                 index_path = f"indexes/{resolved_id}"
-                if storage.file_exists(f"{index_path}/index.faiss"):
-                    storage.delete_file(f"{index_path}/index.faiss")
-                if storage.file_exists(f"{index_path}/index.pkl"):
-                    storage.delete_file(f"{index_path}/index.pkl")
+                # index.pkl is the legacy sidecar; index.json the current one.
+                # Older sources have only the former, so clear whichever exist.
+                for index_file in ("index.faiss", "index.json", "index.pkl"):
+                    if storage.file_exists(f"{index_path}/{index_file}"):
+                        storage.delete_file(f"{index_path}/{index_file}")
             else:
                 vectorstore = VectorCreator.create_vectorstore(
                     settings.VECTOR_STORE, source_id=resolved_id
@@ -671,10 +672,43 @@ class SourceConfigResource(Resource):
                     "success": True,
                     "config": new_config.model_dump(),
                     "requires_reingest": requires_reingest,
+                    "warnings": _unsupported_retrieval_warnings(new_config),
                 }
             ),
             200,
         )
+
+
+def _unsupported_retrieval_warnings(config) -> list:
+    """Flag retrieval knobs the active backend cannot honour.
+
+    ``score_threshold`` was accepted and echoed back on every store, but only
+    stores whose scores are cosine similarities can apply it — on the others it
+    silently did nothing, so an operator could tune a threshold forever with no
+    feedback. ``hybrid`` drops it by design (RRF ranks are not similarities).
+    """
+    warnings = []
+    retrieval = getattr(config, "retrieval", None)
+    if retrieval is None or retrieval.score_threshold is None:
+        return warnings
+
+    if (retrieval.retriever or "").lower() == "hybrid":
+        warnings.append(
+            "score_threshold is ignored by the 'hybrid' retriever: its scores "
+            "are reciprocal-rank fusion ranks, not similarities."
+        )
+        return warnings
+
+    from application.vectorstore.vector_creator import VectorCreator
+
+    store_cls = VectorCreator.vectorstores.get(settings.VECTOR_STORE)
+    if getattr(store_cls, "score_kind", None) != "cosine_similarity":
+        warnings.append(
+            f"score_threshold is ignored by the configured vector store "
+            f"'{settings.VECTOR_STORE}', which does not report cosine "
+            f"similarity."
+        )
+    return warnings
 
 
 def _resolve_readable_source(conn, source_id, user):
@@ -766,6 +800,12 @@ class CreateWikiSource(Resource):
                     config={"kind": "wiki"},
                     directory_structure={},
                     tokens=0,
+                    # Wiki pages are embedded like any other source, so record
+                    # which model did it. Left unset, the column reads as NULL,
+                    # which the boot mismatch check takes to mean "pre-dates the
+                    # column, therefore the legacy model" -- and reports a
+                    # correctly-embedded source as stale on every startup.
+                    model=settings.EMBEDDINGS_NAME,
                 )
                 if initial_content:
                     WikiPagesRepository(conn).upsert(

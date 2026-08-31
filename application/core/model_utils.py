@@ -20,6 +20,52 @@ def get_api_key_for_provider(provider: str) -> Optional[str]:
     return settings.API_KEY
 
 
+def resolve_dispatch_provider(
+    stored_llm_name: Optional[str],
+    model_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    fallback: Optional[str] = None,
+) -> Optional[str]:
+    """Resolve a stored provider string to one ``LLMCreator`` can dispatch.
+
+    ``/api/models`` reports ``display_provider`` when a catalog YAML sets one
+    (``foundry``, ``azure_foundry``, ``cloudflare``, …), and clients persist
+    that label as ``llm_name`` on agents and workflow nodes. Those labels are
+    presentation-only: they are absent from ``PROVIDERS_BY_NAME``, so passing
+    one to ``LLMCreator.create_llm`` raises ``No LLM class found for type
+    <label>``. Normalizing here keeps already-stored records working without a
+    migration.
+
+    Resolution order: a stored name that is a real dispatch provider wins;
+    otherwise the model registry decides; otherwise ``fallback``.
+
+    Args:
+        stored_llm_name: Provider string persisted on the record, possibly a
+            display label.
+        model_id: Model whose registry entry knows the true provider.
+        user_id: BYOM-resolution scope for per-user model records.
+        fallback: Used when neither the stored name nor the registry resolves.
+
+    Returns:
+        A dispatchable provider name, or ``fallback`` when nothing resolves.
+    """
+    from application.llm.providers import PROVIDERS_BY_NAME
+
+    # Return the *canonical* lowercase name. ``LLMCreator`` lowercases before
+    # its own lookup, but ``get_api_key_for_provider`` matches exactly — so a
+    # stored "OpenAI" would pass this guard and then silently fall through to
+    # ``settings.API_KEY``, which is the key leak this function exists to stop.
+    if stored_llm_name and stored_llm_name.lower() in PROVIDERS_BY_NAME:
+        return stored_llm_name.lower()
+    if model_id:
+        resolved = get_provider_from_model_id(model_id, user_id=user_id)
+        if resolved:
+            return resolved
+    if fallback and fallback.lower() in PROVIDERS_BY_NAME:
+        return fallback.lower()
+    return fallback
+
+
 def get_all_available_models(
     user_id: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:

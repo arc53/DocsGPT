@@ -388,17 +388,18 @@ function Configure-Embeddings {
     Write-Host ""
     Write-ColorText "Embeddings Configuration" -ForegroundColor "White" -Bold
     Write-ColorText "Choose your embeddings provider:" -ForegroundColor "White"
-    Write-ColorText "1) HuggingFace (default, local)" -ForegroundColor "Yellow"
+    Write-ColorText "1) Granite multilingual (default, local)" -ForegroundColor "Yellow"
     Write-ColorText "2) OpenAI Embeddings" -ForegroundColor "Yellow"
     Write-ColorText "3) Custom Remote Embeddings (OpenAI-compatible API)" -ForegroundColor "Yellow"
+    Write-ColorText "4) all-mpnet-base-v2 (legacy local, English-only)" -ForegroundColor "Yellow"
     Write-ColorText "b) Back" -ForegroundColor "Yellow"
     Write-Host ""
-    $emb_choice = Read-Host "Choose option (1-3, or b)"
+    $emb_choice = Read-Host "Choose option (1-4, or b)"
 
     switch ($emb_choice) {
         "1" {
-            "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" | Add-Content -Path $ENV_FILE -Encoding utf8
-            Write-ColorText "Embeddings set to HuggingFace (local)." -ForegroundColor "Green"
+            "EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-ColorText "Embeddings set to granite-311m-multilingual-r2 (local)." -ForegroundColor "Green"
         }
         "2" {
             "EMBEDDINGS_NAME=openai_text-embedding-ada-002" | Add-Content -Path $ENV_FILE -Encoding utf8
@@ -414,6 +415,10 @@ function Configure-Embeddings {
             $emb_key = Read-Host "Enter embeddings API key (leave empty if none)"
             if ($emb_key) { "EMBEDDINGS_KEY=$emb_key" | Add-Content -Path $ENV_FILE -Encoding utf8 }
             Write-ColorText "Custom remote embeddings configured." -ForegroundColor "Green"
+        }
+        "4" {
+            "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-ColorText "Embeddings set to all-mpnet-base-v2 (legacy local)." -ForegroundColor "Green"
         }
         {$_ -eq "b" -or $_ -eq "B"} { return }
         default {
@@ -445,7 +450,9 @@ function Configure-Auth {
             $jwt_key = Read-Host "Enter JWT secret key (leave empty to auto-generate)"
             if ([string]::IsNullOrEmpty($jwt_key)) {
                 $bytes = New-Object byte[] 32
-                [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
                 $jwt_key = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
                 Write-ColorText "Auto-generated JWT secret key." -ForegroundColor "Yellow"
             }
@@ -457,7 +464,9 @@ function Configure-Auth {
             $jwt_key = Read-Host "Enter JWT secret key (leave empty to auto-generate)"
             if ([string]::IsNullOrEmpty($jwt_key)) {
                 $bytes = New-Object byte[] 32
-                [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
                 $jwt_key = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
                 Write-ColorText "Auto-generated JWT secret key." -ForegroundColor "Yellow"
             }
@@ -558,7 +567,9 @@ function Ensure-InternalKey {
     $content = if (Test-Path $ENV_FILE) { Get-Content $ENV_FILE -Raw } else { "" }
     if ($content -notmatch "(?m)^INTERNAL_KEY=") {
         $bytes = New-Object byte[] 32
-        [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        $rng.GetBytes($bytes)
+        $rng.Dispose()
         $internal_key = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
         "INTERNAL_KEY=$internal_key" | Add-Content -Path $ENV_FILE -Encoding utf8
     }
@@ -721,7 +732,7 @@ function Serve-LocalOllama {
     "LLM_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
     "OPENAI_BASE_URL=http://ollama:11434/v1" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" | Add-Content -Path $ENV_FILE -Encoding utf8
+    "EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2" | Add-Content -Path $ENV_FILE -Encoding utf8
     
     Write-ColorText ".env file configured for Ollama ($($docker_compose_file_suffix.ToUpper()))." -ForegroundColor "Green"
     Write-ColorText "Note: MODEL_NAME is set to '$model_name'. You can change it later in the .env file." -ForegroundColor "Yellow"
@@ -886,7 +897,7 @@ function Connect-LocalInferenceEngine {
     "LLM_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
     "OPENAI_BASE_URL=$openai_base_url" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" | Add-Content -Path $ENV_FILE -Encoding utf8
+    "EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2" | Add-Content -Path $ENV_FILE -Encoding utf8
     
     Write-ColorText ".env file configured for $engine_name with OpenAI API format." -ForegroundColor "Green"
     Write-ColorText "Note: MODEL_NAME is set to '$model_name'. You can change it later in the .env file." -ForegroundColor "Yellow"

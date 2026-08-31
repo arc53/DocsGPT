@@ -43,14 +43,14 @@ class AgentsRepository:
             "limited_token_mode", "limited_request_mode",
             "allow_system_prompt_override",
             "shared", "shared_token", "shared_metadata",
-            "tools", "json_schema", "models", "legacy_mongo_id",
+            "tools", "json_schema", "models", "config", "legacy_mongo_id",
             "created_at", "updated_at", "last_used_at",
         }
 
         for col, val in kwargs.items():
             if col not in _ALLOWED or val is None:
                 continue
-            if col in ("tools", "json_schema", "models", "shared_metadata"):
+            if col in ("tools", "json_schema", "models", "shared_metadata", "config"):
                 # JSONB columns: pass the Python object directly. SQLAlchemy
                 # Core's JSONB type processor json.dumps it once during
                 # bind; pre-serialising would double-encode and the value
@@ -160,6 +160,19 @@ class AgentsRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def count_by_workflow(self, workflow_id: str, user_id: str) -> int:
+        """Number of this user's agents linked to ``workflow_id``."""
+        if not looks_like_uuid(workflow_id):
+            return 0
+        result = self._conn.execute(
+            text(
+                "SELECT COUNT(*) FROM agents "
+                "WHERE workflow_id = CAST(:wf AS uuid) AND user_id = :user_id"
+            ),
+            {"wf": workflow_id, "user_id": user_id},
+        )
+        return int(result.scalar() or 0)
+
     def get_by_id(self, agent_id: str) -> Optional[dict]:
         """Fetch an agent by id with NO ownership scoping.
 
@@ -171,6 +184,25 @@ class AgentsRepository:
             return None
         result = self._conn.execute(
             text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"),
+            {"id": agent_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def find_image_record(self, agent_id: str) -> Optional[dict]:
+        """Fetch only the fields needed to verify a public image capability.
+
+        This lookup is intentionally not owner-scoped because the resulting
+        row is not authorization: callers must verify its HMAC capability
+        before reading or returning any storage bytes.
+        """
+        if not looks_like_uuid(agent_id):
+            return None
+        result = self._conn.execute(
+            text(
+                "SELECT id, user_id, image FROM agents "
+                "WHERE id = CAST(:id AS uuid)"
+            ),
             {"id": agent_id},
         )
         row = result.fetchone()
@@ -202,6 +234,7 @@ class AgentsRepository:
         allowed = {
             "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
+            "config",
             "default_model_id", "folder_id", "workflow_id",
             "extra_source_ids", "image",
             "limited_token_mode", "token_limit",
@@ -215,7 +248,7 @@ class AgentsRepository:
             return False
         values: dict = {}
         for col, val in filtered.items():
-            if col in ("tools", "json_schema", "models", "shared_metadata"):
+            if col in ("tools", "json_schema", "models", "shared_metadata", "config"):
                 values[col] = val
             elif col in ("source_id", "prompt_id", "folder_id", "workflow_id"):
                 values[col] = str(val) if val else None
@@ -261,6 +294,7 @@ class AgentsRepository:
         allowed = {
             "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
+            "config",
             "default_model_id", "folder_id", "workflow_id",
             "extra_source_ids", "image",
             "limited_token_mode", "token_limit",
@@ -275,7 +309,7 @@ class AgentsRepository:
 
         values: dict = {}
         for col, val in filtered.items():
-            if col in ("tools", "json_schema", "models", "shared_metadata"):
+            if col in ("tools", "json_schema", "models", "shared_metadata", "config"):
                 # See note in create(): JSONB columns receive Python
                 # objects, the type processor handles serialisation.
                 values[col] = val

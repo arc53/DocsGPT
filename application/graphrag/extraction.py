@@ -26,7 +26,9 @@ from typing import Any, Callable, Dict, List, Optional
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
 from application.storage.db.source_config import SourceConfig
-from application.vectorstore.base import EmbeddingsSingleton
+# ``EmbeddingsSingleton`` is re-exported here so callers and tests can reach the
+# shared instance cache from this module.
+from application.vectorstore.base import EmbeddingsSingleton, get_embeddings  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -193,9 +195,7 @@ def extract_graph_for_source(
     skipped_over_cap = max(0, len(pending) - cap)
     to_process = pending[:cap]
 
-    embedding = EmbeddingsSingleton.get_instance(
-        settings.EMBEDDINGS_NAME, settings.EMBEDDINGS_KEY
-    )
+    embedding = get_embeddings()
 
     llm = _build_extraction_llm(
         _resolve_extraction_model(config), user, request_id

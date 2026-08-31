@@ -7,9 +7,15 @@ On app startup the Flask factory (and Celery worker init) can call
    configured role to have ``CREATEDB`` privilege).
 2. Apply every pending Alembic migration up to ``head``.
 
-Both steps are gated by settings that default ON for dev convenience and
-can be turned off in prod (``AUTO_CREATE_DB`` / ``AUTO_MIGRATE``) where
-schema is managed out-of-band by a deploy pipeline.
+:func:`ensure_vector_schema` does the same job for the *vector* database
+(``pgvector``): it owns the ``documents`` table and, when GraphRAG is on,
+the graph tables, so the retrieval hot path never runs DDL. That database
+may be a separate cluster, which is why it has no Alembic migration.
+
+Every step is gated by a setting that defaults ON for dev convenience and
+can be turned off in prod (``AUTO_CREATE_DB`` / ``AUTO_MIGRATE`` /
+``AUTO_VECTOR_SCHEMA``) where schema is managed out-of-band by a deploy
+pipeline.
 
 All heavy imports (alembic, psycopg, sqlalchemy.exc sub-symbols) are
 deferred to inside the function so merely importing this module has no
@@ -19,6 +25,7 @@ side effects and is cheap for test collection.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Optional
 
 
@@ -67,6 +74,199 @@ def ensure_database_ready(
 
     if migrate:
         _run_migrations(log)
+
+
+def _release_boot_only_embeddings(log: logging.Logger) -> None:
+    """Drop a model this hook loaded that the process will never use again.
+
+    ``ensure_vector_schema`` has to run the model to learn the width of a model
+    the registry does not describe. ``EmbeddingsSingleton`` then caches it for
+    the life of the process -- correct when this process embeds, pure waste in
+    an API that delegates every embed to the worker, where it costs ~400 MB for
+    a small model and ~800 MB for a granite-sized one that is never called.
+
+    Only the local-ONNX case is dropped. A ``RemoteEmbeddings`` is cheap and is
+    exactly what the process goes on to use, and with delegation off the model
+    would only be rebuilt on the first query.
+
+    Bounds retention, not the transient peak: the load still happens, and the
+    ONNX Runtime arena may not return every page to the OS.
+    """
+    from application.core.settings import settings
+
+    if settings.EMBEDDINGS_BASE_URL:
+        return
+    if getattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False) is not True:
+        return
+
+    import gc
+
+    from application.vectorstore.base import EmbeddingsSingleton
+
+    if EmbeddingsSingleton._instances.pop(settings.EMBEDDINGS_NAME, None) is None:
+        return
+    gc.collect()
+    log.info(
+        "ensure_vector_schema: released the embeddings model loaded to read its "
+        "width; this process delegates embedding to the worker and would never "
+        "have used it."
+    )
+
+
+def ensure_vector_schema(*, logger: Optional[logging.Logger] = None) -> None:
+    """Create the pgvector schema once at boot and verify its dimension.
+
+    Owning the DDL here is what lets ``PGVectorStore`` construction stay free:
+    the retriever builds one store per source per request, and each used to run
+    ``CREATE EXTENSION`` / ``CREATE TABLE`` / two ``CREATE INDEX`` statements
+    before its first SELECT. A dimension mismatch between the table and the
+    configured embeddings model is fatal here rather than silent garbage
+    retrieval at query time.
+
+    Args:
+        logger: Optional logger. Defaults to this module's logger.
+
+    Raises:
+        RuntimeError: The existing ``documents`` table was built for a
+            different embedding width than the configured model produces.
+        Exception: Any connection or DDL failure is re-raised so the app fails
+            fast, matching :func:`ensure_database_ready`.
+    """
+    log = logger or logging.getLogger(__name__)
+
+    from application.core.settings import settings
+
+    store_kind = (settings.VECTOR_STORE or "").lower()
+    if store_kind != "pgvector":
+        log.debug(
+            "ensure_vector_schema: VECTOR_STORE is %r, not pgvector; nothing to do.",
+            settings.VECTOR_STORE,
+        )
+        return
+
+    dsn = getattr(settings, "PGVECTOR_CONNECTION_STRING", None)
+    if not dsn and getattr(settings, "POSTGRES_URI", None):
+        from application.core.db_uri import normalize_pgvector_connection_string
+
+        dsn = normalize_pgvector_connection_string(settings.POSTGRES_URI)
+    if not dsn:
+        log.info(
+            "ensure_vector_schema: no pgvector connection string configured "
+            "(PGVECTOR_CONNECTION_STRING / POSTGRES_URI); skipping."
+        )
+        return
+
+    import psycopg
+
+    from application.vectorstore.pgvector import (
+        DEFAULT_EMBEDDING_DIM,
+        SCHEMA_LOCK_KEY,
+        PGVectorStore,
+    )
+
+    # All this needs is an integer, and for a model the registry describes that
+    # is a lookup. It used to construct the embeddings instance, which loaded
+    # ~800 MB of ONNX into every API and worker process at import purely to
+    # read ``.dimension`` off it.
+    from application.vectorstore.model_registry import dimension_for
+
+    dim: Optional[int] = dimension_for(settings.EMBEDDINGS_NAME)
+
+    graph_enabled = bool(getattr(settings, "GRAPHRAG_ENABLED", False))
+    started = time.monotonic()
+    # A plain connection, never the store's pool: this can run pre-fork under
+    # ``gunicorn --preload``, and an inherited pooled socket is a broken one.
+    # Bounded: a suspended/unreachable vector cluster must fail this hook
+    # rather than hang boot until a liveness probe kills the process.
+    conn = psycopg.connect(dsn, connect_timeout=10)
+    try:
+        cursor = conn.cursor()
+        try:
+            # Serialize concurrent workers; released when this transaction ends.
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s));", (SCHEMA_LOCK_KEY,)
+            )
+        finally:
+            cursor.close()
+
+        if dim is None:
+            # An unregistered model only reports its width once something has
+            # run it. Build it in-process rather than through
+            # ``get_embeddings``: at boot there is no Celery task in flight, so
+            # a delegating client would dispatch to a worker that may not be up
+            # yet. The width must come from the model and not from the existing
+            # table -- reading the table would make the check below compare a
+            # value against itself, which is how a model of a different width
+            # silently inherits a table it does not fit.
+            try:
+                from application.vectorstore.base import build_local_embeddings
+
+                embedding = build_local_embeddings()
+                dim = getattr(embedding, "dimension", None)
+                if not dim:
+                    # A remote client knows nothing about its server until it
+                    # has called it, so ask once. Without this the table is
+                    # sized at the default and the check below is skipped --
+                    # which is how a remote model of any other width silently
+                    # got a vector(768) column, the exact failure this hook
+                    # exists to catch. Milvus and Qdrant probe the same way.
+                    dim = len(embedding.embed_query("dimension probe"))
+            except Exception as exc:  # noqa: BLE001 — never block boot on the model
+                log.warning(
+                    "ensure_vector_schema: could not determine the embedding width "
+                    "(%s); creating the table with %d dimensions and skipping the "
+                    "dimension check.",
+                    exc,
+                    DEFAULT_EMBEDDING_DIM,
+                )
+            finally:
+                _release_boot_only_embeddings(log)
+
+        if dim is None:
+            log.warning(
+                "ensure_vector_schema: the embeddings model exposes no dimension; "
+                "using %d and skipping the dimension check.",
+                DEFAULT_EMBEDDING_DIM,
+            )
+
+        PGVectorStore.create_schema(conn, dimension=dim or DEFAULT_EMBEDDING_DIM)
+        if graph_enabled:
+            from application.graphrag.store import (
+                DEFAULT_NAME_EMBEDDING_DIM,
+                GraphStore,
+            )
+
+            GraphStore.create_schema(
+                conn, dimension=dim or DEFAULT_NAME_EMBEDDING_DIM
+            )
+        conn.commit()
+
+        actual = PGVectorStore.table_dimension(conn)
+        if dim and actual and actual != dim:
+            raise RuntimeError(
+                f"pgvector table 'documents' has vector({actual}) but "
+                f"EMBEDDINGS_NAME={settings.EMBEDDINGS_NAME} produces {dim}-dim "
+                "vectors; re-ingest into a fresh table or point "
+                "PGVECTOR_CONNECTION_STRING at the matching database."
+            )
+
+        log.info(
+            "ensure_vector_schema: table 'documents' ready "
+            "(dimension=%s, graph tables=%s) in %d ms.",
+            actual or dim or DEFAULT_EMBEDDING_DIM,
+            "yes" if graph_enabled else "no",
+            int((time.monotonic() - started) * 1000),
+        )
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            # Connection already gone; nothing left to roll back.
+            pass
+        log.error("ensure_vector_schema: %s", exc)
+        raise
+    finally:
+        conn.close()
 
 
 def _ensure_database_exists(uri: str, log: logging.Logger) -> None:
@@ -263,6 +463,10 @@ def _run_migrations(log: logging.Logger) -> None:
 
     cfg = Config(str(alembic_ini))
     cfg.set_main_option("script_location", str(alembic_ini.parent / "alembic"))
+    # We migrate in-process, after setup_logging() has configured the root
+    # logger. env.py honours this by skipping fileConfig, which would
+    # otherwise replace root's handlers and level for the rest of the process.
+    cfg.attributes["configure_logger"] = False
 
     # Cheap pre-check: if we're already at head, say so explicitly.
     try:

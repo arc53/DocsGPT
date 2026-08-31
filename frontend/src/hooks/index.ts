@@ -65,6 +65,36 @@ export function useMediaQuery() {
   return { isMobile, isTablet, isDesktop };
 }
 
+/**
+ * Reveals ``text`` gradually while ``enabled``, catching up faster the further
+ * the display falls behind (lag stays bounded at roughly half a second).
+ * When ``enabled`` is false the full text is returned immediately.
+ */
+export function usePacedText(text: string, enabled: boolean): string {
+  const textRef = useRef(text);
+  textRef.current = text;
+  const [visibleLength, setVisibleLength] = useState(() =>
+    enabled ? 0 : text.length,
+  );
+
+  useEffect(() => {
+    if (!enabled) {
+      setVisibleLength(textRef.current.length);
+      return;
+    }
+    const id = window.setInterval(() => {
+      setVisibleLength((len) => {
+        const backlog = textRef.current.length - len;
+        if (backlog <= 0) return len;
+        return len + Math.max(2, Math.ceil(backlog * 0.08));
+      });
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [enabled]);
+
+  return enabled ? text.slice(0, Math.min(visibleLength, text.length)) : text;
+}
+
 export function useDarkTheme() {
   const getSystemThemePreference = () => {
     return (

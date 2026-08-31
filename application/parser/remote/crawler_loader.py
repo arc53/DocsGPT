@@ -38,13 +38,20 @@ class CrawlerLoader(BaseRemote):
                 response = pinned_request("GET", current_url, timeout=30)
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "html.parser")
+                extra_info = {
+                    "source": current_url,
+                    "file_path": self._url_to_virtual_path(current_url),
+                }
+                # Mirror WebLoader: without a title, citations fall back to the
+                # chunk body and render as a wall of text.
+                if soup.title:
+                    title = soup.title.get_text(strip=True)
+                    if title:
+                        extra_info["title"] = title
                 loaded_content.append(
                     Document(
                         soup.get_text(separator="\n", strip=True),
-                        extra_info={
-                            "source": current_url,
-                            "file_path": self._url_to_virtual_path(current_url),
-                        },
+                        extra_info=extra_info,
                     )
                 )
             except Exception as e:

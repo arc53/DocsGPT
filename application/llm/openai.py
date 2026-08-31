@@ -3,12 +3,87 @@ import hashlib
 import io
 import json
 import logging
+import os.path
+from typing import Any, Callable
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 
 from application.core.settings import settings
 from application.llm.base import BaseLLM
 from application.storage.storage_creator import StorageCreator
+
+# Placeholder sent to OpenAI-compatible backends that require no credentials.
+NO_API_KEY = "sk-no-key"
+
+# Request keys that only make sense alongside ``tools``; all dropped together
+# when an endpoint turns out not to serve tool calling.
+_TOOL_REQUEST_KEYS = ("tools", "tool_choice", "parallel_tool_calls")
+
+# Knobs that shape *how* tools are called. A 400 naming one of these is a bad
+# argument, so they are dropped on their own before tools are given up.
+_TOOL_CHOICE_KEYS = ("tool_choice", "parallel_tool_calls")
+
+# Substrings an OpenAI-compatible server puts in a 400 when it understands the
+# request but cannot serve tool calling: vLLM without --enable-auto-tool-choice
+# / --tool-call-parser, llama.cpp, TGI, Ollama and friends. Matched case
+# insensitively, and only for requests that actually carried tools — so a false
+# positive degrades to a tool-less answer rather than a failed chat.
+_TOOLS_UNSUPPORTED_MARKERS = (
+    "enable-auto-tool-choice",
+    "tool-call-parser",
+    # Deliberately no bare "tool_choice"/"tool choice": a 400 about a malformed
+    # tool_choice *argument* names the parameter without meaning the endpoint
+    # lacks tool support. Only unambiguous phrasings belong here.
+    "unsupported parameter: 'tool_choice'",
+    "unknown field: tool_choice",
+    "tools are not supported",
+    "tools is not supported",
+    "does not support tools",
+    "doesn't support tools",
+    "tool calling",
+    "tool call is not supported",
+    "function calling",
+    "functions are not supported",
+    "does not support function",
+    "unsupported parameter: 'tools'",
+    "unknown field: tools",
+)
+
+
+def _provider_message(error: Exception) -> str:
+    """The server's own message text, without the SDK's whole-body repr.
+
+    ``openai._base_client`` interpolates the entire decoded JSON body into the
+    exception message, so matching ``str(error)`` would let a *parameter name*
+    ("param": "tool_choice") read as "this endpoint cannot serve tools".
+
+    Args:
+        error: The exception raised by the provider SDK.
+
+    Returns:
+        The server's message when the body carries one, else ``str(error)``.
+    """
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        inner = body.get("error")
+        if isinstance(inner, dict) and inner.get("message"):
+            return str(inner["message"])
+        if body.get("message"):
+            return str(body["message"])
+    return str(error)
+
+
+def _is_tools_unsupported_error(error: Exception) -> bool:
+    """Whether a 400 says the endpoint cannot serve tool calling.
+
+    Args:
+        error: The exception raised by the provider SDK.
+
+    Returns:
+        True when the server's message matches a tool-calling marker.
+    """
+    haystack = _provider_message(error).lower()
+    return any(marker in haystack for marker in _TOOLS_UNSUPPORTED_MARKERS)
 
 
 def _truncate_base64_for_logging(messages):
@@ -111,6 +186,12 @@ class _RespChoice:
 
 class OpenAILLM(BaseLLM):
     provider_name = "openai"
+    structured_output_kwarg = "response_format"
+
+    # Flipped once this endpoint answered 400 on a request carrying tools.
+    # Instance-scoped (the assignment shadows this class default), so an
+    # agent loop pays for the discovery round trip at most once.
+    _tools_rejected = False
 
     def __init__(
         self,
@@ -123,7 +204,12 @@ class OpenAILLM(BaseLLM):
     ):
 
         super().__init__(*args, **kwargs)
-        self.api_key = api_key or settings.OPENAI_API_KEY or settings.API_KEY
+        # openai>=2.53 rejects a falsy api_key at construction. Keyless
+        # OpenAI-compatible backends (Ollama, llama.cpp, vLLM) legitimately have
+        # none, and pydantic-settings yields "" for a bare `API_KEY=` in .env.
+        self.api_key = (
+            api_key or settings.OPENAI_API_KEY or settings.API_KEY or NO_API_KEY
+        )
         self.user_api_key = user_api_key
 
         # Priority: 1) Parameter base_url, 2) Settings OPENAI_BASE_URL, 3) Default
@@ -553,6 +639,77 @@ class OpenAILLM(BaseLLM):
                 return normalized
         return ""
 
+    def _note_tools_rejected(self, model: str, error: Exception) -> None:
+        """Record that this endpoint refuses tool calling, warning once."""
+        if not self._tools_rejected:
+            logging.warning(
+                "Endpoint rejected tool calling (model=%s, base_url=%s): %s. "
+                "Retrying this request without tools and skipping tools for "
+                "the rest of this session — set supports_tools: false in the "
+                "model catalog for %s to avoid the discovery round trip.",
+                model,
+                self._effective_base_url,
+                error,
+                model,
+            )
+        self._tools_rejected = True
+
+    @staticmethod
+    def _params_without_tools(params: dict) -> dict:
+        """Copy of ``params`` with every tool-calling key removed."""
+        return {
+            key: value for key, value in params.items()
+            if key not in _TOOL_REQUEST_KEYS
+        }
+
+    def _create_with_tool_fallback(
+        self, create: Callable[..., Any], params: dict, model: str
+    ) -> Any:
+        """Send a request, retrying once without tools on a tools-unsupported 400.
+
+        Args:
+            create: The provider ``create`` callable for this endpoint.
+            params: Request kwargs, possibly including ``tools``.
+            model: Model id, used for the warning.
+
+        Returns:
+            The provider response — from the first call, or from the
+            tool-less retry when the endpoint rejected tool calling.
+
+        Raises:
+            openai.BadRequestError: Any 400 unrelated to tool calling, any 400
+                on a request that carried no tools, and any 400 raised by the
+                retry itself.
+        """
+        try:
+            return create(**params)
+        except BadRequestError as error:
+            if not params.get("tools"):
+                raise
+            if getattr(error, "param", None) in _TOOL_CHOICE_KEYS:
+                # A rejected tool_choice is a bad argument, not a missing
+                # capability -- the v1 translator forwards a client-supplied
+                # value verbatim. Drop just that knob and keep the tools.
+                logging.warning(
+                    "Endpoint rejected %r (model=%s): %s. Retrying with tools intact.",
+                    getattr(error, "param", None),
+                    model,
+                    error,
+                )
+                retry = {
+                    key: value for key, value in params.items()
+                    if key not in _TOOL_CHOICE_KEYS
+                }
+                return create(**retry)
+            if not _is_tools_unsupported_error(error):
+                raise
+            response = create(**self._params_without_tools(params))
+            # Latch only once the tool-less retry has actually worked: a retry
+            # that also 400s proves nothing about tool support, and must not
+            # disable tools for the rest of this answer.
+            self._note_tools_rejected(model, error)
+            return response
+
     def _raw_gen(
         self,
         baseself,
@@ -611,7 +768,9 @@ class OpenAILLM(BaseLLM):
             request_params["response_format"] = response_format
         self._last_usage = None
         self._stream_reached_finish = False
-        response = self.client.chat.completions.create(**request_params)
+        response = self._create_with_tool_fallback(
+            self.client.chat.completions.create, request_params, model
+        )
         logging.debug("OpenAI request completed")
         self._record_chat_usage(getattr(response, "usage", None))
         if tools:
@@ -685,7 +844,12 @@ class OpenAILLM(BaseLLM):
         self._last_usage = None
         self._stream_reached_finish = False
         self._last_finish_reason = None
-        response = self.client.chat.completions.create(**request_params)
+        # The request is issued before the loop, so a tools-unsupported 400
+        # lands here with nothing yielded yet — the retry inside
+        # ``_create_with_tool_fallback`` can never duplicate delivered output.
+        response = self._create_with_tool_fallback(
+            self.client.chat.completions.create, request_params, model
+        )
 
         try:
             for line in response:
@@ -1289,7 +1453,9 @@ class OpenAILLM(BaseLLM):
             stream=False,
             kwargs=kwargs,
         )
-        response = self.client.responses.create(**params)
+        response = self._create_with_tool_fallback(
+            self.client.responses.create, params, model
+        )
         if response is None:
             raise RuntimeError("Responses API returned no response object")
         logging.debug(
@@ -1362,7 +1528,11 @@ class OpenAILLM(BaseLLM):
             stream=True,
             kwargs=kwargs,
         )
-        response = self.client.responses.create(**params)
+        # Issued before the event loop below, so the tool-less retry cannot
+        # duplicate output already yielded.
+        response = self._create_with_tool_fallback(
+            self.client.responses.create, params, model
+        )
 
         func_calls = {}
         reasoning_items = []
@@ -1476,6 +1646,12 @@ class OpenAILLM(BaseLLM):
                 response.close()
 
     def _supports_tools(self):
+        # A 400 already told us this endpoint can't serve tool calling
+        # (vLLM without --enable-auto-tool-choice, and friends). Answer
+        # False from then on so later turns skip tools outright instead of
+        # paying for another rejected round trip.
+        if self._tools_rejected:
+            return False
         # When the LLM was constructed via LLMCreator with a registered
         # AvailableModel, ``self.capabilities`` is the per-model record.
         # BYOM users can disable tool support; respect that. Otherwise
@@ -1506,6 +1682,8 @@ class OpenAILLM(BaseLLM):
             kwargs["reasoning_effort"] = effort
 
     def prepare_structured_output_format(self, json_schema, strict=True):
+        # Recorded so a cross-provider fallback can re-prepare the raw schema.
+        self._structured_output_source = (json_schema, strict) if json_schema else None
         if not json_schema:
             return None
         try:
@@ -1654,16 +1832,49 @@ class OpenAILLM(BaseLLM):
                 logging.info(f"Attempting to upload PDF to OpenAI: {attachment.get('path', 'unknown')}")
                 try:
                     file_id = self._upload_file_to_openai(attachment)
+                    if not file_id:
+                        # Never emit ``{"file_id": None}``: the part carries no
+                        # document, providers 4xx or silently ignore it, and
+                        # downstream cleaning degrades it to a note claiming the
+                        # file "could not be processed" — while the parsed text
+                        # sits unused on the attachment row.
+                        raise ValueError(
+                            "no file_id returned for PDF upload "
+                            f"{attachment.get('path', 'unknown')!r}"
+                        )
+                    # ``file_id`` only. Sending ``filename`` alongside it is
+                    # rejected: 400 "Unknown parameter: …file.filename".
                     prepared_messages[user_message_index]["content"].append(
                         {"type": "file", "file": {"file_id": file_id}}
                     )
                 except Exception as e:
                     logging.error(f"Error uploading PDF to OpenAI: {e}", exc_info=True)
-                    if "content" in attachment:
+                    # Truthy, not membership — ``content`` is always a key on a
+                    # PG-backed attachment and is "" when extraction produced
+                    # nothing, which would otherwise send an empty "File
+                    # content:" block and read as a successfully-read document.
+                    if attachment.get("content"):
                         prepared_messages[user_message_index]["content"].append(
                             {
                                 "type": "text",
-                                "text": f"File content:\n\n{attachment['content']}",
+                                "text": (
+                                    "File content:\n\n"
+                                    f"{self._fit_attachment_text(attachment['content'])}"
+                                ),
+                            }
+                        )
+                    else:
+                        # Nothing to fall back on: say so, naming the user's own
+                        # file so the answer can't invent a generic excuse.
+                        filename = (
+                            attachment.get("filename")
+                            or os.path.basename(attachment.get("path") or "")
+                            or "the attached file"
+                        )
+                        prepared_messages[user_message_index]["content"].append(
+                            {
+                                "type": "text",
+                                "text": f"[File '{filename}' could not be processed]",
                             }
                         )
             else:
@@ -1689,6 +1900,78 @@ class OpenAILLM(BaseLLM):
         except FileNotFoundError:
             raise FileNotFoundError(f"File not found: {file_path}")
 
+    def _fit_attachment_text(self, content: str) -> str:
+        """Bound inlined attachment text to a share of the model's window.
+
+        ``_enforce_context_window`` runs in ``_llm_gen``, *before* attachments
+        are merged into the messages here, so nothing downstream trims this.
+        A 200-page PDF on an endpoint without a Files API would otherwise be
+        appended whole and get the whole request rejected for length — a worse
+        outcome than the degrade note it replaces.
+        """
+        from application.core.model_utils import get_token_limit
+        from application.utils import num_tokens_from_string
+
+        try:
+            limit = get_token_limit(self.model_id) if self.model_id else 0
+        except Exception:
+            limit = 0
+        # Half the window: the prompt, history and the answer share the rest.
+        budget = int(limit * 0.5) if limit else 24000
+        try:
+            # Tokenize once: this is a full BPE pass over the whole extraction
+            # (~12ms per 250k chars), on the hot path of every attachment turn.
+            token_count = num_tokens_from_string(content)
+            if token_count <= budget:
+                return content
+            chars_per_token = len(content) / max(token_count, 1)
+            keep = max(int(budget * chars_per_token * 0.95), 0)
+        except Exception:
+            keep = budget * 4
+        if keep <= 0 or keep >= len(content):
+            return content
+        return (
+            f"{content[:keep]}\n\n[Content truncated: the file is larger than "
+            "this model's context window.]"
+        )
+
+    def _endpoint_scope(self) -> str:
+        """Short fingerprint of ``(provider, base_url, api_key)``.
+
+        A Files-API ``file_id`` is only meaningful to the endpoint and
+        credential it was uploaded to — the same reasoning the Redis inline
+        cache already applies in ``_inline_file_id_cache_key``.
+        """
+        creds = "\0".join(
+            (
+                self.provider_name or "",
+                self._effective_base_url or "",
+                self.api_key or "",
+            )
+        )
+        return hashlib.sha256(creds.encode("utf-8")).hexdigest()[:16]
+
+    def _stamp_file_id(self, file_id: str) -> str:
+        """Tag a file_id with the endpoint it belongs to before persisting."""
+        return f"{self._endpoint_scope()}:{file_id}"
+
+    def _scoped_file_id(self, stored):
+        """Return a persisted file_id only if this endpoint can resolve it.
+
+        ``attachments.openai_file_id`` is a single global column, so without a
+        scope an id minted against one deployment would be replayed against
+        another, which answers ``No such File object`` on every retry —
+        permanently, since the row keeps the bad id. A miss re-uploads and
+        overwrites, so this self-heals both cross-endpoint reuse and ids that
+        aged out of provider retention. Legacy unscoped values are ignored.
+        """
+        if not stored or not isinstance(stored, str):
+            return None
+        scope, _, file_id = stored.partition(":")
+        if not file_id or scope != self._endpoint_scope():
+            return None
+        return file_id
+
     def _upload_file_to_openai(self, attachment):
         """
         Upload a file to OpenAI and return the file_id.
@@ -1702,8 +1985,13 @@ class OpenAILLM(BaseLLM):
         Returns:
             str: OpenAI file_id for the uploaded file.
         """
-        if "openai_file_id" in attachment:
-            return attachment["openai_file_id"]
+        # Truthy check, not membership: attachment dicts are built from
+        # ``SELECT *``, so ``openai_file_id`` is always a key and is NULL
+        # until an upload caches one. Testing membership treated every fresh
+        # attachment as a cache hit and returned None without uploading.
+        cached = self._scoped_file_id(attachment.get("openai_file_id"))
+        if cached:
+            return cached
         file_path = attachment.get("path")
 
         if not self.storage.file_exists(file_path):
@@ -1740,7 +2028,7 @@ class OpenAILLM(BaseLLM):
                         AttachmentsRepository(conn).update_any(
                             str(attachment_id),
                             user_id,
-                            {"openai_file_id": file_id},
+                            {"openai_file_id": self._stamp_file_id(file_id)},
                         )
                 except Exception as cache_err:
                     logging.warning(

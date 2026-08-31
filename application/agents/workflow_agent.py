@@ -3,6 +3,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from application.agents.base import BaseAgent
+from application.guardrails.config import (
+    DEFAULT_BLOCK_MESSAGE as GUARDRAIL_DEFAULT_MESSAGE,
+)
 from application.agents.workflows.schemas import (
     ExecutionStatus,
     Workflow,
@@ -52,6 +55,17 @@ class WorkflowAgent(BaseAgent):
 
     @log_activity()
     def gen(self, query: str, log_context: LogContext = None) -> Generator[Dict[str, str], None, None]:
+        # This override skips BaseAgent.gen, so the input stage has to be run
+        # here or a workflow agent would accept guardrail config in the builder
+        # and silently enforce none of it.
+        self.bind_guardrail_log_context(log_context)
+        query, decision = self.apply_input_guardrails(query)
+        if decision is not None and decision.blocked:
+            yield self._guardrail_block_event(
+                decision, decision.block_message or GUARDRAIL_DEFAULT_MESSAGE
+            )
+            self.flush_guardrail_audit()
+            return
         yield from self._gen_inner(query, log_context)
 
     def _gen_inner(self, query: str, log_context: LogContext) -> Generator[Dict[str, str], None, None]:
@@ -373,7 +387,42 @@ class WorkflowAgent(BaseAgent):
                     "mime_type": ref["mime_type"],
                 }
             )
+            self._record_preextracted_text(ref["artifact_id"], attachment)
         return refs, dropped
+
+    def _record_preextracted_text(self, artifact_id: str, attachment: Dict[str, Any]) -> None:
+        """Stage an attachment's upload-time text on the engine so nodes skip re-parsing it."""
+        if self._engine is None:
+            return
+        text = self._usable_attachment_text(attachment)
+        if text:
+            self._engine.preextracted_text[str(artifact_id)] = text
+
+    @staticmethod
+    def _usable_attachment_text(attachment: Dict[str, Any]) -> Optional[str]:
+        """Return an attachment's stored text when it is safe to reuse verbatim, else None.
+
+        The attachment was already parsed (and possibly OCR'd) by ``store_attachment``;
+        reusing that text is what keeps a scanned document from being OCR'd once per
+        node. Reuse requires the stored text to be the WHOLE document: a truncated row
+        was cut head-first at ``ATTACHMENT_MAX_TOKENS`` and would silently lose the tail
+        that the workflow's own head+tail bounding keeps, so it falls back to a parse.
+        A row with no ``extraction`` metadata at all (legacy, pre-dating that field) is
+        trusted when its ``content`` is non-empty: nothing records otherwise, and the
+        non-workflow chat path already feeds that same text to the model.
+        """
+        content = attachment.get("content")
+        if not isinstance(content, str) or not content.strip():
+            return None
+        metadata = attachment.get("metadata")
+        extraction = metadata.get("extraction") if isinstance(metadata, dict) else None
+        if extraction is None:
+            return content
+        if not isinstance(extraction, dict):
+            return None
+        if extraction.get("status") != "ok" or extraction.get("truncated"):
+            return None
+        return content
 
     @staticmethod
     def _read_attachment_bytes(storage: Any, upload_path: str, max_bytes: int) -> Optional[bytes]:

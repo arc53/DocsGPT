@@ -242,6 +242,73 @@ class TestS3StorageGetFile:
             s3_storage.get_file(path)
 
 
+class TestS3StorageFileSize:
+    """Test metadata-only size lookup used by bounded public delivery."""
+
+    @pytest.mark.unit
+    def test_get_file_size_uses_head_without_downloading(
+        self, s3_storage, mock_boto3_client
+    ):
+        mock_boto3_client.head_object.return_value = {"ContentLength": 1234}
+
+        assert s3_storage.get_file_size("avatars/test.png") == 1234
+
+        mock_boto3_client.head_object.assert_called_once_with(
+            Bucket="test-bucket", Key="avatars/test.png"
+        )
+        mock_boto3_client.download_fileobj.assert_not_called()
+
+    @pytest.mark.unit
+    def test_get_file_size_maps_missing_object_to_file_not_found(
+        self, s3_storage, mock_boto3_client
+    ):
+        mock_boto3_client.head_object.side_effect = ClientError(
+            {"Error": {"Code": "NoSuchKey", "Message": "Not found"}},
+            "head_object",
+        )
+
+        with pytest.raises(FileNotFoundError, match="File not found"):
+            s3_storage.get_file_size("avatars/missing.png")
+
+    @pytest.mark.unit
+    def test_get_file_size_maps_denied_head_to_file_not_found(
+        self, s3_storage, mock_boto3_client
+    ):
+        # Without s3:ListBucket, HEAD on a missing key returns 403, not 404.
+        mock_boto3_client.head_object.side_effect = ClientError(
+            {"Error": {"Code": "403", "Message": "Forbidden"}},
+            "head_object",
+        )
+
+        with pytest.raises(FileNotFoundError, match="File not found"):
+            s3_storage.get_file_size("avatars/missing.png")
+
+
+class TestS3StoragePresignedUrl:
+    """Test response metadata on short-lived direct avatar delivery URLs."""
+
+    @pytest.mark.unit
+    def test_generate_presigned_url_can_override_content_type(
+        self, s3_storage, mock_boto3_client
+    ):
+        mock_boto3_client.generate_presigned_url.return_value = "https://signed"
+
+        result = s3_storage.generate_presigned_url(
+            "avatars/test.png", expires_in=300, content_type="image/png"
+        )
+
+        assert result == "https://signed"
+        mock_boto3_client.generate_presigned_url.assert_called_once_with(
+            "get_object",
+            Params={
+                "Bucket": "test-bucket",
+                "Key": "avatars/test.png",
+                "ResponseContentType": "image/png",
+            },
+            ExpiresIn=300,
+        )
+
+
 class TestS3StorageDeleteFile:
     """Test file deletion functionality."""
 

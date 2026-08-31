@@ -87,7 +87,7 @@ spec:
         image: arc53/docsgpt
         # `parsing` queue carries read_document/parse_document; required for its await to resolve.
         # For heavy/OCR parsing, run a separate deployment with `-Q parsing` (and GPU env).
-        command: ["celery", "-A", "application.app.celery", "worker", "-l", "INFO", "-n", "worker.%h", "-Q", "docsgpt,parsing"]
+        command: ["celery", "-A", "application.app.celery", "worker", "-l", "INFO", "-n", "worker.%h", "-Q", "docsgpt,parsing,embeddings"]
         resources:
           limits:
             memory: "4Gi"
@@ -99,6 +99,8 @@ spec:
         - secretRef:
             name: docsgpt-secrets
         env:
+        - name: DEPLOYMENT_TYPE
+          value: "cloud"
         - name: API_URL
           value: "http://<your-api-endpoint>"
         - name: POSTGRES_URI

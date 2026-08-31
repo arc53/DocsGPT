@@ -5,7 +5,7 @@ import time
 
 import logging
 import uuid
-from typing import Any, Callable, Dict, Generator, List
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 from application.core import log_context
 from application.storage.db.repositories.stack_logs import StackLogsRepository
@@ -17,11 +17,12 @@ logging.basicConfig(
 
 
 class LogContext:
-    def __init__(self, endpoint, activity_id, user, api_key, query):
+    def __init__(self, endpoint, activity_id, user, api_key, query, agent_id=None):
         self.endpoint = endpoint
         self.activity_id = activity_id
         self.user = user
         self.api_key = api_key
+        self.agent_id = agent_id
         self.query = query
         self.stacks = []
         # Per-activity response aggregates populated by ``_consume_and_log``
@@ -33,6 +34,12 @@ class LogContext:
         self.thought_length = 0
         self.source_count = 0
         self.tool_call_count = 0
+        # Terminal ``error`` events are *yielded*, not raised (workflow node
+        # failures, agent-reported errors), so they never reach the decorator's
+        # ``except``. Recording one here keeps ``activity_finished`` from
+        # reporting ``status="ok"`` on a turn the user saw fail — that gap is
+        # why blank-answer incidents did not show up in error dashboards.
+        self.stream_error: str | None = None
 
 
 def build_stack_data(
@@ -100,7 +107,9 @@ def log_activity() -> Callable:
             # so nested activities record the parent → child link.
             parent_activity_id = log_context.snapshot().get("activity_id")
 
-            context = LogContext(endpoint, activity_id, user, api_key, query)
+            context = LogContext(
+                endpoint, activity_id, user, api_key, query, agent_id=agent_id
+            )
             kwargs["log_context"] = context
 
             ctx_token = log_context.bind(
@@ -171,8 +180,12 @@ def _emit_activity_finished(
             "user_id": context.user,
             "endpoint": context.endpoint,
             "duration_ms": duration_ms,
-            "status": "error" if error is not None else "ok",
-            "error_class": type(error).__name__ if error is not None else None,
+            "status": "error" if (error is not None or context.stream_error) else "ok",
+            "error_class": (
+                type(error).__name__
+                if error is not None
+                else ("StreamError" if context.stream_error else None)
+            ),
             "answer_length": context.answer_length,
             "thought_length": context.thought_length,
             "source_count": context.source_count,
@@ -188,6 +201,11 @@ def _accumulate_response_summary(item: Any, context: "LogContext") -> None:
     gets the same summary.
     """
     if not isinstance(item, dict):
+        return
+    if item.get("type") == "error":
+        # Fall back to a sentinel: an error event carrying no message would
+        # otherwise store "" and read as falsy, reporting the activity "ok".
+        context.stream_error = str(item.get("error") or "")[:200] or "unspecified"
         return
     if "answer" in item:
         context.answer_length += len(str(item["answer"]))
@@ -217,6 +235,7 @@ def _consume_and_log(generator: Generator, context: "LogContext"):
             activity_id=context.activity_id,
             user=context.user,
             api_key=context.api_key,
+            agent_id=context.agent_id,
             query=context.query,
             stacks=context.stacks,
             level="error",
@@ -228,6 +247,7 @@ def _consume_and_log(generator: Generator, context: "LogContext"):
             activity_id=context.activity_id,
             user=context.user,
             api_key=context.api_key,
+            agent_id=context.agent_id,
             query=context.query,
             stacks=context.stacks,
             level="info",
@@ -242,6 +262,7 @@ def _log_activity_to_db(
     query: str,
     stacks: List[Dict],
     level: str,
+    agent_id: Optional[str] = None,
 ) -> None:
     """Append a per-request activity log row to Postgres (``stack_logs``)."""
     try:
@@ -259,6 +280,7 @@ def _log_activity_to_db(
                 level=_truncate(level),
                 user_id=_truncate(user),
                 api_key=_truncate(api_key),
+                agent_id=agent_id,
                 query=_truncate(query),
                 stacks=stacks,
                 timestamp=datetime.datetime.now(datetime.timezone.utc),

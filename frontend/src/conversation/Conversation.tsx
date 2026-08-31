@@ -7,6 +7,7 @@ import userService from '../api/services/userService';
 import SharedAgentCard from '../agents/SharedAgentCard';
 import { Agent } from '../agents/types';
 import ArtifactSidebar from '../components/ArtifactSidebar';
+import ErrorBoundary from '../components/ErrorBoundary';
 import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
 import {
@@ -31,7 +32,12 @@ import {
   submitToolActions,
   updateQuery,
 } from './conversationSlice';
-import { selectCompletedAttachments } from '../upload/uploadSlice';
+import { getSendReadiness } from '../components/message-input/armedSend';
+import {
+  clearAttachments,
+  selectAttachments,
+  selectCompletedAttachments,
+} from '../upload/uploadSlice';
 
 export default function Conversation() {
   const { t } = useTranslation();
@@ -54,6 +60,10 @@ export default function Conversation() {
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
   const completedAttachments = useSelector(selectCompletedAttachments);
+  const attachments = useSelector(selectAttachments);
+  // A direct send (hero card) that must wait for pending attachments is
+  // parked here; MessageInput consumes it into an armed composer send.
+  const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
@@ -165,8 +175,16 @@ export default function Conversation() {
   }, [conversationId, status]);
 
   const handleFetchAnswer = useCallback(
-    ({ question, index }: { question: string; index?: number }) => {
-      dispatch(fetchAnswer({ question, indx: index }));
+    ({
+      question,
+      index,
+      attachmentIds,
+    }: {
+      question: string;
+      index?: number;
+      attachmentIds?: string[];
+    }) => {
+      dispatch(fetchAnswer({ question, indx: index, attachmentIds }));
     },
     [dispatch, selectedAgent],
   );
@@ -184,11 +202,12 @@ export default function Conversation() {
       const trimmedQuestion = question.trim();
       if (trimmedQuestion === '') return;
 
-      const filesAttached = completedAttachments
-        .filter((a) => a.id)
-        .map((a) => ({ id: a.id as string, fileName: a.fileName }));
-
       if (index !== undefined) {
+        // Retry/edit of an existing turn: re-send the ids bound to that
+        // row — the composer slice was consumed by the original send.
+        const rowAttachmentIds = (queries[index]?.attachments ?? []).map(
+          (a) => a.id,
+        );
         dispatch(
           resendQuery({
             index,
@@ -196,8 +215,22 @@ export default function Conversation() {
             keepIdempotencyKey: isRetry,
           }),
         );
-        handleFetchAnswer({ question: trimmedQuestion, index });
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index,
+          attachmentIds: rowAttachmentIds,
+        });
+      } else if (getSendReadiness(attachments).state !== 'ready') {
+        // Direct new sends (hero suggestion cards) bypass MessageInput's
+        // submit gate. With files still uploading/parsing (or failed),
+        // sending now would silently drop them — route the question into
+        // the composer instead, where the armed-send banner takes over.
+        setQueuedQuestion(trimmedQuestion);
       } else {
+        const filesAttached = completedAttachments
+          .filter((a) => a.id)
+          .map((a) => ({ id: a.id as string, fileName: a.fileName }));
+
         if (!isRetry)
           dispatch(
             addQuery({
@@ -205,10 +238,17 @@ export default function Conversation() {
               attachments: filesAttached,
             }),
           );
-        handleFetchAnswer({ question: trimmedQuestion, index });
+        // One source of truth: the ids on the wire are exactly the ids
+        // the optimistic row displays.
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index,
+          attachmentIds: filesAttached.map((f) => f.id),
+        });
+        if (filesAttached.length > 0) dispatch(clearAttachments());
       }
     },
-    [dispatch, handleFetchAnswer, completedAttachments],
+    [dispatch, handleFetchAnswer, completedAttachments, attachments, queries],
   );
 
   const handleFeedback = (query: Query, feedback: FEEDBACK, index: number) => {
@@ -336,52 +376,57 @@ export default function Conversation() {
         }`}
       >
         <div className="relative min-h-0 flex-1">
-          <ConversationMessages
-            key={conversationMountKey}
-            handleQuestion={handleQuestion}
-            handleQuestionSubmission={handleQuestionSubmission}
-            handleFeedback={handleFeedback}
-            queries={queries}
-            status={status}
-            showHeroOnEmpty={selectedAgent ? false : true}
-            onOpenArtifact={handleOpenArtifact}
-            onToolAction={handleToolAction}
-            isSplitView={isSplitArtifactOpen}
-            agentId={selectedAgent?.id}
-            headerContent={
-              selectedAgent ? (
-                <div className="flex w-full items-center justify-center py-4">
-                  <SharedAgentCard
-                    agent={selectedAgent}
-                    onEdit={
-                      selectedAgent.id
-                        ? () =>
-                            navigate(
-                              selectedAgent.agent_type === 'workflow'
-                                ? `/agents/workflow/edit/${selectedAgent.id}`
-                                : `/agents/edit/${selectedAgent.id}`,
-                            )
-                        : undefined
-                    }
-                  />
-                </div>
-              ) : undefined
-            }
-          />
+          {/* A render crash in the message list must leave the composer
+              usable; the boundary resets on conversation switch. */}
+          <ErrorBoundary key={conversationMountKey}>
+            <ConversationMessages
+              handleQuestion={handleQuestion}
+              handleQuestionSubmission={handleQuestionSubmission}
+              handleFeedback={handleFeedback}
+              queries={queries}
+              status={status}
+              showHeroOnEmpty={selectedAgent ? false : true}
+              onOpenArtifact={handleOpenArtifact}
+              onToolAction={handleToolAction}
+              isSplitView={isSplitArtifactOpen}
+              agentId={selectedAgent?.id}
+              headerContent={
+                selectedAgent ? (
+                  <div className="flex w-full items-center justify-center py-4">
+                    <SharedAgentCard
+                      agent={selectedAgent}
+                      onEdit={
+                        selectedAgent.id
+                          ? () =>
+                              navigate(
+                                selectedAgent.agent_type === 'workflow'
+                                  ? `/agents/workflow/edit/${selectedAgent.id}`
+                                  : `/agents/edit/${selectedAgent.id}`,
+                              )
+                          : undefined
+                      }
+                    />
+                  </div>
+                ) : undefined
+              }
+            />
+          </ErrorBoundary>
           <div
             className={`from-background pointer-events-none absolute bottom-0 left-1/2 h-6 w-full -translate-x-1/2 rounded-t-2xl bg-linear-to-t to-transparent bg-clip-content px-2 ${
               isSplitArtifactOpen
                 ? 'max-w-325'
-                : 'max-w-325 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
+                : 'max-w-325 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12'
             }`}
           />
         </div>
 
+        {/* One notch narrower than the message column above it, which keeps its
+            own width. */}
         <div
           className={`bg-opacity-0 z-3 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1 ${
             isSplitArtifactOpen
-              ? 'max-w-325'
-              : 'max-w-325 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
+              ? 'max-w-290'
+              : 'max-w-290 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12'
           }`}
         >
           <div className="flex w-full items-center rounded-full px-2">
@@ -390,6 +435,8 @@ export default function Conversation() {
               onSubmit={(text) => {
                 handleQuestionSubmission(text);
               }}
+              queuedQuestion={queuedQuestion}
+              onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
               loading={status === 'loading'}
               showSourceButton={selectedAgent ? false : true}
               showToolButton={selectedAgent ? false : true}

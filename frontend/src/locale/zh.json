@@ -1001,7 +1001,9 @@
       "webhookUrl": "Webhook URL",
       "generate": "Generate",
       "test": "Test",
-      "learnMore": "Learn more"
+      "learnMore": "Learn more",
+      "resetKey": "重置密钥",
+      "resetKeyConfirm": "确定要重置 API 密钥吗？当前密钥将立即停止工作，此操作无法撤销。"
     },
     "importSpec": {
       "title": "导入 API 规范",
@@ -1028,6 +1030,9 @@
       "importError": "Import failed",
       "willCreate": "Creates a new agent.",
       "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
+      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
+      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
+      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
       "sources": "Sources",
       "tools": "Tools",
       "models": "Models",
@@ -1098,6 +1103,45 @@
       "insert": "已编辑 Wiki 页面",
       "delete": "已删除 Wiki 页面",
       "rename": "已重命名 Wiki 页面",
+      "failed": "失败",
+      "active": {
+        "edited": "正在编辑 Wiki…",
+        "create": "正在创建 Wiki 页面…",
+        "str_replace": "正在编辑 Wiki 页面…",
+        "insert": "正在编辑 Wiki 页面…",
+        "delete": "正在删除 Wiki 页面…",
+        "rename": "正在重命名 Wiki 页面…"
+      }
+    },
+    "streamingStatus": {
+      "thinking": "思考中…",
+      "generating": "生成中…",
+      "searchingWeb": "正在网上搜索“{{query}}”…",
+      "searchingWebGeneric": "正在搜索网络…",
+      "searchingImages": "正在搜索“{{query}}”的图片…",
+      "readingPage": "正在阅读 {{target}}…",
+      "searchingKnowledge": "正在搜索知识库…",
+      "accessingMemory": "正在访问记忆…",
+      "runningCode": "正在运行代码…",
+      "creatingArtifact": "正在创建工件…",
+      "usingTool": "正在使用 {{tool}}…"
+    },
+    "toolChip": {
+      "searchingWeb": "已搜索网络 · “{{query}}”",
+      "searchedWebGeneric": "已搜索网络",
+      "searchingImages": "已搜索图片 · “{{query}}”",
+      "readingPage": "已阅读 {{target}}",
+      "searchingKnowledge": "已搜索知识库",
+      "accessingMemory": "已访问记忆",
+      "runningCode": "已运行代码",
+      "creatingArtifact": "已创建工件",
+      "usingTool": "已使用 {{tool}}"
+    },
+    "inlineSteps": {
+      "arguments": "参数",
+      "response": "响应",
+      "running": "正在运行…",
+      "denied": "已被用户拒绝",
       "failed": "失败"
     }
   },
@@ -1108,6 +1152,8 @@
     "newAgent": "新建代理",
     "importAgent": "Import",
     "exportAgent": "Export as YAML",
+    "exportAgentFailed": "Failed to export agent",
+    "close": "关闭",
     "shareWithTeam": "与团队共享",
     "backToAll": "返回所有代理",
     "pageHeader": {
@@ -1184,6 +1230,7 @@
         "agentType": "代理类型",
         "models": "模型",
         "advanced": "高级",
+        "guardrails": "Guardrails",
         "preview": "预览"
       },
       "placeholders": {
@@ -1247,7 +1294,62 @@
         "description": "删除此代理将无法恢复，并会移除其所有计划和运行历史。",
         "deleteButton": "删除代理"
       },
-      "externalKb": "外部知识库"
+      "externalKb": "外部知识库",
+      "errors": {
+        "publishFailed": "无法发布该助手，请重试。",
+        "saveDraftFailed": "无法保存草稿，请重试。"
+      },
+      "guardrails": {
+        "enable": "Enable guardrails",
+        "enableDescription": "Run the selected checks on this agent's runs",
+        "mode": "Enforcement mode",
+        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
+        "checks": "Checks",
+        "latencyHint": "Approximate added latency when this check runs",
+        "notConfigured": "Not configured",
+        "lockedByFloor": "Required by the instance policy and cannot be removed",
+        "configure": "Configure",
+        "blockMessage": "Blocked-response message",
+        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
+        "failOpen": "Continue if a check fails",
+        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
+        "timeout": "Check timeout (ms)",
+        "loadError": "Could not load the guardrail catalog",
+        "terms": "Banned terms (one per line)",
+        "termsPlaceholder": "competitor name\ninternal codename",
+        "allowHosts": "Allowed hosts (one per line)",
+        "blockHosts": "Blocked hosts (one per line)",
+        "policyText": "Policy",
+        "minOverlap": "Minimum source overlap",
+        "minWords": "Minimum answer length (words)",
+        "confidence": "Confidence threshold",
+        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
+        "activeCount": "{{count}} active",
+        "needsSetup": "{{count}} need setup",
+        "setupRequired": "Fill in this check's settings before saving.",
+        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
+        "remove": "Remove",
+        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
+        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
+        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
+        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
+        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "stages": {
+          "input": "User input",
+          "retrieval": "Retrieved sources",
+          "toolResult": "Tool result",
+          "output": "Answer"
+        },
+        "actions": {
+          "flag": "Flag only",
+          "redact": "Redact",
+          "block": "Block"
+        },
+        "modes": {
+          "monitorOnly": "Monitor only",
+          "scanAll": "Enforce everywhere"
+        }
+      }
     },
     "logs": {
       "title": "代理日志",
@@ -1347,6 +1449,29 @@
       "currentFolder": "此文件夹",
       "noSubfolders": "没有子文件夹",
       "noFolders": "暂无文件夹"
+    },
+    "guardrailEvents": {
+      "heading": "Guardrail activity",
+      "description": "Every control that fired on this agent, and every one that could not run.",
+      "lastDays": "Last {{count}} days",
+      "blocked": "Blocked",
+      "redacted": "Redacted",
+      "flagged": "Flagged",
+      "notEvaluated": "Not evaluated",
+      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
+      "byCheck": "By check",
+      "allChecks": "All checks",
+      "allOutcomes": "All outcomes",
+      "tableHeader": "Guardrail decisions",
+      "when": "When",
+      "check": "Check",
+      "stage": "Stage",
+      "outcome": "Outcome",
+      "detail": "Detail",
+      "empty": "No guardrail has fired on this agent yet.",
+      "emptyForFilter": "No decisions match this filter.",
+      "truncated": "Showing the most recent {{count}} decisions.",
+      "loadError": "Could not load guardrail activity"
     }
   },
   "components": {

@@ -97,6 +97,31 @@ class LLMResponse:
         return bool(self.tool_calls) and self.finish_reason == "tool_calls"
 
 
+def _is_restated_payload(existing: str, incoming: str) -> bool:
+    """True when ``incoming`` restates an already-complete ``existing`` payload.
+
+    Genuine argument deltas are fragments: a strict prefix of a single
+    top-level JSON object can never parse, because the outer brace balances
+    only at the final character. So "``existing`` parses on its own" is a
+    reliable signal that it is finished and ``incoming`` is a restatement
+    rather than a continuation.
+
+    The character check runs first and is what keeps this O(1) per frame —
+    parsing the accumulator on every delta would be quadratic in the number
+    of frames, which is 100 ms+ of CPU for a large artifact spec streamed a
+    few characters at a time.
+    """
+    if not existing or not incoming:
+        return False
+    if existing.rstrip()[-1:] not in ("}", "]") or incoming.lstrip()[:1] not in ("{", "["):
+        return False
+    try:
+        json.loads(existing)
+    except ValueError:
+        return False
+    return True
+
+
 class LLMHandler(ABC):
     """Abstract base class for LLM handlers."""
 
@@ -316,11 +341,39 @@ class LLMHandler(ABC):
         attachment_texts = []
 
         for attachment in attachments:
-            logger.info(f"Adding attachment {attachment.get('id')} to context")
-            if "content" in attachment:
-                attachment_texts.append(
-                    f"Attached file content:\n\n{attachment['content']}"
+            # ``metadata.extraction`` records what parsing actually did.
+            # Rows predating it have no ``extraction`` key and pass; rows
+            # whose extraction failed must not reach the prompt (a PG row
+            # always has a ``content`` key, so key membership is no gate).
+            extraction = (attachment.get("metadata") or {}).get("extraction") or {}
+            status = extraction.get("status")
+            if status is not None and status != "ok":
+                logger.info(
+                    f"Skipping attachment {attachment.get('id')}: extraction status {status}"
                 )
+                continue
+            content = attachment.get("content")
+            if content is None:
+                logger.info(
+                    f"Skipping attachment {attachment.get('id')}: no extracted content"
+                )
+                continue
+            logger.info(f"Adding attachment {attachment.get('id')} to context")
+            note = ""
+            if extraction.get("truncated"):
+                stored = extraction.get("stored_tokens")
+                original = extraction.get("original_tokens")
+                counts = (
+                    f"only the first {stored:,} of ~{original:,} tokens are included"
+                    if isinstance(stored, int) and isinstance(original, int)
+                    else "part of the document is missing"
+                )
+                name = attachment.get("filename") or "This file"
+                note = (
+                    f'[NOTE: "{name}" was truncated during extraction — {counts}. '
+                    "Scope any whole-document claims to this portion.]\n\n"
+                )
+            attachment_texts.append(f"Attached file content:\n\n{note}{content}")
         if attachment_texts:
             combined_text = "\n\n".join(attachment_texts)
 
@@ -1236,14 +1289,21 @@ class LLMHandler(ABC):
                 return ""
 
             # Cap reached: force one final tool-less call so the stream
-            # always ends with content rather than cutting off.
+            # always ends with content rather than cutting off. The
+            # instruction rides as a USER turn, not a trailing system
+            # message: strict chat templates (Cloudflare's qwen, prod
+            # 2026-08-18) reject any request whose system message is not
+            # at position 0 — 400 "System message must be at the
+            # beginning" — killing the primary on the very turn meant to
+            # wrap up. ``tools=None`` below enforces the cap regardless
+            # of the role.
             if iteration >= MAX_TOOL_ITERATIONS:
                 logger.warning(
                     "agent tool loop hit cap (%d); forcing finalize",
                     MAX_TOOL_ITERATIONS,
                 )
                 messages.append(
-                    {"role": "system", "content": _FINALIZE_INSTRUCTION},
+                    {"role": "user", "content": _FINALIZE_INSTRUCTION},
                 )
                 response = agent.llm.gen(
                     model=getattr(agent.llm, "model_id", None) or agent.model_id,
@@ -1377,6 +1437,25 @@ class LLMHandler(ABC):
                         tool_calls[call.index] = call
                     else:
                         existing = tool_calls[call.index]
+                        # Decide BEFORE the id/name overwrite below: a gateway
+                        # that reuses one index for sequential DISTINCT calls
+                        # is indistinguishable from a restatement once the
+                        # identity is gone. Restatement frames carry neither
+                        # id nor name, so a differing one means a new call.
+                        is_new_call = bool(
+                            (call.id and existing.id and call.id != existing.id)
+                            or (call.name and existing.name and call.name != existing.name)
+                        )
+                        if is_new_call:
+                            logger.warning(
+                                "tool_call_index_reused_by_distinct_call",
+                                extra={
+                                    "index": call.index,
+                                    "previous_call": f"{existing.id}/{existing.name}",
+                                    "incoming_call": f"{call.id}/{call.name}",
+                                    "dropped_prefix": str(existing.arguments)[:120],
+                                },
+                            )
                         if call.id:
                             existing.id = call.id
                         if call.name:
@@ -1387,7 +1466,23 @@ class LLMHandler(ABC):
                             elif isinstance(existing.arguments, str) and isinstance(
                                 call.arguments, str
                             ):
-                                existing.arguments += call.arguments
+                                if (
+                                    _is_restated_payload(
+                                        existing.arguments, call.arguments
+                                    )
+                                    and not is_new_call
+                                ):
+                                    # Some OpenAI-compatible gateways restate
+                                    # the WHOLE argument payload on the finish
+                                    # frame for an index instead of streaming
+                                    # deltas. Appending produced '{...}{...}',
+                                    # which never parses, so the tool call
+                                    # failed on every one of the turn's
+                                    # MAX_TOOL_ITERATIONS rounds while the turn
+                                    # still reported status='complete'.
+                                    existing.arguments = call.arguments
+                                else:
+                                    existing.arguments += call.arguments
                             else:
                                 # Complete (non-delta) payloads: latest wins.
                                 existing.arguments = call.arguments
@@ -1430,7 +1525,7 @@ class LLMHandler(ABC):
                 # Mirror the finalize-round contract at the bottom of
                 # this method: when the cap or context limit already
                 # forced ``tools=None`` (with an accompanying "no more
-                # tools" system message), the recovery must not reopen
+                # tools" user-turn instruction), the recovery must not reopen
                 # tools, or the model could run one extra tool call past
                 # the cap. ``_iteration >= MAX_TOOL_ITERATIONS`` catches
                 # the finalize round.
@@ -1498,11 +1593,13 @@ class LLMHandler(ABC):
         next_iteration = _iteration + 1
         cap_reached = next_iteration >= MAX_TOOL_ITERATIONS
 
-        # Check if context limit was reached during tool execution
+        # Check if context limit was reached during tool execution.
+        # Injected as a USER turn, not a trailing system message — see the
+        # cap branch below for why (strict chat templates 400 on
+        # non-leading system messages).
         if hasattr(agent, 'context_limit_reached') and agent.context_limit_reached:
-            # Add system message warning about context limit
             messages.append({
-                "role": "system",
+                "role": "user",
                 "content": (
                     "WARNING: Context window limit has been reached. "
                     "Please provide a final response to the user without making additional tool calls. "
@@ -1511,12 +1608,19 @@ class LLMHandler(ABC):
             })
             logger.info("Context limit reached - instructing agent to wrap up")
         elif cap_reached:
+            # USER turn, not a trailing system message: Cloudflare's qwen
+            # (vLLM-style template) 400s any request whose system message
+            # is not at position 0 ("System message must be at the
+            # beginning", prod 2026-08-18) — the finalize turn killed the
+            # primary and the answer came from the fallback. Probed
+            # 2026-08-20: qwen accepts the identical text as a user turn.
+            # ``tools=None`` below enforces the cap regardless of role.
             logger.warning(
                 "agent tool loop hit cap (%d); forcing finalize",
                 MAX_TOOL_ITERATIONS,
             )
             messages.append(
-                {"role": "system", "content": _FINALIZE_INSTRUCTION},
+                {"role": "user", "content": _FINALIZE_INSTRUCTION},
             )
 
         # Hard pre-send gate: tool results appended this round may have

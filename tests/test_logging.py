@@ -257,6 +257,35 @@ class TestLogActivity:
         assert finished.status == "error"
         assert finished.error_class == "ValueError"
 
+    def test_log_activity_records_error_status_on_yielded_error(self, caplog):
+        # Workflow node failures are reported as a yielded ``type: error``
+        # event rather than a raised exception, so the decorator's ``except``
+        # never runs. Those turns used to log ``status="ok"`` with
+        # ``answer_length=0``, which kept real user-visible failures out of
+        # every error dashboard.
+        import logging as _logging
+
+        from application.logging import log_activity
+
+        class FakeAgent:
+            endpoint = "stream"
+            user = "user1"
+            user_api_key = ""
+            query = "hello"
+
+        @log_activity()
+        def erroring(agent, log_context=None):
+            yield {"type": "error", "error": "No LLM class found for type foundry"}
+
+        with patch("application.logging._log_activity_to_db"), \
+                caplog.at_level(_logging.INFO, logger="root"):
+            list(erroring(FakeAgent()))
+
+        finished = next(r for r in caplog.records if r.message == "activity_finished")
+        assert finished.status == "error"
+        assert finished.error_class == "StreamError"
+        assert finished.answer_length == 0
+
     def test_log_activity_emits_response_summary_aggregates(self, caplog):
         # Replaces the ``agent_response`` event that ``run_agent_logic``
         # used to emit only on the Celery webhook path: every Flask

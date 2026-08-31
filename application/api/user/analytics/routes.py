@@ -801,15 +801,23 @@ class GetUserLogs(Resource):
                         "(l.data->>'api_key' = :api_key"
                         " OR l.data->>'agent_id' = :agent_pg_id)"
                     ]
+                    # ``stack_logs.agent_id`` (0026) is the stable join key;
+                    # ``api_key`` is mutable (agents rotate keys), so match the
+                    # id first and keep the key arm for rows predating the
+                    # backfill / any null agent_id.
+                    stack_agent_match = (
+                        "(s.agent_id = CAST(:agent_pg_id AS uuid)"
+                        " OR s.api_key = :api_key)"
+                    )
                     webhook_where = [
                         "COALESCE(s.endpoint, '') = 'webhook'",
-                        "s.api_key = :api_key",
+                        stack_agent_match,
                         webhook_dedupe,
                     ]
                     system_where = [
                         "s.level = 'error'",
                         "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
-                        "s.api_key = :api_key",
+                        stack_agent_match,
                     ]
                     # Owner-gated agent match: drop the user clause so a
                     # shared agent's runs (stamped with the caller's

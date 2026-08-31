@@ -15,7 +15,7 @@ import os
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Union
 
 from application.core.settings import settings
 from application.parser.file.bulk import get_default_file_extractor
@@ -105,14 +105,26 @@ def _max_input_bytes() -> int:
 _ZIP_CONTAINER_EXTENSIONS = frozenset({".docx", ".xlsx", ".pptx", ".epub"})
 
 
-def _reject_zip_bomb(data: bytes, suffix: str) -> Optional[str]:
-    """Return an error string if a zip-based document declares an implausible expansion, else None."""
+def _zip_bomb_reason(source: Union[bytes, str, Path], suffix: str) -> Optional[str]:
+    """Return an error string if a zip container declares an implausible expansion, else None.
+
+    Reads only the central directory (declared sizes), never decompressing.
+
+    Args:
+        source: Document bytes, or a filesystem path to the document.
+        suffix: Lowercased file extension; non-zip formats are not gated here.
+
+    Returns:
+        The rejection reason, or None when the archive is acceptable, is not a
+        zip container, or is not a readable zip.
+    """
     if suffix not in _ZIP_CONTAINER_EXTENSIONS:
         return None
     max_entries = int(getattr(settings, "DOCUMENT_MAX_ARCHIVE_ENTRIES", 10000))
     cap = int(getattr(settings, "DOCUMENT_MAX_DECOMPRESSED_BYTES", 300 * 1024 * 1024))
+    opened = io.BytesIO(source) if isinstance(source, bytes) else source
     try:
-        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        with zipfile.ZipFile(opened) as zf:
             infos = zf.infolist()
             if len(infos) > max_entries:
                 return f"document archive has too many entries ({len(infos)} > {max_entries})."
@@ -125,6 +137,23 @@ def _reject_zip_bomb(data: bytes, suffix: str) -> Optional[str]:
         # Not a readable zip; the format-specific parser will surface a clean error.
         return None
     return None
+
+
+def _reject_zip_bomb(data: bytes, suffix: str) -> Optional[str]:
+    """Return an error string if a zip-based document declares an implausible expansion, else None."""
+    return _zip_bomb_reason(data, suffix)
+
+
+def reject_zip_bomb_path(path: Union[str, Path]) -> Optional[str]:
+    """Path-taking sibling of ``_reject_zip_bomb`` for callers that have a file, not bytes.
+
+    Args:
+        path: Filesystem path of the document about to be parsed.
+
+    Returns:
+        The rejection reason, or None when the file is acceptable / not a zip container.
+    """
+    return _zip_bomb_reason(path, os.path.splitext(str(path))[1].lower())
 
 
 def _resolve_ocr_enabled(ocr: str) -> bool:
@@ -223,6 +252,9 @@ def _docling_structured(path: Path, *, ocr_enabled: bool, include_tables: bool, 
     else:
         from docling.document_converter import DocumentConverter
 
+        from application.parser.file.docling_parser import _apply_inference_settings
+
+        _apply_inference_settings()
         converter = DocumentConverter()
         doc = converter.convert(str(path)).document
         markdown = doc.export_to_markdown()
@@ -231,8 +263,15 @@ def _docling_structured(path: Path, *, ocr_enabled: bool, include_tables: bool, 
     if include_tables:
         for tbl in getattr(doc, "tables", []) or []:
             try:
+                from application.parser.file.tabular_parser import cell_to_text
+
+                # ``astype(str)`` leaks pandas-3 NaNs and mangles gapped int
+                # columns ("1001.0") — same contract as the tabular parser.
                 df = tbl.export_to_dataframe()
-                tables.append({"columns": [str(c) for c in df.columns], "rows": df.astype(str).values.tolist()})
+                tables.append({
+                    "columns": [cell_to_text(c) for c in df.columns],
+                    "rows": [[cell_to_text(v) for v in row] for row in df.values.tolist()],
+                })
             except Exception:
                 try:
                     tables.append({"markdown": tbl.export_to_markdown()})

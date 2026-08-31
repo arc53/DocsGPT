@@ -286,7 +286,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 13
+        assert sender.add_periodic_task.call_count == 14
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -310,20 +310,23 @@ class TestSetupPeriodicTasks:
         # message_events retention sweep (24h)
         assert calls[7][0][0] == timedelta(hours=24)
         assert calls[7][1].get("name") == "cleanup-message-events"
-        # orphan memories sweep (24h)
+        # guardrail_events retention sweep (24h)
         assert calls[8][0][0] == timedelta(hours=24)
-        assert calls[8][1].get("name") == "cleanup-orphan-memories"
+        assert calls[8][1].get("name") == "cleanup-guardrail-events"
+        # orphan memories sweep (24h)
+        assert calls[9][0][0] == timedelta(hours=24)
+        assert calls[9][1].get("name") == "cleanup-orphan-memories"
         # scheduler dispatcher
-        assert calls[9][1].get("name") == "dispatch-scheduled-runs"
+        assert calls[10][1].get("name") == "dispatch-scheduled-runs"
         # schedule runs cleanup (24h)
-        assert calls[10][0][0] == timedelta(hours=24)
-        assert calls[10][1].get("name") == "cleanup-schedule-runs"
+        assert calls[11][0][0] == timedelta(hours=24)
+        assert calls[11][1].get("name") == "cleanup-schedule-runs"
         # sandbox session reaper (60s)
-        assert calls[11][0][0] == timedelta(seconds=60)
-        assert calls[11][1].get("name") == "reap-sandbox-sessions"
+        assert calls[12][0][0] == timedelta(seconds=60)
+        assert calls[12][1].get("name") == "reap-sandbox-sessions"
         # stale workflow-run reaper (5m)
-        assert calls[12][0][0] == timedelta(seconds=300)
-        assert calls[12][1].get("name") == "reap-stale-workflow-runs"
+        assert calls[13][0][0] == timedelta(seconds=300)
+        assert calls[13][1].get("name") == "reap-stale-workflow-runs"
 
 
 class TestMcpOauthTask:
@@ -411,8 +414,12 @@ class TestDurableTaskRetryPolicy:
         task = getattr(tasks_module, task_name)
         assert task.acks_late is True
         assert Exception in task.autoretry_for
-        assert task.retry_backoff is True
-        assert task.retry_kwargs == {"max_retries": 3, "countdown": 60}
+        assert task.retry_backoff == 60
+        assert task.max_retries == 3
+        # ``retry_kwargs`` is deliberately unset: celery mutates that dict in
+        # place on every retry, so sharing one across the decorators would
+        # race. See the DURABLE_TASK comment in application/api/user/tasks.py.
+        assert not getattr(task, "retry_kwargs", None)
 
     @pytest.mark.unit
     @pytest.mark.parametrize(
@@ -650,6 +657,8 @@ class TestCleanupMessageEventsTask:
 
         assert result == {
             "deleted": 1,
+            # Supersede tombstones ride the same retention beat.
+            "superseded_deleted": 0,
             "ttl_days": settings.MESSAGE_EVENTS_RETENTION_DAYS,
         }
         # Only the fresh row survives.
@@ -827,3 +836,102 @@ def test_bare_worker_consumes_app_and_parsing_queues():
     names = {queue.name for queue in celeryconfig.task_queues}
     assert "docsgpt" in names
     assert settings.DOCUMENT_PARSE_QUEUE in names
+
+
+class TestParseTimeoutForSize:
+    """The awaited parse window is floored at the base timeout, scales with size, and is capped."""
+
+    @pytest.mark.unit
+    def test_unknown_size_uses_the_base_timeout(self):
+        from application.api.user.tasks import parse_timeout_for_size
+        from application.core.settings import settings
+
+        base = float(settings.DOCUMENT_PARSE_TIMEOUT)
+        assert parse_timeout_for_size(None) == base
+        assert parse_timeout_for_size(0) == base
+        # A negative/garbage size can never shrink the window below the floor.
+        assert parse_timeout_for_size(-1) == base
+        assert parse_timeout_for_size("nope") == base
+
+    @pytest.mark.unit
+    def test_window_grows_with_the_document_size(self, monkeypatch):
+        from application.api.user import tasks
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120, raising=False)
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 60, raising=False)
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_MAX", 900, raising=False)
+
+        assert tasks.parse_timeout_for_size(1024 * 1024) == 180.0
+        assert tasks.parse_timeout_for_size(5 * 1024 * 1024) == 420.0
+        # Fractional sizes scale proportionally, never rounded down to the floor.
+        assert tasks.parse_timeout_for_size(512 * 1024) == 150.0
+
+    @pytest.mark.unit
+    def test_window_is_capped(self, monkeypatch):
+        from application.api.user import tasks
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120, raising=False)
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 60, raising=False)
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_MAX", 900, raising=False)
+
+        # A huge document cannot pin a parsing-worker slot indefinitely.
+        assert tasks.parse_timeout_for_size(500 * 1024 * 1024) == 900.0
+
+    @pytest.mark.unit
+    def test_scaling_disabled_by_zero_per_mb(self, monkeypatch):
+        from application.api.user import tasks
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120, raising=False)
+        monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 0, raising=False)
+
+        assert tasks.parse_timeout_for_size(50 * 1024 * 1024) == 120.0
+
+    @pytest.mark.unit
+    def test_task_time_limits_track_the_awaited_window(self):
+        from application.api.user.tasks import parse_document, parse_task_time_limits
+
+        limits = parse_task_time_limits(420.0)
+        assert limits == {"soft_time_limit": 420, "time_limit": 450}
+        # Same grace as the import-time binding, so per-call limits stay comparable.
+        grace = parse_document.time_limit - parse_document.soft_time_limit
+        assert limits["time_limit"] - limits["soft_time_limit"] == grace
+        # Never zero/negative, whatever the caller computed.
+        assert parse_task_time_limits(0)["soft_time_limit"] == 1
+
+
+class TestReconciliationTaskShape:
+    """The beat's error fallback must report the same counters as a good tick."""
+
+    @pytest.mark.unit
+    def test_error_fallback_matches_the_real_summary_keys(self):
+        from application.api.user import reconciliation
+        from application.api.user.tasks import reconciliation_task
+
+        with patch.object(
+            reconciliation, "run_reconciliation", side_effect=RuntimeError("db down")
+        ):
+            result = reconciliation_task.run()
+
+        assert result["error"] is True
+        # Hand-writing the fallback drifted immediately: it invented
+        # ``attachments_stalled`` (no sweep produces it) and dropped
+        # ``idempotency_pending_failed``, so a failed tick reported counters
+        # that could never appear and hid one that can.
+        counters = {k: v for k, v in result.items() if k != "error"}
+        assert counters == reconciliation.zero_summary()
+        assert all(v == 0 for v in counters.values())
+
+    @pytest.mark.unit
+    def test_skipped_tick_reports_the_same_counters(self, monkeypatch):
+        from application.api.user import reconciliation
+
+        monkeypatch.setattr(reconciliation.settings, "POSTGRES_URI", "", raising=False)
+        result = reconciliation.run_reconciliation()
+
+        assert result["skipped"] == "POSTGRES_URI not set"
+        assert {k: v for k, v in result.items() if k != "skipped"} == (
+            reconciliation.zero_summary()
+        )

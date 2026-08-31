@@ -8,6 +8,8 @@ support (``keyword_search`` returns ``[]``) reduce to exact vector-only
 behaviour.
 """
 
+from typing import Any, List, Optional
+
 from application.retriever.classic_rag import ClassicRAG
 
 RRF_K = 60
@@ -49,22 +51,33 @@ def fuse_with_scores(vector_hits, keyword_hits, k=RRF_K):
 class HybridRetriever(ClassicRAG):
     """ClassicRAG variant that fuses vector + keyword search with RRF."""
 
-    def _score_kind(self, docsearch):
+    def _score_kind(self, docsearch: Any) -> str:
         """RRF scores rank hits against each other, not against a similarity
         cutoff — they are not comparable to the store's cosine scores, so they
         carry their own label."""
         return "rrf"
 
-    def _fetch_candidates(self, docsearch, question, src_k, score_threshold):
+    def _fetch_candidates(
+        self,
+        docsearch: Any,
+        question: str,
+        src_k: int,
+        score_threshold: Optional[float],
+        query_vector: Optional[List[float]] = None,
+    ) -> List[Any]:
         """Return RRF-fused vector+keyword hits for one vector store.
 
         Inherits the per-source resolution and budgeting from
         :meth:`ClassicRAG._get_data`; only candidate sourcing differs.
         RRF scores are not cosine similarities, so ``score_threshold`` is
-        intentionally not applied to the fused list.
+        intentionally not applied to the fused list. ``query_vector`` is the
+        retrieval's single query embedding — the keyword half never needs one.
         """
         candidate_k = min(max(src_k * 2, 20), 500)
-        vector_hits = docsearch.search(question, k=candidate_k)
+        vector_kwargs = {"k": candidate_k}
+        if query_vector is not None:
+            vector_kwargs["query_vector"] = query_vector
+        vector_hits = docsearch.search(question, **vector_kwargs)
         keyword_hits = docsearch.keyword_search(question, k=candidate_k)
         fused = fuse_with_scores(vector_hits, keyword_hits)
         if self.include_scores:

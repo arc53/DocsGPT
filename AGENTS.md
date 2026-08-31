@@ -54,11 +54,19 @@ Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same
 `application.asgi:asgi_app` target; see `application/Dockerfile` for the
 full flag set.
 
-Run the Celery worker in a separate terminal (if needed):
+Run the Celery worker in a separate terminal:
 
 ```bash
 celery -A application.app.celery worker -l INFO
 ```
+
+**The worker is required for retrieval, not optional.** `EMBEDDINGS_DELEGATE_TO_WORKER`
+defaults on, so the API embeds each query by dispatching to the worker rather than
+loading a model of its own — which keeps the API process around 285 MB instead of
+1.2 GB. Without a worker consuming `EMBEDDINGS_QUEUE`, every search fails after
+`EMBEDDINGS_DELEGATE_TIMEOUT`. To run the API on its own, either set
+`EMBEDDINGS_DELEGATE_TO_WORKER=false` (loads the model in-process) or point
+`EMBEDDINGS_BASE_URL` at an embeddings service.
 
 On macOS, prefer the solo pool for Celery:
 
@@ -66,11 +74,17 @@ On macOS, prefer the solo pool for Celery:
 python -m celery -A application.app.celery worker -l INFO --pool=solo
 ```
 
+Note that `--pool=solo` costs roughly 350 ms per query embed against ~55 ms on the
+default prefork pool — nearly all of it the solo worker picking the message up, not
+the embedding itself. That only affects local dev; production runs prefork.
+
 A bare worker (no `-Q`) consumes every configured queue, so one worker does the
-whole job — app tasks and document parsing (the `read_document` tool / workflow
-native-file parse) alike. Use `-Q` only to split load: run the main worker with
-`-Q docsgpt` and a dedicated (e.g. GPU-enabled) parser worker with `-Q parsing`
-for heavy OCR.
+whole job — app tasks, query embedding, and document parsing (the `read_document`
+tool / workflow native-file parse) alike. Use `-Q` only to split load: run the main
+worker with `-Q docsgpt`, a dedicated (e.g. GPU-enabled) parser worker with
+`-Q parsing` for heavy OCR, and `-Q embeddings` to keep query latency off the ingest
+pool. Note the main `ingest` task parses in-process on `docsgpt`; only
+`read_document` is routed to `parsing`.
 
 ### Frontend
 
@@ -95,6 +109,20 @@ npm install
 ruff check .
 python -m pytest
 ```
+
+On **macOS**, run the suite with `KMP_DUPLICATE_LIB_OK=TRUE`:
+
+```bash
+KMP_DUPLICATE_LIB_OK=TRUE python -m pytest
+```
+
+`faiss-cpu` and `torch` each ship their own LLVM OpenMP runtime, and loading
+both into one process makes `libomp.dylib` abort the interpreter
+(`OMP: Error #15`). It is a macOS-only packaging clash, not a code fault: Linux
+resolves both to `libgomp`, which tolerates duplicates, so CI (`ubuntu-latest`)
+and the Docker images are unaffected. Without the variable, whether the run
+aborts depends on which tests happen to load faiss and torch in the same
+process, so a green run on one selection and an abort on another is expected.
 
 ### Frontend changes
 

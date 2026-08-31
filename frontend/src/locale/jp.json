@@ -1001,7 +1001,9 @@
       "webhookUrl": "Webhook URL",
       "generate": "Generate",
       "test": "Test",
-      "learnMore": "Learn more"
+      "learnMore": "Learn more",
+      "resetKey": "キーをリセット",
+      "resetKeyConfirm": "APIキーをリセットしてもよろしいですか？現在のキーは直ちに無効になり、この操作は元に戻せません。"
     },
     "importSpec": {
       "title": "API仕様のインポート",
@@ -1028,6 +1030,9 @@
       "importError": "Import failed",
       "willCreate": "Creates a new agent.",
       "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
+      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
+      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
+      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
       "sources": "Sources",
       "tools": "Tools",
       "models": "Models",
@@ -1098,6 +1103,45 @@
       "insert": "Wikiページを編集",
       "delete": "Wikiページを削除",
       "rename": "Wikiページの名前を変更",
+      "failed": "失敗",
+      "active": {
+        "edited": "Wikiを編集中…",
+        "create": "Wikiページを作成中…",
+        "str_replace": "Wikiページを編集中…",
+        "insert": "Wikiページを編集中…",
+        "delete": "Wikiページを削除中…",
+        "rename": "Wikiページの名前を変更中…"
+      }
+    },
+    "streamingStatus": {
+      "thinking": "考え中…",
+      "generating": "生成中…",
+      "searchingWeb": "「{{query}}」をウェブ検索中…",
+      "searchingWebGeneric": "ウェブ検索中…",
+      "searchingImages": "「{{query}}」の画像を検索中…",
+      "readingPage": "{{target}} を読み込み中…",
+      "searchingKnowledge": "ナレッジベースを検索中…",
+      "accessingMemory": "メモリにアクセス中…",
+      "runningCode": "コードを実行中…",
+      "creatingArtifact": "アーティファクトを作成中…",
+      "usingTool": "{{tool}} を使用中…"
+    },
+    "toolChip": {
+      "searchingWeb": "ウェブ検索済み · 「{{query}}」",
+      "searchedWebGeneric": "ウェブ検索済み",
+      "searchingImages": "画像検索済み · 「{{query}}」",
+      "readingPage": "{{target}} を読み込み済み",
+      "searchingKnowledge": "ナレッジベース検索済み",
+      "accessingMemory": "メモリにアクセス済み",
+      "runningCode": "コード実行済み",
+      "creatingArtifact": "アーティファクト作成済み",
+      "usingTool": "{{tool}} を使用済み"
+    },
+    "inlineSteps": {
+      "arguments": "引数",
+      "response": "レスポンス",
+      "running": "実行中…",
+      "denied": "ユーザーによって拒否されました",
       "failed": "失敗"
     }
   },
@@ -1108,6 +1152,8 @@
     "newAgent": "新しいエージェント",
     "importAgent": "Import",
     "exportAgent": "Export as YAML",
+    "exportAgentFailed": "Failed to export agent",
+    "close": "閉じる",
     "shareWithTeam": "チームと共有",
     "backToAll": "すべてのエージェントに戻る",
     "pageHeader": {
@@ -1184,6 +1230,7 @@
         "agentType": "エージェントタイプ",
         "models": "モデル",
         "advanced": "詳細設定",
+        "guardrails": "Guardrails",
         "preview": "プレビュー"
       },
       "placeholders": {
@@ -1247,7 +1294,62 @@
         "description": "このエージェントを削除すると元に戻せません。すべてのスケジュールと実行履歴も削除されます。",
         "deleteButton": "エージェントを削除"
       },
-      "externalKb": "外部KB"
+      "externalKb": "外部KB",
+      "errors": {
+        "publishFailed": "エージェントを公開できませんでした。もう一度お試しください。",
+        "saveDraftFailed": "下書きを保存できませんでした。もう一度お試しください。"
+      },
+      "guardrails": {
+        "enable": "Enable guardrails",
+        "enableDescription": "Run the selected checks on this agent's runs",
+        "mode": "Enforcement mode",
+        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
+        "checks": "Checks",
+        "latencyHint": "Approximate added latency when this check runs",
+        "notConfigured": "Not configured",
+        "lockedByFloor": "Required by the instance policy and cannot be removed",
+        "configure": "Configure",
+        "blockMessage": "Blocked-response message",
+        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
+        "failOpen": "Continue if a check fails",
+        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
+        "timeout": "Check timeout (ms)",
+        "loadError": "Could not load the guardrail catalog",
+        "terms": "Banned terms (one per line)",
+        "termsPlaceholder": "competitor name\ninternal codename",
+        "allowHosts": "Allowed hosts (one per line)",
+        "blockHosts": "Blocked hosts (one per line)",
+        "policyText": "Policy",
+        "minOverlap": "Minimum source overlap",
+        "minWords": "Minimum answer length (words)",
+        "confidence": "Confidence threshold",
+        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
+        "activeCount": "{{count}} active",
+        "needsSetup": "{{count}} need setup",
+        "setupRequired": "Fill in this check's settings before saving.",
+        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
+        "remove": "Remove",
+        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
+        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
+        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
+        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
+        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "stages": {
+          "input": "User input",
+          "retrieval": "Retrieved sources",
+          "toolResult": "Tool result",
+          "output": "Answer"
+        },
+        "actions": {
+          "flag": "Flag only",
+          "redact": "Redact",
+          "block": "Block"
+        },
+        "modes": {
+          "monitorOnly": "Monitor only",
+          "scanAll": "Enforce everywhere"
+        }
+      }
     },
     "logs": {
       "title": "エージェントログ",
@@ -1347,6 +1449,29 @@
       "currentFolder": "このフォルダ",
       "noSubfolders": "サブフォルダなし",
       "noFolders": "フォルダがありません"
+    },
+    "guardrailEvents": {
+      "heading": "Guardrail activity",
+      "description": "Every control that fired on this agent, and every one that could not run.",
+      "lastDays": "Last {{count}} days",
+      "blocked": "Blocked",
+      "redacted": "Redacted",
+      "flagged": "Flagged",
+      "notEvaluated": "Not evaluated",
+      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
+      "byCheck": "By check",
+      "allChecks": "All checks",
+      "allOutcomes": "All outcomes",
+      "tableHeader": "Guardrail decisions",
+      "when": "When",
+      "check": "Check",
+      "stage": "Stage",
+      "outcome": "Outcome",
+      "detail": "Detail",
+      "empty": "No guardrail has fired on this agent yet.",
+      "emptyForFilter": "No decisions match this filter.",
+      "truncated": "Showing the most recent {{count}} decisions.",
+      "loadError": "Could not load guardrail activity"
     }
   },
   "components": {

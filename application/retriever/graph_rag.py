@@ -7,7 +7,11 @@ reused) rephrase.
 
 Composes :class:`ClassicRAG` rather than subclassing: PPR doesn't fit the
 ``_fetch_candidates`` hook, but the composed instance supplies the rephrase, the
-token-budget loop, and the per-source fallback when a source has no graph.
+token-budget loop, and the fallback for sources that have no graph.
+
+Per request the whole source group costs one node-count query, one query
+embedding, and one ClassicRAG run for all the graphless sources together — all
+over a single pooled connection shared with the vector store.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from application.retriever.base import BaseRetriever
 from application.retriever.classic_rag import ClassicRAG
 from application.retriever.labels import labels_from_metadata
 from application.utils import num_tokens_from_string
-from application.vectorstore.base import EmbeddingsSingleton
+from application.vectorstore.base import get_embeddings
 
 SEED_NODES = 10
 SUBGRAPH_HOPS = 1
@@ -88,9 +92,7 @@ class GraphRAGRetriever(BaseRetriever):
         self.per_source_retrieval = {}
 
     def _embed_query(self, question: str) -> List[float]:
-        embedding = EmbeddingsSingleton.get_instance(
-            settings.EMBEDDINGS_NAME, settings.EMBEDDINGS_KEY
-        )
+        embedding = get_embeddings()
         return embedding.embed_query(question)
 
     def _ppr_scores(self, subgraph, seeds) -> Dict[str, float]:
@@ -157,10 +159,17 @@ class GraphRAGRetriever(BaseRetriever):
         base = self.base_chunks if self.base_chunks is not None else self.chunks
         return max(1, base // max(1, len(self.vectorstores)))
 
-    def _graph_docs_for_source(self, store, source_id) -> List[Dict[str, Any]]:
-        """Local PPR retrieval for one source (caller guarantees it has a graph)."""
-        question = self._classic._get_rephrased_question()
-        query_embedding = self._embed_query(question)
+    def _graph_docs_for_source(
+        self, store, source_id, query_embedding: List[float]
+    ) -> List[Dict[str, Any]]:
+        """Local PPR retrieval for one source (caller guarantees it has a graph).
+
+        Args:
+            store: Open :class:`GraphStore` shared by every source of this run.
+            source_id: Source to retrieve from.
+            query_embedding: Embedding of the rephrased question, computed once
+                by the caller for the whole retrieval.
+        """
         seed_rows = store.search_nodes_by_embedding(
             source_id, query_embedding, k=SEED_NODES
         )
@@ -204,15 +213,26 @@ class GraphRAGRetriever(BaseRetriever):
             cumulative_tokens += doc_tokens
         return docs
 
-    def _classic_for_source(self, source_id) -> List[Dict[str, Any]]:
-        """Reuse the composed ClassicRAG to retrieve one source's chunks."""
+    def _classic_for_sources(self, source_ids) -> List[Dict[str, Any]]:
+        """Reuse the composed ClassicRAG to retrieve a whole batch of sources.
+
+        One inner run for every graphless source instead of one run per source:
+        ClassicRAG then embeds the query once and fans the sources out itself.
+        The trade is that the per-source chunk split and the shared doc-token
+        budget apply across the batch — i.e. exactly plain ClassicRAG semantics
+        over those sources, rather than each source getting its own full budget.
+        """
+        source_ids = [source_id for source_id in source_ids if source_id]
+        if not source_ids:
+            return []
+        wanted = set(source_ids)
         original = self._classic.vectorstores
         original_overrides = self._classic.per_source_retrieval
         original_base = self._classic.base_chunks
         try:
-            self._classic.vectorstores = [source_id]
+            self._classic.vectorstores = list(source_ids)
             self._classic.per_source_retrieval = {
-                k: v for k, v in self.per_source_retrieval.items() if k == source_id
+                k: v for k, v in self.per_source_retrieval.items() if k in wanted
             }
             # The Dispatcher sets these on *this* object; the inner retriever is
             # the one that reads them.
@@ -223,8 +243,90 @@ class GraphRAGRetriever(BaseRetriever):
             self._classic.per_source_retrieval = original_overrides
             self._classic.base_chunks = original_base
 
+    def _classic_for_source(self, source_id) -> List[Dict[str, Any]]:
+        """Retrieve one source through the batched classic path."""
+        return self._classic_for_sources([source_id])
+
+    def _retrieve_with_store(self, store, sources) -> List[Dict[str, Any]]:
+        """Split ``sources`` by graph presence, then batch each half.
+
+        Graph sources keep their own slot in source order; every graphless
+        source collapses into a single ClassicRAG run that occupies the slot of
+        the first graphless source. Sources whose PPR retrieval raises are
+        collected and retried as one more classic batch, appended at the end.
+        """
+        try:
+            counts = store.count_nodes_many(sources)
+        except Exception as e:
+            logging.error(f"GraphRAG count_nodes failed for {sources}: {e}")
+            counts = {}
+
+        segments: List[List[Dict[str, Any]]] = []
+        graph_slots: Dict[str, int] = {}
+        graphed: List[str] = []
+        graphless: List[str] = []
+        classic_slot = None
+        for source_id in sources:
+            if counts.get(source_id, 0) > 0:
+                if source_id in graph_slots:
+                    continue
+                graph_slots[source_id] = len(segments)
+                segments.append([])
+                graphed.append(source_id)
+            else:
+                if classic_slot is None:
+                    classic_slot = len(segments)
+                    segments.append([])
+                graphless.append(source_id)
+
+        failed: List[str] = []
+        query_embedding = None
+        if graphed:
+            # Embedded once for the whole retrieval, not once per graph source.
+            try:
+                query_embedding = self._embed_query(
+                    self._classic._get_rephrased_question()
+                )
+            except Exception as e:
+                logging.error(
+                    f"GraphRAG query embedding failed, falling back: {e}",
+                    exc_info=True,
+                )
+                failed, graphed = list(graphed), []
+
+        for source_id in graphed:
+            try:
+                segments[graph_slots[source_id]] = self._graph_docs_for_source(
+                    store, source_id, query_embedding
+                )
+            except Exception as e:
+                logging.error(
+                    f"GraphRAG retrieval failed for {source_id}, falling back: {e}",
+                    exc_info=True,
+                )
+                failed.append(source_id)
+
+        # Every remaining segment is a ClassicRAG fan-out, and each of its legs
+        # checks out of the *same* per-DSN pool this store is holding. Hand the
+        # graph connection back first, or concurrent GraphRAG retrievals occupy
+        # every slot and then block on their own fallbacks until PoolTimeout.
+        # ``close()`` nulls the connection, so ``_get_data``'s finally stays correct.
+        if graphless or failed:
+            try:
+                store.close()
+            except Exception as e:
+                logging.debug("Error releasing GraphRAG store before fallback: %s", e)
+
+        if graphless:
+            segments[classic_slot] = self._classic_for_sources(graphless)
+        if failed:
+            segments.append(self._classic_for_sources(failed))
+
+        return [doc for segment in segments for doc in segment]
+
     def _get_data(self) -> List[Dict[str, Any]]:
-        if not self.vectorstores:
+        sources = [source_id for source_id in self.vectorstores if source_id]
+        if not sources:
             return []
 
         store = None
@@ -235,31 +337,17 @@ class GraphRAGRetriever(BaseRetriever):
                 logging.error(f"GraphRAG store unavailable, falling back: {e}")
                 store = None
 
-        all_docs: List[Dict[str, Any]] = []
-        for source_id in self.vectorstores:
-            if not source_id:
-                continue
-            has_graph = False
-            if store is not None:
-                try:
-                    has_graph = store.count_nodes(source_id) > 0
-                except Exception as e:
-                    logging.error(f"GraphRAG count_nodes failed for {source_id}: {e}")
-                    has_graph = False
+        if store is None:
+            return self._classic_for_sources(sources)
 
-            if not has_graph:
-                all_docs.extend(self._classic_for_source(source_id))
-                continue
-
+        try:
+            return self._retrieve_with_store(store, sources)
+        finally:
+            # Hand the pooled connection back; the store is per-request.
             try:
-                all_docs.extend(self._graph_docs_for_source(store, source_id))
+                store.close()
             except Exception as e:
-                logging.error(
-                    f"GraphRAG retrieval failed for {source_id}, falling back: {e}",
-                    exc_info=True,
-                )
-                all_docs.extend(self._classic_for_source(source_id))
-        return all_docs
+                logging.debug("Error closing GraphRAG store: %s", e)
 
     def search(self, query: str = "") -> List[Dict[str, Any]]:
         if query:

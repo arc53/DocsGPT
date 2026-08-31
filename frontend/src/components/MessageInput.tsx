@@ -44,6 +44,7 @@ import {
   SourcesTrigger,
   ToolsTrigger,
 } from './message-input';
+import { useArmedSend } from './message-input/armedSend';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
@@ -303,6 +304,11 @@ type MessageInputProps = {
   // attachments (used by doc-driven workflow runs). Normal chat leaves this
   // unset, preserving the text-required behavior.
   allowSendWithoutText?: boolean;
+  // A question queued by a send path outside the composer (hero
+  // suggestion cards) while attachments were still pending: seeds the
+  // input and arms the send so the standard waiting banner takes over.
+  queuedQuestion?: string | null;
+  onQueuedQuestionConsumed?: () => void;
 };
 
 export default function MessageInput({
@@ -312,6 +318,8 @@ export default function MessageInput({
   showToolButton = true,
   autoFocus = true,
   allowSendWithoutText = false,
+  queuedQuestion = null,
+  onQueuedQuestionConsumed,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -907,6 +915,11 @@ export default function MessageInput({
     onDrop,
     noClick: true,
     noKeyboard: true,
+    // The textarea below owns paste-to-attach via handlePaste. react-dropzone
+    // added its own paste handling in v19.2 (on by default), which fires on the
+    // root for pastes into any focused descendant - so both would upload the
+    // same file. Leave paste to handlePaste.
+    noPaste: true,
     multiple: true,
     onDragEnter: () => {
       setHandleDragActive(true);
@@ -1478,32 +1491,57 @@ export default function MessageInput({
   };
 
   // When ``allowSendWithoutText`` is set, an attachment-only submit is
-  // permitted as long as at least one attachment has finished processing.
-  const hasCompletedAttachment = attachments.some(
-    (attachment) => attachment.status === 'completed',
-  );
+  // permitted as long as at least one attachment exists; a still-pending
+  // one arms the send instead of submitting (see handleSubmit).
   const hasSubmittableContent =
-    Boolean(value.trim()) || (allowSendWithoutText && hasCompletedAttachment);
+    Boolean(value.trim()) || (allowSendWithoutText && attachments.length > 0);
   const canSubmit =
     hasSubmittableContent &&
     !loading &&
     recordingState !== 'recording' &&
     recordingState !== 'transcribing';
 
-  const handleSubmit = () => {
-    if (canSubmit) {
-      onSubmit(value);
-      setValue('');
-      if (isTouch) {
-        inputRef.current?.blur();
-      } else if (autoFocus) {
-        setTimeout(() => {
-          if (isMountedRef.current) {
-            inputRef.current?.focus();
-          }
-        }, 0);
-      }
+  const submitNow = () => {
+    onSubmit(value);
+    setValue('');
+    if (isTouch) {
+      inputRef.current?.blur();
+    } else if (autoFocus) {
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          inputRef.current?.focus();
+        }
+      }, 0);
     }
+  };
+
+  const {
+    armed: sendArmed,
+    readiness: sendReadiness,
+    arm: armSend,
+    cancel: cancelArmedSend,
+  } = useArmedSend({ attachments, onFlush: submitNow });
+
+  // Adopt a question queued outside the composer: seed the input, arm,
+  // and hand the wait to the standard banner. If the attachments already
+  // resolved by the time this runs, the armed-send effect flushes at once.
+  useEffect(() => {
+    if (queuedQuestion == null || queuedQuestion === '') return;
+    setValue(queuedQuestion);
+    armSend();
+    onQueuedQuestionConsumed?.();
+  }, [queuedQuestion]);
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    // Attachments still uploading/parsing (or failed) must never be
+    // silently dropped from the payload: hold the send in the composer
+    // until every attachment resolves, then flush automatically.
+    if (sendReadiness.state !== 'ready') {
+      armSend();
+      return;
+    }
+    submitNow();
   };
 
   const handleCancel = () => {
@@ -1566,6 +1604,35 @@ export default function MessageInput({
           onDropOn={handleDropOn}
         />
 
+        {sendArmed && sendReadiness.state === 'waiting' && (
+          <div
+            className="text-muted-foreground flex items-center gap-2 px-2 pb-1 text-xs sm:px-3"
+            role="status"
+          >
+            <span>
+              {t('conversation.attachments.waitingToSend', {
+                count: sendReadiness.pendingCount,
+              })}
+            </span>
+            <button
+              type="button"
+              onClick={cancelArmedSend}
+              className="underline hover:opacity-80"
+            >
+              {t('conversation.attachments.cancelQueuedSend')}
+            </button>
+          </div>
+        )}
+        {sendArmed && sendReadiness.state === 'blocked' && (
+          <div
+            className="px-2 pb-1 text-xs text-[#B42318] sm:px-3"
+            role="alert"
+          >
+            {t('conversation.attachments.sendBlockedByFailed', {
+              names: sendReadiness.failedNames.join(', '),
+            })}
+          </div>
+        )}
         {voiceError && (
           <div className="px-2 pb-1 text-xs text-[#B42318] sm:px-3">
             {voiceError}

@@ -2,6 +2,7 @@ from typing import List, Optional
 import importlib
 from application.vectorstore.base import BaseVectorStore
 from application.core.settings import settings
+from application.vectorstore.model_registry import DEFAULT_EMBEDDING_DIMENSION
 
 class LanceDBVectorStore(BaseVectorStore):
     """Class for LanceDB Vector Store integration."""
@@ -54,8 +55,11 @@ class LanceDBVectorStore(BaseVectorStore):
         """Ensure the table exists before performing operations."""
         if self.table is None:
             embeddings = self._get_embeddings(settings.EMBEDDINGS_NAME, self.embeddings_key)
+            # A model outside the registry reports no width until it has run;
+            # ``list_size=None`` is a TypeError, not a permissive schema.
+            dimension = getattr(embeddings, "dimension", None) or DEFAULT_EMBEDDING_DIMENSION
             schema = self.pa.schema([
-                self.pa.field("vector", self.pa.list_(self.pa.float32(), list_size=embeddings.dimension)),
+                self.pa.field("vector", self.pa.list_(self.pa.float32(), list_size=dimension)),
                 self.pa.field("text", self.pa.string()),
                 self.pa.field("metadata", self.pa.struct([
                     self.pa.field("key", self.pa.string()),
@@ -80,10 +84,19 @@ class LanceDBVectorStore(BaseVectorStore):
         self.ensure_table_exists()
         self.docsearch.add(vectors)
 
-    def search(self, query: str, k: int = 2, *args, **kwargs):
-        """Search LanceDB for the top k most similar vectors."""
+    def search(self, query: str, k: int = 2, *args, query_vector=None, **kwargs):
+        """Search LanceDB for the top k most similar vectors.
+
+        Args:
+            query_vector: Precomputed embedding of ``query``; when given the
+                store skips embedding the query itself.
+        """
         self.ensure_table_exists()
-        query_embedding = self._get_embeddings(settings.EMBEDDINGS_NAME, self.embeddings_key).embed_query(query)
+        query_embedding = query_vector
+        if query_embedding is None:
+            query_embedding = self._get_embeddings(
+                settings.EMBEDDINGS_NAME, self.embeddings_key
+            ).embed_query(query)
         results = self.docsearch.search(query_embedding).limit(k).to_list()
         return [(result["_distance"], result["text"], result["metadata"]) for result in results]
 

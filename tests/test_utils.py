@@ -16,10 +16,12 @@ from application.utils import (
     get_hash,
     get_missing_fields,
     generate_image_url,
+    is_safe_agent_image_path,
     limit_chat_history,
     num_tokens_from_object_or_list,
     num_tokens_from_string,
     safe_filename,
+    truncate_to_line_boundary,
     validate_function_name,
     validate_required_fields,
 )
@@ -99,6 +101,31 @@ class TestNumTokens:
     @pytest.mark.unit
     def test_empty_string(self):
         assert num_tokens_from_string("") == 0
+
+    @pytest.mark.unit
+    def test_special_token_text_counts_instead_of_raising(self):
+        # User documents legitimately contain literal marker text like
+        # <|endoftext|> (any paper about LLMs). Plain ``encode()`` raises
+        # ValueError on it; counting must treat it as ordinary text.
+        count = num_tokens_from_string(
+            "This paper discusses the <|endoftext|> token in GPT models."
+        )
+        assert count > 0
+
+    @pytest.mark.unit
+    def test_unbroken_cjk_run_counts_in_bounded_time(self):
+        # An unbroken letter run is a single BPE piece; tiktoken < 0.13.0
+        # merged it quadratically (~26s for this input, minutes for real
+        # uploads). tiktoken 0.13.0 does it in milliseconds. Guards
+        # against a dependency downgrade re-introducing the hang.
+        import time
+
+        dense = "統計資料表格內容分析報告書類文書處理系統設計開發" * 4000  # 96k chars, one piece
+        start = time.monotonic()
+        count = num_tokens_from_string(dense)
+        elapsed = time.monotonic() - start
+        assert count > 100000
+        assert elapsed < 10, f"pathological encode took {elapsed:.1f}s — tiktoken downgraded?"
 
 
 class TestNumTokensFromObjectOrList:
@@ -316,42 +343,114 @@ class TestGenerateImageUrl:
         assert generate_image_url("http://example.com/img.png") == "http://example.com/img.png"
 
     @pytest.mark.unit
-    def test_s3_strategy(self):
+    def test_internal_image_uses_opaque_capability(self):
         with patch("application.utils.settings") as s:
-            s.URL_STRATEGY = "s3"
-            s.S3_BUCKET_NAME = "my-bucket"
-            s.S3_ENDPOINT_URL = None
-            s.S3_REGION = "us-west-2"
-            result = generate_image_url("path/to/img.png")
-            assert result == "https://my-bucket.s3.us-west-2.amazonaws.com/path/to/img.png"
+            s.JWT_SECRET_KEY = "test-image-secret"
+            s.UPLOAD_FOLDER = "inputs"
+            s.API_URL = "https://api.example.com"
+            result = generate_image_url(
+                "inputs/user-1/attachments/avatar.png",
+                "00000000-0000-0000-0000-000000000001",
+                "user-1",
+            )
+            assert result.startswith(
+                "https://api.example.com/api/images/"
+                "00000000-0000-0000-0000-000000000001/"
+            )
+            assert "inputs" not in result
+            assert "avatar.png" not in result
 
     @pytest.mark.unit
-    def test_s3_strategy_custom_endpoint_path_style(self):
+    def test_internal_image_fails_closed_without_agent_identity(self):
         with patch("application.utils.settings") as s:
-            s.URL_STRATEGY = "s3"
-            s.S3_BUCKET_NAME = "my-bucket"
-            s.S3_ENDPOINT_URL = "https://account.r2.cloudflarestorage.com"
-            s.S3_PATH_STYLE = True
-            result = generate_image_url("path/to/img.png")
-            assert result == "https://account.r2.cloudflarestorage.com/my-bucket/path/to/img.png"
+            s.JWT_SECRET_KEY = "test-image-secret"
+            s.UPLOAD_FOLDER = "inputs"
+            assert generate_image_url("inputs/user-1/attachments/avatar.png") == ""
 
     @pytest.mark.unit
-    def test_s3_strategy_custom_endpoint_virtual_host(self):
+    def test_internal_image_fails_closed_without_secret(self):
         with patch("application.utils.settings") as s:
-            s.URL_STRATEGY = "s3"
-            s.S3_BUCKET_NAME = "my-bucket"
-            s.S3_ENDPOINT_URL = "https://minio.example.com"
-            s.S3_PATH_STYLE = False
-            result = generate_image_url("path/to/img.png")
-            assert result == "https://my-bucket.minio.example.com/path/to/img.png"
+            s.JWT_SECRET_KEY = ""
+            s.UPLOAD_FOLDER = "inputs"
+            result = generate_image_url(
+                "inputs/user-1/attachments/avatar.png",
+                "00000000-0000-0000-0000-000000000001",
+                "user-1",
+            )
+            assert result == ""
 
     @pytest.mark.unit
-    def test_backend_strategy(self):
+    def test_internal_image_rejects_path_outside_owner_uploads(self):
         with patch("application.utils.settings") as s:
-            s.URL_STRATEGY = "backend"
+            s.JWT_SECRET_KEY = "test-image-secret"
+            s.UPLOAD_FOLDER = "inputs"
             s.API_URL = "http://localhost:7091"
-            result = generate_image_url("path/to/img.png")
-            assert result == "http://localhost:7091/api/images/path/to/img.png"
+            result = generate_image_url(
+                ".env",
+                "00000000-0000-0000-0000-000000000001",
+                "user-1",
+            )
+            assert result == ""
+
+    @pytest.mark.unit
+    def test_absolute_upload_folder_still_serves_owned_images(self):
+        with patch("application.utils.settings") as s:
+            s.JWT_SECRET_KEY = "test-image-secret"
+            s.UPLOAD_FOLDER = "/data/inputs"
+            s.API_URL = "https://api.example.com"
+            result = generate_image_url(
+                "/data/inputs/user-1/attachments/avatar.png",
+                "00000000-0000-0000-0000-000000000001",
+                "user-1",
+            )
+            assert result.startswith(
+                "https://api.example.com/api/images/"
+                "00000000-0000-0000-0000-000000000001/"
+            )
+
+
+class TestIsSafeAgentImagePath:
+
+    @pytest.mark.unit
+    def test_absolute_upload_folder_accepts_owned_path(self):
+        with patch("application.utils.settings") as s:
+            s.UPLOAD_FOLDER = "/data/inputs"
+            assert is_safe_agent_image_path(
+                "/data/inputs/user-1/attachments/avatar.png", "user-1"
+            )
+
+    @pytest.mark.unit
+    def test_absolute_upload_folder_rejects_other_owner(self):
+        with patch("application.utils.settings") as s:
+            s.UPLOAD_FOLDER = "/data/inputs"
+            assert not is_safe_agent_image_path(
+                "/data/inputs/user-2/attachments/avatar.png", "user-1"
+            )
+
+    @pytest.mark.unit
+    def test_absolute_upload_folder_rejects_escape(self):
+        with patch("application.utils.settings") as s:
+            s.UPLOAD_FOLDER = "/data/inputs"
+            assert not is_safe_agent_image_path(
+                "/data/inputs/user-1/attachments/../../../etc/passwd.png", "user-1"
+            )
+            assert not is_safe_agent_image_path("/etc/passwd.png", "user-1")
+
+    @pytest.mark.unit
+    def test_relative_upload_folder_rejects_absolute_path(self):
+        with patch("application.utils.settings") as s:
+            s.UPLOAD_FOLDER = "inputs"
+            assert not is_safe_agent_image_path(
+                "/inputs/user-1/attachments/avatar.png", "user-1"
+            )
+
+    @pytest.mark.unit
+    def test_relative_upload_folder_accepts_owned_path(self):
+        with patch("application.utils.settings") as s:
+            s.UPLOAD_FOLDER = "inputs"
+            assert is_safe_agent_image_path(
+                "inputs/user-1/attachments/avatar.png", "user-1"
+            )
 
 
 class TestCalculateCompressionThreshold:
@@ -640,17 +739,20 @@ class TestGenerateImageUrlEdgeCases:
     @pytest.mark.unit
     def test_non_string_input(self):
         result = generate_image_url(123)
-        # Not a string, not starting with http, uses default strategy
-        assert "/api/images/" in result or "s3" in result
+        assert result == ""
 
     @pytest.mark.unit
-    def test_default_strategy_is_backend(self):
+    def test_email_owner_legacy_path_is_supported(self):
         with patch("application.utils.settings") as s:
-            # Simulate missing URL_STRATEGY attribute
-            del s.URL_STRATEGY
+            s.JWT_SECRET_KEY = "test-image-secret"
+            s.UPLOAD_FOLDER = "inputs"
             s.API_URL = "http://localhost:7091"
-            result = generate_image_url("img.png")
-            assert "localhost:7091" in result
+            result = generate_image_url(
+                "inputs/person@example.com/attachments/img.png",
+                "00000000-0000-0000-0000-000000000001",
+                "person@example.com",
+            )
+            assert result.startswith("http://localhost:7091/api/images/")
 
 
 class TestGetHashEdgeCases:
@@ -664,6 +766,53 @@ class TestGetHashEdgeCases:
     def test_unicode_string(self):
         h = get_hash("\u4f60\u597d\u4e16\u754c")
         assert len(h) == 32
+
+
+class TestTruncateToLineBoundary:
+    """Trimming a head window back to its last line boundary.
+
+    Shared by the attachment size gate and the docling markup gate. The trim
+    is skipped whenever it would cost more than half the window: a partial
+    final line is always better than losing the content.
+    """
+
+    @pytest.mark.unit
+    def test_trims_to_last_newline(self):
+        data = b"aaaa\nbbbb\ncccc"
+        assert truncate_to_line_boundary(data) == b"aaaa\nbbbb\n"
+
+    @pytest.mark.unit
+    def test_already_line_terminated_is_unchanged(self):
+        data = b"aaaa\nbbbb\n"
+        assert truncate_to_line_boundary(data) == data
+
+    @pytest.mark.unit
+    def test_no_newline_falls_back_to_the_hard_cut(self):
+        data = b"x" * 500
+        assert truncate_to_line_boundary(data) == data
+
+    @pytest.mark.unit
+    def test_leading_newline_only_keeps_the_content(self):
+        # rfind returns 0 here; trimming would collapse the window to a single
+        # byte, so the partial line is kept instead.
+        data = b"\n" + b"x" * 499
+        assert truncate_to_line_boundary(data) == data
+
+    @pytest.mark.unit
+    def test_early_newline_keeps_the_content(self):
+        # A short first line followed by one huge line: cutting at byte 10
+        # would discard ~98% of the window.
+        data = b"header\n" + b"x" * 493
+        assert truncate_to_line_boundary(data) == data
+
+    @pytest.mark.unit
+    def test_newline_past_the_halfway_mark_is_used(self):
+        data = b"x" * 300 + b"\n" + b"y" * 199
+        assert truncate_to_line_boundary(data) == b"x" * 300 + b"\n"
+
+    @pytest.mark.unit
+    def test_empty_input(self):
+        assert truncate_to_line_boundary(b"") == b""
 
 
 class TestValidateFunctionNameEdgeCases:

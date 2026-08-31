@@ -5,6 +5,22 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 
+class DocumentParseError(Exception):
+    """A file could not be converted to text.
+
+    Raised instead of returning the failure message as the document body: a
+    parser that hands back its own traceback produces an attachment/source
+    whose "content" is an error string, which then reaches the LLM as if it
+    were the document. Callers should treat this as a failed upload and tell
+    the user, rather than storing anything.
+
+    Deterministic for a given input, so it is marked non-retryable on the
+    Celery tasks that parse (alongside ``DataError`` and
+    ``AttachmentRejectedError``) — a poison file fails once instead of
+    re-failing identically on every retry.
+    """
+
+
 class BaseParser:
     """Base class for all parsers."""
 

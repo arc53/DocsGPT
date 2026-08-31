@@ -1293,6 +1293,208 @@ class TestHandleStreaming:
         executed_call = tool_call_args[0][1]
         assert executed_call.arguments == '{"q":"test"}'
 
+    @pytest.mark.parametrize(
+        "first,second,expected",
+        [
+            # A gateway that restates the whole payload on the finish frame
+            # instead of streaming deltas. Appending gave '{}{}' / the doubled
+            # object, which never parses.
+            ("{}", "{}", "{}"),
+            ('{"path": "/"}', '{"path": "/"}', '{"path": "/"}'),
+            # ...but genuine deltas must still concatenate.
+            ('{"q":', '"test"}', '{"q":"test"}'),
+            ('{"a": 1', ', "b": 2}', '{"a": 1, "b": 2}'),
+        ],
+    )
+    def test_restated_tool_arguments_replace_rather_than_append(
+        self, first, second, expected
+    ):
+        """A complete payload restated for the same index must not be appended.
+
+        A strict prefix of one top-level JSON object never parses, so
+        "the accumulator already parses" cleanly separates a restatement from
+        a continuation.
+        """
+        import json as _json
+
+        handler = ConcreteHandler()
+        agent = Mock()
+        agent.llm = Mock()
+        agent.model_id = "test"
+        agent.tools = []
+        agent._check_context_limit = Mock(return_value=False)
+        agent.context_limit_reached = False
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
+
+        chunk1 = LLMResponse(
+            content="",
+            tool_calls=[ToolCall(id="c1", name="search", arguments=first, index=0)],
+            finish_reason="",
+            raw_response={},
+        )
+        chunk2 = LLMResponse(
+            content="",
+            tool_calls=[ToolCall(id="", name="", arguments=second, index=0)],
+            finish_reason="tool_calls",
+            raw_response={},
+        )
+
+        handler.parse_response = lambda c: c
+
+        def fake_iterate(response):
+            yield from response
+
+        handler._iterate_stream = fake_iterate
+
+        def fake_execute(tools_dict, call):
+            yield {"type": "tool_call", "data": {"status": "pending"}}
+            return ("result", call.id)
+
+        agent._execute_tool_action = Mock(side_effect=fake_execute)
+        agent.llm.gen_stream = Mock(
+            return_value=[
+                LLMResponse(
+                    content="done", tool_calls=[], finish_reason="stop", raw_response={}
+                )
+            ]
+        )
+
+        list(handler.handle_streaming(agent, [chunk1, chunk2], {"1": {"name": "t"}}, []))
+
+        executed_call = agent._execute_tool_action.call_args[0][1]
+        assert executed_call.arguments == expected
+        # The whole point: the merged payload parses.
+        _json.loads(executed_call.arguments)
+
+    def test_a_distinct_call_reusing_an_index_is_not_treated_as_a_restatement(
+        self, caplog
+    ):
+        """Two complete payloads under one index may be two different calls.
+
+        Some OpenAI-compatible gateways tag sequential parallel calls with the
+        same ``index``. That is indistinguishable from a restatement by payload
+        shape alone, so the identity decides — and it must be read BEFORE the
+        id/name overwrite, which would otherwise erase the evidence. Falling
+        back to concatenation keeps the failure loud: ``tool_action_parser``
+        logs the unparseable prefix, where a silent replace would run one tool
+        with the other's arguments and report the turn complete.
+        """
+        import logging as _logging
+
+        handler = ConcreteHandler()
+        agent = Mock()
+        agent.llm = Mock()
+        agent.model_id = "test"
+        agent.tools = []
+        agent._check_context_limit = Mock(return_value=False)
+        agent.context_limit_reached = False
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
+
+        chunk1 = LLMResponse(
+            content="",
+            tool_calls=[
+                ToolCall(id="call_A", name="memory_view", arguments='{"a":1}', index=0)
+            ],
+            finish_reason="",
+            raw_response={},
+        )
+        chunk2 = LLMResponse(
+            content="",
+            tool_calls=[
+                ToolCall(id="call_B", name="memory_write", arguments='{"b":2}', index=0)
+            ],
+            finish_reason="tool_calls",
+            raw_response={},
+        )
+
+        handler.parse_response = lambda c: c
+
+        def fake_iterate(response):
+            yield from response
+
+        handler._iterate_stream = fake_iterate
+
+        def fake_execute(tools_dict, call):
+            yield {"type": "tool_call", "data": {"status": "pending"}}
+            return ("result", call.id)
+
+        agent._execute_tool_action = Mock(side_effect=fake_execute)
+        agent.llm.gen_stream = Mock(
+            return_value=[
+                LLMResponse(
+                    content="done", tool_calls=[], finish_reason="stop", raw_response={}
+                )
+            ]
+        )
+
+        with caplog.at_level(_logging.WARNING, logger="application.llm.handlers.base"):
+            list(
+                handler.handle_streaming(agent, [chunk1, chunk2], {"1": {"name": "t"}}, [])
+            )
+
+        executed_call = agent._execute_tool_action.call_args[0][1]
+        # Concatenated, not silently replaced: call A's payload survives in a
+        # form the parser reports rather than vanishing.
+        assert executed_call.arguments == '{"a":1}{"b":2}'
+        assert "tool_call_index_reused_by_distinct_call" in caplog.text
+
+    def test_a_restatement_carrying_the_same_identity_still_replaces(self):
+        """The guard must not undo the fix: same id/name means one call."""
+        handler = ConcreteHandler()
+        agent = Mock()
+        agent.llm = Mock()
+        agent.model_id = "test"
+        agent.tools = []
+        agent._check_context_limit = Mock(return_value=False)
+        agent.context_limit_reached = False
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
+
+        chunk1 = LLMResponse(
+            content="",
+            tool_calls=[
+                ToolCall(id="c1", name="search", arguments='{"q":"x"}', index=0)
+            ],
+            finish_reason="",
+            raw_response={},
+        )
+        # The finish frame repeats the identity as well as the payload.
+        chunk2 = LLMResponse(
+            content="",
+            tool_calls=[
+                ToolCall(id="c1", name="search", arguments='{"q":"x"}', index=0)
+            ],
+            finish_reason="tool_calls",
+            raw_response={},
+        )
+
+        handler.parse_response = lambda c: c
+
+        def fake_iterate(response):
+            yield from response
+
+        handler._iterate_stream = fake_iterate
+
+        def fake_execute(tools_dict, call):
+            yield {"type": "tool_call", "data": {"status": "pending"}}
+            return ("result", call.id)
+
+        agent._execute_tool_action = Mock(side_effect=fake_execute)
+        agent.llm.gen_stream = Mock(
+            return_value=[
+                LLMResponse(
+                    content="done", tool_calls=[], finish_reason="stop", raw_response={}
+                )
+            ]
+        )
+
+        list(handler.handle_streaming(agent, [chunk1, chunk2], {"1": {"name": "t"}}, []))
+
+        executed_call = agent._execute_tool_action.call_args[0][1]
+        assert executed_call.arguments == '{"q":"x"}'
+
     def test_context_limit_adds_system_message(self):
         handler = ConcreteHandler()
         agent = Mock()
@@ -2105,3 +2307,90 @@ class TestHandleToolCallsCompressionSuccess:
             if isinstance(e, dict) and e.get("data", {}).get("status") == "skipped"
         ]
         assert len(skip_events) == 1  # Only second call skipped
+
+
+# ---------------------------------------------------------------------------
+# _append_unsupported_attachments — extraction-provenance gate
+# ---------------------------------------------------------------------------
+
+
+class TestAttachmentExtractionGate:
+    """Rows now carry ``metadata.extraction`` provenance; the append gate
+    must honor it. Legacy rows (no ``extraction`` key) keep working."""
+
+    def test_failed_extraction_row_is_skipped(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "mime_type": "application/vnd.ms-excel",
+            "content": None,
+            "metadata": {"extraction": {"status": "failed", "error": "docling boom"}},
+        }]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        assert result[0]["content"] == "sys"
+        assert "None" not in result[0]["content"]
+        assert "docling boom" not in result[0]["content"]
+
+    def test_null_content_row_is_skipped_even_without_extraction(self):
+        # A PG row always has the ``content`` key; key membership is not a
+        # signal. ``content=None`` must never append the string "None".
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{"id": "a1", "mime_type": "text/plain", "content": None}]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        assert result[0]["content"] == "sys"
+
+    def test_legacy_row_without_extraction_still_appended(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "content": "legacy file text",
+            "metadata": {"storage_type": "local"},
+        }]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        assert "legacy file text" in result[0]["content"]
+
+    def test_ok_row_appended_without_truncation_notice(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "content": "full file text",
+            "metadata": {"extraction": {"status": "ok", "truncated": False}},
+        }]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        assert "full file text" in result[0]["content"]
+        assert "truncated" not in result[0]["content"]
+
+    def test_truncated_row_appended_with_partial_document_notice(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "filename": "big.pdf",
+            "content": "partial file text",
+            "metadata": {"extraction": {
+                "status": "ok",
+                "truncated": True,
+                "original_tokens": 250000,
+                "stored_tokens": 100000,
+            }},
+        }]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        prompt = result[0]["content"]
+        assert "partial file text" in prompt
+        assert "truncated" in prompt
+        assert "100,000" in prompt
+        assert "250,000" in prompt

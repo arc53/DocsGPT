@@ -18,6 +18,7 @@ from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.conversations import (
     ConversationsRepository,
+    HeartbeatState,
     MessageUpdateOutcome,
 )
 from application.storage.db.session import db_readonly, db_session
@@ -100,8 +101,14 @@ class ConversationService:
         attachment_ids: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         visibility: str = "hidden",
+        status: str = "complete",
     ) -> str:
         """Save or update a conversation in Postgres.
+
+        ``status`` lets a caller record a turn that failed without producing
+        an answer. It defaults to ``complete``, matching the column default
+        this path relied on before; passing ``failed`` is what stops a blank
+        errored turn from rendering as an empty bubble with no retry.
 
         Returns the string conversation id (PG UUID as string, or the
         caller-provided id if it was already a UUID).
@@ -127,6 +134,7 @@ class ConversationService:
             "attachments": attachment_ids,
             "model_id": model_id,
             "timestamp": current_time,
+            "status": status,
         }
         if metadata:
             message_payload["metadata"] = metadata
@@ -332,6 +340,20 @@ class ConversationService:
                 message_id, status,
             )
 
+    def was_superseded(self, message_id: str) -> bool:
+        """True when a retry/edit truncation deleted this message's row.
+
+        Args:
+            message_id: The reserved message id the stream was writing to.
+
+        Returns:
+            True if the row was deliberately superseded rather than lost.
+        """
+        if not message_id:
+            return False
+        with db_readonly() as conn:
+            return ConversationsRepository(conn).was_superseded(message_id)
+
     def heartbeat_message(self, message_id: str) -> bool:
         """Bump ``message_metadata.last_heartbeat_at`` so the reconciler's
         staleness sweep counts the row as alive. No-ops on terminal rows.
@@ -340,6 +362,22 @@ class ConversationService:
             return False
         with db_session() as conn:
             return ConversationsRepository(conn).heartbeat_message(message_id)
+
+    def heartbeat_message_state(self, message_id: str) -> HeartbeatState:
+        """Heartbeat, reporting whether the row is live, terminal, or gone.
+
+        Args:
+            message_id: UUID of the message row.
+
+        Returns:
+            HeartbeatState: What the row was at stamp time.
+        """
+        if not message_id:
+            return HeartbeatState.MISSING
+        with db_session() as conn:
+            return ConversationsRepository(conn).heartbeat_message_state(
+                message_id
+            )
 
     def finalize_message(
         self,
@@ -395,11 +433,20 @@ class ConversationService:
         # Atomic message update + tool_call_attempts confirm; the
         # ``only_if_non_terminal`` guard prevents a late stream from
         # retracting a row the reconciler already escalated.
+        #
+        # Exception: a *successful* finalize is allowed to reclaim a row the
+        # reconciler failed for staleness. A stream that reaches this point
+        # with an answer was self-evidently not stuck, so refusing it throws
+        # away real output and leaves the user staring at "Response was
+        # terminated prior to completion". Only on success — a late failure
+        # must never overwrite the reconciler's failure with a different one.
+        reclaim = status == "complete"
         with db_session() as conn:
             repo = ConversationsRepository(conn)
             outcome = repo.update_message_by_id(
                 message_id, update_fields,
                 only_if_non_terminal=True,
+                reclaim_reconciler_failed=reclaim,
             )
             if outcome is not MessageUpdateOutcome.UPDATED:
                 logger.warning(
@@ -410,7 +457,12 @@ class ConversationService:
             repo.confirm_executed_tool_calls(message_id)
 
         # Outside the txn — title-gen is a multi-second LLM round trip.
-        if title_inputs and status == "complete":
+        # ``failed`` counts too: the conversation is still listed, and
+        # ``_maybe_generate_title`` only regenerates while the name is still
+        # the question-prefix fallback. Skipping it here would strand a
+        # conversation whose first turn failed with the raw prompt as its
+        # name forever, because by turn two the fallback no longer matches.
+        if title_inputs and status in ("complete", "failed"):
             if async_title_generation:
                 threading.Thread(
                     target=self._generate_title_safely,

@@ -203,6 +203,30 @@ class TestExtractZipRecursive:
         found = list(extract_to.rglob("inside.txt"))
         assert found, "expected nested zip to be extracted"
 
+    def test_nested_archives_share_one_expansion_budget(self, tmp_path):
+        from application.worker import extract_zip_recursive, ZipExtractionError
+
+        inner = tmp_path / "inner.zip"
+        with zipfile.ZipFile(inner, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("inside.txt", b"x" * 60)
+
+        outer = tmp_path / "outer.zip"
+        with zipfile.ZipFile(outer, "w", zipfile.ZIP_STORED) as zf:
+            zf.write(inner, "inner.zip")
+
+        # The outer archive fits, as does the inner archive in isolation, but
+        # extracting both exceeds one cumulative request budget.
+        limit = inner.stat().st_size + 30
+        extract_to = tmp_path / "out"
+        extract_to.mkdir()
+        with patch("application.worker.MAX_UNCOMPRESSED_SIZE", limit), patch(
+            "application.worker.MAX_COMPRESSION_RATIO", 10_000,
+        ):
+            with pytest.raises(ZipExtractionError):
+                extract_zip_recursive(str(outer), str(extract_to))
+
+        assert not (extract_to / "inside.txt").exists()
+
 
 class TestDownloadFile:
     def test_writes_file_on_success(self, tmp_path):
@@ -287,3 +311,79 @@ class TestUploadIndex:
         mock_post.assert_called_once()
         files = mock_post.call_args.kwargs["files"]
         assert "file_faiss" in files and "file_pkl" in files
+
+
+# ── directory_structure accounting ─────────────────────────────────────────
+
+
+class TestCountStructureFiles:
+    """Regression: the remote-ingest completion log used
+    ``len(directory_structure)``, which counts top-level entries only — a
+    1,474-file repo logged "44 files"."""
+
+    def test_counts_nested_leaves_not_top_level_keys(self):
+        from application.worker import count_structure_files
+
+        structure = {
+            "README.md": {"type": "text/markdown", "size_bytes": 10, "token_count": 3},
+            "src": {
+                "main": {
+                    "a.py": {"type": "text/x-python", "size_bytes": 5, "token_count": 2},
+                    "b.py": {"type": "text/x-python", "size_bytes": 5, "token_count": 2},
+                },
+                "c.py": {"type": "text/x-python", "size_bytes": 5, "token_count": 2},
+            },
+        }
+        assert len(structure) == 2  # the old, wrong number
+        assert count_structure_files(structure) == 4
+
+    def test_empty_and_non_dict_are_zero(self):
+        from application.worker import count_structure_files
+
+        assert count_structure_files({}) == 0
+        assert count_structure_files(None) == 0
+        assert count_structure_files({"empty_dir": {}}) == 0
+
+
+class TestDirectoryStructureAccumulatesChunks:
+    """Regression: ``directory_structure`` was built from *chunks* but
+    assigned per path, so a multi-chunk file kept only its last fragment's
+    size and token count."""
+
+    def test_multi_chunk_file_sums_its_chunks(self):
+        from application.worker import add_file_to_structure, count_structure_files
+
+        structure: dict = {}
+        for tokens, size in [(900, 3600), (900, 3600), (120, 480)]:
+            add_file_to_structure(
+                structure, "docs/guide.md", "text/markdown",
+                size_bytes=size, token_count=tokens,
+            )
+
+        leaf = structure["docs"]["guide.md"]
+        assert leaf["token_count"] == 1920   # not 120, the last chunk
+        assert leaf["size_bytes"] == 7680    # not 480
+        assert leaf["type"] == "text/markdown"
+        assert count_structure_files(structure) == 1
+
+    def test_distinct_files_stay_separate(self):
+        from application.worker import add_file_to_structure, count_structure_files
+
+        structure: dict = {}
+        for path in ["a.md", "src/b.py", "src/deep/c.py"]:
+            add_file_to_structure(
+                structure, path, "text/plain", size_bytes=10, token_count=4,
+            )
+
+        assert count_structure_files(structure) == 3
+        assert structure["src"]["deep"]["c.py"]["token_count"] == 4
+        assert structure["a.md"]["token_count"] == 4
+
+    def test_empty_path_is_ignored(self):
+        from application.worker import add_file_to_structure
+
+        structure: dict = {}
+        add_file_to_structure(
+            structure, "", "text/plain", size_bytes=1, token_count=1,
+        )
+        assert structure == {}

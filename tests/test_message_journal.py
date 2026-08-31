@@ -648,6 +648,55 @@ class TestBatchedJournalWriter:
             # Buffer cleared so close() is a no-op and memory stays bounded.
             assert writer._buffer == []
 
+    def test_missing_parent_is_latched_after_the_first_failure(self, caplog):
+        """One WARN per stream, not one per flush.
+
+        A parent row deleted mid-stream (retry/edit truncation) never comes
+        back, so every later flush FK-fails identically. Un-latched, a single
+        3.5-minute research stream logged 342 identical WARNs in production
+        and was that day's entire WARN volume.
+        """
+        import logging
+
+        session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
+        with session_cm as mock_session, readonly_cm, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            repo = MagicMock(name="repo")
+            repo.bulk_record.side_effect = _integrity_error("23503")
+            mock_repo_cls.return_value = repo
+            mock_topic_cls.return_value = MagicMock()
+
+            writer = BatchedJournalWriter("msg-1", batch_size=1)
+            with caplog.at_level(
+                logging.WARNING, logger="application.streaming.message_journal"
+            ):
+                for seq in range(25):
+                    writer.record(seq, "answer", {"text": "x"})
+
+        warnings = [
+            r for r in caplog.records
+            if "no conversation_messages row" in r.getMessage()
+        ]
+        assert len(warnings) == 1, (
+            f"expected a single latched warning, got {len(warnings)}"
+        )
+        # And it stopped hitting the DB after the first failure.
+        assert repo.bulk_record.call_count == 1
+
+    def test_record_returns_false_once_parent_is_known_missing(self):
+        session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
+        with session_cm as mock_session, readonly_cm, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            repo = MagicMock(name="repo")
+            repo.bulk_record.side_effect = _integrity_error("23503")
+            mock_repo_cls.return_value = repo
+            mock_topic_cls.return_value = MagicMock()
+
+            writer = BatchedJournalWriter("msg-1", batch_size=1)
+
+            assert writer.record(0, "answer", {"text": "a"}) is True
+            assert writer.record(1, "answer", {"text": "b"}) is False
+
     def test_bulk_collision_23505_still_falls_back_to_per_row(self):
         """An explicit 23505 (unique/PK collision) keeps the per-row
         fallback — the parent exists, only a ``sequence_no`` collided.

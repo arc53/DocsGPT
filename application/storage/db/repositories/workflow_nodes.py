@@ -143,16 +143,6 @@ class WorkflowNodesRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
-    def delete_by_workflow(self, workflow_id: str) -> int:
-        result = self._conn.execute(
-            text(
-                "DELETE FROM workflow_nodes "
-                "WHERE workflow_id = CAST(:wf_id AS uuid)"
-            ),
-            {"wf_id": workflow_id},
-        )
-        return result.rowcount
-
     def delete_by_version(self, workflow_id: str, graph_version: int) -> int:
         result = self._conn.execute(
             text(

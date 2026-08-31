@@ -29,6 +29,27 @@ const userService = {
     throttledApiClient.get(endpoints.USER.AGENT(id), token),
   getAgents: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.AGENTS, token),
+  getGuardrailCatalog: (token: string | null): Promise<any> =>
+    throttledApiClient.get(endpoints.USER.GUARDRAIL_CATALOG, token),
+  getGuardrailEvents: (
+    agentId: string,
+    token: string | null,
+    limit = 100,
+    offset = 0,
+  ): Promise<any> =>
+    throttledApiClient.get(
+      endpoints.USER.GUARDRAIL_EVENTS(agentId, limit, offset),
+      token,
+    ),
+  getGuardrailSummary: (
+    token: string | null,
+    agentId?: string,
+    days = 30,
+  ): Promise<any> =>
+    throttledApiClient.get(
+      endpoints.USER.GUARDRAIL_SUMMARY(agentId, days),
+      token,
+    ),
   createAgent: (data: any, token: string | null): Promise<any> =>
     apiClient.postFormData(endpoints.USER.CREATE_AGENT, data, token),
   updateAgent: (
@@ -66,6 +87,8 @@ const userService = {
     apiClient.post(endpoints.USER.ADOPT_AGENT(id), {}, token),
   getAgentWebhook: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.AGENT_WEBHOOK(id), token),
+  regenerateAgentKey: (id: string, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.REGENERATE_AGENT_KEY(id), {}, token),
   getPrompts: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.PROMPTS, token),
   createPrompt: (data: any, token: string | null): Promise<any> =>

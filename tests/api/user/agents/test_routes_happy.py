@@ -465,6 +465,28 @@ class TestUpdateAgent:
         got = AgentsRepository(pg_conn).get(str(agent["id"]), user)
         assert got["name"] == "new name"
 
+    def test_ignores_client_supplied_image_path(self, app, pg_conn):
+        from application.api.user.agents.routes import UpdateAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-upd-image-path"
+        agent = _seed_agent(
+            pg_conn, user=user, status="draft", with_source=False,
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"description": "safe update", "image": ".env"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+
+        assert response.status_code == 200
+        got = AgentsRepository(pg_conn).get(str(agent["id"]), user)
+        assert got["description"] == "safe update"
+        assert got["image"] is None
+
     def test_invalid_status_returns_400(self, app, pg_conn):
         from application.api.user.agents.routes import UpdateAgent
 
@@ -533,6 +555,56 @@ class TestUpdateAgent:
             request.decoded_token = {"sub": user}
             response = UpdateAgent().put(str(agent["id"]))
         assert response.status_code == 400
+
+    @pytest.mark.parametrize(
+        "payload,field",
+        [
+            ({"status": "bogus"}, "status"),
+            ({"source": "not-a-uuid"}, "source"),
+            ({"sources": ["not-uuid"]}, "sources"),
+            ({"chunks": -1}, "chunks"),
+            ({"chunks": "not-an-int"}, "chunks"),
+            ({"tools": "not-a-list"}, "tools"),
+            ({"prompt_id": "not-a-uuid"}, "prompt_id"),
+            ({"description": "   "}, "description"),
+        ],
+    )
+    def test_validation_rejection_is_logged(
+        self, app, pg_conn, caplog, payload, field
+    ):
+        """Every 400 must leave a WARN naming the field and the user.
+
+        Regression test for the silent-publish-failure bug: the route used to
+        ``make_response(..., 400)`` without logging, so a rejected publish left
+        no server-side trace at all — the only evidence it happened was the
+        OTel span's status code. Combined with the frontend discarding the
+        response body, that made a deterministic validation failure impossible
+        to diagnose from any telemetry we keep.
+        """
+        import logging
+
+        from application.api.user.agents.routes import UpdateAgent
+
+        user = f"u-log-{field}"
+        agent = _seed_agent(pg_conn, user=user)
+        body = {"name": "n", "description": "d", "status": "draft", **payload}
+
+        with caplog.at_level(logging.WARNING), _patch_db(
+            pg_conn
+        ), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT", json=body,
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+
+        assert response.status_code == 400
+        warnings = [
+            r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING
+        ]
+        assert any(
+            field in msg and user in msg for msg in warnings
+        ), f"no WARN naming field={field!r} and user={user!r}; got {warnings!r}"
 
     def test_invalid_chunks_returns_400(self, app, pg_conn):
         from application.api.user.agents.routes import UpdateAgent
@@ -1171,6 +1243,120 @@ class TestAdoptAgentMore:
         mine = repo.list_for_user("u-adopter")
         assert any(a["name"] == "Template X" for a in mine)
 
+    def test_adopt_copies_image_into_adopter_storage(self, app, pg_conn):
+        import io
+        from unittest.mock import MagicMock
+
+        from application.api.user.agents.routes import AdoptAgent
+        from application.core.settings import settings
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.utils import (
+            is_safe_agent_image_path,
+            safe_user_storage_component,
+        )
+
+        repo = AgentsRepository(pg_conn)
+        template = repo.create(
+            "__system__",
+            "Template Img",
+            "template",
+            image="inputs/__system__/attachments/abc_logo.png",
+        )
+
+        storage = MagicMock()
+        storage.get_file.return_value = io.BytesIO(b"png-bytes")
+        storage.save_file.side_effect = lambda data, path, **kw: {"path": path}
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.agents.routes.storage", storage
+        ), app.test_request_context(
+            f"/api/adopt_agent?id={template['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-adopter"}
+            response = AdoptAgent().post()
+
+        assert response.status_code == 200
+        adopted = next(
+            a for a in repo.list_for_user("u-adopter") if a["name"] == "Template Img"
+        )
+        owner = safe_user_storage_component("u-adopter")
+        expected_prefix = f"{settings.UPLOAD_FOLDER}/{owner}/attachments/"
+        assert adopted["image"].startswith(expected_prefix)
+        assert adopted["image"].endswith("_logo.png")
+        assert is_safe_agent_image_path(adopted["image"], "u-adopter")
+        storage.get_file.assert_called_once_with(
+            "inputs/__system__/attachments/abc_logo.png"
+        )
+
+    def test_adopt_drops_image_when_copy_fails(self, app, pg_conn):
+        from unittest.mock import MagicMock
+
+        from application.api.user.agents.routes import AdoptAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        repo = AgentsRepository(pg_conn)
+        template = repo.create(
+            "__system__",
+            "Template Broken Img",
+            "template",
+            image="inputs/__system__/attachments/gone_logo.png",
+        )
+
+        storage = MagicMock()
+        storage.get_file.side_effect = FileNotFoundError("missing")
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.agents.routes.storage", storage
+        ), app.test_request_context(
+            f"/api/adopt_agent?id={template['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-adopter2"}
+            response = AdoptAgent().post()
+
+        assert response.status_code == 200
+        adopted = next(
+            a
+            for a in repo.list_for_user("u-adopter2")
+            if a["name"] == "Template Broken Img"
+        )
+        assert not adopted.get("image")
+
+    def test_adopt_keeps_external_image_url(self, app, pg_conn):
+        from unittest.mock import MagicMock
+
+        from application.api.user.agents.routes import AdoptAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        repo = AgentsRepository(pg_conn)
+        template = repo.create(
+            "__system__",
+            "Template Ext Img",
+            "template",
+            image="https://cdn.example.com/logo.png",
+        )
+
+        storage = MagicMock()
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.agents.routes.storage", storage
+        ), app.test_request_context(
+            f"/api/adopt_agent?id={template['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-adopter3"}
+            response = AdoptAgent().post()
+
+        assert response.status_code == 200
+        adopted = next(
+            a
+            for a in repo.list_for_user("u-adopter3")
+            if a["name"] == "Template Ext Img"
+        )
+        assert adopted["image"] == "https://cdn.example.com/logo.png"
+        storage.get_file.assert_not_called()
+
     def test_adopt_template_missing_returns_404(self, app, pg_conn):
         from application.api.user.agents.routes import AdoptAgent
 
@@ -1249,6 +1435,187 @@ class TestPinAgentMore:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = PinAgent().post()
+        assert response.status_code == 500
+
+
+class TestRegenerateAgentKey:
+    def _seed_published_with_key(self, pg_conn, user, key):
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent = _seed_agent(pg_conn, user=user, status="published")
+        AgentsRepository(pg_conn).update(str(agent["id"]), user, {"key": key})
+        return agent
+
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.agents.routes import RegenerateAgentKey
+
+        with app.test_request_context(
+            "/api/regenerate_agent_key/abc", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = RegenerateAgentKey().post("abc")
+        status = (
+            response[1] if isinstance(response, tuple) else response.status_code
+        )
+        assert status == 401
+
+    def test_returns_404_when_missing(self, app, pg_conn):
+        from application.api.user.agents.routes import RegenerateAgentKey
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/regenerate_agent_key/00000000-0000-0000-0000-000000000000",
+            method="POST",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = RegenerateAgentKey().post(
+                "00000000-0000-0000-0000-000000000000"
+            )
+        assert response.status_code == 404
+
+    def test_returns_404_for_non_owner(self, app, pg_conn):
+        """Owner-only: another user cannot rotate someone else's key."""
+        from application.api.user.agents.routes import RegenerateAgentKey
+
+        owner = "u-owner-key"
+        agent = self._seed_published_with_key(pg_conn, owner, "owner-old-key")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/regenerate_agent_key/{agent['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-intruder"}
+            response = RegenerateAgentKey().post(str(agent["id"]))
+        assert response.status_code == 404
+
+    def test_returns_400_for_draft_without_key(self, app, pg_conn):
+        from application.api.user.agents.routes import RegenerateAgentKey
+
+        user = "u-draft-key"
+        agent = _seed_agent(pg_conn, user=user, status="draft")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/regenerate_agent_key/{agent['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = RegenerateAgentKey().post(str(agent["id"]))
+        assert response.status_code == 400
+
+    def test_regenerates_key_and_invalidates_old(self, app, pg_conn):
+        from application.api.user.agents.routes import RegenerateAgentKey
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-regen"
+        old_key = "regen-old-key"
+        agent = self._seed_published_with_key(pg_conn, user, old_key)
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/regenerate_agent_key/{agent['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = RegenerateAgentKey().post(str(agent["id"]))
+
+        assert response.status_code == 200
+        new_key = response.json["key"]
+        assert new_key and new_key != old_key
+
+        repo = AgentsRepository(pg_conn)
+        # Persisted key is the new one; the old key no longer resolves.
+        assert repo.get(str(agent["id"]), user)["key"] == new_key
+        assert repo.find_by_key(old_key) is None
+        assert repo.find_by_key(new_key)["id"] == agent["id"]
+
+    def test_migrates_historical_logs_and_usage(self, app, pg_conn):
+        """stack_logs + token_usage + conversations + shared_conversations rows
+        follow the key so analytics, the rate-limit window, and promptable shared
+        links are not orphaned/broken. The stack_logs row is stamped with a
+        *different* user_id (a caller, not the owner) to prove the migration is
+        not owner-scoped, and the conversation is created with api_key set but
+        agent_id NULL to prove the api_key-only path is covered.
+        """
+        from application.api.user.agents.routes import RegenerateAgentKey
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+        from application.storage.db.repositories.shared_conversations import (
+            SharedConversationsRepository,
+        )
+        from application.storage.db.repositories.stack_logs import (
+            StackLogsRepository,
+        )
+        from application.storage.db.repositories.token_usage import (
+            TokenUsageRepository,
+        )
+
+        user = "u-regen-hist"
+        old_key = "regen-hist-old-key"
+        agent = self._seed_published_with_key(pg_conn, user, old_key)
+
+        StackLogsRepository(pg_conn).insert(
+            activity_id="regen-act-1",
+            endpoint="webhook",
+            level="info",
+            user_id="external-caller",
+            api_key=old_key,
+        )
+        TokenUsageRepository(pg_conn).insert(
+            api_key=old_key, prompt_tokens=7, generated_tokens=3,
+        )
+        # api_key set, agent_id intentionally omitted (NULL) — the orphan case.
+        conv = ConversationsRepository(pg_conn).create(
+            user, "conv", api_key=old_key,
+        )
+        # A promptable shared link stores the agent key; rotation must not
+        # leave it pointing at an invalidated key.
+        SharedConversationsRepository(pg_conn).create(
+            conv["id"], user, is_promptable=True, api_key=old_key,
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/regenerate_agent_key/{agent['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = RegenerateAgentKey().post(str(agent["id"]))
+        assert response.status_code == 200
+        new_key = response.json["key"]
+
+        from sqlalchemy import text
+
+        def _count(table, key):
+            return pg_conn.execute(
+                text(f"SELECT COUNT(*) FROM {table} WHERE api_key = :k"),
+                {"k": key},
+            ).scalar()
+
+        assert _count("stack_logs", old_key) == 0
+        assert _count("stack_logs", new_key) == 1
+        assert _count("token_usage", old_key) == 0
+        assert _count("token_usage", new_key) == 1
+        assert _count("conversations", old_key) == 0
+        assert _count("conversations", new_key) == 1
+        assert _count("shared_conversations", old_key) == 0
+        assert _count("shared_conversations", new_key) == 1
+
+    def test_db_error_returns_500(self, app):
+        from application.api.user.agents.routes import RegenerateAgentKey
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.agents.routes.db_session", _broken
+        ), app.test_request_context(
+            "/api/regenerate_agent_key/abc", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = RegenerateAgentKey().post("abc")
         assert response.status_code == 500
 
 
