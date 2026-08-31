@@ -1,23 +1,12 @@
 import 'katex/dist/katex.min.css';
 
+import { Pencil } from 'lucide-react';
 import { forwardRef, Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import {
-  oneLight,
-  vscDarkPlus,
-} from 'react-syntax-highlighter/dist/cjs/styles/prism';
-import rehypeKatex from 'rehype-katex';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 
-import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
 import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
 import ChevronDown from '../assets/chevron-down.svg';
-import Cloud from '../assets/cloud.svg';
-import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
 import DocumentationDark from '../assets/documentation-dark.svg';
@@ -25,36 +14,28 @@ import Edit from '../assets/edit.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
-import UserIcon from '../assets/user.svg';
 import CopyButton from '../components/CopyButton';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '../components/ui/accordion';
+
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import MermaidRenderer from '../components/MermaidRenderer';
-import Spinner from '../components/Spinner';
 import { Sheet, SheetContent } from '../components/ui/sheet';
 import SpeakButton from '../components/TextToSpeechButton';
-import { useDarkTheme, useOutsideAlerter } from '../hooks';
+import { useOutsideAlerter } from '../hooks';
 import {
   selectChunks,
   selectSelectedDocs,
   selectToken,
 } from '../preferences/preferenceSlice';
-import classes from './ConversationBubble.module.css';
+import { isToolCallRunning } from '../utils/streamingStatusUtils';
+import AnswerFlow from './AnswerFlow';
+import { AnswerSegment } from './answerSegments';
+import { deriveArtifactChips } from './artifactChips';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
+import MarkdownAnswer from './MarkdownAnswer';
 import ResearchProgress from './ResearchProgress';
 import { ToolCallsType } from './types';
-import {
-  isWikiWriteCall,
-  wikiWriteActionKey,
-  wikiWritePath,
-} from './wikiToolCall';
+import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -69,6 +50,8 @@ const ConversationBubble = forwardRef<
     thought?: string;
     sources?: { title: string; text: string; link: string }[];
     toolCalls?: ToolCallsType[];
+    /** Arrival order of the answer's parts; drives inline rendering. */
+    segments?: AnswerSegment[];
     /** Set when this answer came from a workflow agent run; renders the
      * run's produced artifacts as click-through chips/previews. */
     workflowRunId?: string;
@@ -82,6 +65,12 @@ const ConversationBubble = forwardRef<
       index?: number,
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
+    /**
+     * Every artifact in the conversation, for resolving inline links. Refs
+     * are conversation-scoped, so a link may point at an earlier turn's file.
+     * The chip RAIL still uses this turn's artifacts only.
+     */
+    conversationArtifacts?: ReturnType<typeof deriveArtifactChips>;
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
     onToolAction?: (
       callId: string,
@@ -101,6 +90,7 @@ const ConversationBubble = forwardRef<
     thought,
     sources,
     toolCalls,
+    segments,
     workflowRunId,
     research,
     retryBtn,
@@ -108,6 +98,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
+    conversationArtifacts,
     onOpenArtifact,
     onToolAction,
     agentId,
@@ -115,7 +106,6 @@ const ConversationBubble = forwardRef<
   ref,
 ) {
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -129,23 +119,7 @@ const ConversationBubble = forwardRef<
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
-  const completedArtifactCalls = (toolCalls ?? []).filter(
-    (toolCall) => toolCall.artifact_id && toolCall.status === 'completed',
-  );
-  const artifactCount = completedArtifactCalls.length;
-
-  const formatToolName = (toolName: string | undefined): string => {
-    if (!toolName) return '';
-    // Display-name overrides for tools whose label differs from the formatted key.
-    const overrides: Record<string, string> = {
-      artifact_generator: 'Artifact',
-    };
-    if (overrides[toolName]) return overrides[toolName];
-    return toolName
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  };
+  const completedArtifacts = deriveArtifactChips(toolCalls);
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
@@ -168,7 +142,7 @@ const ConversationBubble = forwardRef<
       <div className={`group ${className}`}>
         <div className="flex flex-col items-end">
           {filesAttached && filesAttached.length > 0 && (
-            <div className="mr-12 mb-4 flex flex-wrap justify-end gap-2">
+            <div className="mr-5 mb-4 flex flex-wrap justify-end gap-2">
               {filesAttached.map((file, index) => (
                 <div
                   key={index}
@@ -193,12 +167,11 @@ const ConversationBubble = forwardRef<
             ref={ref}
             className={`flex flex-row-reverse justify-items-start`}
           >
-            <Avatar className="mt-2 shrink-0 text-2xl">
-              <img className="mr-1 rounded-full" width={30} src={UserIcon} />
-            </Avatar>
             {!isEditClicked && (
               <>
-                <div className="relative mr-2 flex w-full min-w-0 flex-col">
+                {/* ``mr-3`` plus the pill's own ``mr-2`` puts the question's
+                    right edge on the answer's ``mr-5`` gutter. */}
+                <div className="relative mr-3 flex w-full min-w-0 flex-col">
                   <div className="mr-2 ml-2 flex max-w-full min-w-0 items-start gap-2 rounded-3xl bg-linear-to-b from-violet-500 to-violet-600 px-5 py-4 text-sm leading-normal wrap-anywhere whitespace-pre-wrap text-white sm:text-base">
                     <div
                       ref={messageRef}
@@ -290,60 +263,6 @@ const ConversationBubble = forwardRef<
       </div>
     );
   } else {
-    const preprocessLaTeX = (content: string) => {
-      // Replace block-level LaTeX delimiters \[ \] with $$ $$
-      const blockProcessedContent = content.replace(
-        /\\\[(.*?)\\\]/gs,
-        (_, equation) => `$$${equation}$$`,
-      );
-
-      // Replace inline LaTeX delimiters \( \) with $ $
-      const inlineProcessedContent = blockProcessedContent.replace(
-        /\\\((.*?)\\\)/gs,
-        (_, equation) => `$${equation}$`,
-      );
-
-      return inlineProcessedContent;
-    };
-    const processMarkdownContent = (content: string) => {
-      let processedContent = preprocessLaTeX(content);
-
-      // Convert citation references [N] into markdown links [N](#cite-N)
-      // so ReactMarkdown renders them as <a> tags we can style.
-      // Avoid matching inside code blocks or existing links.
-      processedContent = processedContent.replace(
-        /(?<!\[)\[(\d+)\](?!\()/g,
-        (_, num) => `[${num}](#cite-${num})`,
-      );
-
-      const contentSegments: Array<{
-        type: 'text' | 'mermaid';
-        content: string;
-      }> = [];
-
-      let lastIndex = 0;
-      const regex = /```mermaid\n([\s\S]*?)```/g;
-      let match;
-
-      while ((match = regex.exec(processedContent)) !== null) {
-        const textBefore = processedContent.substring(lastIndex, match.index);
-        if (textBefore) {
-          contentSegments.push({ type: 'text', content: textBefore });
-        }
-
-        contentSegments.push({ type: 'mermaid', content: match[1].trim() });
-
-        lastIndex = match.index + match[0].length;
-      }
-
-      const textAfter = processedContent.substring(lastIndex);
-      if (textAfter) {
-        contentSegments.push({ type: 'text', content: textAfter });
-      }
-
-      return contentSegments;
-    };
-
     bubble = (
       <div
         ref={ref}
@@ -355,8 +274,10 @@ const ConversationBubble = forwardRef<
         sources?.some((source) => source.link === 'None')
           ? null
           : sources && (
-              <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
-                <div className="my-2 flex flex-row items-center justify-center gap-3">
+              // Stretched, not shrink-to-fit: the grid below sizes off this box,
+              // so a fit-content parent would leave its width to the cards.
+              <div className="mb-4 flex w-full flex-col flex-wrap items-start self-stretch lg:flex-nowrap">
+                <div className="my-2 ml-6 flex flex-row items-center justify-center gap-3">
                   <Avatar
                     src={Sources}
                     alt={t('conversation.sources.title')}
@@ -367,7 +288,9 @@ const ConversationBubble = forwardRef<
                     {t('conversation.sources.title')}
                   </p>
                 </div>
-                <div className="fade-in mr-5 ml-3 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
+                {/* Width comes from the stretched parent minus these margins;
+                    w-full here would be the column width plus them. */}
+                <div className="fade-in mr-5 ml-6">
                   <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     {sources?.slice(0, 3)?.map((source, index) => (
                       <div
@@ -448,23 +371,16 @@ const ConversationBubble = forwardRef<
               </div>
             )}
         {research && <ResearchProgress research={research} />}
-        {toolCalls && toolCalls.length > 0 && (
-          <ToolCalls
-            toolCalls={toolCalls}
-            onToolAction={onToolAction}
-            agentId={agentId}
-          />
-        )}
-        {!message && onOpenArtifact && completedArtifactCalls.length > 0 && (
-          <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
-            {completedArtifactCalls.map((artifactCall, artifactIndex) => (
+        {!message && onOpenArtifact && completedArtifacts.length > 0 && (
+          <div className="my-2 ml-6 flex flex-wrap justify-start gap-2">
+            {completedArtifacts.map((artifact, artifactIndex) => (
               <Button
-                key={artifactCall.call_id ?? artifactIndex}
+                key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
                 type="button"
                 onClick={() =>
                   onOpenArtifact({
-                    id: artifactCall.artifact_id!,
-                    toolName: artifactCall.tool_name,
+                    id: artifact.id,
+                    toolName: artifact.toolName,
                   })
                 }
                 className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
@@ -488,231 +404,63 @@ const ConversationBubble = forwardRef<
                     d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                   />
                 </svg>
-                {(artifactCall.tool_name
-                  ? formatToolName(artifactCall.tool_name)
-                  : 'Artifact') +
-                  (artifactCount > 1 ? ` (${artifactIndex + 1})` : '')}
+                <span className="max-w-50 truncate" title={artifact.label}>
+                  {artifact.label}
+                </span>
               </Button>
             ))}
           </div>
         )}
         {workflowRunId && (
-          <div className="my-2 mr-5 ml-2">
+          <div className="my-2 mr-5 ml-6">
             <WorkflowRunArtifacts
               workflowRunId={workflowRunId}
               inProgress={isStreaming}
             />
           </div>
         )}
-        {thought && (
-          <Thought thought={thought} preprocessLaTeX={preprocessLaTeX} />
+        {type === 'ERROR' ? (
+          message && (
+            <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+              <div className="fade-in-bubble text-destructive/80 dark:border-destructive dark:bg-destructive/15 relative mr-5 flex max-w-full flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 px-6 py-5 text-sm font-normal dark:text-white">
+                <MarkdownAnswer content={message} isStreaming={isStreaming} />
+              </div>
+            </div>
+          )
+        ) : (
+          <AnswerFlow
+            message={message}
+            thought={thought}
+            toolCalls={toolCalls}
+            segments={segments}
+            isStreaming={isStreaming}
+            agentId={agentId}
+            // A research run already narrates itself above; the status line
+            // would be a second live indicator away from the point of action.
+            suppressStatusLine={Boolean(research)}
+            artifacts={conversationArtifacts ?? completedArtifacts}
+            // The chip rail below renders from this turn's artifacts alone, so
+            // a bare-filename link has to resolve against the same set or the
+            // two controls in one bubble open different files.
+            turnArtifacts={completedArtifacts}
+            onOpenArtifact={onOpenArtifact}
+            renderApproval={(toolCall: ToolCallsType) => (
+              <div className="fade-in mt-4 mr-5 ml-6">
+                <ToolCallApprovalBar
+                  toolCall={toolCall}
+                  onToolAction={onToolAction}
+                />
+              </div>
+            )}
+            renderWikiWrite={(toolCall: ToolCallsType, isLive: boolean) => (
+              <WikiWriteToolCallCard toolCall={toolCall} isLive={isLive} />
+            )}
+          />
         )}
         {message && (
-          <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-            <div className="my-2 flex flex-row items-center justify-center gap-3">
-              <Avatar
-                src={DocsGPT3}
-                alt={t('conversation.answer')}
-                className="h-8.5 w-8.5 text-2xl"
-                imgClassName="h-full w-full object-cover"
-              />
-              <p className="text-base font-semibold">
-                {t('conversation.answer')}
-              </p>
-            </div>
-            <div
-              className={`fade-in-bubble bg-answer-bubble mr-5 flex max-w-full rounded-2xl px-6 py-4.5 ${
-                type === 'ERROR'
-                  ? 'text-destructive/80 dark:border-destructive dark:bg-destructive/15 relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:text-white'
-                  : 'flex-col rounded-3xl'
-              }`}
-            >
-              {(() => {
-                const contentSegments = processMarkdownContent(message);
-                return (
-                  <>
-                    {contentSegments.map((segment, index) => (
-                      <Fragment key={index}>
-                        {segment.type === 'text' ? (
-                          <ReactMarkdown
-                            className="fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap"
-                            remarkPlugins={[
-                              remarkGfm,
-                              [remarkMath, { singleDollarTextMath: false }],
-                            ]}
-                            rehypePlugins={[rehypeKatex]}
-                            components={{
-                              a({ href, children }) {
-                                if (href?.startsWith('#cite-')) {
-                                  const num = href.replace('#cite-', '');
-                                  const sourceIdx = parseInt(num, 10) - 1;
-                                  return (
-                                    <Button
-                                      type="button"
-                                      onClick={() => {
-                                        const el = document.getElementById(
-                                          `source-${sourceIdx}`,
-                                        );
-                                        if (el) {
-                                          el.scrollIntoView({
-                                            behavior: 'smooth',
-                                            block: 'center',
-                                          });
-                                          el.classList.add(
-                                            'ring-2',
-                                            'ring-purple-500',
-                                          );
-                                          setTimeout(
-                                            () =>
-                                              el.classList.remove(
-                                                'ring-2',
-                                                'ring-purple-500',
-                                              ),
-                                            2000,
-                                          );
-                                        }
-                                      }}
-                                      className="mx-0.5 h-5 min-w-5 rounded-full bg-purple-100 px-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
-                                      title={`Jump to source ${num}`}
-                                    >
-                                      {num}
-                                    </Button>
-                                  );
-                                }
-                                return (
-                                  <a
-                                    href={href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    {children}
-                                  </a>
-                                );
-                              },
-                              code(props) {
-                                const {
-                                  children,
-                                  className,
-                                  node,
-                                  ref,
-                                  ...rest
-                                } = props;
-                                const match = /language-(\w+)/.exec(
-                                  className || '',
-                                );
-                                const language = match ? match[1] : '';
-
-                                return match ? (
-                                  <div className="group border-border relative overflow-hidden rounded-xl border">
-                                    <div className="bg-muted flex items-center justify-between px-2 py-1">
-                                      <span className="text-foreground dark:text-foreground text-xs font-medium">
-                                        {language}
-                                      </span>
-                                      <CopyButton
-                                        textToCopy={String(children).replace(
-                                          /\n$/,
-                                          '',
-                                        )}
-                                      />
-                                    </div>
-                                    <SyntaxHighlighter
-                                      {...rest}
-                                      PreTag="div"
-                                      language={language}
-                                      style={
-                                        isDarkTheme ? vscDarkPlus : oneLight
-                                      }
-                                      className="mt-0!"
-                                      customStyle={{
-                                        margin: 0,
-                                        borderRadius: 0,
-                                      }}
-                                    >
-                                      {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
-                                  </div>
-                                ) : (
-                                  <code className="dark:bg-accent dark:text-foreground rounded-md bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
-                                    {children}
-                                  </code>
-                                );
-                              },
-                              ul({ children }) {
-                                return (
-                                  <ul
-                                    className={`list-inside list-disc pl-4 whitespace-normal ${classes.list}`}
-                                  >
-                                    {children}
-                                  </ul>
-                                );
-                              },
-                              ol({ children }) {
-                                return (
-                                  <ol
-                                    className={`list-inside list-decimal pl-4 whitespace-normal ${classes.list}`}
-                                  >
-                                    {children}
-                                  </ol>
-                                );
-                              },
-                              table({ children }) {
-                                return (
-                                  <div className="border-border relative overflow-x-auto rounded-lg border">
-                                    <table className="dark:text-foreground w-full text-left text-gray-700">
-                                      {children}
-                                    </table>
-                                  </div>
-                                );
-                              },
-                              thead({ children }) {
-                                return (
-                                  <thead className="bg-muted text-foreground text-xs uppercase">
-                                    {children}
-                                  </thead>
-                                );
-                              },
-                              tr({ children }) {
-                                return (
-                                  <tr className="border-border odd:bg-card even:bg-muted border-b">
-                                    {children}
-                                  </tr>
-                                );
-                              },
-                              th({ children }) {
-                                return (
-                                  <th className="px-6 py-3">{children}</th>
-                                );
-                              },
-                              td({ children }) {
-                                return (
-                                  <td className="px-6 py-3">{children}</td>
-                                );
-                              },
-                            }}
-                          >
-                            {segment.content}
-                          </ReactMarkdown>
-                        ) : (
-                          <div
-                            className="my-4 w-full"
-                            style={{ minWidth: '100%' }}
-                          >
-                            <MermaidRenderer
-                              code={segment.content}
-                              isLoading={isStreaming}
-                            />
-                          </div>
-                        )}
-                      </Fragment>
-                    ))}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-        )}
-        {message && (
-          <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
+          // ml-4 plus each button's own p-2 puts the first glyph on the answer's
+          // ml-6 text column.
+          <div className="my-2 ml-4 flex flex-wrap justify-start gap-2">
             {type === 'ERROR' ? (
               <div className="relative block items-center justify-center">
                 <div>{retryBtn}</div>
@@ -720,17 +468,17 @@ const ConversationBubble = forwardRef<
             ) : (
               <>
                 {onOpenArtifact &&
-                  completedArtifactCalls.map((artifactCall, artifactIndex) => (
+                  completedArtifacts.map((artifact, artifactIndex) => (
                     <div
-                      key={artifactCall.call_id ?? artifactIndex}
+                      key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
                       className="relative flex items-center justify-center"
                     >
                       <Button
                         type="button"
                         onClick={() =>
                           onOpenArtifact({
-                            id: artifactCall.artifact_id!,
-                            toolName: artifactCall.tool_name,
+                            id: artifact.id,
+                            toolName: artifact.toolName,
                           })
                         }
                         className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
@@ -755,10 +503,12 @@ const ConversationBubble = forwardRef<
                             d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                           />
                         </svg>
-                        {(artifactCall.tool_name
-                          ? formatToolName(artifactCall.tool_name)
-                          : 'Artifact') +
-                          (artifactCount > 1 ? ` (${artifactIndex + 1})` : '')}
+                        <span
+                          className="max-w-50 truncate"
+                          title={artifact.label}
+                        >
+                          {artifact.label}
+                        </span>
                       </Button>
                     </div>
                   ))}
@@ -975,9 +725,8 @@ function ToolCallApprovalBar({
       (toolCall.arguments && (toolCall.arguments.command as string)) || '';
     if (command) {
       try {
-        const { default: devicesService } = await import(
-          '../api/services/devicesService'
-        );
+        const { default: devicesService } =
+          await import('../api/services/devicesService');
         await devicesService.addAutoApprovePattern(
           toolCall.device_id,
           command,
@@ -1094,353 +843,50 @@ function ToolCallApprovalBar({
   );
 }
 
+/** The wiki-write step, in the same inline chip language as the other steps. */
 export function WikiWriteToolCallCard({
   toolCall,
+  isLive,
 }: {
   toolCall: ToolCallsType;
+  isLive?: boolean;
 }) {
   const { t } = useTranslation();
   const path = wikiWritePath(toolCall);
   const actionKey = wikiWriteActionKey(toolCall.action_name);
   const isError = toolCall.status === 'error';
+  const namespace = isToolCallRunning(toolCall)
+    ? 'wikiWrite.active'
+    : 'wikiWrite';
+  const label = t(`conversation.${namespace}.${actionKey}`, {
+    defaultValue: t(`conversation.${namespace}.edited`),
+  });
 
   return (
-    <div
-      className={`flex items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-sm ${
-        isError
-          ? 'border-destructive/40 bg-destructive/5'
-          : 'border-primary/30 bg-primary/5 dark:bg-primary/10'
-      }`}
-    >
-      <span aria-hidden="true" className="text-base leading-none">
-        ✏️
-      </span>
-      <span className="text-foreground font-medium">
-        {t(`conversation.wikiWrite.${actionKey}`, {
-          defaultValue: t('conversation.wikiWrite.edited'),
-        })}
+    <div className="my-2 mr-5 ml-6 flex min-w-0 items-center gap-2 py-1.5 text-sm">
+      <Pencil
+        aria-hidden
+        className={`text-muted-foreground h-4 w-4 shrink-0 ${
+          isLive ? 'animate-pulse' : ''
+        }`}
+      />
+      <span
+        className={`shrink-0 ${isLive ? 'shimmer-text' : 'text-muted-foreground'}`}
+      >
+        {label}
       </span>
       {path && (
-        <code className="dark:bg-card min-w-0 truncate rounded-md bg-black/10 px-1.5 py-0.5 font-mono text-xs">
+        <code
+          className="text-muted-foreground bg-muted dark:bg-answer-bubble min-w-0 truncate rounded-md px-1.5 py-0.5 font-mono text-xs"
+          title={path}
+        >
           {path}
         </code>
       )}
       {isError && (
-        <span className="text-destructive text-xs">
+        <span className="text-destructive shrink-0 text-xs">
           {t('conversation.wikiWrite.failed')}
         </span>
-      )}
-    </div>
-  );
-}
-
-export function ToolCalls({
-  toolCalls,
-  onToolAction,
-  agentId,
-}: {
-  toolCalls: ToolCallsType[];
-  onToolAction?: (
-    callId: string,
-    decision: 'approved' | 'denied',
-    comment?: string,
-  ) => void;
-  agentId?: string;
-}) {
-  const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
-
-  const awaitingCalls = toolCalls.filter(
-    (tc) => tc.status === 'awaiting_approval',
-  );
-  const wikiWriteCalls = toolCalls.filter(
-    (tc) => tc.status !== 'awaiting_approval' && isWikiWriteCall(tc),
-  );
-  const resolvedCalls = toolCalls.filter(
-    (tc) => tc.status !== 'awaiting_approval' && !isWikiWriteCall(tc),
-  );
-
-  return (
-    <div className="relative mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-      {/* Approval bars — always visible, compact inline */}
-      {awaitingCalls.length > 0 && (
-        <div className="fade-in mt-4 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
-          {awaitingCalls.map((tc) => (
-            <ToolCallApprovalBar
-              key={`approval-${tc.call_id}`}
-              toolCall={tc}
-              onToolAction={onToolAction}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Wiki write cards — always visible (D24: visibility is the control) */}
-      {wikiWriteCalls.length > 0 && (
-        <div className="fade-in mt-4 mr-5 ml-3 grid w-[90vw] grid-cols-1 gap-2 md:w-[70vw] lg:w-full">
-          {wikiWriteCalls.map((toolCall, index) => (
-            <WikiWriteToolCallCard
-              key={`wiki-write-${toolCall.call_id ?? index}`}
-              toolCall={toolCall}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Regular tool calls accordion */}
-      {resolvedCalls.length > 0 && (
-        <>
-          <div className="my-2 flex flex-row items-center justify-center gap-3">
-            <Avatar
-              src={Sources}
-              alt={'ToolCalls'}
-              className="h-6.5 w-7.5 text-xl"
-              imgClassName="h-full w-full object-fill"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-auto bg-transparent px-0 py-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
-              onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
-            >
-              <p className="text-base font-semibold">Tool Calls</p>
-              <img
-                src={ChevronDown}
-                alt="ChevronDown"
-                className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
-              />
-            </Button>
-          </div>
-          {isToolCallsOpen && (
-            <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
-              <div className="grid grid-cols-1 gap-2">
-                {resolvedCalls.map((toolCall, index) => {
-                  if (toolCall.tool_name === 'scheduler') {
-                    return (
-                      <SchedulerToolCallCard
-                        key={`scheduler-${toolCall.call_id ?? index}`}
-                        result={toolCall.result}
-                        actionName={toolCall.action_name}
-                        status={toolCall.status}
-                        agentId={agentId}
-                      />
-                    );
-                  }
-                  return (
-                    <Accordion
-                      key={`tool-call-${index}`}
-                      type="single"
-                      collapsible
-                      className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
-                    >
-                      <AccordionItem value="tool-call">
-                        <AccordionTrigger className="px-6 py-2 text-sm font-semibold">
-                          {`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          <div className="flex flex-col gap-1">
-                            <div className="border-border flex flex-col rounded-2xl border">
-                              <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 font-mono text-sm font-semibold wrap-break-word">
-                                <span>Arguments</span>{' '}
-                                <CopyButton
-                                  textToCopy={JSON.stringify(
-                                    toolCall.arguments,
-                                    null,
-                                    2,
-                                  )}
-                                />
-                              </p>
-                              <p className="dark:bg-card max-h-80 overflow-y-auto rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                                <span className="dark:text-muted-foreground leading-5.75 text-black">
-                                  {JSON.stringify(toolCall.arguments, null, 2)}
-                                </span>
-                              </p>
-                            </div>
-                            <div className="border-border flex flex-col rounded-2xl border">
-                              <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 font-mono text-sm font-semibold wrap-break-word">
-                                <span>Response</span>{' '}
-                                <CopyButton
-                                  textToCopy={
-                                    toolCall.status === 'error'
-                                      ? toolCall.error || 'Unknown error'
-                                      : JSON.stringify(toolCall.result, null, 2)
-                                  }
-                                />
-                              </p>
-                              {toolCall.status === 'pending' && (
-                                <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
-                                  <Spinner size="small" />
-                                </span>
-                              )}
-                              {toolCall.status === 'completed' && (
-                                <p className="dark:bg-card max-h-80 overflow-y-auto rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                                  <span className="dark:text-muted-foreground leading-5.75 text-black">
-                                    {JSON.stringify(toolCall.result, null, 2)}
-                                  </span>
-                                </p>
-                              )}
-                              {toolCall.status === 'error' && (
-                                <p className="dark:bg-card max-h-80 overflow-y-auto rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                                  <span className="text-destructive leading-5.75">
-                                    {toolCall.error}
-                                  </span>
-                                </p>
-                              )}
-                              {toolCall.status === 'denied' && (
-                                <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                                  <span className="text-muted-foreground leading-5.75">
-                                    Denied by user
-                                  </span>
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function Thought({
-  thought,
-  preprocessLaTeX,
-}: {
-  thought: string;
-  preprocessLaTeX: (content: string) => string;
-}) {
-  const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
-  const [isThoughtOpen, setIsThoughtOpen] = useState(false);
-
-  return (
-    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-      <div className="my-2 flex flex-row items-center justify-center gap-3">
-        <Avatar
-          src={Cloud}
-          alt={'Thought'}
-          className="h-6.5 w-7.5 text-xl"
-          imgClassName="h-full w-full object-fill"
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-auto bg-transparent px-0 py-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
-          onClick={() => setIsThoughtOpen(!isThoughtOpen)}
-        >
-          <p className="text-base font-semibold">
-            {t('conversation.reasoning')}
-          </p>
-          <img
-            src={ChevronDown}
-            alt="ChevronDown"
-            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isThoughtOpen ? 'rotate-180' : ''}`}
-          />
-        </Button>
-      </div>
-      {isThoughtOpen && (
-        <div className="fade-in mr-5 ml-2 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
-          <div className="bg-muted dark:bg-answer-bubble rounded-3xl px-7 py-4.5">
-            <ReactMarkdown
-              className="fade-in leading-normal wrap-break-word whitespace-pre-wrap"
-              remarkPlugins={[
-                remarkGfm,
-                [remarkMath, { singleDollarTextMath: false }],
-              ]}
-              rehypePlugins={[rehypeKatex]}
-              components={{
-                code(props) {
-                  const { children, className, node, ref, ...rest } = props;
-                  const match = /language-(\w+)/.exec(className || '');
-                  const language = match ? match[1] : '';
-
-                  return match ? (
-                    <div className="group border-border relative overflow-hidden rounded-xl border">
-                      <div className="bg-muted flex items-center justify-between px-2 py-1">
-                        <span className="text-foreground dark:text-foreground text-xs font-medium">
-                          {language}
-                        </span>
-                        <CopyButton
-                          textToCopy={String(children).replace(/\n$/, '')}
-                        />
-                      </div>
-                      <SyntaxHighlighter
-                        {...rest}
-                        PreTag="div"
-                        language={language}
-                        style={isDarkTheme ? vscDarkPlus : oneLight}
-                        className="mt-0!"
-                        customStyle={{
-                          margin: 0,
-                          borderRadius: 0,
-                        }}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    </div>
-                  ) : (
-                    <code className="dark:bg-accent dark:text-foreground rounded-md bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
-                      {children}
-                    </code>
-                  );
-                },
-                ul({ children }) {
-                  return (
-                    <ul className="list-inside list-disc pl-4 whitespace-normal">
-                      {children}
-                    </ul>
-                  );
-                },
-                ol({ children }) {
-                  return (
-                    <ol className="list-inside list-decimal pl-4 whitespace-normal">
-                      {children}
-                    </ol>
-                  );
-                },
-                table({ children }) {
-                  return (
-                    <div className="border-border relative overflow-x-auto rounded-lg border">
-                      <table className="dark:text-foreground w-full text-left text-gray-700">
-                        {children}
-                      </table>
-                    </div>
-                  );
-                },
-                thead({ children }) {
-                  return (
-                    <thead className="bg-muted text-foreground text-xs uppercase">
-                      {children}
-                    </thead>
-                  );
-                },
-                tr({ children }) {
-                  return (
-                    <tr className="border-border odd:bg-card even:bg-muted border-b">
-                      {children}
-                    </tr>
-                  );
-                },
-                th({ children }) {
-                  return <th className="px-6 py-3">{children}</th>;
-                },
-                td({ children }) {
-                  return <td className="px-6 py-3">{children}</td>;
-                },
-              }}
-            >
-              {preprocessLaTeX(thought ?? '')}
-            </ReactMarkdown>
-          </div>
-        </div>
       )}
     </div>
   );

@@ -115,3 +115,43 @@ class TestListForUser:
         repo = _repo(pg_conn)
         results = repo.list_for_user("nonexistent")
         assert results == []
+
+
+class TestUpdateMetadataIfContentNull:
+    """Atomic no-clobber write for failure provenance: the ``content IS
+    NULL`` predicate lives in the UPDATE itself, so a success row committed
+    by a concurrent duplicate execution can never be overwritten between a
+    check and the write."""
+
+    def test_updates_row_without_stored_content(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("u", "f.xlsx", "/p", content=None,
+                    metadata={"extraction": {"status": "failed", "error": "first"}},
+                    legacy_mongo_id="handle-1")
+
+        updated = repo.update_metadata_if_content_null(
+            "handle-1", "u", {"extraction": {"status": "failed", "error": "second"}}
+        )
+
+        assert updated is True
+        row = repo.get_by_legacy_id("handle-1", "u")
+        assert row["metadata"]["extraction"]["error"] == "second"
+
+    def test_refuses_row_with_stored_content(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("u", "f.txt", "/p", content="durable text", token_count=2,
+                    metadata={"extraction": {"status": "ok"}},
+                    legacy_mongo_id="handle-2")
+
+        updated = repo.update_metadata_if_content_null(
+            "handle-2", "u", {"extraction": {"status": "failed", "error": "late loser"}}
+        )
+
+        assert updated is False
+        row = repo.get_by_legacy_id("handle-2", "u")
+        assert row["metadata"]["extraction"]["status"] == "ok"
+        assert row["content"] == "durable text"
+
+    def test_missing_row_returns_false(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.update_metadata_if_content_null("nope", "u", {"x": 1}) is False

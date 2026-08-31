@@ -1471,3 +1471,82 @@ def test_to_responses_input_drops_out_of_order_pair_entirely(monkeypatch):
     items = llm._to_responses_input(messages)
     assert not [i for i in items if i.get("type") == "function_call"]
     assert not [i for i in items if i.get("type") == "function_call_output"]
+
+
+# ── tool-calling fallback on the Responses path ──────────────────────────────
+
+
+def _vllm_bad_request():
+    """400 a tool-less OpenAI-compatible endpoint returns for a tools request."""
+    import httpx
+    from openai import BadRequestError
+
+    message = (
+        '"auto" tool choice requires --enable-auto-tool-choice and '
+        "--tool-call-parser to be set"
+    )
+    request = httpx.Request("POST", "http://localhost:8000/v1/responses")
+    return BadRequestError(
+        message, response=httpx.Response(400, request=request), body={"message": message}
+    )
+
+
+class _RejectThenAccept:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        if len(self.calls) == 1:
+            raise _vllm_bad_request()
+        return self.result
+
+
+@pytest.mark.unit
+def test_responses_gen_retries_without_tools(monkeypatch):
+    llm = _make_llm(monkeypatch, _responses_caps())
+    response = _ns(
+        id="resp_degraded",
+        output=[_ns(type="message", content=[_ns(type="output_text", text="plain")])],
+    )
+    create = _RejectThenAccept(response)
+    llm.client.responses.create = create
+
+    choice = llm._responses_gen(
+        "local-model",
+        [{"role": "user", "content": "hi"}],
+        tools=[{"type": "function", "function": {"name": "t", "parameters": {}}}],
+        tool_choice="auto",
+    )
+
+    assert len(create.calls) == 2
+    assert "tools" in create.calls[0]
+    assert "tools" not in create.calls[1]
+    assert "tool_choice" not in create.calls[1]
+    assert choice.message.content == "plain"
+    assert llm._supports_tools() is False
+
+
+@pytest.mark.unit
+def test_responses_gen_stream_retries_without_tools(monkeypatch):
+    llm = _make_llm(monkeypatch, _responses_caps())
+    events = [
+        _ns(type="response.output_text.delta", delta="plain"),
+        _ns(type="response.completed", response=_ns(id="resp_degraded")),
+    ]
+    create = _RejectThenAccept(events)
+    llm.client.responses.create = create
+
+    chunks = list(
+        llm._responses_gen_stream(
+            "local-model",
+            [{"role": "user", "content": "hi"}],
+            tools=[{"type": "function", "function": {"name": "t", "parameters": {}}}],
+        )
+    )
+
+    assert chunks == ["plain"]
+    assert len(create.calls) == 2
+    assert "tools" in create.calls[0]
+    assert "tools" not in create.calls[1]

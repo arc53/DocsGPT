@@ -1,8 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('./conversationHandlers', () => ({
+  handleFetchAnswer: vi.fn().mockResolvedValue(null),
+  handleFetchAnswerSteaming: vi.fn().mockResolvedValue(undefined),
+  handleSubmitToolActions: vi.fn(),
+  handleV1ChatCompletionStreaming: vi.fn(),
+}));
+
+import { configureStore } from '@reduxjs/toolkit';
+
+import uploadReducer, { addAttachment } from '../upload/uploadSlice';
+import { handleFetchAnswer } from './conversationHandlers';
 import reducer, {
+  addQuery,
   applyMessageTail,
+  fetchAnswer,
   raiseNotice,
+  resendQuery,
   setConversation,
 } from './conversationSlice';
 
@@ -180,5 +194,137 @@ describe('raiseNotice — non-fatal notice', () => {
       }),
     );
     expect(next.queries[0].notice).toBeUndefined();
+  });
+});
+
+const completedAtt = {
+  id: 'srv-1',
+  fileName: 'a.pdf',
+  progress: 100,
+  status: 'completed' as const,
+  taskId: 't1',
+};
+const processingAtt = {
+  id: 'c-2',
+  fileName: 'b.pdf',
+  progress: 40,
+  status: 'processing' as const,
+  taskId: 't2',
+};
+
+const preferenceStub = {
+  token: 'tok',
+  selectedDocs: [],
+  prompt: { id: 'default' },
+  chunks: '2',
+  selectedAgent: null,
+  selectedModel: null,
+};
+
+const makeStore = () =>
+  configureStore({
+    reducer: {
+      conversation: reducer,
+      upload: uploadReducer,
+      preference: () => preferenceStub,
+    },
+  });
+
+describe('fetchAnswer — attachment ids on the wire', () => {
+  beforeEach(() => {
+    vi.mocked(handleFetchAnswer)
+      .mockClear()
+      .mockResolvedValue(null as never);
+  });
+
+  it('sends explicit attachmentIds and leaves composer attachments untouched', async () => {
+    const store = makeStore();
+    store.dispatch(addQuery({ prompt: 'q' }));
+    store.dispatch(addAttachment(completedAtt));
+
+    await store.dispatch(
+      fetchAnswer({
+        question: 'q',
+        indx: 0,
+        attachmentIds: ['row-1', 'row-2'],
+      }),
+    );
+
+    expect(vi.mocked(handleFetchAnswer).mock.calls[0][8]).toEqual([
+      'row-1',
+      'row-2',
+    ]);
+    // Explicit ids (e.g. a retry of an existing turn) must not consume
+    // whatever the composer currently holds.
+    expect(store.getState().upload.attachments).toHaveLength(1);
+  });
+
+  it('falls back to completed composer uploads and clears them when no ids are passed', async () => {
+    const store = makeStore();
+    store.dispatch(addQuery({ prompt: 'q' }));
+    store.dispatch(addAttachment(completedAtt));
+    store.dispatch(addAttachment(processingAtt));
+
+    await store.dispatch(fetchAnswer({ question: 'q', indx: 0 }));
+
+    expect(vi.mocked(handleFetchAnswer).mock.calls[0][8]).toEqual(['srv-1']);
+    // clearAttachments keeps in-flight rows.
+    expect(store.getState().upload.attachments.map((a) => a.id)).toEqual([
+      'c-2',
+    ]);
+  });
+});
+
+describe('fetchAnswer.rejected', () => {
+  it('writes the error to the retried row, not the last row', () => {
+    let state = reducer(
+      undefined,
+      setConversation([{ prompt: 'first' }, { prompt: 'second' }]),
+    );
+    state = reducer(
+      state,
+      fetchAnswer.rejected(new Error('boom'), 'req-1', {
+        question: 'first',
+        indx: 0,
+      }),
+    );
+    expect(state.status).toBe('failed');
+    expect(state.queries[0].error).toBe('Something went wrong');
+    expect(state.queries[1].error).toBeUndefined();
+  });
+
+  it('defaults to the last row when no index is given', () => {
+    let state = reducer(
+      undefined,
+      setConversation([{ prompt: 'first' }, { prompt: 'second' }]),
+    );
+    state = reducer(
+      state,
+      fetchAnswer.rejected(new Error('boom'), 'req-1', { question: 'second' }),
+    );
+    expect(state.queries[0].error).toBeUndefined();
+    expect(state.queries[1].error).toBe('Something went wrong');
+  });
+});
+
+describe('resendQuery', () => {
+  it('preserves the attachments bound to the turn', () => {
+    let state = reducer(
+      undefined,
+      setConversation([
+        {
+          prompt: 'p',
+          response: 'r',
+          error: 'e',
+          attachments: [{ id: 'x', fileName: 'f.pdf' }],
+        },
+      ]),
+    );
+    state = reducer(state, resendQuery({ index: 0, prompt: 'p2' }));
+    expect(state.queries[0].attachments).toEqual([
+      { id: 'x', fileName: 'f.pdf' },
+    ]);
+    expect(state.queries[0].response).toBeUndefined();
+    expect(state.queries[0].error).toBeUndefined();
   });
 });

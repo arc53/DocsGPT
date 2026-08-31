@@ -1,3 +1,4 @@
+import { AnswerSegment } from './answerSegments';
 import { ToolCallsType } from './types';
 
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
@@ -62,6 +63,10 @@ export interface Query {
   thought?: string;
   sources?: { title: string; text: string; link: string }[];
   tool_calls?: ToolCallsType[];
+  // Arrival-ordered layout of the fields above, so reasoning and tool calls
+  // render where they happened. Live-stream only; absent on reload, where
+  // ``getAnswerSegments`` synthesizes an order instead.
+  segments?: AnswerSegment[];
   // Set when this answer came from a workflow agent run; lets the chat render
   // the run's produced artifacts via WorkflowRunArtifacts.
   workflow_run_id?: string;

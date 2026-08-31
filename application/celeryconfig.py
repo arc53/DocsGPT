@@ -13,7 +13,10 @@ result_serializer = 'json'
 accept_content = ['json']
 
 # Autodiscover tasks
-imports = ('application.api.user.tasks',)
+imports = (
+    'application.api.user.tasks',
+    'application.vectorstore.embeddings_tasks',
+)
 
 # Project-scoped queue so a stray sibling worker on the same broker
 # (other repo, same default ``celery`` queue) can't grab DocsGPT tasks.
@@ -25,8 +28,13 @@ task_default_routing_key = "docsgpt"
 # Celery worker (headless/scheduled agent) is served by a separate parsing worker
 # and never self-deadlocks the awaiting worker. The tool also passes the queue at
 # apply_async time, so this routing is the default for any other enqueuer.
+# Query embedding gets its own queue for the same reason parsing does: a query
+# waiting behind a multi-minute ingest is a query that has timed out. A bare
+# worker still consumes it, but its concurrency is shared -- run a separate
+# ``-Q embeddings`` worker to actually isolate query latency from ingest.
 task_routes = {
     "application.api.user.tasks.parse_document": {"queue": settings.DOCUMENT_PARSE_QUEUE},
+    "application.vectorstore.embeddings_tasks.embed_texts": {"queue": settings.EMBEDDINGS_QUEUE},
 }
 
 # Declare every queue so a bare ``celery worker`` (no -Q) consumes ALL of them —
@@ -34,7 +42,10 @@ task_routes = {
 # heavy OCR isolated run one worker with ``-Q docsgpt`` and another with
 # ``-Q parsing``. (dict.fromkeys dedupes if DOCUMENT_PARSE_QUEUE == "docsgpt".)
 task_queues = tuple(
-    Queue(name) for name in dict.fromkeys(["docsgpt", settings.DOCUMENT_PARSE_QUEUE])
+    Queue(name)
+    for name in dict.fromkeys(
+        ["docsgpt", settings.DOCUMENT_PARSE_QUEUE, settings.EMBEDDINGS_QUEUE]
+    )
 )
 
 beat_scheduler = "redbeat.RedBeatScheduler"

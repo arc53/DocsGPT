@@ -11,8 +11,11 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), svgr()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(import.meta.dirname, './src'),
       },
+      // Radix keeps its body pointer-events lock in module scope. Any second copy
+      // npm nests, now or after a future bump, can leave that lock stuck on <body>.
+      dedupe: ['@radix-ui/react-dismissable-layer'],
     },
     server: {
       // Extra dev hosts (e.g. a tailscale name) come from VITE_ALLOWED_HOSTS in

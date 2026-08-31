@@ -1,16 +1,21 @@
 import logging
 import re
 import uuid
-from collections import Counter
+from collections import Counter, OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
+from sqlalchemy.exc import IntegrityError
+
 from application.agents.default_tools import (
+    BUILTIN_AGENT_TOOLS,
     is_headless_excluded_tool,
+    is_synthesized_tool_id,
     resolve_tool_by_id,
     synthesized_default_tools,
 )
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
+from application.guardrails.types import Stage as GuardrailStage, resolve_tool_result
 from application.security.encryption import decrypt_credentials
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
@@ -24,8 +29,43 @@ from application.storage.db.session import db_readonly, db_session
 logger = logging.getLogger(__name__)
 
 
+def _is_foreign_key_violation(exc: BaseException) -> bool:
+    """Whether ``exc`` is a Postgres FK violation (SQLSTATE 23503)."""
+    if not isinstance(exc, IntegrityError):
+        return False
+    pgcode = getattr(getattr(exc, "orig", None), "sqlstate", None) or getattr(
+        getattr(exc, "orig", None), "pgcode", None
+    )
+    return pgcode == "23503"
+
+
 # Tightest provider limit on function-call names (OpenAI: ^[a-zA-Z0-9_-]{1,64}$).
 _MAX_LLM_NAME_LEN = 64
+
+
+def _dedupable_tool_names() -> frozenset:
+    """Builtin tool names whose duplicate registrations may be collapsed.
+
+    A builtin can resolve through both the default-tool and the builtin-agent
+    registry, so the same row can arrive twice under different synthetic ids.
+    Only these are safe to collapse — an MCP or user-added tool may
+    legitimately appear more than once under a single name.
+    """
+    from application.core.settings import settings
+
+    return frozenset(BUILTIN_AGENT_TOOLS) | frozenset(getattr(settings, "DEFAULT_CHAT_TOOLS", None) or [])
+
+
+def _requires_approval(tool: Dict, action: Dict) -> bool:
+    """Effective approval gate for one action of a tool row.
+
+    Both sources live on the row: the cached ``actions[].require_approval``
+    snapshot and the deployment-level ``config.require_approval`` that
+    ``code_executor`` reads.
+    """
+    if bool(action.get("require_approval")):
+        return True
+    return bool((tool.get("config") or {}).get("require_approval"))
 
 
 def _sanitize_tool_prefix(tool_name: Optional[str]) -> str:
@@ -122,6 +162,41 @@ def _redact_args_for_log(args: Any) -> Any:
     return redacted
 
 
+# ``message_id``s whose ``conversation_messages`` parent has been found
+# missing. Every tool-call journal write for such a message FK-fails
+# identically, and a long tool loop produces one ERROR *pair* per call — 60
+# ERRORs from a single stream in production, the whole api-tier error volume
+# for that day. Latch the first failure and log the rest at debug.
+# Bounded so a long-lived worker cannot grow this without limit.
+_MISSING_PARENTS: "OrderedDict[str, None]" = OrderedDict()
+_MISSING_PARENTS_MAX = 256
+
+
+def _is_missing_parent(message_id: Optional[str]) -> bool:
+    return bool(message_id) and message_id in _MISSING_PARENTS
+
+
+def _note_missing_parent(message_id: Optional[str], exc: BaseException) -> bool:
+    """Record a FK failure against ``message_id``. True if newly latched.
+
+    Args:
+        message_id: The message the write was scoped to, if any.
+        exc: The exception raised by the write.
+
+    Returns:
+        True when this is the first sighting for the message (so the caller
+        should log loudly), False when already latched or not a FK error.
+    """
+    if not message_id or not _is_foreign_key_violation(exc):
+        return False
+    if message_id in _MISSING_PARENTS:
+        return False
+    _MISSING_PARENTS[message_id] = None
+    while len(_MISSING_PARENTS) > _MISSING_PARENTS_MAX:
+        _MISSING_PARENTS.popitem(last=False)
+    return True
+
+
 def _journal_key(call_id: str, message_id: Optional[str]) -> str:
     """Namespace the durability-journal key by the per-turn ``message_id``.
 
@@ -177,8 +252,26 @@ def _record_proposed(
                 extra={"alert": "tool_call_id_collision", "call_id": call_id},
             )
         return inserted
-    except Exception:
-        logger.exception("tool_call_attempts proposed write failed for %s", call_id)
+    except Exception as exc:
+        if _note_missing_parent(message_id, exc):
+            logger.warning(
+                "tool_call_attempts: parent message row %s is gone "
+                "(deleted mid-stream); suppressing further journal errors "
+                "for this message. First failing call: %s",
+                message_id,
+                call_id,
+            )
+        elif _is_missing_parent(message_id):
+            logger.debug(
+                "tool_call_attempts proposed write skipped for %s "
+                "(parent %s already known missing)",
+                call_id,
+                message_id,
+            )
+        else:
+            logger.exception(
+                "tool_call_attempts proposed write failed for %s", call_id
+            )
         return False
 
 
@@ -229,8 +322,18 @@ def _mark_executed(
                 user_id=user_id,
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),
             )
-    except Exception:
-        logger.exception("tool_call_attempts executed write failed for %s", call_id)
+    except Exception as exc:
+        if _note_missing_parent(message_id, exc) or _is_missing_parent(message_id):
+            logger.debug(
+                "tool_call_attempts executed write skipped for %s "
+                "(parent %s gone)",
+                call_id,
+                message_id,
+            )
+        else:
+            logger.exception(
+                "tool_call_attempts executed write failed for %s", call_id
+            )
 
 
 def _mark_failed(
@@ -274,6 +377,8 @@ class ToolExecutor:
         self.headless = bool(headless)
         # Tool-instance ids pre-authorized for headless approval-gated execution.
         self.tool_allowlist: set = {str(x) for x in tool_allowlist} if tool_allowlist else set()
+        # Set by BaseAgent._prepare_tools when the agent has tool-stage controls.
+        self.guardrail_engine = None
         self.tool_calls: List[Dict] = []
         self._loaded_tools: Dict[str, object] = {}
         # Explicit tool-id scope (workflow agent nodes): when set (even empty),
@@ -292,6 +397,11 @@ class ToolExecutor:
         self.attachments: List[Dict] = []
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
+        # Per-NAME failure counts for invented tool names this turn. After
+        # ``UNRESOLVABLE_CALL_LIMIT`` the model is handed a directive message
+        # instead of the generic error; this is a prompt-level nudge, not a hard
+        # bound — the loop bound remains ``MAX_TOOL_ITERATIONS``.
+        self._unresolvable_calls: Dict[str, int] = {}
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
         # Filled by the LLMHandler.handle_tool_calls headless loop.
         self.headless_denials: List[Dict] = []
@@ -447,8 +557,29 @@ class ToolExecutor:
         # (tool_id, tool_name, action_name, action, is_client)
         entries: List[Tuple[str, str, str, Dict, bool]] = []
         name_counts: Counter = Counter()
+        # A builtin can arrive twice: once as the user's stored row (keyed by
+        # list index in ``_get_user_tools``) and once as the synthesized default
+        # (keyed by uuid5). Pass 2 then hands the model two indistinguishable
+        # copies with mangled names (``artifact_generator_create_artifact`` +
+        # ``…_1``). The two rows are NOT byte-identical — a stored row has been
+        # through ``transform_actions``, which stamps ``active``/``filled_by_llm``
+        # onto every action — so the key is (tool name, action name).
+        #
+        # Which copy survives is load-bearing: a stored builtin row CAN carry
+        # per-row config even though ``get_config_requirements() == {}``, and
+        # ``code_executor`` keeps its approval gate there. Insertion order is
+        # the agent's ``tool_ids`` click order on the agent paths, so it must
+        # not decide this — stored rows are considered before synthesized ones,
+        # and a row that requires approval always beats one that does not. Safe
+        # only for builtins; two MCP rows can legitimately share a name and must
+        # stay distinct.
+        seen_actions: Dict[Tuple[str, str, bool], Tuple[int, bool]] = {}
+        dedupable = _dedupable_tool_names()
 
-        for tool_id, tool in tools_dict.items():
+        # Stable sort: preserves the caller's order within each group.
+        ordered_tools = sorted(tools_dict.items(), key=lambda kv: is_synthesized_tool_id(kv[0]))
+
+        for tool_id, tool in ordered_tools:
             is_api = tool["name"] == "api_tool"
             is_client = tool.get("client_side", False)
 
@@ -462,7 +593,36 @@ class ToolExecutor:
             for action in actions:
                 if not action.get("active", True):
                     continue
-                entries.append((tool_id, tool.get("name", ""), action["name"], action, is_client))
+                tool_name = tool.get("name", "")
+                if tool_name in dedupable:
+                    fingerprint = (tool_name, action["name"], is_client)
+                    requires_approval = _requires_approval(tool, action)
+                    kept = seen_actions.get(fingerprint)
+                    if kept is not None:
+                        kept_index, kept_approval = kept
+                        if requires_approval and not kept_approval:
+                            # Never let a duplicate registration drop an
+                            # approval gate the user configured.
+                            entries[kept_index] = (
+                                tool_id,
+                                tool_name,
+                                action["name"],
+                                action,
+                                is_client,
+                            )
+                            seen_actions[fingerprint] = (kept_index, True)
+                            logger.debug(
+                                "duplicate_tool_registration_promoted",
+                                extra={"tool_name": tool_name, "action_name": action["name"]},
+                            )
+                        else:
+                            logger.debug(
+                                "duplicate_tool_registration_collapsed",
+                                extra={"tool_name": tool_name, "action_name": action["name"]},
+                            )
+                        continue
+                    seen_actions[fingerprint] = (len(entries), requires_approval)
+                entries.append((tool_id, tool_name, action["name"], action, is_client))
                 name_counts[action["name"]] += 1
 
         # Pass 2: assign LLM-visible names and build mappings
@@ -523,6 +683,27 @@ class ToolExecutor:
                         if v.get("required", False):
                             params["required"].append(k)
         return params
+
+    def _guardrail_tool_result(self, result: Any, tool_name: str, action_name: str) -> Any:
+        """Scan a tool result before it fans out to the LLM, UI and journal.
+
+        A tool result is untrusted third-party text on the same footing as a
+        retrieved document, and it is a common exfiltration path for secrets
+        that the calling API happened to echo back.
+        """
+        engine = getattr(self, "guardrail_engine", None)
+        if engine is None or not engine.has_stage(GuardrailStage.TOOL_RESULT):
+            return result
+        if not isinstance(result, str) or not result:
+            return result
+        try:
+            engine.context.tool_name = tool_name
+            engine.context.action_name = action_name
+            decision = engine.evaluate(result, GuardrailStage.TOOL_RESULT)
+        except Exception:
+            logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
+            return result
+        return resolve_tool_result(result, decision)
 
     def check_pause(self, tools_dict: Dict, call, llm_class_name: str) -> Optional[Dict]:
         """Return a pending-action dict (approval / client / headless_denied) or None.
@@ -705,6 +886,69 @@ class ToolExecutor:
             )
             return True
 
+    @staticmethod
+    def _advertisable_action_names(tools_dict: Dict) -> set:
+        """Action names a ``tools_dict`` would expose, mirroring pass 1 of
+        :meth:`prepare_tools_for_llm`.
+
+        The model calls ACTION names (``run_code``), never tool names
+        (``code_executor``), so a fallback built from ``tool["name"]`` names
+        strings that cannot resolve — feeding the very retry loop the
+        correctable error exists to break.
+        """
+        names = set()
+        for tool in (tools_dict or {}).values():
+            tool = tool or {}
+            if tool.get("name") == "api_tool":
+                actions = (tool.get("config") or {}).get("actions") or {}
+                actions = actions.values() if isinstance(actions, dict) else actions
+            else:
+                actions = tool.get("actions") or []
+            for action in actions:
+                if not isinstance(action, dict) or not action.get("active", True):
+                    continue
+                if action.get("name"):
+                    names.add(str(action["name"]))
+        return names
+
+    def _available_tool_names(self, tools_dict: Dict, exclude: Optional[str] = None) -> str:
+        """Render the names the model can actually call, for a correctable error.
+
+        Prefer the LLM-visible action names assigned by
+        :meth:`prepare_tools_for_llm` — those are the strings the model puts in
+        a tool call. Fall back to tool names when the mapping has not been built
+        (headless paths, tests). Never the internal tool ids: quoting those
+        tells the model nothing about what to call instead.
+
+        Narrowed to ``tools_dict`` so a call made with a restricted toolset is
+        never told to call something out of scope, and capped: this string is
+        returned as a tool RESULT, so it joins the message history and is
+        re-sent on every later round. Uncapped, a large MCP fleet turns one
+        failed call into kilobytes of prose duplicating the tool schema the
+        provider already received.
+        """
+        scope = set(tools_dict or {})
+        names = sorted(
+            name
+            for (tool_id, _action), name in self._tool_to_name.items()
+            if not scope or tool_id in scope
+        )
+        if not names:
+            names = sorted(self._advertisable_action_names(tools_dict or {}))
+        names = [str(name) for name in names if name != exclude]
+        if len(names) > self.MAX_ADVERTISED_TOOL_NAMES:
+            hidden = len(names) - self.MAX_ADVERTISED_TOOL_NAMES
+            names = names[: self.MAX_ADVERTISED_TOOL_NAMES] + [f"and {hidden} more"]
+        return ", ".join(names) if names else "(none available)"
+
+    # After this many unresolvable calls to the same name, refuse rather than
+    # re-run.
+    UNRESOLVABLE_CALL_LIMIT = 2
+
+    # Cap on names rendered into a failed-call result; see
+    # :meth:`_available_tool_names`.
+    MAX_ADVERTISED_TOOL_NAMES = 30
+
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
         """Execute a tool call. Yields status events, returns (result, call_id)."""
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
@@ -712,9 +956,78 @@ class ToolExecutor:
         llm_name = getattr(call, "name", "unknown")
 
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
+        unresolvable = tool_id is None or action_name is None or tool_id not in tools_dict
+
+        # A tool the model invented will never resolve, so re-running it just
+        # burns the turn's iteration budget on an identical failure. From the
+        # third attempt on, hand back a directive message instead of the generic
+        # error. Scoped to an unknown *name*: a registered tool whose arguments
+        # merely failed to decode is recoverable, and refusing it would strand a
+        # working tool for the rest of the turn.
+        #
+        # Keyed on the NAME ALONE. Keying on the payload too made the guard a
+        # no-op in the case it exists for: told a call failed, a model varies
+        # its arguments on the next attempt, minting a fresh counter every
+        # round and never reaching the limit. Arguments cannot rescue an
+        # unknown name anyway — ``ToolActionParser`` resolves from ``call.name``
+        # only — and the "two different malformed bodies" case this used to
+        # protect belongs to REGISTERED tools, which the
+        # ``llm_name not in self._name_to_tool`` gate already excludes.
+        if unresolvable and llm_name not in self._name_to_tool:
+            failures = self._unresolvable_calls.get(llm_name, 0)
+            # Count before refusing, so the message and the log escalate rather
+            # than freezing at the limit for the rest of the turn.
+            self._unresolvable_calls[llm_name] = failures + 1
+            if failures >= self.UNRESOLVABLE_CALL_LIMIT:
+                repeated = (
+                    f"'{llm_name}' has already failed {failures} times and will keep "
+                    f"failing — it is not a tool that exists. Stop calling it and "
+                    f"either use a different tool "
+                    f"({self._available_tool_names(tools_dict, exclude=llm_name)}) or answer without one."
+                )
+                logger.warning(
+                    "tool_call_repeated_failure",
+                    extra={"llm_tool_name": llm_name, "call_id": call_id, "failures": failures},
+                )
+                tool_call_data = {
+                    "tool_name": "unknown",
+                    "call_id": call_id,
+                    "action_name": llm_name,
+                    "arguments": call_args if isinstance(call_args, dict) else {},
+                    "result": repeated,
+                    "status": "error",
+                }
+                # Journal it like the branches below, so a hallucination storm
+                # is not under-counted in the analytics used to size it.
+                if _record_proposed(
+                    call_id,
+                    "unknown",
+                    llm_name or "unknown",
+                    call_args if isinstance(call_args, dict) else {},
+                    message_id=self.message_id,
+                    user_id=self.user,
+                    agent_id=self.agent_id,
+                ):
+                    _mark_failed(
+                        call_id,
+                        repeated,
+                        message_id=self.message_id,
+                        user_id=self.user,
+                    )
+                yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
+                self.tool_calls.append(tool_call_data)
+                return repeated, call_id
 
         if tool_id is None or action_name is None:
-            error_message = f"Error: Failed to parse LLM tool call. Tool name: {llm_name}"
+            # Say which half actually failed. Reporting a name problem for a
+            # registered tool whose arguments were merely malformed is what sent
+            # one production investigation down the wrong path.
+            name_is_known = llm_name in self._name_to_tool
+            parse_reason = (
+                "its arguments were not a valid JSON object"
+                if name_is_known
+                else "the tool name could not be resolved and its arguments were not a JSON object"
+            )
             logger.error(
                 "tool_call_parse_failed",
                 extra={
@@ -729,7 +1042,10 @@ class ToolExecutor:
                 "call_id": call_id,
                 "action_name": llm_name,
                 "arguments": call_args or {},
-                "result": f"Failed to parse tool call. Invalid tool name format: {llm_name}",
+                "result": (
+                    f"Could not run '{llm_name}': {parse_reason}. "
+                    f"Available tools: {self._available_tool_names(tools_dict)}."
+                ),
                 "status": "error",
             }
             # Journal the malformed call so it still shows up in tool analytics.
@@ -750,10 +1066,9 @@ class ToolExecutor:
                 )
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
-            return "Failed to parse tool call.", call_id
+            return tool_call_data["result"], call_id
 
         if tool_id not in tools_dict:
-            error_message = f"Error: Tool ID '{tool_id}' extracted from LLM call not found in available tools_dict. Available IDs: {list(tools_dict.keys())}"
             logger.error(
                 "tool_id_not_found",
                 extra={
@@ -769,7 +1084,10 @@ class ToolExecutor:
                 "call_id": call_id,
                 "action_name": llm_name,
                 "arguments": call_args,
-                "result": f"Tool with ID {tool_id} not found. Available tools: {list(tools_dict.keys())}",
+                "result": (
+                    f"Could not run '{llm_name}': no such tool. "
+                    f"Available tools: {self._available_tool_names(tools_dict)}."
+                ),
                 "status": "error",
             }
             # Journal the unresolvable call so it still shows up in tool analytics.
@@ -784,13 +1102,13 @@ class ToolExecutor:
             ):
                 _mark_failed(
                     call_id,
-                    f"Tool with ID {tool_id} not found.",
+                    tool_call_data["result"],
                     message_id=self.message_id,
                     user_id=self.user,
                 )
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
-            return f"Tool with ID {tool_id} not found.", call_id
+            return tool_call_data["result"], call_id
 
         tool_call_data = {
             "tool_name": tools_dict[tool_id]["name"],
@@ -927,6 +1245,7 @@ class ToolExecutor:
         # the conversation row, tool_call_attempts, and the stream event —
         # sanitize once so every lane gets clean text.
         result = sanitize_tool_result(result)
+        result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
 
@@ -944,6 +1263,37 @@ class ToolExecutor:
         artifact_id = str(artifact_id).strip() if artifact_id is not None else ""
         if artifact_id:
             tool_call_data["artifact_id"] = artifact_id
+
+        # A single call can produce several files (``run_code`` writing more
+        # than one). ``artifact_id`` names only the first, which left the rest
+        # with no way into the UI, so report the full set with display names.
+        get_artifacts = (
+            getattr(tool, "get_artifacts", None)
+            if tool_data["name"] != "api_tool"
+            else None
+        )
+        if callable(get_artifacts):
+            artifacts = []
+            try:
+                # Normalize inside the guard: a tool returning an unexpected
+                # shape must not break the call it just completed.
+                artifacts = [
+                    {
+                        "id": str(a["id"]).strip(),
+                        "filename": a.get("filename"),
+                        "ref": a.get("ref"),
+                    }
+                    for a in (get_artifacts(action_name, **parameters) or [])
+                    if isinstance(a, dict) and a.get("id")
+                ]
+            except Exception:
+                logger.exception(
+                    "Failed to extract artifacts from tool %s for action %s",
+                    tool_data["name"],
+                    action_name,
+                )
+            if artifacts:
+                tool_call_data["artifacts"] = artifacts
         result_full = bound_result_full(str(result))
         tool_call_data["resolved_arguments"] = resolved_arguments
         tool_call_data["result_full"] = result_full
@@ -1086,9 +1436,25 @@ class ToolExecutor:
 
         return tool
 
+    # Keys the client needs that are not part of the fixed shape below. They are
+    # small and optional, and are copied only when present so an ordinary tool
+    # call does not grow null columns in every persisted row.
+    _PRESERVED_TOOL_CALL_KEYS = ("artifacts", "device_id")
+
     def get_truncated_tool_calls(self) -> List[Dict]:
-        return [
-            {
+        """Project tool calls into the shape that is streamed and persisted.
+
+        This is what the client reloads, so anything dropped here is live-only
+        and vanishes when the conversation is reopened. ``result_full`` and
+        ``resolved_arguments`` are shed deliberately — they are the untruncated
+        copies this projection exists to remove — but ``artifacts`` and
+        ``device_id`` were omitted by oversight, which cost a multi-file
+        ``run_code`` all but its first download chip on reload and left the
+        remote-device approval UI without the id it keys its sticky action on.
+        """
+        projected = []
+        for tool_call in self.tool_calls:
+            entry = {
                 "tool_name": tool_call.get("tool_name"),
                 "call_id": tool_call.get("call_id"),
                 "action_name": tool_call.get("action_name"),
@@ -1097,5 +1463,9 @@ class ToolExecutor:
                 "result": truncate_tool_result(tool_call.get("result")),
                 "status": tool_call.get("status", "completed"),
             }
-            for tool_call in self.tool_calls
-        ]
+            for key in self._PRESERVED_TOOL_CALL_KEYS:
+                value = tool_call.get(key)
+                if value:
+                    entry[key] = value
+            projected.append(entry)
+        return projected

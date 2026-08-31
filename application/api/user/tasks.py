@@ -1,10 +1,12 @@
 import logging
 from datetime import timedelta
+from typing import Dict, Optional
 
 from sqlalchemy.exc import DataError
 
 from application.api.user.idempotency import with_idempotency
 from application.celery_init import celery
+from application.parser.file.base_parser import DocumentParseError
 from application.worker import (
     AttachmentRejectedError,
     agent_webhook_worker,
@@ -26,13 +28,70 @@ logger = logging.getLogger(__name__)
 # durability story is grep-able next to the body. Combined with
 # ``autoretry_for=(Exception,)`` and a bounded ``max_retries`` so a poison
 # message can't loop forever.
+#
+# ``retry_backoff`` is the factor, NOT a boolean toggle: celery's
+# ``add_autoretry_behaviour`` OVERWRITES ``retry_kwargs["countdown"]`` whenever
+# it is truthy (celery/app/autoretry.py). With the old ``retry_backoff=True``
+# the factor was ``int(max(1.0, True)) == 1``, so the three waits were jittered
+# 0-1 s, 0-2 s and 0-4 s — a whole retry envelope of at most 7 seconds. A
+# 3.5-minute network blip (2026-08-21) therefore exhausted every attempt and
+# published a terminal ``source.ingest.failed`` / ``attachment.failed``.
+#
+# celery applies FULL JITTER (``retry_jitter`` defaults to True), so each wait
+# is drawn uniformly from ``[0, factor * 2**retries]`` — the ceilings are NOT
+# the waits, and the envelope is a distribution, not a guarantee. Factor 60
+# gives ceilings 60/120/240 s: a median envelope of ~210 s, which covers a
+# 60 s blip ~98% of the time and a 120 s blip ~85%. Factor 30 would have
+# covered the 210 s incident 0% of the time, because its 210 s nominal
+# maximum was reachable only by drawing all three waits at their ceiling.
+# Raising ``max_retries`` would buy more headroom but is deliberately not
+# done here: attempt 6 would newly reach the ``MAX_TASK_ATTEMPTS=5``
+# poison-loop guard in ``idempotency.py``, which is a separate behaviour
+# change from widening the waits.
+#
+# Jitter is deliberately left ON. These nine task types share their
+# dependencies (Postgres, object storage, the embedding provider), so an
+# outage fails them all at once; ``retry_jitter=False`` would wake every
+# in-flight task at the same instant and stampede the service that just
+# recovered.
+#
+# ``max_retries`` is passed at the top level rather than inside
+# ``retry_kwargs``: celery captures that dict BY REFERENCE and writes
+# ``retry_kwargs["countdown"]`` into it on every retry, so one shared dict
+# spread across all the decorators below would let concurrent retries race
+# and would permanently mutate this module constant.
+#
+# ``dont_autoretry_for`` is the necessary counterweight to that widened
+# envelope. ``autoretry_for=(Exception,)`` retries EVERYTHING, but a
+# ``DocumentParseError`` (unparseable, empty, or image-only file) fails
+# identically on every attempt — with factor 60 it now burns a median 3.5 min
+# and up to ~7 before reaching a terminal state, during which anything polling
+# ``/api/task_status`` (the wiki-convert and GraphRAG-enable modals) just keeps
+# reporting "pending". It is the DEFAULT here so a new durable task cannot
+# forget it; tasks needing a wider set pass their own via ``durable_task()``.
 DURABLE_TASK = dict(
     bind=True,
     acks_late=True,
     autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": 3, "countdown": 60},
-    retry_backoff=True,
+    dont_autoretry_for=(DocumentParseError,),
+    max_retries=3,
+    retry_backoff=60,
 )
+
+
+def durable_task(**overrides) -> Dict:
+    """Return ``DURABLE_TASK`` with per-task overrides applied.
+
+    Needed because ``@celery.task(**DURABLE_TASK, dont_autoretry_for=...)``
+    would be a duplicate keyword argument.
+
+    Args:
+        **overrides: Task options replacing the shared defaults.
+
+    Returns:
+        The merged options dict, for ``@celery.task(**durable_task(...))``.
+    """
+    return {**DURABLE_TASK, **overrides}
 
 
 # operation tag for the poison-path source.ingest.failed event, per task.
@@ -69,6 +128,10 @@ def _emit_ingest_poison_event(task_name, bound):
     )
 
 
+# ``dont_autoretry_for=(DocumentParseError,)`` now comes from ``DURABLE_TASK``:
+# a file that cannot be converted to text fails identically on every attempt,
+# so retrying only multiplies the log noise before the same failure — go
+# straight to the poison/failure path.
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="ingest", on_poison=_emit_ingest_poison_event)
 def ingest(
@@ -215,7 +278,9 @@ def _emit_attachment_poison_event(task_name, bound):
 
     Mirrors ``_emit_ingest_poison_event``: the guard returns before the
     worker runs, so ``attachment_worker``'s own events never fire and the
-    upload toast would otherwise spin on "processing" forever.
+    upload toast would otherwise spin on "processing" forever. Also writes
+    the failure row the worker never got to write, so the poisoned upload
+    stays visible to a DB scan and not just to whoever saw the toast.
     """
     user = bound.get("user")
     file_info = bound.get("file_info") or {}
@@ -223,7 +288,11 @@ def _emit_attachment_poison_event(task_name, bound):
     if not user or not attachment_id:
         return
     from application.events.publisher import publish_user_event
+    from application.worker import record_attachment_failure
 
+    record_attachment_failure(
+        user, file_info, "Attachment processing stopped after repeated failures."
+    )
     publish_user_event(
         user,
         "attachment.failed",
@@ -237,10 +306,15 @@ def _emit_attachment_poison_event(task_name, bound):
 
 
 # ``dont_autoretry_for``: a DataError (poison payload, e.g. NUL bytes or an
-# over-long value) or an AttachmentRejectedError (zip bomb) is deterministic —
-# retrying re-fails identically and multiplies log noise, so it goes straight
-# to the failure path.
-@celery.task(**DURABLE_TASK, dont_autoretry_for=(DataError, AttachmentRejectedError))
+# over-long value), an AttachmentRejectedError (zip bomb) or a
+# DocumentParseError (the file cannot be converted to text at all) is
+# deterministic — retrying re-fails identically and multiplies log noise, so it
+# goes straight to the failure path.
+@celery.task(
+    **durable_task(
+        dont_autoretry_for=(DataError, AttachmentRejectedError, DocumentParseError),
+    )
+)
 @with_idempotency(
     task_name="store_attachment", on_poison=_emit_attachment_poison_event,
 )
@@ -254,6 +328,47 @@ def store_attachment(self, file_info, user, idempotency_key=None):
 def process_agent_webhook(self, agent_id, payload, idempotency_key=None):
     resp = agent_webhook_worker(self, agent_id, payload)
     return resp
+
+
+# Seconds the hard (SIGKILL) limit trails the soft limit, giving the soft handler
+# room to unwind and return a terminal result before the worker is killed.
+_PARSE_HARD_LIMIT_GRACE = 30
+
+
+def parse_timeout_for_size(size_bytes: Optional[int]) -> float:
+    """Seconds to allow one ``parse_document``: floored at the base timeout, scaled by size, capped.
+
+    Args:
+        size_bytes: Byte size of the document, or None when unknown (base timeout).
+
+    Returns:
+        The parse window in seconds.
+    """
+    from application.core.settings import settings
+
+    base = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120) or 120)
+    per_mib = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 0) or 0)
+    ceiling = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT_MAX", base) or base)
+    size = float(size_bytes) if isinstance(size_bytes, (int, float)) else 0.0
+    scaled = base + per_mib * max(size, 0.0) / (1024 * 1024)
+    return min(ceiling, max(base, scaled))
+
+
+def parse_task_time_limits(timeout: float) -> Dict[str, int]:
+    """Per-call Celery limits for a ``parse_document`` the caller awaits for ``timeout`` seconds.
+
+    The task's import-time ``soft_time_limit`` is bound to the BASE timeout, so a caller
+    awaiting a longer, size-scaled window must raise the per-call limits to match or the
+    worker self-terminates the parse first.
+
+    Args:
+        timeout: The awaited parse window in seconds.
+
+    Returns:
+        ``apply_async`` kwargs carrying the soft and hard time limits.
+    """
+    soft = max(1, int(timeout))
+    return {"soft_time_limit": soft, "time_limit": soft + _PARSE_HARD_LIMIT_GRACE}
 
 
 # Not DURABLE: the read_document tool awaits this synchronously with a timeout, so a
@@ -272,18 +387,23 @@ def parse_document(self, artifact_id, parent, user_id, options=None):
         # A pathological/malicious document must not pin a parsing-worker slot past the
         # window the caller already abandoned. Return the worker's clean error shape so
         # the slot frees and the Redis result backend still gets a terminal result.
-        limit = getattr(self, "soft_time_limit", None)
+        # ``request.timelimit`` is (hard, soft) and carries the caller's PER-CALL limit,
+        # so prefer it over the import-time default when reporting the window.
+        limit = (getattr(self.request, "timelimit", None) or (None, None))[1]
+        if limit is None:
+            limit = getattr(self, "soft_time_limit", None)
         suffix = f" after {int(limit)}s" if limit else ""
         return {"status": "error", "error": f"document parsing timed out{suffix}."}
 
 
-# Bind the soft limit to DOCUMENT_PARSE_TIMEOUT (the same window read_document awaits) so
+# Bind the soft limit to DOCUMENT_PARSE_TIMEOUT (the floor of the window callers await) so
 # the prefork worker self-terminates a runaway parse instead of pinning the slot; the hard
-# limit is the SIGKILL backstop if the soft handler can't unwind in time.
+# limit is the SIGKILL backstop if the soft handler can't unwind in time. Callers awaiting a
+# size-scaled window override both per call via ``parse_task_time_limits``.
 try:
     from application.core.settings import settings as _parse_settings
     parse_document.soft_time_limit = int(_parse_settings.DOCUMENT_PARSE_TIMEOUT)
-    parse_document.time_limit = parse_document.soft_time_limit + 30
+    parse_document.time_limit = parse_document.soft_time_limit + _PARSE_HARD_LIMIT_GRACE
 except Exception:
     pass
 
@@ -482,6 +602,11 @@ def setup_periodic_tasks(sender, **kwargs):
     )
     sender.add_periodic_task(
         timedelta(hours=24),
+        cleanup_guardrail_events.s(),
+        name="cleanup-guardrail-events",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
         cleanup_orphan_memories.s(),
         name="cleanup-orphan-memories",
     )
@@ -615,10 +740,29 @@ def cleanup_idempotency_dedup(self):
 
 @celery.task(bind=True, acks_late=False)
 def reconciliation_task(self):
-    """Sweep stuck durability rows and escalate them to terminal status + alert."""
-    from application.api.user.reconciliation import run_reconciliation
+    """Sweep stuck durability rows and escalate them to terminal status + alert.
 
-    return run_reconciliation()
+    Never retries: the task is on a 30 s beat, so the next tick IS the retry,
+    and ``acks_late=False`` keeps a failing run from being redelivered. It only
+    guards itself so a transient connectivity error emits one WARNING instead
+    of a full traceback on the same ERROR channel ``_emit_alert`` uses for real
+    reconciler findings — at 30 s cadence a multi-minute outage would otherwise
+    bury genuine alerts under dozens of identical stack traces.
+    """
+    from application.api.user.reconciliation import run_reconciliation, zero_summary
+
+    try:
+        return run_reconciliation()
+    except Exception:  # noqa: BLE001 - housekeeping must never crash the beat loop
+        # ``exception`` not ``warning``: without the traceback a programming
+        # error in a sweep logs one context-free line every 30 s forever and
+        # there is no way to locate it. Celery still records the tick as
+        # SUCCESS because the exception is swallowed here, so this log is the
+        # only channel that carries the stack.
+        logger.exception("reconciliation_task failed; the next beat retries")
+        # Keys come from ``zero_summary`` so a failed tick reports the same
+        # shape as a successful one; hand-writing them drifted immediately.
+        return {**zero_summary(), "error": True}
 
 
 @celery.task(bind=True, acks_late=False)
@@ -640,10 +784,43 @@ def cleanup_message_events(self):
         MessageEventsRepository,
     )
 
+    from application.storage.db.repositories.conversations import (
+        ConversationsRepository,
+    )
+
     ttl_days = settings.MESSAGE_EVENTS_RETENTION_DAYS
     engine = get_engine()
     with engine.begin() as conn:
         deleted = MessageEventsRepository(conn).cleanup_older_than(ttl_days)
+        # Supersede tombstones ride the same beat: both are per-stream
+        # bookkeeping with the same retention story.
+        tombstones = ConversationsRepository(conn).cleanup_superseded_older_than(
+            ttl_days
+        )
+    return {"deleted": deleted, "superseded_deleted": tombstones, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_guardrail_events(self):
+    """Delete ``guardrail_events`` rows older than the retention window.
+
+    The journal has no natural bound: every triggered control on every turn
+    writes a row, and the table carries scanned text when the operator opted
+    into storing it, so it should not be kept indefinitely.
+    """
+    from application.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from application.storage.db.engine import get_engine
+    from application.storage.db.repositories.guardrail_events import (
+        GuardrailEventsRepository,
+    )
+
+    ttl_days = settings.GUARDRAILS_EVENTS_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = GuardrailEventsRepository(conn).purge_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
 
 

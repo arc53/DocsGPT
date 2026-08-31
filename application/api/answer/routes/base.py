@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import threading
 import time
 import uuid
 from typing import Any, Dict, Generator, List, Optional
@@ -23,7 +24,10 @@ from application.core.settings import settings
 from application.error import sanitize_api_error
 from application.llm.llm_creator import LLMCreator
 from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.conversations import MessageUpdateOutcome
+from application.storage.db.repositories.conversations import (
+    HeartbeatState,
+    MessageUpdateOutcome,
+)
 from application.storage.db.repositories.token_usage import TokenUsageRepository
 from application.storage.db.repositories.user_logs import UserLogsRepository
 from application.storage.db.session import db_readonly, db_session
@@ -36,6 +40,25 @@ from application.streaming.message_journal import (
 from application.utils import check_required_fields
 
 logger = logging.getLogger(__name__)
+
+# Seconds between liveness stamps on an in-flight message row. 30 s keeps
+# three stamps inside the reconciler's 5-minute staleness window and inside
+# the replay watchdog's 90 s producer-idle window, so a single missed tick is
+# never enough to trip either.
+STREAM_HEARTBEAT_INTERVAL = 30
+# Ceiling on how long the ticker will keep a row alive. Above the realistic
+# worst case for a 25-round tool loop, but finite, so a wedged-but-alive
+# stream still gets swept eventually.
+STREAM_HEARTBEAT_MAX_SECONDS = 3600
+
+
+class StreamSuperseded(Exception):
+    """Raised to unwind a stream whose message row was deleted mid-flight.
+
+    Not an error condition: the user replaced this turn (retry or edited
+    question) and `truncate_after` removed the row. Carries the message id
+    purely for logging.
+    """
 
 
 answer_ns = Namespace("answer", description="Answer related operations", path="/")
@@ -246,6 +269,14 @@ class BaseAnswerResource:
         structured_chunks = []
         query_metadata: Dict[str, Any] = {}
         paused = False
+        # Set when the agent *yields* a terminal ``error`` event instead of
+        # raising. Workflow node failures take that route (the engine catches
+        # the node exception and reports it as an event), so the generator
+        # returns normally and the ``except`` handler below never runs. Without
+        # this flag the turn was finalized ``complete`` with an empty response:
+        # the live client showed an error bubble, but on reload history mapped
+        # the row to a blank answer with no error text and no retry.
+        stream_error: Optional[str] = None
         # A ``tool_calls_pending`` event is held back and only flushed after
         # continuation state is committed (or the stateless finalize path is
         # reached): the v1 translator turns it into ``finish_reason:"tool_calls"``,
@@ -270,6 +301,23 @@ class BaseAnswerResource:
         # Intentional: a continuation round reserves no new WAL row, so on the
         # stateless ``/v1`` path the intermediate tool rounds aren't persisted
         # (only the first turn + the final answer turn are). Accepted as-is.
+        # Input controls have to run before the question is stored, not only
+        # inside ``gen``: this frame is what writes ``conversation_messages``
+        # and ``user_logs``, so a redaction that reached the model prompt alone
+        # would still leave the raw text — the PII the control exists to keep
+        # out of storage — in both. ``gen`` re-runs the stage against the
+        # original question and hits the agent's stage cache, so the scan is
+        # paid for once.
+        raw_question = question
+        guard_input = getattr(agent, "apply_input_guardrails", None)
+        if callable(guard_input) and not _continuation:
+            try:
+                question, _ = guard_input(question)
+            except Exception:
+                logger.exception(
+                    "Input guardrail scan failed; persisting the question unredacted"
+                )
+
         wal_eligible = should_persist and not _continuation
         if wal_eligible:
             try:
@@ -297,6 +345,16 @@ class BaseAnswerResource:
         elif _continuation and _continuation.get("reserved_message_id"):
             reserved_message_id = _continuation["reserved_message_id"]
 
+        # Bind the row now so an audit flush that happens before the ``finally``
+        # below — an input block returns from ``gen`` immediately and flushes
+        # there — still writes rows linked to their message instead of orphans.
+        bind_message_id = getattr(agent, "bind_guardrail_message_id", None)
+        if callable(bind_message_id):
+            try:
+                bind_message_id(reserved_message_id)
+            except Exception:
+                logger.exception("Could not bind guardrail audit to the message row")
+
         primary_llm = getattr(agent, "llm", None)
         if primary_llm is not None:
             primary_llm._request_id = request_id
@@ -310,12 +368,13 @@ class BaseAnswerResource:
         # ``streaming``, yet must still count as live).
         streaming_marked = False
         # Heartbeat goes into ``metadata.last_heartbeat_at`` (not
-        # ``updated_at``, which reconciler-side writes share) and uses
-        # ``time.monotonic`` so a blocked event loop can't fake fresh.
+        # ``updated_at``, which reconciler-side writes share).
         # ``heartbeat_message`` only touches non-terminal rows, so stamping a
         # still-``pending`` row is safe and does NOT change its status.
-        STREAM_HEARTBEAT_INTERVAL = 60
-        last_heartbeat_at = time.monotonic()
+        heartbeat_stop: Optional[threading.Event] = None
+        # Set by the heartbeat ticker when it finds the row gone. Checked by
+        # the emit loop, which is where the stream regains control.
+        stream_cancelled = threading.Event()
 
         def _mark_streaming_once() -> None:
             """Flip the reserved row ``pending → streaming`` exactly once.
@@ -327,7 +386,7 @@ class BaseAnswerResource:
             ``_heartbeat_streaming``), so a thought-only reasoning phase that
             never reaches this point still stays live.
             """
-            nonlocal streaming_marked, last_heartbeat_at
+            nonlocal streaming_marked
             if streaming_marked or not reserved_message_id:
                 return
             try:
@@ -340,7 +399,7 @@ class BaseAnswerResource:
                     reserved_message_id,
                 )
             # Re-stamp last_heartbeat_at on the transition too; harmless given
-            # the seed at generation start and the per-interval pump below.
+            # the seed at generation start and the background ticker below.
             try:
                 self.conversation_service.heartbeat_message(
                     reserved_message_id,
@@ -351,43 +410,92 @@ class BaseAnswerResource:
                     reserved_message_id,
                 )
             streaming_marked = True
-            last_heartbeat_at = time.monotonic()
 
-        def _heartbeat_streaming() -> None:
-            """Pump the liveness heartbeat once per ``STREAM_HEARTBEAT_INTERVAL``.
+        def _start_heartbeat_ticker() -> "Optional[threading.Event]":
+            """Stamp the liveness heartbeat on a timer for the stream's life.
 
-            Deliberately gated on ``reserved_message_id`` only — NOT on
-            ``streaming_marked``. The loop calls this for *every* chunk
-            (including ``thought``/``metadata``), so a reasoning model that
-            streams only ``thought`` chunks while it "thinks" keeps a still-
-            ``pending`` row's ``last_heartbeat_at`` fresh and stays out of the
-            reconciler's staleness sweep. ``heartbeat_message`` only updates
-            non-terminal rows, so this never resurrects or restatuses a
-            terminal row.
+            This replaces a per-chunk pump that could only stamp when a chunk
+            flowed, which made liveness a function of *output* rather than of
+            the stream actually being alive. Four windows are routinely silent
+            — a provider round that emits only tool-call deltas, the body of a
+            tool call, a same-primary retry or cross-provider fallback, and
+            mid-execution compression — and any of them longer than the
+            reconciler's threshold got a healthy stream swept and its answer
+            discarded. The old pump was also interval-gated against the *last
+            stamp*, so bursty output could leave the row 60 s staler than the
+            last chunk suggested.
 
-            Residual: a model that emits NO chunks at all (not even
-            ``thought``) for longer than the reconciler threshold still goes
-            stale, because this pump only ticks when a chunk flows. Covering a
-            fully-silent stream would require a background-thread heartbeat or
-            a higher staleness threshold; both are out of scope here. The
-            realistic reasoning case (``thought`` chunks streaming) is covered.
+            Liveness stays honest because the ticker is an in-process daemon
+            thread: every real death mode we see in production (gunicorn
+            SIGKILL, worker OOM, ``max_requests`` recycle, host freeze) takes
+            the thread with it, so the row goes stale on schedule and the
+            reconciler still does its job. ``STREAM_HEARTBEAT_MAX_SECONDS``
+            bounds the other direction — a hung-but-alive stream cannot keep a
+            row alive forever.
+
+            Returns:
+                The stop event for the ticker, or None when there is no
+                reserved row to stamp (headless/``/v1`` continuation rounds).
             """
-            nonlocal last_heartbeat_at
             if not reserved_message_id:
-                return
-            now_mono = time.monotonic()
-            if now_mono - last_heartbeat_at < STREAM_HEARTBEAT_INTERVAL:
-                return
-            try:
-                self.conversation_service.heartbeat_message(
-                    reserved_message_id,
-                )
-            except Exception:
-                logger.exception(
-                    "stream heartbeat update failed for %s",
-                    reserved_message_id,
-                )
-            last_heartbeat_at = now_mono
+                return None
+            stop = threading.Event()
+            message_id = reserved_message_id
+            service = self.conversation_service
+            cancelled = stream_cancelled
+
+            def _tick() -> None:
+                deadline = time.monotonic() + STREAM_HEARTBEAT_MAX_SECONDS
+                while not stop.wait(STREAM_HEARTBEAT_INTERVAL):
+                    if time.monotonic() > deadline:
+                        logger.warning(
+                            "stream heartbeat ticker hit its %ss ceiling for "
+                            "message_id=%s; stopping",
+                            STREAM_HEARTBEAT_MAX_SECONDS,
+                            message_id,
+                        )
+                        return
+                    try:
+                        state = service.heartbeat_message_state(message_id)
+                    except Exception:
+                        # Swallowed deliberately: a transient DB blip must not
+                        # kill the stream, and must never be mistaken for the
+                        # row being gone. The reconciler is the backstop.
+                        logger.exception(
+                            "stream heartbeat update failed for %s", message_id,
+                        )
+                        continue
+                    if state is HeartbeatState.MISSING:
+                        # The row was deleted mid-stream — a retry or an
+                        # edited question truncated this position away. Nothing
+                        # this stream produces can ever be read, so stop the
+                        # work instead of burning tool calls and LLM rounds
+                        # into a void. Production saw a superseded stream run
+                        # 4 further minutes and 12 further rounds.
+                        logger.info(
+                            "stream superseded: message row %s was deleted "
+                            "mid-stream; cancelling",
+                            message_id,
+                            extra={
+                                "alert": "stream_superseded",
+                                "message_id": message_id,
+                            },
+                        )
+                        cancelled.set()
+                        return
+                    if state is HeartbeatState.TERMINAL:
+                        # Row exists but is complete/failed — usually the
+                        # reconciler having swept it. Deliberately NOT
+                        # cancelled: if this stream finishes, finalize is
+                        # allowed to reclaim the row and land the real answer.
+                        return
+
+            threading.Thread(
+                target=_tick,
+                daemon=True,
+                name=f"stream-heartbeat-{message_id[:8]}",
+            ).start()
+            return stop
 
         # Correlates tool_call_attempts rows with this message.
         if reserved_message_id and getattr(agent, "tool_executor", None):
@@ -491,7 +599,11 @@ class BaseAnswerResource:
                     reasoning_content=_continuation.get("reasoning_content", ""),
                 )
             else:
-                gen_iter = agent.gen(query=question)
+                # The original text: ``gen`` runs the input stage itself and
+                # applies the redaction to what it sends the model. Handing it
+                # the already-redacted question would make that a second scan
+                # over different text, and a remote check would be paid twice.
+                gen_iter = agent.gen(query=raw_question)
 
             # Seed a liveness heartbeat the moment generation starts, before
             # the first chunk. The row is still ``pending`` here; this stamps a
@@ -509,14 +621,18 @@ class BaseAnswerResource:
                         "generation-start heartbeat seed failed for %s",
                         reserved_message_id,
                     )
-                last_heartbeat_at = time.monotonic()
+
+            # The seed above covers t=0; the ticker takes over from the first
+            # interval onwards, independently of whether anything is flowing.
+            heartbeat_stop = _start_heartbeat_ticker()
 
             for line in gen_iter:
-                # Cheap closure check that only hits the DB when the heartbeat
-                # interval has elapsed. Runs for *every* chunk (incl. ``thought``
-                # / ``metadata``), so a still-``pending`` reasoning stream stays
-                # live without waiting for the ``streaming`` status flip.
-                _heartbeat_streaming()
+                # The emit loop is where the stream regains control between
+                # rounds, so this is the cheapest place to honour a cancel.
+                # Bound: a stream sitting inside one long tool call emits
+                # nothing and is only cancelled when that call returns.
+                if stream_cancelled.is_set():
+                    raise StreamSuperseded(reserved_message_id or "")
                 if "metadata" in line:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
@@ -541,10 +657,12 @@ class BaseAnswerResource:
                                 truncated_source["text"][:100].strip() + "..."
                             )
                         truncated_sources.append(truncated_source)
-                    if truncated_sources:
-                        yield _emit(
-                            {"type": "source", "source": truncated_sources}
-                        )
+                    # Emit even when empty. Suppressing it made "searched your
+                    # sources and found nothing" indistinguishable from "no
+                    # source was attached" — the client cannot tell a grounded
+                    # answer from an ungrounded one, which is what hid a
+                    # retrieval outage behind a confident, fabricated answer.
+                    yield _emit({"type": "source", "source": truncated_sources})
                 elif "tool_calls" in line:
                     tool_calls = line["tool_calls"]
                     yield _emit({"type": "tool_calls", "tool_calls": tool_calls})
@@ -568,6 +686,30 @@ class BaseAnswerResource:
                         error_text = line.get("error", "An error occurred")
                         if not line.get("user_facing"):
                             error_text = sanitize_api_error(error_text)
+                        stream_error = error_text
+                        guardrail_meta = line.get("guardrail")
+                        if guardrail_meta:
+                            # A guardrail tripped mid-stream. Tokens already on
+                            # the wire cannot be recalled, but the persisted
+                            # message must not keep them — otherwise reloading
+                            # the page redisplays exactly what was just blocked.
+                            # ``thought`` counts: a reasoning model states its
+                            # intent before acting on it, so the trace is where
+                            # the blocked material appears first. The client
+                            # clears it live, so leaving it here would surface
+                            # it only on reload.
+                            response_full = error_text
+                            thought = ""
+                            structured_chunks.clear()
+                            is_structured = False
+                            query_metadata["guardrail"] = guardrail_meta
+                            yield _emit(
+                                {
+                                    "type": "guardrail",
+                                    "guardrail": guardrail_meta,
+                                    "retract": True,
+                                }
+                            )
                         yield _emit({"type": "error", "error": error_text})
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
@@ -594,6 +736,14 @@ class BaseAnswerResource:
                         "schema": schema_info,
                     }
                 )
+
+            # Record a yielded error before any early return so the pause /
+            # stateless-tool-round paths persist it too. No producer currently
+            # emits a non-terminal error and then pauses, but leaving the only
+            # write below the pause blocks would make that combination lose the
+            # error silently — the exact shape of the bug being fixed here.
+            if stream_error:
+                query_metadata.setdefault("error", stream_error)
 
             # ---- Paused: save continuation state and end stream early ----
             if paused:
@@ -709,6 +859,13 @@ class BaseAnswerResource:
                                     "prompt": getattr(agent, "prompt", ""),
                                     "json_schema": getattr(agent, "json_schema", None),
                                     "retriever_config": getattr(agent, "retriever_config", None),
+                                    # Guardrails must survive the pause: a
+                                    # resumed turn is still the same turn.
+                                    "guardrails": (
+                                        agent.guardrails_config.model_dump(mode="json")
+                                        if getattr(agent, "guardrails_config", None)
+                                        else None
+                                    ),
                                     # Reused on resume so the same WAL row
                                     # is finalised and request_id stays
                                     # consistent across token_usage rows.
@@ -848,9 +1005,22 @@ class BaseAnswerResource:
                 )
                 llm._token_usage_source = "title"
 
+            # The error was recorded above so the failure stays greppable, but
+            # it only *fails* the turn when nothing was produced. An error
+            # arriving after partial output (e.g. a later workflow node) must
+            # stay ``complete``, since the client only renders ``response`` for
+            # complete rows — failing it would discard text the user already
+            # saw. ``structured_chunks`` counts as output for the same reason:
+            # a structured answer lives there, not in ``response_full``.
+            errored_empty = (
+                bool(stream_error)
+                and not response_full.strip()
+                and not structured_chunks
+            )
+
             if should_persist:
                 if reserved_message_id is not None:
-                    self.conversation_service.finalize_message(
+                    finalize_outcome = self.conversation_service.finalize_message(
                         reserved_message_id,
                         response_full,
                         thought=thought,
@@ -858,7 +1028,7 @@ class BaseAnswerResource:
                         tool_calls=tool_calls,
                         model_id=model_id or self.default_model_id,
                         metadata=query_metadata if query_metadata else None,
-                        status="complete",
+                        status="failed" if errored_empty else "complete",
                         title_inputs={
                             "llm": llm,
                             "question": question,
@@ -870,6 +1040,75 @@ class BaseAnswerResource:
                         } if llm is not None else None,
                         async_title_generation=llm is not None,
                     )
+                    # The outcome used to be discarded here, which is how a
+                    # finished answer could vanish silently: if the row was
+                    # deleted mid-stream (retry/edit truncation) the write
+                    # lands nowhere and `activity_finished` still reports
+                    # `ok`, because activity logging never observes the DB.
+                    # Emit a distinct, countable signal instead.
+                    if finalize_outcome is MessageUpdateOutcome.NOT_FOUND:
+                        # The row can be gone for two very different reasons.
+                        # A retry/edit deliberately replaced this turn — the
+                        # user asked for the answer to be discarded, and the
+                        # cancel flag could not reach us because the ticker
+                        # that sets it lives in the superseding request's own
+                        # process. That is routine and must not page anyone.
+                        # Anything else is a genuinely orphaned answer.
+                        # Guarded: this opens its own DB connection, and an
+                        # unguarded raise here would escape to the generic
+                        # ``except`` below — which yields a terminal ``error``
+                        # frame, re-finalizes, and releases the resume claim,
+                        # all for a row that is already gone. It would also
+                        # swallow the very alert this branch exists to raise.
+                        # A missing ``superseded_messages`` table (code
+                        # deployed ahead of ``alembic upgrade head``) lands
+                        # here too, so the fallback is the pre-tombstone
+                        # behaviour rather than a user-visible failure.
+                        try:
+                            superseded = self.conversation_service.was_superseded(
+                                reserved_message_id
+                            )
+                        except Exception:
+                            logger.exception(
+                                "was_superseded lookup failed for %s; "
+                                "treating the row as orphaned",
+                                reserved_message_id,
+                            )
+                            superseded = False
+                        if superseded:
+                            logger.info(
+                                "stream superseded: message row %s was replaced "
+                                "by a newer turn after %d chars; discarding "
+                                "(conversation=%s)",
+                                reserved_message_id,
+                                len(response_full or ""),
+                                conversation_id,
+                                extra={
+                                    "alert": "stream_superseded",
+                                    "message_id": reserved_message_id,
+                                    "conversation_id": (
+                                        str(conversation_id) if conversation_id else None
+                                    ),
+                                    "answer_length": len(response_full or ""),
+                                },
+                            )
+                        else:
+                            logger.error(
+                                "answer_persist_failed: message row %s no longer "
+                                "exists; %d chars of answer were produced and "
+                                "could not be saved (conversation=%s)",
+                                reserved_message_id,
+                                len(response_full or ""),
+                                conversation_id,
+                                extra={
+                                    "alert": "answer_persist_failed",
+                                    "message_id": reserved_message_id,
+                                    "conversation_id": (
+                                        str(conversation_id) if conversation_id else None
+                                    ),
+                                    "answer_length": len(response_full or ""),
+                                },
+                            )
                 else:
                     conversation_id = self.conversation_service.save_conversation(
                         conversation_id,
@@ -889,6 +1128,7 @@ class BaseAnswerResource:
                         attachment_ids=attachment_ids,
                         metadata=query_metadata if query_metadata else None,
                         visibility=visibility,
+                        status="failed" if errored_empty else "complete",
                     )
                 # Persist compression metadata/summary if it exists and wasn't saved mid-execution
                 compression_meta = getattr(agent, "compression_metadata", None)
@@ -1163,9 +1403,65 @@ class BaseAnswerResource:
                         exc_info=True,
                     )
             raise
+        except StreamSuperseded as e:
+            # Deliberately ahead of the generic handler below: this is not a
+            # failure and must not be finalized as one. The row is gone, so
+            # there is nothing to write and nothing to journal (the writer has
+            # already latched on the same FK violation). The client that
+            # replaced this turn is watching a different stream.
+            logger.info(
+                "stream superseded mid-flight for message_id=%s after "
+                "%d chars; abandoning without persisting",
+                str(e),
+                len(response_full or ""),
+                extra={
+                    "alert": "stream_superseded",
+                    "message_id": str(e),
+                    "answer_length": len(response_full or ""),
+                },
+            )
+            if journal_writer is not None:
+                journal_writer.close()
+            return
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)
+            # This process took the resume claim, so it owns releasing it. The
+            # only other way back is ``revert_stale_resuming``'s 600 s grace,
+            # which leaves the user locked out of their own conversation for
+            # ten minutes after a resume that errored: ``load_state`` sees
+            # only ``pending`` rows, so the paused turn is still resumable but
+            # invisible, and every retry inside the window gets another 409.
+            # Not on the ``StreamSuperseded`` path above — there the turn was
+            # deliberately replaced and the row is legitimately gone.
+            claim_released = False
+            if _continuation and conversation_id:
+                try:
+                    claim_released = ContinuationService().release_claim(
+                        str(conversation_id),
+                        decoded_token.get("sub", "local"),
+                    )
+                except Exception as release_err:
+                    logger.error(
+                        f"Failed to release resume claim after a failed "
+                        f"resume: {release_err}",
+                        exc_info=True,
+                    )
             if reserved_message_id is not None:
+                # Releasing the claim above says "this turn is retryable"; the
+                # row must not simultaneously be stamped terminally failed in a
+                # way the retry cannot overwrite. A resume reuses the SAME
+                # ``reserved_message_id`` (stream_processor stores it in the
+                # persisted ``agent_config``), so the retry's own
+                # ``finalize_message(status="complete")`` is gated by
+                # ``only_if_non_terminal`` and lands ``ALREADY_FAILED`` — the
+                # user watches a correct answer stream in and finds
+                # "Response was terminated prior to completion" on reload.
+                # Mark the failure retryable so the reclaim hole in
+                # ``update_message_by_id`` lets that second answer through,
+                # exactly as it already does for the reconciler's own marker.
+                failure_metadata = dict(query_metadata or {})
+                if claim_released:
+                    failure_metadata["resume_retryable"] = True
                 try:
                     self.conversation_service.finalize_message(
                         reserved_message_id,
@@ -1174,7 +1470,7 @@ class BaseAnswerResource:
                         sources=source_log_docs,
                         tool_calls=tool_calls,
                         model_id=model_id or self.default_model_id,
-                        metadata=query_metadata if query_metadata else None,
+                        metadata=failure_metadata or None,
                         status="failed",
                         error=e,
                     )
@@ -1194,6 +1490,23 @@ class BaseAnswerResource:
             if journal_writer is not None:
                 journal_writer.close()
             return
+        finally:
+            # Every exit path — normal, client abort, error — must stop the
+            # ticker, or a leaked thread keeps stamping a row nobody owns.
+            # Harmless if it ever does leak (``heartbeat_message`` no-ops on
+            # terminal rows) but the thread would live until the worker
+            # recycles.
+            if heartbeat_stop is not None:
+                heartbeat_stop.set()
+            # The audit trail must survive an aborted or failed turn — a
+            # guardrail that fired on a stream the client dropped is exactly
+            # the event an operator needs to see.
+            flush_guardrails = getattr(agent, "flush_guardrail_audit", None)
+            if callable(flush_guardrails):
+                try:
+                    flush_guardrails(reserved_message_id)
+                except Exception:
+                    logger.exception("Guardrail audit flush failed")
 
     def _finalize_stateless_tool_pause(
         self,

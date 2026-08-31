@@ -5,6 +5,7 @@ from retry import retry
 from tqdm import tqdm
 from application.core.settings import settings
 from application.events.publisher import publish_user_event
+from application.parser.file.base_parser import DocumentParseError
 from application.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
@@ -38,31 +39,91 @@ def sanitize_content(content: str) -> str:
     return content.replace('\x00', '')
 
 
-# Per-chunk inline retry. Aggressive defaults (tries=10, delay=60) blocked
+# Fallback when ``settings.EMBEDDINGS_BATCH_SIZE`` is unset or unusable.
+DEFAULT_EMBEDDINGS_BATCH_SIZE = 32
+
+
+def _resolve_batch_size() -> int:
+    """Read ``EMBEDDINGS_BATCH_SIZE``, falling back to the default.
+
+    Tolerates a missing, ``None`` or non-numeric setting (tests patch
+    ``settings`` with a ``MagicMock``) so a misconfiguration degrades to
+    the default batch rather than breaking ingest.
+
+    Returns:
+        Chunks per embed request, always >= 1.
+    """
+    raw = getattr(settings, "EMBEDDINGS_BATCH_SIZE", None)
+    # Explicit type check rather than a bare ``int(raw)``: ``int(MagicMock())``
+    # succeeds and yields 1, which would silently drop ingest back to the
+    # per-chunk behaviour this batching replaces.
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        return DEFAULT_EMBEDDINGS_BATCH_SIZE
+    try:
+        size = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_EMBEDDINGS_BATCH_SIZE
+    return max(1, size)
+
+
+# Per-batch inline retry. Aggressive defaults (tries=10, delay=60) blocked
 # the loop for up to 9 min per chunk and wedged the heartbeat: lower the
 # tail so a transient failure fails-fast and the chunk-progress checkpoint
 # resumes cleanly on next dispatch.
 @retry(tries=3, delay=5, backoff=2)
+def add_texts_to_store_with_retry(
+    store: Any, docs: List[Any], source_id: str
+) -> None:
+    """Add a batch of documents to the vector store with retry logic.
+
+    One call per batch replaces one call per chunk: the remote embeddings
+    API accepts a list, and the store writes the whole batch in a single
+    transaction, so this collapses N HTTP round-trips and N INSERTs into
+    one of each. Safe to retry — ``add_texts`` embeds before it inserts
+    and rolls back on failure, so a failed batch writes nothing.
+
+    Args:
+        store: The vector store object.
+        docs: The documents to be added.
+        source_id: Unique identifier for the source.
+
+    Raises:
+        Exception: If the batch fails after all retry attempts.
+    """
+    if not docs:
+        return
+    try:
+        texts: List[str] = []
+        metadatas: List[Any] = []
+        for doc in docs:
+            # Sanitize content to remove NUL characters that cause ingestion failures
+            doc.page_content = sanitize_content(doc.page_content)
+            doc.metadata["source_id"] = str(source_id)
+            texts.append(doc.page_content)
+            metadatas.append(doc.metadata)
+        store.add_texts(texts, metadatas=metadatas)
+    except Exception as e:
+        logging.error(
+            f"Failed to add {len(docs)} document(s) with retry: {e}", exc_info=True
+        )
+        raise
+
+
 def add_text_to_store_with_retry(store: Any, doc: Any, source_id: str) -> None:
-    """Add a document's text and metadata to the vector store with retry logic.
-    
+    """Add a single document to the vector store with retry logic.
+
+    Thin wrapper over :func:`add_texts_to_store_with_retry`, kept for the
+    per-chunk fallback in the embed loop and for callers outside it.
+
     Args:
         store: The vector store object.
         doc: The document to be added.
         source_id: Unique identifier for the source.
-        
+
     Raises:
         Exception: If document addition fails after all retry attempts.
     """
-    try:
-        # Sanitize content to remove NUL characters that cause ingestion failures
-        doc.page_content = sanitize_content(doc.page_content)
-        
-        doc.metadata["source_id"] = str(source_id)
-        store.add_texts([doc.page_content], metadatas=[doc.metadata])
-    except Exception as e:
-        logging.error(f"Failed to add document with retry: {e}", exc_info=True)
-        raise
+    add_texts_to_store_with_retry(store, [doc], source_id)
 
 
 def _init_progress_and_resume_index(
@@ -112,6 +173,39 @@ def _record_progress(source_id: str, last_index: int, embedded_chunks: int) -> N
         logging.warning(
             f"Could not record ingest progress for {source_id}: {e}", exc_info=True
         )
+
+
+def _embed_batch_individually(
+    store: Any,
+    docs: List[Any],
+    batch_start: int,
+    batch_end: int,
+    source_id: str,
+) -> tuple[Exception | None, int | None]:
+    """Re-run one failed batch a chunk at a time, checkpointing as it goes.
+
+    Called only after a batch raised. Preserves the pre-batching failure
+    contract: chunks before the offender are embedded and recorded, and the
+    returned index is the exact chunk that failed rather than the batch head.
+
+    Args:
+        store: The vector store object.
+        docs: The full chunk list.
+        batch_start: Index of the first chunk in the failed batch.
+        batch_end: Index one past the last chunk in the failed batch.
+        source_id: Unique identifier for the source.
+
+    Returns:
+        ``(None, None)`` when every chunk succeeded on its own, else the
+        exception and the index of the chunk that failed.
+    """
+    for idx in range(batch_start, batch_end):
+        try:
+            add_text_to_store_with_retry(store, docs[idx], source_id)
+            _record_progress(source_id, last_index=idx, embedded_chunks=idx + 1)
+        except Exception as e:
+            return e, idx
+    return None, None
 
 
 def assert_index_complete(source_id: str) -> None:
@@ -195,9 +289,24 @@ def embed_and_store_documents(
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
 
-    # Validate docs is not empty
+    # Drop blank documents before validating. A file that parses to nothing
+    # (empty upload, whitespace-only, an image-only PDF with no OCR) used to
+    # reach here as a one-element list of "" and ingest as a healthy source,
+    # putting an embedding of the empty string into the index.
+    docs = [
+        d for d in docs
+        if str(getattr(d, "text", getattr(d, "page_content", d)) or "").strip()
+    ]
     if not docs:
-        raise ValueError("No documents to embed - check file format and extension")
+        # ``DocumentParseError``, not ``ValueError``: an empty or image-only
+        # file yields nothing on every attempt, so this must reach the Celery
+        # tasks' ``dont_autoretry_for`` and fail once. As a bare ``ValueError``
+        # it was swept up by ``autoretry_for=(Exception,)`` and re-failed
+        # identically across the whole backoff envelope.
+        raise DocumentParseError(
+            "No text could be extracted from this file. It may be empty, "
+            "image-only, or in an unsupported format."
+        )
 
     total_docs = len(docs)
     # Atomic upsert that preserves checkpoint state on attempt-id match
@@ -259,24 +368,31 @@ def embed_and_store_documents(
         # tripwire still validates ``embedded == total`` afterwards.
         loop_start = total_docs
 
-    # Process and embed documents
+    # Process and embed documents, one batch per embed request. Progress is
+    # checkpointed per batch rather than per chunk, so a 3k-chunk ingest
+    # writes ~90 progress rows instead of 3k — the per-chunk bookkeeping
+    # (Neon UPDATE + Celery update_state + SSE) dominated wall-clock more
+    # than the embedding itself.
     chunk_error: Exception | None = None
     failed_idx: int | None = None
     last_published_pct = -1
     source_id_str = str(source_id)
     progress_span = progress_end - progress_start
-    for idx in tqdm(
-        range(loop_start, total_docs),
+    batch_size = _resolve_batch_size()
+    batch_starts = list(range(loop_start, total_docs, batch_size))
+    for batch_start in tqdm(
+        batch_starts,
         desc="Embedding 🦖",
-        unit="docs",
-        total=total_docs - loop_start,
+        unit="batch",
+        total=len(batch_starts),
         bar_format="{l_bar}{bar}| Time Left: {remaining}",
     ):
-        doc = docs[idx]
+        batch_end = min(batch_start + batch_size, total_docs)
+        last_idx = batch_end - 1
         try:
             # Map the embed loop into [progress_start, progress_end].
             progress = progress_start + int(
-                ((idx + 1) / total_docs) * progress_span
+                (batch_end / total_docs) * progress_span
             )
             task_status.update_state(state="PROGRESS", meta={"current": progress})
 
@@ -291,21 +407,45 @@ def embed_and_store_documents(
                     {
                         "current": progress,
                         "total": total_docs,
-                        "embedded_chunks": idx + 1,
+                        "embedded_chunks": batch_end,
                         "stage": "embedding",
                     },
                     scope={"kind": "source", "id": source_id_str},
                 )
                 last_published_pct = progress
 
-            # Add document to vector store
-            add_text_to_store_with_retry(store, doc, source_id)
-            _record_progress(source_id, last_index=idx, embedded_chunks=idx + 1)
-        except Exception as e:
-            chunk_error = e
-            failed_idx = idx
-            logging.error(f"Error embedding document {idx}: {e}", exc_info=True)
-            logging.info(f"Saving progress at document {idx} out of {total_docs}")
+            # Add the batch to the vector store
+            add_texts_to_store_with_retry(
+                store, docs[batch_start:batch_end], source_id
+            )
+            _record_progress(
+                source_id, last_index=last_idx, embedded_chunks=batch_end
+            )
+        except Exception as batch_exc:
+            # The batch failed as a unit and wrote nothing (``add_texts``
+            # embeds before it inserts and rolls back). Re-run it one chunk
+            # at a time so a single poison chunk — an oversized input the
+            # embeddings server rejects — costs only itself: the chunks
+            # before it still land and are checkpointed, and ``failed_idx``
+            # names the real offender instead of the batch head.
+            logging.warning(
+                f"Batch embed failed for chunks {batch_start}-{last_idx} "
+                f"({batch_exc}); retrying individually to isolate the failure"
+            )
+            chunk_error, failed_idx = _embed_batch_individually(
+                store, docs, batch_start, batch_end, source_id
+            )
+            if chunk_error is None:
+                # Every chunk passed on its own — the batch-level failure was
+                # transient (or a payload-size limit). Progress is recorded.
+                continue
+            logging.error(
+                f"Error embedding document {failed_idx}: {chunk_error}",
+                exc_info=True,
+            )
+            logging.info(
+                f"Saving progress at document {failed_idx} out of {total_docs}"
+            )
             try:
                 store.save_local(folder_name)
                 logging.info("Progress saved successfully")

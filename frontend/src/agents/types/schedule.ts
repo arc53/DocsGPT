@@ -10,6 +10,7 @@ export type ScheduleRunStatus =
   | 'skipped'
   | 'timeout';
 
+// Mirrors the schedule_runs.error_type CHECK constraint (migrations 0010, 0027).
 export type ScheduleRunErrorType =
   | 'auth_expired'
   | 'tool_not_allowed'
@@ -18,7 +19,9 @@ export type ScheduleRunErrorType =
   | 'agent_error'
   | 'internal'
   | 'missed'
-  | 'overlap';
+  | 'overlap'
+  | 'stream_error'
+  | 'empty_output';
 
 export type Schedule = {
   id: string;

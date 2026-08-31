@@ -31,10 +31,12 @@ _HEADLESS_EXCLUDED_TOOLS = frozenset({"scheduler"})
 # default tools. Names may overlap with DEFAULT_CHAT_TOOLS (e.g. ``scheduler``)
 # — both registries share ``_DEFAULT_TOOL_NAMESPACE`` so the same uuid5
 # resolves either way (the dual-flag row carries ``default`` AND ``builtin``).
-# ``code_executor`` and ``artifact_generator`` are builtin-only (not default-on):
-# both render/execute through a running sandbox runner, so they are opt-in per
-# agent, but staying registered keeps their synthetic ids resolvable (an agent
-# that enabled one never silently loses it) and keeps them in the agent picker.
+# ``code_executor`` and ``artifact_generator`` are builtin-only (not in the
+# shipped ``DEFAULT_CHAT_TOOLS``): both execute through a running sandbox
+# runner, so a deployment without one would advertise tools that fail on every
+# call. An operator with a sandbox can add them to ``DEFAULT_CHAT_TOOLS``
+# explicitly. Staying registered here keeps their synthetic ids resolvable (an
+# agent that enabled one never silently loses it) and keeps them in the picker.
 BUILTIN_AGENT_TOOLS: tuple = (
     "scheduler",
     "read_document",

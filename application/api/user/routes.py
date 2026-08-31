@@ -7,6 +7,7 @@ from flask import Blueprint
 from application.api import api
 from .agents import (
     agents_folders_ns,
+    agents_guardrails_ns,
     agents_ns,
     agents_portability_ns,
     agents_sharing_ns,
@@ -58,6 +59,7 @@ api.add_namespace(agents_sharing_ns)
 api.add_namespace(agents_webhooks_ns)
 api.add_namespace(agents_folders_ns)
 api.add_namespace(agents_portability_ns)
+api.add_namespace(agents_guardrails_ns)
 
 # Prompts
 api.add_namespace(prompts_ns)

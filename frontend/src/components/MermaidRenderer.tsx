@@ -1,4 +1,3 @@
-import mermaid from 'mermaid';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -11,6 +10,7 @@ import {
 import { selectStatus } from '../conversation/conversationSlice';
 import { useDarkTheme } from '../hooks';
 import CopyButton from './CopyButton';
+import { renderMermaidDiagram } from './mermaidSecurity';
 import { Button } from './ui/button';
 import { MermaidRendererProps } from './types';
 
@@ -23,12 +23,14 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const diagramId = useRef(
     `mermaid-${Date.now()}-${Math.random().toString(36).substring(2)}`,
   );
+  const renderSequence = useRef(0);
   const status = useSelector(selectStatus);
   const [error, setError] = useState<string | null>(null);
   const [showCode, setShowCode] = useState<boolean>(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState<boolean>(false);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const diagramRef = useRef<HTMLPreElement>(null);
   const [hoverPosition, setHoverPosition] = useState<{
     x: number;
     y: number;
@@ -83,26 +85,33 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     return `${hoverPosition.x * 100}% ${hoverPosition.y * 100}%`;
   };
 
-  useEffect(() => {
-    const renderDiagram = async () => {
-      mermaid.initialize({
-        startOnLoad: true,
-        theme: isDarkTheme ? 'dark' : 'default',
-        securityLevel: 'loose',
-        suppressErrorRendering: true,
-      });
+  const isCurrentlyLoading =
+    isLoading !== undefined ? isLoading : status === 'loading';
 
-      const isCurrentlyLoading =
-        isLoading !== undefined ? isLoading : status === 'loading';
+  useEffect(() => {
+    let cancelled = false;
+    const renderDiagram = async () => {
       if (!isCurrentlyLoading && code) {
         try {
-          const element = document.getElementById(diagramId.current);
+          setError(null);
+          const { svg, bindFunctions } = await renderMermaidDiagram({
+            // Mermaid owns and removes this temporary ID while rendering. It
+            // must never match the visible host's ID.
+            id: `${diagramId.current}-render-${++renderSequence.current}`,
+            code,
+            isDarkTheme,
+            securityLevel: 'strict',
+          });
+          if (cancelled) return;
+
+          const element = diagramRef.current;
           if (element) {
-            element.removeAttribute('data-processed');
-            await mermaid.parse(code); //syntax check
-            mermaid.contentLoaded();
+            // Mermaid strict mode sanitizes this generated SVG before it is returned.
+            element.innerHTML = svg;
+            bindFunctions?.(element);
           }
         } catch (err) {
+          if (cancelled) return;
           console.error('Error rendering mermaid diagram:', err);
           setError(
             `Failed to render diagram: ${err instanceof Error ? err.message : String(err)}`,
@@ -112,7 +121,10 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     };
 
     renderDiagram();
-  }, [code, isDarkTheme, isLoading]);
+    return () => {
+      cancelled = true;
+    };
+  }, [code, isDarkTheme, isCurrentlyLoading]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -258,8 +270,6 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
     { label: 'Download as MMD', action: downloadMmd },
   ];
 
-  const isCurrentlyLoading =
-    isLoading !== undefined ? isLoading : status === 'loading';
   const showDiagramOptions = !isCurrentlyLoading && !error;
   const errorRender = !isCurrentlyLoading && error;
 
@@ -395,6 +405,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
               </>
             )}
             <pre
+              ref={diagramRef}
               className="mermaid w-full select-none"
               id={diagramId.current}
               key={`mermaid-${diagramId.current}`}
@@ -407,9 +418,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                 display: 'flex',
                 justifyContent: 'center',
               }}
-            >
-              {code}
-            </pre>
+            />
           </div>
 
           {showCode && (

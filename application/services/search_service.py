@@ -8,9 +8,10 @@ MCP error responses, etc.).
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from application.core.settings import settings
+from application.retriever.fanout import fetch_per_source
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.session import db_readonly
 from application.vectorstore.vector_creator import VectorCreator
@@ -44,6 +45,102 @@ def _collect_source_ids(agent: Dict[str, Any]) -> List[str]:
     return source_ids
 
 
+def _authorized_source_ids(conn, agent: Dict[str, Any], source_ids: List[str]) -> List[str]:
+    """Drop source ids the agent's owner may not read.
+
+    ``_collect_source_ids`` trusts whatever the agent row carries, and this
+    service searches those ids directly. That made it the second half of a
+    real disclosure: ``/api/share`` resolved a client-supplied source with no
+    ownership predicate and baked it into the agent it created, after which
+    this path returned another tenant's documents. The share route is fixed,
+    but a row written before that — or by any future write path with the same
+    gap — is still live here, so re-resolve against the owner rather than
+    trusting the stored value.
+
+    Args:
+        conn: Open read connection.
+        agent: The agent row resolved from the API key.
+        source_ids: Ids extracted from that row.
+
+    Returns:
+        list: The subset the agent's owner may read.
+    """
+    owner = agent.get("user_id")
+    if not owner:
+        logger.warning("Agent %s has no owner; refusing to search its sources.", agent.get("id"))
+        return []
+
+    from application.api.user.team_sharing import can_access
+
+    allowed = []
+    for sid in source_ids:
+        try:
+            permitted = can_access(conn, "source", str(sid), owner)
+        except Exception:
+            # Fail closed, matching the answer path.
+            logger.warning("Access check failed for source %s; dropping it.", sid)
+            continue
+        if permitted:
+            allowed.append(sid)
+        else:
+            logger.warning(
+                "Agent %s references source %s its owner %s cannot read; dropping it.",
+                agent.get("id"), sid, owner,
+            )
+    return allowed
+
+
+def _search_one(
+    source_id: str,
+    docsearch: Any,
+    query: str,
+    k: int,
+    query_vector: Optional[List[float]],
+) -> Optional[List[Any]]:
+    """Search one source, returning its hits or ``None`` when it fails.
+
+    Builds the vector store when not supplied, so each worker thread owns its
+    own store instance (and therefore its own DB connection). Errors are logged
+    and reported as ``None`` so one broken index cannot take the rest down.
+    """
+    try:
+        if docsearch is None:
+            docsearch = VectorCreator.create_vectorstore(
+                settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+            )
+        search_kwargs: Dict[str, Any] = {"k": k}
+        if query_vector is not None:
+            search_kwargs["query_vector"] = query_vector
+        return docsearch.search(query, **search_kwargs)
+    except Exception as e:
+        logger.error(
+            f"Error searching vectorstore {source_id}: {e}",
+            exc_info=True,
+        )
+        return None
+
+
+def _fetch_sources(
+    query: str, source_ids: List[str], k: int
+) -> List[Optional[List[Any]]]:
+    """Fetch every source's hits: one query embedding, one bounded fan-out.
+
+    Shares :func:`~application.retriever.fanout.fetch_per_source` with
+    ``ClassicRAG`` so the search route and the answer path order, embed and
+    degrade identically.
+    """
+    return fetch_per_source(
+        source_ids,
+        lambda source_id: VectorCreator.create_vectorstore(
+            settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+        ),
+        lambda source_id, docsearch, query_vector: _search_one(
+            source_id, docsearch, query, k, query_vector
+        ),
+        lambda _source_id: query,
+    )
+
+
 def _search_sources(
     query: str, source_ids: List[str], chunks: int
 ) -> List[Dict[str, Any]]:
@@ -56,19 +153,24 @@ def _search_sources(
         return []
 
     results: List[Dict[str, Any]] = []
+    # Blank ids build no store but still count here, so the per-source budget
+    # matches what the serial implementation handed each real source.
     chunks_per_source = max(1, chunks // len(source_ids))
     seen_texts: set[int] = set()
 
-    for source_id in source_ids:
-        if not source_id or not source_id.strip():
+    active_ids = [sid for sid in source_ids if sid and sid.strip()]
+    if not active_ids:
+        return []
+
+    # Fetch every source up front, then merge serially in source order so the
+    # dedupe / cap semantics are exactly what they were.
+    fetched = _fetch_sources(query, active_ids, chunks_per_source * 2)
+
+    for source_id, docs in zip(active_ids, fetched):
+        if docs is None:
             continue
 
         try:
-            docsearch = VectorCreator.create_vectorstore(
-                settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
-            )
-            docs = docsearch.search(query, k=chunks_per_source * 2)
-
             for doc in docs:
                 if len(results) >= chunks:
                     break
@@ -140,13 +242,17 @@ def search(api_key: str, query: str, chunks: int = 5) -> List[Dict[str, Any]]:
     try:
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_key(api_key)
+            if not agent:
+                raise InvalidAPIKey()
+            # Authorize inside the same connection the agent was read on.
+            source_ids = _authorized_source_ids(
+                conn, agent, _collect_source_ids(agent)
+            )
+    except InvalidAPIKey:
+        raise
     except Exception as e:
         raise SearchFailed("agent lookup failed") from e
 
-    if not agent:
-        raise InvalidAPIKey()
-
-    source_ids = _collect_source_ids(agent)
     if not source_ids:
         return []
 

@@ -2,10 +2,7 @@ import logging
 from typing import Dict, Generator, Optional
 
 from application.agents.base import BaseAgent
-from application.agents.tools.internal_search import (
-    INTERNAL_TOOL_ID,
-    add_internal_search_tool,
-)
+from application.agents.tools.internal_search import add_internal_search_tool
 from application.agents.tools.wiki import add_wiki_tool
 from application.logging import LogContext
 
@@ -61,26 +58,3 @@ class ClassicAgent(BaseAgent):
         log_context.stacks.append(
             {"component": "agent", "data": {"tool_calls": self.tool_calls.copy()}}
         )
-
-    def _collect_internal_sources(self):
-        """Merge the cached InternalSearchTool's docs into ``retrieved_docs``,
-        deduped, preserving any pre-fetched docs so a mixed-exposure agent cites
-        both pre-fetched and tool-retrieved sources (not just the tool's)."""
-        cache_key = f"internal_search:{INTERNAL_TOOL_ID}:{self.user or ''}"
-        tool = self.tool_executor._loaded_tools.get(cache_key)
-        if not (tool and getattr(tool, "retrieved_docs", None)):
-            return
-
-        def _key(d):
-            if isinstance(d, dict):
-                return (d.get("source"), d.get("title"), d.get("text"))
-            return id(d)
-
-        merged = list(self.retrieved_docs or [])
-        seen = {_key(d) for d in merged}
-        for doc in tool.retrieved_docs:
-            k = _key(doc)
-            if k not in seen:
-                seen.add(k)
-                merged.append(doc)
-        self.retrieved_docs = merged

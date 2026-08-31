@@ -73,6 +73,7 @@ class CodeExecutorTool(Tool):
         # Static, deployment-level approval gate (mirrors the action metadata flag).
         self._require_approval: bool = bool(self.config.get("require_approval", False))
         self._last_artifact_id: Optional[str] = None
+        self._last_artifacts: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -110,10 +111,16 @@ class CodeExecutorTool(Tool):
             {
                 "name": "run_code",
                 "description": (
-                    "Execute Python in a sandboxed, stateful session bound to this conversation. "
+                    "Execute Python in a sandboxed, stateful session bound to this conversation. ""Use it for real computation, data processing, file parsing or conversion, and "
+                    "charts rather than estimating or writing results by hand; each run is "
+                    "time-limited, so start long work in the background and check on it with "
+                    "another run. Do NOT use it for arithmetic you can do inline. "
+                    
                     "Files written by the code are saved as downloadable artifacts (write throwaway "
                     "files under `tmp/`, or pass `outputs` to save only specific files); only a compact "
                     "summary (output tail + artifact references) is returned, never raw bytes. "
+                    "Each saved file appears to the user as a download button: name it in your answer, "
+                    "never write a link or sandbox path to it. "
                     "Each call is capped at ~60s of wall-clock; for longer work, start it in the "
                     "background and poll with additional run_code calls (use persist=true to keep state). "
                     + self._environment_note()
@@ -177,6 +184,15 @@ class CodeExecutorTool(Tool):
         """Return the primary produced artifact id so the UI artifact rail lights up."""
         return self._last_artifact_id
 
+    def get_artifacts(self, action_name: str, **kwargs: Any) -> List[Dict[str, Any]]:
+        """Return every artifact this call produced, with display names.
+
+        A single ``run_code`` can write several files. Reporting only the first
+        left the others reachable by API but invisible in the UI, and gave the
+        one button the tool's name rather than the file's.
+        """
+        return list(self._last_artifacts)
+
     def preview_decision(self, action_name: str, params: dict) -> Tuple[bool, bool]:
         """Return ``(requires_approval, denylist_forced)`` for the approval gate; never denylist-forced here."""
         if action_name != "run_code":
@@ -191,6 +207,7 @@ class CodeExecutorTool(Tool):
         if action_name != "run_code":
             return {"status": "error", "error": f"unknown action: {action_name}"}
         self._last_artifact_id = None
+        self._last_artifacts = []
         return self._run_code(**kwargs)
 
     def _run_code(self, **kwargs: Any) -> Dict[str, Any]:
@@ -400,6 +417,13 @@ class CodeExecutorTool(Tool):
         )
         if captured:
             self._last_artifact_id = captured[0]["artifact_id"]
+            self._last_artifacts = [
+                # ``ref`` is the model-facing handle (``A1``); the UI needs it to
+                # resolve a ref the model typed into its answer.
+                {"id": a["artifact_id"], "filename": a.get("filename"), "ref": a.get("ref")}
+                for a in captured
+                if a.get("artifact_id")
+            ]
         return captured
 
     def _shape_payload(

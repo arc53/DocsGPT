@@ -905,6 +905,9 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
         sp.conversation_id = None
         sp.compression_orchestrator = MagicMock()
         sp._agent_data = None
+        # __init__ sets this before _configure_retriever runs; this factory
+        # bypasses __init__, so supply it explicitly.
+        sp.all_sources = []
         return sp
 
     def test_configure_retriever_passes_model_user_id_to_doc_budget(

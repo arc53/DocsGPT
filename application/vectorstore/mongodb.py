@@ -54,7 +54,9 @@ class MongoDBVectorStore(BaseVectorStore):
 
     score_kind = "cosine_similarity"
 
-    def search(self, question, k=2, *args, score_threshold=None, **kwargs):
+    def search(
+        self, question, k=2, *args, score_threshold=None, query_vector=None, **kwargs
+    ):
         """Search via Atlas ``$vectorSearch``.
 
         Args:
@@ -62,21 +64,32 @@ class MongoDBVectorStore(BaseVectorStore):
             k: Maximum number of results.
             score_threshold: Optional ``vectorSearchScore`` floor in ``[0, 1]``;
                 results scoring below it are dropped.
+            query_vector: Precomputed embedding of ``question``, so a caller
+                searching several sources embeds the query only once.
         """
         return [
             doc
             for doc, _ in self.search_with_scores(
-                question, k, *args, score_threshold=score_threshold, **kwargs
+                question,
+                k,
+                *args,
+                score_threshold=score_threshold,
+                query_vector=query_vector,
+                **kwargs,
             )
         ]
 
-    def search_with_scores(self, question, k=2, *args, score_threshold=None, **kwargs):
+    def search_with_scores(
+        self, question, k=2, *args, score_threshold=None, query_vector=None, **kwargs
+    ):
         """Same search as :meth:`search`, pairing each hit with its score.
 
         The score is Atlas' ``vectorSearchScore`` — the same quantity
-        ``score_threshold`` is compared against.
+        ``score_threshold`` is compared against. ``query_vector`` skips the
+        per-store query embedding when the caller already has one.
         """
-        query_vector = self._embedding.embed_query(question)
+        if query_vector is None:
+            query_vector = self._embedding.embed_query(question)
 
         pipeline = [
             {

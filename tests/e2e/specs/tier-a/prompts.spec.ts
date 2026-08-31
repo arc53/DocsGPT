@@ -53,23 +53,14 @@ async function openSettingsPrompts(
 }
 
 /**
- * Open the prompt Dropdown by clicking the button that is the sibling of
- * the "Add" button. The Dropdown renders a plain `<button>` with only a
- * `<span>` containing either the placeholder or the selected prompt's
- * name — it has no accessible role-name, so role-based locators don't
- * work. We identify it structurally: the first button inside the
- * `div.flex-row` row that also contains the Add button.
+ * Open the prompt picker. It is a Popover + cmdk list (settings/Prompts.tsx),
+ * whose trigger carries aria-label="Toggle prompt list". It used to be a bare
+ * <button> found by DOM position, which is why this walked up from "Add".
  */
 async function openPromptDropdown(
   page: import('@playwright/test').Page,
 ): Promise<void> {
-  // Container is the flex-row wrapper that holds [Dropdown, Add button].
-  // The dropdown's button is the first button in that row.
-  const addBtn = page.getByRole('button', { name: 'Add', exact: true });
-  // Walk up to the shared row container.
-  const row = addBtn.locator('..');
-  const dropdownButton = row.locator('button').first();
-  await dropdownButton.click();
+  await page.getByRole('button', { name: 'Toggle prompt list' }).click();
 }
 
 test.describe('tier-a · prompts CRUD', () => {
@@ -94,7 +85,7 @@ test.describe('tier-a · prompts CRUD', () => {
       const promptContent = 'You are a DocsGPT E2E assistant.';
 
       await page
-        .getByPlaceholder('Prompt Name')
+        .getByLabel('Prompt Name')
         .first()
         .fill(promptName);
       await page.locator('#new-prompt-content').fill(promptContent);
@@ -171,7 +162,7 @@ test.describe('tier-a · prompts CRUD', () => {
       await expect(row).toBeVisible();
       await row.locator('button').first().click();
 
-      const editName = page.getByPlaceholder('Prompt Name').first();
+      const editName = page.getByLabel('Prompt Name').first();
       await expect(editName).toHaveValue('e2e-to-edit');
       await editName.fill('e2e-edited');
       await page.locator('#edit-prompt-content').fill('updated content');
@@ -221,11 +212,13 @@ test.describe('tier-a · prompts CRUD', () => {
       await openSettingsPrompts(page);
       await openPromptDropdown(page);
 
-      // The row's delete button is the second <button> inside the row
-      // (after Pencil) per Dropdown.tsx lines 192-233.
-      const row = page.locator('div', { hasText: /^e2e-to-delete$/ }).first();
+      // Each entry is a cmdk option carrying labelled action buttons
+      // (settings/Prompts.tsx: "Edit prompt" / "Duplicate prompt" /
+      // "Delete prompt"). Target the label, not the button's position — the
+      // old spec indexed into the row and broke when the actions changed.
+      const row = page.getByRole('option', { name: /e2e-to-delete/ });
       await expect(row).toBeVisible();
-      await row.locator('button').nth(1).click();
+      await row.getByRole('button', { name: 'Delete prompt' }).click();
 
       // ConfirmationModal → submit button labelled "Delete" (modals.deleteConv.delete).
       const [deleteRes] = await Promise.all([

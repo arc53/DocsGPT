@@ -11,6 +11,7 @@ from application.api.answer.services.conversation_service import (
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
+from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.attachments import AttachmentsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.message_events import MessageEventsRepository
@@ -357,10 +358,20 @@ class SubmitFeedback(Resource):
         description="Submit feedback for a conversation",
     )
     def post(self):
+        data = request.get_json() or {}
         decoded_token = request.decoded_token
+        # api_key callers (widgets) carry no JWT; resolve the key to its owner.
+        scoped_api_key = None
         if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        data = request.get_json()
+            api_key = data.get("api_key")
+            agent = None
+            if api_key:
+                with db_readonly() as conn:
+                    agent = AgentsRepository(conn).find_by_key(api_key)
+            if not agent:
+                return make_response(jsonify({"success": False}), 401)
+            decoded_token = {"sub": agent.get("user_id")}
+            scoped_api_key = api_key
         required_fields = ["feedback", "conversation_id", "question_index"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
@@ -387,7 +398,10 @@ class SubmitFeedback(Resource):
             with db_session() as conn:
                 repo = ConversationsRepository(conn)
                 conv = repo.get_any(data["conversation_id"], user_id)
-                if conv is None:
+                # A key may only rate conversations it created.
+                if conv is None or (
+                    scoped_api_key and conv.get("api_key") != scoped_api_key
+                ):
                     return make_response(
                         jsonify({"success": False, "message": "Not found"}), 404
                     )

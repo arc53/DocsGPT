@@ -6,9 +6,12 @@ import uuid
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
+from pydantic import ValidationError as PydanticValidationError
 
 from application.api import api
+from application.guardrails.config import AgentConfig
 from application.api.user.base import (
+    copy_agent_image_for_user,
     handle_image_upload,
     resolve_prompt_name,
     resolve_source_details,
@@ -26,8 +29,13 @@ from application.api.user.team_sharing import (
     team_access_for,
     visible_with_access,
 )
+from application.agents.default_tools import is_synthesized_tool_id
 from application.storage.db.repositories.agent_folders import AgentFoldersRepository
 from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.user_custom_models import (
+    UserCustomModelsRepository,
+)
+from application.storage.db.repositories.user_tools import UserToolsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.shared_conversations import (
     SharedConversationsRepository,
@@ -35,8 +43,6 @@ from application.storage.db.repositories.shared_conversations import (
 from application.storage.db.repositories.stack_logs import StackLogsRepository
 from application.storage.db.repositories.token_usage import TokenUsageRepository
 from application.storage.db.repositories.users import UsersRepository
-from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
-from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
 from application.storage.db.repositories.workflows import WorkflowsRepository
 from application.storage.db.session import db_readonly, db_session
 from application.utils import (
@@ -47,6 +53,13 @@ from application.utils import (
 
 
 agents_ns = Namespace("agents", description="Agent management operations", path="/api")
+
+# Returned verbatim on a rejected ``config`` write. Deliberately static — the
+# validator's own text can carry input-derived detail, and an error body is not
+# the place for it.
+INVALID_CONFIG_MESSAGE = (
+    "Invalid config: one or more guardrail controls failed validation."
+)
 
 
 AGENT_TYPE_SCHEMAS = {
@@ -86,6 +99,7 @@ AGENT_TYPE_SCHEMAS = {
             "limited_request_mode",
             "request_limit",
             "allow_system_prompt_override",
+            "config",
         ],
     },
     "workflow": {
@@ -106,6 +120,7 @@ AGENT_TYPE_SCHEMAS = {
             "limited_request_mode",
             "request_limit",
             "allow_system_prompt_override",
+            "config",
         ],
     },
 }
@@ -178,6 +193,30 @@ def _resolve_folder_id(conn, folder_id, user):
     return str(folder["id"]), None
 
 
+def _reject(message: str, user: str, field: str = "-"):
+    """Log a request-validation rejection at WARN and return its 400 response.
+
+    Every validation branch in the agent write paths used to ``make_response``
+    a 400 without logging anything, so a rejected update left no server-side
+    trace — the only evidence was the request span's status code. The client
+    compounded it by discarding the response body, which made an entirely
+    deterministic failure undiagnosable from any telemetry we keep. Route all
+    400s through here so the field and user always reach the logs.
+
+    Args:
+        message: User-facing reason, returned verbatim in the response body.
+        user: Subject claim of the caller, for correlating with client reports.
+        field: Name of the offending field, or ``"-"`` when not field-specific.
+
+    Returns:
+        A Flask 400 response carrying ``{"success": False, "message": ...}``.
+    """
+    current_app.logger.warning(
+        "Agent update rejected: %s (field=%s, user=%s)", message, field, user
+    )
+    return make_response(jsonify({"success": False, "message": message}), 400)
+
+
 def _format_agent_output(
     agent: dict,
     *,
@@ -209,7 +248,11 @@ def _format_agent_output(
         "slug": agent.get("slug", "") or "",
         "description": agent.get("description", "") or "",
         "image": (
-            generate_image_url(agent["image"]) if agent.get("image") else ""
+            generate_image_url(
+                agent["image"], agent["id"], agent.get("user_id")
+            )
+            if agent.get("image")
+            else ""
         ),
         "source": source_value,
         "sources": sources_list,
@@ -221,6 +264,7 @@ def _format_agent_output(
         "agent_type": agent.get("agent_type", "") or "",
         "status": agent.get("status", "") or "",
         "json_schema": agent.get("json_schema"),
+        "config": agent.get("config") or {},
         "limited_token_mode": bool(agent.get("limited_token_mode", False)),
         "token_limit": agent.get("token_limit") or settings.DEFAULT_AGENT_LIMITS["token_limit"],
         "limited_request_mode": bool(agent.get("limited_request_mode", False)),
@@ -272,7 +316,7 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
     allowed_fields = set(schema["fields"])
 
     for key in (
-        "description", "agent_type", "key", "image", "retriever",
+        "description", "agent_type", "key", "retriever",
         "default_model_id",
     ):
         if key in allowed_fields and data.get(key) not in (None, ""):
@@ -330,8 +374,52 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
         kwargs["json_schema"] = data["json_schema"]
     if "models" in allowed_fields and data.get("models") is not None:
         kwargs["models"] = data["models"]
+    if "config" in allowed_fields and data.get("config") is not None:
+        kwargs["config"] = data["config"]
 
     return kwargs
+
+
+def normalize_agent_config(raw):
+    """Validate an inbound ``config`` payload, returning the normalized dict.
+
+    Strict on write: an unknown check, an action a stage cannot honour, or bad
+    per-check settings is a 400 rather than a silently-ignored control that the
+    operator believes is protecting them.
+
+    Args:
+        raw: The ``config`` value from the request (dict, JSON string, or None).
+
+    Returns:
+        The normalized config dict, or None when nothing was supplied.
+
+    Raises:
+        ValueError: When the payload cannot be validated.
+    """
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            raise ValueError("config must be a JSON object")
+    if not isinstance(raw, dict):
+        raise ValueError("config must be a JSON object")
+    try:
+        return AgentConfig.model_validate(raw).model_dump(mode="json")
+    except PydanticValidationError as exc:
+        raise ValueError(_first_pydantic_error(exc))
+
+
+def _first_pydantic_error(exc: PydanticValidationError) -> str:
+    """Render the first validation error as a short, user-facing message."""
+    errors = exc.errors()
+    if not errors:
+        return "config is invalid"
+    first = errors[0]
+    location = ".".join(str(part) for part in first.get("loc", ()) if part != "__root__")
+    message = str(first.get("msg", "invalid")).replace("Value error, ", "")
+    return f"config.{location}: {message}" if location else f"config: {message}"
 
 
 @agents_ns.route("/get_agent")
@@ -533,6 +621,25 @@ class CreateAgent(Resource):
                     jsonify({"success": False, "message": "Invalid JSON schema"}),
                     400,
                 )
+        if "config" in data:
+            try:
+                normalized_config = normalize_agent_config(data.get("config"))
+            except ValueError as exc:
+                # Static message, detail to the log: validation internals must
+                # not reach the caller (same policy as SourceConfig writes in
+                # api/user/sources/routes.py). The builder validates the same
+                # rules client-side, so this path is for API callers.
+                current_app.logger.warning(
+                    "Agent config rejected on create (user=%s): %s", user, exc
+                )
+                return make_response(
+                    jsonify({"success": False, "message": INVALID_CONFIG_MESSAGE}),
+                    400,
+                )
+            if normalized_config is None:
+                data.pop("config", None)
+            else:
+                data["config"] = normalized_config
         if data.get("status") not in ["draft", "published"]:
             return make_response(
                 jsonify(
@@ -688,8 +795,8 @@ class UpdateAgent(Resource):
             "description": fields.String(
                 required=True, description="New description of the agent"
             ),
-            "image": fields.String(
-                required=False, description="New image URL or identifier"
+            "image": fields.Raw(
+                required=False, description="Image file upload", type="file"
             ),
             "source": fields.String(
                 required=False, description="Source ID (legacy single source)"
@@ -765,20 +872,16 @@ class UpdateAgent(Resource):
                 data = request.get_json()
             else:
                 data = request.form.to_dict()
-                json_fields = ["tools", "sources", "json_schema", "models"]
+                json_fields = ["tools", "sources", "json_schema", "models", "config"]
                 for field in json_fields:
                     if field in data and data[field]:
                         try:
                             data[field] = json.loads(data[field])
                         except json.JSONDecodeError:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Invalid JSON format for field: {field}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                f"Invalid JSON format for field: {field}",
+                                user,
+                                field,
                             )
                 if data.get("json_schema") == "":
                     data["json_schema"] = None
@@ -818,8 +921,12 @@ class UpdateAgent(Resource):
                         404,
                     )
                 pg_agent_id = str(existing_agent["id"])
+                existing_image = existing_agent.get("image", "") or ""
                 image_url, image_error = handle_image_upload(
-                    request, existing_agent.get("image", "") or "", user, storage,
+                    request,
+                    existing_image,
+                    existing_agent.get("user_id") or user,
+                    storage,
                 )
                 if image_error:
                     return image_error
@@ -828,7 +935,6 @@ class UpdateAgent(Resource):
                 allowed_fields = [
                     "name",
                     "description",
-                    "image",
                     "source",
                     "sources",
                     "chunks",
@@ -843,6 +949,7 @@ class UpdateAgent(Resource):
                     "limited_request_mode",
                     "request_limit",
                     "models",
+                    "config",
                     "default_model_id",
                     "folder_id",
                     "workflow",
@@ -855,14 +962,10 @@ class UpdateAgent(Resource):
                     if field == "status":
                         new_status = data.get("status")
                         if new_status not in ["draft", "published"]:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Invalid status value. Must be 'draft' or 'published'",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Invalid status value. Must be 'draft' or 'published'",
+                                user,
+                                field,
                             )
                         update_fields["status"] = new_status
                     elif field == "source":
@@ -872,14 +975,8 @@ class UpdateAgent(Resource):
                         elif looks_like_uuid(source_id):
                             update_fields["source_id"] = source_id
                         else:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Invalid source ID format: {source_id}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                f"Invalid source ID format: {source_id}", user, field
                             )
                     elif field == "sources":
                         sources_list = data.get("sources", []) or []
@@ -893,14 +990,8 @@ class UpdateAgent(Resource):
                             if looks_like_uuid(src):
                                 valid.append(src)
                             else:
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": f"Invalid source ID in list: {src}",
-                                        }
-                                    ),
-                                    400,
+                                return _reject(
+                                    f"Invalid source ID in list: {src}", user, field
                                 )
                         update_fields["extra_source_ids"] = valid
                     elif field == "chunks":
@@ -911,33 +1002,20 @@ class UpdateAgent(Resource):
                             try:
                                 chunks_int = int(chunks_value)
                                 if chunks_int < 0:
-                                    return make_response(
-                                        jsonify(
-                                            {
-                                                "success": False,
-                                                "message": "Chunks value must be a non-negative integer",
-                                            }
-                                        ),
-                                        400,
+                                    return _reject(
+                                        "Chunks value must be a non-negative integer",
+                                        user,
+                                        field,
                                     )
                                 update_fields["chunks"] = chunks_int
                             except (ValueError, TypeError):
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": f"Invalid chunks value: {chunks_value}",
-                                        }
-                                    ),
-                                    400,
+                                return _reject(
+                                    f"Invalid chunks value: {chunks_value}", user, field
                                 )
                     elif field == "tools":
                         tools_list = data.get("tools", [])
                         if not isinstance(tools_list, list):
-                            return make_response(
-                                jsonify({"success": False, "message": "Tools must be a list"}),
-                                400,
-                            )
+                            return _reject("Tools must be a list", user, field)
                         update_fields["tools"] = tools_list
                     elif field == "json_schema":
                         json_schema = data.get("json_schema")
@@ -947,12 +1025,20 @@ class UpdateAgent(Resource):
                                     json_schema
                                 )
                             except JsonSchemaValidationError:
-                                return make_response(
-                                    jsonify({"success": False, "message": "Invalid JSON schema"}),
-                                    400,
-                                )
+                                return _reject("Invalid JSON schema", user, field)
                         else:
                             update_fields["json_schema"] = None
+                    elif field == "config":
+                        try:
+                            normalized_config = normalize_agent_config(data.get("config"))
+                        except ValueError as exc:
+                            current_app.logger.warning(
+                                "Agent config rejected on update (user=%s): %s",
+                                user,
+                                exc,
+                            )
+                            return _reject(INVALID_CONFIG_MESSAGE, user, field)
+                        update_fields["config"] = normalized_config or {}
                     elif field == "limited_token_mode":
                         raw_value = data.get("limited_token_mode", False)
                         bool_value = (
@@ -962,14 +1048,10 @@ class UpdateAgent(Resource):
                         )
                         update_fields["limited_token_mode"] = bool_value
                         if bool_value and data.get("token_limit") is None:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Token limit must be provided when limited token mode is enabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Token limit must be provided when limited token mode is enabled",
+                                user,
+                                field,
                             )
                     elif field == "limited_request_mode":
                         raw_value = data.get("limited_request_mode", False)
@@ -980,40 +1062,34 @@ class UpdateAgent(Resource):
                         )
                         update_fields["limited_request_mode"] = bool_value
                         if bool_value and data.get("request_limit") is None:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Request limit must be provided when limited request mode is enabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Request limit must be provided when limited request mode is enabled",
+                                user,
+                                field,
                             )
                     elif field == "token_limit":
                         token_limit = data.get("token_limit")
                         update_fields["token_limit"] = int(token_limit) if token_limit else 0
+                        # NOTE: unreachable from a multipart/form submit. ``data``
+                        # then comes from ``request.form.to_dict()``, so this is
+                        # the *string* "False" and ``not "False"`` is False. Left
+                        # as-is deliberately: tightening it here would start
+                        # rejecting form payloads that currently succeed.
                         if update_fields["token_limit"] > 0 and not data.get("limited_token_mode"):
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Token limit cannot be set when limited token mode is disabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Token limit cannot be set when limited token mode is disabled",
+                                user,
+                                field,
                             )
                     elif field == "request_limit":
                         request_limit = data.get("request_limit")
                         update_fields["request_limit"] = int(request_limit) if request_limit else 0
+                        # Same string-truthiness caveat as ``token_limit`` above.
                         if update_fields["request_limit"] > 0 and not data.get("limited_request_mode"):
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Request limit cannot be set when limited request mode is disabled",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Request limit cannot be set when limited request mode is disabled",
+                                user,
+                                field,
                             )
                     elif field == "folder_id":
                         folder_input = data.get("folder_id")
@@ -1036,10 +1112,7 @@ class UpdateAgent(Resource):
                         normalized = normalize_workflow_reference(workflow_input)
                         if not normalized:
                             if workflow_required:
-                                return make_response(
-                                    jsonify({"success": False, "message": "Workflow is required"}),
-                                    400,
-                                )
+                                return _reject("Workflow is required", user, field)
                             update_fields["workflow_id"] = None
                         else:
                             pg_workflow_id, wf_err = _resolve_workflow_for_user(
@@ -1055,12 +1128,7 @@ class UpdateAgent(Resource):
                         elif looks_like_uuid(value):
                             update_fields["prompt_id"] = value
                         else:
-                            return make_response(
-                                jsonify(
-                                    {"success": False, "message": f"Invalid prompt_id: {value}"}
-                                ),
-                                400,
-                            )
+                            return _reject(f"Invalid prompt_id: {value}", user, field)
                     elif field == "allow_system_prompt_override":
                         raw_value = data.get("allow_system_prompt_override", False)
                         update_fields["allow_system_prompt_override"] = (
@@ -1072,28 +1140,14 @@ class UpdateAgent(Resource):
                         value = data[field]
                         if field in ["name", "description", "agent_type"]:
                             if not value or not str(value).strip():
-                                return make_response(
-                                    jsonify(
-                                        {
-                                            "success": False,
-                                            "message": f"Field '{field}' cannot be empty",
-                                        }
-                                    ),
-                                    400,
+                                return _reject(
+                                    f"Field '{field}' cannot be empty", user, field
                                 )
                         update_fields[field] = value
-                if image_url:
+                if image_url and image_url != existing_image:
                     update_fields["image"] = image_url
                 if not update_fields:
-                    return make_response(
-                        jsonify(
-                            {
-                                "success": False,
-                                "message": "No valid update data provided",
-                            }
-                        ),
-                        400,
-                    )
+                    return _reject("No valid update data provided", user)
 
                 newly_generated_key = None
                 final_status = update_fields.get("status", existing_agent.get("status"))
@@ -1112,14 +1166,11 @@ class UpdateAgent(Resource):
                         if not workflow_final:
                             missing_published_fields.append("Workflow")
                         if missing_published_fields:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Cannot publish workflow agent. Missing required fields: {', '.join(missing_published_fields)}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Cannot publish workflow agent. Missing required "
+                                f"fields: {', '.join(missing_published_fields)}",
+                                user,
+                                ",".join(missing_published_fields),
                             )
                     else:
                         # ``prompt_id`` is intentionally omitted: the
@@ -1163,14 +1214,11 @@ class UpdateAgent(Resource):
                         ):
                             missing_published_fields.append("Source or retriever")
                         if missing_published_fields:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Cannot publish agent. Missing or invalid required fields: {', '.join(missing_published_fields)}",
-                                    }
-                                ),
-                                400,
+                            return _reject(
+                                "Cannot publish agent. Missing or invalid required "
+                                f"fields: {', '.join(missing_published_fields)}",
+                                user,
+                                ",".join(missing_published_fields),
                             )
                     if not existing_agent.get("key"):
                         newly_generated_key = str(uuid.uuid4())
@@ -1244,6 +1292,10 @@ class UpdateAgent(Resource):
                     for _q in (
                         "token_limit", "request_limit",
                         "limited_token_mode", "limited_request_mode",
+                        # Guardrails are the owner's policy for their agent.
+                        # An editor who could clear them would silently strip
+                        # protection from everyone else using it.
+                        "config",
                     ):
                         update_fields.pop(_q, None)
 
@@ -1424,15 +1476,13 @@ class DeleteAgent(Resource):
                 workflow_id = agent.get("workflow_id")
                 # For workflow-type agents, delete the owned workflow in the
                 # same transaction. workflow_nodes/workflow_edges cascade
-                # via ON DELETE CASCADE so a single workflow delete suffices.
+                # via ON DELETE CASCADE so the single owner-scoped delete
+                # suffices — and it must stay the ONLY delete: an explicit
+                # (unscoped) node/edge cleanup here once let deleting an agent
+                # whose ``workflow_id`` pointed at another user's workflow gut
+                # that user's graph.
                 if agent.get("agent_type") == "workflow" and workflow_id:
                     try:
-                        WorkflowNodesRepository(conn).delete_by_workflow(
-                            str(workflow_id),
-                        )
-                        WorkflowEdgesRepository(conn).delete_by_workflow(
-                            str(workflow_id),
-                        )
                         WorkflowsRepository(conn).delete(str(workflow_id), user)
                     except Exception as wf_err:
                         current_app.logger.warning(
@@ -1502,7 +1552,11 @@ class PinnedAgents(Resource):
                         "name": agent.get("name", ""),
                         "description": agent.get("description", ""),
                         "image": (
-                            generate_image_url(agent["image"]) if agent.get("image") else ""
+                            generate_image_url(
+                                agent["image"], agent["id"], agent.get("user_id")
+                            )
+                            if agent.get("image")
+                            else ""
                         ),
                         "source": str(source_id) if source_id else "",
                         "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "",
@@ -1550,7 +1604,13 @@ class GetTemplateAgents(Resource):
                     "id": str(agent["id"]),
                     "name": agent.get("name"),
                     "description": agent.get("description") or "",
-                    "image": agent.get("image") or "",
+                    "image": (
+                        generate_image_url(
+                            agent["image"], agent["id"], agent.get("user_id")
+                        )
+                        if agent.get("image")
+                        else ""
+                    ),
                 }
                 for agent in template_rows
             ]
@@ -1558,6 +1618,71 @@ class GetTemplateAgents(Resource):
         except Exception as e:
             current_app.logger.error(f"Template agents fetch error: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
+
+
+def _filter_adoptable_tool_ids(conn, user: str, tool_ids) -> list:
+    """Keep only tool ids the adopter can actually run.
+
+    Builtin synthetic ids resolve for everyone; a ``user_tools`` row must be
+    the adopter's own — the runtime resolves tools strictly owner-scoped, so
+    a template owner's tool id would just be dropped (with a log line) on
+    every run. Filtering at adopt time makes the gap visible in the builder
+    instead of at run time.
+    """
+    tools_repo = UserToolsRepository(conn)
+    kept = []
+    for tid in tool_ids or []:
+        tid = str(tid)
+        if is_synthesized_tool_id(tid) or (
+            looks_like_uuid(tid) and tools_repo.get_any(tid, user)
+        ):
+            kept.append(tid)
+    return kept
+
+
+def _strip_foreign_node_refs(conn, user: str):
+    """Build a ``clone_to_user`` node-config transform for adoption.
+
+    Agent nodes carry raw tool/source/model ids from the template owner. The
+    engine resolves all three owner-scoped at run time (dropping misses with
+    only a log line), so unresolvable refs would survive the clone as ghost
+    references — shown in the builder, never used. Strip them instead, so
+    the adopter sees empty fields to fill in.
+    """
+
+    def transform(node_type: str, config: dict) -> dict:
+        if node_type != "agent":
+            return config
+        # Node settings may sit nested under ``config`` — mirror the engine,
+        # which reads ``node.config.get("config", node.config)``.
+        nested = config.get("config")
+        cfg = nested if isinstance(nested, dict) else config
+        if cfg.get("tools"):
+            cfg["tools"] = _filter_adoptable_tool_ids(conn, user, cfg["tools"])
+        if cfg.get("sources"):
+            sources = cfg["sources"]
+            if not isinstance(sources, list):
+                sources = [sources]
+            cfg["sources"] = [
+                str(s)
+                for s in sources
+                if s and can_access(conn, "source", str(s), user)
+            ]
+        model_id = cfg.get("model_id")
+        if (
+            model_id
+            and looks_like_uuid(str(model_id))
+            and not UserCustomModelsRepository(conn).get(str(model_id), user)
+        ):
+            cfg["model_id"] = None
+        if cfg is not config:
+            # Flat leftovers of these keys are ignored by the engine but would
+            # carry the template owner's raw ids along; drop them.
+            for key in ("tools", "sources", "model_id"):
+                config.pop(key, None)
+        return config
+
+    return transform
 
 
 @agents_ns.route("/adopt_agent")
@@ -1606,17 +1731,69 @@ class AdoptAgent(Resource):
                 # and must get its own values (slug stays NULL until exported).
                 create_kwargs: dict = {}
                 for col in (
-                    "description", "agent_type", "image", "retriever",
+                    "description", "agent_type", "retriever",
                     "default_model_id",
-                    "source_id", "prompt_id", "folder_id", "workflow_id",
+                    "source_id", "prompt_id", "folder_id",
                     "extra_source_ids",
                 ):
                     val = template.get(col)
                     if val not in (None, ""):
                         create_kwargs[col] = val
-                for col in ("tools", "json_schema", "models", "shared_metadata"):
+
+                # ``workflow_id`` must NOT be copied by reference: the runtime
+                # resolves it strictly owner-scoped, so the adopter would get
+                # "Workflow not found or inaccessible" on every run. Deep-copy
+                # the template's graph into a workflow the adopter owns,
+                # stripping node refs (tools/sources/models) the adopter can't
+                # resolve — they are owner-scoped at run time too.
+                if template.get("workflow_id"):
+                    cloned_workflow = WorkflowsRepository(conn).clone_to_user(
+                        str(template["workflow_id"]),
+                        user,
+                        from_owner=template.get("user_id"),
+                        node_config_transform=_strip_foreign_node_refs(conn, user),
+                    )
+                    if cloned_workflow is None:
+                        # A workflow agent without its graph can never run —
+                        # fail the adopt instead of publishing a broken agent.
+                        current_app.logger.error(
+                            "Adopt: template %s references workflow %s not owned "
+                            "by %s; adoption refused",
+                            template.get("id"),
+                            template.get("workflow_id"),
+                            template.get("user_id"),
+                        )
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "This template's workflow is "
+                                    "unavailable; it cannot be adopted",
+                                }
+                            ),
+                            500,
+                        )
+                    create_kwargs["workflow_id"] = str(cloned_workflow["id"])
+
+                # The avatar must live under the adopter's own upload
+                # directory: image paths are validated against their owner,
+                # so a copied reference to the template owner's blob would
+                # fail closed and render blank.
+                adopted_image = copy_agent_image_for_user(
+                    template.get("image"), user, storage
+                )
+                if adopted_image:
+                    create_kwargs["image"] = adopted_image
+                for col in ("json_schema", "models", "shared_metadata", "config"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]
+                # Tool ids resolve owner-scoped at run time, so the template
+                # owner's rows would silently drop on every run — keep only
+                # what the adopter can actually use (builtins, own tools).
+                if template.get("tools") is not None:
+                    create_kwargs["tools"] = _filter_adoptable_tool_ids(
+                        conn, user, template["tools"]
+                    )
                 for col in ("chunks", "token_limit", "request_limit"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]

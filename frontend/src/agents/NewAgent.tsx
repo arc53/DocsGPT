@@ -56,11 +56,37 @@ import {
   isClassicAgentToolVisible,
 } from '../utils/toolUtils';
 import AgentPageHeader from './AgentPageHeader';
+import GuardrailsSection, {
+  guardrailsIncomplete,
+} from './components/GuardrailsSection';
 import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
+
+/**
+ * Pull the backend's own explanation out of a failed response.
+ *
+ * The agent write endpoints answer a rejected save with
+ * `{"success": false, "message": "<why>"}` — e.g. "Invalid chunks value: …"
+ * or "Field 'description' cannot be empty". Callers used to test only
+ * `response.ok` and throw a fixed string, so the one piece of information
+ * that could tell the user what to change was dropped on the floor.
+ */
+const extractApiError = async (
+  response: Response,
+  fallback: string,
+): Promise<string> => {
+  try {
+    const body = await response.json();
+    if (typeof body?.message === 'string' && body.message.trim())
+      return body.message;
+  } catch {
+    // Non-JSON body (proxy HTML error page, empty 502) — use the fallback.
+  }
+  return fallback;
+};
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t } = useTranslation();
@@ -126,6 +152,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
   const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] =
@@ -173,12 +200,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const isJsonSchemaValidOrEmpty =
       jsonSchemaText.trim() === '' || jsonSchemaValid;
     const hasSource = selectedSourceIds.size > 0;
-    return hasRequiredFields && isJsonSchemaValidOrEmpty && hasSource;
+    const guardrailsOk = !guardrailsIncomplete(agent.config?.guardrails);
+    return (
+      hasRequiredFields && isJsonSchemaValidOrEmpty && hasSource && guardrailsOk
+    );
   };
 
   const isJsonSchemaInvalid = () => {
     return jsonSchemaText.trim() !== '' && !jsonSchemaValid;
   };
+
+  // Draft saves post the same `config` blob and hit the same server-side
+  // validation as publish, so they need the same gate — otherwise an
+  // incomplete control 400s the draft behind a message that names no field.
+  const isDraftBlocked = () =>
+    isJsonSchemaInvalid() || guardrailsIncomplete(agent.config?.guardrails);
 
   // Resolve a selected source id to its display name. Prefer the caller's own
   // source list; fall back to the owner-resolved name embedded in the agent
@@ -264,6 +300,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('prompt_id', agent.prompt_id);
     formData.append('agent_type', agent.agent_type);
     formData.append('status', 'draft');
+    formData.append('config', JSON.stringify(agent.config ?? {}));
 
     if (agent.limited_token_mode && agent.token_limit) {
       formData.append('limited_token_mode', 'True');
@@ -312,11 +349,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
     try {
       setDraftLoading(true);
+      setSubmitError(null);
       const response =
         effectiveMode === 'new'
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
-      if (!response.ok) throw new Error('Failed to create agent draft');
+      if (!response.ok) {
+        setSubmitError(
+          await extractApiError(
+            response,
+            t('agents.form.errors.saveDraftFailed'),
+          ),
+        );
+        return;
+      }
       const data = await response.json();
 
       const updatedAgent = {
@@ -329,7 +375,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       if (effectiveMode === 'new') setEffectiveMode('draft');
     } catch (error) {
       console.error('Error saving draft:', error);
-      throw new Error('Failed to save draft');
+      setSubmitError(t('agents.form.errors.saveDraftFailed'));
     } finally {
       setDraftLoading(false);
     }
@@ -379,6 +425,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('prompt_id', agent.prompt_id);
     formData.append('agent_type', agent.agent_type);
     formData.append('status', 'published');
+    formData.append('config', JSON.stringify(agent.config ?? {}));
 
     if (imageFile) formData.append('image', imageFile);
     if (agent.tools && agent.tools.length > 0)
@@ -427,11 +474,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
     try {
       setPublishLoading(true);
+      setSubmitError(null);
       const response =
         effectiveMode === 'new'
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
-      if (!response.ok) throw new Error('Failed to publish agent');
+      if (!response.ok) {
+        setSubmitError(
+          await extractApiError(
+            response,
+            t('agents.form.errors.publishFailed'),
+          ),
+        );
+        return;
+      }
       const data = await response.json();
 
       const updatedAgent = {
@@ -451,7 +507,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       setImageFile(null);
     } catch (error) {
       console.error('Error publishing agent:', error);
-      throw new Error('Failed to publish agent');
+      setSubmitError(t('agents.form.errors.publishFailed'));
     } finally {
       setPublishLoading(false);
     }
@@ -669,6 +725,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           sources: data.sources || [],
           models: data.models || [],
           default_model_id: data.default_model_id || '',
+          config: data.config || {},
         };
         setAgent(normalized);
         initialAgentRef.current = normalized;
@@ -812,6 +869,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           <span aria-hidden />
         )}
         <div className="flex flex-wrap items-center gap-2">
+          {submitError && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400"
+            >
+              <span className="h-4 w-4 shrink-0 bg-[url('/src/assets/circle-x.svg')] bg-contain bg-center bg-no-repeat" />
+              {submitError}
+            </div>
+          )}
           {hasChanges && (
             <Button
               type="button"
@@ -825,10 +891,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           {modeConfig[effectiveMode].showSaveDraft && (
             <Button
               type="button"
-              disabled={isJsonSchemaInvalid()}
+              disabled={isDraftBlocked()}
               onClick={handleSaveDraft}
               className={`border-primary text-primary hover:bg-primary/90 min-w-28 rounded-3xl border border-solid bg-transparent px-5 whitespace-nowrap hover:text-white ${
-                isJsonSchemaInvalid() ? 'disabled:opacity-30' : ''
+                isDraftBlocked() ? 'disabled:opacity-30' : ''
               }`}
             >
               <span className="flex items-center justify-center transition-all duration-200">
@@ -1408,6 +1474,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </div>
             )}
           </div>
+          <GuardrailsSection
+            value={agent.config?.guardrails}
+            token={token}
+            // Guardrails are the owner's policy: the update route drops
+            // ``config`` for team members, editors included. Leaving the
+            // controls live for editors let them save a change the server
+            // silently discarded, and the success toast said it had worked.
+            disabled={Boolean(agent.team_access)}
+            disabledNotice={
+              agent.team_access
+                ? t('agents.form.guardrails.ownerOnly')
+                : undefined
+            }
+            onChange={(guardrails) =>
+              setAgent({
+                ...agent,
+                config: { ...(agent.config ?? {}), guardrails },
+              })
+            }
+          />
           {modeConfig[effectiveMode].showDelete && agent.id && (
             <div className="border-destructive/40 bg-destructive/5 rounded-2xl border px-6 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">

@@ -25,7 +25,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-PG_BIN="/Users/Shared/DBngin/postgresql/16.2/bin"
+PG_BIN="${PG_BIN:-/Users/Shared/DBngin/postgresql/16.2/bin}"
 DBNGIN_REDIS_BIN="/Users/Shared/DBngin/redis/7.0.0/bin"
 
 # Resolve redis-cli — PATH first, then DBngin's bundled copy.

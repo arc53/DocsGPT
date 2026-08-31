@@ -40,7 +40,7 @@ services:
     user: root
     image: arc53/docsgpt:develop
     # `parsing` queue carries read_document/parse_document; required for its await to resolve.
-    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing
+    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
     env_file:
       - ../.env
     environment:

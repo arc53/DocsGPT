@@ -6,6 +6,7 @@ import uuid
 import dotenv
 from flask import Flask, Response, jsonify, redirect, request
 from jose import jwt
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from application.auth import handle_auth
 
@@ -28,11 +29,23 @@ from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
 from application.api.v1 import v1_bp  # noqa: E402
 from application.celery_init import celery  # noqa: E402
+from application.core.secret_key import resolve_jwt_secret_key  # noqa: E402
 from application.core.settings import settings  # noqa: E402
-from application.storage.db.bootstrap import ensure_database_ready  # noqa: E402
+from application.storage.db.bootstrap import (  # noqa: E402
+    ensure_database_ready,
+    ensure_vector_schema,
+)
+from application.storage.db.embeddings_pin import (  # noqa: E402
+    resolve_embeddings_pin,
+    warn_on_source_model_mismatch,
+)
 from application.stt.upload_limits import (  # noqa: E402
     build_stt_file_size_limit_message,
     should_reject_stt_request,
+)
+from application.upload_limits import (  # noqa: E402
+    is_document_upload_path,
+    upload_request_limit_message,
 )
 
 
@@ -52,6 +65,29 @@ ensure_database_ready(
     migrate=settings.AUTO_MIGRATE,
     logger=logging.getLogger("application.app"),
 )
+
+# Which embedding model this installation uses is a property of its index, not of
+# the release. Resolve it before the vector schema hook below, which sizes the
+# table from EMBEDDINGS_NAME, and before anything embeds.
+resolve_embeddings_pin(logging.getLogger("application.app"))
+warn_on_source_model_mismatch(logging.getLogger("application.app"))
+
+# Own the vector DB's schema here too, so the retrieval hot path is pure reads
+# instead of re-running DDL for every source of every request.
+if settings.AUTO_VECTOR_SCHEMA:
+    _vector_schema_log = logging.getLogger("application.app")
+    try:
+        ensure_vector_schema(logger=_vector_schema_log)
+    except Exception:
+        # The vector DB is often a separate cluster. This runs at import time,
+        # so re-raising would stop gunicorn and every Celery worker from
+        # booting -- taking auth, chat history and webhooks down over a fault
+        # that only affects retrieval. PGVectorStore re-checks the schema on
+        # its write path, so degrading here loses nothing.
+        _vector_schema_log.exception(
+            "ensure_vector_schema failed; retrieval is degraded until the "
+            "vector database is reachable and its width matches EMBEDDINGS_NAME."
+        )
 
 from application.agents.default_tools import (  # noqa: E402
     validate_default_chat_tools,
@@ -84,18 +120,59 @@ app.config.update(
 celery.config_from_object("application.celeryconfig")
 api.init_app(app)
 
-if settings.AUTH_TYPE in ("simple_jwt", "session_jwt", "oidc") and not settings.JWT_SECRET_KEY:
-    key_file = ".jwt_secret_key"
-    try:
-        with open(key_file, "r") as f:
-            settings.JWT_SECRET_KEY = f.read().strip()
-    except FileNotFoundError:
-        new_key = os.urandom(32).hex()
-        with open(key_file, "w") as f:
-            f.write(new_key)
-        settings.JWT_SECRET_KEY = new_key
-    except Exception as e:
-        raise RuntimeError(f"Failed to setup JWT_SECRET_KEY: {e}")
+
+def _upload_limit_error_payload() -> dict[str, bool | str]:
+    """Build a consistent 413 payload using the active route-specific limit."""
+    active_limit = request.max_content_length
+    if active_limit is None:
+        active_limit = settings.UPLOAD_MAX_REQUEST_BYTES
+    return {
+        "success": False,
+        "message": upload_request_limit_message(active_limit),
+    }
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(_error):
+    """Return API-shaped JSON instead of Werkzeug's HTML 413 page."""
+    return jsonify(_upload_limit_error_payload()), 413
+
+
+@api.errorhandler(RequestEntityTooLarge)
+def handle_restx_request_entity_too_large(_error):
+    """Keep Flask-RESTX from replacing the configured upload-limit response."""
+    return _upload_limit_error_payload(), 413
+
+
+@app.before_request
+def enforce_document_upload_request_size_limit():
+    """Bound multipart parsing for public file-upload routes only.
+
+    Internal worker index uploads are intentionally excluded; they are trusted
+    service traffic and can legitimately exceed the end-user document limit.
+    """
+    if request.method == "OPTIONS" or not is_document_upload_path(request.path):
+        return None
+    request_limit = (
+        settings.PARSE_SPEC_MAX_BYTES
+        if request.path == "/api/parse_spec" and request.is_json
+        else settings.UPLOAD_MAX_REQUEST_BYTES
+    )
+    request.max_content_length = request_limit
+    if (
+        request.content_length is not None
+        and request.content_length > request_limit
+    ):
+        raise RequestEntityTooLarge()
+    return None
+
+# The same stable secret also signs opaque agent-image capabilities, including
+# in no-auth mode. Production replicas must receive one shared configured key;
+# only local development may use the atomic filesystem fallback.
+settings.JWT_SECRET_KEY = resolve_jwt_secret_key(
+    settings.JWT_SECRET_KEY,
+    os.getenv("DEPLOYMENT_TYPE"),
+)
 if settings.AUTH_TYPE == "oidc":
     _missing_oidc = [
         name
@@ -183,6 +260,10 @@ def _reset_log_context(_exc):
     # leak into the stream's view of the context.
     token = getattr(request, _LOG_CTX_TOKEN_ATTR, None)
     if token is not None:
+        # Flask >= 3.1.2 tears a stream_with_context request down twice: once
+        # when the view returns, once when the generator is finalized. Clear
+        # the token first — resetting one twice raises RuntimeError.
+        setattr(request, _LOG_CTX_TOKEN_ATTR, None)
         log_context.reset(token)
 
 

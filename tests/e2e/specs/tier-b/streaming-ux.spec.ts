@@ -174,13 +174,21 @@ test.describe('tier-b · streaming UX', () => {
     // We model the tool-approval flow at the table level — the contract is
     // that the route path with `tool_actions` + `conversation_id` calls
     // `StreamProcessor.resume_from_tool_actions`, which loads from PG, then
-    // `mark_resuming` flips status `pending`→`resuming` so the row cannot
-    // be re-claimed (see continuation_service.py + repositories/pending_tool_state.py).
-    // On clean completion the route layer DELETEs the row
-    // (routes/base.py: `delete_state` after stream success); on a crash the
-    // row stays in `resuming` for the janitor to revert after the grace
-    // window. Either outcome proves the replay footgun is closed — what
-    // must not happen is the row remaining in `pending` status.
+    // claims the row so it cannot be claimed twice
+    // (see continuation_service.py + repositories/pending_tool_state.py).
+    //
+    // What the claim must never be is STUCK. It originally could only be
+    // released by `revert_stale_resuming`'s 600 s grace, which locked the user
+    // out of their own conversation for ten minutes after any resume that
+    // failed. `release_claim` now hands the row back on the error path, so the
+    // outcomes are: DELETED (clean completion, `delete_state`), `pending`
+    // (released for an immediate retry), or `resuming` only while a resume is
+    // genuinely still in flight.
+    //
+    // A released row IS re-fireable, which is the point — the replay footgun
+    // that justified the old `pending`-is-forbidden rule is now handled by the
+    // owning message row instead: see `resume-retry-persists.spec.ts`, which
+    // pins that the retry lands on the same row and its answer survives.
     // No real agent wiring is needed to test that contract.
     const { sub, token } = await newUserContext(browser);
     const api = await authedRequest(playwright, token);
@@ -278,15 +286,15 @@ test.describe('tier-b · streaming UX', () => {
       expect(resume.status()).toBe(200);
       await resume.text();
 
-      // 4. Row must be either deleted (clean completion) or marked
-      // `resuming` (crash partway). What must not happen is the row
-      // remaining in `pending` — that would mean the resume is
-      // re-fireable, a footgun mirroring Mongo-era bug #2088.
-      const pendingCount = await countRows('pending_tool_state', {
-        sql: "user_id = $1 AND conversation_id = CAST($2 AS uuid) AND status = 'pending'",
+      // 4. The resume errored (the mock LLM cannot continue from a fabricated
+      // tool_call), so the claim must have been handed back rather than left
+      // held. Either the row is gone or it is `pending` and immediately
+      // retryable; a leftover `resuming` is the ten-minute lockout.
+      const stuckCount = await countRows('pending_tool_state', {
+        sql: "user_id = $1 AND conversation_id = CAST($2 AS uuid) AND status = 'resuming'",
         params: [sub, convId],
       });
-      expect(pendingCount).toBe(0);
+      expect(stuckCount).toBe(0);
     } finally {
       await api.dispose();
     }

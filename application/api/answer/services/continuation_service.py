@@ -35,6 +35,12 @@ class ResumeInProgressError(ValueError):
     """Raised when another request already owns a continuation claim."""
 
 
+# The single wording every route answers this condition with. Handlers render
+# this constant rather than ``str(exc)`` so no exception text — and nothing an
+# exception might later be constructed from — can reach a response body.
+RESUME_IN_PROGRESS_MESSAGE = "Resume already in progress for this conversation."
+
+
 class ContinuationService:
     """Manages pending tool-call state in Postgres."""
 
@@ -147,9 +153,7 @@ class ContinuationService:
                 return claimed
             existing = repo.load_state_any(pg_conv_id, user)
             if existing and existing.get("status") == "resuming":
-                raise ResumeInProgressError(
-                    "Resume already in progress for this conversation."
-                )
+                raise ResumeInProgressError(RESUME_IN_PROGRESS_MESSAGE)
         return None
 
     def delete_state(self, conversation_id: str, user: str) -> bool:
@@ -173,6 +177,27 @@ class ContinuationService:
                 f"Deleted continuation state for conversation {conversation_id}"
             )
         return deleted
+
+    def release_claim(self, conversation_id: str, user: str) -> bool:
+        """Return a claimed row to ``pending`` after a resume failed.
+
+        Returns:
+            True if a claim was released.
+        """
+        with db_session() as conn:
+            conv = ConversationsRepository(conn).get_by_legacy_id(conversation_id)
+            if conv is not None:
+                pg_conv_id = conv["id"]
+            elif looks_like_uuid(conversation_id):
+                pg_conv_id = conversation_id
+            else:
+                return False
+            released = PendingToolStateRepository(conn).release_claim(pg_conv_id, user)
+        if released:
+            logger.info(
+                f"Released resume claim for conversation {conversation_id}"
+            )
+        return released
 
     def mark_resuming(self, conversation_id: str, user: str) -> bool:
         """Flip the pending row to ``resuming`` so a crashed resume can be retried."""

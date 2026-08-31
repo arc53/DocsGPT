@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
@@ -76,6 +77,13 @@ class WorkflowEngine:
         # embedded draft), so run-scoped artifacts must NOT be persisted as orphans.
         # Defaults True; WorkflowAgent flips it off on the draft path.
         self.run_persisted: bool = True
+        # Transient, in-memory ``artifact_id -> text`` for input documents whose text
+        # was already extracted when the attachment was stored, so a node reuses it
+        # instead of re-parsing (re-OCRing) the same bytes. Deliberately NOT part of
+        # ``state``: state is snapshotted into the run row, and the text is large.
+        # Populated once per run by ``WorkflowAgent._bridge_attachments``; lifetime is
+        # this engine instance, i.e. exactly the run.
+        self.preextracted_text: Dict[str, str] = {}
         self.state: WorkflowState = {}
         self.execution_log: List[Dict[str, Any]] = []
         self._condition_result: Optional[str] = None
@@ -165,7 +173,19 @@ class WorkflowEngine:
                 self._finalize_log_entry(log_entry, pre_state)
                 self.execution_log.append(log_entry)
 
-                user_friendly_error = sanitize_api_error(e)
+                # A misconfigured expression is the builder's own typo, and the
+                # message says exactly how to fix it. Routing it through
+                # sanitize_api_error would match the ``{`` in ``{{query}}`` and
+                # replace the whole thing with "An error occurred … try again
+                # later" — advice that sends the user round the same loop.
+                # Everything else stays sanitized: node internals and upstream
+                # provider errors are not for end users.
+                is_config_error = isinstance(e, CelEvaluationError)
+                user_friendly_error = (
+                    f"{node.title or node.type.value}: {e}"
+                    if is_config_error
+                    else sanitize_api_error(e)
+                )
                 yield {
                     "type": "workflow_step",
                     "node_id": node.id,
@@ -175,7 +195,11 @@ class WorkflowEngine:
                     "state_delta": log_entry["state_delta"],
                     "error": user_friendly_error,
                 }
-                yield {"type": "error", "error": user_friendly_error}
+                yield {
+                    "type": "error",
+                    "error": user_friendly_error,
+                    "user_facing": is_config_error,
+                }
                 break
             self.execution_log.append(log_entry)
             pre_state = dict(self.state)
@@ -291,13 +315,18 @@ class WorkflowEngine:
         from application.core.model_utils import (
             get_api_key_for_provider,
             get_model_capabilities,
-            get_provider_from_model_id,
+            resolve_dispatch_provider,
+        )
+
+        from application.api.answer.services.prompt_renderer import (
+            prompt_embeds_documents as _prompt_embeds_documents,
         )
 
         node_config = AgentNodeConfig(**node.config.get("config", node.config))
 
-        if node_config.sources:
-            self._retrieve_node_sources(node_config)
+        node_docs = (
+            self._retrieve_node_sources(node_config) if node_config.sources else []
+        )
 
         if node_config.prompt_template:
             formatted_prompt = self._format_template(node_config.prompt_template)
@@ -314,13 +343,22 @@ class WorkflowEngine:
             if isinstance(self.agent.decoded_token, dict)
             else None
         )
-        node_llm_name = (
-            node_config.llm_name
-            or get_provider_from_model_id(
-                node_model_id or "", user_id=node_user_id
-            )
-            or self.agent.llm_name
+        # ``node_config.llm_name`` is whatever the builder stored, which for
+        # catalogs with a ``display_provider`` is a presentation label
+        # ("foundry", "azure_foundry", "cloudflare") that no LLM class is
+        # registered under. Trusting it verbatim fails the node before any LLM
+        # call and hands the user a blank answer, so resolve it to a real
+        # dispatch provider first — this also repairs nodes already saved with
+        # a label, without a migration.
+        node_llm_name = resolve_dispatch_provider(
+            node_config.llm_name,
+            node_model_id,
+            user_id=node_user_id,
+            fallback=self.agent.llm_name,
         )
+        # Resolve the key from the normalized name: get_api_key_for_provider
+        # silently returns settings.API_KEY for names it does not know, so a
+        # label here would leak the deployment key to the wrong endpoint.
         node_api_key = get_api_key_for_provider(node_llm_name) or self.agent.api_key
 
         # Structured output gates on the model's registry capability flags;
@@ -339,6 +377,11 @@ class WorkflowEngine:
         if doc_manifest:
             node_prompt = f"{node_prompt}\n\n{doc_manifest}" if node_prompt else doc_manifest
 
+        # No ``agent_config`` here, deliberately: per-agent guardrails are not
+        # wired through workflows yet, so a node runs the instance floor (which
+        # ``resolve_config(None)`` still applies) but none of the parent
+        # agent's own controls. Passing it would need an aggregate output guard
+        # in WorkflowAgent to be meaningful.
         factory_kwargs = {
             "agent_type": node_config.agent_type,
             "endpoint": self.agent.endpoint,
@@ -351,12 +394,23 @@ class WorkflowEngine:
             "chat_history": self.agent.chat_history,
             "decoded_token": self.agent.decoded_token,
             "json_schema": node_json_schema,
+            "retrieved_docs": node_docs,
+            # A template that interpolates the documents itself already carries
+            # them; suppress the user-turn block so they are not sent twice.
+            "prompt_embeds_documents": _prompt_embeds_documents(
+                node_config.prompt_template
+            ),
+            "sources_were_searched": bool(node_config.sources),
         }
 
         # Agentic/research agents need retriever_config for on-demand search
         if node_config.agent_type in (AgentType.AGENTIC, AgentType.RESEARCH):
             factory_kwargs["retriever_config"] = {
-                "source": {"active_docs": node_config.sources} if node_config.sources else {},
+                "source": (
+                    {"active_docs": self._authorized_node_sources(node_config.sources)}
+                    if node_config.sources
+                    else {}
+                ),
                 "retriever_name": node_config.retriever or "classic",
                 "chunks": int(node_config.chunks) if node_config.chunks else 2,
                 "model_id": node_model_id,
@@ -697,6 +751,12 @@ class WorkflowEngine:
         supports_images = any(t.startswith("image/") for t in supported)
         max_files = int(getattr(settings, "WORKFLOW_NODE_NATIVE_MAX_FILES", 5))
         extract_max = int(getattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 5))
+        # One wall clock for every blocking parse this node issues. The cap
+        # above bounds how MANY parses run; this bounds how LONG they take in
+        # total, so N documents cannot serialize N size-scaled windows.
+        parse_deadline = time.monotonic() + float(
+            getattr(settings, "WORKFLOW_NODE_EXTRACT_BUDGET_SECONDS", 900)
+        )
         max_bytes = int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 25 * 1024 * 1024))
 
         # One read-only connection for the whole batch; the resolved-version
@@ -759,16 +819,22 @@ class WorkflowEngine:
                 attachments.append({"id": artifact_id, "mime_type": mime_type, "path": storage_path})
                 native_count += 1
             else:
-                # Inline-text mimes are read directly (cheap); other mimes route
-                # through the parsing worker -- a blocking, ~120s per-document call.
-                # Cap how many documents a single node sends down that path so a
-                # node referencing many non-native documents (e.g. the ``*`` token)
-                # can't serialize dozens of parses. Inline text is not capped.
-                needs_parse = not self._is_inline_text_mime(mime_type)
+                # Inline-text mimes are read directly (cheap), and a document whose
+                # text was already extracted when its attachment was stored is reused
+                # as-is (no parse at all); every other mime routes through the parsing
+                # worker -- a blocking, size-scaled per-document call. Cap how many
+                # documents a single node sends down THAT path so a node referencing
+                # many non-native documents (e.g. the ``*`` token) can't serialize
+                # dozens of parses. Inline text and reused text are not capped: they
+                # cost no blocking parse, so charging them would starve the budget.
+                needs_parse = (
+                    artifact_id not in self.preextracted_text
+                    and not self._is_inline_text_mime(mime_type)
+                )
                 if needs_parse:
                     # Count (and gate on) the parse ATTEMPT, not the success: a
-                    # timed-out/failed parse is the ~120s worst case we must bound,
-                    # so it has to consume cap budget too. Otherwise a degraded
+                    # timed-out/failed parse is the full-window worst case we must
+                    # bound, so it has to consume cap budget too. Otherwise a degraded
                     # parsing backend (every parse fails) never advances the count
                     # and the node keeps issuing blocking parses without limit.
                     if extract_count >= extract_max:
@@ -776,7 +842,8 @@ class WorkflowEngine:
                         continue
                     extract_count += 1
                 content = self._extract_attachment_text(
-                    artifact_id, storage_path, mime_type, filename, max_bytes
+                    artifact_id, storage_path, mime_type, filename, max_bytes,
+                    size=size, deadline=parse_deadline,
                 )
                 if content is None:
                     logger.warning(
@@ -827,12 +894,36 @@ class WorkflowEngine:
         return mime_type == "application/pdf" and supports_images
 
     def _extract_attachment_text(
-        self, artifact_id: str, storage_path: str, mime_type: str, filename: str, max_bytes: int
+        self,
+        artifact_id: str,
+        storage_path: str,
+        mime_type: str,
+        filename: str,
+        max_bytes: int,
+        size: Optional[int] = None,
+        deadline: Optional[float] = None,
     ) -> Optional[str]:
-        """Get an attachment's text: inline already-text formats, else parse via the parsing worker; None on failure."""
+        """Get an attachment's text: reuse upload-time extraction, else inline text mimes, else parse.
+
+        Args:
+            deadline: ``time.monotonic()`` value past which no further blocking
+                parse may run, shared across the node's documents.
+        """
         from application.parser.document_reader import truncate_text_head_tail
         from application.storage.storage_creator import StorageCreator
 
+        # An uploaded chat attachment was already parsed (and possibly OCR'd) when it
+        # was stored, so re-parsing it here would repeat the dominant cost of the run
+        # for every node that references it. Bounded with the same head+tail window the
+        # inline-text path uses.
+        preextracted = self.preextracted_text.get(artifact_id)
+        if preextracted:
+            logger.info(
+                "Workflow node: reusing upload-time extraction for %s (%s); skipping re-parse",
+                filename,
+                artifact_id,
+            )
+            return truncate_text_head_tail(preextracted)
         if self._is_inline_text_mime(mime_type):
             try:
                 data = StorageCreator.get_storage().get_file(storage_path).read()
@@ -856,13 +947,29 @@ class WorkflowEngine:
             return truncate_text_head_tail(text)
         # Non-text mimes parse via the dedicated parsing queue (works on any backend,
         # no sandbox): the worker re-resolves the artifact run-scoped and reads its bytes.
-        return self._parse_document_text(artifact_id)
+        return self._parse_document_text(artifact_id, size=size, deadline=deadline)
 
-    def _parse_document_text(self, artifact_id: str) -> Optional[str]:
-        """Enqueue ``parse_document`` for this run and await the bounded markdown; None on failure."""
+    def _parse_document_text(
+        self,
+        artifact_id: str,
+        size: Optional[int] = None,
+        deadline: Optional[float] = None,
+    ) -> Optional[str]:
+        """Enqueue ``parse_document`` for this run and await the size-scaled markdown; None on failure.
+
+        Args:
+            artifact_id: Run-scoped artifact to parse.
+            size: Stored byte size, used to scale the per-document window.
+            deadline: ``time.monotonic()`` value the await must not outlive,
+                shared with the node's other documents.
+        """
         from celery.exceptions import TimeoutError as CeleryTimeoutError
 
-        from application.api.user.tasks import parse_document
+        from application.api.user.tasks import (
+            parse_document,
+            parse_task_time_limits,
+            parse_timeout_for_size,
+        )
         from application.core.settings import settings
 
         user_id = self._resolve_user_id()
@@ -870,11 +977,22 @@ class WorkflowEngine:
             return None
         options = {"output": "markdown", "include_tables": False, "persist": False}
         queue = getattr(settings, "DOCUMENT_PARSE_QUEUE", "parsing")
-        timeout = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120))
+        # OCR cost scales with pages, so the window grows with the document's size
+        # (floored at DOCUMENT_PARSE_TIMEOUT); the task's per-call time limits are
+        # raised to match, else the worker would self-terminate mid-parse.
+        timeout = parse_timeout_for_size(size)
+        if deadline is not None:
+            timeout = min(timeout, deadline - time.monotonic())
+            if timeout <= 0:
+                logger.warning(
+                    "Workflow node: parse budget exhausted; skipping %s", artifact_id
+                )
+                return None
         try:
             async_result = parse_document.apply_async(
                 args=[artifact_id, {"workflow_run_id": self.workflow_run_id}, user_id, options],
                 queue=queue,
+                **parse_task_time_limits(timeout),
             )
             # A workflow can run inside a Celery worker (scheduled runs / webhooks).
             # In a prefork worker ``task_join_will_block()`` is process-wide, so the
@@ -1128,6 +1246,9 @@ class WorkflowEngine:
             tools_data=tools_data,
             artifacts_data=self._collect_artifact_refs(),
             artifact_parent={"workflow_run_id": self.workflow_run_id},
+            # Node templates gate tool-specific sections on this; an unresolved
+            # set would fail open and advertise tools the node does not have.
+            enabled_tools=set(),
         )
 
         agent_context: Dict[str, Any] = {}
@@ -1183,18 +1304,71 @@ class WorkflowEngine:
         docs_together = "\n\n".join(docs_together_parts) if docs_together_parts else None
         return docs, docs_together
 
-    def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> None:
-        """Retrieve documents from the node's sources for template resolution."""
+    def _authorized_node_sources(self, sources) -> list:
+        """Filter a node's configured source ids to those its owner may read.
+
+        ``AgentNodeConfig.sources`` is written verbatim from client JSON when a
+        workflow is saved and nothing validated it, so a node could name any
+        tenant's source id and the retriever — which filters only on
+        ``source_id`` — handed the documents back. Gate on the workflow owner
+        (not the runner): a shared workflow legitimately reads its owner's
+        sources, exactly like a shared agent does.
+
+        Args:
+            sources: Source ids from the stored node config.
+
+        Returns:
+            list: The subset the owner may read.
+        """
+        if not sources:
+            return []
+        ids = sources if isinstance(sources, list) else [sources]
+        resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
+        owner = (resolve_owner() if callable(resolve_owner) else None) or (
+            self._resolve_user_id()
+        )
+        if not owner:
+            logger.warning("Workflow node sources dropped: no owner to authorize.")
+            return []
+
+        from application.api.user.team_sharing import can_access
+        from application.storage.db.session import db_readonly
+
+        allowed = []
+        try:
+            with db_readonly() as conn:
+                for sid in ids:
+                    if sid and can_access(conn, "source", str(sid), owner):
+                        allowed.append(sid)
+                    else:
+                        logger.warning(
+                            "Workflow node source %s dropped: %s has no access.",
+                            sid, owner,
+                        )
+        except Exception:
+            logger.exception("Workflow node source authorization failed; dropping all.")
+            return []
+        return allowed
+
+    def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> list:
+        """Retrieve this node's source documents.
+
+        Args:
+            node_config: The node's resolved configuration.
+
+        Returns:
+            list: Retrieved documents, empty when there was nothing to fetch.
+        """
         from application.retriever.retriever_creator import RetrieverCreator
 
         query = self.state.get("query", "")
         if not query:
-            return
+            return []
 
         try:
             retriever = RetrieverCreator.create_retriever(
                 node_config.retriever or "classic",
-                source={"active_docs": node_config.sources},
+                source={"active_docs": self._authorized_node_sources(node_config.sources)},
                 chat_history=[],
                 prompt="",
                 chunks=int(node_config.chunks) if node_config.chunks else 2,
@@ -1202,9 +1376,13 @@ class WorkflowEngine:
             )
             docs = retriever.search(query)
             if docs:
+                # The parent copy still backs ``{{ source.* }}`` template
+                # resolution; the return value is what reaches the node agent.
                 self.agent.retrieved_docs = docs
+            return docs or []
         except Exception:
             logger.exception("Failed to retrieve docs for workflow node")
+            return []
 
     def get_execution_summary(self) -> List[NodeExecutionLog]:
         return [

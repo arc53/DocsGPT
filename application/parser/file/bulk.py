@@ -1,10 +1,10 @@
 """Simple reader that reads files of different formats from a directory."""
 import logging
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from application.parser.file.base import BaseReader
-from application.parser.file.base_parser import BaseParser
+from application.parser.file.base_parser import BaseParser, DocumentParseError
 from application.parser.file.docs_parser import DocxParser, PDFParser
 from application.parser.file.epub_parser import EpubParser
 from application.parser.file.html_parser import HTMLParser
@@ -25,13 +25,50 @@ def _build_audio_parser_mapping() -> Dict[str, BaseParser]:
     return {extension: AudioParser() for extension in SUPPORTED_AUDIO_EXTENSIONS}
 
 
+def _wrap_pdf_fast_path(pdf_parser: BaseParser) -> BaseParser:
+    """Put the pypdfium2 text-layer parser in front of ``pdf_parser``.
+
+    Args:
+        pdf_parser: Parser to fall back to for PDFs with no usable text layer.
+
+    Returns:
+        BaseParser: The fast-path parser, or ``pdf_parser`` unchanged when
+        pypdfium2 is unavailable.
+    """
+    try:
+        from application.parser.file.pdfium_parser import PdfiumTextParser
+    except ImportError:
+        logging.warning(
+            "pypdfium2 is not installed; PDF attachments will use %s",
+            type(pdf_parser).__name__,
+        )
+        return pdf_parser
+    return PdfiumTextParser(
+        fallback_parser=pdf_parser,
+        min_median_chars=settings.ATTACHMENT_PDF_TEXT_MIN_MEDIAN_CHARS,
+    )
+
+
 def get_default_file_extractor(
     ocr_enabled: Optional[bool] = None,
+    pdf_text_fast_path: bool = False,
 ) -> Dict[str, BaseParser]:
     """Get the default file extractor.
 
     Uses docling parsers by default for advanced document processing.
     Falls back to standard parsers if docling is not installed.
+
+    Args:
+        ocr_enabled: Enable OCR in the docling parsers. Defaults to
+            ``settings.DOCLING_OCR_ENABLED``.
+        pdf_text_fast_path: Read PDFs via their embedded text layer
+            (pypdfium2) instead of docling, falling back to docling for scans.
+            Off by default: it trades docling's structural markdown for speed,
+            which suits attachments (read into a prompt) but not source
+            ingestion (chunked and embedded for retrieval).
+
+    Returns:
+        Dict[str, BaseParser]: Parser keyed by lower-case file suffix.
     """
     try:
         from application.parser.file.docling_parser import (
@@ -48,9 +85,12 @@ def get_default_file_extractor(
         )
         if ocr_enabled is None:
             ocr_enabled = settings.DOCLING_OCR_ENABLED
+        pdf_parser: BaseParser = DoclingPDFParser(ocr_enabled=ocr_enabled)
+        if pdf_text_fast_path:
+            pdf_parser = _wrap_pdf_fast_path(pdf_parser)
         return {
             # Documents
-            ".pdf": DoclingPDFParser(ocr_enabled=ocr_enabled),
+            ".pdf": pdf_parser,
             ".docx": DoclingDocxParser(),
             ".pptx": DoclingPPTXParser(),
             ".xlsx": DoclingXLSXParser(),
@@ -88,8 +128,11 @@ def get_default_file_extractor(
             "For advanced document parsing, install with: pip install docling"
         )
         # Fallback to standard parsers
+        legacy_pdf: BaseParser = PDFParser()
+        if pdf_text_fast_path:
+            legacy_pdf = _wrap_pdf_fast_path(legacy_pdf)
         return {
-            ".pdf": PDFParser(),
+            ".pdf": legacy_pdf,
             ".docx": DocxParser(),
             ".csv": PandasCSVParser(),
             ".xlsx": ExcelParser(),
@@ -177,6 +220,8 @@ class SimpleDirectoryReader(BaseReader):
 
         self.file_extractor = file_extractor or DEFAULT_FILE_EXTRACTOR
         self.file_metadata = file_metadata
+        # (path, message) per file skipped by ``load_data`` as unparseable.
+        self.failed_files: List[Tuple[Path, str]] = []
 
     def _add_files(self, input_dir: Path) -> List[Path]:
         """Add files."""
@@ -230,27 +275,51 @@ class SimpleDirectoryReader(BaseReader):
 
         Returns:
             List[Document]: A list of documents.
+
+        Raises:
+            DocumentParseError: if no input file could be parsed. Individual
+                unreadable files are skipped and recorded in ``failed_files``
+                so one corrupt document does not cost the caller the rest of
+                the batch; a single-file read (the attachment path) still
+                raises, since skipping there would only defer the failure to
+                an empty result.
         """
         data: Union[str, List[str]] = ""
         data_list: List[str] = []
         metadata_list = []
         self.file_token_counts = {}
+        self.failed_files = []
 
         total_files = len(self.input_files)
+
+        def report_progress(files_done: int) -> None:
+            if progress_callback is None:
+                return
+            try:
+                progress_callback(files_done, total_files)
+            except Exception:
+                logging.warning("load_data progress callback failed", exc_info=True)
+
         for file_index, input_file in enumerate(self.input_files):
             suffix_lower = input_file.suffix.lower()
             parser_metadata = {}
-            if suffix_lower in self.file_extractor:
-                parser = self.file_extractor[suffix_lower]
-                if not parser.parser_config_set:
-                    parser.init_parser()
-                data = parser.parse_file(input_file, errors=self.errors)
-                parser_metadata = parser.get_file_metadata(input_file)
-            else:
-                # do standard read
-                with open(input_file, "r", errors=self.errors) as f:
-                    data = f.read()
-            
+            try:
+                if suffix_lower in self.file_extractor:
+                    parser = self.file_extractor[suffix_lower]
+                    if not parser.parser_config_set:
+                        parser.init_parser()
+                    data = parser.parse_file(input_file, errors=self.errors)
+                    parser_metadata = parser.get_file_metadata(input_file)
+                else:
+                    # do standard read
+                    with open(input_file, "r", errors=self.errors) as f:
+                        data = f.read()
+            except DocumentParseError as e:
+                logging.warning(f"Skipping unreadable file {input_file.name}: {e}")
+                self.failed_files.append((input_file, str(e)))
+                report_progress(file_index + 1)
+                continue
+
             # Calculate token count for this file
             if isinstance(data, List):
                 file_tokens = sum(num_tokens_from_string(str(d)) for d in data)
@@ -283,18 +352,31 @@ class SimpleDirectoryReader(BaseReader):
             if isinstance(data, List):
                 # Extend data_list with each item in the data list
                 data_list.extend([str(d) for d in data])
-                metadata_list.extend([base_metadata for _ in data])
+                # copy(): chunking writes token_count into this dict in
+                # place, so a shared reference gives every chunk the last
+                # chunk's count.
+                metadata_list.extend([base_metadata.copy() for _ in data])
             else:
                 data_list.append(str(data))
-                metadata_list.append(base_metadata)
+                metadata_list.append(base_metadata.copy())
 
-            if progress_callback is not None:
-                try:
-                    progress_callback(file_index + 1, total_files)
-                except Exception:
-                    logging.warning(
-                        "load_data progress callback failed", exc_info=True
-                    )
+            report_progress(file_index + 1)
+
+        # Every file failed: there is nothing to ingest, so this is a failed
+        # read rather than an empty one. Callers (the attachment worker, the
+        # ingest tasks) treat it as terminal and tell the user.
+        if self.failed_files and not data_list:
+            if len(self.failed_files) == 1:
+                # Single-file read (the attachment path): the parser's own
+                # message reaches the user verbatim, so don't wrap it in
+                # "None of the 1 file(s)…".
+                raise DocumentParseError(self.failed_files[0][1])
+            names = ", ".join(p.name for p, _ in self.failed_files[:5])
+            raise DocumentParseError(
+                f"None of the {len(self.failed_files)} files could be parsed: "
+                f"{names}{'…' if len(self.failed_files) > 5 else ''} "
+                f"({self.failed_files[0][1]})"
+            )
 
         # Build directory structure if input_dir is provided
         if hasattr(self, 'input_dir'):

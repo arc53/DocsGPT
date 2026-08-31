@@ -38,7 +38,7 @@ class TestAttachmentWorker:
 
         # Stub the parser selection so the docling import path isn't taken.
         monkeypatch.setattr(
-            worker, "get_default_file_extractor", lambda ocr_enabled=False: {}
+            worker, "get_default_file_extractor", lambda ocr_enabled=False, pdf_text_fast_path=False: {}
         )
 
         file_info = {
@@ -66,6 +66,82 @@ class TestAttachmentWorker:
         assert row["upload_path"] == "uploads/user1/notes.txt"
         assert row["content"] == "hello world"
         assert row["user_id"] == "user1"
+
+    def test_parse_failure_stores_failure_row_and_tells_the_user(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """A parse failure must fail loudly, not store the error as content.
+
+        Regression (prod 2026-08-05): docling's PDF layout stage died, the
+        parser returned its own traceback as the "document", and the worker
+        stored it and published ``attachment.completed`` — so the upload
+        looked fine and the model was handed an error message as the PDF.
+        The failure now leaves a queryable row whose ``metadata.extraction``
+        records the error; ``content`` stays NULL so the model can never
+        read a traceback as the document.
+        """
+        from application import worker
+        from application.parser.file.base_parser import DocumentParseError
+
+        published: list[tuple[str, dict]] = []
+        monkeypatch.setattr(
+            worker,
+            "publish_user_event",
+            lambda user, event, payload, **kw: published.append((event, payload)),
+        )
+
+        fake_storage = MagicMock(name="storage")
+        fake_storage.process_file.side_effect = DocumentParseError(
+            "Failed to parse scan.pdf with docling: Conversion failed for: "
+            "scan.pdf with status: failure. Errors: InvalidCxxCompiler"
+        )
+        monkeypatch.setattr(
+            worker.StorageCreator, "get_storage", lambda: fake_storage
+        )
+        monkeypatch.setattr(
+            worker, "get_default_file_extractor", lambda ocr_enabled=False, pdf_text_fast_path=False: {}
+        )
+
+        file_info = {
+            "filename": "scan.pdf",
+            "attachment_id": "507f1f77bcf86cd799439012",
+            "path": "uploads/user1/scan.pdf",
+            "metadata": {"source": "chat"},
+        }
+
+        with pytest.raises(DocumentParseError):
+            worker.attachment_worker(task_self, file_info, "user1")
+
+        # The error lives in metadata, never in content — an attachment whose
+        # text is a traceback is worse than no attachment, because the model
+        # will read it.
+        row = AttachmentsRepository(pg_conn).get_by_legacy_id(
+            file_info["attachment_id"], "user1"
+        )
+        assert row is not None, "a failed parse must leave a queryable row"
+        assert row["content"] is None
+        extraction = row["metadata"]["extraction"]
+        assert extraction["status"] == "failed"
+        assert "InvalidCxxCompiler" in extraction["error"]
+
+        # The user is told it failed, and never told it completed.
+        events = [event for event, _ in published]
+        assert "attachment.failed" in events
+        assert "attachment.completed" not in events
+
+    @pytest.mark.parametrize("task_name", ["store_attachment", "ingest"])
+    def test_parse_failure_is_not_retried(self, task_name):
+        """A parse failure is deterministic; retrying only multiplies noise.
+
+        Both parsing entry points matter: now that the parser raises instead of
+        returning its traceback as content, an unguarded task would turn one
+        unreadable upload into a retry loop of identical failures.
+        """
+        from application.api.user import tasks as user_tasks
+        from application.parser.file.base_parser import DocumentParseError
+
+        task = getattr(user_tasks, task_name)
+        assert DocumentParseError in task.dont_autoretry_for
 
 
 @pytest.mark.unit

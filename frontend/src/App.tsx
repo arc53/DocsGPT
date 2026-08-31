@@ -10,6 +10,7 @@ import SharedAgentGate from './agents/SharedAgentGate';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import ActionButtons from './components/ActionButtons';
 import AdminRoute from './components/AdminRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 import Spinner from './components/Spinner';
 import { Button } from './components/ui/button';
 import UploadToast from './components/UploadToast';
@@ -75,6 +76,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
 function MainLayout() {
   const { isMobile, isTablet } = useMediaQuery();
   const [navOpen, setNavOpen] = useState(!(isMobile || isTablet));
+  const location = useLocation();
 
   return (
     <div className="bg-background relative h-screen overflow-hidden">
@@ -87,7 +89,11 @@ function MainLayout() {
             : 'ml-0 lg:ml-16'
         }`}
       >
-        <Outlet />
+        {/* Contain route render crashes so navigation stays usable;
+            keyed by path so the boundary resets when the user leaves. */}
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </div>
       <UploadToast />
       <ToolApprovalToast />

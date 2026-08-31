@@ -79,6 +79,17 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
                   query: { tool_calls: data.tool_calls },
                 }),
               );
+            } else if (data.type === 'guardrail') {
+              // Shared conversations stream through the same route and so hit
+              // the same output guard. Without this the event fell into the
+              // final `else` and was read as an answer chunk.
+              if (data.retract) {
+                dispatch(
+                  sharedConversationSlice.actions.retractResponse({
+                    index: state.sharedConversation.queries.length - 1,
+                  }),
+                );
+              }
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(sharedConversationSlice.actions.setStatus('failed'));
@@ -242,6 +253,16 @@ export const sharedConversationSlice = createSlice({
       const { index, message } = action.payload;
       state.queries[index].error = message;
     },
+    retractResponse(state, action: PayloadAction<{ index: number }>) {
+      // A guardrail tripped after tokens were already rendered. The backend
+      // has replaced the persisted message with the block message, so drop the
+      // partial answer here too — otherwise the leaked text stays on screen
+      // until reload and contradicts what is in the database.
+      const { index } = action.payload;
+      if (!state.queries[index]) return;
+      state.queries[index].response = '';
+      state.queries[index].thought = '';
+    },
     saveToLocalStorage(state) {
       const previousQueriesStr = localStorage.getItem(state.identifier);
       previousQueriesStr
@@ -289,6 +310,7 @@ export const {
   addQuery,
   saveToLocalStorage,
   updateStreamingSource,
+  retractResponse,
 } = sharedConversationSlice.actions;
 
 export const selectStatus = (state: RootState) =>

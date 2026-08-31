@@ -29,7 +29,11 @@ def _serialize_agent_basic(agent: dict) -> dict:
         "user": agent.get("user_id", ""),
         "name": agent.get("name", ""),
         "image": (
-            generate_image_url(agent["image"]) if agent.get("image") else ""
+            generate_image_url(
+                agent["image"], agent["id"], agent.get("user_id")
+            )
+            if agent.get("image")
+            else ""
         ),
         "description": agent.get("description", ""),
         "source": str(source_id) if source_id else "",
@@ -158,7 +162,11 @@ class SharedAgents(Resource):
                         "name": agent.get("name", ""),
                         "description": agent.get("description", ""),
                         "image": (
-                            generate_image_url(agent["image"]) if agent.get("image") else ""
+                            generate_image_url(
+                                agent["image"], agent["id"], agent.get("user_id")
+                            )
+                            if agent.get("image")
+                            else ""
                         ),
                         "tools": agent.get("tools", []) or [],
                         "tool_details": resolve_tool_details(

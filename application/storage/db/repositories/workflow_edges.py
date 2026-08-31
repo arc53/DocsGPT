@@ -149,16 +149,6 @@ class WorkflowEdgesRepository:
         row = result.fetchone()
         return str(row[0]) if row else None
 
-    def delete_by_workflow(self, workflow_id: str) -> int:
-        result = self._conn.execute(
-            text(
-                "DELETE FROM workflow_edges "
-                "WHERE workflow_id = CAST(:wf_id AS uuid)"
-            ),
-            {"wf_id": workflow_id},
-        )
-        return result.rowcount
-
     def delete_by_version(self, workflow_id: str, graph_version: int) -> int:
         result = self._conn.execute(
             text(

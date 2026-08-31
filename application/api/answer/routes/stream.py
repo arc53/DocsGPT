@@ -8,6 +8,10 @@ from application.api import api
 
 from application.api.answer.routes.base import answer_ns, BaseAnswerResource
 
+from application.api.answer.services.continuation_service import (
+    RESUME_IN_PROGRESS_MESSAGE,
+    ResumeInProgressError,
+)
 from application.api.answer.services.persistence_policy import resolve_persistence
 from application.api.answer.services.stream_processor import StreamProcessor
 from application.streaming.sse_keepalive import with_sse_keepalive
@@ -173,6 +177,24 @@ class StreamResource(Resource, BaseAnswerResource):
                         model_user_id=processor.model_user_id,
                     ),
                 ),
+                mimetype="text/event-stream",
+            )
+        except ResumeInProgressError as e:
+            # Another request already owns this conversation's continuation
+            # claim — an expected concurrency outcome, not a bad request. It
+            # must be caught ahead of ``ValueError`` (its base class), or it
+            # lands in the handler below and is reported to the user as a
+            # malformed body while filling the ERROR channel with tracebacks.
+            # ``/v1/chat/completions`` has answered 409 for this since
+            # 2026-07-13; this is the same contract on the primary route.
+            logger.warning(
+                "/stream - resume already in progress for conversation %s",
+                data.get("conversation_id"),
+                extra={"error": str(e)},
+            )
+            return Response(
+                self.error_stream_generate(RESUME_IN_PROGRESS_MESSAGE),
+                status=409,
                 mimetype="text/event-stream",
             )
         except ValueError as e:

@@ -18,6 +18,7 @@ from application.api.answer.routes.base import BaseAnswerResource
 from application.api.answer.services.persistence_policy import resolve_persistence
 from application.api.answer.services.continuation_service import (
     ContinuationService,
+    RESUME_IN_PROGRESS_MESSAGE,
     ResumeInProgressError,
 )
 from application.api.answer.services.stream_processor import StreamProcessor
@@ -425,7 +426,7 @@ def chat_completions():
         return make_response(
             jsonify({
                 "error": {
-                    "message": "Resume already in progress for this conversation.",
+                    "message": RESUME_IN_PROGRESS_MESSAGE,
                     "type": "conflict_error",
                     "code": "resume_in_progress",
                 }

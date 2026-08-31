@@ -516,3 +516,109 @@ def test_bound_parse_payload_small_content_not_flagged():
     out = bound_parse_payload({"output": "text", "content": "hi"}, max_chars=10)
     assert out["content"] == "hi"
     assert out["truncated"] is False
+
+
+# ---------------------------------------------------------------------------
+# vanilla-converter fallback honors the torch.compile toggle
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_vanilla_converter_applies_inference_settings(monkeypatch, tmp_path):
+    """The fallback builds its own DocumentConverter, so it must disable
+    torch.compile itself — the configured-parser path can't do it for it."""
+    import sys
+    import types
+
+    called = []
+    monkeypatch.setattr(
+        "application.parser.file.docling_parser._apply_inference_settings",
+        lambda: called.append(True),
+    )
+
+    class _Doc:
+        texts = []
+        tables = []
+        pages = {}
+
+        def export_to_markdown(self):
+            return "# md"
+
+        def export_to_dict(self):
+            return {"texts": []}
+
+    class _Converter:
+        def convert(self, *a, **k):
+            assert called == [True], "converter built before torch.compile was disabled"
+            return types.SimpleNamespace(document=_Doc())
+
+    fake_docling = types.ModuleType("docling")
+    fake_dc_module = types.ModuleType("docling.document_converter")
+    fake_dc_module.DocumentConverter = _Converter
+    fake_docling.document_converter = fake_dc_module
+    monkeypatch.setitem(sys.modules, "docling", fake_docling)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", fake_dc_module)
+
+    path = tmp_path / "doc.pdf"
+    path.write_bytes(b"%PDF")
+
+    out = dr._docling_structured(path, ocr_enabled=False, include_tables=False, parser=None)
+
+    assert out["markdown"] == "# md"
+    assert called == [True]
+
+
+# ---------------------------------------------------------------------------
+# _docling_structured tables: blank cells must not leak NaN or mangle ints
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_structured_tables_render_blank_cells_as_strings(monkeypatch, tmp_path):
+    """pandas 3 preserves missing values through ``astype(str)``, so a blank
+    spreadsheet cell leaked a float NaN into the tables payload and a blank
+    in an integer column mangled every id to ``1001.0``. Cells must come out
+    as join-safe strings (same contract as the tabular parser's
+    ``cell_to_text``)."""
+    import sys
+    import types
+
+    import pandas as pd
+
+    df = pd.DataFrame({"id": [1001, None, 1003], "name": ["a", "b", None]})
+
+    class _Table:
+        def export_to_dataframe(self):
+            return df
+
+    class _Doc:
+        tables = [_Table()]
+        pages = {"1": {}}
+
+        def export_to_markdown(self):
+            return "# md"
+
+        def export_to_dict(self):
+            return {"texts": [], "tables": [{}], "pages": {"1": {}}}
+
+    class _Converter:
+        def convert(self, *a, **k):
+            return types.SimpleNamespace(document=_Doc())
+
+    monkeypatch.setattr(
+        "application.parser.file.docling_parser._apply_inference_settings",
+        lambda: None,
+    )
+    fake_docling = types.ModuleType("docling")
+    fake_dc_module = types.ModuleType("docling.document_converter")
+    fake_dc_module.DocumentConverter = _Converter
+    fake_docling.document_converter = fake_dc_module
+    monkeypatch.setitem(sys.modules, "docling", fake_docling)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", fake_dc_module)
+
+    path = tmp_path / "doc.xlsx"
+    path.write_bytes(b"stub")
+
+    out = dr._docling_structured(path, ocr_enabled=False, include_tables=True, parser=None)
+
+    [table] = out["tables"]
+    cells = [c for row in table["rows"] for c in row]
+    assert all(isinstance(c, str) for c in cells), f"non-string cells: {cells!r}"
+    assert "1001" in cells and "1001.0" not in cells
+    assert "" in cells  # blank cell renders as empty string, not "nan"/"None"

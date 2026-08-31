@@ -10,6 +10,7 @@ from application.sandbox.base import (
     CodeSandbox,
     ExecResult,
     Plot,
+    SandboxGoneError,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,6 +134,14 @@ class DaytonaSandbox(CodeSandbox):
         Reattach order: an in-memory handle, then (across process restarts) a live cloud
         sandbox carrying the session label, and only then a fresh ``create``. Enforces
         ``max_sandboxes`` so a flood of sessions cannot run up unbounded paid resources.
+
+        Returns:
+            str: The live sandbox id, already registered for this session.
+
+        Raises:
+            SandboxGoneError: The sandbox was confirmed gone before its workspace
+                could be primed. Nothing is cached, so a retry cold-starts.
+            RuntimeError: ``max_sandboxes`` live sandboxes already exist.
         """
         self._validate_session_id(session_id)
         # Wait out any in-flight create/reattach for this session, then reuse its
@@ -150,8 +159,17 @@ class DaytonaSandbox(CodeSandbox):
             # instead of leaking it behind a brand-new create.
             reattached = self._reattach_existing(session_id)
             if reattached is not None:
-                self._prime(reattached)
-                return reattached.sandbox_id
+                if self._prime(reattached):
+                    return reattached.sandbox_id
+                # The labelled sandbox is gone in the cloud (deleted between the
+                # list and its first use — seen in prod as toolbox 404 "it has
+                # been deleted"). Forget it and fall through to a fresh create.
+                logger.warning(
+                    "Reattached Daytona sandbox %s for session %s is gone; creating a fresh one",
+                    reattached.sandbox_id,
+                    session_id,
+                )
+                self._forget_handle(session_id, reattached)
 
             with self._lock:
                 if len(self._handles) >= self._max_sandboxes:
@@ -173,7 +191,24 @@ class DaytonaSandbox(CodeSandbox):
                 except Exception as del_exc:  # noqa: BLE001 - cleanup is best-effort
                     logger.warning("Failed to delete orphaned Daytona sandbox during open: %s", del_exc)
                 raise
-            self._prime(handle)
+            if not self._prime(handle):
+                # ``_prime`` only reports False once ``_sandbox_gone`` confirms it.
+                # Caching a dead handle would be worse than failing here: ``open``
+                # returns cached handles without revalidating them, so every later
+                # open for this session would replay the same dead id. Forgetting
+                # it does not strand a paid resource even if the classification was
+                # a false positive -- the sandbox carries the session label, so
+                # ``_reattach_existing`` picks it up on the next open.
+                self._forget_handle(session_id, handle)
+                logger.warning(
+                    "Freshly created Daytona sandbox %s for session %s was gone before "
+                    "its workspace could be primed; not caching it",
+                    sandbox_id,
+                    session_id,
+                )
+                raise SandboxGoneError(
+                    f"Daytona sandbox {sandbox_id} vanished during workspace prime"
+                )
             return sandbox_id
         finally:
             with self._create_cv:
@@ -194,7 +229,7 @@ class DaytonaSandbox(CodeSandbox):
                 labels={_SESSION_LABEL: session_id},
                 states=[SandboxState.STARTED, SandboxState.STOPPED],
             )
-            matches = list(self._client.list(query))
+            matches = list(self._client.list(query, request_timeout=self._default_timeout))
         except Exception as exc:  # noqa: BLE001 - listing must never block opening a session
             logger.warning("Daytona list for session %s failed; will create fresh: %s", session_id, exc)
             return None
@@ -227,7 +262,7 @@ class DaytonaSandbox(CodeSandbox):
     def _ensure_started(self, handle: "_Handle") -> bool:
         """Refresh the handle's sandbox; start it if auto-stopped. True only if it was woken."""
         try:
-            fresh = self._client.get(handle.sandbox_id)
+            fresh = self._client.get(handle.sandbox_id, request_timeout=self._default_timeout)
         except Exception as exc:  # noqa: BLE001 - a failed refresh just means we don't retry
             logger.warning("Daytona get for %s failed while ensuring started: %s", handle.sandbox_id, exc)
             return False
@@ -316,7 +351,7 @@ class DaytonaSandbox(CodeSandbox):
         evict-then-concurrent-reopen path where only the captured id is still known.
         """
         try:
-            sandbox = self._client.get(sandbox_id)
+            sandbox = self._client.get(sandbox_id, request_timeout=self._default_timeout)
             self._client.delete(sandbox)
         except Exception as exc:  # noqa: BLE001 - teardown is best-effort, never raise
             logger.warning("Failed to delete Daytona sandbox by id %s: %s", sandbox_id, exc)
@@ -326,7 +361,7 @@ class DaytonaSandbox(CodeSandbox):
 
         The tools pass a token DIRECTORY (e.g. ``artifacts/{token}``), so the delete is
         recursive — ``fs.delete_file`` with ``recursive=True`` removes a folder and its
-        contents (daytona==0.190.1).
+        contents (daytona==0.203.0).
         """
         try:
             handle = self._get_handle(session_id)
@@ -340,7 +375,7 @@ class DaytonaSandbox(CodeSandbox):
     def _delete_remote(self, handle: "_Handle", remote: str) -> None:
         """Recursively delete ``remote`` inside the sandbox, with a contained-command fallback."""
         try:
-            handle.sandbox.fs.delete_file(remote, recursive=True)
+            handle.sandbox.fs.delete_file(remote, recursive=True, request_timeout=self._default_timeout)
             return
         except TypeError:
             # Older SDK without the recursive kwarg: fall back to a contained rm -rf.
@@ -351,12 +386,43 @@ class DaytonaSandbox(CodeSandbox):
             quoted = "'" + remote.replace("'", "'\\''") + "'"
             handle.sandbox.process.exec(f"rm -rf {quoted}", timeout=int(self._default_timeout))
 
-    def _prime(self, handle: _Handle) -> None:
-        """Create the per-session workspace directory inside the sandbox."""
+    def _prime(self, handle: _Handle) -> bool:
+        """Create the per-session workspace directory inside the sandbox (bounded).
+
+        The toolbox proxy of a just-created/just-woken sandbox can accept a
+        request and never answer (no container IP registered yet), and the SDK
+        default is NO client timeout — in prod one hung ``create_folder`` here
+        pinned a stream for ~16 minutes until the idle auto-stop dropped the
+        connection. Bound the call, refresh/wake the sandbox, and retry once.
+
+        ``create_folder`` is idempotent on an existing directory (verified
+        against Daytona 0.205.1), so any failure here is real. Returns False
+        when the sandbox no longer exists in the cloud — the caller must
+        discard the handle and start fresh. A still-alive sandbox that fails
+        to prime stays usable (True): ``exec`` prepends ``makedirs`` and
+        ``put_file`` creates parent dirs, so the workspace materializes on
+        first use anyway.
+        """
         try:
-            handle.sandbox.fs.create_folder(handle.workspace, "755")
-        except Exception as exc:  # noqa: BLE001 - folder may already exist on a reused snapshot
-            logger.debug("Workspace folder prime returned: %s", exc)
+            handle.sandbox.fs.create_folder(handle.workspace, "755", request_timeout=self._default_timeout)
+            return True
+        except Exception as exc:  # noqa: BLE001 - hang/transport/stopped: refresh and retry once
+            logger.debug("Workspace folder prime failed; refreshing sandbox and retrying once: %s", exc)
+        self._ensure_started(handle)  # refreshes the handle; wakes an auto-stopped sandbox
+        try:
+            handle.sandbox.fs.create_folder(handle.workspace, "755", request_timeout=self._default_timeout)
+            return True
+        except Exception as exc:  # noqa: BLE001 - classify gone-vs-degraded below
+            if self._sandbox_gone(handle):
+                logger.warning("Workspace prime found sandbox %s gone: %s", handle.sandbox_id, exc)
+                return False
+            logger.warning(
+                "Workspace prime failed twice for live sandbox %s "
+                "(continuing; exec/put_file create the workspace on demand): %s",
+                handle.sandbox_id,
+                exc,
+            )
+            return True
 
     # -- Execution -------------------------------------------------------
 
@@ -401,7 +467,7 @@ class DaytonaSandbox(CodeSandbox):
         handle). A ``get`` that cannot resolve the id, or a terminal state, means gone.
         """
         try:
-            fresh = self._client.get(handle.sandbox_id)
+            fresh = self._client.get(handle.sandbox_id, request_timeout=self._default_timeout)
         except Exception:  # noqa: BLE001 - unresolvable id => the sandbox is gone
             return True
         state = getattr(fresh, "state", None)
@@ -511,17 +577,16 @@ class DaytonaSandbox(CodeSandbox):
                     return
                 except Exception:  # noqa: BLE001 - second failure -> generic IOError below
                     pass
-            logger.warning("put_file failed for %r: %s", dest_path, exc)
-            raise IOError(f"put_file failed: {type(exc).__name__}") from exc
+            self._raise_file_error("put_file", dest_path, session_id, handle, exc)
 
     def _upload(self, handle: "_Handle", remote: str, parent: str, data: bytes) -> None:
         """Create the parent folder (best-effort) and upload ``data`` to ``remote``."""
         if parent and parent != handle.workspace:
             try:
-                handle.sandbox.fs.create_folder(parent, "755")
+                handle.sandbox.fs.create_folder(parent, "755", request_timeout=self._default_timeout)
             except Exception as folder_exc:  # noqa: BLE001 - folder may already exist
                 logger.debug("put_file parent folder create returned: %s", folder_exc)
-        handle.sandbox.fs.upload_file(data, remote)
+        handle.sandbox.fs.upload_file(data, remote, timeout=int(self._default_timeout))
 
     def get_file(self, session_id: str, path: str) -> bytes:
         """Download ``path`` from the session workspace as bytes, capped at ``max_file_bytes``."""
@@ -534,15 +599,13 @@ class DaytonaSandbox(CodeSandbox):
         except Exception as exc:  # noqa: BLE001 - log detail server-side, return a generic error
             # A cached handle may point at an auto-stopped sandbox; wake it and retry once.
             if not self._ensure_started(handle):
-                logger.warning("get_file failed for %r: %s", path, exc)
-                raise IOError(f"get_file failed: {type(exc).__name__}") from exc
+                self._raise_file_error("get_file", path, session_id, handle, exc)
             try:
                 data = self._download(handle, remote)
             except IOError:
                 raise
-            except Exception:  # noqa: BLE001 - second failure -> generic IOError
-                logger.warning("get_file failed for %r: %s", path, exc)
-                raise IOError(f"get_file failed: {type(exc).__name__}") from exc
+            except Exception:  # noqa: BLE001 - second failure -> classified below
+                self._raise_file_error("get_file", path, session_id, handle, exc)
         if data is None:
             raise IOError(f"get_file produced no payload for {path!r}")
         data = data if isinstance(data, bytes) else bytes(data)
@@ -552,24 +615,49 @@ class DaytonaSandbox(CodeSandbox):
             raise IOError(f"file too large: {len(data)} > {self._max_file_bytes} bytes")
         return data
 
+    def _raise_file_error(self, op: str, path: str, session_id: str, handle: "_Handle", exc: Exception) -> None:
+        """Classify and raise a failed file op: ``SandboxGoneError`` vs plain ``IOError``.
+
+        A deleted-but-cached sandbox (auto-delete, or a stale reattach candidate
+        the cloud list still returned) would otherwise 404 every subsequent call
+        on this handle. Forget the handle so the next ``open`` reattaches or
+        creates fresh, and raise ``SandboxGoneError`` so the manager drops its
+        session too (the file-op mirror of ``exec``'s ``runtime_invalidated``).
+        A failure on a still-live sandbox stays a plain ``IOError`` and keeps
+        the handle. Always raises; error text carries only the exception type,
+        never backend URLs/payloads.
+        """
+        logger.warning("%s failed for %r: %s", op, path, exc)
+        if self._sandbox_gone(handle):
+            self._forget_handle(session_id, handle)
+            raise SandboxGoneError(f"{op} failed: sandbox gone ({type(exc).__name__})") from exc
+        if isinstance(exc, IOError):
+            raise exc
+        raise IOError(f"{op} failed: {type(exc).__name__}") from exc
+
     def _download(self, handle: "_Handle", remote: str) -> object:
         """Fetch ``remote``'s bytes, rejecting a file whose declared size exceeds the cap."""
-        info = handle.sandbox.fs.get_file_info(remote)
+        info = handle.sandbox.fs.get_file_info(remote, request_timeout=self._default_timeout)
         size = getattr(info, "size", None)
         if size is not None and size > self._max_file_bytes:
             raise IOError(f"file too large: {size} > {self._max_file_bytes} bytes")
-        return handle.sandbox.fs.download_file(remote)
+        # download_file takes its timeout positionally and dispatches on
+        # isinstance(arg, int): a float would be read as a destination path.
+        return handle.sandbox.fs.download_file(remote, int(self._default_timeout))
 
     def list_files(self, session_id: str) -> List[str]:
         """List workspace-relative file paths for ``session_id`` (recursive, never escapes the workspace)."""
         handle = self._get_handle(session_id)
         try:
             return self._list_all(handle)
-        except Exception:  # noqa: BLE001 - transport/stopped fault: wake and retry once, else re-raise
+        except Exception as exc:  # noqa: BLE001 - transport/stopped fault: wake and retry once
             # A cached handle may point at an auto-stopped sandbox; wake it and retry once.
             if self._ensure_started(handle):
-                return self._list_all(handle)
-            raise
+                try:
+                    return self._list_all(handle)
+                except Exception:  # noqa: BLE001 - second failure -> classified below
+                    pass
+            self._raise_file_error("list_files", ".", session_id, handle, exc)
 
     def _list_all(self, handle: "_Handle") -> List[str]:
         """Walk the workspace subtree for ``handle`` and return workspace-relative file paths."""
@@ -581,7 +669,7 @@ class DaytonaSandbox(CodeSandbox):
         """Recurse one workspace subtree, appending workspace-relative file paths to ``out``."""
         abs_dir = posixpath.join(root, rel_dir) if rel_dir else root
         try:
-            entries = sandbox.fs.list_files(abs_dir)
+            entries = sandbox.fs.list_files(abs_dir, request_timeout=self._default_timeout)
         except Exception as exc:  # noqa: BLE001 - log detail server-side, return a generic error
             logger.warning("list_files failed for %r: %s", rel_dir or ".", exc)
             raise IOError(f"list_files failed: {type(exc).__name__}") from exc

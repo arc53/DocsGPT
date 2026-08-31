@@ -15,12 +15,19 @@ Extends coverage beyond test_openai_llm.py:
 """
 
 import base64
+import logging
 import types
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
+from openai import BadRequestError
 
-from application.llm.openai import OpenAILLM, _truncate_base64_for_logging
+from application.llm.openai import (
+    OpenAILLM,
+    _is_tools_unsupported_error,
+    _truncate_base64_for_logging,
+)
 
 
 # Fake client helpers
@@ -89,7 +96,11 @@ class FakeChatCompletions:
 
 
 class FakeFiles:
+    def __init__(self):
+        self.created = []
+
     def create(self, file=None, purpose=None):
+        self.created.append(purpose)
         return types.SimpleNamespace(id="file_id_uploaded")
 
 
@@ -729,6 +740,149 @@ class TestPrepareMessagesWithAttachments:
         assert isinstance(user_msg["content"], list)
 
 
+@pytest.mark.unit
+class TestPdfAttachmentNullFileIdCache:
+    """A NULL ``openai_file_id`` column must not read as a cache hit.
+
+    Attachment dicts come from ``SELECT *`` (``row_to_dict``), so every row
+    carries an ``openai_file_id`` key and it is NULL until an upload caches
+    one. Testing for key *membership* therefore treated every fresh
+    attachment as cached, returned ``None`` without uploading, and — because
+    nothing raised — skipped the fallback that inlines the extracted text.
+    The user was told their perfectly good PDF "could not be processed".
+    """
+
+    @pytest.fixture(autouse=True)
+    def _real_pdf_on_disk(self, tmp_path):
+        """The upload path opens the file, so it has to exist."""
+        pdf = tmp_path / "contract.pdf"
+        pdf.write_bytes(b"%PDF-1.4\ntrailer<</Root 1 0 R>>\n")
+        self._pdf_path = str(pdf)
+
+    def _pg_shaped_attachment(self, **overrides):
+        """What ``_attachment_to_dict`` actually produces for a fresh row."""
+        attachment = {
+            "id": "att-1",
+            "filename": "contract.pdf",
+            "path": self._pdf_path,
+            "upload_path": self._pdf_path,
+            "mime_type": "application/pdf",
+            "size": 120_000,
+            "content": "REAL EXTRACTED TEXT",
+            "token_count": 6748,
+            "openai_file_id": None,
+            "google_file_uri": None,
+        }
+        attachment.update(overrides)
+        return attachment
+
+    def test_null_cached_id_still_uploads(self, llm):
+        file_id = llm._upload_file_to_openai(self._pg_shaped_attachment())
+        assert file_id, "a NULL cached id must not short-circuit the upload"
+        assert llm.client.files.created, "files.create was never called"
+
+    def test_populated_cached_id_short_circuits(self, llm):
+        stamped = llm._stamp_file_id("file-cached")
+        attachment = self._pg_shaped_attachment(openai_file_id=stamped)
+        assert llm._upload_file_to_openai(attachment) == "file-cached"
+        assert not llm.client.files.created, "should not re-upload a cached file"
+
+    def test_cached_id_from_another_endpoint_is_ignored(self, llm):
+        """A file_id only resolves at the endpoint that minted it.
+
+        ``attachments.openai_file_id`` is one global column, so an id cached
+        against deployment A would otherwise be replayed against deployment B,
+        which answers "No such File object" on every retry — permanently,
+        since the row keeps the bad id.
+        """
+        attachment = self._pg_shaped_attachment(
+            openai_file_id="0123456789abcdef:file-from-elsewhere"
+        )
+        file_id = llm._upload_file_to_openai(attachment)
+        assert file_id == "file_id_uploaded"
+        assert llm.client.files.created, "a foreign-scope id must re-upload"
+
+    def test_legacy_unscoped_cached_id_is_ignored(self, llm):
+        """Rows written before scoping carry a bare id; re-upload and restamp."""
+        attachment = self._pg_shaped_attachment(openai_file_id="file-legacy")
+        assert llm._upload_file_to_openai(attachment) == "file_id_uploaded"
+        assert llm.client.files.created
+
+    def test_oversized_content_is_truncated_before_inlining(self, llm):
+        """Attachments merge in *after* the context-window check, so nothing
+        downstream trims this — a big PDF would blow the whole request."""
+        llm._upload_file_to_openai = lambda _attachment: None
+        llm.model_id = None  # exercise the no-registry default budget
+        huge = "word " * 200_000
+        attachment = self._pg_shaped_attachment(content=huge)
+
+        result = llm.prepare_messages_with_attachments(
+            [{"role": "user", "content": "summarize"}], [attachment]
+        )
+        text = next(
+            p["text"]
+            for p in result[-1]["content"]
+            if p.get("type") == "text" and p["text"].startswith("File content:")
+        )
+        assert len(text) < len(huge)
+        assert "Content truncated" in text
+
+    def test_extracted_text_reaches_the_model_when_upload_yields_no_id(self, llm):
+        """The production failure: no id, no exception, no text, wrong answer."""
+        llm._upload_file_to_openai = lambda _attachment: None
+
+        msgs = [{"role": "user", "content": "summarize the attached pdf"}]
+        result = llm.prepare_messages_with_attachments(
+            msgs, [self._pg_shaped_attachment()]
+        )
+
+        user_msg = next(m for m in result if m["role"] == "user")
+        assert not any(
+            p.get("type") == "file" and not p.get("file", {}).get("file_id")
+            for p in user_msg["content"]
+        ), "must not emit a file part with an empty file_id"
+        assert any(
+            "REAL EXTRACTED TEXT" in p.get("text", "")
+            for p in user_msg["content"]
+            if p.get("type") == "text"
+        ), "extracted content must be inlined rather than dropped"
+
+    def test_degrade_note_names_the_real_file(self, llm):
+        """Fall back to the note only with no text, and never say 'upload.pdf'."""
+        llm._upload_file_to_openai = lambda _attachment: None
+        attachment = self._pg_shaped_attachment(content="")
+
+        msgs = [{"role": "user", "content": "summarize"}]
+        result = llm.prepare_messages_with_attachments(msgs, [attachment])
+
+        user_msg = next(m for m in result if m["role"] == "user")
+        notes = [
+            p["text"]
+            for p in user_msg["content"]
+            if p.get("type") == "text" and "could not be processed" in p.get("text", "")
+        ]
+        assert len(notes) == 1
+        assert "contract.pdf" in notes[0]
+        assert "upload.pdf" not in notes[0]
+
+    def test_file_part_carries_only_file_id(self, llm):
+        """Never send ``filename`` next to ``file_id``.
+
+        Verified against the Azure Foundry deployment: a file part carrying
+        both is rejected outright —
+        ``400 Unknown parameter: 'messages[0].content[1].file.filename'``.
+        The upload itself and a ``file_id``-only part both return 200 and the
+        model reads the PDF correctly, so the reference is all we may send.
+        """
+        msgs = [{"role": "user", "content": "summarize"}]
+        result = llm.prepare_messages_with_attachments(
+            msgs, [self._pg_shaped_attachment()]
+        )
+        user_msg = next(m for m in result if m["role"] == "user")
+        file_part = next(p for p in user_msg["content"] if p.get("type") == "file")
+        assert file_part["file"] == {"file_id": "file_id_uploaded"}
+
+
 # _get_base64_image
 
 
@@ -1048,8 +1202,15 @@ class TestPrepareMessagesWithAttachmentsAdditional:
 class TestUploadFileToOpenai:
 
     def test_cached_file_id_returned(self, llm):
-        """Cover line 469: cached openai_file_id."""
-        result = llm._upload_file_to_openai({"openai_file_id": "cached_id"})
+        """A cached openai_file_id short-circuits the upload.
+
+        The stored value is endpoint-scoped: a bare id is a legacy row and is
+        deliberately treated as a miss (see
+        ``TestPdfAttachmentNullFileIdCache``).
+        """
+        result = llm._upload_file_to_openai(
+            {"openai_file_id": llm._stamp_file_id("cached_id")}
+        )
         assert result == "cached_id"
 
     def test_file_not_found_raises(self, llm):
@@ -1156,8 +1317,10 @@ class TestOpenAILLMConstructor:
 class TestUploadFileToOpenai2:
 
     def test_returns_cached_file_id(self, llm):
-        """Cover line 491-492: returns cached openai_file_id."""
-        result = llm._upload_file_to_openai({"openai_file_id": "file-123"})
+        """Returns the cached openai_file_id when it belongs to this endpoint."""
+        result = llm._upload_file_to_openai(
+            {"openai_file_id": llm._stamp_file_id("file-123")}
+        )
         assert result == "file-123"
 
     def test_file_not_found_raises(self, llm):
@@ -1386,7 +1549,9 @@ class TestUploadFileToOpenaiLine469:
     """Cover line 469: cached openai_file_id returned early."""
 
     def test_cached_id_returned_immediately(self, llm):
-        result = llm._upload_file_to_openai({"openai_file_id": "file-cached-123"})
+        result = llm._upload_file_to_openai(
+            {"openai_file_id": llm._stamp_file_id("file-cached-123")}
+        )
         assert result == "file-cached-123"
 
 
@@ -1529,9 +1694,9 @@ class TestUploadFileToOpenAIError:
             llm._upload_file_to_openai({"path": "/doc.pdf"})
 
     def test_upload_cached_file_id(self, llm):
-        """Cover line 491-492: already has openai_file_id."""
+        """Already has an endpoint-scoped openai_file_id."""
         result = llm._upload_file_to_openai(
-            {"path": "/doc.pdf", "openai_file_id": "file-cached"}
+            {"path": "/doc.pdf", "openai_file_id": llm._stamp_file_id("file-cached")}
         )
         assert result == "file-cached"
 
@@ -1891,3 +2056,344 @@ class TestInlineFilePartResolution:
         # Upload happened because the read errored → treated as miss.
         assert len(llm.client.files.calls) == 1
         assert out[0]["content"][1] == {"type": "file", "file": {"file_id": "file-1"}}
+
+
+@pytest.mark.unit
+class TestKeylessConstruction:
+    """openai>=2.53 raises on a falsy api_key at construction.
+
+    Keyless OpenAI-compatible backends (Ollama, llama.cpp, vLLM) have no
+    credential, and pydantic-settings yields "" — not None — for a bare
+    `API_KEY=` line in .env, so the empty string must not reach the SDK.
+    """
+
+    @pytest.mark.parametrize("blank", ["", None])
+    def test_llm_accepts_blank_key(self, blank):
+        with patch("application.llm.openai.settings") as mock_settings:
+            mock_settings.OPENAI_API_KEY = blank
+            mock_settings.API_KEY = blank
+            mock_settings.OPENAI_BASE_URL = "http://localhost:11434/v1"
+            llm = OpenAILLM(api_key=blank)
+        assert llm.api_key == "sk-no-key"
+
+    @pytest.mark.parametrize("blank", ["", None])
+    def test_stt_accepts_blank_key(self, blank):
+        from application.stt.openai_stt import OpenAISTT
+
+        with patch("application.stt.openai_stt.settings") as mock_settings:
+            mock_settings.OPENAI_API_KEY = blank
+            mock_settings.API_KEY = blank
+            mock_settings.OPENAI_BASE_URL = "http://localhost:11434/v1"
+            mock_settings.OPENAI_STT_MODEL = "whisper-1"
+            stt = OpenAISTT(api_key=blank)
+        assert stt.api_key == "sk-no-key"
+
+
+# Tool-calling fallback for endpoints that can't serve tools
+
+
+VLLM_TOOL_ERROR = (
+    '"auto" tool choice requires --enable-auto-tool-choice and '
+    "--tool-call-parser to be set"
+)
+
+
+def _bad_request(message):
+    """Build a real ``openai.BadRequestError`` carrying ``message``."""
+    request = httpx.Request("POST", "http://localhost:8000/v1/chat/completions")
+    response = httpx.Response(400, request=request)
+    return BadRequestError(message, response=response, body={"message": message})
+
+
+class _RecordingCreate:
+    """``create`` stub that raises on the first call, then succeeds."""
+
+    def __init__(self, error, result):
+        self.error = error
+        self.result = result
+        self.calls = []
+
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        if len(self.calls) == 1 and self.error is not None:
+            raise self.error
+        return self.result
+
+
+@pytest.mark.unit
+class TestIsToolsUnsupportedError:
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            VLLM_TOOL_ERROR,
+            "Tool calling is not supported by this model",
+            "This endpoint does not support tools",
+            "function calling is unavailable for this deployment",
+            "Unsupported parameter: 'tools'",
+        ],
+    )
+    def test_matches_tool_messages(self, message):
+        assert _is_tools_unsupported_error(_bad_request(message)) is True
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "This model's maximum context length is 8192 tokens",
+            "Invalid value for 'temperature': must be <= 2",
+            "Incorrect API key provided",
+        ],
+    )
+    def test_ignores_unrelated_messages(self, message):
+        assert _is_tools_unsupported_error(_bad_request(message)) is False
+
+    def test_matches_message_only_present_in_body(self):
+        request = httpx.Request("POST", "http://localhost:8000/v1/chat/completions")
+        error = BadRequestError(
+            "Error code: 400",
+            response=httpx.Response(400, request=request),
+            body={"message": VLLM_TOOL_ERROR},
+        )
+        assert _is_tools_unsupported_error(error) is True
+
+
+def _bad_request_param(message, param):
+    """A 400 that names a request *parameter*, the way OpenAI/Azure do.
+
+    Mirrors ``openai._base_client._make_status_error_from_response``, which
+    interpolates the whole decoded body into the exception's own message --
+    the reason a body-repr match sees tool words that the server never said.
+    """
+    request = httpx.Request("POST", "http://localhost:8000/v1/chat/completions")
+    response = httpx.Response(400, request=request)
+    # The SDK unwraps the "error" envelope into ``body`` (so ``error.param``
+    # resolves) but keeps the *whole* payload in the message string.
+    payload = {"error": {"message": message, "param": param}}
+    return BadRequestError(
+        f"Error code: 400 - {payload}", response=response, body=payload["error"]
+    )
+
+
+@pytest.mark.unit
+class TestToolChoiceIsNotACapabilitySignal:
+    """A rejected ``tool_choice`` is a bad argument, not a missing capability.
+
+    The SDK interpolates the whole JSON body into ``str(error)``, so matching
+    on that made ``"param": "tool_choice"`` look like "this endpoint cannot do
+    tools" -- and the v1 translator forwards a client-supplied ``tool_choice``
+    verbatim, so any API caller could trigger it.
+    """
+
+    TOOLS = [{"type": "function", "function": {"name": "t"}}]
+
+    def test_a_rejected_tool_choice_is_not_a_tools_error(self):
+        error = _bad_request_param(
+            "Invalid value: 'require'. Supported values are: 'none', 'auto'.",
+            "tool_choice",
+        )
+
+        assert _is_tools_unsupported_error(error) is False
+
+    def test_the_body_repr_alone_does_not_trip_the_match(self):
+        # str(error) contains the entire body, including the param name.
+        error = _bad_request_param("Unsupported value.", "tool_choice")
+
+        assert "tool_choice" in str(error)
+        assert _is_tools_unsupported_error(error) is False
+
+    def test_retries_without_tool_choice_but_keeps_the_tools(self, llm):
+        create = _RecordingCreate(
+            _bad_request_param("Invalid value: 'require'.", "tool_choice"),
+            _Response(choices=[_Choice(content="answered")]),
+        )
+        llm.client.chat.completions.create = create
+
+        llm._raw_gen(
+            llm, model="local-model", messages=[{"role": "user", "content": "hi"}],
+            stream=False, tools=self.TOOLS, tool_choice="require",
+        )
+
+        assert len(create.calls) == 2
+        assert "tool_choice" not in create.calls[1]
+        assert create.calls[1]["tools"] == self.TOOLS
+        assert llm._supports_tools() is True
+
+    def test_a_failed_tool_less_retry_does_not_latch(self, llm):
+        def _always_400(**kwargs):
+            raise _bad_request(VLLM_TOOL_ERROR)
+
+        llm.client.chat.completions.create = _always_400
+
+        with pytest.raises(BadRequestError):
+            llm._raw_gen(
+                llm, model="local-model",
+                messages=[{"role": "user", "content": "hi"}],
+                stream=False, tools=self.TOOLS,
+            )
+
+        # Nothing proved the endpoint is tool-less, so later turns must retry.
+        assert llm._supports_tools() is True
+
+
+@pytest.mark.unit
+class TestToolCallingFallback:
+    """An OpenAI-compatible endpoint without tool support (vLLM started
+    without --enable-auto-tool-choice) 400s every chat, because agentless
+    chat always sends synthesized default tools. Degrade instead."""
+
+    TOOLS = [{"type": "function", "function": {"name": "t"}}]
+    MSGS = [{"role": "user", "content": "hi"}]
+
+    def test_raw_gen_retries_once_without_tools(self, llm):
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR),
+            _Response(choices=[_Choice(content="degraded answer")]),
+        )
+        llm.client.chat.completions.create = create
+
+        result = llm._raw_gen(
+            llm, model="local-model", messages=self.MSGS, stream=False,
+            tools=self.TOOLS, tool_choice="auto", parallel_tool_calls=True,
+        )
+
+        assert len(create.calls) == 2
+        assert create.calls[0]["tools"] == self.TOOLS
+        assert "tools" not in create.calls[1]
+        assert "tool_choice" not in create.calls[1]
+        assert "parallel_tool_calls" not in create.calls[1]
+        # The caller asked for tools, so the tool-shaped return contract holds.
+        assert result.message.content == "degraded answer"
+
+    def test_raw_gen_stream_retries_once_without_tools(self, llm):
+        retry_response = _Response(
+            lines=[_StreamLine([_Choice(delta="degraded")])]
+        )
+        create = _RecordingCreate(_bad_request(VLLM_TOOL_ERROR), retry_response)
+        llm.client.chat.completions.create = create
+
+        chunks = list(
+            llm._raw_gen_stream(
+                llm, model="local-model", messages=self.MSGS, stream=True,
+                tools=self.TOOLS, tool_choice="auto",
+            )
+        )
+
+        assert chunks == ["degraded"]
+        assert len(create.calls) == 2
+        assert create.calls[0]["tools"] == self.TOOLS
+        assert "tools" not in create.calls[1]
+        assert "tool_choice" not in create.calls[1]
+
+    def test_unrelated_bad_request_propagates(self, llm):
+        error = _bad_request("This model's maximum context length is 8192 tokens")
+        create = _RecordingCreate(error, _Response(choices=[_Choice(content="x")]))
+        llm.client.chat.completions.create = create
+
+        with pytest.raises(BadRequestError):
+            llm._raw_gen(
+                llm, model="local-model", messages=self.MSGS, stream=False,
+                tools=self.TOOLS,
+            )
+
+        assert len(create.calls) == 1
+        assert llm._supports_tools() is True
+
+    def test_unrelated_bad_request_propagates_from_stream(self, llm):
+        error = _bad_request("This model's maximum context length is 8192 tokens")
+        create = _RecordingCreate(error, _Response(lines=[]))
+        llm.client.chat.completions.create = create
+
+        with pytest.raises(BadRequestError):
+            list(
+                llm._raw_gen_stream(
+                    llm, model="local-model", messages=self.MSGS, stream=True,
+                    tools=self.TOOLS,
+                )
+            )
+
+        assert len(create.calls) == 1
+
+    def test_tool_error_without_tools_in_request_propagates(self, llm):
+        """No tools were sent, so there is nothing to degrade to."""
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR), _Response(choices=[_Choice(content="x")])
+        )
+        llm.client.chat.completions.create = create
+
+        with pytest.raises(BadRequestError):
+            llm._raw_gen(
+                llm, model="local-model", messages=self.MSGS, stream=False, tools=None
+            )
+
+        assert len(create.calls) == 1
+        assert llm._supports_tools() is True
+
+    def test_supports_tools_false_after_rejection(self, llm):
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR),
+            _Response(choices=[_Choice(content="degraded")]),
+        )
+        llm.client.chat.completions.create = create
+
+        assert llm._supports_tools() is True
+        llm._raw_gen(
+            llm, model="local-model", messages=self.MSGS, stream=False,
+            tools=self.TOOLS,
+        )
+        assert llm._supports_tools() is False
+
+    def test_later_calls_skip_tools_without_another_round_trip(self, llm):
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR),
+            _Response(choices=[_Choice(content="degraded")]),
+        )
+        llm.client.chat.completions.create = create
+
+        llm._raw_gen(
+            llm, model="local-model", messages=self.MSGS, stream=False,
+            tools=self.TOOLS,
+        )
+        llm._raw_gen(
+            llm, model="local-model", messages=self.MSGS, stream=False,
+            tools=self.TOOLS, tool_choice="auto",
+        )
+
+        # 2 for the first call (reject + retry), 1 for the second.
+        assert len(create.calls) == 3
+        assert "tools" not in create.calls[2]
+        assert "tool_choice" not in create.calls[2]
+
+    def test_rejection_does_not_leak_to_other_instances(self, llm):
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR),
+            _Response(choices=[_Choice(content="degraded")]),
+        )
+        llm.client.chat.completions.create = create
+        llm._raw_gen(
+            llm, model="local-model", messages=self.MSGS, stream=False,
+            tools=self.TOOLS,
+        )
+
+        other = OpenAILLM(api_key="sk-test", user_api_key=None)
+        assert other._supports_tools() is True
+
+    def test_warns_once_with_actionable_message(self, llm, caplog):
+        create = _RecordingCreate(
+            _bad_request(VLLM_TOOL_ERROR),
+            _Response(choices=[_Choice(content="degraded")]),
+        )
+        llm.client.chat.completions.create = create
+
+        with caplog.at_level(logging.WARNING):
+            llm._raw_gen(
+                llm, model="local-model", messages=self.MSGS, stream=False,
+                tools=self.TOOLS,
+            )
+            llm._note_tools_rejected("local-model", "second time")
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        message = warnings[0].getMessage()
+        assert "supports_tools: false" in message
+        assert "local-model" in message
+        assert "--enable-auto-tool-choice" in message

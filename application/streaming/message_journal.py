@@ -233,6 +233,9 @@ class BatchedJournalWriter:
         self._buffer: list[tuple[int, str, dict[str, Any]]] = []
         self._last_flush_mono_ms = time.monotonic() * 1000.0
         self._closed = False
+        # Latched once the parent row is found to be gone. A deleted parent
+        # never returns, so every subsequent write would FK-fail identically.
+        self._parent_missing = False
 
     def record(
         self,
@@ -249,6 +252,10 @@ class BatchedJournalWriter:
                 sequence_no,
                 event_type,
             )
+            return False
+        if self._parent_missing:
+            # Parent row deleted mid-stream; nothing can be replayed and no
+            # future write can succeed. Already logged once by ``flush``.
             return False
         if not event_type:
             logger.warning(
@@ -317,15 +324,23 @@ class BatchedJournalWriter:
                 )
         except IntegrityError as exc:
             if _is_foreign_key_violation(exc):
-                # The whole batch references a conversation_messages
-                # parent that doesn't exist — every per-row retry would
-                # FK-fail too, so drop the batch once instead of N
-                # pointless re-attempts. The buffer is already cleared.
+                # The parent ``conversation_messages`` row is gone. In
+                # production this means the row was DELETED out from under a
+                # still-running stream — ``truncate_after`` on a retry or an
+                # edited question removes the row a live (or paused) stream
+                # still owns, and ``message_events`` cascades with it.
+                #
+                # It never comes back, so latch: one WARN for the stream, then
+                # stop re-attempting and stop re-logging. Un-latched, a single
+                # 3.5-minute research stream produced 342 identical WARNs and
+                # was the entire WARN volume for the day.
+                self._parent_missing = True
                 logger.warning(
                     "BatchedJournalWriter: no conversation_messages row "
                     "for message_id=%s (foreign-key violation); dropping "
-                    "%d event(s). The parent message row must be committed "
-                    "before its events are journaled.",
+                    "%d event(s) and all further events for this stream. "
+                    "The parent row was deleted while the stream was still "
+                    "running (retry/edit truncation) or never committed.",
                     self._message_id,
                     len(pending),
                 )

@@ -59,8 +59,9 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`EMBEDDINGS_NAME`**: This setting defines which embedding model DocsGPT will use to generate vector embeddings for your documents. Embeddings are numerical representations of text that allow DocsGPT to understand the semantic meaning of your documents for efficient search and retrieval.
 
-  - **Default value:** `huggingface_sentence-transformers/all-mpnet-base-v2` (a good general-purpose embedding model).
-  - **Other options:** You can explore other embedding models from Hugging Face Sentence Transformers or other providers if needed.
+  - **Default value:** leave it unset and DocsGPT picks for you at first boot, recording the choice so it never changes underneath you: a fresh install is pinned to `ibm-granite/granite-embedding-311m-multilingual-r2` (multilingual, 32k context, same 768 dimensions), and an install that already has sources is pinned to `huggingface_sentence-transformers/all-mpnet-base-v2` so its index stays readable. Setting it here overrides that pin.
+  - **Other options:** Any FastEmbed built-in model, or any Hugging Face repository shipping an ONNX export. See [Embeddings](/Models/embeddings).
+  - **Changing it on an existing index requires re-embedding** — same-width models swap without any error and silently degrade retrieval. Run `python -m application.scripts.reembed`.
 
 - **`API_KEY`**: Required for most cloud-based LLM providers. This is your authentication key to access the LLM provider's API. You'll need to obtain this key from your chosen provider's platform.
 
@@ -93,7 +94,7 @@ LLM_PROVIDER=openai # Using OpenAI compatible API format for local models
 API_KEY=None      # API Key is not needed for local Ollama
 LLM_NAME=llama3.2:1b
 OPENAI_BASE_URL=http://host.docker.internal:11434/v1 # Default Ollama API URL within Docker
-EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2 # You can also run embeddings locally if needed
+EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2 # runs locally; see Models/embeddings for alternatives
 ```
 
 In this case, even though you are using Ollama locally, `LLM_PROVIDER` is set to `openai` because Ollama (and many other local inference engines) are designed to be API-compatible with OpenAI. `OPENAI_BASE_URL` points DocsGPT to the local Ollama server.
@@ -174,6 +175,30 @@ the built-in catalog — it does **not** fail to start. If a YAML
 declares an unknown provider name or has a schema error, the app
 **does** fail to start, with the offending file path in the message.
 
+## Document Upload Limits
+
+DocsGPT bounds public document and attachment uploads before storage or parsing.
+ZIP limits are cumulative across nested archives. Unsafe archive paths,
+duplicate file entries, encrypted members, symlinks, and other special files
+are rejected. Repeated directory records are ignored, and case-colliding names
+are disambiguated without overwriting either file. Nested archives expand into
+a directory named after the archive; files that merely end in `.zip` remain
+ordinary files.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `UPLOAD_MAX_REQUEST_BYTES` | `268435456` | Maximum request body for a public file-upload route, including multipart overhead. |
+| `UPLOAD_MAX_FILE_BYTES` | `104857600` | Maximum encoded size of one uploaded file or one extracted ZIP member. |
+| `PARSE_SPEC_MAX_BYTES` | `10485760` | Maximum UTF-8 size of an uploaded or JSON API specification. |
+| `UPLOAD_MAX_ARCHIVE_BYTES` | `262144000` | Maximum total uncompressed bytes across all ZIP layers in one extraction. |
+| `UPLOAD_MAX_ARCHIVE_FILES` | `10000` | Maximum total extracted files across all nested layers; directory records do not count. |
+| `UPLOAD_MAX_ARCHIVE_RATIO` | `1000` | Maximum uncompressed-to-compressed expansion ratio for each archive layer. |
+| `UPLOAD_MAX_ARCHIVE_DEPTH` | `3` | Maximum number of nested ZIP layers expanded after the outer archive. |
+
+These byte/count limits and the non-negative nesting depth can be overridden in `.env`.
+The request limit intentionally applies only to public upload routes; internal
+worker index transfers use their own trusted service boundary.
+
 ## Speech-to-Text Settings
 
 DocsGPT can transcribe audio in two places:
@@ -217,6 +242,17 @@ STT_ENABLE_DIARIZATION=false
 
 `faster_whisper` is an optional backend dependency. Install it in the Python environment used by the DocsGPT API and worker before selecting this provider.
 
+## Agent Image Settings
+
+Agent avatars uploaded to DocsGPT must be valid PNG, JPEG, GIF, or WebP files.
+The decoded image and its file extension must agree; SVG and other formats are
+rejected. These limits apply before the image is written to local or S3 storage.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `AGENT_IMAGE_MAX_BYTES` | `5000000` | Maximum encoded avatar file size in bytes. |
+| `AGENT_IMAGE_MAX_PIXELS` | `16777216` | Maximum decoded width × height, limiting decompression-bomb images. |
+
 ## Authentication Settings
 
 DocsGPT includes a JWT (JSON Web Token) based authentication feature for managing sessions or securing local deployments while allowing access.
@@ -237,27 +273,28 @@ The `AUTH_TYPE` setting in your `.env` file or `settings.py` determines the auth
 Add the following to your `.env` file (or set in `settings.py`):
 
 ```env
+# Shared signing key (required in production for every authentication mode)
+JWT_SECRET_KEY=<long-random-value>
+
 # No authentication (default)
 AUTH_TYPE=None
 
 # OR: Simple JWT (shared token)
 AUTH_TYPE=simple_jwt
-JWT_SECRET_KEY=your_secret_key_here
 
 # OR: Session JWT (per-user/session tokens)
 AUTH_TYPE=session_jwt
-JWT_SECRET_KEY=your_secret_key_here
 
 # OR: SSO via an OpenID Connect provider (Authentik, Keycloak, Okta, ...)
 AUTH_TYPE=oidc
 OIDC_ISSUER=https://auth.example.com/application/o/docsgpt/
 OIDC_CLIENT_ID=your_client_id
 OIDC_FRONTEND_URL=https://docsgpt.example.com
-JWT_SECRET_KEY=your_secret_key_here
 ```
 
-- If `AUTH_TYPE` is set to `simple_jwt` or `session_jwt`, a `JWT_SECRET_KEY` is required.
-- If `JWT_SECRET_KEY` is not set, DocsGPT will generate one and store it in `.jwt_secret_key` in the project root.
+- `JWT_SECRET_KEY` signs authentication tokens where applicable and opaque agent-avatar capabilities in every authentication mode, including no-auth mode.
+- Cloud and production deployments must set a strong `JWT_SECRET_KEY`, shared unchanged by every API and worker replica. Startup fails rather than creating replica-local keys when it is missing.
+- Local development may omit it. DocsGPT atomically generates an owner-readable `.jwt_secret_key` in the project root and reuses it on later starts.
 
 #### How Each Method Works
 
@@ -283,7 +320,7 @@ JWT_SECRET_KEY=your_secret_key_here
 
 - Always keep your `JWT_SECRET_KEY` secure and private.
 - If you set it manually, use a strong, random string.
-- If not set, DocsGPT will generate a secure key and persist it in `.jwt_secret_key`.
+- Keep the value stable. Rotating it invalidates active JWTs and previously generated agent-avatar URLs.
 
 #### Checking Current Auth Type
 
@@ -317,7 +354,7 @@ By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 
 | `S3_REGION` | Region (use `auto` for Cloudflare R2) | — |
 | `S3_ENDPOINT_URL` | Custom endpoint for S3-compatible services; leave unset for AWS S3 | — |
 | `S3_PATH_STYLE` | Use path-style addressing (required by most non-AWS services) | `false` |
-| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct object URLs) | `backend` |
+| `URL_STRATEGY` | Artifact-download delivery: `backend` proxies bytes through the API; `s3` returns short-lived presigned object URLs. Agent avatars always use capability URLs and, with S3 storage, redirect to a size-checked presigned URL. | `backend` |
 
 ### AWS S3
 
@@ -406,10 +443,13 @@ See [Embeddings](/Models/embeddings) for full guidance.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `EMBEDDINGS_NAME` | `huggingface_sentence-transformers/all-mpnet-base-v2` | The embedding model. |
+| `EMBEDDINGS_NAME` | `huggingface_sentence-transformers/all-mpnet-base-v2` | The embedding model. New installs use `ibm-granite/granite-embedding-311m-multilingual-r2`. Changing it on a populated index requires `application.scripts.reembed`. |
 | `EMBEDDINGS_BASE_URL` | unset | Base URL of a remote OpenAI-compatible embeddings server. Setting it routes all embedding calls there. |
 | `EMBEDDINGS_KEY` | unset | Optional bearer token for the remote embeddings server. |
 | `EMBEDDINGS_MAX_INPUT_TOKENS` | unset | Truncate each remote embedding input to N tokens (guards servers that reject oversized inputs). |
+| `EMBEDDINGS_DELEGATE_TO_WORKER` | `true` | Embed queries on the Celery worker instead of loading a model in the API. Requires a worker consuming `EMBEDDINGS_QUEUE`; set `false` to run the API standalone. Ignored when `EMBEDDINGS_BASE_URL` is set. |
+| `EMBEDDINGS_QUEUE` | `embeddings` | Queue the query-embedding task is routed to. A worker started with an explicit `-Q` must list it. |
+| `EMBEDDINGS_DELEGATE_TIMEOUT` | `60` | Seconds the API waits for the worker's vector before failing the search. |
 
 ## Tools Settings
 
@@ -437,6 +477,37 @@ See [Access Control, Roles & Teams](/Deploying/Access-Control) for the full mode
 ## Realtime Events Settings
 
 The realtime notifications channel has its own settings — see [Realtime Events & Notifications](/Agents/notifications) (`ENABLE_SSE_PUSH`, `EVENTS_STREAM_MAXLEN`, `SSE_MAX_CONCURRENT_PER_USER`, and related).
+
+## Vector indexes on pgvector
+
+DocsGPT does **not** create a vector index on the `documents` table, and for
+most deployments it should not have one. Exact search is correct and fast well
+past the size most corpora reach, and searches are filtered to a single source
+(`WHERE source_id = ...`) — a filter an approximate index applies only *after*
+picking its candidates.
+
+That combination is what makes a badly-sized index dangerous rather than merely
+slow: the index picks candidates from the whole table, the source filter
+discards them, and the query returns **too few rows or none at all**, silently.
+The model then answers as if the source were empty.
+
+If you have an existing `documents_embedding_idx` from an older version and
+your corpus is small (roughly under 50k vectors), drop it:
+
+```sql
+DROP INDEX IF EXISTS documents_embedding_idx;
+```
+
+DocsGPT still works with one in place — it raises `ivfflat.probes` to
+`sqrt(lists)` automatically and falls back to an exact search whenever an
+indexed search returns fewer rows than the source actually holds. You can pin
+probes explicitly with `PGVECTOR_IVFFLAT_PROBES`.
+
+Only add an index once a corpus is genuinely large, size it to the data you
+actually have (IVFFlat's `lists` guidance is roughly `rows / 1000`), and build
+it **after** the data is loaded — IVFFlat computes its cluster centroids at
+build time, so an index built on an empty table gets random centroids and never
+recovers.
 
 ## Exploring More Settings
 

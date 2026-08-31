@@ -15,11 +15,13 @@ from application.parser.chunking_strategies import (
     SemanticChunker,
 )
 from application.parser.schema.base import Document
-from application.utils import get_encoding
+from application.parser.tokenization import get_token_counter
 
 
 def _tok(text: str) -> int:
-    return len(get_encoding().encode(text))
+    # Chunk budgets are enforced in the embedding model's tokenizer, so a
+    # test that measures them in cl100k measures the wrong thing.
+    return get_token_counter().count(text)
 
 
 @pytest.mark.unit
@@ -115,7 +117,7 @@ class TestParentChild:
     def test_parent_text_reaches_vectorstore_metadata(self):
         chunker = ParentChildChunker(max_tokens=80, min_tokens=20)
         out = chunker.chunk([Document(text="beta " * 150, doc_id="d")])
-        lc = out[0].to_langchain_format()
+        lc = out[0].to_vector_format()
         # parent_text must survive the langchain conversion into metadata.
         assert "parent_text" in lc.metadata
         assert lc.metadata["parent_text"]
@@ -140,6 +142,13 @@ class _FakeEmbeddings:
 
 @pytest.mark.unit
 class TestSemantic:
+    @pytest.fixture(autouse=True)
+    def _no_remote_embeddings(self, monkeypatch):
+        """The resolver short-circuits to the remote API when this is set."""
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "EMBEDDINGS_BASE_URL", None)
+
     def test_breakpoint_forces_split(self):
         # Two topics: sentences 0-1 vs 2-3, orthogonal embeddings between.
         text = "Alpha one. Alpha two. Beta one. Beta two."
@@ -250,3 +259,25 @@ class TestClassicByteIdentical:
         assert [(c.doc_id, c.text, c.extra_info) for c in via] == [
             (c.doc_id, c.text, c.extra_info) for c in direct
         ]
+
+
+@pytest.mark.unit
+class TestSemanticEmbeddingsResolution:
+    def test_uses_shared_resolver(self):
+        """Semantic chunking must resolve embeddings through ``get_embeddings``.
+
+        Calling the singleton directly with the configured name skips the
+        bundled local model and downloads a second copy from the hub.
+        """
+        vectors = [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]]
+        text = "Alpha one. Alpha two. Beta one. Beta two."
+        chunker = SemanticChunker(max_tokens=2000, min_tokens=0)
+
+        with patch(
+            "application.vectorstore.base.get_embeddings",
+            return_value=_FakeEmbeddings(vectors),
+        ) as mock_resolver:
+            out = chunker.chunk([Document(text=text, doc_id="d")])
+
+        mock_resolver.assert_called_once_with()
+        assert len(out) == 2

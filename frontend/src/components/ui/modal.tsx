@@ -1,7 +1,7 @@
 'use client';
 
 import { XIcon } from 'lucide-react';
-import { VisuallyHidden } from 'radix-ui';
+import { Dialog as DialogPrimitive, VisuallyHidden } from 'radix-ui';
 import * as React from 'react';
 
 import {
@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/dialog';
 import { useMediaQuery } from '../../hooks';
 import { cn } from '@/lib/utils';
-import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
 type ModalMobileVariant = 'modal' | 'sheet';

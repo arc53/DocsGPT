@@ -18,6 +18,7 @@ import {
   selectCompletedAttachments,
 } from '../upload/uploadSlice';
 import { newIdempotencyKey } from '../utils/idempotency';
+import { appendThoughtText, recordToolCall } from './answerSegments';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
@@ -159,20 +160,29 @@ export const loadConversation = createAsyncThunk<
 
 export const fetchAnswer = createAsyncThunk<
   Answer,
-  { question: string; indx?: number }
->('fetchAnswer', async ({ question, indx }, { dispatch, getState }) => {
+  { question: string; indx?: number; attachmentIds?: string[] }
+>('fetchAnswer', async (arg, { dispatch, getState }) => {
+  const { question, indx } = arg;
   if (abortController) abortController.abort();
   abortController = new AbortController();
   const { signal } = abortController;
 
   let isSourceUpdated = false;
   const state = getState() as RootState;
-  const attachmentIds = selectCompletedAttachments(state)
-    .filter((a) => a.id)
-    .map((a) => a.id) as string[];
-
-  if (attachmentIds.length > 0) {
-    dispatch(clearAttachments());
+  // Explicit ids (new sends and retries pass the ids bound to the turn)
+  // keep the wire payload in sync with what the query row displays.
+  // The fallback reads the composer state for callers that predate the
+  // argument and consumes it, which loses the ids on a later retry.
+  let attachmentIds: string[];
+  if (arg.attachmentIds !== undefined) {
+    attachmentIds = arg.attachmentIds;
+  } else {
+    attachmentIds = selectCompletedAttachments(state)
+      .filter((a) => a.id)
+      .map((a) => a.id) as string[];
+    if (attachmentIds.length > 0) {
+      dispatch(clearAttachments());
+    }
   }
 
   // Mutable so the SSE handler can adopt a server-assigned id and
@@ -306,6 +316,15 @@ export const fetchAnswer = createAsyncThunk<
                   message: data.notice ?? '',
                 }),
               );
+            } else if (data.type === 'guardrail') {
+              if (data.retract) {
+                dispatch(
+                  conversationSlice.actions.retractResponse({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                  }),
+                );
+              }
             } else if (data.type === 'error') {
               dispatch(conversationSlice.actions.setStatus('failed'));
               dispatch(
@@ -466,6 +485,15 @@ export const fetchAnswer = createAsyncThunk<
                   message: data.notice ?? '',
                 }),
               );
+            } else if (data.type === 'guardrail') {
+              if (data.retract) {
+                dispatch(
+                  conversationSlice.actions.retractResponse({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                  }),
+                );
+              }
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(conversationSlice.actions.setStatus('failed'));
@@ -735,6 +763,18 @@ export const submitToolActions = createAsyncThunk<
             message: data.notice ?? '',
           }),
         );
+      } else if (data.type === 'guardrail') {
+        // A resumed turn is still the same turn: the output guard runs on the
+        // continuation too, so this path needs the same retraction as the
+        // initial stream or the blocked text stays on screen until reload.
+        if (data.retract) {
+          dispatch(
+            conversationSlice.actions.retractResponse({
+              conversationId,
+              index: targetIndex,
+            }),
+          );
+        }
       } else if (data.type === 'error') {
         dispatch(conversationSlice.actions.setStatus('failed'));
         dispatch(
@@ -785,6 +825,7 @@ export const conversationSlice = createSlice({
       delete state.queries[index].thought;
       delete state.queries[index].sources;
       delete state.queries[index].tool_calls;
+      delete state.queries[index].segments;
       delete state.queries[index].error;
       delete state.queries[index].structured;
       delete state.queries[index].schema;
@@ -852,6 +893,8 @@ export const conversationSlice = createSlice({
       if (query.thought != undefined) {
         state.queries[index].thought =
           (state.queries[index].thought || '') + query.thought;
+        if (!state.queries[index].segments) state.queries[index].segments = [];
+        appendThoughtText(state.queries[index].segments, query.thought);
       }
     },
     updateStreamingSource(
@@ -884,6 +927,9 @@ export const conversationSlice = createSlice({
           ...tool_call,
         };
       } else state.queries[index].tool_calls.push(tool_call);
+
+      if (!state.queries[index].segments) state.queries[index].segments = [];
+      recordToolCall(state.queries[index].segments, tool_call.call_id);
     },
     // Records the workflow run id so the answer bubble can render the run's
     // produced artifacts (WorkflowRunArtifacts fetches by this id).
@@ -1006,6 +1052,11 @@ export const conversationSlice = createSlice({
       const { index, tail } = action.payload;
       const query = state.queries[index];
       if (!query) return;
+      // A tail is a flat snapshot with no ordering. The live order is left
+      // alone: dropping it here left the stream reducers rebuilding a partial
+      // one from the next delta, which hid every step that came before. It is
+      // rendering that decides, per answer, whether the recorded order still
+      // accounts for the snapshot or synthesis has to take over.
       const status = tail?.status as MessageStatus | undefined;
       query.messageStatus = status;
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;
@@ -1070,6 +1121,22 @@ export const conversationSlice = createSlice({
       state.queries[index].notice = message;
     },
 
+    retractResponse(
+      state,
+      action: PayloadAction<{ conversationId: string | null; index: number }>,
+    ) {
+      // A guardrail tripped after tokens were already rendered. The backend
+      // has replaced the persisted message with the block message, so drop the
+      // partial answer here too — otherwise the leaked text stays on screen
+      // until reload and contradicts what is in the database.
+      const { conversationId, index } = action.payload;
+      if (state.conversationId !== conversationId) return;
+      if (!state.queries[index]) return;
+
+      state.queries[index].response = '';
+      state.queries[index].thought = '';
+    },
+
     resetConversation: (state) => {
       state.queries = initialState.queries;
       state.status = initialState.status;
@@ -1089,8 +1156,14 @@ export const conversationSlice = createSlice({
         }
         state.status = 'failed';
         if (state.queries.length > 0) {
-          state.queries[state.queries.length - 1].error =
-            'Something went wrong';
+          // Indexed sends (edit/retry) must fail on their own row, not
+          // whatever happens to be last.
+          const indx = action.meta.arg?.indx;
+          const targetIndex =
+            indx !== undefined && indx >= 0 && indx < state.queries.length
+              ? indx
+              : state.queries.length - 1;
+          state.queries[targetIndex].error = 'Something went wrong';
         }
       });
   },
@@ -1117,6 +1190,7 @@ export const {
   setStatus,
   raiseError,
   raiseNotice,
+  retractResponse,
   resetConversation,
   applyMessageTail,
   updateMessageMeta,

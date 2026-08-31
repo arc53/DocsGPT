@@ -49,6 +49,57 @@ export type Agent = {
   folder_id?: string;
   workflow?: string;
   allow_system_prompt_override?: boolean;
+  config?: AgentConfig;
+};
+
+export type GuardrailStage = 'input' | 'retrieval' | 'tool_result' | 'output';
+
+export type GuardrailAction = 'flag' | 'redact' | 'block';
+
+export type GuardrailMode = 'monitor_only' | 'scan_all';
+
+export type GuardrailControl = {
+  check: string;
+  stage: GuardrailStage;
+  action: GuardrailAction;
+  enabled: boolean;
+  settings: Record<string, any>;
+};
+
+export type GuardrailsConfig = {
+  enabled: boolean;
+  mode: GuardrailMode;
+  fail_open: boolean;
+  timeout_ms: number;
+  block_message: string;
+  controls: GuardrailControl[];
+};
+
+export type AgentConfig = {
+  guardrails?: GuardrailsConfig;
+};
+
+export type GuardrailCheckInfo = {
+  name: string;
+  label: string;
+  description: string;
+  stages: GuardrailStage[];
+  supports_redaction: boolean;
+  latency_hint_ms: number;
+  remote: boolean;
+  available: boolean;
+};
+
+export type GuardrailCatalog = {
+  enabled: boolean;
+  checks: GuardrailCheckInfo[];
+  stages: GuardrailStage[];
+  modes: GuardrailMode[];
+  actions_by_stage: Record<GuardrailStage, GuardrailAction[]>;
+  default_block_message: string;
+  pii_entities: string[];
+  default_pii_entities: string[];
+  floor: GuardrailsConfig | null;
 };
 
 export type AgentFolder = {
@@ -61,3 +112,37 @@ export type AgentFolder = {
 
 export * from './schedule';
 export * from './workflow';
+
+export type GuardrailEvent = {
+  id: string;
+  agent_id: string | null;
+  message_id: string | null;
+  request_id: string | null;
+  stage: GuardrailStage;
+  check_name: string;
+  detector_type: string;
+  action: GuardrailAction;
+  outcome: 'triggered' | 'not_evaluated';
+  category: string | null;
+  score: number | null;
+  match_count: number;
+  detail: string | null;
+  created_at: string;
+};
+
+export type GuardrailSummary = {
+  breakdown: {
+    check_name: string;
+    stage: GuardrailStage;
+    action: GuardrailAction;
+    outcome: string;
+    category: string | null;
+    total: number;
+  }[];
+  totals: {
+    blocked: number;
+    flagged: number;
+    redacted: number;
+    not_evaluated: number;
+  };
+};

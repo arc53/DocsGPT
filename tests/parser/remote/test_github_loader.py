@@ -91,9 +91,11 @@ class TestGitHubLoaderLoadData:
         loader = GitHubLoader()
 
         # Stub out network-dependent methods
-        monkeypatch.setattr(loader, "fetch_repo_files", lambda repo, path="": [
-            "README.md", "src/main.py"
-        ])
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
+        monkeypatch.setattr(
+            loader, "fetch_repo_tree",
+            lambda repo, branch: ([("README.md", 10), ("src/main.py", 10)], False),
+        )
 
         def fake_fetch_content(repo, file_path):
             return f"content for {file_path}"
@@ -257,8 +259,10 @@ class TestGitHubLoaderFetchFileContentEdgeCases:
 class TestGitHubLoaderLoadDataSkipsNone:
     def test_skips_binary_files(self, monkeypatch):
         loader = GitHubLoader()
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
         monkeypatch.setattr(
-            loader, "fetch_repo_files", lambda repo, path="": ["a.py", "b.png"]
+            loader, "fetch_repo_tree",
+            lambda repo, branch: ([("a.py", 10), ("b.png", 10)], False),
         )
 
         def fake_content(repo, fp):
@@ -312,3 +316,199 @@ class TestGitHubLoaderRobustness:
         mock_get.return_value = make_response({"encoding": "base64", "content": "AAA"})
         result = GitHubLoader().fetch_file_content("owner/repo", "bigfile.bin")
         assert result is None
+
+
+class TestGitHubLoaderNormalizeRepo:
+    @pytest.mark.parametrize("raw,expected", [
+        ("https://github.com/owner/repo", "owner/repo"),
+        ("https://github.com/owner/repo.git", "owner/repo"),
+        ("https://github.com/owner/repo/", "owner/repo"),
+        ("http://github.com/owner/repo.git/", "owner/repo"),
+        ("owner/repo", "owner/repo"),
+        ("https://github.com/owner/repo/tree/main/sub", "owner/repo"),
+    ])
+    def test_normalizes(self, raw, expected):
+        assert GitHubLoader.normalize_repo(raw) == expected
+
+    def test_rejects_non_repo_url(self):
+        """Regression: a pasted website URL used to be concatenated straight
+        into the contents path and 404-loop."""
+        loader = GitHubLoader()
+        with pytest.raises(ValueError, match="Not a valid GitHub repository"):
+            loader.load_data("https://suat-handbook.netlify.app/")
+
+
+class TestGitHubLoaderSkipPaths:
+    @pytest.mark.parametrize("path", [
+        "node_modules/left-pad/index.js",
+        "web/dist/app.js",
+        "target/scala-2.13/Foo.class",
+        "vendor/github.com/pkg/errors/errors.go",
+        "package-lock.json",
+        "assets/app.min.js",
+        "build/output.map",
+        ".venv/lib/thing.py",
+        "src/__pycache__/mod.pyc",
+    ])
+    def test_skipped(self, path):
+        assert GitHubLoader().should_skip_path(path) is True
+
+    @pytest.mark.parametrize("path", [
+        "README.md",
+        "src/main/scala/zio/ZIO.scala",
+        ".github/workflows/ci.yml",
+        "docs/guide/setup.md",
+        "Cargo.toml",
+    ])
+    def test_kept(self, path):
+        assert GitHubLoader().should_skip_path(path) is False
+
+
+class TestGitHubLoaderIsTextFileAdditions:
+    @pytest.mark.parametrize("path", [
+        "Cargo.toml", "main.go", "app.vue", "schema.proto",
+        "infra.tf", "Dockerfile", "Makefile", "build.gradle",
+    ])
+    def test_newly_recognised_text(self, path):
+        assert GitHubLoader().is_text_file(path) is True
+
+    def test_env_files_are_not_ingested(self):
+        """.env was in the allowlist, so a committed secrets file would be
+        embedded verbatim into the vector index."""
+        loader = GitHubLoader()
+        assert loader.is_text_file("config/.env") is False
+        assert loader.is_text_file(".env") is False
+
+
+class TestGitHubLoaderSelectFiles:
+    def test_applies_size_cap(self, monkeypatch):
+        loader = GitHubLoader()
+        monkeypatch.setattr(
+            "application.parser.remote.github_loader.settings.GITHUB_INGEST_MAX_FILE_BYTES",
+            100, raising=False,
+        )
+        entries = [("small.py", 50), ("huge.py", 5000), ("ok.md", 99)]
+        assert loader.select_files(entries) == ["small.py", "ok.md"]
+
+    def test_zero_cap_disables_limit(self, monkeypatch):
+        loader = GitHubLoader()
+        monkeypatch.setattr(
+            "application.parser.remote.github_loader.settings.GITHUB_INGEST_MAX_FILE_BYTES",
+            0, raising=False,
+        )
+        assert loader.select_files([("huge.py", 10**9)]) == ["huge.py"]
+
+    def test_filters_binaries_and_vendored(self):
+        entries = [
+            ("README.md", 10), ("logo.png", 10),
+            ("node_modules/x/i.js", 10), ("src/a.py", 10),
+        ]
+        assert GitHubLoader().select_files(entries) == ["README.md", "src/a.py"]
+
+
+class TestGitHubLoaderTree:
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_single_request_lists_all_blobs(self, mock_get):
+        mock_get.return_value = make_response({
+            "tree": [
+                {"path": "README.md", "type": "blob", "size": 12},
+                {"path": "src", "type": "tree"},
+                {"path": "src/a.py", "type": "blob", "size": 34},
+            ],
+            "truncated": False,
+        })
+        entries, truncated = GitHubLoader().fetch_repo_tree("owner/repo", "main")
+
+        assert entries == [("README.md", 12), ("src/a.py", 34)]
+        assert truncated is False
+        # One call for the whole repo, versus one per directory before.
+        assert mock_get.call_count == 1
+
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_truncated_tree_falls_back_to_walk(self, mock_get, monkeypatch):
+        loader = GitHubLoader()
+        mock_get.return_value = make_response({"tree": [], "truncated": True})
+        monkeypatch.setattr(
+            loader, "fetch_repo_files", lambda repo, path="": ["README.md"]
+        )
+        assert loader._list_candidate_files("owner/repo", "main") == ["README.md"]
+
+
+class TestGitHubLoaderDefaultBranch:
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_uses_repo_default_branch(self, mock_get):
+        mock_get.return_value = make_response({"default_branch": "master"})
+        assert GitHubLoader().get_default_branch("owner/repo") == "master"
+
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_falls_back_to_main(self, mock_get):
+        mock_get.side_effect = requests.ConnectionError("boom")
+        assert GitHubLoader().get_default_branch("owner/repo") == "main"
+
+    def test_citation_url_uses_real_branch(self, monkeypatch):
+        """Regression: blob/main was hard-coded, so every master-default
+        repo produced dead source links."""
+        loader = GitHubLoader()
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "master")
+        monkeypatch.setattr(
+            loader, "fetch_repo_tree", lambda repo, branch: ([("a.py", 5)], False)
+        )
+        monkeypatch.setattr(loader, "fetch_file_content", lambda r, p: "code")
+
+        docs = loader.load_data("https://github.com/owner/repo")
+        assert docs[0].extra_info["source"] == (
+            "https://github.com/owner/repo/blob/master/a.py"
+        )
+
+
+class TestGitHubLoaderParallelFetch:
+    def test_fetches_in_parallel_and_preserves_order(self, monkeypatch):
+        loader = GitHubLoader()
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
+        paths = [f"f{i}.py" for i in range(10)]
+        monkeypatch.setattr(
+            loader, "fetch_repo_tree",
+            lambda repo, branch: ([(p, 5) for p in paths], False),
+        )
+        monkeypatch.setattr(
+            loader, "fetch_file_content", lambda r, p: f"body {p}"
+        )
+
+        docs = loader.load_data("https://github.com/owner/repo")
+        assert [d.doc_id for d in docs] == paths
+
+    def test_one_bad_file_does_not_sink_the_ingest(self, monkeypatch):
+        loader = GitHubLoader()
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
+        monkeypatch.setattr(
+            loader, "fetch_repo_tree",
+            lambda repo, branch: ([("good.py", 5), ("bad.py", 5)], False),
+        )
+
+        def flaky(repo, path):
+            if path == "bad.py":
+                raise requests.HTTPError("500")
+            return "code"
+        monkeypatch.setattr(loader, "fetch_file_content", flaky)
+
+        docs = loader.load_data("https://github.com/owner/repo")
+        assert [d.doc_id for d in docs] == ["good.py"]
+
+
+class TestGitHubLoaderStaleTokenFallback:
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_401_retries_unauthenticated(self, mock_get):
+        """An expired PAT 401s even public repos; fall back to anonymous
+        rather than failing the ingest outright."""
+        loader = GitHubLoader()
+        loader.access_token = "stale-token"
+        unauthorized = MagicMock(status_code=401)
+        ok = make_response({"ok": True}, 200)
+        mock_get.side_effect = [unauthorized, ok]
+
+        resp = loader._make_request("https://api.github.com/repos/o/r")
+
+        assert resp.status_code == 200
+        assert mock_get.call_count == 2
+        # Second attempt carried no Authorization header.
+        assert "Authorization" not in mock_get.call_args.kwargs["headers"]

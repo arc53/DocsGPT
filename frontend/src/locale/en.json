@@ -8,6 +8,10 @@
   "sourceDocs": "Source",
   "none": "None",
   "cancel": "Cancel",
+  "errorBoundary": {
+    "message": "Something went wrong displaying this content.",
+    "tryAgain": "Try again"
+  },
   "help": "Help",
   "emailUs": "Email us",
   "documentation": "Documentation",
@@ -1031,6 +1035,9 @@
       "importError": "Import failed",
       "willCreate": "Creates a new agent.",
       "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
+      "workflowCreate": "Includes a workflow with {{nodes}} nodes — it will be created for you.",
+      "workflowUpdate": "Includes a workflow with {{nodes}} nodes — your existing workflow will be updated.",
+      "workflowDelete": "Includes no workflow — the agent's existing workflow ({{nodes}} nodes), its run history and its artifacts will be permanently deleted.",
       "sources": "Sources",
       "tools": "Tools",
       "models": "Models",
@@ -1090,7 +1097,11 @@
     },
     "attachments": {
       "attach": "Attach",
-      "remove": "Remove attachment"
+      "remove": "Remove attachment",
+      "waitingToSend_one": "Will send when {{count}} file finishes processing…",
+      "waitingToSend_other": "Will send when {{count}} files finish processing…",
+      "cancelQueuedSend": "Cancel",
+      "sendBlockedByFailed": "{{names}} couldn't be processed — remove to send"
     },
     "retry": "Retry",
     "reasoning": "Reasoning",
@@ -1101,6 +1112,45 @@
       "insert": "Edited wiki page",
       "delete": "Deleted wiki page",
       "rename": "Renamed wiki page",
+      "failed": "failed",
+      "active": {
+        "edited": "Editing wiki…",
+        "create": "Creating wiki page…",
+        "str_replace": "Editing wiki page…",
+        "insert": "Editing wiki page…",
+        "delete": "Deleting wiki page…",
+        "rename": "Renaming wiki page…"
+      }
+    },
+    "streamingStatus": {
+      "thinking": "Thinking…",
+      "generating": "Generating…",
+      "searchingWeb": "Searching the web for “{{query}}”…",
+      "searchingWebGeneric": "Searching the web…",
+      "searchingImages": "Searching images for “{{query}}”…",
+      "readingPage": "Reading {{target}}…",
+      "searchingKnowledge": "Searching knowledge base…",
+      "accessingMemory": "Accessing memory…",
+      "runningCode": "Running code…",
+      "creatingArtifact": "Creating an artifact…",
+      "usingTool": "Using {{tool}}…"
+    },
+    "toolChip": {
+      "searchingWeb": "Searched the web · “{{query}}”",
+      "searchedWebGeneric": "Searched the web",
+      "searchingImages": "Searched images · “{{query}}”",
+      "readingPage": "Read {{target}}",
+      "searchingKnowledge": "Searched knowledge base",
+      "accessingMemory": "Accessed memory",
+      "runningCode": "Ran code",
+      "creatingArtifact": "Created an artifact",
+      "usingTool": "Used {{tool}}"
+    },
+    "inlineSteps": {
+      "arguments": "Arguments",
+      "response": "Response",
+      "running": "Running…",
+      "denied": "Denied by user",
       "failed": "failed"
     }
   },
@@ -1111,6 +1161,8 @@
     "newAgent": "New Agent",
     "importAgent": "Import",
     "exportAgent": "Export as YAML",
+    "exportAgentFailed": "Failed to export agent",
+    "close": "Close",
     "shareWithTeam": "Share with team",
     "backToAll": "Back to all agents",
     "pageHeader": {
@@ -1187,6 +1239,7 @@
         "agentType": "Agent type",
         "models": "Models",
         "advanced": "Advanced",
+        "guardrails": "Guardrails",
         "preview": "Preview"
       },
       "placeholders": {
@@ -1250,7 +1303,62 @@
         "description": "Deleting this agent is permanent and will remove all its schedules and run history.",
         "deleteButton": "Delete agent"
       },
-      "externalKb": "External KB"
+      "externalKb": "External KB",
+      "errors": {
+        "publishFailed": "Could not publish the agent. Please try again.",
+        "saveDraftFailed": "Could not save the draft. Please try again."
+      },
+      "guardrails": {
+        "enable": "Enable guardrails",
+        "enableDescription": "Run the selected checks on this agent's runs",
+        "mode": "Enforcement mode",
+        "monitorHint": "Monitor mode records what would have happened without changing any answer. Start here, review the log, then switch to enforcing.",
+        "checks": "Checks",
+        "latencyHint": "Approximate added latency when this check runs",
+        "notConfigured": "Not configured",
+        "lockedByFloor": "Required by the instance policy and cannot be removed",
+        "configure": "Configure",
+        "blockMessage": "Blocked-response message",
+        "blockMessageDescription": "Shown to the user when a check blocks a request or answer",
+        "failOpen": "Continue if a check fails",
+        "failOpenDescription": "When a check times out or errors, allow the turn through. Turn this off to stop the turn instead.",
+        "timeout": "Check timeout (ms)",
+        "loadError": "Could not load the guardrail catalog",
+        "terms": "Banned terms (one per line)",
+        "termsPlaceholder": "competitor name\ninternal codename",
+        "allowHosts": "Allowed hosts (one per line)",
+        "blockHosts": "Blocked hosts (one per line)",
+        "policyText": "Policy",
+        "minOverlap": "Minimum source overlap",
+        "minWords": "Minimum answer length (words)",
+        "confidence": "Confidence threshold",
+        "confidenceHint": "The judge must both flag the content and be at least this confident (default: 0.7)",
+        "activeCount": "{{count}} active",
+        "needsSetup": "{{count}} need setup",
+        "setupRequired": "Fill in this check's settings before saving.",
+        "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
+        "remove": "Remove",
+        "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
+        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
+        "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
+        "floorControl": "{{stage}}: {{action}} — required by the instance policy",
+        "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
+        "stages": {
+          "input": "User input",
+          "retrieval": "Retrieved sources",
+          "toolResult": "Tool result",
+          "output": "Answer"
+        },
+        "actions": {
+          "flag": "Flag only",
+          "redact": "Redact",
+          "block": "Block"
+        },
+        "modes": {
+          "monitorOnly": "Monitor only",
+          "scanAll": "Enforce everywhere"
+        }
+      }
     },
     "logs": {
       "title": "Agent Logs",
@@ -1350,6 +1458,29 @@
       "currentFolder": "This folder",
       "noSubfolders": "No subfolders",
       "noFolders": "No folders yet"
+    },
+    "guardrailEvents": {
+      "heading": "Guardrail activity",
+      "description": "Every control that fired on this agent, and every one that could not run.",
+      "lastDays": "Last {{count}} days",
+      "blocked": "Blocked",
+      "redacted": "Redacted",
+      "flagged": "Flagged",
+      "notEvaluated": "Not evaluated",
+      "notEvaluatedHint": "The check timed out or errored, so this content was never actually inspected. It is not the same as clean.",
+      "byCheck": "By check",
+      "allChecks": "All checks",
+      "allOutcomes": "All outcomes",
+      "tableHeader": "Guardrail decisions",
+      "when": "When",
+      "check": "Check",
+      "stage": "Stage",
+      "outcome": "Outcome",
+      "detail": "Detail",
+      "empty": "No guardrail has fired on this agent yet.",
+      "emptyForFilter": "No decisions match this filter.",
+      "truncated": "Showing the most recent {{count}} decisions.",
+      "loadError": "Could not load guardrail activity"
     }
   },
   "components": {

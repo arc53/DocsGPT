@@ -476,3 +476,72 @@ describe('attachment race recovery', () => {
     expect(uploadState.attachments[0].status).toBe('failed');
   });
 });
+
+describe('upload race — SSE auto-created duplicate absorbed on sourceId bind', () => {
+  it('merges the orphan row when the upload response binds the sourceId', () => {
+    // Client row exists without a sourceId (upload XHR still in flight)...
+    let state = stateWithTask(
+      makeTask({
+        id: 'client-1',
+        sourceId: undefined,
+        status: 'uploading',
+        fileName: 'doc4.pdf',
+      }),
+    );
+    // ...and the worker's queued event lands first — the slice cannot
+    // match it, so it auto-creates an orphan row keyed by sourceId.
+    state = reducer(
+      state,
+      ingest('source.ingest.queued', { filename: 'doc4.pdf' }),
+    );
+    expect(state.tasks).toHaveLength(2);
+
+    // The XHR response now binds the sourceId to the client row: the
+    // orphan must be absorbed, not left behind as a stuck duplicate.
+    state = reducer(
+      state,
+      updateUploadTask({
+        id: 'client-1',
+        updates: {
+          taskId: 'task-9',
+          sourceId: SOURCE_ID,
+          status: 'training',
+          progress: 0,
+        },
+      }),
+    );
+
+    expect(state.tasks).toHaveLength(1);
+    expect(state.tasks[0].id).toBe('client-1');
+    expect(state.tasks[0].sourceId).toBe(SOURCE_ID);
+  });
+
+  it('keeps the orphan progress and terminal state when it advanced further', () => {
+    let state = stateWithTask(
+      makeTask({ id: 'client-1', sourceId: undefined, status: 'uploading' }),
+    );
+    state = reducer(
+      state,
+      ingest('source.ingest.queued', { filename: 'doc.pdf' }),
+    );
+    state = reducer(
+      state,
+      ingest('source.ingest.progress', { current: 80, stage: 'embedding' }),
+    );
+    state = reducer(state, ingest('source.ingest.completed', {}));
+
+    state = reducer(
+      state,
+      updateUploadTask({
+        id: 'client-1',
+        updates: { sourceId: SOURCE_ID, status: 'training', progress: 0 },
+      }),
+    );
+
+    expect(state.tasks).toHaveLength(1);
+    const task = state.tasks[0];
+    expect(task.id).toBe('client-1');
+    expect(task.status).toBe('completed');
+    expect(task.progress).toBe(100);
+  });
+});

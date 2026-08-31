@@ -1,8 +1,8 @@
 """Base schema for readers."""
 from dataclasses import dataclass
 
-from langchain_core.documents import Document as LCDocument
 from application.parser.schema.schema import BaseDocument
+from application.vectorstore.document_class import Document as VectorDocument
 
 
 @dataclass
@@ -23,12 +23,12 @@ class Document(BaseDocument):
         """Get Document type."""
         return "Document"
 
-    def to_langchain_format(self) -> LCDocument:
-        """Convert struct to LangChain document format."""
+    def to_vector_format(self) -> VectorDocument:
+        """Convert struct to the page_content/metadata shape vector stores take."""
         metadata = self.extra_info or {}
-        return LCDocument(page_content=self.text, metadata=metadata)
+        return VectorDocument(page_content=self.text, metadata=metadata)
 
     @classmethod
-    def from_langchain_format(cls, doc: LCDocument) -> "Document":
-        """Convert struct from LangChain document format."""
+    def from_vector_format(cls, doc: VectorDocument) -> "Document":
+        """Convert struct from the vector-store document shape."""
         return cls(text=doc.page_content, extra_info=doc.metadata)

@@ -1,14 +1,13 @@
 """Prompt management routes."""
 
-import os
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
-from application.api.user.base import current_dir
 from application.api.user.team_sharing import team_access_for, visible_with_access
 from application.storage.db.repositories.prompts import PromptsRepository
+from application.prompts.composer import compose_preset, is_composed_preset
 from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
@@ -109,26 +108,10 @@ class GetSinglePrompt(Resource):
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
         try:
-            if prompt_id == "default":
-                with open(
-                    os.path.join(current_dir, "prompts", "chat_combine_default.txt"),
-                    "r",
-                ) as f:
-                    chat_combine_template = f.read()
-                return make_response(jsonify({"content": chat_combine_template}), 200)
-            elif prompt_id == "creative":
-                with open(
-                    os.path.join(current_dir, "prompts", "chat_combine_creative.txt"),
-                    "r",
-                ) as f:
-                    chat_reduce_creative = f.read()
-                return make_response(jsonify({"content": chat_reduce_creative}), 200)
-            elif prompt_id == "strict":
-                with open(
-                    os.path.join(current_dir, "prompts", "chat_combine_strict.txt"), "r"
-                ) as f:
-                    chat_reduce_strict = f.read()
-                return make_response(jsonify({"content": chat_reduce_strict}), 200)
+            if is_composed_preset(prompt_id):
+                return make_response(
+                    jsonify({"content": compose_preset(prompt_id)}), 200
+                )
             with db_readonly() as conn:
                 repo = PromptsRepository(conn)
                 prompt = repo.get_any(prompt_id, user)
