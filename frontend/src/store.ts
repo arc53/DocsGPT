@@ -50,7 +50,7 @@ const preloadedState: { preference: Preference } = {
         model: '1.0',
         type: 'remote',
         id: 'default',
-        retriever: 'clasic',
+        retriever: 'classic',
       },
     ],
     modalState: 'INACTIVE',
