@@ -1,168 +1,15 @@
 """Tool management routes."""
 
 from flask import current_app, jsonify, make_response, request
-from flask_restx import fields, Namespace, Resource
+from flask_restx import Namespace, Resource, fields
 
-from application.agents.default_tools import (
-    builtin_agent_tools_for_management,
-    BUILTIN_AGENT_TOOLS,
-    default_tool_name_for_id,
-    default_tools_for_management,
-    is_builtin_agent_tool_id,
-    is_default_tool_id,
-    is_synthesized_tool_id,
-    WORKFLOW_ONLY_BUILTINS,
-)
-from application.agents.tools.spec_parser import parse_spec
-from application.agents.tools.tool_manager import ToolManager
+from application.agents.tools import tool_manager
 from application.api import api
-from application.api.user.artifacts.authz import Principal, authorize_artifact
-from application.api.user.team_sharing import effective_write_owner, visible_with_access
-from application.core.settings import settings
-from application.core.url_validation import SSRFError, validate_url
-from application.security.encryption import decrypt_credentials, encrypt_credentials
-from application.storage.db.base_repository import looks_like_uuid
-from application.storage.db.repositories.artifacts import ArtifactsRepository
-from application.storage.db.repositories.notes import NotesRepository
-from application.storage.db.repositories.todos import TodosRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository
-from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
-from application.upload_limits import (
-    read_text_upload_limited,
-    upload_limit_message,
-    UploadTooLargeError,
-)
-from application.utils import check_required_fields, validate_function_name
+from application.utils import check_required_fields
 
-tool_config = {}
-tool_manager = ToolManager(config=tool_config)
-
-
-# ---------------------------------------------------------------------------
-# Shape translation helpers
-# ---------------------------------------------------------------------------
-# The frontend speaks camelCase (``displayName`` / ``customName`` /
-# ``configRequirements``). The PG ``user_tools`` table stores snake_case
-# (``display_name`` / ``custom_name`` / ``config_requirements``). Keep the
-# translation localized to this module so repositories stay pure.
-
-_CAMEL_TO_SNAKE = {
-    "displayName": "display_name",
-    "customName": "custom_name",
-    "configRequirements": "config_requirements",
-}
-_SNAKE_TO_CAMEL = {v: k for k, v in _CAMEL_TO_SNAKE.items()}
-
-
-def _row_to_api(row: dict) -> dict:
-    """Rename DB-native snake_case keys to the camelCase shape the frontend expects."""
-    out = dict(row)
-    for snake, camel in _SNAKE_TO_CAMEL.items():
-        if snake in out:
-            out[camel] = out.pop(snake)
-    # ``user_id`` is exposed as ``user`` in the legacy API shape.
-    if "user_id" in out:
-        out["user"] = out.pop("user_id")
-    return out
-
-
-def _api_to_update_fields(data: dict) -> dict:
-    """Rename incoming camelCase update keys to the repo's snake_case columns."""
-    fields_out: dict = {}
-    for key, value in data.items():
-        fields_out[_CAMEL_TO_SNAKE.get(key, key)] = value
-    return fields_out
-
-
-def _encrypt_secret_fields(config, config_requirements, user_id):
-    secret_keys = [
-        key for key, spec in config_requirements.items()
-        if spec.get("secret") and key in config and config[key]
-    ]
-    if not secret_keys:
-        return config
-
-    storage_config = config.copy()
-    secret_values = {k: config[k] for k in secret_keys}
-    storage_config["encrypted_credentials"] = encrypt_credentials(secret_values, user_id)
-    for key in secret_keys:
-        storage_config.pop(key, None)
-    return storage_config
-
-
-def _validate_config(config, config_requirements, has_existing_secrets=False):
-    errors = {}
-    for key, spec in config_requirements.items():
-        depends_on = spec.get("depends_on")
-        if depends_on:
-            if not all(config.get(dk) == dv for dk, dv in depends_on.items()):
-                continue
-        if spec.get("required") and not config.get(key):
-            if has_existing_secrets and spec.get("secret"):
-                continue
-            errors[key] = f"{spec.get('label', key)} is required"
-        value = config.get(key)
-        if value is not None and value != "":
-            if spec.get("type") == "number":
-                try:
-                    num = float(value)
-                    if key == "timeout" and (num < 1 or num > 300):
-                        errors[key] = "Timeout must be between 1 and 300"
-                except (ValueError, TypeError):
-                    errors[key] = f"{spec.get('label', key)} must be a number"
-            if spec.get("enum") and value not in spec["enum"]:
-                errors[key] = f"Invalid value for {spec.get('label', key)}"
-    return errors
-
-
-def _merge_secrets_on_update(new_config, existing_config, config_requirements, user_id):
-    """Merge incoming config with existing encrypted secrets and re-encrypt.
-
-    For updates, the client may omit unchanged secret values.  This helper
-    decrypts any previously stored secrets, overlays whatever the client *did*
-    send, strips plain-text secrets from the stored config, and re-encrypts
-    the merged result.
-
-    Returns the final ``config`` dict ready for persistence.
-    """
-    secret_keys = [
-        key for key, spec in config_requirements.items()
-        if spec.get("secret")
-    ]
-
-    if not secret_keys:
-        return new_config
-
-    existing_secrets = {}
-    if "encrypted_credentials" in existing_config:
-        existing_secrets = decrypt_credentials(
-            existing_config["encrypted_credentials"], user_id
-        )
-
-    merged_secrets = existing_secrets.copy()
-    for key in secret_keys:
-        if key in new_config and new_config[key]:
-            merged_secrets[key] = new_config[key]
-
-    # Start from existing non-secret values, then overlay incoming non-secrets
-    storage_config = {
-        k: v for k, v in existing_config.items()
-        if k not in secret_keys and k != "encrypted_credentials"
-    }
-    storage_config.update(
-        {k: v for k, v in new_config.items() if k not in secret_keys}
-    )
-
-    if merged_secrets:
-        storage_config["encrypted_credentials"] = encrypt_credentials(
-            merged_secrets, user_id
-        )
-    else:
-        storage_config.pop("encrypted_credentials", None)
-
-    storage_config.pop("has_encrypted_credentials", None)
-    return storage_config
+tools_ns = Namespace("tools", description="Tool management operations", path="/api")
 
 
 def transform_actions(actions_metadata):
@@ -177,13 +24,12 @@ def transform_actions(actions_metadata):
         if "parameters" in action:
             props = action["parameters"].get("properties", {})
             for param_details in props.values():
+                if not isinstance(param_details, dict):
+                    continue
                 param_details["filled_by_llm"] = True
                 param_details["value"] = ""
         transformed.append(action)
     return transformed
-
-
-tools_ns = Namespace("tools", description="Tool management operations", path="/api")
 
 
 @tools_ns.route("/available_tools")
@@ -210,821 +56,223 @@ class AvailableTools(Resource):
                         "actions": actions,
                     }
                 )
-        except Exception as err:
-            current_app.logger.error(
-                f"Error getting available tools: {err}", exc_info=True
-            )
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
+            return make_response(jsonify({"tools": tools_metadata}), 200)
+        except Exception as e:
+            current_app.logger.error(f"Error getting available tools: {e}")
+            return make_response(jsonify({"error": str(e)}), 500)
 
 
-@tools_ns.route("/get_tools")
-class GetTools(Resource):
-    @api.doc(description="Get tools created by a user")
+@tools_ns.route("/tools")
+class UserTools(Resource):
+    @api.doc(description="Get tools for the current user")
     def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         try:
-            decoded_token = request.decoded_token
-            if not decoded_token:
-                return make_response(jsonify({"success": False}), 401)
-            user = decoded_token.get("sub")
             with db_readonly() as conn:
-                tools_repo = UserToolsRepository(conn)
-                rows = tools_repo.list_for_user(user)
-                user_doc = UsersRepository(conn).get(user)
-                owned_ids = {str(r["id"]) for r in rows}
-                # Tools shared with the caller's teams. Secrets are stripped
-                # unconditionally below — a grantee never sees the owner's
-                # credentials (they only run with the owner's creds server-side).
-                team_shared = visible_with_access(conn, user, "tool")
-                shared_ids = [tid for tid in team_shared if tid not in owned_ids]
-                shared_rows = tools_repo.list_by_ids(shared_ids)
-            user_tools = []
+                repo = UserToolsRepository(conn)
+                tools = repo.list_for_user(user)
+            return make_response(jsonify({"tools": tools}), 200)
+        except Exception as e:
+            current_app.logger.error(f"Error getting user tools: {e}")
+            return make_response(jsonify({"error": str(e)}), 500)
 
-            def _shape_tool(row, *, ownership="user", force_strip_secret=False):
-                tool_copy = _row_to_api(row)
-                config_req = tool_copy.get("configRequirements", {})
-                if not config_req:
-                    tool_instance = tool_manager.tools.get(tool_copy.get("name"))
-                    if tool_instance:
-                        config_req = tool_instance.get_config_requirements()
-                        tool_copy["configRequirements"] = config_req
-                has_secrets = any(
-                    spec.get("secret") for spec in config_req.values()
-                ) if config_req else False
-                if (has_secrets or force_strip_secret) and "encrypted_credentials" in tool_copy.get(
-                    "config", {}
-                ):
-                    tool_copy["config"]["has_encrypted_credentials"] = True
-                    tool_copy["config"].pop("encrypted_credentials", None)
-                tool_copy["ownership"] = ownership
-                return tool_copy
-
-            for row in rows:
-                user_tools.append(_shape_tool(row))
-            for row in shared_rows:
-                shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
-                shaped["team_access"] = team_shared.get(str(row["id"]))
-                user_tools.append(shaped)
-
-            # ``scheduler`` is dual-registered (default chat tool + agent-
-            # selectable builtin) and resolves to the same synthetic uuid5 id.
-            # Surface a single row with both flags so the frontend can show it
-            # in the management page (toggle) and the agent picker.
-            seen_ids: set = set()
-            for default_row in default_tools_for_management(user_doc):
-                default_copy = _row_to_api(default_row)
-                default_copy["default"] = True
-                if default_copy.get("name") in BUILTIN_AGENT_TOOLS:
-                    default_copy["builtin"] = True
-                seen_ids.add(str(default_copy["id"]))
-                user_tools.append(default_copy)
-            # Builtins (e.g. scheduler) hidden from Add-Tool catalog, visible
-            # to the agent picker. Skip ones already added via the default
-            # path — both registries share ``_DEFAULT_TOOL_NAMESPACE``.
-            # ``workflow_only`` builtins (e.g. ``read_document``) carry that
-            # flag so the classic picker can hide them and the workflow node
-            # picker can keep them.
-            for builtin_row in builtin_agent_tools_for_management():
-                builtin_copy = _row_to_api(builtin_row)
-                if str(builtin_copy["id"]) in seen_ids:
-                    continue
-                builtin_copy["builtin"] = True
-                builtin_copy["default"] = False
-                builtin_copy["workflow_only"] = (
-                    builtin_copy.get("name") in WORKFLOW_ONLY_BUILTINS
-                )
-                user_tools.append(builtin_copy)
-        except Exception as err:
-            current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True, "tools": user_tools}), 200)
-
-
-@tools_ns.route("/create_tool")
-class CreateTool(Resource):
     @api.expect(
         api.model(
             "CreateToolModel",
             {
-                "name": fields.String(required=True, description="Name of the tool"),
+                "name": fields.String(required=True, description="Tool name"),
                 "displayName": fields.String(
                     required=True, description="Display name for the tool"
                 ),
-                "description": fields.String(
-                    required=True, description="Tool description"
-                ),
-                "config": fields.Raw(
-                    required=True, description="Configuration of the tool"
-                ),
-                "customName": fields.String(
-                    required=False, description="Custom name for the tool"
-                ),
+                "config": fields.Raw(required=True, description="Tool configuration"),
                 "status": fields.Boolean(
-                    required=True, description="Status of the tool"
+                    required=False, default=True, description="Tool status"
                 ),
             },
         )
     )
-    @api.doc(description="Create a new tool")
+    @api.doc(description="Create a new tool for the current user")
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
         data = request.get_json()
-        required_fields = [
-            "name",
-            "displayName",
-            "description",
-            "config",
-            "status",
-        ]
+
+        required_fields = ["name", "displayName", "config"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+
+        tool_name = data["name"]
+        if tool_name not in tool_manager.tools:
+            return make_response(
+                jsonify({"success": False, "error": f"Tool {tool_name} not found"}),
+                404,
+            )
+
         try:
-            if data["name"] == "mcp_tool":
-                server_url = (data.get("config", {}).get("server_url") or "").strip()
-                if server_url:
-                    try:
-                        validate_url(server_url)
-                    except SSRFError:
-                        return make_response(
-                            jsonify({"success": False, "message": "Invalid server URL"}),
-                            400,
-                        )
-            tool_instance = tool_manager.tools.get(data["name"])
-            if not tool_instance:
-                return make_response(
-                    jsonify({"success": False, "message": "Tool not found"}), 404
-                )
+            tool_instance = tool_manager.tools[tool_name]
+            config = data["config"]
             actions_metadata = tool_instance.get_actions_metadata()
             transformed_actions = transform_actions(actions_metadata)
-        except Exception as err:
-            current_app.logger.error(
-                f"Error getting tool actions: {err}", exc_info=True
-            )
-            return make_response(jsonify({"success": False}), 400)
-        try:
-            config_requirements = tool_instance.get_config_requirements()
-            if config_requirements:
-                validation_errors = _validate_config(
-                    data["config"], config_requirements
-                )
-                if validation_errors:
-                    return make_response(
-                        jsonify(
-                            {
-                                "success": False,
-                                "message": "Validation failed",
-                                "errors": validation_errors,
-                            }
-                        ),
-                        400,
-                    )
-            storage_config = _encrypt_secret_fields(
-                data["config"], config_requirements, user
-            )
+
+            display_name = data["displayName"]
+            description = data.get("description", "")
+            status_bool = bool(data.get("status", True))
+
             with db_session() as conn:
-                created = UserToolsRepository(conn).create(
+                repo = UserToolsRepository(conn)
+                created = repo.create(
                     user,
-                    data["name"],
-                    config=storage_config,
-                    custom_name=data.get("customName", ""),
-                    display_name=data["displayName"],
-                    description=data["description"],
-                    config_requirements=config_requirements,
+                    tool_name,
+                    config=config,
+                    custom_name=display_name,
+                    display_name=display_name,
+                    description=description,
+                    config_requirements=tool_instance.get_config_requirements(),
                     actions=transformed_actions,
-                    status=bool(data.get("status", True)),
+                    status=status_bool,
                 )
-            new_id = str(created["id"])
-        except Exception as err:
-            current_app.logger.error(f"Error creating tool: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"id": new_id}), 200)
-
-
-@tools_ns.route("/update_tool")
-class UpdateTool(Resource):
-    @api.expect(
-        api.model(
-            "UpdateToolModel",
-            {
-                "id": fields.String(required=True, description="Tool ID"),
-                "name": fields.String(description="Name of the tool"),
-                "displayName": fields.String(description="Display name for the tool"),
-                "customName": fields.String(description="Custom name for the tool"),
-                "description": fields.String(description="Tool description"),
-                "config": fields.Raw(description="Configuration of the tool"),
-                "actions": fields.List(
-                    fields.Raw, description="Actions the tool can perform"
-                ),
-                "status": fields.Boolean(description="Status of the tool"),
-            },
-        )
-    )
-    @api.doc(description="Update a tool by ID")
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data = request.get_json()
-        required_fields = ["id"]
-        missing_fields = check_required_fields(data, required_fields)
-        if missing_fields:
-            return missing_fields
-        # Default-tool branch first: a dual-registered tool (e.g. ``scheduler``)
-        # matches BOTH ``is_default_tool_id`` and ``is_builtin_agent_tool_id``.
-        # The toggle in Tools settings is the per-user opt-out for the
-        # agentless default — it must reach the ``set_default_tool_enabled``
-        # path, not the builtin "not editable" reject.
-        if is_default_tool_id(data["id"]):
-            if "status" not in data:
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": "Default tools are not editable; "
-                            "only their on/off status can be changed.",
-                        }
-                    ),
-                    400,
-                )
-            tool_name = default_tool_name_for_id(data["id"])
-            try:
-                with db_session() as conn:
-                    UsersRepository(conn).set_default_tool_enabled(
-                        user, tool_name, bool(data["status"])
-                    )
-            except Exception as err:
-                current_app.logger.error(
-                    f"Error updating default tool: {err}", exc_info=True
-                )
-                return make_response(jsonify({"success": False}), 400)
-            return make_response(jsonify({"success": True}), 200)
-        if is_builtin_agent_tool_id(data["id"]):
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Built-in agent tools are not editable; "
-                        "add them to an agent via the agent picker.",
-                    }
-                ),
-                400,
-            )
-        try:
-            update_data: dict = {}
-            for key in ("name", "displayName", "customName", "description", "actions"):
-                if key in data:
-                    update_data[key] = data[key]
-            if "config" in data:
-                if "actions" in data["config"]:
-                    for action_name in list(data["config"]["actions"].keys()):
-                        if not validate_function_name(action_name):
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Invalid function name '{action_name}'. Function names must match pattern '^[a-zA-Z0-9_-]+$'.",
-                                        "param": "tools[].function.name",
-                                    }
-                                ),
-                                400,
-                            )
-                with db_session() as conn:
-                    repo = UserToolsRepository(conn)
-                    tool_doc = repo.get_any(data["id"], user)
-                    if not tool_doc:
-                        return make_response(
-                            jsonify({"success": False, "message": "Tool not found"}),
-                            404,
-                        )
-                    tool_name = tool_doc.get("name", data.get("name"))
-                    tool_instance = tool_manager.tools.get(tool_name)
-                    config_requirements = (
-                        tool_instance.get_config_requirements()
-                        if tool_instance
-                        else {}
-                    )
-                    existing_config = tool_doc.get("config", {}) or {}
-                    has_existing_secrets = "encrypted_credentials" in existing_config
-
-                    if config_requirements:
-                        validation_errors = _validate_config(
-                            data["config"], config_requirements,
-                            has_existing_secrets=has_existing_secrets,
-                        )
-                        if validation_errors:
-                            return make_response(
-                                jsonify({
-                                    "success": False,
-                                    "message": "Validation failed",
-                                    "errors": validation_errors,
-                                }),
-                                400,
-                            )
-
-                    update_data["config"] = _merge_secrets_on_update(
-                        data["config"], existing_config, config_requirements, user
-                    )
-                    if "status" in data:
-                        update_data["status"] = bool(data["status"])
-                    repo.update(
-                        str(tool_doc["id"]), user, _api_to_update_fields(update_data),
-                    )
-            else:
-                if "status" in data:
-                    update_data["status"] = bool(data["status"])
-                with db_session() as conn:
-                    repo = UserToolsRepository(conn)
-                    tool_doc = repo.get_any(data["id"], user)
-                    if not tool_doc:
-                        return make_response(
-                            jsonify({"success": False, "message": "Tool not found"}),
-                            404,
-                        )
-                    repo.update(
-                        str(tool_doc["id"]), user, _api_to_update_fields(update_data),
-                    )
-        except Exception as err:
-            current_app.logger.error(f"Error updating tool: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True}), 200)
-
-
-@tools_ns.route("/update_tool_config")
-class UpdateToolConfig(Resource):
-    @api.expect(
-        api.model(
-            "UpdateToolConfigModel",
-            {
-                "id": fields.String(required=True, description="Tool ID"),
-                "config": fields.Raw(
-                    required=True, description="Configuration of the tool"
-                ),
-            },
-        )
-    )
-    @api.doc(description="Update the configuration of a tool")
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data = request.get_json()
-        required_fields = ["id", "config"]
-        missing_fields = check_required_fields(data, required_fields)
-        if missing_fields:
-            return missing_fields
-        if is_synthesized_tool_id(data["id"]):
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Default and built-in tools are config-free "
-                        "and cannot be configured.",
-                    }
-                ),
-                400,
-            )
-        try:
-            with db_session() as conn:
-                repo = UserToolsRepository(conn)
-                tool_doc = repo.get_any(data["id"], user)
-                if not tool_doc:
-                    return make_response(jsonify({"success": False}), 404)
-
-                tool_name = tool_doc.get("name")
-                if tool_name == "mcp_tool":
-                    server_url = (data["config"].get("server_url") or "").strip()
-                    if server_url:
-                        try:
-                            validate_url(server_url)
-                        except SSRFError:
-                            return make_response(
-                                jsonify({"success": False, "message": "Invalid server URL"}),
-                                400,
-                            )
-                tool_instance = tool_manager.tools.get(tool_name)
-                config_requirements = (
-                    tool_instance.get_config_requirements() if tool_instance else {}
-                )
-                existing_config = tool_doc.get("config", {}) or {}
-                has_existing_secrets = "encrypted_credentials" in existing_config
-
-                if config_requirements:
-                    validation_errors = _validate_config(
-                        data["config"], config_requirements,
-                        has_existing_secrets=has_existing_secrets,
-                    )
-                    if validation_errors:
-                        return make_response(
-                            jsonify({
-                                "success": False,
-                                "message": "Validation failed",
-                                "errors": validation_errors,
-                            }),
-                            400,
-                        )
-
-                final_config = _merge_secrets_on_update(
-                    data["config"], existing_config, config_requirements, user
-                )
-
-                repo.update(str(tool_doc["id"]), user, {"config": final_config})
-        except Exception as err:
-            current_app.logger.error(
-                f"Error updating tool config: {err}", exc_info=True
-            )
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True}), 200)
-
-
-@tools_ns.route("/update_tool_actions")
-class UpdateToolActions(Resource):
-    @api.expect(
-        api.model(
-            "UpdateToolActionsModel",
-            {
-                "id": fields.String(required=True, description="Tool ID"),
-                "actions": fields.List(
-                    fields.Raw,
-                    required=True,
-                    description="Actions the tool can perform",
-                ),
-            },
-        )
-    )
-    @api.doc(description="Update the actions of a tool")
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data = request.get_json()
-        required_fields = ["id", "actions"]
-        missing_fields = check_required_fields(data, required_fields)
-        if missing_fields:
-            return missing_fields
-        if is_synthesized_tool_id(data["id"]):
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Default and built-in tools' actions are not editable.",
-                    }
-                ),
-                400,
-            )
-        try:
-            with db_session() as conn:
-                repo = UserToolsRepository(conn)
-                tool_doc = repo.get_any(data["id"], user)
-                if tool_doc:
-                    repo.update(str(tool_doc["id"]), user, {"actions": data["actions"]})
-                else:
-                    # Team editor write path (secrets stay owner-only — actions
-                    # carry no credentials, so editing them is safe).
-                    owner = effective_write_owner(conn, "tool", data["id"], user)
-                    if not owner:
-                        return make_response(
-                            jsonify({"success": False, "message": "Tool not found"}),
-                            404,
-                        )
-                    repo.update(data["id"], owner, {"actions": data["actions"]})
-        except Exception as err:
-            current_app.logger.error(
-                f"Error updating tool actions: {err}", exc_info=True
-            )
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True}), 200)
-
-
-@tools_ns.route("/update_tool_status")
-class UpdateToolStatus(Resource):
-    @api.expect(
-        api.model(
-            "UpdateToolStatusModel",
-            {
-                "id": fields.String(required=True, description="Tool ID"),
-                "status": fields.Boolean(
-                    required=True, description="Status of the tool"
-                ),
-            },
-        )
-    )
-    @api.doc(description="Update the status of a tool")
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data = request.get_json()
-        required_fields = ["id", "status"]
-        missing_fields = check_required_fields(data, required_fields)
-        if missing_fields:
-            return missing_fields
-        try:
-            # Default branch first so a dual-registered id (e.g. ``scheduler``)
-            # writes the per-user opt-out instead of being rejected as a
-            # not-editable builtin (both predicates match the same uuid5).
-            if is_default_tool_id(data["id"]):
-                tool_name = default_tool_name_for_id(data["id"])
-                with db_session() as conn:
-                    UsersRepository(conn).set_default_tool_enabled(
-                        user, tool_name, bool(data["status"])
-                    )
-                return make_response(jsonify({"success": True}), 200)
-            if is_builtin_agent_tool_id(data["id"]):
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": "Built-in agent tools have no per-user "
-                            "toggle; add them to an agent via the agent picker.",
-                        }
-                    ),
-                    400,
-                )
-            with db_session() as conn:
-                repo = UserToolsRepository(conn)
-                tool_doc = repo.get_any(data["id"], user)
-                if not tool_doc:
-                    return make_response(
-                        jsonify({"success": False, "message": "Tool not found"}),
-                        404,
-                    )
-                repo.update(
-                    str(tool_doc["id"]), user, {"status": bool(data["status"])},
-                )
-        except Exception as err:
-            current_app.logger.error(
-                f"Error updating tool status: {err}", exc_info=True
-            )
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True}), 200)
-
-
-@tools_ns.route("/delete_tool")
-class DeleteTool(Resource):
-    @api.expect(
-        api.model(
-            "DeleteToolModel",
-            {"id": fields.String(required=True, description="Tool ID")},
-        )
-    )
-    @api.doc(description="Delete a tool by ID")
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data = request.get_json()
-        required_fields = ["id"]
-        missing_fields = check_required_fields(data, required_fields)
-        if missing_fields:
-            return missing_fields
-        if is_synthesized_tool_id(data["id"]):
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Built-in tools cannot be deleted; disable them instead.",
-                    }
-                ),
-                400,
-            )
-        try:
-            with db_session() as conn:
-                repo = UserToolsRepository(conn)
-                tool_doc = repo.get_any(data["id"], user)
-                if not tool_doc:
-                    return make_response(
-                        jsonify({"success": False, "message": "Tool not found"}), 404
-                    )
-                repo.delete(str(tool_doc["id"]), user)
-        except Exception as err:
-            current_app.logger.error(f"Error deleting tool: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True}), 200)
-
-
-@tools_ns.route("/parse_spec")
-class ParseSpec(Resource):
-    @api.doc(
-        description="Parse an API specification (OpenAPI 3.x or Swagger 2.0) and return actions"
-    )
-    def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
-            return make_response(jsonify({"success": False}), 401)
-        if "file" in request.files:
-            file = request.files["file"]
-            if not file.filename:
-                return make_response(
-                    jsonify({"success": False, "message": "No file selected"}), 400
-                )
-            try:
-                spec_content = read_text_upload_limited(
-                    file, max_bytes=settings.PARSE_SPEC_MAX_BYTES
-                )
-            except UploadTooLargeError:
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": upload_limit_message(
-                                settings.PARSE_SPEC_MAX_BYTES
-                            ),
-                        }
-                    ),
-                    413,
-                )
-            except UnicodeDecodeError:
-                return make_response(
-                    jsonify({"success": False, "message": "Invalid file encoding"}), 400
-                )
-        elif request.is_json:
-            data = request.get_json()
-            spec_content = data.get("spec_content", "")
-        else:
-            return make_response(
-                jsonify({"success": False, "message": "No spec provided"}), 400
-            )
-        if (
-            not isinstance(spec_content, str)
-            or len(spec_content.encode("utf-8")) > settings.PARSE_SPEC_MAX_BYTES
-        ):
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": upload_limit_message(
-                            settings.PARSE_SPEC_MAX_BYTES
-                        ),
-                    }
-                ),
-                413,
-            )
-        if not spec_content or not spec_content.strip():
-            return make_response(
-                jsonify({"success": False, "message": "Empty spec content"}), 400
-            )
-        try:
-            metadata, actions = parse_spec(spec_content)
             return make_response(
                 jsonify(
                     {
                         "success": True,
-                        "metadata": metadata,
-                        "actions": actions,
+                        "id": str(created["id"]),
+                        "message": "Tool created successfully",
                     }
                 ),
                 200,
             )
-        except ValueError as e:
-            current_app.logger.error(f"Spec validation error: {e}")
-            return make_response(jsonify({"success": False, "error": "Invalid specification format"}), 400)
-        except Exception as err:
-            current_app.logger.error(f"Error parsing spec: {err}", exc_info=True)
-            return make_response(jsonify({"success": False, "error": "Failed to parse specification"}), 500)
+        except Exception as e:
+            current_app.logger.error(f"Error creating tool: {e}", exc_info=True)
+            return make_response(
+                jsonify({"success": False, "error": "Failed to create tool"}), 500
+            )
 
 
-@tools_ns.route("/artifact/<artifact_id>")
-class GetArtifact(Resource):
-    @api.doc(description="Get artifact data by artifact ID. Returns all todos for the tool when fetching a todo artifact.")
-    def get(self, artifact_id: str):
+@tools_ns.route("/tools/<string:tool_id>")
+class UserTool(Resource):
+    @api.doc(description="Get a specific tool")
+    def get(self, tool_id):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
-        user_id = decoded_token.get("sub")
-
+        user = decoded_token.get("sub")
         try:
             with db_readonly() as conn:
-                notes_repo = NotesRepository(conn)
-                todos_repo = TodosRepository(conn)
+                repo = UserToolsRepository(conn)
+                tool = repo.get(tool_id, user)
+            if not tool:
+                return make_response(
+                    jsonify({"success": False, "error": "Tool not found"}), 404
+                )
+            return make_response(jsonify(tool), 200)
+        except Exception as e:
+            current_app.logger.error(f"Error getting tool: {e}")
+            return make_response(jsonify({"error": str(e)}), 500)
 
-                # Artifact IDs may be PG UUIDs (post-cutover) or legacy
-                # Mongo ObjectIds embedded in older conversation history.
-                # Both repos' ``get_any`` handles the id-shape branching
-                # internally so a non-UUID input never reaches
-                # ``CAST(:id AS uuid)`` (which would poison the readonly
-                # transaction and break the fallback below).
-                note_doc = notes_repo.get_any(artifact_id, user_id)
+    @api.doc(description="Update a tool")
+    def put(self, tool_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json()
+        try:
+            update_data = {}
+            if "displayName" in data:
+                update_data["display_name"] = data["displayName"]
+                update_data["custom_name"] = data["displayName"]
+            if "config" in data:
+                update_data["config"] = data["config"]
+            if "status" in data:
+                update_data["status"] = bool(data["status"])
+            if "actions" in data:
+                update_data["actions"] = data["actions"]
 
-                if note_doc:
-                    content = note_doc.get("note", "") or note_doc.get("content", "")
-                    line_count = len(content.split("\n")) if content else 0
-                    updated = note_doc.get("updated_at")
-                    artifact = {
-                        "artifact_type": "note",
-                        "data": {
-                            "content": content,
-                            "line_count": line_count,
-                            "updated_at": (
-                                updated.isoformat()
-                                if hasattr(updated, "isoformat")
-                                else updated
-                            ),
-                        },
-                    }
+            with db_session() as conn:
+                repo = UserToolsRepository(conn)
+                tool = repo.get(tool_id, user)
+                if not tool:
                     return make_response(
-                        jsonify({"success": True, "artifact": artifact}), 200
+                        jsonify({"success": False, "error": "Tool not found"}), 404
                     )
 
-                todo_doc = todos_repo.get_any(artifact_id, user_id)
-                if todo_doc:
-                    tool_id = todo_doc.get("tool_id")
-                    all_todos = todos_repo.list_for_tool(user_id, tool_id) if tool_id else []
-                    items = []
-                    open_count = 0
-                    completed_count = 0
-                    for t in all_todos:
-                        # PG ``todos`` stores a ``completed BOOLEAN`` column;
-                        # the legacy Mongo shape used a ``status`` string.
-                        # Keep the response shape stable by translating here.
-                        status = "completed" if t.get("completed") else "open"
-                        if status == "open":
-                            open_count += 1
-                        else:
-                            completed_count += 1
-                        created = t.get("created_at")
-                        updated = t.get("updated_at")
-                        items.append({
-                            "todo_id": t.get("todo_id"),
-                            "title": t.get("title", ""),
-                            "status": status,
-                            "created_at": (
-                                created.isoformat()
-                                if hasattr(created, "isoformat")
-                                else created
-                            ),
-                            "updated_at": (
-                                updated.isoformat()
-                                if hasattr(updated, "isoformat")
-                                else updated
-                            ),
-                        })
-                    artifact = {
-                        "artifact_type": "todo_list",
-                        "data": {
-                            "items": items,
-                            "total_count": len(items),
-                            "open_count": open_count,
-                            "completed_count": completed_count,
-                        },
-                    }
-                    return make_response(
-                        jsonify({"success": True, "artifact": artifact}), 200
-                    )
+                if "config" in data and tool.get("name") in tool_manager.tools:
+                    tool_instance = tool_manager.tools[tool["name"]]
+                    actions_metadata = tool_instance.get_actions_metadata()
+                    update_data["actions"] = transform_actions(actions_metadata)
 
-                # Generalized document/file artifacts live in the
-                # ``artifacts`` store, authorized by their parent (not user_id).
-                # Shape-gate the UUID lookup so a non-UUID id (legacy note/todo
-                # ObjectId already handled above) never reaches the CAST that
-                # would poison this read-only transaction.
-                artifact_doc = None
-                if looks_like_uuid(artifact_id):
-                    artifacts_repo = ArtifactsRepository(conn)
-                    artifact_doc = artifacts_repo.get_artifact(artifact_id)
-                if artifact_doc and authorize_artifact(
-                    conn, artifact_doc, Principal(user_id=user_id)
-                ):
-                    current = artifacts_repo.get_version(
-                        artifact_id, artifact_doc.get("current_version")
-                    )
-                    artifact = {
-                        "artifact_type": (
-                            "document"
-                            if artifact_doc.get("kind") != "file"
-                            else "file"
-                        ),
-                        "data": {
-                            "id": str(artifact_doc.get("id")),
-                            "kind": artifact_doc.get("kind"),
-                            "title": artifact_doc.get("title"),
-                            "current_version": artifact_doc.get("current_version"),
-                            "mime_type": current.get("mime_type") if current else None,
-                            "filename": current.get("filename") if current else None,
-                            "size": current.get("size") if current else None,
-                            "download_url": (
-                                f"/api/artifacts/{artifact_id}/download"
-                                if current and current.get("storage_path")
-                                else None
-                            ),
-                        },
-                    }
-                    return make_response(
-                        jsonify({"success": True, "artifact": artifact}), 200
-                    )
-        except Exception as err:
-            current_app.logger.error(
-                f"Error retrieving artifact: {err}", exc_info=True
+                repo.update(tool_id, user, update_data)
+
+            return make_response(
+                jsonify({"success": True, "message": "Tool updated successfully"}), 200
             )
-            return make_response(jsonify({"success": False}), 400)
+        except Exception as e:
+            current_app.logger.error(f"Error updating tool: {e}", exc_info=True)
+            return make_response(
+                jsonify({"success": False, "error": "Failed to update tool"}), 500
+            )
 
-        return make_response(
-            jsonify({"success": False, "message": "Artifact not found"}), 404
-        )
+    @api.doc(description="Delete a tool")
+    def delete(self, tool_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_session() as conn:
+                repo = UserToolsRepository(conn)
+                tool = repo.get(tool_id, user)
+                if not tool:
+                    return make_response(
+                        jsonify({"success": False, "error": "Tool not found"}), 404
+                    )
+                repo.delete(tool_id, user)
+            return make_response(
+                jsonify({"success": True, "message": "Tool deleted successfully"}), 200
+            )
+        except Exception as e:
+            current_app.logger.error(f"Error deleting tool: {e}", exc_info=True)
+            return make_response(
+                jsonify({"success": False, "error": "Failed to delete tool"}), 500
+            )
+
+
+@tools_ns.route("/tools/<string:tool_id>/toggle")
+class ToggleTool(Resource):
+    @api.doc(description="Toggle tool status")
+    def post(self, tool_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_session() as conn:
+                repo = UserToolsRepository(conn)
+                tool = repo.get(tool_id, user)
+                if not tool:
+                    return make_response(
+                        jsonify({"success": False, "error": "Tool not found"}), 404
+                    )
+                new_status = not bool(tool.get("status", True))
+                repo.update(tool_id, user, {"status": new_status})
+            return make_response(
+                jsonify(
+                    {
+                        "success": True,
+                        "status": new_status,
+                        "message": f"Tool {'enabled' if new_status else 'disabled'} successfully",
+                    }
+                ),
+                200,
+            )
+        except Exception as e:
+            current_app.logger.error(f"Error toggling tool: {e}", exc_info=True)
+            return make_response(
+                jsonify({"success": False, "error": "Failed to toggle tool"}), 500
+            )
