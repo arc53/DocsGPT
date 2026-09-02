@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -8,6 +9,8 @@ from application.stt.base import BaseSTT
 
 # Placeholder sent to OpenAI-compatible backends that require no credentials.
 NO_API_KEY = "sk-no-key"
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAISTT(BaseSTT):
@@ -32,7 +35,11 @@ class OpenAISTT(BaseSTT):
         timestamps: bool = False,
         diarize: bool = False,
     ) -> Dict[str, Any]:
-        _ = diarize
+        if diarize:
+            logger.warning(
+                "OpenAI STT does not support speaker diarization; "
+                "STT_ENABLE_DIARIZATION has no effect for this provider."
+            )
         request: Dict[str, Any] = {
             "file": file_path,
             "model": self.model,
