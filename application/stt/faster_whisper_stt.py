@@ -1,7 +1,10 @@
+import logging
 from pathlib import Path
 from typing import Dict, Optional
 
 from application.stt.base import BaseSTT
+
+logger = logging.getLogger(__name__)
 
 
 class FasterWhisperSTT(BaseSTT):
@@ -39,7 +42,11 @@ class FasterWhisperSTT(BaseSTT):
         timestamps: bool = False,
         diarize: bool = False,
     ) -> Dict[str, object]:
-        _ = diarize
+        if diarize:
+            logger.warning(
+                "faster-whisper STT does not support speaker diarization; "
+                "STT_ENABLE_DIARIZATION has no effect for this provider."
+            )
         model = self._get_model()
         segments_iter, info = model.transcribe(
             str(file_path),
