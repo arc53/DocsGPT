@@ -62,12 +62,16 @@ from sqlalchemy import create_engine
 _ALEMBIC_INI = Path(__file__).resolve().parent.parent / "application" / "alembic.ini"
 
 
-def _migrate_template_db(host, port, user, dbname, password) -> None:
+def _migrate_template_db(host, port, user, dbname, password, **_loader_options) -> None:
     """Run alembic ``upgrade head`` into the session's template database.
 
     Called once per session by pytest-postgresql's ``load=`` hook (against
     the template DB, before any test runs). Runs in a subprocess so the
     parent process never imports application settings with this URI cached.
+
+    ``**_loader_options`` absorbs keyword arguments newer pytest-postgresql
+    releases pass to loaders (9.0.0 added ``autocommit=``); alembic manages
+    its own connection, so they are irrelevant here.
     """
     url = (
         f"postgresql+psycopg://{user}:{password or ''}@{host}:{port}/{dbname}"
