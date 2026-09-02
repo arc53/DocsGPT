@@ -183,9 +183,10 @@ class Settings(BaseSettings):
     OCR_LANGS: str = "eng"
     OCR_DEEPSEEK_URL: str = "http://localhost:11434/v1/chat/completions"
     OCR_DEEPSEEK_MODEL: str = "deepseek-ocr:3b"
-    # Native backend only: seconds allowed per page request to the DeepSeek
-    # endpoint (pages are sent one at a time). A 3B model on a laptop needs
-    # minutes; a vLLM GPU deployment, seconds.
+    # Seconds allowed per page request to the DeepSeek endpoint, on both
+    # backends (native sends pages one at a time; docling's VLM pipeline
+    # keeps its own concurrency). A 3B model on a laptop needs minutes; a
+    # vLLM GPU deployment, seconds.
     OCR_DEEPSEEK_TIMEOUT: float = 300.0
     # Native backend only: resolution at which pages without a text layer are
     # rendered before OCR. 200 suits tesseract; clamped to 72-600.

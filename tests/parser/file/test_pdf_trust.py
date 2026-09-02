@@ -146,3 +146,79 @@ def test_flate_bomb_streams_are_capped():
 
 def test_verify_pdf_file_unreadable_trusts_output(tmp_path):
     assert verify_pdf_file(tmp_path / "missing.pdf", "text") == []
+
+
+# --- stream scanning is a keyword walk, not a regex -----------------------------
+
+
+class TestStreamWalk:
+    def test_stream_without_eol_before_endstream_is_seen(self):
+        body = zlib.compress(b"<</Type/Font/Subtype/Type0/BaseFont/X>>")
+        data = b"2 0 obj<</Filter/FlateDecode>>stream\n" + body + b"endstream endobj\n"
+        assert check_pdf_fonts(data)["type0"] == 1
+
+    def test_undecodable_stream_does_not_swallow_the_next_one(self):
+        """A non-Flate (image) stream before a font stream must not merge the two."""
+        image = b"3 0 obj<</Filter/DCTDecode>>stream\n\xff\xd8 not zlib at all\nendstream endobj\n"
+        font = _stream(b"<</Type/Font/Subtype/Type0/BaseFont/X/ToUnicode 9 0 R>>")
+        result = check_pdf_fonts(image + font)
+        assert result["type0"] == 1
+        assert result["type0_no_tounicode"] == 0
+
+    def test_crlf_streams_decompress(self):
+        body = zlib.compress(b"/Ordering (GB1)")
+        data = b"2 0 obj<</Filter/FlateDecode>>stream\r\n" + body + b"\r\nendstream endobj\n"
+        assert check_pdf_fonts(data)["expects_cjk"] is True
+
+    def test_large_file_with_many_streams_is_linear(self):
+        """1000 undecodable streams: the old regex went quadratic here."""
+        import time
+
+        chunk = b"9 0 obj<</Length 30>>stream\n" + b"\x00" * 30 + b"endstream endobj\n"
+        data = chunk * 1000 + TYPE0_BARE
+        started = time.perf_counter()
+        result = check_pdf_fonts(data)
+        assert time.perf_counter() - started < 1.0
+        assert result["type0_no_tounicode"] == 1
+
+
+# --- the CJK cross-check is confirmed against pdfium's text layer --------------
+
+
+def _latin_pdf(path: Path) -> Path:
+    import pytest
+
+    pytest.importorskip("reportlab")
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path))
+    c.drawString(72, 700, "Plain English content, nothing else on the page.")
+    c.showPage()
+    c.save()
+    return path
+
+
+def test_stray_cjk_ordering_without_cjk_text_is_not_flagged(tmp_path):
+    """A Quartz-style export declares Japan1 on one unused font: pdfium sees no
+    CJK either, so anydoc dropped nothing and the file must not be rerouted."""
+    import pytest
+
+    pytest.importorskip("pypdfium2")
+    path = _latin_pdf(tmp_path / "latin.pdf")
+    with open(path, "ab") as fh:
+        fh.write(b"\n% trailing junk\n" + _obj(b"<</Registry(Adobe)/Ordering(Japan1)/Supplement 6>>"))
+    markdown = "Plain English content, nothing else on the page."
+
+    # The byte-level check alone still fires...
+    assert any(p.startswith("PDF declares CJK fonts") for p in verify_extraction(path.read_bytes(), markdown))
+    # ...and the file-level check withdraws it.
+    assert [p for p in verify_pdf_file(path, markdown) if p.startswith("PDF declares CJK fonts")] == []
+
+
+def test_real_cjk_drop_survives_the_cross_check():
+    import pytest
+
+    pytest.importorskip("pypdfium2")
+    fixture = FIXTURES / "nda_en_zh_cid_font.pdf"
+    problems = verify_pdf_file(fixture, "English only, the Chinese column is gone.")
+    assert any(p.startswith("PDF declares CJK fonts") for p in problems)

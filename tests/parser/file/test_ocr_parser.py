@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import logging
 import pytest
 
 pytest.importorskip("pypdfium2")
@@ -748,7 +749,7 @@ class TestAnydocMixedDocuments:
             content = parser.parse_file(mixed_pdf)
 
         assert "Digital text page" in content
-        assert "text pages only" in caplog.text
+        assert "skipping that page" in caplog.text
         assert parser.get_file_metadata(mixed_pdf) == {}
 
     def test_all_text_document_never_probes_ocr(self, tmp_path):
@@ -761,3 +762,88 @@ class TestAnydocMixedDocuments:
         parser = AnydocParser(fallback_parser=fallback)
         parser.parse_file(pdf)
         fallback.ocr_pages.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Render budget: an oversized MediaBox must not become a multi-GB bitmap
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRenderBudget:
+    def test_letter_page_is_not_clamped(self):
+        assert op.render_scale(612, 792, 200) == pytest.approx(200 / 72)
+
+    def test_pdf_maximum_page_is_clamped_to_the_budget(self):
+        scale = op.render_scale(14400, 14400, 200)
+        assert scale < 200 / 72
+        assert (14400 * scale) * (14400 * scale) <= op._MAX_RENDER_PIXELS * 1.001
+
+    def test_huge_page_renders_within_budget(self, tmp_path, caplog):
+        """A 14400x14400 pt blank page (the PDF maximum, a few hundred bytes)
+        would be 40000x40000 px = 6 GiB at 200 dpi without the cap."""
+        pytest.importorskip("pypdf")
+        import pypdfium2 as pdfium
+        from pypdf import PdfWriter
+
+        path = tmp_path / "huge.pdf"
+        writer = PdfWriter()
+        writer.add_blank_page(width=14400, height=14400)
+        with open(path, "wb") as fh:
+            writer.write(fh)
+
+        pdf = pdfium.PdfDocument(str(path))
+        try:
+            page = pdf[0]
+            try:
+                with caplog.at_level(logging.WARNING, logger="application.parser.file.ocr_parser"):
+                    image = op._render_page(page, 200)
+            finally:
+                page.close()
+        finally:
+            pdf.close()
+        assert image.width * image.height <= op._MAX_RENDER_PIXELS * 1.001
+        assert "stay within" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Scanned-page probe: thin text layers count only over an image
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestScannedPageProbeImageGate:
+    def _cover_and_figure_pdf(self, path: Path) -> Path:
+        pytest.importorskip("reportlab")
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.utils import ImageReader
+        from reportlab.pdfgen import canvas
+
+        c = canvas.Canvas(str(path), pagesize=letter)
+        # Page 1: a short title and nothing else — not a scan, nothing to OCR.
+        c.setFont("Helvetica", 36)
+        c.drawString(72, 500, "Annual Report 2025")
+        c.showPage()
+        # Page 2: a page number under a full-page raster figure — a scan with a stamp.
+        img = Image.new("RGB", (300, 400), "white")
+        ImageDraw.Draw(img).rectangle((50, 50, 250, 350), outline="black", width=3)
+        c.drawImage(ImageReader(img), 72, 150, width=450, height=600)
+        c.setFont("Helvetica", 10)
+        c.drawString(300, 60, "17")
+        c.showPage()
+        # Page 3: ordinary text.
+        c.setFont("Helvetica", 12)
+        c.drawString(72, 700, "A full paragraph of ordinary body text that anydoc reads directly.")
+        c.showPage()
+        c.save()
+        return path
+
+    def test_short_text_page_without_image_is_not_scanned(self, tmp_path):
+        path = self._cover_and_figure_pdf(tmp_path / "cover.pdf")
+        counts = op.text_layer_counts(path)
+        assert 0 < counts[0] < op.DEFAULT_TEXT_LAYER_MIN_CHARS
+        assert 0 < counts[1] < op.DEFAULT_TEXT_LAYER_MIN_CHARS
+        assert op.scanned_page_indices(path) == [1]
+
+    def test_pages_with_no_text_at_all_still_count(self, tmp_path):
+        assert op.scanned_page_indices(_image_pdf(tmp_path / "scan.pdf", pages=2)) == [0, 1]

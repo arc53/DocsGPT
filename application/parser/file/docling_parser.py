@@ -543,6 +543,10 @@ class DoclingParser(BaseParser):
         vlm_options = vlm_model_specs.DEEPSEEKOCR_OLLAMA.model_copy(deep=True)
         vlm_options.url = settings.OCR_DEEPSEEK_URL
         vlm_options.params["model"] = settings.OCR_DEEPSEEK_MODEL
+        # docling's spec default is 90 s per request, which a laptop-hosted
+        # 3B model overruns; honour the same per-page budget the native
+        # backend gives the endpoint.
+        vlm_options.timeout = float(settings.OCR_DEEPSEEK_TIMEOUT)
         pipeline_options = VlmPipelineOptions(
             vlm_options=vlm_options, enable_remote_services=True
         )
@@ -622,7 +626,12 @@ class DoclingParser(BaseParser):
         tesseract's CJK models space every glyph ("互相 保密 协议"); the native
         backend collapses that in ``TesseractEngine`` and the docling path
         needs the same treatment or Chinese scans index worse here than there.
-        Other engines (and OCR off) return the export untouched.
+        Other engines (and OCR off) return the export untouched. Only the PDF
+        and image parsers construct with OCR on — the office/markup parsers
+        never OCR, so their born-digital text must not be rewritten. On a
+        hybrid-OCR PDF the collapse still covers the whole export, native
+        text included; deliberate spaces inside CJK runs are rare enough
+        there that indexing scans correctly wins.
         """
         if self.ocr_enabled and self._active_ocr_engine == "tesseract":
             return collapse_cjk_spaces(content)
@@ -866,21 +875,21 @@ class DoclingDocxParser(DoclingParser):
     """Docling-based DOCX parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
 
 class DoclingPPTXParser(DoclingParser):
     """Docling-based PPTX parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
 
 class DoclingXLSXParser(DoclingParser):
     """Docling-based XLSX parser with table structure."""
 
     def __init__(self):
-        super().__init__(table_structure=True, export_format="markdown")
+        super().__init__(ocr_enabled=False, table_structure=True, export_format="markdown")
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse an XLSX file, delegating oversized files to ``ExcelParser``."""
@@ -899,7 +908,7 @@ class DoclingHTMLParser(DoclingParser):
     """Docling-based HTML parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse HTML, truncating oversized element-dense markup first."""
@@ -933,7 +942,7 @@ class DoclingCSVParser(DoclingParser):
     """Docling-based CSV parser."""
 
     def __init__(self):
-        super().__init__(table_structure=True, export_format="markdown")
+        super().__init__(ocr_enabled=False, table_structure=True, export_format="markdown")
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse a CSV file, delegating oversized files to the plain ``CSVParser``."""
@@ -952,21 +961,21 @@ class DoclingMarkdownParser(DoclingParser):
     """Docling-based Markdown parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
 
 class DoclingAsciiDocParser(DoclingParser):
     """Docling-based AsciiDoc parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
 
 class DoclingVTTParser(DoclingParser):
     """Docling-based WebVTT (video text tracks) parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse WebVTT, truncating oversized cue-dense tracks first."""
@@ -977,4 +986,4 @@ class DoclingXMLParser(DoclingParser):
     """Docling-based XML parser (USPTO, JATS)."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")

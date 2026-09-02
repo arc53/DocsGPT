@@ -220,7 +220,7 @@ for the engines and flows.
 | `OCR_LANGS` | `eng` | Tesseract language packs, `+`-separated (e.g. `eng+chi_sim+deu`). |
 | `OCR_DEEPSEEK_URL` | `http://localhost:11434/v1/chat/completions` | OpenAI-compatible endpoint for `OCR_ENGINE=deepseek` (Ollama or vLLM). |
 | `OCR_DEEPSEEK_MODEL` | `deepseek-ocr:3b` | Model name at that endpoint. |
-| `OCR_DEEPSEEK_TIMEOUT` | `300` | Native backend: seconds allowed per page request to the DeepSeek endpoint (pages are sent one at a time). |
+| `OCR_DEEPSEEK_TIMEOUT` | `300` | Seconds allowed per page request to the DeepSeek endpoint, on both backends (the native backend sends pages one at a time). |
 | `OCR_RENDER_DPI` | `200` | Native backend: resolution at which pages without a text layer are rendered before OCR (clamped to 72-600). |
 | `OCR_MIN_CHARS_PER_PAGE` | `20` | Chars-per-page floor below which an OCR'd parse is treated as an OCR dropout and fails loudly instead of indexing an empty document; `0` disables. Alias: `DOCLING_OCR_MIN_CHARS_PER_PAGE`. |
 

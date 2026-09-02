@@ -68,6 +68,12 @@ ANYDOC_SUFFIXES: Tuple[str, ...] = (
 # else in ``ANYDOC_SUFFIXES`` is anydoc-only ("gained") and is mapped to a
 # fallback-less ``AnydocParser`` in every parser map.
 _CORE_SUFFIXES = frozenset({".pdf", ".docx", ".pptx", ".xlsx", ".csv"})
+
+# Spreadsheets anydoc may refuse on its fixed, non-configurable limits
+# (2M XML nodes per part, 128 MiB decompressed per part — a ~265k-row sheet
+# trips them) that the plain tabular parsers read fine in a few hundred MB.
+# For these a ResourceLimitError is a reason to delegate, not to fail.
+_TABULAR_SUFFIXES = frozenset({".csv", ".xlsx", ".xlsm", ".xlsb", ".xls", ".ods"})
 ANYDOC_GAINED_SUFFIXES: Tuple[str, ...] = tuple(
     suffix for suffix in ANYDOC_SUFFIXES if suffix not in _CORE_SUFFIXES
 )
@@ -171,9 +177,14 @@ class AnydocParser(BaseParser):
             content = anydoc.to_markdown(str(path))
         except anydoc.ResourceLimitError as exc:
             # anydoc refused because the file is too expensive (declared
-            # decompression size, nesting depth, node count). A heavier
-            # engine would spend exactly what was just refused, so this is
-            # terminal rather than a reason to delegate.
+            # decompression size, nesting depth, node count). For office
+            # documents a heavier engine would spend exactly what was just
+            # refused, so this is terminal. Spreadsheets are the exception:
+            # anydoc's cell/node limits sit below what ordinary business
+            # exports reach, and the tabular fallback (docling's gate hands
+            # oversized sheets to pandas/openpyxl) is lighter, not heavier.
+            if path.suffix.lower() in _TABULAR_SUFFIXES and self.fallback_parser is not None:
+                return self._delegate(path, errors, f"{type(exc).__name__}: {exc}")
             self.last_engine = None
             raise DocumentParseError(
                 f"Failed to parse {path.name}: {type(exc).__name__}: {exc}"
@@ -304,10 +315,13 @@ class AnydocParser(BaseParser):
         Runs only when the fallback parser both has OCR on and exposes
         ``ocr_pages`` (the native OCR PDF parser, or the docling PDF parser).
         With OCR off the fallback is the plain pypdf parser and mixed
-        documents keep today's behaviour: text pages only. An OCR failure is
-        logged and the anydoc text kept — a partial document beats a
-        rejected upload, and the loud-failure path stays reserved for fully
-        scanned files.
+        documents keep today's behaviour: text pages only. Pages are OCR'd
+        one at a time so a failure on one page costs that page, not the OCR
+        of every other; the anydoc text is always kept — a partial document
+        beats a rejected upload, and the loud-failure path stays reserved
+        for fully scanned files. anydoc's PDF markdown carries no page
+        separators, so the OCR'd pages are appended after the text pages
+        rather than spliced into position.
         """
         fallback = self.fallback_parser
         if not (getattr(fallback, "ocr_enabled", False) and hasattr(fallback, "ocr_pages")):
@@ -326,7 +340,6 @@ class AnydocParser(BaseParser):
         try:
             if not fallback.parser_config_set:
                 fallback.init_parser()
-            texts = fallback.ocr_pages(path, indices)
         except Exception:  # noqa: BLE001 - keep the text pages rather than fail the file
             logger.warning(
                 "OCR of the scanned pages of %s failed; indexing the text pages only",
@@ -334,7 +347,20 @@ class AnydocParser(BaseParser):
                 exc_info=True,
             )
             return content
-        extra = [texts[index] for index in indices if texts.get(index, "").strip()]
+        extra: List[str] = []
+        for index in indices:
+            try:
+                text = fallback.ocr_pages(path, [index]).get(index, "")
+            except Exception:  # noqa: BLE001 - one page's failure must not drop the others
+                logger.warning(
+                    "OCR of page %d of %s failed; skipping that page",
+                    index + 1,
+                    path.name,
+                    exc_info=True,
+                )
+                continue
+            if text and text.strip():
+                extra.append(text)
         if not extra:
             return content
         self._last_ocr_pages = (path, len(extra))

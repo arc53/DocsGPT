@@ -165,6 +165,9 @@ def docling_engine(monkeypatch):
     from application.core.settings import settings
 
     monkeypatch.setattr(settings, "DOC_PARSER_ENGINE", "docling")
+    # A developer .env with OCR on (and OCR_BACKEND=native) would otherwise
+    # swap the native OCR parser in for the docling one these tests expect.
+    monkeypatch.setattr(settings, "OCR_ENABLED", False)
 
 
 def test_extractor_defaults_to_docling_for_pdf(docling_engine):

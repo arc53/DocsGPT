@@ -568,7 +568,51 @@ class TestDoclingParserGaps:
 
         parser = DoclingCSVParser()
         assert parser.export_format == "markdown"
-        assert parser.ocr_enabled is True
+        assert parser.ocr_enabled is False
+
+
+@pytest.mark.unit
+class TestNonOcrParsersLeaveTextAlone:
+    """Office/markup docling parsers never OCR, so the tesseract CJK
+    post-processing must not touch their born-digital exports."""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "DoclingDocxParser",
+            "DoclingPPTXParser",
+            "DoclingXLSXParser",
+            "DoclingHTMLParser",
+            "DoclingCSVParser",
+            "DoclingMarkdownParser",
+            "DoclingAsciiDocParser",
+            "DoclingVTTParser",
+            "DoclingXMLParser",
+        ],
+    )
+    def test_ocr_is_off_by_construction(self, name):
+        import application.parser.file.docling_parser as dp
+
+        assert getattr(dp, name)().ocr_enabled is False
+
+    def test_cjk_spaces_survive_in_a_docx_export(self, monkeypatch):
+        from application.core.settings import settings
+        from application.parser.file.docling_parser import DoclingDocxParser
+
+        monkeypatch.setattr(settings, "OCR_ENGINE", "tesseract")
+        parser = DoclingDocxParser()
+        # Simulate what _create_converter records for an OCR-on parser; the
+        # docx parser is OCR-off so the collapse must stay inert regardless.
+        parser._active_ocr_engine = "tesseract"
+        text = "\u5f20 \u4e09 \u548c \u674e \u56db\n\uff21\uff22\uff23 \uff24\uff25\uff26"
+        assert parser._postprocess_ocr_text(text) == text
+
+    def test_pdf_parser_with_tesseract_still_collapses(self):
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        parser._active_ocr_engine = "tesseract"
+        assert parser._postprocess_ocr_text("\u4e92\u76f8 \u4fdd\u5bc6") == "\u4e92\u76f8\u4fdd\u5bc6"
 
 
 # =====================================================================
@@ -1331,11 +1375,11 @@ class TestOCRDropoutGuard:
         assert create.call_count == 1
 
     def test_guard_does_not_apply_to_non_ocr_formats(self):
-        """DOCX parsers inherit ocr_enabled=True but never OCR anything."""
+        """DOCX parsers construct with OCR off: they never OCR anything."""
         from application.parser.file.docling_parser import DoclingDocxParser
 
         parser = DoclingDocxParser()
-        assert parser.ocr_enabled is True
+        assert parser.ocr_enabled is False
         converter = MagicMock()
         converter.convert.return_value = _mock_conversion("Hi", pages=1)
         parser._converter = converter

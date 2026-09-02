@@ -142,14 +142,15 @@ For `deepseek`, point the worker at an OpenAI-compatible endpoint:
 OCR_ENGINE=deepseek
 OCR_DEEPSEEK_URL=http://localhost:11434/v1/chat/completions  # Ollama default
 OCR_DEEPSEEK_MODEL=deepseek-ocr:3b
-OCR_DEEPSEEK_TIMEOUT=300  # native backend: seconds per page
+OCR_DEEPSEEK_TIMEOUT=300  # seconds per page request, both backends
 ```
 
 Ollama works out of the box (`ollama pull deepseek-ocr:3b`); for real
 throughput serve `deepseek-ai/DeepSeek-OCR` with vLLM on a GPU and set the
 URL accordingly. The native backend sends pages one at a time, so a slow
 laptop-hosted model only needs a generous `OCR_DEEPSEEK_TIMEOUT`; docling's
-VLM pipeline uses its own 90 s timeout and four concurrent requests.
+VLM pipeline honours the same timeout per request but keeps its own four
+concurrent requests.
 
 A selected engine that is not available degrades rather than failing parses:
 under docling, a missing tesseract binary or non-macOS `ocrmac` falls back to
@@ -177,7 +178,7 @@ difference matters more than for tesseract:
 - **docling** uses its VLM pipeline, which *replaces* the whole converter:
   every page of every PDF that reaches docling goes to the model, text layer
   or not (a 39-page text PDF measured 721 s against 20 s on the other paths),
-  with four concurrent requests and a fixed 90 s timeout. In testing it also
+  with four concurrent requests and `OCR_DEEPSEEK_TIMEOUT` per request. In testing it also
   dropped page-level elements — a title, an intro paragraph — that the same
   model kept through the native path, and it logs a burst of pydantic
   serialization warnings per conversion. Its one advantage was table

@@ -56,6 +56,12 @@ DEFAULT_TEXT_LAYER_MIN_CHARS = 32
 _DEFAULT_MIN_CHARS_PER_PAGE = 20
 _DEFAULT_RENDER_DPI = 200
 _MIN_RENDER_DPI, _MAX_RENDER_DPI = 72, 600
+# Pixel budget for one rendered page. pypdfium2 allocates width*height*4
+# bytes up front with no cap of its own, so a 14400x14400 pt page (the PDF
+# maximum; a 191-byte file) at 200 dpi would ask for 40000x40000 px = 6 GiB.
+# 40 MP is ~10x a Letter page at 200 dpi and still OCRs an A0 poster at a
+# usable ~125 dpi; anything larger renders at the scale that fits.
+_MAX_RENDER_PIXELS = 40_000_000
 _TESSERACT_TIMEOUT_SECONDS = 300
 # docling's DeepSeek-OCR prompt minus its ``<|grounding|>`` prefix: grounding
 # makes the model wrap every element in ref/det tags with bounding boxes,
@@ -368,9 +374,32 @@ def build_native_ocr_engine(engine: Optional[str] = None, languages: Optional[Li
 # ---------------------------------------------------------------------------
 
 
+def render_scale(page_width_pt: float, page_height_pt: float, dpi: int) -> float:
+    """Render scale for a page of the given size at ``dpi``, capped by ``_MAX_RENDER_PIXELS``.
+
+    The cap is what stands between an oversized (or hostile) MediaBox and a
+    multi-gigabyte bitmap allocation in the ingest worker.
+    """
+    scale = dpi / 72.0
+    area = max(1.0, float(page_width_pt)) * max(1.0, float(page_height_pt))
+    max_scale = (_MAX_RENDER_PIXELS / area) ** 0.5
+    return min(scale, max_scale)
+
+
 def _render_page(page, dpi: int):
-    """Render a pypdfium2 page to a PIL image at ``dpi``."""
-    return page.render(scale=dpi / 72.0).to_pil()
+    """Render a pypdfium2 page to a PIL image at ``dpi``, within the pixel budget."""
+    width_pt, height_pt = page.get_size()
+    scale = render_scale(width_pt, height_pt, dpi)
+    if scale < dpi / 72.0:
+        logger.warning(
+            "Page is %.0fx%.0f pt; rendering at %.0f dpi instead of %d to stay within %d MP",
+            width_pt,
+            height_pt,
+            scale * 72.0,
+            dpi,
+            _MAX_RENDER_PIXELS // 1_000_000,
+        )
+    return page.render(scale=scale).to_pil()
 
 
 def text_layer_counts(path: Path) -> List[int]:
@@ -399,20 +428,54 @@ def text_layer_counts(path: Path) -> List[int]:
     return counts
 
 
+def _page_has_image(page) -> bool:
+    """Whether the page draws at least one image XObject (something OCR could read)."""
+    import pypdfium2.raw as pdfium_c
+
+    try:
+        return next(iter(page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_IMAGE,))), None) is not None
+    except Exception:  # noqa: BLE001 - treat an unreadable page as image-bearing
+        return True
+
+
 def scanned_page_indices(path: Path, min_chars: int = DEFAULT_TEXT_LAYER_MIN_CHARS) -> List[int]:
-    """0-based indices of the pages whose text layer is too thin to be real.
+    """0-based indices of the pages that look scanned: no text layer, or a thin one over an image.
 
     The probe behind mixed-document handling: a text-layer converter (anydoc)
     reads the text pages and silently skips these, so whoever owns OCR has to
-    fill them in. Returns [] when the file cannot be probed — the caller then
-    keeps what it has rather than failing a successful parse.
+    fill them in. A page with no text at all always qualifies. A page with a
+    thin text layer (under ``min_chars``: a Bates stamp on a scan, a page
+    number under a full-page figure) qualifies only when it also draws an
+    image — a cover page reading just "Annual Report 2025" has nothing to OCR,
+    and OCR-ing it would duplicate text the converter already read. Returns []
+    when the file cannot be probed — the caller then keeps what it has rather
+    than failing a successful parse.
     """
+    import pypdfium2 as pdfium
+
+    floor = max(1, int(min_chars))
+    indices: List[int] = []
     try:
-        counts = text_layer_counts(Path(path))
+        pdf = pdfium.PdfDocument(str(path))
+        try:
+            for index in range(len(pdf)):
+                page = pdf[index]
+                try:
+                    textpage = page.get_textpage()
+                    try:
+                        count = max(0, textpage.count_chars())
+                    finally:
+                        textpage.close()
+                    if count == 0 or (count < floor and _page_has_image(page)):
+                        indices.append(index)
+                finally:
+                    page.close()
+        finally:
+            pdf.close()
     except Exception:  # noqa: BLE001 - a probe must never fail the parse
         logger.warning("Could not probe %s for scanned pages", Path(path).name, exc_info=True)
         return []
-    return [index for index, count in enumerate(counts) if count < max(1, int(min_chars))]
+    return indices
 
 
 def _check_near_empty(name: str, engine: str, content: str, pages: int, ocr_pages: int) -> None:

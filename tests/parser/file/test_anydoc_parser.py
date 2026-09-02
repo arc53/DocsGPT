@@ -534,3 +534,81 @@ def test_non_scan_refusals_do_not_trigger_the_guard(tmp_path, monkeypatch):
 
     out = AnydocParser(fallback_parser=_RecordingFallback(result="tiny")).parse_file(path)
     assert out == "tiny"
+
+
+# --- spreadsheets: a resource limit delegates, other formats stay terminal ----
+
+
+def test_resource_limit_on_a_spreadsheet_delegates_to_the_tabular_fallback(tmp_path, monkeypatch):
+    """anydoc refuses a 265k-row sheet on fixed limits that openpyxl/pandas
+    read fine, so for tabular suffixes the limit is a reason to fall back."""
+    fake = _fake_anydoc(monkeypatch, None)
+
+    def _refuse(path):
+        raise fake.ResourceLimitError("resource limit exceeded (max_xml_nodes): 2000000")
+
+    fake.to_markdown = _refuse
+    fallback = _RecordingFallback()
+    parser = AnydocParser(fallback_parser=fallback)
+    path = tmp_path / "big.xlsx"
+    path.write_bytes(b"PK")
+
+    assert parser.parse_file(path) == FALLBACK_TEXT
+    assert fallback.calls == [path]
+    assert parser.last_engine == "_RecordingFallback"
+
+
+def test_resource_limit_on_a_spreadsheet_without_fallback_is_terminal(tmp_path, monkeypatch):
+    fake = _fake_anydoc(monkeypatch, None)
+
+    def _refuse(path):
+        raise fake.ResourceLimitError("resource limit exceeded (max_entry_bytes)")
+
+    fake.to_markdown = _refuse
+    path = tmp_path / "big.xlsx"
+    path.write_bytes(b"PK")
+
+    with pytest.raises(DocumentParseError, match="max_entry_bytes"):
+        AnydocParser().parse_file(path)
+
+
+# --- mixed documents: one page's OCR failure costs that page only ------------
+
+
+class _PerPageOcrFallback(BaseParser):
+    ocr_enabled = True
+
+    def __init__(self, failing_index):
+        super().__init__()
+        self.failing_index = failing_index
+        self.requests = []
+
+    def _init_parser(self):
+        return {}
+
+    def parse_file(self, file, errors="ignore"):
+        return "unused"
+
+    def ocr_pages(self, file, indices):
+        self.requests.append(list(indices))
+        if self.failing_index in indices:
+            raise DocumentParseError("tesseract failed on this page")
+        return {index: f"OCR TEXT PAGE {index + 1}" for index in indices}
+
+
+def test_one_failing_page_does_not_drop_the_other_pages_ocr(tmp_path, monkeypatch):
+    pytest.importorskip("pypdfium2")
+    pytest.importorskip("pypdf")
+    _fake_anydoc(monkeypatch, lambda path: "Text pages read by anydoc.")
+    fallback = _PerPageOcrFallback(failing_index=0)
+    parser = AnydocParser(fallback_parser=fallback)
+    path = _scanned_pdf(tmp_path / "mixed.pdf", pages=3)  # every page probes as scanned
+
+    text = parser.parse_file(path)
+
+    assert fallback.requests == [[0], [1], [2]]
+    assert "OCR TEXT PAGE 1" not in text
+    assert "OCR TEXT PAGE 2" in text and "OCR TEXT PAGE 3" in text
+    assert text.startswith("Text pages read by anydoc.")
+    # (The font-less blank-page fixture also earns a trust-check warning.)
+    assert parser.get_file_metadata(path)["ocr_pages"] == 2

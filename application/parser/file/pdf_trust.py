@@ -27,10 +27,9 @@ silent-drop cases with zero false positives on the other 14 PDFs, and cost
 import re
 import zlib
 from pathlib import Path
-from typing import Dict, Iterator, List, Union
+from typing import Dict, Iterator, List, Optional, Union
 
 _OBJ = re.compile(rb"\d+\s+\d+\s+obj(.*?)endobj", re.DOTALL)
-_STREAM = re.compile(rb"stream\r?\n(.*?)\r?\nendstream", re.DOTALL)
 _TYPE0 = re.compile(rb"/Subtype\s*/Type0")
 # The CJK expectation is keyed on CIDSystemInfo /Ordering ALONE — the
 # authoritative "this PDF maps text through a CJK character collection"
@@ -49,6 +48,7 @@ _WINDOW_BEFORE, _WINDOW_AFTER = 200, 800
 # Extracted text with fewer CJK characters than this, from a PDF that
 # declares CJK fonts, is treated as a silent drop.
 _MIN_CJK_CHARS = 10
+_CJK_PROBLEM_PREFIX = "PDF declares CJK fonts"
 
 _CJK_RANGES = (
     ("一", "鿿"),  # CJK Unified Ideographs
@@ -64,13 +64,46 @@ _CJK_RANGES = (
 _STREAM_INFLATE_CAP = 4_000_000
 
 
+def _stream_bodies(raw: bytes) -> Iterator[bytes]:
+    """The raw bytes between each ``stream`` / ``endstream`` keyword pair.
+
+    A ``find`` walk rather than a regex: ``stream\\r?\\n(.*?)\\r?\\nendstream``
+    misses every stream whose data runs straight into ``endstream`` with no
+    EOL (common in the wild), and when it misses one its lazy group scans on
+    to the *next* stream's terminator — quadratic on large files (a 10 MB
+    file measured 32 s, matching a fifth of its streams) and a merged,
+    undecodable body for the rest.
+    """
+    pos = 0
+    while True:
+        pos = raw.find(b"stream", pos)
+        if pos < 0:
+            return
+        if raw[max(0, pos - 3):pos] == b"end":
+            pos += 6
+            continue
+        start = pos + 6
+        if raw[start:start + 2] == b"\r\n":
+            start += 2
+        elif raw[start:start + 1] in (b"\n", b"\r"):
+            start += 1
+        end = raw.find(b"endstream", start)
+        if end < 0:
+            return
+        body = raw[start:end]
+        if body.endswith(b"\r\n"):
+            body = body[:-2]
+        elif body.endswith((b"\n", b"\r")):
+            body = body[:-1]
+        pos = end + 9
+        yield body
+
+
 def _decompressed_streams(raw: bytes) -> Iterator[bytes]:
     """Each Flate stream in ``raw`` that decompresses, one at a time, capped."""
-    for match in _STREAM.finditer(raw):
+    for body in _stream_bodies(raw):
         try:
-            inflated = zlib.decompressobj().decompress(
-                match.group(1), _STREAM_INFLATE_CAP
-            )
+            inflated = zlib.decompressobj().decompress(body, _STREAM_INFLATE_CAP)
         except zlib.error:
             continue
         yield inflated
@@ -162,16 +195,65 @@ def verify_extraction(data: bytes, markdown: str) -> List[str]:
         cjk = _cjk_chars(markdown, _MIN_CJK_CHARS)
         if cjk < _MIN_CJK_CHARS:
             problems.append(
-                f"PDF declares CJK fonts but the extracted text contains only "
+                f"{_CJK_PROBLEM_PREFIX} but the extracted text contains only "
                 f"{cjk} CJK character(s)"
             )
     return problems
 
 
+def _text_layer_cjk_chars(file: Path, up_to: int) -> Optional[int]:
+    """CJK characters in the text layer as pypdfium2 reads it, stopping at ``up_to``.
+
+    pdfium ships Adobe's predefined CMaps, so it is an independent reference
+    for whether the document *has* CJK text to lose. None when pypdfium2 is
+    unavailable or the file cannot be read that way.
+    """
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        return None
+    try:
+        pdf = pdfium.PdfDocument(str(file))
+    except Exception:  # noqa: BLE001 - a reference probe, not a parse
+        return None
+    count = 0
+    try:
+        for index in range(len(pdf)):
+            page = pdf[index]
+            try:
+                textpage = page.get_textpage()
+                try:
+                    text = textpage.get_text_bounded()
+                finally:
+                    textpage.close()
+            finally:
+                page.close()
+            count += _cjk_chars(text, up_to - count)
+            if count >= up_to:
+                break
+    except Exception:  # noqa: BLE001
+        return None
+    finally:
+        pdf.close()
+    return count
+
+
 def verify_pdf_file(file: Path, markdown: str) -> List[str]:
-    """``verify_extraction`` for a file on disk; unreadable files trust the output."""
+    """``verify_extraction`` for a file on disk; unreadable files trust the output.
+
+    The CJK cross-check is confirmed against pdfium's own text layer: a
+    stray ``/Ordering (Japan1)`` in an otherwise Latin document (a 48-page
+    Quartz export in the corpus carries one among 258 Identity fonts) is not
+    a dropped Chinese column, and must not send the file to a full docling
+    re-parse.
+    """
     try:
         data = Path(file).read_bytes()
     except OSError:
         return []
-    return verify_extraction(data, markdown)
+    problems = verify_extraction(data, markdown)
+    if any(problem.startswith(_CJK_PROBLEM_PREFIX) for problem in problems):
+        reference = _text_layer_cjk_chars(Path(file), _MIN_CJK_CHARS)
+        if reference is not None and reference < _MIN_CJK_CHARS:
+            problems = [p for p in problems if not p.startswith(_CJK_PROBLEM_PREFIX)]
+    return problems
