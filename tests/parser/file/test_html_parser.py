@@ -218,7 +218,7 @@ def test_trim_torn_utf8_tail():
 
 def test_markdown_parser_metadata_reuses_last_parse(tmp_path, rich_html_file, monkeypatch):
     """The metadata call after parse_file must not build the soup again."""
-    import application.parser.file.html_parser as mod
+    from application.parser.file import html_parser as mod
 
     parser = HTMLMarkdownParser()
     parser.parse_file(rich_html_file)
@@ -231,3 +231,48 @@ def test_markdown_parser_metadata_reuses_last_parse(tmp_path, rich_html_file, mo
     other.write_text("<title>Other</title>")
     parser.get_file_metadata(other)
     assert len(calls) == 1
+
+
+# --- second-pass fixes: XML prolog, data URIs, UTF-16 heads ---------------------
+
+
+def test_xml_prolog_does_not_leak_into_markdown(tmp_path):
+    from application.parser.file.html_parser import HTMLMarkdownParser
+
+    path = tmp_path / "doc.xhtml"
+    path.write_bytes(
+        b'<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE html>\n'
+        b'<html xmlns="http://www.w3.org/1999/xhtml"><head><title>T</title></head>'
+        b"<body><h1>Hi</h1><p>para</p><![CDATA[raw]]></body></html>"
+    )
+    text = HTMLMarkdownParser().parse_file(path)
+    assert "xml version" not in text
+    assert "raw" not in text
+    assert text.startswith("# Hi")
+
+
+def test_data_uris_are_stripped_from_images_and_links():
+    payload = "data:image/png;base64," + "A" * 200_000
+    html = (
+        f'<p>before</p><img src="{payload}" alt="chart"><a href="{payload}">dl</a>'
+        f'<img srcset="{payload} 1x" alt="x"><p>after</p>'
+    )
+    text = html_to_markdown(html)
+    assert "AAAA" not in text
+    assert "before" in text and "after" in text
+    assert len(text) < 200
+
+
+def test_utf16_head_keeps_an_even_byte_count(tmp_path, monkeypatch):
+    from application.core.settings import settings
+    from application.parser.file.html_parser import HTMLMarkdownParser, read_markup_head
+
+    body = "".join(f"<p>Zeile {i} Über Größe</p>\n" for i in range(200))
+    path = tmp_path / "wide.html"
+    path.write_bytes(("<html><body>" + body + "</body></html>").encode("utf-16"))  # BOM-prefixed
+    head = read_markup_head(path, 3001)
+    assert len(head) % 2 == 0
+    monkeypatch.setattr(settings, "MARKUP_MAX_BYTES", 3001)
+    text = HTMLMarkdownParser().parse_file(path)
+    assert "Zeile 0 Über Größe" in text
+    assert "\x00" not in text

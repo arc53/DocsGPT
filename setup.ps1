@@ -508,10 +508,17 @@ function Configure-DocProcessing {
         Write-ColorText "PDF-as-image parsing enabled." -ForegroundColor "Green"
     }
 
-    $ocr_enabled = Read-Host "Enable OCR for document processing (Docling)? (y/N)"
+    $ocr_enabled = Read-Host "Enable OCR for scanned PDFs and images? (y/N)"
     if ($ocr_enabled -eq "y" -or $ocr_enabled -eq "Y") {
-        "DOCLING_OCR_ENABLED=true" | Add-Content -Path $ENV_FILE -Encoding utf8
-        Write-ColorText "Docling OCR enabled." -ForegroundColor "Green"
+        "OCR_ENABLED=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-ColorText "OCR enabled (tesseract, shipped in the Docker image; set OCR_ENGINE=deepseek for a DeepSeek-OCR endpoint)." -ForegroundColor "Green"
+        $docling_ocr = Read-Host "Also install the Docling layout engine for OCR (better tables/reading order, several GB heavier)? (y/N)"
+        if ($docling_ocr -eq "y" -or $docling_ocr -eq "Y") {
+            # Honoured by locally built images (docker compose --env-file .env build);
+            # pre-built Docker Hub images do not include docling.
+            "INSTALL_DOCLING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-ColorText "Docling will be built into locally built images (pre-built Docker Hub images are unaffected)." -ForegroundColor "Green"
+        }
     }
 }
 

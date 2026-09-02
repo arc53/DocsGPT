@@ -371,7 +371,7 @@ configure_doc_processing() {
             # Locally built images include docling via this build arg; it becomes
             # the OCR backend automatically (OCR_BACKEND=auto).
             echo "INSTALL_DOCLING=true" >> "$ENV_FILE"
-            echo -e "${GREEN}Docling will be built into locally built images.${NC}"
+            echo -e "${GREEN}Docling will be built into locally built images (docker compose --env-file .env build). Pre-built Docker Hub images do not include it.${NC}"
         fi
     fi
 }

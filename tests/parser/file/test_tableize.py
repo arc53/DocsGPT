@@ -72,3 +72,23 @@ def test_non_table_text_passes_through_verbatim():
     """Only the trailing newline may differ (splitlines/join round-trip)."""
     md = "# Heading\n\nA paragraph with no numbers.\n\n- a list item\n"
     assert tableize(md) == md.rstrip("\n")
+
+
+def test_single_trailing_number_lines_are_not_a_table():
+    """Headings, footnotes and version lists look like 'word number' rows; leave them alone."""
+    from application.parser.file.tableize import tableize
+
+    for block in (
+        "Chapter 1\nChapter 2\nChapter 3",
+        "Footnote 1\nFootnote 2\nFootnote 3",
+        "ISO 9001\nISO 14001\nISO 27001",
+        "Version 2.0\nVersion 3.0\nVersion 4.0",
+    ):
+        assert tableize(block) == block
+
+
+def test_leader_rows_with_one_value_still_convert():
+    from application.parser.file.tableize import tableize
+
+    block = "Revenue ...... 1,234\nCosts ...... 567\nProfit ...... 667"
+    assert "| --- |" in tableize(block)

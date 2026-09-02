@@ -121,19 +121,19 @@ class TestOcrEngineSelection:
         assert _resolve_ocr_engine("easyocr") == "auto"
 
     def test_tesseract_without_binary_degrades_to_auto(self, monkeypatch):
-        import application.parser.file.docling_parser as dp
+        from application.parser.file import docling_parser as dp
 
         monkeypatch.setattr(dp.shutil, "which", lambda name: None)
         assert dp._resolve_ocr_engine("tesseract") == "auto"
 
     def test_tesseract_with_binary_selected(self, monkeypatch):
-        import application.parser.file.docling_parser as dp
+        from application.parser.file import docling_parser as dp
 
         monkeypatch.setattr(dp.shutil, "which", lambda name: "/usr/bin/tesseract")
         assert dp._resolve_ocr_engine("tesseract") == "tesseract"
 
     def test_ocrmac_off_darwin_degrades_to_auto(self, monkeypatch):
-        import application.parser.file.docling_parser as dp
+        from application.parser.file import docling_parser as dp
 
         monkeypatch.setattr(dp.sys, "platform", "linux")
         assert dp._resolve_ocr_engine("ocrmac") == "auto"
@@ -141,7 +141,7 @@ class TestOcrEngineSelection:
     def test_rapidocr_missing_degrades_to_auto(self, monkeypatch):
         import sys
 
-        import application.parser.file.docling_parser as dp
+        from application.parser.file import docling_parser as dp
 
         monkeypatch.setitem(sys.modules, "rapidocr", None)
         assert dp._resolve_ocr_engine("rapidocr") == "auto"
@@ -167,10 +167,13 @@ class TestOcrEngineSelection:
         assert options.lang == ["eng", "chi_sim"]
         assert options.force_full_page_ocr is True
 
-    def test_build_tesseract_explicit_languages_win(self):
+    def test_build_tesseract_explicit_languages_win(self, monkeypatch):
         pytest.importorskip("docling")
+        import application.parser.file.ocr_parser as op
         from application.parser.file.docling_parser import _build_ocr_options
 
+        # Pack inventory unknown: the requested list is passed through untouched.
+        monkeypatch.setattr(op, "tesseract_languages", lambda: None)
         options = _build_ocr_options("tesseract", ["deu"], False)
         assert options.lang == ["deu"]
 
@@ -591,7 +594,7 @@ class TestNonOcrParsersLeaveTextAlone:
         ],
     )
     def test_ocr_is_off_by_construction(self, name):
-        import application.parser.file.docling_parser as dp
+        from application.parser.file import docling_parser as dp
 
         assert getattr(dp, name)().ocr_enabled is False
 
@@ -1673,3 +1676,33 @@ class TestDoclingOcrPages:
         pdf.write_bytes(b"%PDF-1.4")
         with pytest.raises(DocumentParseError, match="page 1 of doc.pdf"):
             parser.ocr_pages(pdf, [0])
+
+
+@pytest.mark.unit
+class TestTesseractLanguageFilter:
+    def test_uninstalled_packs_are_dropped_with_a_warning(self, monkeypatch, caplog):
+        pytest.importorskip("docling")
+        import application.parser.file.ocr_parser as op
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        monkeypatch.setattr(op, "tesseract_languages", lambda: frozenset({"eng", "osd"}))
+        with caplog.at_level("WARNING"):
+            options = _build_ocr_options("tesseract", ["eng", "chi_sim"], False)
+        assert options.lang == ["eng"]
+        assert "chi_sim" in caplog.text
+
+    def test_all_packs_missing_falls_back_to_eng(self, monkeypatch):
+        pytest.importorskip("docling")
+        import application.parser.file.ocr_parser as op
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        monkeypatch.setattr(op, "tesseract_languages", lambda: frozenset({"eng"}))
+        assert _build_ocr_options("tesseract", ["xyz"], False).lang == ["eng"]
+
+    def test_unknown_inventory_keeps_the_list(self, monkeypatch):
+        pytest.importorskip("docling")
+        import application.parser.file.ocr_parser as op
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        monkeypatch.setattr(op, "tesseract_languages", lambda: None)
+        assert _build_ocr_options("tesseract", ["eng", "deu"], False).lang == ["eng", "deu"]

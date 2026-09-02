@@ -196,18 +196,27 @@ def _pick_parser(suffix: str, *, ocr_enabled: bool, engine: str):
 def _legacy_parser_for(suffix: str):
     """Return a non-Docling parser for ``suffix`` (the ``fast`` engine), or None."""
     from application.parser.file.docs_parser import DocxParser, PDFParser
+    from application.parser.file.epub_parser import EpubParser
     from application.parser.file.html_parser import HTMLParser
+    from application.parser.file.json_parser import JSONParser
     from application.parser.file.markdown_parser import MarkdownParser
+    from application.parser.file.pptx_parser import PPTXParser
+    from application.parser.file.rst_parser import RstParser
     from application.parser.file.tabular_parser import ExcelParser, PandasCSVParser
 
     legacy = {
         ".pdf": PDFParser,
         ".docx": DocxParser,
+        ".pptx": PPTXParser,
         ".csv": PandasCSVParser,
         ".xlsx": ExcelParser,
         ".html": HTMLParser,
+        ".xhtml": HTMLParser,
+        ".epub": EpubParser,
         ".md": MarkdownParser,
         ".mdx": MarkdownParser,
+        ".rst": RstParser,
+        ".json": JSONParser,
     }
     cls = legacy.get(suffix)
     return cls() if cls is not None else None
@@ -221,6 +230,17 @@ def _parse_to_text(parser: Any, path: Path) -> str:
     if isinstance(parsed, list):
         return "\n\n".join(str(part) for part in parsed)
     return str(parsed)
+
+
+def _is_native_ocr_parser(parser: Any) -> bool:
+    """True for the native OCR PDF parser (OCR_BACKEND=native): a docling table pass would OCR the scan again."""
+    if parser is None:
+        return False
+    try:
+        from application.parser.file.ocr_parser import NativeOcrPdfParser
+    except Exception:
+        return False
+    return isinstance(parser, NativeOcrPdfParser)
 
 
 def _is_docling_parser(parser: Any) -> bool:
@@ -510,10 +530,17 @@ def _shape(
 
     parser = _pick_parser(suffix, ocr_enabled=ocr_enabled, engine=engine)
     # Tables come from a Docling conversion, so they are only collected when
-    # Docling is the engine in play: under anydoc/fast a table pass would be
-    # a second, full docling conversion that costs more than the whole read.
+    # a Docling parser is actually in play: under anydoc/fast a table pass
+    # would be a second, full docling conversion that costs more than the
+    # whole read, and under OCR_BACKEND=native the PDF parser is the native
+    # OCR parser (docling only as its text_parser), where a vanilla
+    # DocumentConverter pass would OCR the scan a second time with docling's
+    # default engine, ignoring OCR_ENGINE.
     wants_tables = (
-        include_tables and output != "chunks" and _effective_engine(engine) == "docling"
+        include_tables
+        and output != "chunks"
+        and _effective_engine(engine) == "docling"
+        and not _is_native_ocr_parser(parser)
     )
 
     # A Docling-backed parser already converts the whole document to produce its text.
@@ -536,7 +563,16 @@ def _shape(
 
     if parser is None:
         # A whitelisted extension with no dedicated parser (e.g. .txt) reads as plain
-        # text, matching SimpleDirectoryReader's standard-read fallback.
+        # text, matching SimpleDirectoryReader's standard-read fallback. Binary
+        # office formats that only anydoc reads must not: without anydoc they
+        # would come back as OLE/zip bytes decoded as text.
+        from application.parser.file.anydoc_parser import ANYDOC_GAINED_SUFFIXES
+
+        if suffix in ANYDOC_GAINED_SUFFIXES:
+            return {
+                "error": f"No parser is available for {suffix} files: firecrawl-anydoc "
+                "is not installed (pip install firecrawl-anydoc)"
+            }
         text = path.read_text(errors="ignore")
     else:
         text = _parse_to_text(parser, path)

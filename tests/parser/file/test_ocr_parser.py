@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import io
 import logging
 import pytest
 
@@ -46,7 +47,7 @@ def _text_pdf(
     path: Path, pages: int = 1, text: str = "Hello text layer, plenty of characters here.", lines: int = 1
 ) -> Path:
     """A born-digital PDF; ``lines`` paragraphs per page make anydoc classify it as text-based."""
-    reportlab = pytest.importorskip("reportlab")  # noqa: F841
+    pytest.importorskip("reportlab")
     from reportlab.lib.pagesizes import letter
     from reportlab.pdfgen import canvas
 
@@ -847,3 +848,119 @@ class TestScannedPageProbeImageGate:
 
     def test_pages_with_no_text_at_all_still_count(self, tmp_path):
         assert op.scanned_page_indices(_image_pdf(tmp_path / "scan.pdf", pages=2)) == [0, 1]
+
+
+# ---------------------------------------------------------------------------
+# Second-pass fixes: language packs, alpha, animations, image budget, errors
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestTesseractLanguagePacks:
+    def test_missing_pack_with_exit_zero_is_a_typed_error(self, monkeypatch):
+        """tesseract drops a missing pack, exits 0 and OCRs with the rest — that must not pass silently."""
+        monkeypatch.setattr(op.shutil, "which", lambda name: "/usr/bin/tesseract")
+
+        def fake_run(cmd, input=None, capture_output=None, timeout=None, check=None):
+            return subprocess.CompletedProcess(
+                cmd, 0, stdout=b"English only\n",
+                stderr=b"Error opening data file /usr/share/tessdata/chi_sim.traineddata\n",
+            )
+
+        monkeypatch.setattr(op.subprocess, "run", fake_run)
+        engine = op.TesseractEngine(languages=["eng", "chi_sim"])
+        with pytest.raises(op.OcrUnavailableError, match="chi_sim"):
+            engine.ocr_image(Image.new("RGB", (10, 10), "white"))
+
+    def test_list_langs_is_parsed(self, monkeypatch):
+        op.tesseract_languages.cache_clear()
+        monkeypatch.setattr(op.shutil, "which", lambda name: "/usr/bin/tesseract")
+
+        def fake_run(cmd, capture_output=None, timeout=None, check=None):
+            return subprocess.CompletedProcess(
+                cmd, 0, stdout=b"List of available languages in /usr/share/tessdata/ (3):\nchi_sim\neng\nosd\n", stderr=b""
+            )
+
+        monkeypatch.setattr(op.subprocess, "run", fake_run)
+        try:
+            assert op.tesseract_languages() == frozenset({"chi_sim", "eng", "osd"})
+        finally:
+            op.tesseract_languages.cache_clear()
+
+
+@pytest.mark.unit
+class TestImageNormalisation:
+    def test_transparent_background_is_flattened_to_white(self):
+        rgba = Image.new("RGBA", (4, 4), (0, 0, 0, 0))
+        rgba.putpixel((1, 1), (0, 0, 0, 255))  # one black "text" pixel
+        flat = Image.open(io.BytesIO(op._png_bytes(rgba)))
+        assert flat.mode == "RGB"
+        assert flat.getpixel((0, 0)) == (255, 255, 255)
+        assert flat.getpixel((1, 1)) == (0, 0, 0)
+
+    def test_palette_transparency_is_flattened(self):
+        pal = Image.new("P", (2, 2), 0)
+        pal.info["transparency"] = 0
+        flat = Image.open(io.BytesIO(op._png_bytes(pal)))
+        assert flat.getpixel((0, 0)) == (255, 255, 255)
+
+    def test_oversized_image_is_downscaled_to_the_budget(self, caplog):
+        big = Image.new("L", (9000, 9000), 255)
+        with caplog.at_level(logging.WARNING, logger="application.parser.file.ocr_parser"):
+            small = op.fit_to_pixel_budget(big)
+        assert small.width * small.height <= op._MAX_RENDER_PIXELS
+        assert "downscaling" in caplog.text
+
+    def test_small_image_is_untouched(self):
+        img = Image.new("RGB", (300, 200), "white")
+        assert op.fit_to_pixel_budget(img) is img
+
+    def test_animated_gif_ocrs_only_the_first_frame(self, tmp_path):
+        frames = [Image.new("RGB", (20, 20), "white") for _ in range(5)]
+        gif = tmp_path / "anim.gif"
+        frames[0].save(gif, save_all=True, append_images=frames[1:], duration=50, loop=0)
+        engine = FakeEngine(["frame text"])
+        parser = op.NativeOcrImageParser(engine=engine)
+        assert parser.parse_file(gif) == "frame text"
+        assert parser.get_file_metadata(gif)["ocr_pages"] == 1
+
+    def test_multi_page_tiff_still_reads_every_frame(self, tmp_path):
+        frames = [Image.new("L", (20, 20), 255) for _ in range(3)]
+        tiff = tmp_path / "fax.tiff"
+        frames[0].save(tiff, save_all=True, append_images=frames[1:])
+        parser = op.NativeOcrImageParser(engine=FakeEngine(["a", "b", "c"]))
+        assert parser.parse_file(tiff) == "a\n\nb\n\nc"
+
+
+@pytest.mark.unit
+class TestDeepseekErrorShapes:
+    def test_non_json_body_is_reported_as_such(self, monkeypatch):
+        import requests
+
+        class _Resp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                raise requests.exceptions.JSONDecodeError("Expecting value", "<html>", 0)
+
+        monkeypatch.setattr(requests, "post", lambda *a, **k: _Resp())
+        engine = op.DeepseekOcrEngine(url="http://proxy.local/v1/chat/completions", model="m")
+        with pytest.raises(DocumentParseError, match="non-JSON body"):
+            engine.ocr_image(Image.new("RGB", (5, 5), "white"))
+
+
+@pytest.mark.unit
+def test_delegate_parse_lets_setup_errors_through():
+    """A fallback whose dependency is missing is a deployment problem, not a bad file."""
+    from application.parser.file.base_parser import BaseParser, delegate_parse
+
+    class _NeedsLib(BaseParser):
+        def _init_parser(self):
+            raise ImportError("docling is required")
+
+        def parse_file(self, file, errors="ignore"):
+            return "never"
+
+    with pytest.raises(ImportError, match="docling is required"):
+        delegate_parse(_NeedsLib(), Path("x.pdf"), "ignore")

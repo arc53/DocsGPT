@@ -23,6 +23,7 @@ tesseract binary alone, and one that does install it keeps today's
 behaviour unchanged.
 """
 import base64
+import functools
 import io
 import logging
 import re
@@ -63,6 +64,11 @@ _MIN_RENDER_DPI, _MAX_RENDER_DPI = 72, 600
 # usable ~125 dpi; anything larger renders at the scale that fits.
 _MAX_RENDER_PIXELS = 40_000_000
 _TESSERACT_TIMEOUT_SECONDS = 300
+# tesseract reports a missing language pack on stderr and, when at least one
+# other requested pack loads, exits 0 and silently OCRs with what it has —
+# so the exit code alone cannot catch OCR_LANGS=eng+chi_sim without chi_sim.
+_TESSERACT_LANG_ERROR_RE = re.compile(r"Error opening data file|Failed loading language")
+_TESSERACT_LANG_RE = re.compile(r"^[A-Za-z0-9_/\-]+$")
 # docling's DeepSeek-OCR prompt minus its ``<|grounding|>`` prefix: grounding
 # makes the model wrap every element in ref/det tags with bounding boxes,
 # which docling parses back into a layout tree. Plain Markdown is what the
@@ -91,7 +97,6 @@ class OcrEngine(Protocol):
 
     def ocr_image(self, image) -> str:  # pragma: no cover - protocol
         """Return the text (or Markdown) recognised in ``image`` (a PIL image)."""
-        ...
 
 
 # ---------------------------------------------------------------------------
@@ -181,13 +186,78 @@ def render_dpi() -> int:
     return max(_MIN_RENDER_DPI, min(_MAX_RENDER_DPI, dpi))
 
 
+def _has_alpha(image) -> bool:
+    return "A" in image.getbands() or (image.mode == "P" and "transparency" in image.info)
+
+
 def _png_bytes(image) -> bytes:
-    """Encode a PIL image as PNG, flattening modes the engines cannot take."""
-    if image.mode not in ("RGB", "L"):
+    """Encode a PIL image as PNG, flattening modes the engines cannot take.
+
+    Transparency is composited onto white: a plain ``convert("RGB")`` drops
+    the alpha channel and leaves transparent pixels black, which turns dark
+    text on a transparent background into an all-black page that OCRs to
+    nothing.
+    """
+    from PIL import Image
+
+    if _has_alpha(image):
+        rgba = image.convert("RGBA")
+        canvas = Image.new("RGB", rgba.size, "white")
+        canvas.paste(rgba, mask=rgba.getchannel("A"))
+        image = canvas
+    elif image.mode not in ("RGB", "L"):
         image = image.convert("RGB")
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def fit_to_pixel_budget(image):
+    """Downscale a decoded image to ``_MAX_RENDER_PIXELS`` before OCR.
+
+    The same budget the PDF renderer applies: a 28 KB PNG can decode to
+    81 MP (Pillow's bomb guard only trips at ~178 MP), and every extra
+    pixel is paid again in the PNG re-encode and inside tesseract.
+    """
+    from PIL import Image
+
+    width, height = image.size
+    scale = render_scale(width, height, 72)
+    if scale >= 1.0:
+        return image
+    if image.mode not in ("RGB", "L", "RGBA", "LA"):
+        image = image.convert("RGBA" if _has_alpha(image) else "RGB")
+    logger.warning(
+        "Image is %dx%d px; downscaling to %.0f%% to stay within %d MP before OCR",
+        width,
+        height,
+        scale * 100,
+        _MAX_RENDER_PIXELS // 1_000_000,
+    )
+    return image.resize(
+        (max(1, int(width * scale)), max(1, int(height * scale))), Image.Resampling.BILINEAR
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def tesseract_languages() -> Optional[frozenset]:
+    """Language packs the ``tesseract`` binary reports (``--list-langs``), or None when unknown.
+
+    Cached for the process: packs are installed with the image, not at runtime.
+    """
+    if shutil.which("tesseract") is None:
+        return None
+    try:
+        completed = subprocess.run(
+            ["tesseract", "--list-langs"], capture_output=True, timeout=30, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    output = completed.stdout.decode("utf-8", "replace") + "\n" + completed.stderr.decode("utf-8", "replace")
+    langs = frozenset(
+        line.strip() for line in output.splitlines() if _TESSERACT_LANG_RE.match(line.strip())
+    )
+    return langs or None
 
 
 # ---------------------------------------------------------------------------
@@ -261,9 +331,17 @@ class TesseractEngine:
             raise DocumentParseError(f"tesseract timed out after {self.timeout:.0f}s on a page") from exc
         except OSError as exc:
             raise DocumentParseError(f"tesseract could not be started: {exc}") from exc
+        stderr = completed.stderr.decode("utf-8", "replace").strip()
+        if _TESSERACT_LANG_ERROR_RE.search(stderr):
+            # Exit code 0 here means tesseract dropped the missing pack and
+            # OCR'd with the rest: Chinese scans would come out as garbage
+            # with no signal. Fail the file and name the fix instead.
+            raise OcrUnavailableError(
+                f"tesseract could not load a language pack for OCR_LANGS={self._language_arg()!r}: "
+                f"{stderr[:300]}. Install the tesseract-ocr-<lang> package for every language listed."
+            )
         if completed.returncode != 0:
-            detail = completed.stderr.decode("utf-8", "replace").strip()[:300]
-            raise DocumentParseError(f"tesseract failed (exit {completed.returncode}): {detail}")
+            raise DocumentParseError(f"tesseract failed (exit {completed.returncode}): {stderr[:300]}")
         return collapse_cjk_spaces(completed.stdout.decode("utf-8", "replace")).strip()
 
 
@@ -343,13 +421,15 @@ class DeepseekOcrEngine:
             response = requests.post(self.url, json=self.payload(image), timeout=self.timeout)
             response.raise_for_status()
             body = response.json()
+        except requests.exceptions.JSONDecodeError as exc:
+            # Subclasses RequestException too, so it must be caught first or a
+            # proxy's HTML error page is reported as a connection failure.
+            raise DocumentParseError(f"DeepSeek-OCR endpoint {self.url} returned a non-JSON body") from exc
         except requests.RequestException as exc:
             raise DocumentParseError(
                 f"DeepSeek-OCR request to {self.url} failed: {exc}. Check OCR_DEEPSEEK_URL "
                 f"and that model {self.model!r} is served (e.g. `ollama pull {self.model}`)."
             ) from exc
-        except ValueError as exc:
-            raise DocumentParseError(f"DeepSeek-OCR endpoint {self.url} returned a non-JSON body") from exc
         try:
             content = body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
@@ -433,7 +513,10 @@ def _page_has_image(page) -> bool:
     import pypdfium2.raw as pdfium_c
 
     try:
-        return next(iter(page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_IMAGE,))), None) is not None
+        # pypdfium2's default max_depth=2 misses images inside nested Form
+        # XObjects, which print drivers and InDesign produce routinely.
+        objects = page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_IMAGE,), max_depth=16)
+        return next(iter(objects), None) is not None
     except Exception:  # noqa: BLE001 - treat an unreadable page as image-bearing
         return True
 
@@ -663,7 +746,7 @@ class NativeOcrPdfParser(BaseParser):
                     if counts[index] >= self.min_text_chars:
                         textpage = page.get_textpage()
                         try:
-                            text = textpage.get_text_range()
+                            text = textpage.get_text_bounded()
                         finally:
                             textpage.close()
                     else:
@@ -723,6 +806,12 @@ class NativeOcrImageParser(BaseParser):
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """OCR an image file.
 
+        Only TIFF frames are pages (multi-page faxes and scans); every other
+        multi-frame format is an animation (GIF, WebP, APNG) whose frames
+        repeat one picture, so only the first is OCR'd — a 50-frame WebP
+        would otherwise cost 50 tesseract runs and then be rejected as an
+        empty multi-page document.
+
         Raises:
             DocumentParseError: The image cannot be decoded, the engine failed,
                 or a multi-frame image OCR'd to nothing.
@@ -737,8 +826,9 @@ class NativeOcrImageParser(BaseParser):
         texts: List[str] = []
         try:
             with Image.open(path) as image:
-                for frame in ImageSequence.Iterator(image):
-                    texts.append((engine.ocr_image(frame.convert("RGB")) or "").strip())
+                frames = ImageSequence.Iterator(image) if path.suffix.lower() in (".tif", ".tiff") else [image]
+                for frame in frames:
+                    texts.append((engine.ocr_image(fit_to_pixel_budget(frame)) or "").strip())
         except DocumentParseError:
             raise
         except Exception as exc:

@@ -37,13 +37,22 @@ def _merge_currency(tokens: List[str]) -> List[str]:
 
 
 def _parse_row(line: str) -> Optional[Tuple[str, List[str]]]:
-    """``(label, values)`` when the line looks like a typographic table row, else None."""
-    match = _LEADER.match(line) or _TRAILING.match(line)
+    """``(label, values)`` when the line looks like a typographic table row, else None.
+
+    Without dot leaders a row needs at least two numeric columns: a single
+    trailing number is what "Chapter 1", "Footnote 2", "ISO 9001" and
+    "Version 3.0" look like, and three of those in a row are a list, not a
+    table.
+    """
+    leader = _LEADER.match(line)
+    match = leader or _TRAILING.match(line)
     if not match:
         return None
     label, rest = match.group(1).strip(" ."), match.group(2)
     values = _merge_currency(rest.split())
     if not values or not all(_NUM_TOKEN.fullmatch(v.lstrip("$")) for v in values):
+        return None
+    if leader is None and len(values) < 2:
         return None
     if not label or _NUM_TOKEN.fullmatch(label):
         return None

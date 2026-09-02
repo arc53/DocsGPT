@@ -25,6 +25,10 @@ MARKDOWNIFY_OPTIONS = {"heading_style": "ATX", "newline_style": "BACKSLASH"}
 # Elements whose text is never document content. ``title`` is reported via
 # ``get_file_metadata`` instead of leaking in as a stray first line.
 _DROP_TAGS = ("title", "script", "style", "noscript", "template")
+# Attributes whose ``data:`` URIs would otherwise land in the Markdown as
+# link/image targets: one inline image is megabytes of base64 "text" for the
+# chunker and embedder (a 5 MB data-URI ``<img>`` measured 7 MB of output).
+_URI_ATTRIBUTES = ("src", "href", "srcset", "poster", "data")
 
 
 def html_to_markdown(html: Union[str, bytes]) -> str:
@@ -56,10 +60,22 @@ def soup_to_markdown(soup) -> str:
     Returns:
         Markdown with runs of blank lines collapsed to one.
     """
+    from bs4 import CData, Declaration, ProcessingInstruction
     from markdownify import MarkdownConverter
 
     for tag in soup.find_all(_DROP_TAGS):
         tag.decompose()
+    # ``<?xml ...?>`` (every XHTML file), CDATA and stray declarations are
+    # not text; markdownify would emit them as the document's first line.
+    for node in soup.find_all(string=lambda s: isinstance(s, (ProcessingInstruction, CData, Declaration))):
+        node.extract()
+    for tag in soup.find_all(True):
+        for attribute in _URI_ATTRIBUTES:
+            value = tag.get(attribute)
+            if isinstance(value, list):
+                value = " ".join(value)
+            if isinstance(value, str) and "data:" in value.lower():
+                del tag[attribute]
     markdown = MarkdownConverter(**MARKDOWNIFY_OPTIONS).convert_soup(soup)
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
 
@@ -130,7 +146,15 @@ def read_markup_head(file: Path, max_bytes: int) -> bytes:
         f"Markup {Path(file).name} exceeds MARKUP_MAX_BYTES ({max_bytes}); "
         f"parsing the first {max_bytes} bytes to bound memory"
     )
-    return _trim_torn_utf8_tail(truncate_to_line_boundary(head[:max_bytes]))
+    head = head[:max_bytes]
+    if head[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        # UTF-16 (BOM-declared): a byte-level line cut lands between the two
+        # bytes of a code unit and the strict decode then fails outright, so
+        # keep an even byte count and let the lenient parser take the torn
+        # tail. (Only 2-byte units matter here; a torn surrogate pair is one
+        # lost character.)
+        return head[: len(head) - (len(head) % 2)]
+    return _trim_torn_utf8_tail(truncate_to_line_boundary(head))
 
 
 class HTMLParser(BaseParser):

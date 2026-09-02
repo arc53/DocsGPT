@@ -19,12 +19,12 @@ DOC_PARSER_ENGINE=anydoc
 - `anydoc` (default): [firecrawl-anydoc](https://github.com/firecrawl/anydoc),
   a Rust converter with no ML models. It reads PDF, DOCX, PPTX, XLSX and CSV
   in milliseconds with ~100 MB peak memory; HTML/XHTML is converted with
-  `markdownify`, head-truncated at `MARKUP_MAX_BYTES`. Source uploads and the
-  `read_document` tool accept the same file types as before (the
-  `SUPPORTED_SOURCE_EXTENSIONS` whitelist is unchanged); chat attachments,
-  which are not whitelisted by extension, can additionally be parsed from
-  anydoc's other formats (DOC, PPT/PPS/POT, XLS, ODT/ODS/ODP, RTF and the
-  macro-enabled Office variants). It never performs OCR:
+  `markdownify`, head-truncated at `MARKUP_MAX_BYTES`. Because anydoc is a
+  core dependency, source uploads and the `read_document` tool now also
+  accept its other formats — DOC, PPT/PPS/POT, XLS, ODT/ODS/ODP, RTF, XHTML
+  and the macro-enabled Office variants — on every engine (they are in the
+  `SUPPORTED_SOURCE_EXTENSIONS` whitelist; chat attachments are not
+  whitelisted by extension and take them too). It never performs OCR:
   a scanned or image-only PDF is *detected* and handed to the fallback
   parser — the active OCR backend when OCR is on (see below), Docling when
   it is installed, the legacy text parsers otherwise — and if nothing can
@@ -37,17 +37,17 @@ DOC_PARSER_ENGINE=anydoc
   this one variable; nothing else changes.
 
 With `DOC_PARSER_ENGINE=anydoc`, Docling still handles what anydoc cannot when
-it is installed: `.adoc`, `.vtt` and `.xml` sources, the fallback for files
-anydoc rejects, and — when it is the OCR backend — scanned PDFs and images.
-Without Docling those formats use the standard parsers; OCR still works
-through the native backend, and with OCR off images are only read when
-`PARSE_IMAGE_REMOTE=true`.
+it is installed: the fallback for files anydoc rejects, `.adoc`/`.vtt`/`.xml`
+chat attachments (those suffixes are not in the source-upload whitelist),
+and — when it is the OCR backend — scanned PDFs and images. Without Docling
+those formats use the standard parsers; OCR still works through the native
+backend, and with OCR off images are only read when `PARSE_IMAGE_REMOTE=true`.
 
 ## Installing the docling engine
 
 docling is not part of the base install, and OCR does not need it (see
 [OCR backends](#ocr-backends)). Add it when you want its layout-model OCR,
-`.adoc`/`.vtt`/`.xml` source parsing, or `read_document`'s `structured`
+`.adoc`/`.vtt`/`.xml` attachment parsing, or `read_document`'s `structured`
 output:
 
 ```bash
@@ -63,7 +63,12 @@ docker build --build-arg INSTALL_DOCLING=true ./application
 `deployment/docker-compose.yaml` forwards the same switch, so setting
 `INSTALL_DOCLING=true` in `.env` (or the shell) bakes docling into locally
 built backend and worker images; `setup.sh` offers it as a follow-up to the
-OCR question. Either way no code changes are needed — docling is picked up as
+OCR question. Compose reads build arguments from the shell or from the
+`.env` you pass with `--env-file .env` (not from the containers' `env_file`),
+so build with `docker compose --env-file .env -f deployment/docker-compose.yaml build`
+as `setup.sh` does. Pre-built Docker Hub images (`docker-compose-hub.yaml`)
+never include docling; install it in a derived image instead. Either way no
+code changes are needed — docling is picked up as
 the fallback engine (and, under `OCR_BACKEND=auto`, as the OCR backend) as
 soon as it is importable, and `DOC_PARSER_ENGINE=docling` makes it the
 primary parser.

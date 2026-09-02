@@ -707,3 +707,49 @@ def test_structured_output_stays_docling_under_anydoc(monkeypatch):
     out = parse_document_bytes(b"%PDF-1.4", "doc.pdf", output="structured")
     assert out["output"] == "structured"
     assert len(calls) == 1
+
+
+# --- second-pass routing fixes ---------------------------------------------------
+
+
+def test_fast_engine_covers_the_whole_legacy_map():
+    """`fast` must never fall through to the configured (anydoc/docling) map."""
+    for suffix, name in {
+        ".xhtml": "HTMLParser",
+        ".pptx": "PPTXParser",
+        ".epub": "EpubParser",
+        ".rst": "RstParser",
+        ".json": "JSONParser",
+    }.items():
+        assert type(dr._legacy_parser_for(suffix)).__name__ == name
+
+
+def test_tables_are_not_collected_when_the_pdf_parser_is_not_docling(monkeypatch):
+    """Under OCR_BACKEND=native the docling engine hands PDFs to the native OCR
+    parser; a vanilla DocumentConverter table pass would OCR the scan again."""
+
+    from application.parser.file.ocr_parser import NativeOcrPdfParser
+
+    native = NativeOcrPdfParser()
+    native._parser_config = {}
+    monkeypatch.setattr(native, "parse_file", lambda path, errors="ignore": "native text")
+
+    calls = []
+    monkeypatch.setattr(dr, "_pick_parser", lambda *a, **k: native)
+    monkeypatch.setattr(dr, "_effective_engine", lambda engine: "docling")
+    monkeypatch.setattr(dr, "_docling_structured", lambda *a, **k: calls.append(1) or {"tables": []})
+    monkeypatch.setattr(dr, "_zip_bomb_reason", lambda *a, **k: None)
+
+    out = parse_document_bytes(b"%PDF-1.4", "scan.pdf", engine="docling", include_tables=True)
+
+    assert out["content"] == "native text"
+    assert calls == []
+
+
+def test_binary_office_suffix_without_anydoc_is_an_error_not_text(monkeypatch):
+    monkeypatch.setattr(dr, "_pick_parser", lambda *a, **k: None)
+    monkeypatch.setattr(dr, "_zip_bomb_reason", lambda *a, **k: None)
+
+    out = parse_document_bytes(b"\xd0\xcf\x11\xe0 OLE bytes", "legacy.doc", output="text")
+
+    assert "firecrawl-anydoc" in out["error"]

@@ -222,7 +222,7 @@ for the engines and flows.
 | `OCR_DEEPSEEK_MODEL` | `deepseek-ocr:3b` | Model name at that endpoint. |
 | `OCR_DEEPSEEK_TIMEOUT` | `300` | Seconds allowed per page request to the DeepSeek endpoint, on both backends (the native backend sends pages one at a time). |
 | `OCR_RENDER_DPI` | `200` | Native backend: resolution at which pages without a text layer are rendered before OCR (clamped to 72-600). |
-| `OCR_MIN_CHARS_PER_PAGE` | `20` | Chars-per-page floor below which an OCR'd parse is treated as an OCR dropout and fails loudly instead of indexing an empty document; `0` disables. Alias: `DOCLING_OCR_MIN_CHARS_PER_PAGE`. |
+| `OCR_MIN_CHARS_PER_PAGE` | `20` | Chars-per-page floor for the OCR dropout guard: a multi-page parse whose OCR returns nothing fails loudly instead of indexing an empty document (docling retries once on full-page OCR first); output below the floor but non-empty is indexed with a warning. `0` disables. Alias: `DOCLING_OCR_MIN_CHARS_PER_PAGE`. |
 
 ## Speech-to-Text Settings
 

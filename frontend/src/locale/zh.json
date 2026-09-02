@@ -765,7 +765,7 @@
       "start": "开始聊天",
       "name": "名称",
       "choose": "选择文件",
-      "info": "请上传限制为25MB的.pdf、.txt、.rst、.csv、.xlsx、.xls、.ods、.docx、.doc、.odt、.rtf、.md、.html、.xhtml、.png、.jpg、.jpeg、.epub、.json、.pptx、.ppt、.odp、.zip文件",
+      "info": "请上传限制为25MB的.pdf、.txt、.rst、.csv、.xlsx、.xlsm、.xlsb、.xls、.ods、.docx、.docm、.doc、.odt、.rtf、.md、.html、.xhtml、.png、.jpg、.jpeg、.epub、.json、.pptx、.pptm、.ppt、.pps、.ppsx、.ppsm、.pot、.odp、.zip文件",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
       "train": "训练",

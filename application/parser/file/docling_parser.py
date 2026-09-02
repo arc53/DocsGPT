@@ -148,11 +148,31 @@ def _build_ocr_options(
         if engine == "tesseract":
             from docling.datamodel.pipeline_options import TesseractCliOcrOptions
 
+            from application.parser.file.ocr_parser import tesseract_languages
+
             langs = (
                 languages
                 or [lang.strip() for lang in settings.OCR_LANGS.split("+") if lang.strip()]
                 or ["eng"]
             )
+            # docling swallows tesseract's per-region failures: a language list
+            # with no installed pack logs an error per region and exports ''
+            # which the dropout guard then indexes as "text-sparse". Drop the
+            # packs that are not installed up front and say so.
+            installed = tesseract_languages()
+            if installed is not None:
+                missing = [lang for lang in langs if lang not in installed]
+                if missing:
+                    kept = [lang for lang in langs if lang in installed]
+                    if not kept and "eng" in installed:
+                        kept = ["eng"]
+                    logger.warning(
+                        "OCR_LANGS lists tesseract language pack(s) that are not installed: %s; "
+                        "OCR-ing with %s (install tesseract-ocr-<lang> for each missing pack)",
+                        "+".join(missing),
+                        "+".join(kept) if kept else "the requested list anyway",
+                    )
+                    langs = kept or langs
             return TesseractCliOcrOptions(
                 lang=langs, force_full_page_ocr=force_full_page_ocr
             )

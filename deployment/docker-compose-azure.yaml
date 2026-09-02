@@ -10,7 +10,11 @@ services:
       - backend
 
   backend:
-    build: ../application
+    build:
+      context: ../application
+      args:
+        INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
+        INSTALL_TESSERACT: ${INSTALL_TESSERACT:-true}
     env_file:
       - ../.env
     environment:
@@ -31,7 +35,11 @@ services:
         condition: service_healthy
 
   worker:
-    build: ../application
+    build:
+      context: ../application
+      args:
+        INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
+        INSTALL_TESSERACT: ${INSTALL_TESSERACT:-true}
     # `parsing` queue carries read_document/parse_document; required for its await to resolve.
     command: celery -A application.app.celery worker -l INFO -Q docsgpt,parsing
     env_file:

@@ -308,7 +308,7 @@ def test_init_parser_imports_for_real_not_just_find_spec(monkeypatch):
     """A wheel whose native extension fails to load has a spec but no importable
     module; that must surface at init, not as a bare ImportError from parse_file
     mid-ingest (which load_data does not catch)."""
-    import application.parser.file.anydoc_parser as mod
+    from application.parser.file import anydoc_parser as mod
 
     monkeypatch.setattr(mod, "anydoc_available", lambda: True)
     monkeypatch.setitem(sys.modules, "anydoc", None)
@@ -337,6 +337,7 @@ class _FakeDoclingFallback:
 
         class _Inner(DoclingParser):
             def __init__(self):
+                super().__init__(ocr_enabled=False)
                 self._parser_config = {}
                 self.calls = []
                 self.last_engine = None

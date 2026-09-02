@@ -749,3 +749,16 @@ class TestGainedFormats:
 
         assert "# Title" in out
         assert "Body text here." in out
+
+
+def test_gained_suffix_without_a_parser_is_rejected_not_read_as_text(tmp_path):
+    """Without anydoc an OLE .doc must not be indexed as decoded binary garbage."""
+    from application.parser.file.base_parser import DocumentParseError
+    from application.parser.file.bulk import SimpleDirectoryReader
+
+    path = tmp_path / "legacy.doc"
+    path.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64)
+    reader = SimpleDirectoryReader(input_files=[str(path)], file_extractor={".pdf": object()})
+
+    with pytest.raises(DocumentParseError, match="firecrawl-anydoc"):
+        reader.load_data()

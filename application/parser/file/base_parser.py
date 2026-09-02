@@ -117,6 +117,11 @@ def delegate_parse(
         return parser.parse_file(file, errors)
     except DocumentParseError:
         raise
+    except ImportError:
+        # A fallback whose dependency is missing is a deployment problem, not
+        # a bad document: let it reach the ingest task's setup-error path
+        # instead of blaming every file with "could not be read".
+        raise
     except Exception as e:
         logger.error(
             f"Fallback parse of {Path(file).name} with "

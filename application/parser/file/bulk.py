@@ -53,9 +53,10 @@ def _gained_format_entries() -> Dict[str, BaseParser]:
     """Anydoc-only formats (legacy/macro Office, OpenDocument, RTF) for every map.
 
     anydoc is a core dependency, so these suffixes are parseable under both
-    engines. When anydoc is somehow missing the entries are omitted, and such
-    files fall to ``SimpleDirectoryReader``'s plain-text read — the
-    pre-existing behaviour for unmapped suffixes.
+    engines. When anydoc is somehow missing the entries are omitted and
+    ``SimpleDirectoryReader.load_data`` rejects such files with a
+    ``DocumentParseError`` naming the install, rather than reading OLE/zip
+    bytes as text.
     """
     from application.parser.file.anydoc_parser import (
         ANYDOC_GAINED_SUFFIXES,
@@ -511,6 +512,15 @@ class SimpleDirectoryReader(BaseReader):
                     data = parser.parse_file(input_file, errors=self.errors)
                     parser_metadata = parser.get_file_metadata(input_file)
                 else:
+                    from application.parser.file.anydoc_parser import ANYDOC_GAINED_SUFFIXES
+
+                    if suffix_lower in ANYDOC_GAINED_SUFFIXES:
+                        # Binary office formats only anydoc reads; without it
+                        # the standard read would index OLE/zip bytes as text.
+                        raise DocumentParseError(
+                            f"No parser is available for {suffix_lower} files: "
+                            "firecrawl-anydoc is not installed (pip install firecrawl-anydoc)"
+                        )
                     # do standard read
                     with open(input_file, "r", errors=self.errors) as f:
                         data = f.read()
