@@ -122,7 +122,7 @@ class TestMCPServerConfig(Resource):
                 safe_result = {
                     k: v
                     for k, v in result.items()
-                    if k in ("success", "requires_oauth", "auth_url")
+                    if k in ("success", "requires_oauth", "auth_url", "task_id", "message")
                 }
                 return make_response(jsonify(safe_result), 200)
 
@@ -311,9 +311,6 @@ class MCPServerSave(Resource):
                         "tools_count": len(transformed_actions),
                     }
                 else:
-                    # Fall back to find_by_user_and_name — the original
-                    # dual-write path also ran an existence check before
-                    # deciding between insert and update.
                     existing_by_name = repo.find_by_user_and_name(user, "mcp_tool")
                     if tool_id is None and existing_by_name and (
                         (existing_by_name.get("config") or {}).get("server_url")
@@ -356,7 +353,6 @@ class MCPServerSave(Resource):
                             "tools_count": len(transformed_actions),
                         }
                     if tool_id and existing_doc is None:
-                        # Client requested update on a non-existent tool id.
                         return make_response(
                             jsonify(
                                 {
@@ -479,10 +475,6 @@ class MCPAuthStatus(Resource):
                         statuses[tool_id] = "configured"
 
                 if oauth_server_urls:
-                    # Look up a session per distinct base URL. MCP sessions
-                    # are stored with ``provider = "mcp:<server_url>"``
-                    # and the URL in ``server_url``; reuse the repo's
-                    # per-URL accessor rather than an ad-hoc $in query.
                     url_has_tokens: dict = {}
                     for base_url in set(oauth_server_urls.values()):
                         session = sessions_repo.get_by_user_and_server_url(
@@ -491,8 +483,6 @@ class MCPAuthStatus(Resource):
                         tokens = (
                             (session or {}).get("session_data", {}) or {}
                         ).get("tokens", {}) or {}
-                        # MCP code also stashes tokens into token_info on
-                        # the row; consider either present as "connected".
                         token_info = (session or {}).get("token_info") or {}
                         url_has_tokens[base_url] = bool(
                             tokens.get("access_token")
