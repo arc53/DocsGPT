@@ -1745,7 +1745,7 @@ def attachment_worker(self, file_info, user):
         # calls SimpleDirectoryReader without a ``file_extractor`` and so keeps
         # the ``DOC_PARSER_ENGINE`` default map, which retrieval quality depends on.
         file_extractor = get_default_file_extractor(
-            ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED,
+            ocr_enabled=settings.OCR_ATTACHMENTS_ENABLED,
             pdf_text_fast_path=settings.ATTACHMENT_PDF_TEXT_FAST_PATH,
         )
         _parser = file_extractor.get(os.path.splitext(filename)[1].lower())

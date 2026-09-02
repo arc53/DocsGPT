@@ -1,9 +1,11 @@
 # Optional docling parser engine.
 #
-# Needed only for: DOC_PARSER_ENGINE=docling, OCR of scanned PDFs and images
-# (DOCLING_OCR_ENABLED / DOCLING_OCR_ATTACHMENTS_ENABLED), .adoc/.vtt/.xml
-# source parsing, and the read_document tool's `structured` output. The
-# default anydoc engine needs none of this.
+# Needed only for: DOC_PARSER_ENGINE=docling, the docling OCR backend
+# (OCR_BACKEND=docling: layout-model hybrid OCR, ocrmac/rapidocr engines),
+# .adoc/.vtt/.xml source parsing, and the read_document tool's `structured`
+# output. The default anydoc engine needs none of this, and OCR itself does
+# not either: OCR_ENABLED=true with the tesseract binary (or a DeepSeek-OCR
+# endpoint) runs through application/parser/file/ocr_parser.py.
 #
 # Install ON TOP of requirements.txt (torch/transformers stay pinned there,
 # shared with sentence-transformers):

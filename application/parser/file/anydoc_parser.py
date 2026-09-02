@@ -10,9 +10,10 @@ PDFs.
 
 anydoc never OCRs. It *detects* a scanned or image-only PDF and raises
 ``UnsupportedError`` ("OCR is required"), which is the routing point: a
-parser given a ``fallback_parser`` (docling when installed, otherwise the
-legacy parser for the suffix) delegates there; without one the file fails
-loudly as ``DocumentParseError`` rather than being stored empty.
+parser given a ``fallback_parser`` (docling when installed, the native OCR
+parser when OCR is on without docling, otherwise the legacy parser for the
+suffix) delegates there; without one the file fails loudly as
+``DocumentParseError`` rather than being stored empty.
 """
 import logging
 from pathlib import Path
@@ -85,14 +86,21 @@ def _result_chars(result: Union[str, List[str]]) -> int:
 
 
 def _is_docling_backed(parser: Optional[BaseParser]) -> bool:
-    """True when ``parser`` is a docling parser (worth a trust-check re-parse)."""
+    """True when ``parser`` is a docling parser (worth a trust-check re-parse).
+
+    Looks through ``NativeOcrPdfParser``, which under ``OCR_BACKEND=native``
+    wraps the docling PDF parser as its ``text_parser`` and hands text-layer
+    PDFs — the only kind the trust check flags — straight to it.
+    """
     if parser is None:
         return False
     try:
         from application.parser.file.docling_parser import DoclingParser
     except ImportError:
         return False
-    return isinstance(parser, DoclingParser)
+    if isinstance(parser, DoclingParser):
+        return True
+    return isinstance(getattr(parser, "text_parser", None), DoclingParser)
 
 
 class AnydocParser(BaseParser):
@@ -120,6 +128,8 @@ class AnydocParser(BaseParser):
         # check flagged but kept — surfaced via ``get_file_metadata`` as
         # ``parse_warnings`` so the document carries its own caveat.
         self._last_warnings: Optional[Tuple[Path, List[str]]] = None
+        # (path, count) of scanned pages OCR'd into the most recent parse.
+        self._last_ocr_pages: Optional[Tuple[Path, int]] = None
 
     def _init_parser(self) -> Dict:
         # Import for real rather than trusting ``find_spec``: a wheel whose
@@ -156,6 +166,7 @@ class AnydocParser(BaseParser):
 
         path = Path(file)
         self._last_warnings = None
+        self._last_ocr_pages = None
         try:
             content = anydoc.to_markdown(str(path))
         except anydoc.ResourceLimitError as exc:
@@ -196,7 +207,7 @@ class AnydocParser(BaseParser):
     def _finish_pdf(self, path: Path, content: str, errors: str) -> Union[str, List[str]]:
         """Post-process a successful anydoc PDF conversion.
 
-        Two PDF-only steps:
+        Three PDF-only steps:
 
         1. Trust check (``PDF_TRUST_CHECK``): the two classes where anydoc
            drops text *silently* — Type0 fonts without ToUnicode, and
@@ -204,7 +215,12 @@ class AnydocParser(BaseParser):
            on the docling fallback when one is wired; otherwise the anydoc
            output is kept and the problems ride along as ``parse_warnings``
            metadata.
-        2. ``ANYDOC_TABLEIZE`` (off by default): rewrite dot-leader /
+        2. Mixed documents: anydoc only refuses a PDF when *every* page lacks
+           text, so a text document with scanned pages in it converts fine
+           and silently loses those pages. When the fallback parser can OCR
+           (it is wired with OCR on), the pages with no text layer are OCR'd
+           through it and appended (``_ocr_scanned_pages``).
+        3. ``ANYDOC_TABLEIZE`` (off by default): rewrite dot-leader /
            whitespace table runs as GFM tables. Never applied to a docling
            re-parse — docling emits real tables already.
         """
@@ -218,6 +234,7 @@ class AnydocParser(BaseParser):
                 f"anydoc output for {path.name} failed the PDF trust check "
                 f"({'; '.join(problems)}); keeping it with parse_warnings"
             )
+        content = self._ocr_scanned_pages(path, content)
         if settings.ANYDOC_TABLEIZE:
             from application.parser.file.tableize import tableize
 
@@ -281,12 +298,58 @@ class AnydocParser(BaseParser):
         self.last_engine = getattr(fallback, "last_engine", None) or type(fallback).__name__
         return result
 
+    def _ocr_scanned_pages(self, path: Path, content: str) -> str:
+        """Append OCR text for the pages of ``path`` that have no text layer.
+
+        Runs only when the fallback parser both has OCR on and exposes
+        ``ocr_pages`` (the native OCR PDF parser, or the docling PDF parser).
+        With OCR off the fallback is the plain pypdf parser and mixed
+        documents keep today's behaviour: text pages only. An OCR failure is
+        logged and the anydoc text kept — a partial document beats a
+        rejected upload, and the loud-failure path stays reserved for fully
+        scanned files.
+        """
+        fallback = self.fallback_parser
+        if not (getattr(fallback, "ocr_enabled", False) and hasattr(fallback, "ocr_pages")):
+            return content
+        from application.parser.file.ocr_parser import scanned_page_indices
+
+        indices = scanned_page_indices(path)
+        if not indices:
+            return content
+        logger.info(
+            "%s has %d page(s) without a text layer among its text pages; OCR-ing them with %s",
+            path.name,
+            len(indices),
+            type(fallback).__name__,
+        )
+        try:
+            if not fallback.parser_config_set:
+                fallback.init_parser()
+            texts = fallback.ocr_pages(path, indices)
+        except Exception:  # noqa: BLE001 - keep the text pages rather than fail the file
+            logger.warning(
+                "OCR of the scanned pages of %s failed; indexing the text pages only",
+                path.name,
+                exc_info=True,
+            )
+            return content
+        extra = [texts[index] for index in indices if texts.get(index, "").strip()]
+        if not extra:
+            return content
+        self._last_ocr_pages = (path, len(extra))
+        return content.rstrip() + "\n\n" + "\n\n".join(extra) + "\n"
+
     def get_file_metadata(self, file: Path) -> Dict:
-        """Surface trust-check findings for the file just parsed, if any."""
+        """Surface trust-check findings and OCR'd page counts for the file just parsed."""
+        metadata: Dict = {}
         last = self._last_warnings
         if last is not None and last[0] == Path(file):
-            return {"parse_warnings": list(last[1])}
-        return {}
+            metadata["parse_warnings"] = list(last[1])
+        ocr = self._last_ocr_pages
+        if ocr is not None and ocr[0] == Path(file):
+            metadata["ocr_pages"] = ocr[1]
+        return metadata
 
     def _delegate(
         self, path: Path, errors: str, reason: str, ocr_needed: bool = False
@@ -315,9 +378,10 @@ class AnydocParser(BaseParser):
                 hint = " even with OCR enabled."
             else:
                 hint = (
-                    ". Enable OCR to ingest scans: set DOCLING_OCR_ENABLED=true "
-                    "(and DOCLING_OCR_ATTACHMENTS_ENABLED for attachments) with "
-                    "the docling extra installed."
+                    ". Enable OCR to ingest scans: set OCR_ENABLED=true (and "
+                    "OCR_ATTACHMENTS_ENABLED for attachments). OCR runs on the "
+                    "tesseract binary or a DeepSeek-OCR endpoint (OCR_ENGINE), or "
+                    "through the optional docling extra when installed."
                 )
             raise DocumentParseError(
                 f"{path.name} appears to be a scanned PDF (no text layer), and "

@@ -69,7 +69,9 @@ def tableize(markdown: str, min_rows: int = 3) -> str:
         if len(run) >= min_rows and len(widths) == 1:
             ncols = widths.pop()
             out.append("")
-            out.append("| " + " | ".join([" "] + [f"col{i + 1}" for i in range(ncols)]) + " |")
+            # GFM needs a header row; an empty one keeps invented labels out
+            # of the indexed text (they would otherwise be embedded as content).
+            out.append("|" + "   |" * (ncols + 1))
             out.append("|" + " --- |" * (ncols + 1))
             for label, values, _ in run:
                 # Only the label can carry a '|' (values are numeric tokens);

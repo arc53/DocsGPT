@@ -206,19 +206,23 @@ for the engines and flows.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `DOC_PARSER_ENGINE` | `anydoc` | Parser engine: `anydoc` (fast Rust converter, no ML models) or `docling` (layout/table models, OCR, structured output). Files anydoc cannot read fall back to Docling when installed. Docling is an optional extra: `pip install -r application/requirements-docling.txt`, or Docker builds with `--build-arg INSTALL_DOCLING=true`. |
-| `DOCLING_OCR_ENABLED` | `false` | OCR for source ingestion (Docling only). |
-| `DOCLING_OCR_ATTACHMENTS_ENABLED` | `false` | OCR for chat attachments (Docling only). |
+| `DOC_PARSER_ENGINE` | `anydoc` | Parser engine: `anydoc` (fast Rust converter, no ML models) or `docling` (layout/table models, structured output). Files anydoc cannot read fall back to Docling when installed. Docling is an optional extra: `pip install -r application/requirements-docling.txt`, or Docker builds with `--build-arg INSTALL_DOCLING=true`. |
+| `OCR_ENABLED` | `false` | OCR for source ingestion. Alias: `DOCLING_OCR_ENABLED`. |
+| `OCR_ATTACHMENTS_ENABLED` | `false` | OCR for chat attachments. Alias: `DOCLING_OCR_ATTACHMENTS_ENABLED`. |
+| `OCR_BACKEND` | `auto` | Who performs OCR: `auto` (Docling when installed, else native), `native` (pypdfium2 + Pillow rendering into tesseract or DeepSeek-OCR; no docling needed), or `docling` (layout-model hybrid OCR). See the [OCR guide](/Guides/ocr#ocr-backends). |
 | `ATTACHMENT_PDF_TEXT_FAST_PATH` | `true` | Under the `docling` engine, read PDF attachments through their text layer (pypdfium2) and only hand scans to Docling. Not needed under `anydoc`. |
 | `DOCLING_TABULAR_MAX_BYTES` | `2000000` | Docling engine: CSV/XLSX larger than this (by content) use the lightweight tabular parsers. |
 | `DOCLING_MARKUP_MAX_BYTES` | `8000000` | Docling engine: HTML/VTT larger than this are head-truncated before parsing. |
 | `MARKUP_MAX_BYTES` | `8000000` | anydoc engine: HTML/XHTML larger than this are head-truncated before the `markdownify` parser runs (its tree costs ~50x the input). `0` disables the gate. |
 | `PDF_TRUST_CHECK` | `true` | Trust-check anydoc's PDF output for the two silent-loss classes (Type0 fonts without ToUnicode, CJK-declaring PDFs with CJK-less text). Flagged files re-parse on Docling when installed, else carry `parse_warnings` metadata. |
 | `ANYDOC_TABLEIZE` | `false` | Rewrite dot-leader / whitespace-aligned table runs in anydoc's PDF markdown into GFM tables. |
-| `OCR_ENGINE` | `tesseract` | OCR engine when OCR is on: `tesseract` (recommended), `auto`, `ocrmac`, `rapidocr`, or `deepseek` (VLM endpoint). Unavailable engines degrade to `auto` with a warning. See the [OCR guide](/Guides/ocr). |
+| `OCR_ENGINE` | `tesseract` | OCR engine when OCR is on: `tesseract` (recommended, both backends), `deepseek` (VLM endpoint, both backends), or the Docling-only `auto`, `ocrmac`, `rapidocr`. Unavailable engines degrade with a warning. See the [OCR guide](/Guides/ocr). |
 | `OCR_LANGS` | `eng` | Tesseract language packs, `+`-separated (e.g. `eng+chi_sim+deu`). |
 | `OCR_DEEPSEEK_URL` | `http://localhost:11434/v1/chat/completions` | OpenAI-compatible endpoint for `OCR_ENGINE=deepseek` (Ollama or vLLM). |
 | `OCR_DEEPSEEK_MODEL` | `deepseek-ocr:3b` | Model name at that endpoint. |
+| `OCR_DEEPSEEK_TIMEOUT` | `300` | Native backend: seconds allowed per page request to the DeepSeek endpoint (pages are sent one at a time). |
+| `OCR_RENDER_DPI` | `200` | Native backend: resolution at which pages without a text layer are rendered before OCR (clamped to 72-600). |
+| `OCR_MIN_CHARS_PER_PAGE` | `20` | Chars-per-page floor below which an OCR'd parse is treated as an OCR dropout and fails loudly instead of indexing an empty document; `0` disables. Alias: `DOCLING_OCR_MIN_CHARS_PER_PAGE`. |
 
 ## Speech-to-Text Settings
 

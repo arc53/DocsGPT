@@ -525,6 +525,15 @@ class TestParserEngineSwitch:
 
         return settings
 
+    @pytest.fixture(autouse=True)
+    def _default_ocr_settings(self, monkeypatch):
+        """Pin the OCR knobs to their defaults so a developer's ``.env`` (OCR on,
+        native backend) cannot change which parsers the maps hand out here."""
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "OCR_ENABLED", False)
+        monkeypatch.setattr(settings, "OCR_BACKEND", "auto")
+
     def test_default_engine_is_anydoc(self, settings, monkeypatch):
         pytest.importorskip("anydoc")
         from application.parser.file.anydoc_parser import ANYDOC_SUFFIXES, AnydocParser

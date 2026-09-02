@@ -493,7 +493,7 @@ def test_scanned_pdf_with_near_empty_fallback_fails_loudly_when_ocr_off(tmp_path
     fallback.ocr_enabled = False
     parser = AnydocParser(fallback_parser=fallback)
 
-    with pytest.raises(DocumentParseError, match="DOCLING_OCR_ENABLED"):
+    with pytest.raises(DocumentParseError, match="OCR_ENABLED"):
         parser.parse_file(path)
     assert parser.last_engine is None
 

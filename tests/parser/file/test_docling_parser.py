@@ -99,9 +99,15 @@ class TestOcrEngineSelection:
 
         return settings
 
-    def test_default_setting_is_tesseract(self, settings):
-        assert settings.OCR_ENGINE == "tesseract"
-        assert settings.OCR_LANGS == "eng"
+    def test_default_setting_is_tesseract(self):
+        # Field defaults, not the live settings: a developer's ``.env`` may
+        # legitimately set other engines/languages.
+        from application.core.settings import Settings
+
+        defaults = Settings.model_construct()
+        assert defaults.OCR_ENGINE == "tesseract"
+        assert defaults.OCR_LANGS == "eng"
+        assert defaults.OCR_BACKEND == "auto"
 
     def test_none_reads_setting(self, settings, monkeypatch):
         from application.parser.file.docling_parser import _resolve_ocr_engine
@@ -1147,7 +1153,7 @@ def _set_threshold(monkeypatch, value: int) -> None:
             return getattr(real_settings, name)
 
     stub = _Stub()
-    stub.DOCLING_OCR_MIN_CHARS_PER_PAGE = value
+    stub.OCR_MIN_CHARS_PER_PAGE = value
     monkeypatch.setattr("application.core.settings.settings", stub)
 
 
@@ -1559,3 +1565,67 @@ class TestForceFullPageOCRWiring:
             force_full_page_ocr=False,
         )
         assert options.ocr_options.force_full_page_ocr is False
+
+
+@pytest.mark.unit
+class TestDoclingTesseractPostprocessing:
+    """docling's tesseract path gets the same CJK glyph-space cleanup as the native engine."""
+
+    def _parser_with_export(self, engine, ocr_enabled=True):
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=ocr_enabled)
+        parser._active_ocr_engine = engine
+        document = MagicMock()
+        document.export_to_markdown.return_value = "## 互相 保密 协议\n\nhello world 你 好"
+        return parser, document
+
+    def test_tesseract_output_collapses_cjk_spaces(self):
+        parser, document = self._parser_with_export("tesseract")
+        assert parser._export_content(document) == "## 互相保密协议\n\nhello world 你好"
+
+    def test_other_engines_untouched(self):
+        parser, document = self._parser_with_export("deepseek")
+        assert parser._export_content(document) == "## 互相 保密 协议\n\nhello world 你 好"
+
+    def test_ocr_off_untouched(self):
+        parser, document = self._parser_with_export("tesseract", ocr_enabled=False)
+        assert parser._export_content(document) == "## 互相 保密 协议\n\nhello world 你 好"
+
+
+@pytest.mark.unit
+class TestDoclingOcrPages:
+    def test_converts_each_requested_page_with_page_range(self, tmp_path):
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        converter = MagicMock()
+
+        def convert(source, page_range=None):
+            result = MagicMock()
+            result.document.export_to_markdown.return_value = f"page {page_range[0]} text " * 5
+            return result
+
+        converter.convert.side_effect = convert
+        parser._converter = converter
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+
+        texts = parser.ocr_pages(pdf, [2, 0])
+
+        assert set(texts) == {2, 0}
+        assert texts[2].startswith("page 3 text")
+        assert texts[0].startswith("page 1 text")
+        assert [c.kwargs["page_range"] for c in converter.convert.call_args_list] == [(3, 3), (1, 1)]
+
+    def test_failure_is_a_parse_error(self, tmp_path):
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        parser._converter = MagicMock()
+        parser._converter.convert.side_effect = RuntimeError("boom")
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        with pytest.raises(DocumentParseError, match="page 1 of doc.pdf"):
+            parser.ocr_pages(pdf, [0])

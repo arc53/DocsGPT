@@ -169,7 +169,7 @@ def _resolve_ocr_enabled(ocr: str) -> bool:
         return True
     if ocr == "off":
         return False
-    return bool(getattr(settings, "DOCLING_OCR_ENABLED", False))
+    return bool(getattr(settings, "OCR_ENABLED", False))
 
 
 def _effective_engine(engine: str) -> str:

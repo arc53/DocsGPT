@@ -765,7 +765,7 @@
       "start": "Начать чат",
       "name": "Имя",
       "choose": "Выбрать файлы",
-      "info": "Пожалуйста, загрузите файлы .pdf, .txt, .rst, .csv, .xlsx, .xls, .ods, .docx, .doc, .odt, .rtf, .md, .html, .epub, .json, .pptx, .ppt, .odp, .zip размером до 25 МБ",
+      "info": "Пожалуйста, загрузите файлы .pdf, .txt, .rst, .csv, .xlsx, .xls, .ods, .docx, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .ppt, .odp, .zip размером до 25 МБ",
       "uploadedFiles": "Загруженные файлы",
       "cancel": "Отмена",
       "train": "Тренировка",

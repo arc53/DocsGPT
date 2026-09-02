@@ -471,11 +471,11 @@ def test_temp_file_cleaned_up_on_parser_error(monkeypatch):
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 def test_ocr_resolution(monkeypatch):
-    monkeypatch.setattr(dr.settings, "DOCLING_OCR_ENABLED", True, raising=False)
+    monkeypatch.setattr(dr.settings, "OCR_ENABLED", True, raising=False)
     assert dr._resolve_ocr_enabled("off") is False
     assert dr._resolve_ocr_enabled("on") is True
     assert dr._resolve_ocr_enabled("auto") is True
-    monkeypatch.setattr(dr.settings, "DOCLING_OCR_ENABLED", False, raising=False)
+    monkeypatch.setattr(dr.settings, "OCR_ENABLED", False, raising=False)
     assert dr._resolve_ocr_enabled("auto") is False
 
 

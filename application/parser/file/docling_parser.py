@@ -22,6 +22,8 @@ from application.parser.file.base_parser import (
     DocumentParseError,
     delegate_parse as _delegate,
 )
+from application.parser.file.ocr_parser import VALID_OCR_ENGINES as _VALID_OCR_ENGINES
+from application.parser.file.ocr_parser import collapse_cjk_spaces
 from application.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
@@ -73,7 +75,6 @@ def _apply_inference_settings() -> None:
         inference.compile_torch_models = settings.DOCLING_COMPILE_TORCH_MODELS
 
 
-_VALID_OCR_ENGINES = ("tesseract", "auto", "ocrmac", "rapidocr", "deepseek")
 
 
 def _resolve_ocr_engine(requested: Optional[str]) -> str:
@@ -102,8 +103,8 @@ def _resolve_ocr_engine(requested: Optional[str]) -> str:
     if engine == "tesseract" and shutil.which("tesseract") is None:
         logger.warning(
             "OCR_ENGINE=tesseract but no tesseract binary is on PATH (install "
-            "tesseract-ocr plus language packs, or build the Docker image with "
-            "INSTALL_DOCLING=true); using docling auto-selection"
+            "tesseract-ocr plus language packs; the Docker image ships them unless "
+            "built with INSTALL_TESSERACT=false); using docling auto-selection"
         )
         return "auto"
     if engine == "ocrmac" and (
@@ -314,7 +315,7 @@ def _ocr_min_chars_per_page() -> int:
         return int(
             getattr(
                 settings,
-                "DOCLING_OCR_MIN_CHARS_PER_PAGE",
+                "OCR_MIN_CHARS_PER_PAGE",
                 _DEFAULT_OCR_MIN_CHARS_PER_PAGE,
             )
         )
@@ -451,6 +452,9 @@ class DoclingParser(BaseParser):
         self.ocr_engine = ocr_engine
         self.ocr_languages = ocr_languages
         self.force_full_page_ocr = force_full_page_ocr
+        # Engine the current converter was built for (None with OCR off);
+        # drives tesseract-specific post-processing of the export.
+        self._active_ocr_engine: Optional[str] = None
         self._converter = None
 
     def _create_converter(self):
@@ -477,6 +481,7 @@ class DoclingParser(BaseParser):
         _apply_inference_settings()
 
         engine = _resolve_ocr_engine(self.ocr_engine) if self.ocr_enabled else None
+        self._active_ocr_engine = engine
         if engine == "deepseek":
             return self._create_vlm_converter()
 
@@ -607,8 +612,20 @@ class DoclingParser(BaseParser):
                     f"Standard export minimal ({len(stripped_content)} chars), "
                     f"extracting {len(extracted_texts)} texts directly"
                 )
-                return "\n\n".join(extracted_texts)
+                content = "\n\n".join(extracted_texts)
 
+        return self._postprocess_ocr_text(content)
+
+    def _postprocess_ocr_text(self, content: str) -> str:
+        """Engine-specific cleanup of OCR'd text.
+
+        tesseract's CJK models space every glyph ("互相 保密 协议"); the native
+        backend collapses that in ``TesseractEngine`` and the docling path
+        needs the same treatment or Chinese scans index worse here than there.
+        Other engines (and OCR off) return the export untouched.
+        """
+        if self.ocr_enabled and self._active_ocr_engine == "tesseract":
+            return collapse_cjk_spaces(content)
         return content
 
     def _ocr_guard_applies(self, file: Path) -> bool:
@@ -814,6 +831,35 @@ class DoclingPDFParser(DoclingParser):
             ocr_languages=ocr_languages,
             force_full_page_ocr=force_full_page_ocr,
         )
+
+
+    def ocr_pages(self, file: Path, indices: List[int]) -> Dict[int, str]:
+        """Convert only the given 0-based pages of ``file`` and return their text.
+
+        The counterpart of ``NativeOcrPdfParser.ocr_pages`` for the docling
+        backend: ``AnydocParser`` calls it for the scanned pages of a mixed
+        document. Each page is a separate ``convert`` with ``page_range`` so
+        the layout model sees one page at a time; a fully scanned page is one
+        bitmap region, which hybrid OCR reads in full.
+
+        Raises:
+            DocumentParseError: docling failed on a page.
+        """
+        if self._converter is None:
+            self._init_parser()
+        path = Path(file)
+        texts: Dict[int, str] = {}
+        for index in indices:
+            if index < 0:
+                continue
+            try:
+                result = self._converter.convert(str(path), page_range=(index + 1, index + 1))
+                texts[index] = self._export_content(result.document).strip()
+            except Exception as exc:
+                raise DocumentParseError(
+                    f"Failed to OCR page {index + 1} of {path.name} with docling: {exc}"
+                ) from exc
+        return texts
 
 
 class DoclingDocxParser(DoclingParser):

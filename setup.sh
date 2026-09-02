@@ -362,13 +362,17 @@ configure_doc_processing() {
         echo -e "${GREEN}PDF-as-image parsing enabled.${NC}"
     fi
 
-    read -p "$(echo -e "${DEFAULT_FG}Enable OCR for document processing (Docling)? (y/N): ${NC}")" ocr_enabled
+    read -p "$(echo -e "${DEFAULT_FG}Enable OCR for scanned PDFs and images? (y/N): ${NC}")" ocr_enabled
     if [[ "$ocr_enabled" =~ ^[yY]$ ]]; then
-        echo "DOCLING_OCR_ENABLED=true" >> "$ENV_FILE"
-        # OCR needs the optional docling engine; locally built images include
-        # it via this build arg (hub images must be published with it baked in).
-        echo "INSTALL_DOCLING=true" >> "$ENV_FILE"
-        echo -e "${GREEN}Docling OCR enabled (locally built images will include the docling engine).${NC}"
+        echo "OCR_ENABLED=true" >> "$ENV_FILE"
+        echo -e "${GREEN}OCR enabled (tesseract, shipped in the Docker image; set OCR_ENGINE=deepseek for a DeepSeek-OCR endpoint).${NC}"
+        read -p "$(echo -e "${DEFAULT_FG}Also install the Docling layout engine for OCR (better tables/reading order, several GB heavier)? (y/N): ${NC}")" docling_ocr
+        if [[ "$docling_ocr" =~ ^[yY]$ ]]; then
+            # Locally built images include docling via this build arg; it becomes
+            # the OCR backend automatically (OCR_BACKEND=auto).
+            echo "INSTALL_DOCLING=true" >> "$ENV_FILE"
+            echo -e "${GREEN}Docling will be built into locally built images.${NC}"
+        fi
     fi
 }
 

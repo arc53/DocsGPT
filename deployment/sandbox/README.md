@@ -200,7 +200,7 @@ Run a dedicated parsing worker that consumes the `parsing` queue:
 celery -A application.app.celery worker -Q parsing -l INFO
 ```
 
-It can be GPU-enabled with its own env (`DOCLING_OCR_ENABLED=true` plus GPU
+It can be GPU-enabled with its own env (`OCR_ENABLED=true` plus GPU
 libraries) so OCR-heavy parsing runs on a separate, optionally larger pool.
 
 **Dev / single-worker setups:** without a dedicated parsing worker the default

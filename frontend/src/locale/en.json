@@ -770,7 +770,7 @@
       "start": "Start Chatting",
       "name": "Name",
       "choose": "Choose Files",
-      "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .xls, .ods, .docx, .doc, .odt, .rtf, .md, .html, .epub, .json, .pptx, .ppt, .odp, .zip limited to 25mb",
+      "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .xls, .ods, .docx, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .ppt, .odp, .zip limited to 25mb",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Train",
