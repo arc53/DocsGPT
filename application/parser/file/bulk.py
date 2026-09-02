@@ -199,7 +199,7 @@ def _docling_file_extractor(
         logging.log(
             missing_log_level,
             "docling is not installed. Using standard parsers%s. For layout-model "
-            "parsing, install with: pip install -r requirements-docling.txt",
+            "parsing, install with: pip install -r application/requirements-docling.txt",
             " with native OCR" if ocr_enabled else "",
         )
         return _legacy_file_extractor(pdf_text_fast_path, ocr_enabled=ocr_enabled)

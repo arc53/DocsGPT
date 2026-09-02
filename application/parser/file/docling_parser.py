@@ -593,7 +593,7 @@ class DoclingParser(BaseParser):
         if importlib.util.find_spec("docling.document_converter") is None:
             raise ImportError(
                 "docling is required for DoclingParser. "
-                "Install it with: pip install docling"
+                "Install it with: pip install -r application/requirements-docling.txt"
             )
 
         # Create converter with hybrid OCR (smart: text direct, bitmaps OCR'd)

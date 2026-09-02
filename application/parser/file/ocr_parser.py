@@ -130,7 +130,7 @@ def resolve_ocr_backend(requested: Optional[str] = None) -> str:
     if backend == "docling" and not docling_installed:
         logger.warning(
             "OCR_BACKEND=docling but docling is not installed (pip install -r "
-            "requirements-docling.txt); using the native OCR backend"
+            "application/requirements-docling.txt); using the native OCR backend"
         )
         return "native"
     if backend == "auto":

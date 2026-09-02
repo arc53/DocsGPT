@@ -14,7 +14,7 @@ daytona==0.205.1
 defusedxml==0.7.1
 # Default document converter (DOC_PARSER_ENGINE=anydoc). The docling engine
 # (OCR, layout/table models, read_document's structured output) is an
-# optional extra: pip install -r requirements-docling.txt
+# optional extra: pip install -r application/requirements-docling.txt
 firecrawl-anydoc==0.2.3
 docx2txt==0.9
 ddgs>=8.0.0
