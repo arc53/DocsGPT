@@ -52,508 +52,125 @@ class MCPTool(Tool):
                 - headers: Custom headers for requests
                 - command: Command for STDIO transport
                 - args: Arguments for STDIO transport
-                - oauth_scopes: OAuth scopes for oauth auth type
-                - oauth_client_name: OAuth client name for oauth auth type
-                - query_mode: If True, use non-interactive OAuth (fail-fast on 401)
-            user_id: User ID for decrypting credentials (required if encrypted_credentials exist)
         """
         self.config = config
         self.user_id = user_id
-        raw_url = config.get("server_url", "")
-        self.server_url = self._validate_server_url(raw_url) if raw_url else ""
+        self.server_url = config.get("server_url", "")
         self.transport_type = config.get("transport_type", "auto")
         self.auth_type = config.get("auth_type", "none")
         self.timeout = config.get("timeout", 30)
-        self.custom_headers = config.get("headers", {})
-
-        self.auth_credentials = {}
-        if config.get("encrypted_credentials") and user_id:
-            self.auth_credentials = decrypt_credentials(
-                config["encrypted_credentials"], user_id
-            )
-        else:
-            self.auth_credentials = config.get("auth_credentials", {})
-        self.oauth_scopes = config.get("oauth_scopes", [])
+        self.headers = config.get("headers", {})
+        self.command = config.get("command", "")
+        self.args = config.get("args", [])
         self.oauth_task_id = config.get("oauth_task_id", None)
-        self.oauth_client_name = config.get("oauth_client_name", "DocsGPT-MCP")
-        self.redirect_uri = self._resolve_redirect_uri(config.get("redirect_uri"))
-        # Pulled out of ``config`` (rather than left in ``self.config``)
-        # because it is a callable supplied by the OAuth worker — not
-        # something the rest of the tool plumbing should marshal or
-        # serialize. ``DocsGPTOAuth`` invokes it from ``redirect_handler``
-        # so the SSE envelope can carry ``authorization_url``.
-        self.oauth_redirect_publish = config.pop("oauth_redirect_publish", None)
-
         self.available_tools = []
-        self._cache_key = self._generate_cache_key()
-        self._client = None
-        self.query_mode = config.get("query_mode", False)
+        self.actions_metadata = []
 
-        if self.server_url and self.auth_type != "oauth":
-            self._setup_client()
+    def _get_auth(self):
+        """Get authentication handler based on auth_type."""
+        auth_credentials = self.config.get("auth_credentials", {})
 
-    @staticmethod
-    def _validate_server_url(server_url: str) -> str:
-        """Validate server_url to prevent SSRF to internal networks.
-
-        Raises:
-            ValueError: If the URL points to a private/internal address.
-        """
-        try:
-            return validate_url(server_url)
-        except SSRFError as exc:
-            raise ValueError(f"Invalid MCP server URL: {exc}") from exc
-
-    def _resolve_redirect_uri(self, configured_redirect_uri: Optional[str]) -> str:
-        if configured_redirect_uri:
-            return configured_redirect_uri.rstrip("/")
-
-        explicit = getattr(settings, "MCP_OAUTH_REDIRECT_URI", None)
-        if explicit:
-            return explicit.rstrip("/")
-
-        connector_base = getattr(settings, "CONNECTOR_REDIRECT_BASE_URI", None)
-        if connector_base:
-            parsed = urlparse(connector_base)
-            if parsed.scheme and parsed.netloc:
-                return f"{parsed.scheme}://{parsed.netloc}/api/mcp_server/callback"
-
-        return f"{settings.API_URL.rstrip('/')}/api/mcp_server/callback"
-
-    def _generate_cache_key(self) -> str:
-        """Generate a unique cache key for this MCP server configuration."""
-        auth_key = ""
-        if self.auth_type == "oauth":
-            scopes_str = ",".join(self.oauth_scopes) if self.oauth_scopes else "none"
-            oauth_identity = self.user_id or self.oauth_task_id or "anonymous"
-            auth_key = (
-                f"oauth:{oauth_identity}:{self.oauth_client_name}:{scopes_str}:{self.redirect_uri}"
-            )
-        elif self.auth_type in ["bearer"]:
-            token = self.auth_credentials.get(
-                "bearer_token", ""
-            ) or self.auth_credentials.get("access_token", "")
-            auth_key = f"bearer:{token[:10]}..." if token else "bearer:none"
-        elif self.auth_type == "api_key":
-            api_key = self.auth_credentials.get("api_key", "")
-            auth_key = f"apikey:{api_key[:10]}..." if api_key else "apikey:none"
-        elif self.auth_type == "basic":
-            username = self.auth_credentials.get("username", "")
-            auth_key = f"basic:{username}"
-        else:
-            auth_key = "none"
-        return f"{self.server_url}#{self.transport_type}#{auth_key}"
-
-    def _setup_client(self):
-        global _mcp_clients_cache
-        if self._cache_key in _mcp_clients_cache:
-            cached_data = _mcp_clients_cache[self._cache_key]
-            if time.time() - cached_data["created_at"] < 300:
-                self._client = cached_data["client"]
-                return
-            else:
-                del _mcp_clients_cache[self._cache_key]
-        transport = self._create_transport()
-        auth = None
-
-        if self.auth_type == "oauth":
-            redis_client = get_redis_instance()
-            if self.query_mode:
-                auth = NonInteractiveOAuth(
-                    mcp_url=self.server_url,
-                    scopes=self.oauth_scopes,
-                    redis_client=redis_client,
-                    redirect_uri=self.redirect_uri,
-                    user_id=self.user_id,
-                )
-            else:
-                auth = DocsGPTOAuth(
-                    mcp_url=self.server_url,
-                    scopes=self.oauth_scopes,
-                    redis_client=redis_client,
-                    redirect_uri=self.redirect_uri,
-                    task_id=self.oauth_task_id,
-                    user_id=self.user_id,
-                    redirect_publish=self.oauth_redirect_publish,
-                )
-        elif self.auth_type == "bearer":
-            token = self.auth_credentials.get(
-                "bearer_token", ""
-            ) or self.auth_credentials.get("access_token", "")
+        if self.auth_type == "bearer":
+            token = auth_credentials.get("bearer_token", "")
             if token:
-                auth = BearerAuth(token)
-        self._client = Client(transport, auth=auth)
-        _mcp_clients_cache[self._cache_key] = {
-            "client": self._client,
-            "created_at": time.time(),
-        }
-
-    def _create_transport(self):
-        """Create appropriate transport based on configuration."""
-        headers = {"Content-Type": "application/json", "User-Agent": "DocsGPT-MCP/1.0"}
-        headers.update(self.custom_headers)
-
-        if self.auth_type == "api_key":
-            api_key = self.auth_credentials.get("api_key", "")
-            header_name = self.auth_credentials.get("api_key_header", "X-API-Key")
+                return BearerAuth(token)
+        elif self.auth_type == "api_key":
+            api_key = auth_credentials.get("api_key", "")
+            header_name = auth_credentials.get("api_key_header", "X-API-Key")
             if api_key:
-                headers[header_name] = api_key
+                return BearerAuth(api_key)
         elif self.auth_type == "basic":
-            username = self.auth_credentials.get("username", "")
-            password = self.auth_credentials.get("password", "")
+            username = auth_credentials.get("username", "")
+            password = auth_credentials.get("password", "")
             if username and password:
-                credentials = base64.b64encode(
-                    f"{username}:{password}".encode()
-                ).decode()
-                headers["Authorization"] = f"Basic {credentials}"
-        if self.transport_type == "auto":
-            if "sse" in self.server_url.lower() or self.server_url.endswith("/sse"):
-                transport_type = "sse"
-            else:
-                transport_type = "http"
-        else:
-            transport_type = self.transport_type
-        if transport_type == "stdio":
-            raise ValueError("STDIO transport is disabled")
-        if transport_type == "sse":
-            headers.update({"Accept": "text/event-stream", "Cache-Control": "no-cache"})
-            return SSETransport(url=self.server_url, headers=headers)
-        elif transport_type == "http":
-            return StreamableHttpTransport(url=self.server_url, headers=headers)
-        elif transport_type == "stdio":
-            command = self.config.get("command", "python")
-            args = self.config.get("args", [])
-            env = self.auth_credentials if self.auth_credentials else None
-            return StdioTransport(command=command, args=args, env=env)
-        else:
-            return StreamableHttpTransport(url=self.server_url, headers=headers)
+                import base64 as b64
+                credentials = b64.b64encode(f"{username}:{password}".encode()).decode()
+                return BearerAuth(credentials)
 
-    def _format_tools(self, tools_response) -> List[Dict]:
-        """Format tools response to match expected format."""
-        if hasattr(tools_response, "tools"):
-            tools = tools_response.tools
-        elif isinstance(tools_response, list):
-            tools = tools_response
-        else:
-            tools = []
-        tools_dict = []
-        for tool in tools:
-            if hasattr(tool, "name"):
-                tool_dict = {
-                    "name": tool.name,
-                    "description": tool.description,
-                }
-                if hasattr(tool, "inputSchema"):
-                    tool_dict["inputSchema"] = tool.inputSchema
-                tools_dict.append(tool_dict)
-            elif isinstance(tool, dict):
-                tools_dict.append(tool)
-            else:
-                if hasattr(tool, "model_dump"):
-                    tools_dict.append(tool.model_dump())
-                else:
-                    tools_dict.append({"name": str(tool), "description": ""})
-        return tools_dict
+        return None
 
-    async def _execute_with_client(self, operation: str, *args, **kwargs):
-        """Execute operation with FastMCP client."""
-        if not self._client:
-            raise Exception("FastMCP client not initialized")
-        async with self._client:
-            if operation == "ping":
-                return await self._client.ping()
-            elif operation == "list_tools":
-                tools_response = await self._client.list_tools()
-                self.available_tools = self._format_tools(tools_response)
-                return self.available_tools
-            elif operation == "call_tool":
-                tool_name = args[0]
-                tool_args = kwargs
-                return await self._client.call_tool(tool_name, tool_args)
-            elif operation == "list_resources":
-                return await self._client.list_resources()
-            elif operation == "list_prompts":
-                return await self._client.list_prompts()
-            else:
-                raise Exception(f"Unknown operation: {operation}")
-
-    _ERROR_MAP = [
-        (concurrent.futures.TimeoutError, lambda op, t, _: f"Timed out after {t}s"),
-        (ConnectionRefusedError, lambda *_: "Connection refused"),
-    ]
-
-    _ERROR_PATTERNS = {
-        ("403", "Forbidden"): "Access denied (403 Forbidden)",
-        ("401", "Unauthorized"): "Authentication failed (401 Unauthorized)",
-        ("ECONNREFUSED",): "Connection refused",
-        ("SSL", "certificate"): "SSL/TLS error",
-    }
-
-    def _run_async_operation(self, operation: str, *args, **kwargs):
-        try:
-            try:
-                asyncio.get_running_loop()
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        self._run_in_new_loop, operation, *args, **kwargs
-                    )
-                    return future.result(timeout=self.timeout)
-            except RuntimeError:
-                return self._run_in_new_loop(operation, *args, **kwargs)
-        except Exception as e:
-            raise self._map_error(operation, e) from e
-            raise self._map_error(operation, e) from e
-
-    def _run_in_new_loop(self, operation, *args, **kwargs):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(
-                self._execute_with_client(operation, *args, **kwargs)
+    def _get_transport(self, auth=None):
+        """Get the appropriate transport based on transport_type."""
+        if self.transport_type == "stdio":
+            if not self.command:
+                raise ValueError("Command is required for STDIO transport")
+            return StdioTransport(
+                command=self.command,
+                args=self.args if self.args else [],
             )
-        finally:
-            loop.close()
 
-    def _map_error(self, operation: str, exc: Exception) -> Exception:
-        for exc_type, msg_fn in self._ERROR_MAP:
-            if isinstance(exc, exc_type):
-                return Exception(msg_fn(operation, self.timeout, exc))
-        error_msg = str(exc)
-        for patterns, friendly in self._ERROR_PATTERNS.items():
-            if any(p.lower() in error_msg.lower() for p in patterns):
-                return Exception(friendly)
-        logger.error("MCP %s failed: %s", operation, exc)
-        return exc
+        headers = dict(self.headers) if self.headers else {}
 
-    def discover_tools(self) -> List[Dict]:
-        """
-        Discover available tools from the MCP server using FastMCP.
+        if auth and hasattr(auth, 'token'):
+            headers["Authorization"] = f"Bearer {auth.token}"
 
-        Returns:
-            List of tool definitions from the server
-        """
-        if not self.server_url:
-            return []
-        if not self._client:
-            self._setup_client()
-        try:
-            tools = self._run_async_operation("list_tools")
-            self.available_tools = tools
-            return self.available_tools
-        except Exception as e:
-            raise Exception(f"Failed to discover tools from MCP server: {str(e)}")
-
-    def execute_action(self, action_name: str, **kwargs) -> Any:
-        if not self.server_url:
-            raise Exception("No MCP server configured")
-        if not self._client:
-            self._setup_client()
-        cleaned_kwargs = {}
-        for key, value in kwargs.items():
-            if value == "" or value is None:
-                continue
-            cleaned_kwargs[key] = value
-        try:
-            result = self._run_async_operation(
-                "call_tool", action_name, **cleaned_kwargs
-            )
-            return self._format_result(result)
-        except Exception as e:
-            error_msg = str(e)
-            lower_msg = error_msg.lower()
-            is_auth_error = (
-                "401" in error_msg
-                or "unauthorized" in lower_msg
-                or "session expired" in lower_msg
-                or "re-authorize" in lower_msg
-            )
-            if is_auth_error:
-                if self.auth_type == "oauth":
-                    raise Exception(
-                        f"Action '{action_name}' failed: OAuth session expired. "
-                        "Please re-authorize this MCP server in tool settings."
-                    ) from e
-                global _mcp_clients_cache
-                _mcp_clients_cache.pop(self._cache_key, None)
-                self._client = None
-                self._setup_client()
-                try:
-                    result = self._run_async_operation(
-                        "call_tool", action_name, **cleaned_kwargs
-                    )
-                    return self._format_result(result)
-                except Exception as retry_e:
-                    raise Exception(
-                        f"Action '{action_name}' failed after re-auth attempt: {retry_e}. "
-                        "Your credentials may have expired — please re-authorize in tool settings."
-                    ) from retry_e
-            raise Exception(
-                f"Failed to execute action '{action_name}': {error_msg}"
-            ) from e
-
-    def _format_result(self, result) -> Dict:
-        """Format FastMCP result to match expected format."""
-        if hasattr(result, "content"):
-            content_list = []
-            for content_item in result.content:
-                if hasattr(content_item, "text"):
-                    content_list.append({"type": "text", "text": content_item.text})
-                elif hasattr(content_item, "data"):
-                    content_list.append({"type": "data", "data": content_item.data})
-                else:
-                    content_list.append(
-                        {"type": "unknown", "content": str(content_item)}
-                    )
-            return {
-                "content": content_list,
-                "isError": getattr(result, "isError", False),
-            }
-        else:
-            return result
-
-    def test_connection(self) -> Dict:
-        if not self.server_url:
-            return {
-                "success": False,
-                "message": "No server URL configured",
-                "tools_count": 0,
-            }
-        try:
-            parsed = urlparse(self.server_url)
-            if parsed.scheme not in ("http", "https"):
-                return {
-                    "success": False,
-                    "message": f"Invalid URL scheme '{parsed.scheme}' — use http:// or https://",
-                    "tools_count": 0,
-                }
-        except Exception:
-            return {
-                "success": False,
-                "message": "Invalid URL format",
-                "tools_count": 0,
-            }
-        if not self._client:
-            try:
-                self._setup_client()
-            except Exception as e:
-                return {
-                    "success": False,
-                    "message": f"Client init failed: {str(e)}",
-                    "tools_count": 0,
-                }
-        try:
-            if self.auth_type == "oauth":
-                return self._test_oauth_connection()
-            else:
-                return self._test_regular_connection()
-        except Exception as e:
-            return {
-                "success": False,
-                "message": f"Connection failed: {str(e)}",
-                "tools_count": 0,
-            }
-
-    def _test_regular_connection(self) -> Dict:
-        ping_ok = False
-        ping_error = None
-        try:
-            self._run_async_operation("ping")
-            ping_ok = True
-        except Exception as e:
-            ping_error = str(e)
+        transport_class = StreamableHttpTransport
+        if self.transport_type == "sse":
+            transport_class = SSETransport
 
         try:
-            tools = self.discover_tools()
-        except Exception as e:
-            return {
-                "success": False,
-                "message": f"Connection failed: {ping_error or str(e)}",
-                "tools_count": 0,
-            }
+            validate_url(self.server_url)
+        except SSRFError as e:
+            raise ValueError(f"Invalid server URL: {e}") from e
 
-        if not tools and not ping_ok:
-            return {
-                "success": False,
-                "message": f"Connection failed: {ping_error or 'No tools found'}",
-                "tools_count": 0,
-            }
-
-        return {
-            "success": True,
-            "message": f"Connected — found {len(tools)} tool{'s' if len(tools) != 1 else ''}.",
-            "tools_count": len(tools),
-            "tools": [
-                {
-                    "name": tool.get("name", "unknown"),
-                    "description": tool.get("description", ""),
-                }
-                for tool in tools
-            ],
-        }
-
-    def _test_oauth_connection(self) -> Dict:
-        storage = DBTokenStorage(
-            server_url=self.server_url, user_id=self.user_id,
+        return transport_class(
+            url=self.server_url,
+            headers=headers if headers else None,
         )
-        loop = asyncio.new_event_loop()
+
+    def _run_async(self, coro):
+        """Run an async coroutine synchronously."""
         try:
-            tokens = loop.run_until_complete(storage.get_tokens())
-        finally:
-            loop.close()
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, coro)
+                    return future.result(timeout=self.timeout + 5)
+            else:
+                return loop.run_until_complete(coro)
+        except RuntimeError:
+            return asyncio.run(coro)
 
-        if tokens and tokens.access_token:
-            self.query_mode = True
-            _mcp_clients_cache.pop(self._cache_key, None)
-            self._client = None
-            self._setup_client()
-            try:
-                tools = self.discover_tools()
-                return {
-                    "success": True,
-                    "message": f"Connected — found {len(tools)} tool{'s' if len(tools) != 1 else ''}.",
-                    "tools_count": len(tools),
-                    "tools": [
-                        {
-                            "name": t.get("name", "unknown"),
-                            "description": t.get("description", ""),
-                        }
-                        for t in tools
-                    ],
-                }
-            except Exception as e:
-                logger.warning("OAuth token validation failed: %s", e)
-                _mcp_clients_cache.pop(self._cache_key, None)
-                self._client = None
+    async def _connect_and_list_tools(self):
+        """Connect to MCP server and list available tools."""
+        auth = self._get_auth()
+        transport = self._get_transport(auth)
 
-        return self._start_oauth_task()
+        async with Client(transport) as client:
+            tools = await client.list_tools()
+            return tools
 
-    def _start_oauth_task(self) -> Dict:
-        task_config = self.config.copy()
-        task_config.pop("query_mode", None)
-        result = mcp_oauth_task.delay(task_config, self.user_id)
-        return {
-            "success": False,
-            "requires_oauth": True,
-            "task_id": result.id,
-            "message": "OAuth authorization required.",
-            "tools_count": 0,
-        }
+    def discover_tools(self):
+        """Discover tools from the MCP server."""
+        try:
+            tools = self._run_async(self._connect_and_list_tools())
+            self.available_tools = tools if tools else []
+            return True
+        except Exception as e:
+            logger.error(f"Failed to discover MCP tools: {e}")
+            self.available_tools = []
+            return False
 
-    def get_actions_metadata(self) -> List[Dict]:
-        """
-        Get metadata for all available actions.
-
-        Returns:
-            List of action metadata dictionaries
-        """
+    def get_actions_metadata(self):
+        """Convert MCP tools to DocsGPT action metadata format."""
         actions = []
         for tool in self.available_tools:
-            input_schema = (
-                tool.get("inputSchema")
-                or tool.get("input_schema")
-                or tool.get("schema")
-                or tool.get("parameters")
-            )
+            if isinstance(tool, dict):
+                tool_name = tool.get("name", "")
+                tool_description = tool.get("description", "")
+                input_schema = (
+                    tool.get("inputSchema")
+                    or tool.get("input_schema")
+                )
+            else:
+                tool_name = getattr(tool, "name", "")
+                tool_description = getattr(tool, "description", "")
+                input_schema = (
+                    getattr(tool, "inputSchema", None)
+                    or getattr(tool, "input_schema", None)
+                )
+                if input_schema and hasattr(input_schema, "model_dump"):
+                    input_schema = input_schema.model_dump()
 
             parameters_schema = {
                 "type": "object",
@@ -569,129 +186,158 @@ class MCPTool(Tool):
                             "properties": input_schema.get("properties", {}),
                             "required": input_schema.get("required", []),
                         }
-
-                        for key in ["additionalProperties", "description"]:
+                    elif input_schema.get("type") == "object":
+                        # Schema declares no properties — tool takes no arguments.
+                        pass
+                    else:
+                        for key in ("type", "required"):
                             if key in input_schema:
                                 parameters_schema[key] = input_schema[key]
-                    else:
-                        parameters_schema["properties"] = input_schema
+                        parameters_schema["properties"] = input_schema.get("properties") or {}
+
             action = {
-                "name": tool.get("name", ""),
-                "description": tool.get("description", ""),
+                "name": tool_name,
+                "description": tool_description,
                 "parameters": parameters_schema,
             }
             actions.append(action)
+
         return actions
 
-    def get_config_requirements(self) -> Dict:
-        return {
-            "server_url": {
-                "type": "string",
-                "label": "Server URL",
-                "description": "URL of the remote MCP server",
-                "required": True,
-                "secret": False,
-                "order": 1,
-            },
-            "auth_type": {
-                "type": "string",
-                "label": "Authentication Type",
-                "description": "Authentication method for the MCP server",
-                "enum": ["none", "bearer", "oauth", "api_key", "basic"],
-                "default": "none",
-                "required": True,
-                "secret": False,
-                "order": 2,
-            },
-            "api_key": {
-                "type": "string",
-                "label": "API Key",
-                "description": "API key for authentication",
-                "required": False,
-                "secret": True,
-                "order": 3,
-                "depends_on": {"auth_type": "api_key"},
-            },
-            "api_key_header": {
-                "type": "string",
-                "label": "API Key Header",
-                "description": "Header name for API key (default: X-API-Key)",
-                "default": "X-API-Key",
-                "required": False,
-                "secret": False,
-                "order": 4,
-                "depends_on": {"auth_type": "api_key"},
-            },
-            "bearer_token": {
-                "type": "string",
-                "label": "Bearer Token",
-                "description": "Bearer token for authentication",
-                "required": False,
-                "secret": True,
-                "order": 3,
-                "depends_on": {"auth_type": "bearer"},
-            },
-            "username": {
-                "type": "string",
-                "label": "Username",
-                "description": "Username for basic authentication",
-                "required": False,
-                "secret": False,
-                "order": 3,
-                "depends_on": {"auth_type": "basic"},
-            },
-            "password": {
-                "type": "string",
-                "label": "Password",
-                "description": "Password for basic authentication",
-                "required": False,
-                "secret": True,
-                "order": 4,
-                "depends_on": {"auth_type": "basic"},
-            },
-            "oauth_scopes": {
-                "type": "string",
-                "label": "OAuth Scopes",
-                "description": "Comma-separated OAuth scopes to request",
-                "required": False,
-                "secret": False,
-                "order": 3,
-                "depends_on": {"auth_type": "oauth"},
-            },
-            "timeout": {
-                "type": "number",
-                "label": "Timeout (seconds)",
-                "description": "Request timeout in seconds (1-300)",
-                "default": 30,
-                "required": False,
-                "secret": False,
-                "order": 10,
-            },
-        }
+    def _start_oauth_task(self, user_id: str):
+        """Start an OAuth task for authentication."""
+        try:
+            redis_client = get_redis_instance()
+            if not redis_client:
+                return {
+                    "success": False,
+                    "requires_oauth": False,
+                    "message": "Redis not available for OAuth",
+                }
+
+            task = mcp_oauth_task.delay(
+                mcp_url=self.server_url,
+                user_id=user_id,
+            )
+
+            return {
+                "success": False,
+                "requires_oauth": True,
+                "task_id": task.id,
+                "message": "OAuth authorization required",
+            }
+        except Exception as e:
+            logger.error(f"Failed to start OAuth task: {e}")
+            return {
+                "success": False,
+                "requires_oauth": False,
+                "message": f"Failed to initiate OAuth: {str(e)}",
+            }
+
+    def _test_oauth_connection(self, user_id: str):
+        """Test OAuth connection by checking existing tokens."""
+        from application.security.encryption import decrypt_credentials
+
+        encrypted_credentials = self.config.get("encrypted_credentials")
+        if encrypted_credentials and user_id:
+            credentials = decrypt_credentials(encrypted_credentials, user_id)
+            if credentials.get("access_token"):
+                try:
+                    test_config = dict(self.config)
+                    test_config["auth_type"] = "bearer"
+                    test_config["auth_credentials"] = {
+                        "bearer_token": credentials["access_token"]
+                    }
+                    test_tool = MCPTool(config=test_config, user_id=user_id)
+                    if test_tool.discover_tools():
+                        tools = test_tool.get_actions_metadata()
+                        return {
+                            "success": True,
+                            "requires_oauth": False,
+                            "message": f"Connected — found {len(tools)} tools.",
+                            "tools": tools,
+                            "tools_count": len(tools),
+                        }
+                except Exception as e:
+                    logger.debug(f"Stored token test failed: {e}")
+
+        return self._start_oauth_task(user_id)
+
+    def test_connection(self):
+        """Test the MCP server connection."""
+        if self.auth_type == "oauth":
+            user_id = self.user_id or ""
+            return self._test_oauth_connection(user_id)
+
+        try:
+            if self.discover_tools():
+                tools = self.get_actions_metadata()
+                return {
+                    "success": True,
+                    "message": f"Connected — found {len(tools)} tools.",
+                    "tools": tools,
+                    "tools_count": len(tools),
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "Failed to connect to MCP server",
+                    "tools_count": 0,
+                }
+        except Exception as e:
+            logger.error(f"MCP connection test failed: {e}")
+            return {
+                "success": False,
+                "message": f"Connection failed: {str(e)}",
+                "tools_count": 0,
+            }
+
+    def execute(self, action: str, **kwargs) -> Dict[str, Any]:
+        """Execute an MCP tool action."""
+        try:
+            result = self._run_async(
+                self._execute_tool(action, kwargs)
+            )
+            return {"result": result, "success": True}
+        except Exception as e:
+            logger.error(f"MCP tool execution failed: {e}")
+            return {"result": str(e), "success": False}
+
+    async def _execute_tool(self, tool_name: str, arguments: dict):
+        """Execute a specific MCP tool."""
+        auth = self._get_auth()
+        transport = self._get_transport(auth)
+
+        async with Client(transport) as client:
+            result = await client.call_tool(tool_name, arguments)
+            if result and hasattr(result, '__iter__'):
+                parts = []
+                for item in result:
+                    if hasattr(item, 'text'):
+                        parts.append(item.text)
+                    elif isinstance(item, dict) and 'text' in item:
+                        parts.append(item['text'])
+                    else:
+                        parts.append(str(item))
+                return "\n".join(parts) if parts else str(result)
+            return str(result) if result is not None else ""
 
 
 class DocsGPTOAuth(OAuthClientProvider):
-    """
-    Custom OAuth handler for DocsGPT that uses frontend redirect instead of browser.
-    """
+    """OAuth provider for DocsGPT MCP connections."""
 
     def __init__(
         self,
         mcp_url: str,
         redirect_uri: str,
-        redis_client: Redis | None = None,
-        redis_prefix: str = "mcp_oauth:",
-        task_id: str = None,
-        scopes: str | list[str] | None = None,
-        client_name: str = "DocsGPT-MCP",
-        user_id=None,
-        additional_client_metadata: dict[str, Any] | None = None,
+        client_name: str = "DocsGPT",
+        scopes: Optional[list] = None,
+        additional_client_metadata: Optional[dict] = None,
         skip_redirect_validation: bool = False,
+        task_id: str = None,
+        user_id: str = None,
         redirect_publish=None,
     ):
-        self.redirect_uri = redirect_uri
-        self.redis_client = redis_client
-        self.redis_prefix = redis_prefix
         self.task_id = task_id
         self.user_id = user_id
         # Worker-supplied callback. Invoked from ``redirect_handler``
@@ -700,7 +346,7 @@ class DocsGPTOAuth(OAuthClientProvider):
         self.redirect_publish = redirect_publish
 
         parsed_url = urlparse(mcp_url)
-        self.server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        self.server_base_url = mcp_url  # preserve path for path-scoped PRM resources
 
         if isinstance(scopes, list):
             scopes = " ".join(scopes)
@@ -728,379 +374,251 @@ class DocsGPTOAuth(OAuthClientProvider):
         )
 
         self.auth_url = None
-        self.extracted_state = None
 
-    def _process_auth_url(self, authorization_url: str) -> tuple[str, str]:
-        """Process authorization URL to extract state"""
-        try:
-            parsed_url = urlparse(authorization_url)
-            query_params = parse_qs(parsed_url.query)
+    def _get_redirect_uri(self, request_url: str) -> str:
+        """Build the callback redirect URI from the incoming request URL."""
+        parsed = urlparse(request_url)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}/api/mcp_server/callback"
+        return f"{settings.SERVER_URL}/api/mcp_server/callback"
 
-            state_params = query_params.get("state", [])
-            if state_params:
-                state = state_params[0]
-            else:
-                raise ValueError("No state in auth URL")
-            return authorization_url, state
-        except Exception as e:
-            raise Exception(f"Failed to process auth URL: {e}")
-
-    async def redirect_handler(self, authorization_url: str) -> None:
-        """Store auth URL and state in Redis for frontend to use."""
-        auth_url, state = self._process_auth_url(authorization_url)
-        logger.info("Processed auth_url: %s, state: %s", auth_url, state)
-        self.auth_url = auth_url
-        self.extracted_state = state
-
-        if self.redis_client and self.extracted_state:
-            key = f"{self.redis_prefix}auth_url:{self.extracted_state}"
-            self.redis_client.setex(key, 600, auth_url)
-            logger.info("Stored auth_url in Redis: %s", key)
-
-        if self.redirect_publish is not None:
-            # Best-effort: a publish failure must not abort the OAuth
-            # handshake — the user can still authorize via the popup
-            # opened from the legacy polling fallback if the SSE
-            # envelope is lost.
+    async def redirect_handler(self, url: str) -> None:
+        """Handle redirect to OAuth authorization URL."""
+        self.auth_url = url
+        logger.info("MCP OAuth redirect URL: %s", url)
+        if self.redirect_publish:
             try:
-                self.redirect_publish(auth_url)
-            except Exception:
+                await self.redirect_publish(
+                    auth_url=url,
+                    task_id=self.task_id,
+                )
+            except Exception as exc:
                 logger.warning(
-                    "redirect_publish callback raised for task_id=%s",
+                    "redirect_publish callback raised for task_id=%s: %s",
                     self.task_id,
-                    exc_info=True,
+                    exc,
                 )
 
-    async def callback_handler(self) -> tuple[str, str | None]:
-        """Wait for auth code from Redis using the state value."""
-        if not self.redis_client or not self.extracted_state:
-            raise Exception("Redis client or state not configured for OAuth")
-        poll_interval = 1
-        max_wait_time = 300
-        code_key = f"{self.redis_prefix}code:{self.extracted_state}"
-
-        start_time = time.time()
-        while time.time() - start_time < max_wait_time:
-            code_data = self.redis_client.get(code_key)
-            if code_data:
-                code = code_data.decode()
-                returned_state = self.extracted_state
-
-                self.redis_client.delete(code_key)
-                self.redis_client.delete(
-                    f"{self.redis_prefix}auth_url:{self.extracted_state}"
-                )
-                self.redis_client.delete(
-                    f"{self.redis_prefix}state:{self.extracted_state}"
-                )
-                return code, returned_state
-            error_key = f"{self.redis_prefix}error:{self.extracted_state}"
-            error_data = self.redis_client.get(error_key)
-            if error_data:
-                error_msg = error_data.decode()
-                self.redis_client.delete(error_key)
-                self.redis_client.delete(
-                    f"{self.redis_prefix}auth_url:{self.extracted_state}"
-                )
-                self.redis_client.delete(
-                    f"{self.redis_prefix}state:{self.extracted_state}"
-                )
-                raise Exception(f"OAuth error: {error_msg}")
-            await asyncio.sleep(poll_interval)
-        self.redis_client.delete(f"{self.redis_prefix}auth_url:{self.extracted_state}")
-        self.redis_client.delete(f"{self.redis_prefix}state:{self.extracted_state}")
-        raise Exception("OAuth timeout: no code received within 5 minutes")
-
-
-class NonInteractiveOAuth(DocsGPTOAuth):
-    """OAuth provider that fails fast on 401 instead of starting interactive auth.
-
-    Used during query execution to prevent the streaming response from blocking
-    while waiting for user authorization that will never come.
-    """
-
-    def __init__(self, **kwargs):
-        kwargs.setdefault("task_id", None)
-        kwargs["skip_redirect_validation"] = True
-        super().__init__(**kwargs)
-
-    async def redirect_handler(self, authorization_url: str) -> None:
-        raise Exception(
-            "OAuth session expired — please re-authorize this MCP server in tool settings."
-        )
-
-    async def callback_handler(self) -> tuple[str, str | None]:
-        raise Exception(
-            "OAuth session expired — please re-authorize this MCP server in tool settings."
-        )
+    async def callback_handler(self, authorization_url: str) -> tuple:
+        """Handle OAuth callback."""
+        parsed_url = urlparse(authorization_url)
+        query_params = parse_qs(parsed_url.query)
+        code = query_params.get("code", [None])[0]
+        state = query_params.get("state", [None])[0]
+        return code, state
 
 
 class DBTokenStorage(TokenStorage):
-    def __init__(
-        self,
-        server_url: str,
-        user_id: str,
-        expected_redirect_uri: Optional[str] = None,
-    ):
+    """Token storage using database."""
+
+    def __init__(self, server_url: str, user_id: str, expected_redirect_uri: str = None):
         self.server_url = server_url
         self.user_id = user_id
         self.expected_redirect_uri = expected_redirect_uri
 
-    @staticmethod
-    def get_base_url(url: str) -> str:
-        parsed = urlparse(url)
-        return f"{parsed.scheme}://{parsed.netloc}"
-
-    def _pg_provider(self) -> str:
-        return f"mcp:{self.get_base_url(self.server_url)}"
-
-    def _fetch_session_data(self) -> dict:
-        """Read the JSONB ``session_data`` blob for this MCP server row."""
-        from application.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
-        )
-        from application.storage.db.session import db_readonly
-
-        base_url = self.get_base_url(self.server_url)
-        with db_readonly() as conn:
-            row = ConnectorSessionsRepository(conn).get_by_user_and_server_url(
-                self.user_id, base_url,
-            )
-        if not row:
-            return {}
-        data = row.get("session_data") or {}
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except ValueError:
-                return {}
-        return data if isinstance(data, dict) else {}
-
-    async def get_tokens(self) -> OAuthToken | None:
-        data = await asyncio.to_thread(self._fetch_session_data)
-        if not data or "tokens" not in data:
-            return None
+    async def get_tokens(self) -> Optional[OAuthToken]:
+        """Retrieve stored OAuth tokens."""
         try:
-            return OAuthToken.model_validate(data["tokens"])
-        except ValidationError as e:
-            logger.error("Could not load tokens: %s", e)
-            return None
-
-    def _merge(self, patch: dict) -> None:
-        """Shallow-merge ``patch`` into this row's ``session_data``.
-
-        Threads ``server_url`` through to the repository so it lands in
-        the scalar column — ``get_by_user_and_server_url`` needs that to
-        resolve the row (``NULL = 'https://...'`` is UNKNOWN in SQL).
-        """
-        from application.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
-        )
-        from application.storage.db.session import db_session
-
-        base_url = self.get_base_url(self.server_url)
-        with db_session() as conn:
-            ConnectorSessionsRepository(conn).merge_session_data(
-                self.user_id, self._pg_provider(), base_url, patch,
+            from application.storage.db.repositories.connector_sessions import (
+                ConnectorSessionsRepository,
             )
+            from application.storage.db.session import db_readonly
 
-    def _delete(self) -> None:
-        from application.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
-        )
-        from application.storage.db.session import db_session
-
-        with db_session() as conn:
-            ConnectorSessionsRepository(conn).delete(
-                self.user_id, self._pg_provider(),
-            )
+            with db_readonly() as conn:
+                repo = ConnectorSessionsRepository(conn)
+                session = repo.get_by_user_and_server_url(self.user_id, self.server_url)
+                if session:
+                    token_data = session.get("token_info") or {}
+                    if token_data.get("access_token"):
+                        return OAuthToken(
+                            access_token=token_data["access_token"],
+                            token_type=token_data.get("token_type", "Bearer"),
+                            refresh_token=token_data.get("refresh_token"),
+                            expires_in=token_data.get("expires_in"),
+                            scope=token_data.get("scope"),
+                        )
+        except Exception as e:
+            logger.debug(f"Failed to retrieve stored tokens: {e}")
+        return None
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
-        base_url = self.get_base_url(self.server_url)
-        token_dump = tokens.model_dump()
-        await asyncio.to_thread(self._merge, {"tokens": token_dump})
-        logger.info("Saved tokens for %s", base_url)
-
-    async def get_client_info(self) -> OAuthClientInformationFull | None:
-        data = await asyncio.to_thread(self._fetch_session_data)
-        base_url = self.get_base_url(self.server_url)
-        if not data or "client_info" not in data:
-            logger.debug("No client_info in DB for %s", base_url)
-            return None
+        """Store OAuth tokens."""
         try:
-            client_info = OAuthClientInformationFull.model_validate(data["client_info"])
-            if self.expected_redirect_uri:
-                stored_uris = [
-                    str(uri).rstrip("/") for uri in client_info.redirect_uris
-                ]
-                expected_uri = self.expected_redirect_uri.rstrip("/")
-                if expected_uri not in stored_uris:
-                    logger.warning(
-                        "Redirect URI mismatch for %s: expected=%s stored=%s — clearing.",
-                        base_url,
-                        expected_uri,
-                        stored_uris,
-                    )
-                    # Drop ``tokens`` and ``client_info`` from the JSONB
-                    # blob via merge_session_data's ``None``-drops-key
-                    # semantics — preserves the row + any other keys.
-                    await asyncio.to_thread(
-                        self._merge,
-                        {"tokens": None, "client_info": None},
-                    )
-                    return None
-            return client_info
-        except ValidationError as e:
-            logger.error("Could not load client info: %s", e)
-            return None
+            from application.storage.db.repositories.connector_sessions import (
+                ConnectorSessionsRepository,
+            )
+            from application.storage.db.session import db_session
 
-    def _serialize_client_info(self, info: dict) -> dict:
-        if "redirect_uris" in info and isinstance(info["redirect_uris"], list):
-            info["redirect_uris"] = [str(u) for u in info["redirect_uris"]]
-        return info
+            token_data = {
+                "access_token": tokens.access_token,
+                "token_type": tokens.token_type or "Bearer",
+                "refresh_token": tokens.refresh_token,
+                "expires_in": tokens.expires_in,
+                "scope": tokens.scope,
+            }
+
+            with db_session() as conn:
+                repo = ConnectorSessionsRepository(conn)
+                existing = repo.get_by_user_and_server_url(self.user_id, self.server_url)
+                if existing:
+                    repo.update_token_info(str(existing["id"]), token_data)
+                else:
+                    repo.create(
+                        user_id=self.user_id,
+                        provider=f"mcp:{self.server_url}",
+                        server_url=self.server_url,
+                        token_info=token_data,
+                    )
+        except Exception as e:
+            logger.error(f"Failed to store OAuth tokens: {e}")
+
+    async def get_client_info(self) -> Optional[OAuthClientInformationFull]:
+        """Retrieve stored client registration info."""
+        try:
+            from application.storage.db.repositories.connector_sessions import (
+                ConnectorSessionsRepository,
+            )
+            from application.storage.db.session import db_readonly
+
+            with db_readonly() as conn:
+                repo = ConnectorSessionsRepository(conn)
+                session = repo.get_by_user_and_server_url(self.user_id, self.server_url)
+                if session:
+                    client_data = session.get("session_data", {}) or {}
+                    client_info = client_data.get("client_info")
+                    if client_info:
+                        return OAuthClientInformationFull(**client_info)
+        except Exception as e:
+            logger.debug(f"Failed to retrieve client info: {e}")
+        return None
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
-        serialized_info = self._serialize_client_info(client_info.model_dump())
-        base_url = self.get_base_url(self.server_url)
-        await asyncio.to_thread(
-            self._merge, {"client_info": serialized_info},
-        )
-        logger.info("Saved client info for %s", base_url)
+        """Store client registration info."""
+        try:
+            from application.storage.db.repositories.connector_sessions import (
+                ConnectorSessionsRepository,
+            )
+            from application.storage.db.session import db_session
 
-    async def clear(self) -> None:
-        await asyncio.to_thread(self._delete)
-        logger.info("Cleared OAuth cache for %s", self.get_base_url(self.server_url))
+            client_data = client_info.model_dump() if hasattr(client_info, 'model_dump') else {}
 
-    @classmethod
-    async def clear_all(cls, db_client=None) -> None:
-        """Delete every MCP-tagged connector session row.
-
-        ``db_client`` retained for call-site compatibility but unused —
-        storage is Postgres-only now.
-        """
-        from sqlalchemy import text
-
-        from application.storage.db.session import db_session
-
-        def _delete_all() -> None:
             with db_session() as conn:
-                conn.execute(
-                    text(
-                        "DELETE FROM connector_sessions "
-                        "WHERE provider LIKE 'mcp:%'"
+                repo = ConnectorSessionsRepository(conn)
+                existing = repo.get_by_user_and_server_url(self.user_id, self.server_url)
+                if existing:
+                    current_data = existing.get("session_data", {}) or {}
+                    current_data["client_info"] = client_data
+                    repo.update_session_data(str(existing["id"]), current_data)
+                else:
+                    repo.create(
+                        user_id=self.user_id,
+                        provider=f"mcp:{self.server_url}",
+                        server_url=self.server_url,
+                        session_data={"client_info": client_data},
                     )
-                )
-
-        await asyncio.to_thread(_delete_all)
-        logger.info("Cleared all OAuth client cache data.")
+        except Exception as e:
+            logger.error(f"Failed to store client info: {e}")
 
 
 class MCPOAuthManager:
-    """Manager for handling MCP OAuth callbacks."""
+    """Manages OAuth flows for MCP servers via Redis-backed SSE."""
 
-    def __init__(self, redis_client: Redis | None, redis_prefix: str = "mcp_oauth:"):
-        self.redis_client = redis_client
-        self.redis_prefix = redis_prefix
-
-    def handle_oauth_callback(
-        self, state: str, code: str, error: Optional[str] = None
-    ) -> bool:
-        """
-        Handle OAuth callback from provider.
-
-        Args:
-            state: The state parameter from OAuth callback
-            code: The authorization code from OAuth callback
-            error: Error message if OAuth failed
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            if not self.redis_client or not state:
-                raise Exception("Redis client or state not provided")
-            if error:
-                error_key = f"{self.redis_prefix}error:{state}"
-                self.redis_client.setex(error_key, 300, error)
-                raise Exception(f"OAuth error received: {error}")
-            code_key = f"{self.redis_prefix}code:{state}"
-            self.redis_client.setex(code_key, 300, code)
-
-            state_key = f"{self.redis_prefix}state:{state}"
-            self.redis_client.setex(state_key, 300, "completed")
-
-            return True
-        except Exception as e:
-            logger.error("Error handling OAuth callback: %s", e)
-            return False
+    def __init__(self, redis_client: Redis):
+        self.redis = redis_client
 
     def get_oauth_status(self, task_id: str, user_id: str) -> Dict[str, Any]:
         """Return the latest OAuth status for ``task_id`` from the user's SSE journal.
 
-        Mirrors the legacy polling contract: ``status`` derived from the
-        ``mcp.oauth.*`` event-type suffix, with payload fields surfaced
-        (e.g. ``tools``/``tools_count`` on ``completed``).
+        The SSE journal is written by ``mcp_oauth_task`` via
+        ``application.events.keys.stream_key``.  Each entry is a dict
+        with at minimum ``kind``, ``id`` and a ``status`` or ``auth_url``
+        key.
         """
         if not task_id:
-            return {"status": "not_started", "message": "OAuth flow not started"}
-        if not user_id:
-            return {"status": "not_found", "message": "User not provided"}
-        if self.redis_client is None:
-            return {"status": "not_found", "message": "Redis unavailable"}
+            return {"status": "error", "message": "task_id is required"}
 
         try:
-            # OAuth flows are short-lived but a concurrent source
-            # ingest can flood the user channel between the OAuth
-            # popup completing and the user clicking Save, pushing the
-            # completion envelope outside the read window. Bound the
-            # scan by the configured stream cap so we cover the full
-            # journal — XADD MAXLEN keeps that bounded too.
-            scan_count = max(settings.EVENTS_STREAM_MAXLEN, 200)
-            entries = self.redis_client.xrevrange(
-                stream_key(user_id), count=scan_count
-            )
-        except Exception:
-            logger.exception(
-                "xrevrange failed for oauth status: user_id=%s task_id=%s",
+            key = stream_key(user_id)
+            # Read up to 100 recent events from the stream.
+            entries = self.redis.xrevrange(key, count=100)
+        except Exception as e:
+            logger.warning(
+                "xrevrange failed for oauth status: user_id=%s task_id=%s: %s",
                 user_id,
                 task_id,
+                e,
             )
-            return {"status": "not_found", "message": "Status unavailable"}
+            return {"status": "error", "message": "Failed to read event stream"}
 
-        for _entry_id, fields in entries:
-            if not isinstance(fields, dict):
+        for _stream_id, fields in entries:
+            raw = fields.get(b"data") or fields.get("data")
+            if not raw:
                 continue
-            # decode_responses=False ⇒ bytes keys; the string-key fallback
-            # covers a future flip of that default without a forced refactor.
-            event_raw = fields.get(b"event")
-            if event_raw is None:
-                event_raw = fields.get("event")
-            if event_raw is None:
-                continue
-            if isinstance(event_raw, bytes):
-                try:
-                    event_raw = event_raw.decode("utf-8")
-                except Exception:
-                    continue
             try:
-                envelope = json.loads(event_raw)
-            except Exception:
+                scope = json.loads(raw if isinstance(raw, str) else raw.decode())
+            except (json.JSONDecodeError, AttributeError):
                 continue
-            if not isinstance(envelope, dict):
-                continue
-            event_type = envelope.get("type", "")
-            if not isinstance(event_type, str) or not event_type.startswith(
-                "mcp.oauth."
-            ):
-                continue
-            scope = envelope.get("scope") or {}
+
             if scope.get("kind") != "mcp_oauth" or scope.get("id") != task_id:
                 continue
-            payload = envelope.get("payload") or {}
+
             return {
-                "status": event_type[len("mcp.oauth."):],
                 "task_id": task_id,
-                **payload,
+                "status": scope.get("status", "pending"),
+                "auth_url": scope.get("auth_url"),
+                "message": scope.get("message"),
+                "tools": scope.get("tools", []),
             }
 
-        return {"status": "not_found", "message": "Status not found"}
+        return {"task_id": task_id, "status": "pending"}
+
+    def handle_oauth_callback(self, state: str, code: str, error: Optional[str] = None) -> bool:
+        """Route an OAuth callback to the waiting task via Redis pub/sub."""
+        try:
+            callback_data = json.dumps({
+                "state": state,
+                "code": code,
+                "error": error,
+            })
+            channel = f"mcp_oauth_callback:{state}"
+            self.redis.publish(channel, callback_data)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to handle OAuth callback: {e}")
+            return False
+
+
+def _get_or_create_mcp_client(
+    server_url: str,
+    transport_type: str = "auto",
+    auth=None,
+    headers: Optional[Dict] = None,
+    timeout: int = 30,
+    kwargs: Optional[Dict] = None,
+):
+    """Get or create a cached MCP client."""
+    kwargs = kwargs or {}
+    kwargs.setdefault("task_id", None)
+
+    cache_key = f"{server_url}:{transport_type}"
+    if cache_key in _mcp_clients_cache:
+        return _mcp_clients_cache[cache_key]
+
+    tool_config = {
+        "server_url": server_url,
+        "transport_type": transport_type,
+        "headers": headers or {},
+        "timeout": timeout,
+        "auth_type": "bearer" if auth else "none",
+        "auth_credentials": {"bearer_token": getattr(auth, "token", "")} if auth else {},
+    }
+
+    tool = MCPTool(config=tool_config)
+    _mcp_clients_cache[cache_key] = tool
+    return tool
+
+
+def _get_server_base_url(server_url: str) -> str:
+    """Extract base URL (scheme + netloc) from a server URL."""
+    parsed = urlparse(server_url)
+    return f"{parsed.scheme}://{parsed.netloc}"
