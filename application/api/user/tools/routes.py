@@ -1,7 +1,7 @@
 """Tool management routes."""
 
 from flask import current_app, jsonify, make_response, request
-from flask_restx import Namespace, Resource, fields
+from flask_restx import fields, Namespace, Resource
 
 from application.agents.tools import tool_manager
 from application.api import api
@@ -10,6 +10,21 @@ from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
 tools_ns = Namespace("tools", description="Tool management operations", path="/api")
+
+
+def _strip_sensitive_config(config: dict) -> dict:
+    """Remove sensitive fields from a tool config before returning it to the client."""
+    sensitive_fields = [
+        "api_key",
+        "bearer_token",
+        "username",
+        "password",
+        "api_key_header",
+        "encrypted_credentials",
+        "oauth_task_id",
+        "redirect_uri",
+    ]
+    return {k: v for k, v in config.items() if k not in sensitive_fields}
 
 
 def transform_actions(actions_metadata):
@@ -74,7 +89,13 @@ class UserTools(Resource):
             with db_readonly() as conn:
                 repo = UserToolsRepository(conn)
                 tools = repo.list_for_user(user)
-            return make_response(jsonify({"tools": tools}), 200)
+            safe_tools = []
+            for tool in tools:
+                safe_tool = dict(tool)
+                if "config" in safe_tool and isinstance(safe_tool["config"], dict):
+                    safe_tool["config"] = _strip_sensitive_config(safe_tool["config"])
+                safe_tools.append(safe_tool)
+            return make_response(jsonify({"tools": safe_tools}), 200)
         except Exception as e:
             current_app.logger.error(f"Error getting user tools: {e}")
             return make_response(jsonify({"error": str(e)}), 500)
@@ -170,7 +191,10 @@ class UserTool(Resource):
                 return make_response(
                     jsonify({"success": False, "error": "Tool not found"}), 404
                 )
-            return make_response(jsonify(tool), 200)
+            safe_tool = dict(tool)
+            if "config" in safe_tool and isinstance(safe_tool["config"], dict):
+                safe_tool["config"] = _strip_sensitive_config(safe_tool["config"])
+            return make_response(jsonify(safe_tool), 200)
         except Exception as e:
             current_app.logger.error(f"Error getting tool: {e}")
             return make_response(jsonify({"error": str(e)}), 500)
