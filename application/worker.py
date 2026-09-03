@@ -55,6 +55,10 @@ from application.storage.db.repositories.wiki_pages import (
 from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
+from application.upload_limits import (
+    enforce_parseable_attachment,
+    UnsupportedUploadTypeError,
+)
 from application.utils import (
     count_tokens_docs,
     get_encoding,
@@ -1554,6 +1558,26 @@ class AttachmentRejectedError(Exception):
     """
 
 
+def _reject_unparseable_attachment(local_path: str, filename: str) -> None:
+    """Reject an attachment with no parser whose contents are binary.
+
+    Defence in depth behind the route's gate: ``SimpleDirectoryReader`` opens
+    any suffix it has no parser for as plain text, so a binary must fail here,
+    visibly, rather than "succeed" as garbage.
+
+    Args:
+        local_path: Filesystem path of the attachment about to be parsed.
+        filename: The upload's original filename, which carries the suffix.
+
+    Raises:
+        AttachmentRejectedError: If the file has no parser and is not text.
+    """
+    try:
+        enforce_parseable_attachment(local_path, filename)
+    except UnsupportedUploadTypeError as exc:
+        raise AttachmentRejectedError(str(exc)) from exc
+
+
 def _reject_attachment_zip_bomb(local_path: str) -> None:
     """Reject a zip-container attachment that decompresses to too much.
 
@@ -1751,6 +1775,7 @@ def attachment_worker(self, file_info, user):
         parser_name = type(_parser).__name__ if _parser is not None else "SimpleDirectoryReader"
 
         def _parse_local_file(local_path: str, **kwargs) -> Document:
+            _reject_unparseable_attachment(local_path, filename)
             _reject_attachment_zip_bomb(local_path)
             parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
             try:

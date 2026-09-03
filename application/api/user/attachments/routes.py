@@ -39,6 +39,9 @@ from application.stt.stt_creator import STTCreator
 from application.tts.tts_creator import TTSCreator
 from application.upload_limits import (
     copy_upload_to_path,
+    enforce_parseable_attachment,
+    is_unsupported_upload_message,
+    UnsupportedUploadTypeError,
     upload_limit_message,
     UploadTooLargeError,
 )
@@ -130,6 +133,8 @@ def _get_store_attachment_user_error(exc: Exception) -> str:
         return build_stt_file_size_limit_message()
     if isinstance(exc, UploadTooLargeError):
         return upload_limit_message()
+    if isinstance(exc, UnsupportedUploadTypeError):
+        return str(exc)
     return "Failed to process file"
 
 
@@ -214,6 +219,10 @@ class StoreAttachment(Resource):
                     with tempfile.TemporaryDirectory() as temp_dir:
                         staged_path = os.path.join(temp_dir, original_filename)
                         copy_upload_to_path(file, staged_path)
+                        # Refuse here — nothing is stored or queued yet — so a
+                        # video the picker let through never reaches the
+                        # worker's reader, which would open it as text.
+                        enforce_parseable_attachment(staged_path, original_filename)
                         with open(staged_path, "rb") as staged_stream:
                             staged_upload = FileStorage(
                                 stream=staged_stream,
@@ -262,6 +271,22 @@ class StoreAttachment(Resource):
                             }
                         ),
                         413,
+                    )
+                if errors and all(
+                    is_unsupported_upload_message(error.get("error")) for error in errors
+                ):
+                    # Tell the user which type was refused rather than the
+                    # generic copy — this is the branch a phone picker that
+                    # ignores ``accept`` lands in.
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": errors[0]["error"],
+                                "errors": errors,
+                            }
+                        ),
+                        400,
                     )
                 return make_response(
                     jsonify({"status": "error", "message": "No valid files to upload"}),

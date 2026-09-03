@@ -1101,7 +1101,8 @@
       "waitingToSend_one": "Will send when {{count}} file finishes processing…",
       "waitingToSend_other": "Will send when {{count}} files finish processing…",
       "cancelQueuedSend": "Cancel",
-      "sendBlockedByFailed": "{{names}} couldn't be processed — remove to send"
+      "sendBlockedByFailed": "{{names}} couldn't be processed — remove to send",
+      "unsupportedType": "Not a supported file type ({{extension}})"
     },
     "retry": "Retry",
     "reasoning": "Reasoning",

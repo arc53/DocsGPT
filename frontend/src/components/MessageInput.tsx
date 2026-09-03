@@ -48,7 +48,9 @@ import { useArmedSend } from './message-input/armedSend';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
-  FILE_UPLOAD_ACCEPT,
+  getFileExtension,
+  parseUploadErrorMessage,
+  partitionAttachmentFiles,
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
 import { isChatToolVisible } from '../utils/toolUtils';
@@ -497,8 +499,31 @@ export default function MessageInput({
   );
 
   const uploadFiles = useCallback(
-    (files: File[]) => {
-      if (!files || files.length === 0) return;
+    async (incomingFiles: File[]) => {
+      if (!incomingFiles || incomingFiles.length === 0) return;
+
+      // Run the server's own rule here, not just the input's `accept`:
+      // mobile pickers ignore `accept`, and a file the server will refuse
+      // should say so before it costs an upload. Surface the refusal as a
+      // failed chip so the user sees why instead of a silent drop.
+      const { supported, unsupported } =
+        await partitionAttachmentFiles(incomingFiles);
+      unsupported.forEach((file) => {
+        dispatch(
+          addAttachment({
+            id: generateId(),
+            fileName: file.name,
+            progress: 0,
+            status: 'failed' as const,
+            taskId: '',
+            errorMessage: t('conversation.attachments.unsupportedType', {
+              extension: getFileExtension(file.name) || '?',
+            }),
+          }),
+        );
+      });
+      if (supported.length === 0) return;
+      const files = supported;
 
       const apiHost = import.meta.env.VITE_API_HOST;
 
@@ -579,9 +604,14 @@ export default function MessageInput({
                     tasksByIndex.set(uploadIndex, task);
                   });
 
+                  const errorsByIndex = new Map<number, string | undefined>();
                   errors.forEach((errorItem) => {
                     if (typeof errorItem.upload_index === 'number') {
                       failedIndices.add(errorItem.upload_index);
+                      errorsByIndex.set(
+                        errorItem.upload_index,
+                        errorItem.error,
+                      );
                     }
                   });
 
@@ -616,7 +646,10 @@ export default function MessageInput({
                       dispatch(
                         updateAttachment({
                           id: uiId,
-                          updates: { status: 'failed' },
+                          updates: {
+                            status: 'failed',
+                            errorMessage: errorsByIndex.get(index),
+                          },
                         }),
                       );
                       return;
@@ -748,11 +781,12 @@ export default function MessageInput({
             }
           } else {
             console.error('Upload failed', status, xhr.responseText);
+            const errorMessage = parseUploadErrorMessage(xhr.responseText);
             Object.values(indexToUiId).forEach((id) =>
               dispatch(
                 updateAttachment({
                   id,
-                  updates: { status: 'failed' },
+                  updates: { status: 'failed', errorMessage },
                 }),
               ),
             );
@@ -871,7 +905,10 @@ export default function MessageInput({
             dispatch(
               updateAttachment({
                 id: uniqueId,
-                updates: { status: 'failed' },
+                updates: {
+                  status: 'failed',
+                  errorMessage: parseUploadErrorMessage(xhr.responseText),
+                },
               }),
             );
           }
@@ -891,7 +928,7 @@ export default function MessageInput({
         xhr.send(formData);
       });
     },
-    [dispatch, token, trackAttachment],
+    [dispatch, t, token, trackAttachment],
   );
 
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -928,7 +965,10 @@ export default function MessageInput({
       setHandleDragActive(false);
     },
     maxSize: 25000000,
-    accept: FILE_UPLOAD_ACCEPT,
+    // No `accept`: react-dropzone would drop a rejected file on the floor
+    // with no feedback, and its mime matching disagrees with the server for
+    // text files that have no parser (.py, .log). uploadFiles applies the
+    // server's rule and reports what it refuses.
   });
 
   const handleInput = useCallback(() => {
@@ -1594,7 +1634,13 @@ export default function MessageInput({
         onChange={handleVoiceFileAttachment}
       />
 
-      <div className="border-border bg-card relative flex w-full flex-col rounded-3xl border dark:bg-transparent">
+      {/* translate="no": keep Chrome's page translator out of the composer —
+          it rewrites text nodes into <font> wrappers and React loses the
+          controls (dead Attach button, see AttachFileButton). */}
+      <div
+        translate="no"
+        className="border-border bg-card relative flex w-full flex-col rounded-3xl border dark:bg-transparent"
+      >
         <AttachmentChipList
           attachments={attachments}
           draggingId={draggingId}

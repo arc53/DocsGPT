@@ -2386,3 +2386,97 @@ class TestRequireLiveSttRedisUnavailable:
                 result = _require_live_stt_redis()
                 assert hasattr(result, "status_code")
                 assert result.status_code == 503
+
+
+MP4_BYTES = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2avc1mp41\x00\x00\x00\x08free"
+
+
+class TestStoreAttachmentTypeGate:
+    """Unparseable uploads are refused before anything is stored or queued."""
+
+    @patch("application.api.user.tasks.store_attachment.delay")
+    def test_rejects_unsupported_file_type_before_storage(
+        self, mock_store_attachment, flask_app
+    ):
+        from application.api.user.attachments.routes import StoreAttachment
+
+        app = Flask(__name__)
+        mock_storage = MagicMock()
+        with patch("application.api.user.base.storage", mock_storage), app.test_request_context(
+            "/api/store_attachment",
+            method="POST",
+            data={"file": (io.BytesIO(MP4_BYTES), "clip.mp4")},
+            content_type="multipart/form-data",
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = StoreAttachment().post()
+
+        assert _get_response_status(response) == 400
+        body = _get_response_json(response)
+        assert body["success"] is False
+        assert body["message"] == "Unsupported file type: .mp4"
+        assert body["errors"] == [
+            {"upload_index": 0, "filename": "clip.mp4", "error": "Unsupported file type: .mp4"}
+        ]
+        mock_storage.save_file.assert_not_called()
+        mock_store_attachment.assert_not_called()
+
+    @patch("application.api.user.tasks.store_attachment.delay")
+    def test_accepts_a_text_file_with_no_dedicated_parser(
+        self, mock_store_attachment, flask_app
+    ):
+        """A .py or .log is read by the plain-text fallthrough and must stay allowed."""
+        from application.api.user.attachments.routes import StoreAttachment
+
+        app = Flask(__name__)
+        mock_storage = MagicMock()
+        mock_storage.save_file.return_value = {"storage_type": "local"}
+        mock_store_attachment.return_value = SimpleNamespace(id="task-py")
+
+        with patch("application.api.user.base.storage", mock_storage), app.test_request_context(
+            "/api/store_attachment",
+            method="POST",
+            data={"file": (io.BytesIO(b"def main():\n    return 1\n"), "main.py")},
+            content_type="multipart/form-data",
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = StoreAttachment().post()
+
+        assert _get_response_status(response) == 200
+        assert _get_response_json(response)["task_id"] == "task-py"
+        assert mock_store_attachment.call_count == 1
+
+    @patch("application.api.user.tasks.store_attachment.delay")
+    def test_batch_skips_unsupported_file_and_keeps_the_rest(
+        self, mock_store_attachment, flask_app
+    ):
+        from application.api.user.attachments.routes import StoreAttachment
+
+        app = Flask(__name__)
+        mock_storage = MagicMock()
+        mock_storage.save_file.return_value = {"storage_type": "local"}
+        mock_store_attachment.return_value = SimpleNamespace(id="task-notes")
+
+        with patch("application.api.user.base.storage", mock_storage), app.test_request_context(
+            "/api/store_attachment",
+            method="POST",
+            data={
+                "file": [
+                    (io.BytesIO(MP4_BYTES), "clip.mp4"),
+                    (io.BytesIO(b"hello"), "notes.txt"),
+                ]
+            },
+            content_type="multipart/form-data",
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = StoreAttachment().post()
+
+        assert _get_response_status(response) == 200
+        body = _get_response_json(response)
+        assert [task["upload_index"] for task in body["tasks"]] == [1]
+        assert body["tasks"][0]["filename"] == "notes.txt"
+        assert body["errors"] == [
+            {"upload_index": 0, "filename": "clip.mp4", "error": "Unsupported file type: .mp4"}
+        ]
+        assert mock_storage.save_file.call_count == 1
+        assert mock_store_attachment.call_count == 1

@@ -8,6 +8,10 @@ from contextlib import suppress
 from typing import BinaryIO
 
 from application.core.settings import settings
+from application.parser.file.constants import (
+    attachment_extension,
+    has_attachment_parser,
+)
 
 
 _COPY_CHUNK_BYTES = 64 * 1024
@@ -24,6 +28,106 @@ _DOCUMENT_UPLOAD_PATHS = frozenset(
 
 class UploadTooLargeError(ValueError):
     """Raised when one uploaded file exceeds the configured byte cap."""
+
+
+class UnsupportedUploadTypeError(ValueError):
+    """Raised when an uploaded attachment has a file type the worker cannot parse."""
+
+
+_UNSUPPORTED_UPLOAD_PREFIX = "Unsupported file type"
+
+
+def unsupported_upload_message(filename: str | None) -> str:
+    """Return the stable client-facing rejection message for an unparseable upload.
+
+    Args:
+        filename: The rejected upload's filename.
+
+    Returns:
+        ``"Unsupported file type: .mp4"`` style text, naming the extension.
+    """
+    extension = attachment_extension(filename)
+    return f"{_UNSUPPORTED_UPLOAD_PREFIX}: {extension or '(no extension)'}"
+
+
+def is_unsupported_upload_message(message: str | None) -> bool:
+    """Return whether ``message`` is one produced by :func:`unsupported_upload_message`."""
+    return bool(message) and str(message).startswith(_UNSUPPORTED_UPLOAD_PREFIX)
+
+
+# A suffix with no parser is read by ``SimpleDirectoryReader``'s plain-text
+# fallthrough, so it is admitted on content: enough of the head to recognise a
+# container header, and a tolerance that keeps real text (UTF-8 accents, an
+# ANSI-coloured log) in while a random binary — ~12.5% of bytes below 0x20 —
+# stays out.
+_TEXT_SNIFF_BYTES = 8192
+_MAX_NONTEXT_RATIO = 0.10
+# Control bytes that occur in ordinary text: tab, LF, VT, FF, CR, ESC.
+_TEXT_CONTROL_BYTES = frozenset({0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x1B})
+
+
+def looks_like_text(sample: bytes) -> bool:
+    """Return whether a leading byte sample reads as text rather than binary.
+
+    Args:
+        sample: The first bytes of a file; an empty sample counts as text.
+
+    Returns:
+        False when the sample holds a NUL byte or too many other non-text
+        control bytes, True otherwise.
+    """
+    if not sample:
+        return True
+    if b"\x00" in sample:
+        return False
+    nontext = sum(
+        1
+        for byte in sample
+        if (byte < 0x20 and byte not in _TEXT_CONTROL_BYTES) or byte == 0x7F
+    )
+    return nontext / len(sample) <= _MAX_NONTEXT_RATIO
+
+
+def file_looks_like_text(path: str | os.PathLike[str]) -> bool:
+    """Return whether a file on disk reads as text, by its leading bytes.
+
+    Args:
+        path: Filesystem path to sample.
+
+    Returns:
+        The :func:`looks_like_text` verdict for the file's head; True when the
+        file cannot be read, leaving that failure to the parser to report.
+    """
+    try:
+        with open(path, "rb") as handle:
+            return looks_like_text(handle.read(_TEXT_SNIFF_BYTES))
+    except OSError:
+        return True
+
+
+def enforce_parseable_attachment(
+    path: str | os.PathLike[str], filename: str | None
+) -> None:
+    """Reject an attachment that no parser handles and that is not plain text.
+
+    Suffixes with a parser (``SUPPORTED_ATTACHMENT_EXTENSIONS``) are admitted
+    unconditionally — a PDF is binary and parses fine. Everything else has to
+    read as text, which is what keeps a video or an archive out of the
+    plain-text fallthrough while leaving source, config and log files in.
+
+    Args:
+        path: Local path to the staged upload, readable before it is stored.
+        filename: The upload's filename, used for the suffix and the message.
+
+    Raises:
+        UnsupportedUploadTypeError: When the file has no parser and its
+            contents are binary.
+    """
+    if has_attachment_parser(filename):
+        return
+    if file_looks_like_text(path):
+        return
+    raise UnsupportedUploadTypeError(unsupported_upload_message(filename))
 
 
 class _LimitedRawReader(io.RawIOBase):
