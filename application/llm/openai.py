@@ -9,7 +9,7 @@ from typing import Any, Callable
 from openai import BadRequestError, OpenAI
 
 from application.core.settings import settings
-from application.llm.base import BaseLLM
+from application.llm.base import BaseLLM, optional_int
 from application.storage.storage_creator import StorageCreator
 
 # Placeholder sent to OpenAI-compatible backends that require no credentials.
@@ -1305,18 +1305,37 @@ class OpenAILLM(BaseLLM):
         }
         input_details = getattr(usage, "prompt_tokens_details", None)
         output_details = getattr(usage, "completion_tokens_details", None)
-        try:
-            cached = int(getattr(input_details, "cached_tokens", 0) or 0)
-            reasoning = int(getattr(output_details, "reasoning_tokens", 0) or 0)
-        except (TypeError, ValueError):
-            cached = 0
-            reasoning = 0
-        if cached:
-            result["prompt_tokens_details"] = {"cached_tokens": cached}
+        cached = optional_int(getattr(input_details, "cached_tokens", None))
+        written = optional_int(getattr(input_details, "cache_write_tokens", None))
+        reasoning = optional_int(
+            getattr(output_details, "reasoning_tokens", None)
+        )
+        details = self._prompt_cache_details(cached, written)
+        if details:
+            result["prompt_tokens_details"] = details
         if reasoning:
             result["completion_tokens_details"] = {"reasoning_tokens": reasoning}
         self._last_usage = result
         self._last_usage_claimed = False
+
+    @staticmethod
+    def _prompt_cache_details(cached: int | None, written: int | None) -> dict:
+        """Build the ``prompt_tokens_details`` breakdown from the two cache bins.
+
+        A bin is included whenever the provider reported it, zero included:
+        downstream, an absent bin persists as NULL ("we don't know") and a
+        reported zero as 0 ("no cache hits"), and OpenAI reports
+        ``cached_tokens: 0`` on every uncached request. Collapsing the two
+        would file every ordinary request as unknown. ``cache_write_tokens``
+        is reported by newer OpenAI-family deployments that charge for cache
+        writes.
+        """
+        details = {}
+        if cached is not None:
+            details["cached_tokens"] = cached
+        if written is not None:
+            details["cache_write_tokens"] = written
+        return details
 
     @staticmethod
     def _function_call_ids(response):
@@ -1356,10 +1375,16 @@ class OpenAILLM(BaseLLM):
                 "completion_tokens": completion,
                 "total_tokens": int(getattr(usage, "total_tokens", 0) or prompt + completion),
             }
-            cached = int(getattr(input_details, "cached_tokens", 0) or 0)
-            reasoning = int(getattr(output_details, "reasoning_tokens", 0) or 0)
-            if cached:
-                result["prompt_tokens_details"] = {"cached_tokens": cached}
+            cached = optional_int(getattr(input_details, "cached_tokens", None))
+            written = optional_int(
+                getattr(input_details, "cache_write_tokens", None)
+            )
+            reasoning = optional_int(
+                getattr(output_details, "reasoning_tokens", None)
+            )
+            details = self._prompt_cache_details(cached, written)
+            if details:
+                result["prompt_tokens_details"] = details
             if reasoning:
                 result["completion_tokens_details"] = {"reasoning_tokens": reasoning}
             self._last_usage = result

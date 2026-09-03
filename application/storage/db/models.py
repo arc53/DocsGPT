@@ -235,6 +235,12 @@ token_usage_table = Table(
     # Added in ``0015_token_usage_model_id``. Canonical model id (catalog
     # name for built-ins, UUID for BYOM); NULL on un-backfilled rows.
     Column("model_id", Text),
+    # Added in ``0031_token_usage_cache_tokens``. Prompt-cache breakdowns of
+    # ``prompt_tokens`` as reported by the provider (reads; and writes on
+    # newer OpenAI-family models). NULL = not reported, distinct from 0 = no
+    # cache activity, so hit-rate queries stay honest across providers.
+    Column("cached_tokens", Integer),
+    Column("cache_write_tokens", Integer),
 )
 
 user_logs_table = Table(
