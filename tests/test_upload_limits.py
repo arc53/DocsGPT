@@ -1,5 +1,6 @@
 """Tests for bounded user-upload stream helpers."""
 
+import codecs
 import io
 
 import pytest
@@ -80,10 +81,49 @@ def test_enforce_parseable_attachment_rejects_binary_without_a_parser(
     assert str(excinfo.value).startswith("Unsupported file type")
 
 
+def test_enforce_parseable_attachment_rejects_binary_named_as_text(tmp_path):
+    """.txt has no parser — it *is* the fallthrough — so it is sniffed like any suffix.
+
+    Renaming a video to notes.txt would otherwise walk straight back into the
+    bug this gate exists for.
+    """
+    from application.upload_limits import (
+        enforce_parseable_attachment,
+        UnsupportedUploadTypeError,
+    )
+
+    path = tmp_path / "notes.txt"
+    path.write_bytes(MP4_HEADER + bytes(range(256)) * 4)
+
+    with pytest.raises(UnsupportedUploadTypeError) as excinfo:
+        enforce_parseable_attachment(path, "notes.txt")
+    assert str(excinfo.value) == "Unsupported file type: .txt"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        codecs.BOM_UTF8 + "hello — Unicode\n".encode(),
+        codecs.BOM_UTF16_LE + "hello\n".encode("utf-16-le"),
+        codecs.BOM_UTF16_BE + "hello\n".encode("utf-16-be"),
+        codecs.BOM_UTF32_BE + "hello\n".encode("utf-32-be"),
+    ],
+)
+def test_enforce_parseable_attachment_accepts_bom_marked_unicode_text(
+    content, tmp_path
+):
+    """A UTF-16 .txt is half NUL bytes and still ordinary text — the BOM says so."""
+    from application.upload_limits import enforce_parseable_attachment
+
+    path = tmp_path / "notes.txt"
+    path.write_bytes(content)
+
+    enforce_parseable_attachment(path, "notes.txt")
+
+
 @pytest.mark.parametrize(
     "filename",
     [
-        "notes.txt",
         "Report.PDF",
         "photo.JPG",
         "slides.pptx",
@@ -108,7 +148,15 @@ def test_enforce_parseable_attachment_accepts_parser_backed_types(filename, tmp_
 
 @pytest.mark.parametrize(
     "filename",
-    ["main.py", "server.log", "config.yaml", "query.sql", "Dockerfile", "notes.unknown"],
+    [
+        "notes.txt",
+        "main.py",
+        "server.log",
+        "config.yaml",
+        "query.sql",
+        "Dockerfile",
+        "notes.unknown",
+    ],
 )
 def test_enforce_parseable_attachment_accepts_text_without_a_parser(filename, tmp_path):
     """The plain-text fallthrough reads these correctly, so they must stay allowed."""
@@ -127,6 +175,8 @@ def test_enforce_parseable_attachment_accepts_text_without_a_parser(filename, tm
         (b"plain text\n", True),
         ("café — em dash\n".encode(), True),
         (b"\x1b[31mred log line\x1b[0m\n", True),
+        (codecs.BOM_UTF16_LE + "hi\n".encode("utf-16-le"), True),
+        (codecs.BOM_UTF8 + b"hi\n", True),
         (b"text\x00with nul", False),
         (bytes(range(32)) * 4, False),
         (b"\x7f\x7f\x7f\x7f" + b"a" * 16, False),

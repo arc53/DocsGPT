@@ -83,20 +83,20 @@ export const SOURCE_FILE_TREE_ACCEPT_ATTR = [
 
 /**
  * Chat-attachment suffixes with a dedicated parser. Mirrors the backend's
- * `SUPPORTED_ATTACHMENT_EXTENSIONS` (application/parser/file/constants.py) —
+ * `ATTACHMENT_PARSER_EXTENSIONS` (application/parser/file/constants.py) —
  * update both together. Zip is absent: source ingestion extracts archives,
  * the attachment path does not.
  *
- * Not the whole allow-list. A suffix that isn't here (.py, .log, .yaml) is
- * read by the backend's plain-text fallthrough, so it is judged on content
- * by `partitionAttachmentFiles` instead, exactly as the server does.
+ * Not the whole allow-list, and `.txt` is deliberately not here: a suffix
+ * that isn't listed (.txt, .py, .log, .yaml) is read by the backend's
+ * plain-text fallthrough, so it is judged on content by
+ * `partitionAttachmentFiles` instead, exactly as the server does.
  */
 export const ATTACHMENT_PARSER_EXTENSIONS: readonly string[] = [
   '.rst',
   '.md',
   '.mdx',
   '.pdf',
-  '.txt',
   '.docx',
   '.csv',
   '.epub',
@@ -123,9 +123,17 @@ export const ATTACHMENT_PARSER_EXTENSIONS: readonly string[] = [
   '.webm',
 ];
 
-/** Picker filter for the Attach button. A hint only — pickers may ignore it. */
-export const ATTACHMENT_FILE_ACCEPT_ATTR =
-  ATTACHMENT_PARSER_EXTENSIONS.join(',');
+/**
+ * Picker filter for the Attach button. A hint only — pickers may ignore it,
+ * and it must never be narrower than what the upload accepts: `text/*` (plus
+ * `.txt` explicitly) keeps parserless text files such as .py and .log
+ * selectable, since the gate reads those happily.
+ */
+export const ATTACHMENT_FILE_ACCEPT_ATTR = [
+  ...ATTACHMENT_PARSER_EXTENSIONS,
+  '.txt',
+  'text/*',
+].join(',');
 
 /** Lower-cased last extension including the dot, or '' (dotfiles have none). */
 export function getFileExtension(name: string): string {
@@ -152,10 +160,20 @@ const TEXT_SNIFF_BYTES = 8192;
 const MAX_NONTEXT_RATIO = 0.1;
 // Control bytes that occur in ordinary text: tab, LF, VT, FF, CR, ESC.
 const TEXT_CONTROL_BYTES = new Set([0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x1b]);
+// A UTF-16/32 file is half NUL bytes, so it has to be recognised by its BOM
+// before the NUL test — Notepad's "Unicode" .txt is ordinary text.
+const TEXT_BOMS = [
+  [0xef, 0xbb, 0xbf],
+  [0xff, 0xfe],
+  [0xfe, 0xff],
+  [0x00, 0x00, 0xfe, 0xff],
+];
 
 /** Whether a leading byte sample reads as text rather than binary. */
 export function looksLikeText(sample: Uint8Array): boolean {
   if (sample.length === 0) return true;
+  if (TEXT_BOMS.some((bom) => bom.every((byte, i) => sample[i] === byte)))
+    return true;
   let nontext = 0;
   for (const byte of sample) {
     if (byte === 0x00) return false;
@@ -205,4 +223,31 @@ export function parseUploadErrorMessage(body: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Per-file reasons from an error body, keyed by `upload_index`. A rejected
+ * batch carries one `errors` entry per file, so each chip can say why it
+ * failed instead of every chip repeating the first file's reason.
+ */
+export function parseUploadErrorsByIndex(body: string): Map<number, string> {
+  const byIndex = new Map<number, string>();
+  if (!body) return byIndex;
+  try {
+    const parsed = JSON.parse(body) as { errors?: unknown };
+    if (!Array.isArray(parsed?.errors)) return byIndex;
+    for (const entry of parsed.errors as {
+      upload_index?: unknown;
+      error?: unknown;
+    }[]) {
+      if (
+        typeof entry?.upload_index === 'number' &&
+        typeof entry.error === 'string'
+      )
+        byIndex.set(entry.upload_index, entry.error);
+    }
+  } catch {
+    // Not JSON (a proxy's HTML 502, say) — the caller falls back.
+  }
+  return byIndex;
 }

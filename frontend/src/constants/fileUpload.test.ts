@@ -7,6 +7,7 @@ import {
   hasAttachmentParser,
   looksLikeText,
   parseUploadErrorMessage,
+  parseUploadErrorsByIndex,
   partitionAttachmentFiles,
 } from './fileUpload';
 
@@ -46,12 +47,12 @@ describe('attachment type gate', () => {
     expect(hasAttachmentParser(file('main.py'))).toBe(false);
     expect(hasAttachmentParser(file('archive.zip'))).toBe(false);
     expect(hasAttachmentParser(file('clip.mp4'))).toBe(false);
+    // .txt is the plain-text fallthrough itself, not a parser.
+    expect(hasAttachmentParser(file('notes.txt'))).toBe(false);
   });
 
   it('mirrors the backend list: no zip, no video, images and markup included', () => {
-    const listed = ATTACHMENT_FILE_ACCEPT_ATTR.split(',');
-    expect(listed).toEqual([...ATTACHMENT_PARSER_EXTENSIONS]);
-    expect(listed).toContain('.pdf');
+    expect(ATTACHMENT_PARSER_EXTENSIONS).toContain('.pdf');
     // Parser-backed suffixes the first cut of this list missed.
     for (const ext of [
       '.webp',
@@ -62,10 +63,22 @@ describe('attachment type gate', () => {
       '.xml',
       '.mdx',
     ]) {
+      expect(ATTACHMENT_PARSER_EXTENSIONS).toContain(ext);
+    }
+    expect(ATTACHMENT_PARSER_EXTENSIONS).not.toContain('.zip');
+    expect(ATTACHMENT_PARSER_EXTENSIONS).not.toContain('.mp4');
+    expect(ATTACHMENT_PARSER_EXTENSIONS).not.toContain('.txt');
+  });
+
+  it('never hides a file the upload would accept behind the picker filter', () => {
+    const listed = ATTACHMENT_FILE_ACCEPT_ATTR.split(',');
+    for (const ext of ATTACHMENT_PARSER_EXTENSIONS) {
       expect(listed).toContain(ext);
     }
-    expect(listed).not.toContain('.zip');
-    expect(listed).not.toContain('.mp4');
+    // Parserless text (.txt, .py, .log) is accepted on content, so the
+    // picker must not filter it out.
+    expect(listed).toContain('.txt');
+    expect(listed).toContain('text/*');
   });
 });
 
@@ -79,6 +92,14 @@ describe('looksLikeText', () => {
     expect(looksLikeText(bytes(0x1b, 0x5b, 0x33, 0x31, 0x6d, 0x6f, 0x6b))).toBe(
       true,
     );
+  });
+
+  it('accepts BOM-marked Unicode, which is half NUL bytes but still text', () => {
+    // UTF-8, UTF-16 LE/BE, UTF-32 BE.
+    expect(looksLikeText(bytes(0xef, 0xbb, 0xbf, 0x68, 0x69))).toBe(true);
+    expect(looksLikeText(bytes(0xff, 0xfe, 0x68, 0x00, 0x69, 0x00))).toBe(true);
+    expect(looksLikeText(bytes(0xfe, 0xff, 0x00, 0x68, 0x00, 0x69))).toBe(true);
+    expect(looksLikeText(bytes(0x00, 0x00, 0xfe, 0xff, 0x00, 0x68))).toBe(true);
   });
 
   it('rejects a NUL byte and dense control bytes', () => {
@@ -104,16 +125,26 @@ describe('partitionAttachmentFiles', () => {
 
   it('keeps text files that have no parser — the backend reads them', async () => {
     const { supported, unsupported } = await partitionAttachmentFiles([
+      file('notes.txt', 'plain\n'),
       file('main.py', 'def main():\n    return 1\n'),
       file('server.log', '2026-09-02 ERROR boom\n'),
       file('Dockerfile', 'FROM python:3.12\n'),
     ]);
     expect(supported.map((f) => f.name)).toEqual([
+      'notes.txt',
       'main.py',
       'server.log',
       'Dockerfile',
     ]);
     expect(unsupported).toEqual([]);
+  });
+
+  it('refuses a binary renamed to .txt — .txt is sniffed like any other suffix', async () => {
+    const { supported, unsupported } = await partitionAttachmentFiles([
+      file('notes.txt', MP4_HEADER),
+    ]);
+    expect(supported).toEqual([]);
+    expect(unsupported.map((f) => f.name)).toEqual(['notes.txt']);
   });
 
   it('admits parser-backed types on their suffix, binary contents and all', async () => {
@@ -153,5 +184,40 @@ describe('parseUploadErrorMessage', () => {
     expect(parseUploadErrorMessage('<html>502</html>')).toBeUndefined();
     expect(parseUploadErrorMessage('{"ok":1}')).toBeUndefined();
     expect(parseUploadErrorMessage('')).toBeUndefined();
+  });
+});
+
+describe('parseUploadErrorsByIndex', () => {
+  it('keys each reason by its upload_index', () => {
+    const byIndex = parseUploadErrorsByIndex(
+      JSON.stringify({
+        success: false,
+        message: 'Unsupported file type: .mp4',
+        errors: [
+          {
+            upload_index: 0,
+            filename: 'clip.mp4',
+            error: 'Unsupported file type: .mp4',
+          },
+          {
+            upload_index: 1,
+            filename: 'a.zip',
+            error: 'Unsupported file type: .zip',
+          },
+        ],
+      }),
+    );
+    // Without this, both chips would repeat the first file's reason.
+    expect(byIndex.get(0)).toBe('Unsupported file type: .mp4');
+    expect(byIndex.get(1)).toBe('Unsupported file type: .zip');
+  });
+
+  it('is empty for bodies with no usable errors array', () => {
+    expect(parseUploadErrorsByIndex('<html>502</html>').size).toBe(0);
+    expect(parseUploadErrorsByIndex('{"message":"nope"}').size).toBe(0);
+    expect(parseUploadErrorsByIndex('').size).toBe(0);
+    expect(
+      parseUploadErrorsByIndex('{"errors":[{"error":"no index"}]}').size,
+    ).toBe(0);
   });
 });

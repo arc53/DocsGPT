@@ -2369,6 +2369,20 @@ class TestGetStoreAttachmentUserError:
         msg = _get_store_attachment_user_error(RuntimeError("oops"))
         assert msg == "Failed to process file"
 
+    @pytest.mark.unit
+    def test_unsupported_type_message_is_rebuilt_from_the_filename(self):
+        """Nothing is read off the exception, so its text cannot reach a response."""
+        from application.api.user.attachments.routes import (
+            _get_store_attachment_user_error,
+        )
+        from application.upload_limits import UnsupportedUploadTypeError
+
+        err = UnsupportedUploadTypeError("internals: /srv/app/tmp/staged-42")
+        msg = _get_store_attachment_user_error(err, "clip.mp4")
+
+        assert msg == "Unsupported file type: .mp4"
+        assert "/srv/app" not in msg
+
 
 class TestRequireLiveSttRedisUnavailable:
     """Cover lines 99-102: Redis unavailable returns 503."""
@@ -2418,6 +2432,29 @@ class TestStoreAttachmentTypeGate:
         assert body["errors"] == [
             {"upload_index": 0, "filename": "clip.mp4", "error": "Unsupported file type: .mp4"}
         ]
+        mock_storage.save_file.assert_not_called()
+        mock_store_attachment.assert_not_called()
+
+    @patch("application.api.user.tasks.store_attachment.delay")
+    def test_rejects_a_binary_renamed_to_a_text_suffix(
+        self, mock_store_attachment, flask_app
+    ):
+        """.txt has no parser, so it is judged on content like any other suffix."""
+        from application.api.user.attachments.routes import StoreAttachment
+
+        app = Flask(__name__)
+        mock_storage = MagicMock()
+        with patch("application.api.user.base.storage", mock_storage), app.test_request_context(
+            "/api/store_attachment",
+            method="POST",
+            data={"file": (io.BytesIO(MP4_BYTES), "notes.txt")},
+            content_type="multipart/form-data",
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = StoreAttachment().post()
+
+        assert _get_response_status(response) == 400
+        assert _get_response_json(response)["message"] == "Unsupported file type: .txt"
         mock_storage.save_file.assert_not_called()
         mock_store_attachment.assert_not_called()
 

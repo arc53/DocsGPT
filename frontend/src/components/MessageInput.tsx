@@ -50,6 +50,7 @@ import {
   AUDIO_FILE_ACCEPT_ATTR,
   getFileExtension,
   parseUploadErrorMessage,
+  parseUploadErrorsByIndex,
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
@@ -781,12 +782,20 @@ export default function MessageInput({
             }
           } else {
             console.error('Upload failed', status, xhr.responseText);
-            const errorMessage = parseUploadErrorMessage(xhr.responseText);
-            Object.values(indexToUiId).forEach((id) =>
+            // Each file gets its own reason where the server sent one; the
+            // top-level message is the fallback, not the answer for all of
+            // them — a batch can fail two files for two different reasons.
+            const fallbackMessage = parseUploadErrorMessage(xhr.responseText);
+            const errorsByIndex = parseUploadErrorsByIndex(xhr.responseText);
+            Object.entries(indexToUiId).forEach(([index, id]) =>
               dispatch(
                 updateAttachment({
                   id,
-                  updates: { status: 'failed', errorMessage },
+                  updates: {
+                    status: 'failed',
+                    errorMessage:
+                      errorsByIndex.get(Number(index)) ?? fallbackMessage,
+                  },
                 }),
               ),
             );

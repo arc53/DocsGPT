@@ -42,6 +42,7 @@ from application.upload_limits import (
     enforce_parseable_attachment,
     is_unsupported_upload_message,
     UnsupportedUploadTypeError,
+    unsupported_upload_message,
     upload_limit_message,
     UploadTooLargeError,
 )
@@ -128,13 +129,27 @@ def _enforce_uploaded_audio_size_limit(file, filename: str) -> None:
         enforce_audio_file_size_limit(size_bytes)
 
 
-def _get_store_attachment_user_error(exc: Exception) -> str:
+def _get_store_attachment_user_error(exc: Exception, filename: str | None = None) -> str:
+    """Map an upload failure to a fixed client-facing message.
+
+    Every branch returns text this module composes itself. Nothing is read off
+    the exception, so no exception state — message or traceback — can reach a
+    response body (CodeQL py/stack-trace-exposure).
+
+    Args:
+        exc: The exception raised while processing one uploaded file.
+        filename: That file's name, which supplies the extension for the
+            unsupported-type message.
+
+    Returns:
+        The message to report for this failure.
+    """
     if isinstance(exc, AudioFileTooLargeError):
         return build_stt_file_size_limit_message()
     if isinstance(exc, UploadTooLargeError):
         return upload_limit_message()
     if isinstance(exc, UnsupportedUploadTypeError):
-        return str(exc)
+        return unsupported_upload_message(filename)
     return "Failed to process file"
 
 
@@ -251,7 +266,9 @@ class StoreAttachment(Resource):
                     errors.append({
                         "upload_index": idx,
                         "filename": file.filename,
-                        "error": _get_store_attachment_user_error(file_err),
+                        "error": _get_store_attachment_user_error(
+                            file_err, file.filename
+                        ),
                     })
             
             if not tasks:

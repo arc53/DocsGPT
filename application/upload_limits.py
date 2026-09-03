@@ -64,6 +64,14 @@ _TEXT_SNIFF_BYTES = 8192
 _MAX_NONTEXT_RATIO = 0.10
 # Control bytes that occur in ordinary text: tab, LF, VT, FF, CR, ESC.
 _TEXT_CONTROL_BYTES = frozenset({0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x1B})
+# A UTF-16/32 file is half NUL bytes, so it has to be recognised by its BOM
+# before the NUL test — Notepad's "Unicode" .txt is ordinary text.
+_TEXT_BOMS = (
+    b"\xef\xbb\xbf",
+    b"\xff\xfe",
+    b"\xfe\xff",
+    b"\x00\x00\xfe\xff",
+)
 
 
 def looks_like_text(sample: bytes) -> bool:
@@ -74,9 +82,11 @@ def looks_like_text(sample: bytes) -> bool:
 
     Returns:
         False when the sample holds a NUL byte or too many other non-text
-        control bytes, True otherwise.
+        control bytes, True otherwise. A Unicode BOM settles it as text.
     """
     if not sample:
+        return True
+    if sample.startswith(_TEXT_BOMS):
         return True
     if b"\x00" in sample:
         return False
@@ -110,10 +120,11 @@ def enforce_parseable_attachment(
 ) -> None:
     """Reject an attachment that no parser handles and that is not plain text.
 
-    Suffixes with a parser (``SUPPORTED_ATTACHMENT_EXTENSIONS``) are admitted
-    unconditionally — a PDF is binary and parses fine. Everything else has to
-    read as text, which is what keeps a video or an archive out of the
-    plain-text fallthrough while leaving source, config and log files in.
+    Suffixes with a parser (``ATTACHMENT_PARSER_EXTENSIONS``) are admitted
+    unconditionally — a PDF is binary and parses fine. Everything else, .txt
+    included, has to read as text: that is what keeps a video or an archive
+    out of the plain-text fallthrough while leaving source, config and log
+    files in, whatever the file happens to be named.
 
     Args:
         path: Local path to the staged upload, readable before it is stored.

@@ -28,10 +28,10 @@ SUPPORTED_SOURCE_EXTENSIONS = (
     *SUPPORTED_AUDIO_EXTENSIONS,
 )
 
-# Suffixes the attachment path has a dedicated parser for — every key of
-# ``get_default_file_extractor()`` plus ``.txt``, which needs none. Kept as a
-# literal (importing ``bulk`` here would drag docling into the API process),
-# with ``tests/parser/file/test_constants.py`` asserting the two agree.
+# Suffixes the attachment path has a dedicated parser for — exactly the keys
+# of ``get_default_file_extractor()``. Kept as a literal (importing ``bulk``
+# here would drag docling into the API process), with
+# ``tests/parser/file/test_constants.py`` asserting the two agree.
 #
 # This is *not* the whole attachment allow-list: a suffix with no parser is
 # read by ``SimpleDirectoryReader``'s plain-text fallthrough, which is right
@@ -44,7 +44,7 @@ SUPPORTED_SOURCE_EXTENSIONS = (
 # content check like any other binary.
 #
 # Mirrored in ``frontend/src/constants/fileUpload.ts``; update both together.
-SUPPORTED_ATTACHMENT_EXTENSIONS = frozenset(
+ATTACHMENT_PARSER_EXTENSIONS = frozenset(
     {
         *SUPPORTED_SOURCE_EXTENSIONS,
         ".xhtml",
@@ -57,6 +57,10 @@ SUPPORTED_ATTACHMENT_EXTENSIONS = frozenset(
         ".vtt",
         ".xml",
     }
+    # .txt has no parser of its own — it *is* the plain-text fallthrough. It
+    # must be sniffed like any other unparsed suffix, or renaming a video to
+    # notes.txt walks straight back into the bug this gate exists for.
+    - {".txt"}
 )
 
 
@@ -86,6 +90,6 @@ def has_attachment_parser(filename: str | None) -> bool:
         filename: The upload's filename.
 
     Returns:
-        True when the suffix is in ``SUPPORTED_ATTACHMENT_EXTENSIONS``.
+        True when the suffix is in ``ATTACHMENT_PARSER_EXTENSIONS``.
     """
-    return attachment_extension(filename) in SUPPORTED_ATTACHMENT_EXTENSIONS
+    return attachment_extension(filename) in ATTACHMENT_PARSER_EXTENSIONS
