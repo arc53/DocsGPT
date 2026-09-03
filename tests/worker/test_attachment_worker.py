@@ -379,6 +379,53 @@ class TestAttachmentTypeGuard:
         failed = [payload for name, payload in events if name == "attachment.failed"]
         assert failed and failed[0]["error"] == "Unsupported file type: .mp4"
 
+    def test_suffix_the_loaded_extractor_cannot_parse_is_refused(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path
+    ):
+        """The guard judges against the parser table actually loaded.
+
+        Without docling the fallback extractor has no .webp parser, so a
+        .webp the route admitted on its name would otherwise be opened as
+        plain text here.
+        """
+        from application import worker
+
+        local_path = tmp_path / "scan.webp"
+        local_path.write_bytes(b"RIFF\x00\x00\x00\x00WEBPVP8 " + bytes(range(256)))
+
+        events = []
+        fake_storage = MagicMock(name="storage")
+        fake_storage.process_file.side_effect = lambda path, callback: callback(
+            str(local_path)
+        )
+        monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: fake_storage)
+        # The docling-less fallback table: images are handled, .webp is not.
+        monkeypatch.setattr(
+            worker,
+            "get_default_file_extractor",
+            lambda ocr_enabled=False, pdf_text_fast_path=False: {".png": object()},
+        )
+        monkeypatch.setattr(
+            worker,
+            "publish_user_event",
+            lambda user, name, payload, **kwargs: events.append((name, payload)),
+        )
+
+        file_info = {
+            "filename": "scan.webp",
+            "attachment_id": "507f1f77bcf86cd799439014",
+            "path": "uploads/user1/attachments/scan.webp",
+            "metadata": {"source": "chat"},
+        }
+
+        with pytest.raises(
+            worker.AttachmentRejectedError, match=r"Unsupported file type: \.webp"
+        ):
+            worker.attachment_worker(task_self, file_info, "user1")
+
+        failed = [payload for name, payload in events if name == "attachment.failed"]
+        assert failed and failed[0]["error"] == "Unsupported file type: .webp"
+
     def test_text_without_a_parser_is_parsed(
         self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path
     ):

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import codecs
 import io
 import os
 from contextlib import suppress
-from typing import BinaryIO
+from typing import BinaryIO, Container
 
 from application.core.settings import settings
 from application.parser.file.constants import (
@@ -64,14 +65,46 @@ _TEXT_SNIFF_BYTES = 8192
 _MAX_NONTEXT_RATIO = 0.10
 # Control bytes that occur in ordinary text: tab, LF, VT, FF, CR, ESC.
 _TEXT_CONTROL_BYTES = frozenset({0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x1B})
-# A UTF-16/32 file is half NUL bytes, so it has to be recognised by its BOM
-# before the NUL test — Notepad's "Unicode" .txt is ordinary text.
+_TEXT_CONTROL_CHARS = frozenset("\t\n\v\f\r\x1b")
+# A UTF-16/32 file is half NUL bytes, so the byte rules below would reject it.
+# Its BOM says which encoding to read it as; the decoded characters are then
+# judged instead. Longest BOM first — UTF-32-LE starts with the UTF-16-LE one.
+# A BOM is never a verdict on its own: three bytes must not buy a video a pass.
 _TEXT_BOMS = (
-    b"\xef\xbb\xbf",
-    b"\xff\xfe",
-    b"\xfe\xff",
-    b"\x00\x00\xfe\xff",
+    (codecs.BOM_UTF32_LE, "utf-32-le"),
+    (codecs.BOM_UTF32_BE, "utf-32-be"),
+    (codecs.BOM_UTF8, None),
+    (codecs.BOM_UTF16_LE, "utf-16-le"),
+    (codecs.BOM_UTF16_BE, "utf-16-be"),
 )
+
+
+def _decoded_looks_like_text(text: str) -> bool:
+    """Return whether decoded characters read as text.
+
+    Args:
+        text: Characters decoded from a BOM-marked sample.
+
+    Returns:
+        False when a NUL character appears — the byte-level rule, one level
+        up, since no text holds one — or when too many characters are
+        unprintable: control, unassigned, private-use or surrogate, which is
+        what binary decodes into. Replacement characters count as unprintable,
+        so bytes the decoder could not read are evidence rather than silently
+        dropped (a truncated character at the sample boundary is one of
+        thousands and cannot swing the ratio).
+    """
+    if not text:
+        return True
+    if "\x00" in text:
+        return False
+    nontext = sum(
+        1
+        for char in text
+        if char == "�"
+        or (not char.isprintable() and char not in _TEXT_CONTROL_CHARS)
+    )
+    return nontext / len(text) <= _MAX_NONTEXT_RATIO
 
 
 def looks_like_text(sample: bytes) -> bool:
@@ -82,20 +115,30 @@ def looks_like_text(sample: bytes) -> bool:
 
     Returns:
         False when the sample holds a NUL byte or too many other non-text
-        control bytes, True otherwise. A Unicode BOM settles it as text.
+        control bytes, True otherwise. A UTF-16/32 BOM switches the test to
+        the decoded characters; the content is still what decides.
     """
     if not sample:
         return True
-    if sample.startswith(_TEXT_BOMS):
+    body = sample
+    for bom, encoding in _TEXT_BOMS:
+        if not sample.startswith(bom):
+            continue
+        body = sample[len(bom) :]
+        if encoding is not None:
+            return _decoded_looks_like_text(body.decode(encoding, errors="replace"))
+        # UTF-8 BOM: the byte rules still apply to everything after it.
+        break
+    if not body:
         return True
-    if b"\x00" in sample:
+    if b"\x00" in body:
         return False
     nontext = sum(
         1
-        for byte in sample
+        for byte in body
         if (byte < 0x20 and byte not in _TEXT_CONTROL_BYTES) or byte == 0x7F
     )
-    return nontext / len(sample) <= _MAX_NONTEXT_RATIO
+    return nontext / len(body) <= _MAX_NONTEXT_RATIO
 
 
 def file_looks_like_text(path: str | os.PathLike[str]) -> bool:
@@ -116,25 +159,35 @@ def file_looks_like_text(path: str | os.PathLike[str]) -> bool:
 
 
 def enforce_parseable_attachment(
-    path: str | os.PathLike[str], filename: str | None
+    path: str | os.PathLike[str],
+    filename: str | None,
+    parser_extensions: Container[str] | None = None,
 ) -> None:
     """Reject an attachment that no parser handles and that is not plain text.
 
-    Suffixes with a parser (``ATTACHMENT_PARSER_EXTENSIONS``) are admitted
-    unconditionally — a PDF is binary and parses fine. Everything else, .txt
-    included, has to read as text: that is what keeps a video or an archive
-    out of the plain-text fallthrough while leaving source, config and log
-    files in, whatever the file happens to be named.
+    Suffixes with a parser are admitted unconditionally — a PDF is binary and
+    parses fine. Everything else, .txt included, has to read as text: that is
+    what keeps a video or an archive out of the plain-text fallthrough while
+    leaving source, config and log files in, whatever the file is named.
 
     Args:
         path: Local path to the staged upload, readable before it is stored.
         filename: The upload's filename, used for the suffix and the message.
+        parser_extensions: Suffixes to treat as parser-backed. Defaults to
+            ``ATTACHMENT_PARSER_EXTENSIONS``, which assumes the full parser
+            table; callers holding the live extractor (the worker) pass its
+            keys, so a docling-less install does not admit a .webp on trust
+            and then read it as text.
 
     Raises:
         UnsupportedUploadTypeError: When the file has no parser and its
             contents are binary.
     """
-    if has_attachment_parser(filename):
+    if parser_extensions is None:
+        has_parser = has_attachment_parser(filename)
+    else:
+        has_parser = attachment_extension(filename) in parser_extensions
+    if has_parser:
         return
     if file_looks_like_text(path):
         return

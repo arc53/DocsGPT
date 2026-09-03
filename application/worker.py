@@ -1558,22 +1558,26 @@ class AttachmentRejectedError(Exception):
     """
 
 
-def _reject_unparseable_attachment(local_path: str, filename: str) -> None:
+def _reject_unparseable_attachment(
+    local_path: str, filename: str, parser_extensions
+) -> None:
     """Reject an attachment with no parser whose contents are binary.
 
-    Defence in depth behind the route's gate: ``SimpleDirectoryReader`` opens
-    any suffix it has no parser for as plain text, so a binary must fail here,
-    visibly, rather than "succeed" as garbage.
+    Defence in depth behind the route's gate, and stricter than it: this runs
+    against the parser table actually loaded, so a suffix the route trusted
+    (.webp with docling absent, say) is still refused rather than opened as
+    plain text by ``SimpleDirectoryReader`` and stored as garbage.
 
     Args:
         local_path: Filesystem path of the attachment about to be parsed.
         filename: The upload's original filename, which carries the suffix.
+        parser_extensions: Suffixes the live ``file_extractor`` can parse.
 
     Raises:
         AttachmentRejectedError: If the file has no parser and is not text.
     """
     try:
-        enforce_parseable_attachment(local_path, filename)
+        enforce_parseable_attachment(local_path, filename, parser_extensions)
     except UnsupportedUploadTypeError as exc:
         raise AttachmentRejectedError(str(exc)) from exc
 
@@ -1775,7 +1779,7 @@ def attachment_worker(self, file_info, user):
         parser_name = type(_parser).__name__ if _parser is not None else "SimpleDirectoryReader"
 
         def _parse_local_file(local_path: str, **kwargs) -> Document:
-            _reject_unparseable_attachment(local_path, filename)
+            _reject_unparseable_attachment(local_path, filename, set(file_extractor))
             _reject_attachment_zip_bomb(local_path)
             parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
             try:

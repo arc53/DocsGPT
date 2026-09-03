@@ -1583,5 +1583,26 @@ def test_record_responses_metadata_captures_cache_write_bin(monkeypatch):
         ),
     ))
     # A pure cache-write turn (first request of a prefix) has reads=0 and
-    # writes>0; the details must still be recorded.
-    assert llm._last_usage["prompt_tokens_details"] == {"cache_write_tokens": 9}
+    # writes>0; both bins were reported, so both are recorded — a reported
+    # zero is "no cache hits", not "unknown".
+    assert llm._last_usage["prompt_tokens_details"] == {
+        "cached_tokens": 0,
+        "cache_write_tokens": 9,
+    }
+
+
+@pytest.mark.unit
+def test_record_responses_metadata_omits_unreported_cache_bins(monkeypatch):
+    """A provider that says nothing about caching must persist as NULL, not 0."""
+    llm = _make_llm(monkeypatch, _responses_caps())
+    llm._record_responses_metadata(_ns(
+        id="resp_2",
+        usage=_ns(
+            input_tokens=10,
+            output_tokens=7,
+            total_tokens=17,
+            input_tokens_details=None,
+            output_tokens_details=None,
+        ),
+    ))
+    assert "prompt_tokens_details" not in llm._last_usage

@@ -33,6 +33,29 @@ _STREAM_RETRYABLE_TRANSPORT_ERRORS = (
 )
 
 
+def optional_int(value) -> Optional[int]:
+    """Coerce a provider-reported count to int, keeping "unreported" as None.
+
+    Cache bins persist as NULL when a provider says nothing and as 0 when it
+    reports zero, so the two must stay distinguishable all the way from the
+    usage object: providers report ``cached_tokens: 0`` on every uncached
+    request, and folding that into "unknown" would file the ordinary case as
+    no-data.
+
+    Args:
+        value: The raw attribute off a provider usage object.
+
+    Returns:
+        The integer value, or None when absent or not a number.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class BaseLLM(ABC):
     # Stamped onto the ``llm_stream_start`` event so dashboards can group
     # calls by vendor. Subclasses override.

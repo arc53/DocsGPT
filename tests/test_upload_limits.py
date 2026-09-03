@@ -122,6 +122,49 @@ def test_enforce_parseable_attachment_accepts_bom_marked_unicode_text(
 
 
 @pytest.mark.parametrize(
+    "bom",
+    [codecs.BOM_UTF8, codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE, codecs.BOM_UTF32_BE],
+)
+def test_enforce_parseable_attachment_rejects_binary_behind_a_bom(bom, tmp_path):
+    """A BOM says which encoding to read, not that the content is text.
+
+    Otherwise three prepended bytes buy any binary a pass.
+    """
+    from application.upload_limits import (
+        enforce_parseable_attachment,
+        UnsupportedUploadTypeError,
+    )
+
+    path = tmp_path / "notes.txt"
+    path.write_bytes(bom + MP4_HEADER + bytes(range(256)) * 8)
+
+    with pytest.raises(UnsupportedUploadTypeError):
+        enforce_parseable_attachment(path, "notes.txt")
+
+
+def test_enforce_parseable_attachment_uses_the_extractor_it_is_given(tmp_path):
+    """The worker holds the live parser table; a trimmed install must not admit on trust.
+
+    Without docling the fallback extractor has no .webp handler, so a .webp
+    would otherwise skip the content check and be read as plain text.
+    """
+    from application.upload_limits import (
+        enforce_parseable_attachment,
+        UnsupportedUploadTypeError,
+    )
+
+    path = tmp_path / "scan.webp"
+    path.write_bytes(b"RIFF\x00\x00\x00\x00WEBPVP8 " + bytes(range(256)))
+
+    # Default list: .webp is parser-backed, admitted on its name.
+    enforce_parseable_attachment(path, "scan.webp")
+
+    # The extractor actually loaded has no .webp parser.
+    with pytest.raises(UnsupportedUploadTypeError):
+        enforce_parseable_attachment(path, "scan.webp", {".pdf", ".docx"})
+
+
+@pytest.mark.parametrize(
     "filename",
     [
         "Report.PDF",
@@ -177,6 +220,10 @@ def test_enforce_parseable_attachment_accepts_text_without_a_parser(filename, tm
         (b"\x1b[31mred log line\x1b[0m\n", True),
         (codecs.BOM_UTF16_LE + "hi\n".encode("utf-16-le"), True),
         (codecs.BOM_UTF8 + b"hi\n", True),
+        (codecs.BOM_UTF32_LE + "hi\n".encode("utf-32-le"), True),
+        # A BOM in front of binary is still binary.
+        (codecs.BOM_UTF8 + b"\x00\x01\x02", False),
+        (codecs.BOM_UTF16_LE + MP4_HEADER, False),
         (b"text\x00with nul", False),
         (bytes(range(32)) * 4, False),
         (b"\x7f\x7f\x7f\x7f" + b"a" * 16, False),

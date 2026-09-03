@@ -160,27 +160,82 @@ const TEXT_SNIFF_BYTES = 8192;
 const MAX_NONTEXT_RATIO = 0.1;
 // Control bytes that occur in ordinary text: tab, LF, VT, FF, CR, ESC.
 const TEXT_CONTROL_BYTES = new Set([0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x1b]);
-// A UTF-16/32 file is half NUL bytes, so it has to be recognised by its BOM
-// before the NUL test — Notepad's "Unicode" .txt is ordinary text.
-const TEXT_BOMS = [
-  [0xef, 0xbb, 0xbf],
-  [0xff, 0xfe],
-  [0xfe, 0xff],
-  [0x00, 0x00, 0xfe, 0xff],
+const TEXT_CONTROL_CHARS = new Set(['\t', '\n', '\v', '\f', '\r', '\u001b']);
+// \p{C}: control, format, private-use, surrogate and unassigned code points —
+// what binary decodes into.
+const NONTEXT_CHAR = /\p{C}/u;
+// A UTF-16/32 file is half NUL bytes, so the byte rules below would reject it.
+// Its BOM says which encoding to read it as; the decoded characters are then
+// judged instead. Longest BOM first — UTF-32-LE starts with the UTF-16-LE one.
+// A BOM is never a verdict on its own: three bytes must not buy a video a pass.
+const TEXT_BOMS: { bom: number[]; encoding: string | null }[] = [
+  // TextDecoder has no UTF-32; leave those two to the server, which does.
+  { bom: [0xff, 0xfe, 0x00, 0x00], encoding: null },
+  { bom: [0x00, 0x00, 0xfe, 0xff], encoding: null },
+  { bom: [0xef, 0xbb, 0xbf], encoding: 'utf-8' },
+  { bom: [0xff, 0xfe], encoding: 'utf-16le' },
+  { bom: [0xfe, 0xff], encoding: 'utf-16be' },
 ];
 
-/** Whether a leading byte sample reads as text rather than binary. */
+/**
+ * Whether decoded characters read as text rather than decoded binary.
+ * Replacement characters count against it, so bytes the decoder could not
+ * read are evidence rather than silently dropped.
+ */
+function decodedLooksLikeText(text: string): boolean {
+  // The byte-level NUL rule, one level up: no text holds a NUL character.
+  if (text.includes('\u0000')) return false;
+  let total = 0;
+  let nontext = 0;
+  for (const char of text) {
+    total += 1;
+    if (
+      char === '\ufffd' ||
+      (!TEXT_CONTROL_CHARS.has(char) && NONTEXT_CHAR.test(char))
+    )
+      nontext += 1;
+  }
+  if (total === 0) return true;
+  return nontext / total <= MAX_NONTEXT_RATIO;
+}
+
+/**
+ * Whether a leading byte sample reads as text rather than binary. A UTF-16
+ * BOM switches the test to the decoded characters; the content is still what
+ * decides. Mirrors `looks_like_text` in application/upload_limits.py.
+ */
 export function looksLikeText(sample: Uint8Array): boolean {
   if (sample.length === 0) return true;
-  if (TEXT_BOMS.some((bom) => bom.every((byte, i) => sample[i] === byte)))
-    return true;
+
+  let body = sample;
+  const marked = TEXT_BOMS.find(({ bom }) =>
+    bom.every((byte, i) => sample[i] === byte),
+  );
+  if (marked) {
+    // UTF-32, or a decoder this browser lacks: defer to the server rather
+    // than refuse a file it would accept.
+    if (marked.encoding === null) return true;
+    body = sample.subarray(marked.bom.length);
+    if (body.length === 0) return true;
+    if (marked.encoding !== 'utf-8') {
+      try {
+        return decodedLooksLikeText(
+          new TextDecoder(marked.encoding).decode(body),
+        );
+      } catch {
+        return true;
+      }
+    }
+    // UTF-8 BOM: the byte rules still apply to everything after it.
+  }
+
   let nontext = 0;
-  for (const byte of sample) {
+  for (const byte of body) {
     if (byte === 0x00) return false;
     if ((byte < 0x20 && !TEXT_CONTROL_BYTES.has(byte)) || byte === 0x7f)
       nontext += 1;
   }
-  return nontext / sample.length <= MAX_NONTEXT_RATIO;
+  return nontext / body.length <= MAX_NONTEXT_RATIO;
 }
 
 async function isSupportedAttachmentFile(file: File): Promise<boolean> {

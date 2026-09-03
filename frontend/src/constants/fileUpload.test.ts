@@ -95,11 +95,26 @@ describe('looksLikeText', () => {
   });
 
   it('accepts BOM-marked Unicode, which is half NUL bytes but still text', () => {
-    // UTF-8, UTF-16 LE/BE, UTF-32 BE.
+    // UTF-8, UTF-16 LE/BE, and UTF-32 BE (no TextDecoder — left to the server).
     expect(looksLikeText(bytes(0xef, 0xbb, 0xbf, 0x68, 0x69))).toBe(true);
     expect(looksLikeText(bytes(0xff, 0xfe, 0x68, 0x00, 0x69, 0x00))).toBe(true);
     expect(looksLikeText(bytes(0xfe, 0xff, 0x00, 0x68, 0x00, 0x69))).toBe(true);
     expect(looksLikeText(bytes(0x00, 0x00, 0xfe, 0xff, 0x00, 0x68))).toBe(true);
+  });
+
+  it('still rejects binary behind a BOM — three bytes buy nothing', () => {
+    // UTF-8 BOM + MP4 header: the byte rules apply to what follows it.
+    expect(looksLikeText(bytes(0xef, 0xbb, 0xbf, ...MP4_HEADER))).toBe(false);
+    // UTF-16 LE BOM + control-only code points.
+    expect(
+      looksLikeText(
+        bytes(0xff, 0xfe, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00),
+      ),
+    ).toBe(false);
+    // UTF-16 BE BOM + bytes that decode to NUL characters.
+    expect(looksLikeText(bytes(0xfe, 0xff, 0x00, 0x00, 0x00, 0x41))).toBe(
+      false,
+    );
   });
 
   it('rejects a NUL byte and dense control bytes', () => {
@@ -142,9 +157,11 @@ describe('partitionAttachmentFiles', () => {
   it('refuses a binary renamed to .txt — .txt is sniffed like any other suffix', async () => {
     const { supported, unsupported } = await partitionAttachmentFiles([
       file('notes.txt', MP4_HEADER),
+      // A BOM in front of it changes nothing.
+      file('bom.txt', bytes(0xef, 0xbb, 0xbf, ...MP4_HEADER)),
     ]);
     expect(supported).toEqual([]);
-    expect(unsupported.map((f) => f.name)).toEqual(['notes.txt']);
+    expect(unsupported.map((f) => f.name)).toEqual(['notes.txt', 'bom.txt']);
   });
 
   it('admits parser-backed types on their suffix, binary contents and all', async () => {
