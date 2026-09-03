@@ -184,9 +184,10 @@ configure_vector_store() {
     echo -e "${YELLOW}4) Milvus${NC}"
     echo -e "${YELLOW}5) LanceDB${NC}"
     echo -e "${YELLOW}6) PGVector${NC}"
+    echo -e "${YELLOW}7) OceanBase${NC}"
     echo -e "${YELLOW}b) Back${NC}"
     echo
-    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-6, or b): ${NC}")" vs_choice
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-7, or b): ${NC}")" vs_choice
 
     case "$vs_choice" in
         1)
@@ -240,6 +241,16 @@ configure_vector_store() {
             read -p "$(echo -e "${DEFAULT_FG}Enter PGVector connection string (e.g. postgresql://user:pass@host:5432/db): ${NC}")" pgvector_conn
             [ -n "$pgvector_conn" ] && echo "PGVECTOR_CONNECTION_STRING=$pgvector_conn" >> "$ENV_FILE"
             echo -e "${GREEN}Vector store set to PGVector.${NC}"
+            ;;
+        7)
+            read -p "$(echo -e "${DEFAULT_FG}Enter OceanBase URI (e.g. mysql+pymysql://root%40tenant:pass@host:2881/db): ${NC}")" oceanbase_conn
+            if [ -z "$oceanbase_conn" ]; then
+                echo -e "${RED}OceanBase URI is required.${NC}"
+                return
+            fi
+            echo "VECTOR_STORE=oceanbase" >> "$ENV_FILE"
+            echo "OCEANBASE_URI=$oceanbase_conn" >> "$ENV_FILE"
+            echo -e "${GREEN}Vector store set to OceanBase.${NC}"
             ;;
         b|B) return ;;
         *) echo -e "\n${RED}Invalid choice.${NC}" ; sleep 1 ;;

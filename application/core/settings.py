@@ -235,6 +235,10 @@ class Settings(BaseSettings):
     # PGVector config. postgres://, postgresql:// and postgresql+psycopg:// are all accepted
     # and normalized internally for psycopg.connect().
     PGVECTOR_CONNECTION_STRING: Optional[str] = None
+
+    # OceanBase vectorstore config
+    OCEANBASE_URI: Optional[str] = None
+
     PGVECTOR_POOL_MAX_SIZE: int = 8  # per-process pool; 0 = one direct connection per store
     # IVFFlat probes; None derives sqrt(lists) from the index. Higher = better recall, more scan.
     PGVECTOR_IVFFLAT_PROBES: Optional[int] = None

@@ -300,9 +300,10 @@ function Configure-VectorStore {
     Write-ColorText "4) Milvus" -ForegroundColor "Yellow"
     Write-ColorText "5) LanceDB" -ForegroundColor "Yellow"
     Write-ColorText "6) PGVector" -ForegroundColor "Yellow"
+    Write-ColorText "7) OceanBase" -ForegroundColor "Yellow"
     Write-ColorText "b) Back" -ForegroundColor "Yellow"
     Write-Host ""
-    $vs_choice = Read-Host "Choose option (1-6, or b)"
+    $vs_choice = Read-Host "Choose option (1-7, or b)"
 
     switch ($vs_choice) {
         "1" {
@@ -362,6 +363,16 @@ function Configure-VectorStore {
             $pgvector_conn = Read-Host "Enter PGVector connection string (e.g. postgresql://user:pass@host:5432/db)"
             if ($pgvector_conn) { "PGVECTOR_CONNECTION_STRING=$pgvector_conn" | Add-Content -Path $ENV_FILE -Encoding utf8 }
             Write-ColorText "Vector store set to PGVector." -ForegroundColor "Green"
+        }
+        "7" {
+            $oceanbase_conn = Read-Host "Enter OceanBase URI (e.g. mysql+pymysql://root%40tenant:pass@host:2881/db)"
+            if ([string]::IsNullOrEmpty($oceanbase_conn)) {
+                Write-ColorText "OceanBase URI is required." -ForegroundColor "Red"
+                return
+            }
+            "VECTOR_STORE=oceanbase" | Add-Content -Path $ENV_FILE -Encoding utf8
+            "OCEANBASE_URI=$oceanbase_conn" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-ColorText "Vector store set to OceanBase." -ForegroundColor "Green"
         }
         {$_ -eq "b" -or $_ -eq "B"} { return }
         default {
