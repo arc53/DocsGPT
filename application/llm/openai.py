@@ -1307,16 +1307,35 @@ class OpenAILLM(BaseLLM):
         output_details = getattr(usage, "completion_tokens_details", None)
         try:
             cached = int(getattr(input_details, "cached_tokens", 0) or 0)
+            written = int(getattr(input_details, "cache_write_tokens", 0) or 0)
             reasoning = int(getattr(output_details, "reasoning_tokens", 0) or 0)
         except (TypeError, ValueError):
             cached = 0
+            written = 0
             reasoning = 0
-        if cached:
-            result["prompt_tokens_details"] = {"cached_tokens": cached}
+        details = self._prompt_cache_details(cached, written)
+        if details:
+            result["prompt_tokens_details"] = details
         if reasoning:
             result["completion_tokens_details"] = {"reasoning_tokens": reasoning}
         self._last_usage = result
         self._last_usage_claimed = False
+
+    @staticmethod
+    def _prompt_cache_details(cached: int, written: int) -> dict:
+        """Build the ``prompt_tokens_details`` breakdown from the two cache bins.
+
+        Only non-zero bins are included so a provider that never reports
+        caching produces no details (and no misleading zero downstream).
+        ``cache_write_tokens`` is reported by newer OpenAI-family deployments
+        that charge for cache writes.
+        """
+        details = {}
+        if cached:
+            details["cached_tokens"] = cached
+        if written:
+            details["cache_write_tokens"] = written
+        return details
 
     @staticmethod
     def _function_call_ids(response):
@@ -1357,9 +1376,11 @@ class OpenAILLM(BaseLLM):
                 "total_tokens": int(getattr(usage, "total_tokens", 0) or prompt + completion),
             }
             cached = int(getattr(input_details, "cached_tokens", 0) or 0)
+            written = int(getattr(input_details, "cache_write_tokens", 0) or 0)
             reasoning = int(getattr(output_details, "reasoning_tokens", 0) or 0)
-            if cached:
-                result["prompt_tokens_details"] = {"cached_tokens": cached}
+            details = self._prompt_cache_details(cached, written)
+            if details:
+                result["prompt_tokens_details"] = details
             if reasoning:
                 result["completion_tokens_details"] = {"reasoning_tokens": reasoning}
             self._last_usage = result

@@ -179,8 +179,12 @@ class TestPerRoundUsageRows:
                 list(handler.handle_streaming(agent, first, {}, []))
 
         assert len(rows) == 2
-        assert rows[0] == {"prompt_tokens": 100, "generated_tokens": 10}
-        assert rows[1] == {"prompt_tokens": 200, "generated_tokens": 20}
+        # Provider-reported counts replace the estimates; the rest of the
+        # call record (e.g. ``model``) rides along, hence a subset check
+        # rather than dict equality.
+        counts = lambda row: {k: row[k] for k in ("prompt_tokens", "generated_tokens")}  # noqa: E731
+        assert counts(rows[0]) == {"prompt_tokens": 100, "generated_tokens": 10}
+        assert counts(rows[1]) == {"prompt_tokens": 200, "generated_tokens": 20}
 
 
 class TestPreferProviderUsageClaim:

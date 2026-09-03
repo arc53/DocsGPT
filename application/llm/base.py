@@ -710,6 +710,7 @@ class BaseLLM(ABC):
         completion_tokens,
         latency_ms,
         cached_tokens=None,
+        cache_write_tokens=None,
         error=None,
     ):
         # Non-streaming counterpart to ``_emit_stream_finished_log``. Paired
@@ -730,6 +731,8 @@ class BaseLLM(ABC):
         }
         if cached_tokens is not None:
             extra["cached_tokens"] = int(cached_tokens)
+        if cache_write_tokens is not None:
+            extra["cache_write_tokens"] = int(cache_write_tokens)
         if error is not None:
             extra["error_class"] = type(error).__name__
         logging.info("llm_gen_finished", extra=extra)
@@ -757,6 +760,7 @@ class BaseLLM(ABC):
         completion_tokens,
         latency_ms,
         cached_tokens=None,
+        cache_write_tokens=None,
         error=None,
     ):
         # Paired with ``llm_stream_start`` so cost dashboards can sum tokens
@@ -774,6 +778,8 @@ class BaseLLM(ABC):
         }
         if cached_tokens is not None:
             extra["cached_tokens"] = int(cached_tokens)
+        if cache_write_tokens is not None:
+            extra["cache_write_tokens"] = int(cache_write_tokens)
         if error is not None:
             extra["error_class"] = type(error).__name__
         logging.info("llm_stream_finished", extra=extra)
