@@ -40,6 +40,11 @@ export function isImageAttachment(attachment: {
   return false;
 }
 
+/**
+ * Composer attachment chips: image thumbnails (or the generic icon for
+ * documents), upload progress overlays, inline failure reasons, and the
+ * remove control. Drag-to-reorder is wired through the parent callbacks.
+ */
 export default function AttachmentChipList({
   attachments,
   draggingId,

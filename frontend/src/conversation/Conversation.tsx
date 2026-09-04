@@ -190,6 +190,8 @@ export default function Conversation() {
   );
 
   const handleQuestion = useCallback(
+    /** Send a question: snapshot completed attachments, add the query row,
+     * fetch the answer, and clear the composer. Retries reuse the row's ids. */
     ({
       question,
       isRetry = false,

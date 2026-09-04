@@ -2531,6 +2531,7 @@ class TestAttachmentPreview:
     png_bytes = b"\x89PNG\r\n\x1a\n"
 
     def _row(self, **overrides):
+        """Attachment DB row fixture (image PNG owned by user123)."""
         row = {
             "id": self.attachment_id,
             "user_id": "user123",
@@ -2544,6 +2545,7 @@ class TestAttachmentPreview:
 
     @staticmethod
     def _patch_repos(attachment_row):
+        """Patch the attachments repo, readonly session, and local storage."""
         mock_repo = MagicMock()
         mock_repo.get_any.return_value = attachment_row
         return (
@@ -2563,6 +2565,7 @@ class TestAttachmentPreview:
 
     @staticmethod
     def _mock_storage(body=None):
+        """Storage double serving the given (default PNG) bytes."""
         mock_storage = MagicMock()
         payload = TestAttachmentPreview.png_bytes if body is None else body
         mock_storage.get_file_size.return_value = len(payload)
@@ -2589,8 +2592,83 @@ class TestAttachmentPreview:
                 assert _get_response_status(response) == 200
                 assert response.headers.get("Content-Type") == "image/png"
                 assert response.headers.get("X-Content-Type-Options") == "nosniff"
+                assert response.headers.get("Cache-Control") == "no-store"
                 assert b"".join(response.response) == self.png_bytes
                 mock_storage.get_file.assert_called_once_with(self.upload_path)
+
+    def test_preview_webp_octet_stream_served_via_suffix_map(self, flask_app):
+        # The stdlib MIME table names no type for .webp on some supported
+        # Pythons, so the worker stores application/octet-stream; the
+        # controlled suffix map must still serve the preview.
+        from application.api.user.attachments.routes import AttachmentPreview
+
+        app = Flask(__name__)
+        webp_bytes = b"RIFF\x00\x00\x00\x00WEBPVP8 "
+        mock_storage = self._mock_storage(webp_bytes)
+        row = self._row(
+            filename="photo.webp", mime_type="application/octet-stream"
+        )
+        p_repo, p_db, p_store = self._patch_repos(row)
+
+        with p_repo, p_db, p_store, patch(
+            "application.api.user.base.storage", mock_storage
+        ):
+            with app.test_request_context(
+                f"/api/attachment/{self.attachment_id}/preview",
+                method="GET",
+            ):
+                request.decoded_token = {"sub": "user123"}
+                response = AttachmentPreview().get(self.attachment_id)
+
+                assert _get_response_status(response) == 200
+                assert response.headers.get("Content-Type") == "image/webp"
+                assert b"".join(response.response) == webp_bytes
+
+    def test_preview_svg_stored_mime_returns_404_without_reading_bytes(
+        self, flask_app
+    ):
+        # SVG admitted via the text fallthrough must never be served: a
+        # navigated-to SVG would execute script in the application origin.
+        from application.api.user.attachments.routes import AttachmentPreview
+
+        app = Flask(__name__)
+        mock_storage = self._mock_storage(b"<svg></svg>")
+        row = self._row(filename="diagram.svg", mime_type="image/svg+xml")
+        p_repo, p_db, p_store = self._patch_repos(row)
+
+        with p_repo, p_db, p_store, patch(
+            "application.api.user.base.storage", mock_storage
+        ):
+            with app.test_request_context(
+                f"/api/attachment/{self.attachment_id}/preview",
+                method="GET",
+            ):
+                request.decoded_token = {"sub": "user123"}
+                response = AttachmentPreview().get(self.attachment_id)
+
+                assert _get_response_status(response) == 404
+                mock_storage.get_file.assert_not_called()
+
+    def test_preview_svg_suffix_without_mime_returns_404(self, flask_app):
+        from application.api.user.attachments.routes import AttachmentPreview
+
+        app = Flask(__name__)
+        mock_storage = self._mock_storage(b"<svg></svg>")
+        row = self._row(filename="diagram.svg", mime_type=None)
+        p_repo, p_db, p_store = self._patch_repos(row)
+
+        with p_repo, p_db, p_store, patch(
+            "application.api.user.base.storage", mock_storage
+        ):
+            with app.test_request_context(
+                f"/api/attachment/{self.attachment_id}/preview",
+                method="GET",
+            ):
+                request.decoded_token = {"sub": "user123"}
+                response = AttachmentPreview().get(self.attachment_id)
+
+                assert _get_response_status(response) == 404
+                mock_storage.get_file.assert_not_called()
 
     def test_preview_prefers_stored_mime_type(self, flask_app):
         from application.api.user.attachments.routes import AttachmentPreview
@@ -2784,7 +2862,7 @@ class TestAttachmentPreview:
 
         assert response.status_code == 302
         assert response.headers["Location"].startswith("https://bucket.example/")
-        assert response.headers["Cache-Control"] == "private, max-age=240"
+        assert response.headers["Cache-Control"] == "no-store"
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
         mock_storage.generate_presigned_url.assert_called_once_with(
             self.upload_path, expires_in=300, content_type="image/png"
@@ -2795,6 +2873,7 @@ class TestAttachmentPreview:
     conv_id = "33333333-3333-4333-8333-333333333333"
 
     def _patch_share(self, share_row, messages):
+        """Patch the share/conversation repos for share-scoped requests."""
         mock_shared = MagicMock()
         mock_shared.find_by_uuid.return_value = share_row
         mock_conv = MagicMock()
@@ -2812,6 +2891,7 @@ class TestAttachmentPreview:
         )
 
     def _share_row(self, **overrides):
+        """Share row fixture covering the test attachment's message."""
         row = {
             "uuid": self.share_id,
             "conversation_id": self.conv_id,
@@ -2850,6 +2930,7 @@ class TestAttachmentPreview:
 
                 assert _get_response_status(response) == 200
                 assert response.headers.get("Content-Type") == "image/png"
+                assert response.headers.get("Cache-Control") == "no-store"
                 assert b"".join(response.response) == self.png_bytes
                 mock_storage.get_file.assert_called_once_with(self.upload_path)
 

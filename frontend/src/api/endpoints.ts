@@ -103,6 +103,7 @@ const endpoints = {
       `/api/delete_chunk?id=${docId}&chunk_id=${chunkId}`,
     UPDATE_CHUNK: '/api/update_chunk',
     STORE_ATTACHMENT: '/api/store_attachment',
+    /** Chat image-preview bytes for an attachment ID (share-scoped via ?share=). */
     ATTACHMENT_PREVIEW: (id: string, shareId?: string | null) => {
       const params = new URLSearchParams();
       if (shareId) params.set('share', shareId);

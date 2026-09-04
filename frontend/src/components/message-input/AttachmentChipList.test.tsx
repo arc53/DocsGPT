@@ -11,6 +11,7 @@ vi.mock('react-i18next', () => ({
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+/** Completed-PDF attachment fixture, overridable per test. */
 const att = (over: Partial<Attachment> = {}): Attachment => ({
   id: 'a1',
   fileName: 'report.pdf',
@@ -57,6 +58,7 @@ describe('AttachmentChipList', () => {
     container.remove();
   });
 
+  /** Render the chip list with inert drag/drop callbacks. */
   const render = async (
     attachments: Attachment[],
     onRemove: (id: string) => void = () => {},

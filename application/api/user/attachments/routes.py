@@ -1,6 +1,5 @@
 """File attachments and media routes."""
 
-import mimetypes
 import os
 import tempfile
 from pathlib import Path
@@ -69,9 +68,37 @@ _AGENT_IMAGE_CHUNK_BYTES = 64 * 1024
 _AGENT_IMAGE_PRESIGNED_TTL_SECONDS = 300
 _AGENT_IMAGE_REDIRECT_CACHE_SECONDS = _AGENT_IMAGE_PRESIGNED_TTL_SECONDS - 60
 _ATTACHMENT_PREVIEW_PRESIGNED_TTL_SECONDS = 300
-_ATTACHMENT_PREVIEW_REDIRECT_CACHE_SECONDS = (
-    _ATTACHMENT_PREVIEW_PRESIGNED_TTL_SECONDS - 60
+
+# Raster image MIME types the preview endpoint may serve. SVG (and any
+# other non-raster image type) is deliberately absent: the share-scoped
+# preview URL needs no auth headers, so a navigated-to SVG would execute
+# script in the application origin (stored XSS). Raster formats are inert
+# both in <img> and as documents.
+_ATTACHMENT_PREVIEW_RASTER_MIME_TYPES = frozenset(
+    {
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/tiff",
+        "image/bmp",
+    }
 )
+
+# Suffix -> MIME for the same set. A controlled map rather than
+# mimetypes.guess_type: the stdlib table is version-dependent (e.g. .webp
+# is absent on some supported Pythons, which would otherwise refuse
+# legitimate uploads), and only pipeline-storable suffixes are listed.
+_ATTACHMENT_PREVIEW_SUFFIX_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+    ".bmp": "image/bmp",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
 
 
 def _stream_file(file_obj, size_bytes: int):
@@ -183,16 +210,22 @@ def _attachment_preview_content_type(att: dict) -> str | None:
     """Image-only Content-Type for an attachment row.
 
     Prefers the server-derived stored ``mime_type``; falls back to the
-    filename suffix for legacy rows that predate it. Returns None for
-    non-images so the preview endpoint refuses them.
+    controlled suffix map for legacy rows that predate it (or whose
+    stored type the stdlib cannot name, e.g. ``.webp``). Returns None for
+    anything outside the raster allowlist — notably SVG, which must never
+    be served here (see ``_ATTACHMENT_PREVIEW_RASTER_MIME_TYPES``).
+
+    Args:
+        att: Attachment row dict with ``mime_type``/``filename`` keys.
+
+    Returns:
+        The ``image/*`` Content-Type to serve, or None to refuse.
     """
     stored = (att.get("mime_type") or "").split(";")[0].strip().lower()
-    if stored.startswith("image/"):
+    if stored in _ATTACHMENT_PREVIEW_RASTER_MIME_TYPES:
         return stored
-    guessed, _ = mimetypes.guess_type(att.get("filename") or "")
-    if (guessed or "").lower().startswith("image/"):
-        return guessed.lower()
-    return None
+    suffix = os.path.splitext(att.get("filename") or "")[1].lower()
+    return _ATTACHMENT_PREVIEW_SUFFIX_MIME_TYPES.get(suffix)
 
 
 def _resolve_share_attachment_scope(conn, share_id: str, attachment_id: str):
@@ -232,6 +265,17 @@ class AttachmentPreview(Resource):
         "visible in that shared conversation."
     )
     def get(self, attachment_id):
+        """Serve one stored image attachment's bytes for preview rendering.
+
+        Args:
+            attachment_id: Route-minted attachment UUID (``legacy_mongo_id``).
+
+        Returns:
+            The image bytes (local storage) or a short-lived presigned
+            redirect (S3) with ``no-store`` caching; 404 for missing,
+            foreign, non-image, or oversized attachments, 401 when owner
+            authentication is absent or invalid.
+        """
         try:
             share_id = request.args.get("share")
             with db_readonly() as conn:
@@ -297,10 +341,9 @@ class AttachmentPreview(Resource):
                     content_type=content_type,
                 )
                 response = redirect(image_url, code=302)
-                response.headers.set(
-                    "Cache-Control",
-                    f"private, max-age={_ATTACHMENT_PREVIEW_REDIRECT_CACHE_SECONDS}",
-                )
+                # no-store: preview URLs are identity-authorized, so neither
+                # the bytes nor the redirect may sit in a shared cache.
+                response.headers.set("Cache-Control", "no-store")
                 response.headers.set("X-Content-Type-Options", "nosniff")
                 return response
 
@@ -310,9 +353,7 @@ class AttachmentPreview(Resource):
                 content_type=content_type,
                 direct_passthrough=True,
             )
-            response.headers.set(
-                "Cache-Control", "private, max-age=86400, immutable"
-            )
+            response.headers.set("Cache-Control", "no-store")
             response.headers.set("X-Content-Type-Options", "nosniff")
             return response
         except Exception as err:

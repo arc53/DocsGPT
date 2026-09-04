@@ -36,10 +36,14 @@ import {
 } from './conversationModels';
 import { ToolCallsType } from './types';
 
-// Maps a server message dict into the client ``Query`` shape. Only
-// terminal ``complete`` rows expose ``response``; non-terminal rows
-// would carry the WAL placeholder text, which must never render.
-// ``failed`` rows surface as ``error`` so they pick up Retry.
+/**
+ * Maps a server message dict into the client ``Query`` shape. Only
+ * terminal ``complete`` rows expose ``response``; non-terminal rows
+ * would carry the WAL placeholder text, which must never render.
+ * ``failed`` rows surface as ``error`` so they pick up Retry.
+ * Attachments are normalised to the client snapshot shape (notably
+ * ``mime_type`` -> ``mimeType``) so reloads render like live rows.
+ */
 export function mapServerQueryToClient(raw: any): Query {
   const status = raw?.status as MessageStatus | undefined;
   const isTerminalComplete = status === 'complete';

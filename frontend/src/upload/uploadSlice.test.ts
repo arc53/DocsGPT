@@ -555,6 +555,7 @@ describe('attachment preview URL lifecycle', () => {
   const realRevoke = URL.revokeObjectURL;
   let revoked: string[];
 
+  /** Completed image-attachment fixture with a live preview URL. */
   const imgAtt = (over: Partial<Attachment> = {}): Attachment => ({
     id: 'a1',
     fileName: 'photo.png',
@@ -568,6 +569,7 @@ describe('attachment preview URL lifecycle', () => {
 
   // Reducers stay pure: revocation runs in uploadListenerMiddleware.
   // These tests drive a real store so the listeners fire.
+  /** Static slice stub holding a fixed query list for live-URL checks. */
   const stubScope = (
     queries: { attachments?: { previewUrl?: string }[] }[],
   ) => {
@@ -575,6 +577,7 @@ describe('attachment preview URL lifecycle', () => {
     return (state = initial) => state;
   };
 
+  /** Test store: real upload slice + query stubs + listener middleware. */
   const makeStore = (
     conversationQueries: { attachments?: { previewUrl?: string }[] }[] = [],
   ) =>
@@ -588,6 +591,7 @@ describe('attachment preview URL lifecycle', () => {
         getDefault().concat(uploadListenerMiddleware.middleware),
     });
 
+  /** Let queued listener effects run to completion. */
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
   beforeEach(() => {

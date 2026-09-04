@@ -21,6 +21,7 @@ describe('AttachmentPreviewImage', () => {
     container.remove();
   });
 
+  /** Render the preview image in isolation (no store needed). */
   const render = async (previewUrl: string, fileName: string) => {
     await act(async () => {
       root.render(

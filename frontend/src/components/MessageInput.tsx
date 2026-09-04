@@ -315,6 +315,10 @@ type MessageInputProps = {
   onQueuedQuestionConsumed?: () => void;
 };
 
+/**
+ * Chat composer: message input with file attachments (image thumbnails),
+ * voice input, send gating, and tool/source triggers.
+ */
 export default function MessageInput({
   onSubmit,
   loading,

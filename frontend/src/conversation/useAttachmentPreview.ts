@@ -17,6 +17,7 @@ function cacheKey(attachmentId: string, shareId?: string | null): string {
   return `${shareId ?? ''}:${attachmentId}`;
 }
 
+/** Insert, refreshing recency and evicting (revoking) past the cap. */
 function cacheSet(key: string, url: string): void {
   previewCache.delete(key);
   previewCache.set(key, url);
@@ -35,6 +36,7 @@ function cacheSet(key: string, url: string): void {
   }
 }
 
+/** Whether the row carries enough image signal to attempt a fetch. */
 function isPreviewableImage(attachment: {
   mimeType?: string;
   fileName?: string;
@@ -51,6 +53,7 @@ function isPreviewableImage(attachment: {
   return false;
 }
 
+/** Fetch-once bytes for an attachment ID, cached as a blob URL. */
 async function fetchPreviewUrl(
   attachmentId: string,
   token: string | null,

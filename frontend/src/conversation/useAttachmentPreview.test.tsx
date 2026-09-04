@@ -12,6 +12,7 @@ vi.mock('../api/services/userService', () => ({
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+/** Host rendering the hook result as text for assertions. */
 function Host({
   attachment,
   token,
@@ -49,6 +50,7 @@ describe('useAttachmentPreviewUrl', () => {
     URL.createObjectURL = realCreateObjectURL;
   });
 
+  /** Render the hook with a token defaulting to a dummy value. */
   const render = async (
     attachment: AttachmentPreviewSource,
     token: string | null = 'tok',
@@ -61,6 +63,7 @@ describe('useAttachmentPreviewUrl', () => {
     });
   };
 
+  /** Successful image fetch resolving to in-memory bytes. */
   const okImage = () =>
     mockGetPreview.mockResolvedValue(
       new Response(new Blob(['imgbytes'], { type: 'image/png' })),

@@ -28,6 +28,7 @@ const initialState: SharedConversationsType = {
   status: 'idle',
 };
 
+/** Fetch an answer in a shared conversation, consuming completed attachments. */
 export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
   'shared/fetchAnswer',
   async ({ question }, { dispatch, getState, signal }) => {
@@ -263,10 +264,13 @@ export const sharedConversationSlice = createSlice({
       state.queries[index].response = '';
       state.queries[index].thought = '';
     },
+    /**
+     * Persist the latest query for share-link reloads, without
+     * session-local blob preview URLs: they die with the document, and a
+     * reloaded row must resolve its image through the preview endpoint
+     * (by ID + share identifier) instead.
+     */
     saveToLocalStorage(state) {
-      // Persist without session-local blob preview URLs: they die with
-      // the document, and a reloaded row must resolve its image through
-      // the preview endpoint (by ID + share identifier) instead.
       const last = state.queries[state.queries.length - 1];
       const storable = {
         ...last,

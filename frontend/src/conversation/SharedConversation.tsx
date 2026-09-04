@@ -100,6 +100,7 @@ export const SharedConversation = () => {
     }
   };
 
+  /** Send a question in a shared conversation (snapshot attachments first). */
   const handleQuestion = ({
     question,
     isRetry = false,

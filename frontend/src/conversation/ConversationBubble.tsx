@@ -126,6 +126,7 @@ function BubbleAttachmentChip({
   );
 }
 
+/** Chat message bubble: question, answer, sources, and response metadata. */
 const ConversationBubble = forwardRef<
   HTMLDivElement,
   {
