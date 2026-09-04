@@ -103,8 +103,8 @@ def _resolve_ocr_engine(requested: Optional[str]) -> str:
     if engine == "tesseract" and shutil.which("tesseract") is None:
         logger.warning(
             "OCR_ENGINE=tesseract but no tesseract binary is on PATH (install "
-            "tesseract-ocr plus language packs; the Docker image ships them unless "
-            "built with INSTALL_TESSERACT=false); using docling auto-selection"
+            "tesseract-ocr plus language packs: Docker builds need "
+            "INSTALL_TESSERACT=true); using docling auto-selection"
         )
         return "auto"
     if engine == "ocrmac" and (

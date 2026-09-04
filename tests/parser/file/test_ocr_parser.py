@@ -964,3 +964,38 @@ def test_delegate_parse_lets_setup_errors_through():
 
     with pytest.raises(ImportError, match="docling is required"):
         delegate_parse(_NeedsLib(), Path("x.pdf"), "ignore")
+
+
+class TestTextLayerDelegate:
+    """``text_layer_delegate`` mirrors ``parse_file``'s delegation decision."""
+
+    def test_every_page_with_text_returns_the_text_parser(self, monkeypatch):
+        import pypdfium2 as pdfium
+
+        class _Pdf:
+            def close(self):
+                pass
+
+        monkeypatch.setattr(pdfium, "PdfDocument", lambda path: _Pdf())
+        text_parser = object()
+        parser = op.NativeOcrPdfParser(text_parser=text_parser, min_text_chars=20)
+        monkeypatch.setattr(parser, "_text_layer_counts", lambda pdf: [50, 60])
+        assert parser.text_layer_delegate(Path("x.pdf")) is text_parser
+
+    def test_a_scanned_page_keeps_the_native_path(self, monkeypatch):
+        import pypdfium2 as pdfium
+
+        class _Pdf:
+            def close(self):
+                pass
+
+        monkeypatch.setattr(pdfium, "PdfDocument", lambda path: _Pdf())
+        parser = op.NativeOcrPdfParser(text_parser=object(), min_text_chars=20)
+        monkeypatch.setattr(parser, "_text_layer_counts", lambda pdf: [50, 3])
+        assert parser.text_layer_delegate(Path("x.pdf")) is None
+
+    def test_no_text_parser_or_unreadable_file_is_none(self, tmp_path):
+        assert op.NativeOcrPdfParser().text_layer_delegate(Path("x.pdf")) is None
+        broken = tmp_path / "broken.pdf"
+        broken.write_bytes(b"not a pdf")
+        assert op.NativeOcrPdfParser(text_parser=object()).text_layer_delegate(broken) is None

@@ -43,6 +43,34 @@ and — when it is the OCR backend — scanned PDFs and images. Without Docling
 those formats use the standard parsers; OCR still works through the native
 backend, and with OCR off images are only read when `PARSE_IMAGE_REMOTE=true`.
 
+## Installing tesseract
+
+Nothing OCR-related ships in the base install: the default engine,
+`tesseract`, is a ~35 MB system package that you opt into like any other OCR
+dependency. Locally:
+
+```bash
+# Debian/Ubuntu                      # macOS
+apt-get install tesseract-ocr tesseract-ocr-eng    brew install tesseract
+```
+
+Docker images build without it by default; opt in with the build argument:
+
+```bash
+docker build --build-arg INSTALL_TESSERACT=true ./application
+```
+
+`deployment/docker-compose.yaml` forwards the same switch, so setting
+`INSTALL_TESSERACT=true` in `.env` (or the shell) bakes tesseract plus the
+English pack into locally built backend and worker images; `setup.sh` writes
+it when you answer yes to the OCR question after choosing to build images
+locally. Pre-built Docker Hub images (`docker-compose-hub.yaml`) do not
+include it, so `setup.sh` leaves OCR at its default (off) for them; to OCR
+there, point `OCR_ENGINE=deepseek` at a DeepSeek-OCR endpoint or install
+`tesseract-ocr` in a derived image. With `OCR_ENABLED=true` and no binary on
+`PATH`, scanned pages fail with an install hint (text-layer documents are
+unaffected).
+
 ## Installing the docling engine
 
 docling is not part of the base install, and OCR does not need it (see
@@ -112,7 +140,7 @@ Docling is not the only way to OCR. The `native` backend renders the pages
 that need it with pypdfium2 and Pillow — both already core dependencies —
 and feeds them straight into tesseract or a DeepSeek-OCR endpoint. No ML
 models load in the worker, and nothing beyond the ~35 MB tesseract binary
-(shipped in the Docker image) is installed.
+(see [Installing tesseract](#installing-tesseract)) is needed.
 
 | `OCR_BACKEND` | What runs | When to pick it |
 |---|---|---|
@@ -135,7 +163,7 @@ scans (all engines driven through docling so layout handling is identical):
 
 | `OCR_ENGINE` | Backends | Role | Notes |
 |---|---|---|---|
-| `tesseract` | native, docling | **recommended default** | Best classic-engine accuracy in the bench: perfect EN word recall on all docs, 0.000 CER on the bilingual page, 100% table cells, robust to mild degradation. ~35 MB of *system* packages, CPU-only. Needs the `tesseract` binary + language packs — shipped in the Docker image (opt out with `--build-arg INSTALL_TESSERACT=false`); set languages via `OCR_LANGS` (e.g. `eng+chi_sim`). |
+| `tesseract` | native, docling | **recommended default** | Best classic-engine accuracy in the bench: perfect EN word recall on all docs, 0.000 CER on the bilingual page, 100% table cells, robust to mild degradation. ~35 MB of *system* packages, CPU-only. Needs the `tesseract` binary + language packs — an optional install like every OCR dependency (see [Installing tesseract](#installing-tesseract)); set languages via `OCR_LANGS` (e.g. `eng+chi_sim`). |
 | `deepseek` | native, docling | best quality, heavy on the *server* | DeepSeek-OCR against an OpenAI-compatible endpoint. Only engine that reconstructs totals rows as table rows; near-perfect CJK; barely affected by degradation. The ingestion worker stays light (no layout models); the model runs in Ollama or vLLM. Costs: a GPU/Apple-Silicon endpoint, ~seconds per page, and occasional silent drops of page-level elements (titles). |
 | `auto` | docling | convenience | docling picks: `ocrmac` on macOS (excellent, ~1 s/page), `rapidocr` on Linux — see below before relying on it server-side. Also docling's automatic fallback whenever the selected engine is not installed. The native backend runs tesseract for it. |
 | `ocrmac` | docling | macOS only | Best raw accuracy and fastest of all classic engines; irrelevant for Linux deploys. |
@@ -233,8 +261,8 @@ With `OCR_BACKEND=docling`, OCR behavior is different for PDFs vs images:
 - Image parser defaults to full-page OCR (the whole image is visual content).
 
 The engine and its languages come from `OCR_ENGINE` and `OCR_LANGS` (see the
-table above). The Docker image ships only the English tesseract pack; for
-other languages install their packs in the image (e.g.
+table above). `INSTALL_TESSERACT=true` installs only the English tesseract
+pack; for other languages install their packs in the image (e.g.
 `apt-get install tesseract-ocr-chi-sim`) and list them in `OCR_LANGS`
 (`eng+chi_sim`).
 

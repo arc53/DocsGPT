@@ -46,7 +46,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # backend, read_document's structured output) — OFF by default: it pulls the
 # layout/OCR model stack and adds gigabytes to the image. anydoc (in
 # requirements.txt) is the default parser and needs none of it, and OCR runs
-# natively on tesseract (below) without it.
+# natively on tesseract (below, also opt-in) without it.
 ARG INSTALL_DOCLING=false
 RUN if [ "$INSTALL_DOCLING" = "true" ]; then \
         pip install --no-cache-dir -r requirements-docling.txt; \
@@ -67,12 +67,14 @@ RUN apt-get update && \
     ln -s /usr/bin/python3.12 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
-# OCR (OCR_ENABLED=true) runs on the system tesseract binary by default,
-# with or without the docling extra, so ship it in every image (~35 MB).
-# Opt out with --build-arg INSTALL_TESSERACT=false (e.g. a DeepSeek-OCR-only
-# deployment). Extra language packs are a deployment concern
-# (apt: tesseract-ocr-<lang>, then list them in OCR_LANGS).
-ARG INSTALL_TESSERACT=true
+# Optional tesseract OCR engine (OCR_ENABLED=true with OCR_ENGINE=tesseract,
+# the default engine) — OFF by default like every other OCR dependency; OCR
+# itself is off unless configured. Opt in with --build-arg
+# INSTALL_TESSERACT=true (setup.sh writes it to .env when OCR is enabled);
+# ~35 MB of system packages. Extra language packs are a deployment concern
+# (apt: tesseract-ocr-<lang>, then list them in OCR_LANGS). A DeepSeek-OCR
+# endpoint (OCR_ENGINE=deepseek) needs none of this.
+ARG INSTALL_TESSERACT=false
 RUN if [ "$INSTALL_TESSERACT" = "true" ]; then \
         apt-get update && \
         apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng && \

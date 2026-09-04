@@ -362,10 +362,22 @@ configure_doc_processing() {
         echo -e "${GREEN}PDF-as-image parsing enabled.${NC}"
     fi
 
+    # OCR needs the tesseract binary, an optional system package that only
+    # locally built images can include (INSTALL_TESSERACT build arg). The
+    # pre-built Docker Hub images ship without it, so there OCR stays off
+    # (its default) rather than being switched on to fail on every scan.
+    if [[ "$COMPOSE_FILE" != "$COMPOSE_FILE_LOCAL" ]]; then
+        echo -e "${YELLOW}OCR for scanned PDFs and images stays off: the pre-built Docker Hub images do not include tesseract. To use OCR, rerun setup and choose option 5 (build images locally), or point OCR_ENGINE=deepseek at a DeepSeek-OCR endpoint in .env.${NC}"
+        return
+    fi
+
     read -p "$(echo -e "${DEFAULT_FG}Enable OCR for scanned PDFs and images? (y/N): ${NC}")" ocr_enabled
     if [[ "$ocr_enabled" =~ ^[yY]$ ]]; then
         echo "OCR_ENABLED=true" >> "$ENV_FILE"
-        echo -e "${GREEN}OCR enabled (tesseract, shipped in the Docker image; set OCR_ENGINE=deepseek for a DeepSeek-OCR endpoint).${NC}"
+        # Bakes tesseract into the locally built images (docker compose
+        # --env-file .env build).
+        echo "INSTALL_TESSERACT=true" >> "$ENV_FILE"
+        echo -e "${GREEN}OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); set OCR_ENGINE=deepseek in .env for a DeepSeek-OCR endpoint instead.${NC}"
         read -p "$(echo -e "${DEFAULT_FG}Also install the Docling layout engine for OCR (better tables/reading order, several GB heavier)? (y/N): ${NC}")" docling_ocr
         if [[ "$docling_ocr" =~ ^[yY]$ ]]; then
             # Locally built images include docling via this build arg; it becomes

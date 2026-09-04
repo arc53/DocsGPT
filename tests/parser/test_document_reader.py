@@ -724,6 +724,31 @@ def test_fast_engine_covers_the_whole_legacy_map():
         assert type(dr._legacy_parser_for(suffix)).__name__ == name
 
 
+@pytest.mark.parametrize("suffix", [".odt", ".doc", ".rtf", ".xls", ".ods", ".odp"])
+def test_fast_engine_is_terminal_for_anydoc_only_suffixes(monkeypatch, suffix):
+    """A suffix only anydoc reads has no legacy parser; `fast` must report that
+    rather than silently running the configured engine the caller opted out of."""
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("fast fell through to the configured engine map")
+
+    monkeypatch.setattr(dr, "get_default_file_extractor", _boom)
+    monkeypatch.setattr(dr, "_zip_bomb_reason", lambda *a, **k: None)
+
+    assert dr._pick_parser(suffix, ocr_enabled=False, engine="fast") is None
+    out = parse_document_bytes(b"\xd0\xcf\x11\xe0 bytes", f"doc{suffix}", output="text", engine="fast")
+    assert "fast engine" in out["error"] and suffix in out["error"]
+
+
+def test_fast_engine_still_falls_through_for_images_and_audio(monkeypatch):
+    """Formats with no legacy parser and no anydoc alternative keep the configured map."""
+    seen = []
+    monkeypatch.setattr(dr, "get_default_file_extractor", lambda **kwargs: seen.append(kwargs) or {})
+    for suffix in (".png", ".jpg", ".mp3", ".txt"):
+        dr._pick_parser(suffix, ocr_enabled=True, engine="fast")
+    assert len(seen) == 4
+
+
 def test_tables_are_not_collected_when_the_pdf_parser_is_not_docling(monkeypatch):
     """Under OCR_BACKEND=native the docling engine hands PDFs to the native OCR
     parser; a vanilla DocumentConverter table pass would OCR the scan again."""
@@ -744,6 +769,46 @@ def test_tables_are_not_collected_when_the_pdf_parser_is_not_docling(monkeypatch
 
     assert out["content"] == "native text"
     assert calls == []
+
+
+def test_tables_survive_native_ocr_delegation_for_text_only_pdfs(monkeypatch):
+    """OCR_BACKEND=native under the docling engine wraps a DoclingParser as the
+    native parser's text_parser. A PDF with a text layer on every page is handed
+    to that parser, so tables must ride that single conversion instead of being
+    dropped by the scan exclusion."""
+
+    from application.parser.file.docling_parser import DoclingParser
+    from application.parser.file.ocr_parser import NativeOcrPdfParser
+
+    class _Docling(DoclingParser):
+        def __init__(self):
+            super().__init__()
+            self._parser_config = {"ready": True}
+
+    docling = _Docling()
+    native = NativeOcrPdfParser(text_parser=docling)
+    native._parser_config = {}
+    monkeypatch.setattr(native, "text_layer_delegate", lambda path: docling)
+    monkeypatch.setattr(
+        native, "parse_file", lambda path, errors="ignore": pytest.fail("native OCR ran on a text-only PDF")
+    )
+
+    calls = []
+
+    def _fake_structured(path, *, ocr_enabled, include_tables, parser=None):
+        calls.append(parser)
+        return {"markdown": "# text pdf", "tables": [{"markdown": "| t |"}], "structured": {}, "page_count": 1}
+
+    monkeypatch.setattr(dr, "_pick_parser", lambda *a, **k: native)
+    monkeypatch.setattr(dr, "_effective_engine", lambda engine: "docling")
+    monkeypatch.setattr(dr, "_docling_structured", _fake_structured)
+    monkeypatch.setattr(dr, "_zip_bomb_reason", lambda *a, **k: None)
+
+    out = parse_document_bytes(b"%PDF-1.4", "text.pdf", engine="docling", include_tables=True)
+
+    assert out["content"] == "# text pdf"
+    assert out["tables"] == [{"markdown": "| t |"}]
+    assert calls == [docling]
 
 
 def test_binary_office_suffix_without_anydoc_is_an_error_not_text(monkeypatch):

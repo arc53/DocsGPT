@@ -182,6 +182,36 @@ class TestStreamWalk:
         assert result["type0_no_tounicode"] == 1
 
 
+class TestObjectWalk:
+    def test_bodies_match_the_regex_reference(self):
+        """The forward walk yields exactly what ``\\d+\\s+\\d+\\s+obj(.*?)endobj`` did."""
+        import re
+
+        from application.parser.file.pdf_trust import _object_bodies
+
+        reference = re.compile(rb"\d+\s+\d+\s+obj(.*?)endobj", re.DOTALL)
+        data = (
+            TYPE0_BARE
+            + b"7 0 obj no terminator here "  # orphan header: body runs to the next endobj
+            + SIMPLE_FONT
+            + b"junk 12 0 obj<</A/B>>endobj"
+            + _stream(b"x")
+            + b"99 0 obj trailing orphan"
+        )
+        assert list(_object_bodies(data)) == [m.group(1) for m in reference.finditer(data)]
+
+    def test_orphan_headers_are_linear(self):
+        """Headers with no ``endobj`` after them: the old regex rescanned to EOF for
+        each one (2000 in 1 MB took 13.5 s), pinning an ingest worker per upload."""
+        import time
+
+        data = TYPE0_BARE + b"1 0 obj\n" * 20_000 + b"\x00" * 500_000
+        started = time.perf_counter()
+        result = check_pdf_fonts(data)
+        assert time.perf_counter() - started < 1.0
+        assert result["type0_no_tounicode"] == 1
+
+
 # --- the CJK cross-check is confirmed against pdfium's text layer --------------
 
 

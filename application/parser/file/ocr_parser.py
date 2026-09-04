@@ -315,9 +315,9 @@ class TesseractEngine:
         if not self.available():
             raise OcrUnavailableError(
                 "OCR_ENGINE=tesseract but no tesseract binary is on PATH. Install "
-                "tesseract-ocr plus language packs (the Docker image ships them "
-                "unless built with INSTALL_TESSERACT=false), or set "
-                "OCR_ENGINE=deepseek / install the docling extra."
+                "tesseract-ocr plus language packs (Docker: build with "
+                "INSTALL_TESSERACT=true; local: apt/brew install tesseract-ocr), "
+                "or set OCR_ENGINE=deepseek / install the docling extra."
             )
         try:
             completed = subprocess.run(
@@ -698,6 +698,32 @@ class NativeOcrPdfParser(BaseParser):
             pdf.close()
         self.last_engine = engine.name
         return texts
+
+    def text_layer_delegate(self, file: Path) -> Optional[BaseParser]:
+        """The ``text_parser`` that ``parse_file`` would hand ``file`` to, or None.
+
+        None when there is no text parser, the file cannot be opened, or any
+        page falls below ``min_text_chars`` (those are OCR'd here). Callers
+        that want a by-product of the delegate's conversion (docling tables)
+        can run it directly instead of converting the document twice.
+        """
+        if self.text_parser is None:
+            return None
+        try:
+            import pypdfium2 as pdfium
+
+            pdf = pdfium.PdfDocument(str(Path(file)))
+        except Exception:  # noqa: BLE001 - a probe; parse_file reports the real error
+            return None
+        try:
+            counts = self._text_layer_counts(pdf)
+        except Exception:  # noqa: BLE001
+            return None
+        finally:
+            pdf.close()
+        if counts and all(count >= self.min_text_chars for count in counts):
+            return self.text_parser
+        return None
 
     def _delegate_text(self, path: Path, errors: str) -> Union[str, List[str]]:
         text_parser = self.text_parser

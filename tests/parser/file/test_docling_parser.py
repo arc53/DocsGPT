@@ -158,8 +158,12 @@ class TestOcrEngineSelection:
 
     def test_build_tesseract_reads_ocr_langs(self, settings, monkeypatch):
         pytest.importorskip("docling")
+        import application.parser.file.ocr_parser as op
         from application.parser.file.docling_parser import _build_ocr_options
 
+        # Pack inventory unknown: the resolved list is passed through untouched
+        # (a host with tesseract but no chi_sim pack would otherwise drop it).
+        monkeypatch.setattr(op, "tesseract_languages", lambda: None)
         monkeypatch.setattr(settings, "OCR_LANGS", "eng+chi_sim")
         options = _build_ocr_options("tesseract", None, True)
 

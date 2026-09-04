@@ -13,6 +13,7 @@ Three behaviours matter and are asserted separately:
 import importlib.machinery
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -319,9 +320,7 @@ def test_init_parser_imports_for_real_not_just_find_spec(monkeypatch):
 
 # --- PDF trust check + tableize wiring (PR 3) -----------------------------------
 
-from pathlib import Path as _Path
-
-FIXTURES = _Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).parent / "fixtures"
 CID_PDF = FIXTURES / "nda_en_zh_cid_font.pdf"
 
 

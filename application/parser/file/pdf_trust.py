@@ -29,7 +29,7 @@ import zlib
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Union
 
-_OBJ = re.compile(rb"\d+\s+\d+\s+obj(.*?)endobj", re.DOTALL)
+_OBJ_HEADER = re.compile(rb"\d+\s+\d+\s+obj")
 _TYPE0 = re.compile(rb"/Subtype\s*/Type0")
 # The CJK expectation is keyed on CIDSystemInfo /Ordering ALONE — the
 # authoritative "this PDF maps text through a CJK character collection"
@@ -99,6 +99,28 @@ def _stream_bodies(raw: bytes) -> Iterator[bytes]:
         yield body
 
 
+def _object_bodies(raw: bytes) -> Iterator[bytes]:
+    """The bytes between each ``N G obj`` header and the next ``endobj``.
+
+    A forward walk for the same reason as ``_stream_bodies``: the regex
+    ``\\d+\\s+\\d+\\s+obj(.*?)endobj`` rescans to end-of-file for every header
+    that has no ``endobj`` after it, so a malformed (or crafted) PDF with many
+    such headers costs headers x size — 2000 orphan headers in 1 MB measured
+    13.5 s, on the default upload path. Advancing past each ``endobj`` keeps
+    the walk linear and yields the same bodies.
+    """
+    pos = 0
+    while True:
+        header = _OBJ_HEADER.search(raw, pos)
+        if header is None:
+            return
+        end = raw.find(b"endobj", header.end())
+        if end < 0:
+            return
+        yield raw[header.end():end]
+        pos = end + 6
+
+
 def _decompressed_streams(raw: bytes) -> Iterator[bytes]:
     """Each Flate stream in ``raw`` that decompresses, one at a time, capped."""
     for body in _stream_bodies(raw):
@@ -145,8 +167,7 @@ def check_pdf_fonts(data: bytes) -> Dict[str, Union[int, bool]]:
         if b"/ToUnicode" not in unit:
             bare += 1
 
-    for match in _OBJ.finditer(data):
-        body = match.group(1)
+    for body in _object_bodies(data):
         if _TYPE0.search(body):
             count_font(body)
     # Each decompressed stream is scanned for every signal in one pass and

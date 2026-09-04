@@ -186,6 +186,13 @@ def _pick_parser(suffix: str, *, ocr_enabled: bool, engine: str):
         legacy = _legacy_parser_for(suffix)
         if legacy is not None:
             return legacy
+        from application.parser.file.anydoc_parser import ANYDOC_GAINED_SUFFIXES
+
+        if suffix in ANYDOC_GAINED_SUFFIXES:
+            # anydoc-only office formats have no legacy parser. Falling through
+            # would run the configured engine the caller explicitly opted out
+            # of; images/audio/.txt still fall through (no legacy alternative).
+            return None
     if engine in ("docling", "anydoc"):
         extractor = get_default_file_extractor(ocr_enabled=ocr_enabled, engine=engine)
     else:
@@ -529,6 +536,16 @@ def _shape(
         }
 
     parser = _pick_parser(suffix, ocr_enabled=ocr_enabled, engine=engine)
+    # Under OCR_BACKEND=native with the docling engine the PDF parser is the
+    # native OCR parser wrapping a DoclingParser as its text_parser. A PDF
+    # with a text layer on every page is handed to that parser untouched, so
+    # when tables are wanted run it directly: the single docling conversion
+    # below then yields both the markdown and the tables. Scans and mixed
+    # documents keep the native parser (and the exclusion just below).
+    if include_tables and output != "chunks" and _is_native_ocr_parser(parser):
+        delegate = parser.text_layer_delegate(path)
+        if _is_docling_parser(delegate):
+            parser = delegate
     # Tables come from a Docling conversion, so they are only collected when
     # a Docling parser is actually in play: under anydoc/fast a table pass
     # would be a second, full docling conversion that costs more than the
@@ -569,6 +586,11 @@ def _shape(
         from application.parser.file.anydoc_parser import ANYDOC_GAINED_SUFFIXES
 
         if suffix in ANYDOC_GAINED_SUFFIXES:
+            if engine == "fast":
+                return {
+                    "error": f"The fast engine has no parser for {suffix} files; "
+                    "use engine='anydoc' or 'auto'."
+                }
             return {
                 "error": f"No parser is available for {suffix} files: firecrawl-anydoc "
                 "is not installed (pip install firecrawl-anydoc)"

@@ -165,8 +165,9 @@ class Settings(BaseSettings):
     # menu):
     #   tesseract — recommended: best classic-engine accuracy (perfect EN word
     #     recall, 0.000 bilingual CER, 100% table cells), ~35 MB, CPU-only.
-    #     Needs the system binary + language packs (the Docker image ships
-    #     them unless built with INSTALL_TESSERACT=false). Both backends.
+    #     Needs the system binary + language packs: an optional install like
+    #     every OCR dependency (build with INSTALL_TESSERACT=true, or apt/brew
+    #     install tesseract-ocr for a local run). Both backends.
     #   deepseek — DeepSeek-OCR against an Ollama/vLLM endpoint
     #     (OCR_DEEPSEEK_*). Best table/CJK quality; the worker stays light
     #     (no layout models) but each page costs seconds on the model server.
