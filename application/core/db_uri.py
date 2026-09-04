@@ -28,9 +28,9 @@ def _rewrite_uri_prefixes(v, rewrites):
     """Shared URI prefix rewriter used by both normalizers below.
 
     Strips whitespace, returns ``None`` for empty / ``"none"`` values,
-    applies the first matching rewrite, and passes unrecognised input
-    through so downstream consumers (SQLAlchemy, libpq) can produce
-    their own error messages rather than us silently eating a
+    applies the first matching rewrite (case-insensitively on the scheme prefix),
+    and passes unrecognised input through so downstream consumers (SQLAlchemy, libpq)
+    can produce their own error messages rather than us silently eating a
     misconfiguration.
     """
     if v is None:
@@ -40,9 +40,10 @@ def _rewrite_uri_prefixes(v, rewrites):
     v = v.strip()
     if not v or v.lower() == "none":
         return None
+    v_lower = v.lower()
     for prefix, target in rewrites:
-        if v.startswith(prefix):
-            return target + v[len(prefix):]
+        if v_lower.startswith(prefix.lower()):
+            return target + v[len(prefix) :]
     return v
 
 
@@ -51,6 +52,7 @@ def _rewrite_uri_prefixes(v, rewrites):
 # operator-friendly forms TOWARD that dialect.
 _POSTGRES_URI_REWRITES = (
     ("postgresql+psycopg2://", "postgresql+psycopg://"),
+    ("postgresql+psycopg://", "postgresql+psycopg://"),
     ("postgresql://", "postgresql+psycopg://"),
     ("postgres://", "postgresql+psycopg://"),
 )
@@ -64,6 +66,8 @@ _POSTGRES_URI_REWRITES = (
 _PGVECTOR_CONNECTION_STRING_REWRITES = (
     ("postgresql+psycopg2://", "postgresql://"),
     ("postgresql+psycopg://", "postgresql://"),
+    ("postgresql://", "postgresql://"),
+    ("postgres://", "postgres://"),
 )
 
 

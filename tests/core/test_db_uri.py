@@ -49,14 +49,47 @@ class TestNormalizePostgresUri:
                 "postgresql+psycopg://u:p@h:5432/d",
                 "postgresql+psycopg://u:p@h:5432/d",
             ),
+            # Case-insensitive scheme rewriting.
+            (
+                "POSTGRESQL://u:p@h:5432/d",
+                "postgresql+psycopg://u:p@h:5432/d",
+            ),
+            (
+                "POSTGRES://u:p@h:5432/d",
+                "postgresql+psycopg://u:p@h:5432/d",
+            ),
+            (
+                "PostgreSQL://u:p@h:5432/d",
+                "postgresql+psycopg://u:p@h:5432/d",
+            ),
+            (
+                "Postgres://u:p@h:5432/d",
+                "postgresql+psycopg://u:p@h:5432/d",
+            ),
+            (
+                "POSTGRESQL+PSYCOPG2://u:p@h:5432/d",
+                "postgresql+psycopg://u:p@h:5432/d",
+            ),
+            (
+                "POSTGRESQL+PSYCOPG://u:p@h:5432/d",
+                "postgresql+psycopg://u:p@h:5432/d",
+            ),
             # Whitespace is trimmed before rewriting.
             (
                 "  postgres://u:p@h/d  ",
                 "postgresql+psycopg://u:p@h/d",
             ),
+            (
+                "  POSTGRESQL://u:p@h/d  ",
+                "postgresql+psycopg://u:p@h/d",
+            ),
             # Query-string params (sslmode, options) are preserved verbatim.
             (
                 "postgresql://u:p@h:5432/d?sslmode=require&application_name=docsgpt",
+                "postgresql+psycopg://u:p@h:5432/d?sslmode=require&application_name=docsgpt",
+            ),
+            (
+                "POSTGRESQL://u:p@h:5432/d?sslmode=require&application_name=docsgpt",
                 "postgresql+psycopg://u:p@h:5432/d?sslmode=require&application_name=docsgpt",
             ),
         ],
@@ -112,14 +145,43 @@ class TestNormalizePgvectorConnectionString:
                 "postgresql+psycopg2://u:p@h:5432/d",
                 "postgresql://u:p@h:5432/d",
             ),
+            # Case-insensitive scheme rewriting.
+            (
+                "POSTGRESQL://u:p@h:5432/d",
+                "postgresql://u:p@h:5432/d",
+            ),
+            (
+                "POSTGRES://u:p@h:5432/d",
+                "postgres://u:p@h:5432/d",
+            ),
+            (
+                "PostgreSQL://u:p@h:5432/d",
+                "postgresql://u:p@h:5432/d",
+            ),
+            (
+                "POSTGRESQL+PSYCOPG://u:p@h:5432/d",
+                "postgresql://u:p@h:5432/d",
+            ),
+            (
+                "POSTGRESQL+PSYCOPG2://u:p@h:5432/d",
+                "postgresql://u:p@h:5432/d",
+            ),
             # Whitespace is trimmed before rewriting.
             (
                 "  postgresql+psycopg://u:p@h/d  ",
                 "postgresql://u:p@h/d",
             ),
+            (
+                "  POSTGRESQL+PSYCOPG://u:p@h/d  ",
+                "postgresql://u:p@h/d",
+            ),
             # Query-string params (sslmode, etc.) are preserved verbatim.
             (
                 "postgresql+psycopg://u:p@h:5432/d?sslmode=require",
+                "postgresql://u:p@h:5432/d?sslmode=require",
+            ),
+            (
+                "POSTGRESQL+PSYCOPG://u:p@h:5432/d?sslmode=require",
                 "postgresql://u:p@h:5432/d?sslmode=require",
             ),
         ],
