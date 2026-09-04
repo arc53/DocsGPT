@@ -21,6 +21,10 @@ ddgs>=8.0.0
 fast-ebook
 elevenlabs==2.62.0
 Flask==3.1.3
+fastembed==0.8.0
+# fastembed's runtime: local embeddings execute on it, so it stays pinned in
+# core even though the docling extra's rapidocr runs on the same package.
+onnxruntime==1.28.0
 faiss-cpu==1.15.0
 fastmcp==3.4.6
 flask-restx==1.3.2
@@ -91,19 +95,18 @@ referencing>=0.28.0,<0.38.0
 regex==2026.7.19
 requests==2.34.2
 retry==0.9.2
-sentence-transformers==5.7.0
 sqlalchemy>=2.0,<3
 starlette>=1.0,<2
 tiktoken==0.13.0
 tokenizers==0.22.2
-# torch stays in core: sentence-transformers (local embeddings) needs it even
-# with the docling extra uninstalled.
+# torch and transformers serve docling's model stack alone -- embeddings moved
+# to fastembed/onnxruntime. Still in core rather than requirements-docling.txt,
+# so installing the optional extra never re-resolves the shared pins; both can
+# move out with docling.
 torch==2.11.0
 tqdm==4.67.3
-# Kept in core for sentence-transformers, so installing the optional docling
-# extra never changes the shared model stack. Capped <5.9.0 to match
-# docling-core's own darwin pin: 5.9+ breaks docling's PDF layout model on
-# Apple Silicon ("Cannot convert a MPS Tensor to float64").
+# Capped <5.9.0 to match docling-core's own darwin pin: 5.9+ breaks docling's
+# PDF layout model on Apple Silicon ("Cannot convert a MPS Tensor to float64").
 transformers==5.8.1
 typing-extensions==4.16.0
 typing-inspect==0.9.0

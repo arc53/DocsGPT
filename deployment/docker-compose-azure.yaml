@@ -45,7 +45,7 @@ services:
         # must set INSTALL_TESSERACT=true before rebuilding (see docker-compose.yaml).
         INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
     # `parsing` queue carries read_document/parse_document; required for its await to resolve.
-    command: celery -A application.app.celery worker -l INFO -Q docsgpt,parsing
+    command: celery -A application.app.celery worker -l INFO -Q docsgpt,parsing,embeddings
     env_file:
       - ../.env
     environment:

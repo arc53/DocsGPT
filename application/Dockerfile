@@ -17,11 +17,6 @@ RUN if [ -f /usr/bin/python3.12 ]; then \
         echo "Python 3.12 not found"; exit 1; \
     fi
 
-# Download and unzip the model
-RUN wget https://d3dg1063dc54p9.cloudfront.net/models/embeddings/mpnet-base-v2.zip && \
-    unzip mpnet-base-v2.zip -d models && \
-    rm mpnet-base-v2.zip
-
 # Install Rust
 RUN wget -q -O - https://sh.rustup.rs | sh -s -- -y
 
@@ -91,7 +86,26 @@ RUN groupadd -r appuser && \
 # Copy the virtual environment and model from the builder stage
 COPY --from=builder /venv /venv
 
-COPY --from=builder /models /app/models
+# Pre-fetch the embedding models into FastEmbed's cache so a fresh container
+# does not download on first ingest and an air-gapped install works at all.
+# Both defaults are baked: an upgraded deployment keeps using mpnet until it
+# runs the re-embed script, while a new one starts on granite.
+# The prefetch writes hub-layout snapshots (including tokenizer.json) here, so
+# HF_HUB_CACHE has to point at the same directory: chunking loads the tokenizer
+# through ``tokenizers``, which reads the hub cache and would otherwise fetch
+# over the network on first ingest -- and fall back to cl100k when offline.
+ENV EMBEDDINGS_CACHE_DIR=/app/models \
+    HF_HUB_CACHE=/app/models
+
+# Only the modules the prefetch imports are copied first. It reaches nothing
+# beyond model_registry, which is stdlib-only, so keeping the full source copy
+# below this layer stops an unrelated edit from re-downloading ~780 MB of model
+# artifacts on every build.
+COPY __init__.py /app/application/__init__.py
+COPY scripts/__init__.py scripts/prefetch_models.py /app/application/scripts/
+COPY vectorstore/__init__.py vectorstore/model_registry.py /app/application/vectorstore/
+ARG EMBEDDINGS_PREFETCH=""
+RUN PYTHONPATH=/app /venv/bin/python -m application.scripts.prefetch_models ${EMBEDDINGS_PREFETCH}
 
 # Copy your application code
 COPY . /app/application

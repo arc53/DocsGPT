@@ -35,6 +35,8 @@ class TokenUsageRepository:
         request_id: Optional[str] = None,
         model_id: Optional[str] = None,
         timestamp: Optional[datetime] = None,
+        cached_tokens: Optional[int] = None,
+        cache_write_tokens: Optional[int] = None,
     ) -> None:
         # Attribution guard: the ``token_usage_attribution_chk`` CHECK
         # constraint requires at least one of ``user_id`` / ``api_key``
@@ -60,12 +62,14 @@ class TokenUsageRepository:
                 INSERT INTO token_usage (
                     user_id, api_key, agent_id,
                     prompt_tokens, generated_tokens,
+                    cached_tokens, cache_write_tokens,
                     source, request_id, model_id, timestamp
                 )
                 VALUES (
                     :user_id, :api_key,
                     CAST(:agent_id AS uuid),
                     :prompt_tokens, :generated_tokens,
+                    :cached_tokens, :cache_write_tokens,
                     :source, :request_id, :model_id, COALESCE(:timestamp, now())
                 )
                 """
@@ -76,6 +80,8 @@ class TokenUsageRepository:
                 "agent_id": agent_id_uuid,
                 "prompt_tokens": prompt_tokens,
                 "generated_tokens": generated_tokens,
+                "cached_tokens": cached_tokens,
+                "cache_write_tokens": cache_write_tokens,
                 "source": source,
                 "request_id": request_id,
                 "model_id": model_id,

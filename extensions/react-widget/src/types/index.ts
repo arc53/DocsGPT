@@ -14,6 +14,11 @@ declare module 'styled-components' {
     };
     /** Present only in SearchBar theme */
     name?: string;
+    /** Gradient stops for the swept status text. */
+    shimmer?: {
+      base: string;
+      highlight: string;
+    };
     /** Present only in DocsGPTWidget theme (always provided when these styled components render) */
     dimensions?: {
       size: string;
@@ -41,6 +46,12 @@ export interface Query {
   sources?: { title: string; text: string; source: string }[];
   conversationId?: string | null;
   title?: string | null;
+  /** Accumulated from thought events. */
+  thought?: string;
+  /** Latest notice or running workflow node; drives the status line. */
+  notice?: string;
+  /** Tool names from tool_calls / tool_call. */
+  toolCalls?: string[];
 }
 
 export interface WidgetProps {

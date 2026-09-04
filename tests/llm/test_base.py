@@ -2347,3 +2347,38 @@ class TestBuildConversationFromMessagesEmpty:
         result = handler._build_conversation_from_messages(messages)
         assert result is not None
         assert len(result.get("queries", [])) >= 1
+
+
+class TestFinishedLogCacheBins:
+    """``cached_tokens`` / ``cache_write_tokens`` ride on the finish events
+    only when a provider reported them, so dashboards can compute a cache
+    hit rate without a sentinel zero polluting providers that never report."""
+
+    def test_stream_finished_carries_cache_bins_when_given(self, caplog):
+        import logging as _logging
+
+        llm = StubLLM()
+        with caplog.at_level(_logging.INFO, logger="root"):
+            llm._emit_stream_finished_log(
+                "m1",
+                prompt_tokens=100,
+                completion_tokens=5,
+                latency_ms=10,
+                cached_tokens=80,
+                cache_write_tokens=7,
+            )
+        evt = next(r for r in caplog.records if r.message == "llm_stream_finished")
+        assert evt.cached_tokens == 80
+        assert evt.cache_write_tokens == 7
+
+    def test_gen_finished_omits_cache_bins_when_none(self, caplog):
+        import logging as _logging
+
+        llm = StubLLM()
+        with caplog.at_level(_logging.INFO, logger="root"):
+            llm._emit_gen_finished_log(
+                "m1", prompt_tokens=100, completion_tokens=5, latency_ms=10
+            )
+        evt = next(r for r in caplog.records if r.message == "llm_gen_finished")
+        assert not hasattr(evt, "cached_tokens")
+        assert not hasattr(evt, "cache_write_tokens")

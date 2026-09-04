@@ -6,7 +6,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 from anthropic import Anthropic
 
 from application.core.settings import settings
-from application.llm.base import BaseLLM
+from application.llm.base import BaseLLM, optional_int
 from application.storage.storage_creator import StorageCreator
 
 logger = logging.getLogger(__name__)
@@ -387,8 +387,12 @@ class AnthropicLLM(BaseLLM):
             # message_start are reused below instead.
             if not output_only:
                 base_input = int(getattr(usage, "input_tokens", 0) or 0)
-                created = int(getattr(usage, "cache_creation_input_tokens", 0) or 0)
-                cached = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+                # None (unreported) and 0 (reported, no caching) must stay
+                # distinguishable — see ``optional_int``.
+                created = optional_int(
+                    getattr(usage, "cache_creation_input_tokens", None)
+                )
+                cached = optional_int(getattr(usage, "cache_read_input_tokens", None))
         except (TypeError, ValueError):
             return
 
@@ -398,11 +402,11 @@ class AnthropicLLM(BaseLLM):
             prompt = int(previous.get("prompt_tokens", 0) or 0)
             details = previous.get("prompt_tokens_details")
         else:
-            prompt = base_input + created + cached
+            prompt = base_input + (created or 0) + (cached or 0)
             details = {}
-            if cached:
+            if cached is not None:
                 details["cached_tokens"] = cached
-            if created:
+            if created is not None:
                 details["cache_creation_tokens"] = created
             details = details or None
 

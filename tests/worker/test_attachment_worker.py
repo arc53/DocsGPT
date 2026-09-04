@@ -326,3 +326,133 @@ class TestAttachmentZipBombGuard:
 
         # BadZipFile → return quietly; the format parser surfaces a clean error.
         worker._reject_attachment_zip_bomb(str(path))
+
+
+@pytest.mark.unit
+class TestAttachmentTypeGuard:
+    """A binary with no parser must fail rather than be read as text.
+
+    ``SimpleDirectoryReader`` falls through to a plain-text ``open()`` for a
+    suffix it has no parser for, which is how a phone-uploaded ``.mp4`` was
+    once stored as 100k tokens of binary with ``extraction.status == "ok"``.
+    The same fallthrough is what makes a ``.py`` or ``.log`` attachment work,
+    so the guard admits those on content.
+    """
+
+    def test_binary_without_a_parser_fails_instead_of_being_read_as_text(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path
+    ):
+        from application import worker
+
+        local_path = tmp_path / "clip.mp4"
+        local_path.write_bytes(b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomavc1")
+
+        events = []
+        fake_storage = MagicMock(name="storage")
+        fake_storage.process_file.side_effect = lambda path, callback: callback(
+            str(local_path)
+        )
+        monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: fake_storage)
+        monkeypatch.setattr(
+            worker,
+            "get_default_file_extractor",
+            lambda ocr_enabled=False, pdf_text_fast_path=False: {},
+        )
+        monkeypatch.setattr(
+            worker,
+            "publish_user_event",
+            lambda user, name, payload, **kwargs: events.append((name, payload)),
+        )
+
+        file_info = {
+            "filename": "clip.mp4",
+            "attachment_id": "507f1f77bcf86cd799439012",
+            "path": "uploads/user1/attachments/clip.mp4",
+            "metadata": {"source": "chat"},
+        }
+
+        with pytest.raises(
+            worker.AttachmentRejectedError, match=r"Unsupported file type: \.mp4"
+        ):
+            worker.attachment_worker(task_self, file_info, "user1")
+
+        failed = [payload for name, payload in events if name == "attachment.failed"]
+        assert failed and failed[0]["error"] == "Unsupported file type: .mp4"
+
+    def test_suffix_the_loaded_extractor_cannot_parse_is_refused(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path
+    ):
+        """The guard judges against the parser table actually loaded.
+
+        Without docling the fallback extractor has no .webp parser, so a
+        .webp the route admitted on its name would otherwise be opened as
+        plain text here.
+        """
+        from application import worker
+
+        local_path = tmp_path / "scan.webp"
+        local_path.write_bytes(b"RIFF\x00\x00\x00\x00WEBPVP8 " + bytes(range(256)))
+
+        events = []
+        fake_storage = MagicMock(name="storage")
+        fake_storage.process_file.side_effect = lambda path, callback: callback(
+            str(local_path)
+        )
+        monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: fake_storage)
+        # The docling-less fallback table: images are handled, .webp is not.
+        monkeypatch.setattr(
+            worker,
+            "get_default_file_extractor",
+            lambda ocr_enabled=False, pdf_text_fast_path=False: {".png": object()},
+        )
+        monkeypatch.setattr(
+            worker,
+            "publish_user_event",
+            lambda user, name, payload, **kwargs: events.append((name, payload)),
+        )
+
+        file_info = {
+            "filename": "scan.webp",
+            "attachment_id": "507f1f77bcf86cd799439014",
+            "path": "uploads/user1/attachments/scan.webp",
+            "metadata": {"source": "chat"},
+        }
+
+        with pytest.raises(
+            worker.AttachmentRejectedError, match=r"Unsupported file type: \.webp"
+        ):
+            worker.attachment_worker(task_self, file_info, "user1")
+
+        failed = [payload for name, payload in events if name == "attachment.failed"]
+        assert failed and failed[0]["error"] == "Unsupported file type: .webp"
+
+    def test_text_without_a_parser_is_parsed(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path
+    ):
+        from application import worker
+
+        local_path = tmp_path / "server.log"
+        local_path.write_text("2026-09-02 ERROR boom\n", encoding="utf-8")
+
+        fake_storage = MagicMock(name="storage")
+        fake_storage.process_file.side_effect = lambda path, callback: callback(
+            str(local_path)
+        )
+        monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: fake_storage)
+        monkeypatch.setattr(
+            worker,
+            "get_default_file_extractor",
+            lambda ocr_enabled=False, pdf_text_fast_path=False: {},
+        )
+
+        file_info = {
+            "filename": "server.log",
+            "attachment_id": "507f1f77bcf86cd799439013",
+            "path": "uploads/user1/attachments/server.log",
+            "metadata": {"source": "chat"},
+        }
+
+        result = worker.attachment_worker(task_self, file_info, "user1")
+
+        assert result["filename"] == "server.log"
+        assert result["token_count"] > 0

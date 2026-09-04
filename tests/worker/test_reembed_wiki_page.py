@@ -100,6 +100,46 @@ class TestReembedWikiPageWorker:
         )
         assert result == {"status": "embedded", "added": 2, "deleted": 3}
 
+    def test_a_reembed_stamps_the_model_on_the_source(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """Wiki sources are created with ``model`` NULL, which the boot mismatch
+        check reads as the legacy model and reports as stale on every startup.
+        Stamping here heals a source created before it was recorded.
+        """
+        from application import worker
+        from application.core.settings import settings
+
+        source_id = _seed_source(pg_conn)
+        assert SourcesRepository(pg_conn).get_any(source_id, "alice")["model"] is None
+
+        _patch_store(monkeypatch, MagicMock(name="vector_store"))
+        _patch_repo(monkeypatch, {"content": "body", "title": "T"})
+        _patch_chunker(monkeypatch, [Document(text="c1")])
+
+        worker.reembed_wiki_page_worker(
+            task_self, source_id, "p.md", "hash-1", "alice"
+        )
+
+        row = SourcesRepository(pg_conn).get_any(source_id, "alice")
+        assert row["model"] == settings.EMBEDDINGS_NAME
+
+    def test_a_purge_leaves_the_model_alone(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """Deleting a page embeds nothing, so it claims nothing about the model."""
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        _patch_store(monkeypatch, MagicMock(name="vector_store"))
+        _patch_repo(monkeypatch, None)
+
+        worker.reembed_wiki_page_worker(
+            task_self, source_id, "gone.md", "hash-x", "alice"
+        )
+
+        assert SourcesRepository(pg_conn).get_any(source_id, "alice")["model"] is None
+
     def test_page_missing_purges(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):

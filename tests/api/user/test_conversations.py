@@ -769,3 +769,88 @@ class TestSubmitFeedbackHappy:
             response = SubmitFeedback().post()
 
         assert response.status_code == 400
+
+
+@pytest.mark.unit
+class TestSubmitFeedbackWithApiKey:
+    """api_key callers carry no JWT."""
+
+    def _seed_agent_with_key(self, pg_conn, owner, key):
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        return AgentsRepository(pg_conn).create(owner, "widget", "published", key=key)
+
+    def _post(self, app, pg_conn, payload):
+        from application.api.user.conversations.routes import SubmitFeedback
+
+        with _patch_conversations_db(pg_conn), app.test_request_context("/api/feedback", method="POST", json=payload):
+            from flask import request
+
+            request.decoded_token = None
+            return SubmitFeedback().post()
+
+    def test_valid_key_rates_its_own_conversation(self, app, pg_conn):
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        owner, key = "owner-fb-key", "agent-key-ok"
+        self._seed_agent_with_key(pg_conn, owner, key)
+        repo = ConversationsRepository(pg_conn)
+        conv_id = str(repo.create(owner, name="via widget", api_key=key)["id"])
+        repo.append_message(conv_id, {"prompt": "p", "response": "r"})
+
+        response = self._post(
+            app,
+            pg_conn,
+            {
+                "feedback": "LIKE",
+                "question_index": 0,
+                "conversation_id": conv_id,
+                "api_key": key,
+            },
+        )
+
+        assert response.status_code == 200
+        fb = repo.get_messages(conv_id)[0].get("feedback")
+        assert fb and fb.get("text") == "like"
+
+    def test_key_cannot_rate_owner_conversation_it_did_not_create(self, app, pg_conn):
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        owner, key = "owner-fb-scope", "agent-key-scope"
+        self._seed_agent_with_key(pg_conn, owner, key)
+        # Owner's conversation, not created with the key.
+        conv_id = _seed_conversation(pg_conn, owner, name="owner private")
+        ConversationsRepository(pg_conn).append_message(conv_id, {"prompt": "p", "response": "r"})
+
+        response = self._post(
+            app,
+            pg_conn,
+            {
+                "feedback": "LIKE",
+                "question_index": 0,
+                "conversation_id": conv_id,
+                "api_key": key,
+            },
+        )
+
+        assert response.status_code == 404
+
+    def test_unknown_key_is_unauthorized(self, app, pg_conn):
+        conv_id = _seed_conversation(pg_conn, "owner-fb-bad")
+
+        response = self._post(
+            app,
+            pg_conn,
+            {
+                "feedback": "LIKE",
+                "question_index": 0,
+                "conversation_id": conv_id,
+                "api_key": "no-such-key",
+            },
+        )
+
+        assert response.status_code == 401

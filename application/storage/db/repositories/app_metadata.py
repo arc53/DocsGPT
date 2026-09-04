@@ -37,6 +37,21 @@ class AppMetadataRepository:
             {"key": key, "value": value},
         )
 
+    def setdefault(self, key: str, value: str) -> str:
+        """Store ``value`` under ``key`` only if absent, returning what stands.
+
+        Two workers racing on first startup converge on one value instead of
+        each overwriting the other, the way ``get_or_create_instance_id`` does.
+        """
+        self._conn.execute(
+            text(
+                "INSERT INTO app_metadata (key, value) VALUES (:key, :value) "
+                "ON CONFLICT (key) DO NOTHING"
+            ),
+            {"key": key, "value": value},
+        )
+        return self.get(key) or value
+
     def get_or_create_instance_id(self) -> str:
         """Return the anonymous instance UUID, generating one if absent.
 

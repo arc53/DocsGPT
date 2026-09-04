@@ -157,12 +157,14 @@ class GraphStore:
         """Dimension of the configured embeddings model, matching ``PGVectorStore``.
 
         Falls back to ``DEFAULT_NAME_EMBEDDING_DIM`` so the graph table and the
-        pgvector ``documents`` table always agree on the configured model.
+        pgvector ``documents`` table always agree on the configured model. A
+        model outside the registry reports ``None`` rather than no attribute,
+        so the fallback cannot be left to ``getattr``.
         """
         from application.vectorstore.base import get_embeddings
 
         embedding = get_embeddings()
-        return getattr(embedding, "dimension", DEFAULT_NAME_EMBEDDING_DIM)
+        return getattr(embedding, "dimension", None) or DEFAULT_NAME_EMBEDDING_DIM
 
     @staticmethod
     def create_schema(conn, *, dimension: int = DEFAULT_NAME_EMBEDDING_DIM) -> None:

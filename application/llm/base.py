@@ -33,6 +33,29 @@ _STREAM_RETRYABLE_TRANSPORT_ERRORS = (
 )
 
 
+def optional_int(value) -> Optional[int]:
+    """Coerce a provider-reported count to int, keeping "unreported" as None.
+
+    Cache bins persist as NULL when a provider says nothing and as 0 when it
+    reports zero, so the two must stay distinguishable all the way from the
+    usage object: providers report ``cached_tokens: 0`` on every uncached
+    request, and folding that into "unknown" would file the ordinary case as
+    no-data.
+
+    Args:
+        value: The raw attribute off a provider usage object.
+
+    Returns:
+        The integer value, or None when absent or not a number.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class BaseLLM(ABC):
     # Stamped onto the ``llm_stream_start`` event so dashboards can group
     # calls by vendor. Subclasses override.
@@ -710,6 +733,7 @@ class BaseLLM(ABC):
         completion_tokens,
         latency_ms,
         cached_tokens=None,
+        cache_write_tokens=None,
         error=None,
     ):
         # Non-streaming counterpart to ``_emit_stream_finished_log``. Paired
@@ -730,6 +754,8 @@ class BaseLLM(ABC):
         }
         if cached_tokens is not None:
             extra["cached_tokens"] = int(cached_tokens)
+        if cache_write_tokens is not None:
+            extra["cache_write_tokens"] = int(cache_write_tokens)
         if error is not None:
             extra["error_class"] = type(error).__name__
         logging.info("llm_gen_finished", extra=extra)
@@ -757,6 +783,7 @@ class BaseLLM(ABC):
         completion_tokens,
         latency_ms,
         cached_tokens=None,
+        cache_write_tokens=None,
         error=None,
     ):
         # Paired with ``llm_stream_start`` so cost dashboards can sum tokens
@@ -774,6 +801,8 @@ class BaseLLM(ABC):
         }
         if cached_tokens is not None:
             extra["cached_tokens"] = int(cached_tokens)
+        if cache_write_tokens is not None:
+            extra["cache_write_tokens"] = int(cache_write_tokens)
         if error is not None:
             extra["error_class"] = type(error).__name__
         logging.info("llm_stream_finished", extra=extra)

@@ -59,8 +59,9 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`EMBEDDINGS_NAME`**: This setting defines which embedding model DocsGPT will use to generate vector embeddings for your documents. Embeddings are numerical representations of text that allow DocsGPT to understand the semantic meaning of your documents for efficient search and retrieval.
 
-  - **Default value:** `huggingface_sentence-transformers/all-mpnet-base-v2` (a good general-purpose embedding model).
-  - **Other options:** You can explore other embedding models from Hugging Face Sentence Transformers or other providers if needed.
+  - **Default value:** leave it unset and DocsGPT picks for you at first boot, recording the choice so it never changes underneath you: a fresh install is pinned to `ibm-granite/granite-embedding-311m-multilingual-r2` (multilingual, 32k context, same 768 dimensions), and an install that already has sources is pinned to `huggingface_sentence-transformers/all-mpnet-base-v2` so its index stays readable. Setting it here overrides that pin.
+  - **Other options:** Any FastEmbed built-in model, or any Hugging Face repository shipping an ONNX export. See [Embeddings](/Models/embeddings).
+  - **Changing it on an existing index requires re-embedding** — same-width models swap without any error and silently degrade retrieval. Run `python -m application.scripts.reembed`.
 
 - **`API_KEY`**: Required for most cloud-based LLM providers. This is your authentication key to access the LLM provider's API. You'll need to obtain this key from your chosen provider's platform.
 
@@ -93,7 +94,7 @@ LLM_PROVIDER=openai # Using OpenAI compatible API format for local models
 API_KEY=None      # API Key is not needed for local Ollama
 LLM_NAME=llama3.2:1b
 OPENAI_BASE_URL=http://host.docker.internal:11434/v1 # Default Ollama API URL within Docker
-EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2 # You can also run embeddings locally if needed
+EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2 # runs locally; see Models/embeddings for alternatives
 ```
 
 In this case, even though you are using Ollama locally, `LLM_PROVIDER` is set to `openai` because Ollama (and many other local inference engines) are designed to be API-compatible with OpenAI. `OPENAI_BASE_URL` points DocsGPT to the local Ollama server.
@@ -468,10 +469,13 @@ See [Embeddings](/Models/embeddings) for full guidance.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `EMBEDDINGS_NAME` | `huggingface_sentence-transformers/all-mpnet-base-v2` | The embedding model. |
+| `EMBEDDINGS_NAME` | `huggingface_sentence-transformers/all-mpnet-base-v2` | The embedding model. New installs use `ibm-granite/granite-embedding-311m-multilingual-r2`. Changing it on a populated index requires `application.scripts.reembed`. |
 | `EMBEDDINGS_BASE_URL` | unset | Base URL of a remote OpenAI-compatible embeddings server. Setting it routes all embedding calls there. |
 | `EMBEDDINGS_KEY` | unset | Optional bearer token for the remote embeddings server. |
 | `EMBEDDINGS_MAX_INPUT_TOKENS` | unset | Truncate each remote embedding input to N tokens (guards servers that reject oversized inputs). |
+| `EMBEDDINGS_DELEGATE_TO_WORKER` | `true` | Embed queries on the Celery worker instead of loading a model in the API. Requires a worker consuming `EMBEDDINGS_QUEUE`; set `false` to run the API standalone. Ignored when `EMBEDDINGS_BASE_URL` is set. |
+| `EMBEDDINGS_QUEUE` | `embeddings` | Queue the query-embedding task is routed to. A worker started with an explicit `-Q` must list it. |
+| `EMBEDDINGS_DELEGATE_TIMEOUT` | `60` | Seconds the API waits for the worker's vector before failing the search. |
 
 ## Tools Settings
 

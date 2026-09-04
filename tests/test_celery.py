@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from application.celery_init import make_celery
@@ -222,3 +222,53 @@ def test_unparseable_file_raises_the_non_retryable_type():
 
     with pytest.raises(DocumentParseError, match="No text could be extracted"):
         embed_and_store_documents([], "/tmp", "src", None)
+
+
+@pytest.mark.unit
+class TestReclaimIsSkippedForEmbeds:
+    """The post-task heap reclaim must not run on the query hot path.
+
+    ``_reclaim_memory_after_task`` exists for the large transient allocations
+    docling/torch parsing makes. Query embedding became a Celery task, and a
+    full generational collect on a worker holding the ONNX model measured ~86 ms
+    against ~8 ms for the embed itself -- a 9x slowdown of the round trip for a
+    task that allocates a few kilobytes.
+    """
+
+    @staticmethod
+    def _collects(task_name):
+        from application.celery_init import _reclaim_memory_after_task
+
+        task = MagicMock()
+        task.name = task_name
+        with patch("application.celery_init.gc.collect") as collect, patch(
+            "application.celery_init._trim_native_heap"
+        ):
+            _reclaim_memory_after_task(task=task, task_id="t", state="SUCCESS")
+        return collect.called
+
+    def test_the_embed_task_is_skipped(self):
+        assert not self._collects("application.vectorstore.embeddings_tasks.embed_texts")
+
+    def test_parsing_still_reclaims(self):
+        assert self._collects("application.api.user.tasks.parse_document")
+
+    def test_ingest_still_reclaims(self):
+        assert self._collects("application.api.user.tasks.ingest")
+
+    def test_an_unnamed_sender_still_reclaims(self):
+        """Unknown callers keep the old behaviour rather than silently skipping."""
+        from application.celery_init import _reclaim_memory_after_task
+
+        with patch("application.celery_init.gc.collect") as collect, patch(
+            "application.celery_init._trim_native_heap"
+        ):
+            _reclaim_memory_after_task(task_id="t", state="SUCCESS")
+        assert collect.called
+
+    def test_the_skip_list_names_the_real_task(self):
+        """A renamed task must not silently start paying the collect again."""
+        from application.celery_init import _NO_RECLAIM_TASKS
+        from application.vectorstore.embeddings_delegated import EMBED_TASK
+
+        assert EMBED_TASK in _NO_RECLAIM_TASKS

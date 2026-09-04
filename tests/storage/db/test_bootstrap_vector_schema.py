@@ -74,8 +74,8 @@ class TestEnsureVectorSchemaCreates:
         cursor = MagicMock()
         conn.cursor.return_value = cursor
         with patch("psycopg.connect", return_value=conn) as connect, patch(
-            "application.vectorstore.base.get_embeddings",
-            return_value=_embeddings(dimension),
+            "application.vectorstore.model_registry.dimension_for",
+            return_value=dimension,
         ), patch(
             "application.vectorstore.pgvector.PGVectorStore.create_schema"
         ) as vector_schema, patch(
@@ -130,8 +130,8 @@ class TestEnsureVectorSchemaDimensionCheck:
     ):
         conn = MagicMock()
         with patch("psycopg.connect", return_value=conn), patch(
-            "application.vectorstore.base.get_embeddings",
-            return_value=_embeddings(1536),
+            "application.vectorstore.model_registry.dimension_for",
+            return_value=1536,
         ), patch("application.vectorstore.pgvector.PGVectorStore.create_schema"), patch(
             "application.vectorstore.pgvector.PGVectorStore.table_dimension",
             return_value=768,
@@ -226,3 +226,164 @@ class TestBootGating:
         assert 'os.environ.setdefault("AUTO_VECTOR_SCHEMA", "false")' in (
             conftest.read_text()
         )
+
+
+@pytest.mark.unit
+class TestBootDoesNotLoadTheModel:
+    """The hook needs an integer, not an inference session.
+
+    It used to build the embeddings instance to read ``.dimension`` off it,
+    loading several hundred MB of ONNX into every API and worker process at
+    import. For a model the registry describes that is a lookup.
+    """
+
+    def _run(self, registry_dim, loader):
+        conn = MagicMock()
+        conn.cursor.return_value = MagicMock()
+        with patch("psycopg.connect", return_value=conn), patch(
+            "application.vectorstore.model_registry.dimension_for",
+            return_value=registry_dim,
+        ), patch(
+            "application.vectorstore.base.build_local_embeddings", loader
+        ), patch(
+            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+        ) as vector_schema, patch(
+            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            return_value=None,
+        ):
+            ensure_vector_schema()
+        return vector_schema
+
+    def test_a_registered_model_is_never_constructed(self, vector_settings):
+        loader = MagicMock()
+        vector_schema = self._run(768, loader)
+        loader.assert_not_called()
+        assert vector_schema.call_args.kwargs["dimension"] == 768
+
+    def test_an_unregistered_model_still_falls_back_to_loading(self, vector_settings):
+        loader = MagicMock(return_value=_embeddings(1024))
+        vector_schema = self._run(None, loader)
+        loader.assert_called_once()
+        assert vector_schema.call_args.kwargs["dimension"] == 1024
+
+
+@pytest.mark.unit
+class TestUnknownWidthIsProbed:
+    """A remote server's width is only knowable by asking it.
+
+    ``RemoteEmbeddings`` reports ``None`` until its first call, so sizing the
+    table from the attribute alone fell back to 768 and skipped the mismatch
+    check — the silent ``vector(768)`` column this hook exists to prevent.
+    """
+
+    def _run(self, remote, table_dimension=1024):
+        conn = MagicMock()
+        conn.cursor.return_value = MagicMock()
+        with patch("psycopg.connect", return_value=conn), patch(
+            "application.vectorstore.model_registry.dimension_for", return_value=None
+        ), patch(
+            "application.vectorstore.base.build_local_embeddings", return_value=remote
+        ), patch(
+            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+        ) as vector_schema, patch(
+            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            return_value=table_dimension,
+        ):
+            try:
+                ensure_vector_schema()
+                raised = False
+            except RuntimeError:
+                raised = True
+        return vector_schema, raised
+
+    @staticmethod
+    def _remote(width=None, error=None):
+        remote = MagicMock()
+        remote.dimension = None
+        remote.embed_query.side_effect = error or (lambda _text: [0.0] * width)
+        return remote
+
+    def test_the_table_is_sized_from_the_probe(self, vector_settings):
+        remote = self._remote(width=1024)
+        vector_schema, _ = self._run(remote, table_dimension=1024)
+        remote.embed_query.assert_called_once()
+        assert vector_schema.call_args.kwargs["dimension"] == 1024
+
+    def test_the_probe_restores_the_mismatch_check(self, vector_settings):
+        _, raised = self._run(self._remote(width=768), table_dimension=1024)
+        assert raised, "a 768-dim model against a vector(1024) table must fail loudly"
+
+    def test_an_unreachable_server_does_not_block_boot(self, vector_settings):
+        vector_schema, raised = self._run(
+            self._remote(error=ConnectionError("server down")), table_dimension=1024
+        )
+        assert not raised
+        assert vector_schema.call_args.kwargs["dimension"] == 768
+
+    def test_a_model_that_knows_its_width_is_not_probed(self, vector_settings):
+        local = MagicMock()
+        local.dimension = 384
+        vector_schema, _ = self._run(local, table_dimension=384)
+        local.embed_query.assert_not_called()
+        assert vector_schema.call_args.kwargs["dimension"] == 384
+
+
+@pytest.mark.unit
+class TestBootLoadedModelIsReleased:
+    """The width probe must not leave a model resident in a delegating process.
+
+    Reading ``.dimension`` off an unregistered model means loading it, and
+    ``EmbeddingsSingleton`` caches what it builds. In an API that delegates
+    every embed to the worker that cached copy is never called again — it is
+    several hundred megabytes held for the life of the process, which is the
+    cost ``EMBEDDINGS_DELEGATE_TO_WORKER`` exists to avoid.
+    """
+
+    def _run(self, vector_settings, *, delegate, base_url=None):
+        from application.vectorstore.base import EmbeddingsSingleton
+
+        monkeyed = _embeddings(1024)
+        conn = MagicMock()
+        conn.cursor.return_value = MagicMock()
+        EmbeddingsSingleton._instances.pop("test-model", None)
+
+        def _build(*_args, **_kwargs):
+            EmbeddingsSingleton._instances["test-model"] = monkeyed
+            return monkeyed
+
+        with patch.object(
+            vector_settings, "EMBEDDINGS_DELEGATE_TO_WORKER", delegate
+        ), patch.object(
+            vector_settings, "EMBEDDINGS_BASE_URL", base_url
+        ), patch("psycopg.connect", return_value=conn), patch(
+            "application.vectorstore.model_registry.dimension_for", return_value=None
+        ), patch(
+            "application.vectorstore.base.build_local_embeddings", side_effect=_build
+        ), patch(
+            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+        ) as vector_schema, patch(
+            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            return_value=1024,
+        ):
+            ensure_vector_schema()
+        try:
+            return vector_schema, "test-model" in EmbeddingsSingleton._instances
+        finally:
+            EmbeddingsSingleton._instances.pop("test-model", None)
+
+    def test_a_delegating_process_does_not_retain_it(self, vector_settings):
+        vector_schema, retained = self._run(vector_settings, delegate=True)
+        assert not retained, "a delegating API must not hold the model it probed"
+        assert vector_schema.call_args.kwargs["dimension"] == 1024
+
+    def test_a_process_that_embeds_locally_keeps_it(self, vector_settings):
+        _, retained = self._run(vector_settings, delegate=False)
+        assert retained, "without delegation the model is used, so evicting it "\
+            "would only force a rebuild on the first query"
+
+    def test_a_remote_client_is_kept(self, vector_settings):
+        _, retained = self._run(
+            vector_settings, delegate=True, base_url="http://embeddings:8080"
+        )
+        assert retained, "a RemoteEmbeddings holds no model and is what the "\
+            "process goes on to use"

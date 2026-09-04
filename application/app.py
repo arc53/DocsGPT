@@ -35,6 +35,10 @@ from application.storage.db.bootstrap import (  # noqa: E402
     ensure_database_ready,
     ensure_vector_schema,
 )
+from application.storage.db.embeddings_pin import (  # noqa: E402
+    resolve_embeddings_pin,
+    warn_on_source_model_mismatch,
+)
 from application.stt.upload_limits import (  # noqa: E402
     build_stt_file_size_limit_message,
     should_reject_stt_request,
@@ -61,6 +65,12 @@ ensure_database_ready(
     migrate=settings.AUTO_MIGRATE,
     logger=logging.getLogger("application.app"),
 )
+
+# Which embedding model this installation uses is a property of its index, not of
+# the release. Resolve it before the vector schema hook below, which sizes the
+# table from EMBEDDINGS_NAME, and before anything embeds.
+resolve_embeddings_pin(logging.getLogger("application.app"))
+warn_on_source_model_mismatch(logging.getLogger("application.app"))
 
 # Own the vector DB's schema here too, so the retrieval hot path is pure reads
 # instead of re-running DDL for every source of every request.

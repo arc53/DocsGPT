@@ -7,10 +7,9 @@
 # not either: OCR_ENABLED=true with the tesseract binary (or a DeepSeek-OCR
 # endpoint) runs through application/parser/file/ocr_parser.py.
 #
-# Install ON TOP of requirements.txt (torch/transformers stay pinned there,
-# shared with sentence-transformers):
+# Install ON TOP of requirements.txt, which pins torch, transformers and
+# onnxruntime (rapidocr runs on the same onnxruntime fastembed uses):
 #   pip install -r requirements.txt -r requirements-docling.txt
 # Docker: build with --build-arg INSTALL_DOCLING=true
 docling==2.119.0
 rapidocr==3.9.2
-onnxruntime==1.28.0
