@@ -15,7 +15,19 @@ services:
 
   backend:
     user: root
-    build: ../application
+    build:
+      context: ../application
+      args:
+        # Bake the optional docling engine (layout-model OCR backend, structured
+        # output) into the image: set INSTALL_DOCLING=true in ../.env or the shell.
+        INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
+        # Bake the tesseract binary behind OCR_ENABLED=true (~35 MB): set
+        # INSTALL_TESSERACT=true in ../.env or the shell (setup.sh does this
+        # when OCR is enabled). Off by default, like docling. Upgrading a
+        # deployment that already runs OCR_ENABLED=true with tesseract: add
+        # INSTALL_TESSERACT=true to ../.env before rebuilding, or scanned
+        # pages fail with an install hint.
+        INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
     env_file:
       - ../.env
     environment:
@@ -38,7 +50,11 @@ services:
 
   worker:
     user: root
-    build: ../application
+    build:
+      context: ../application
+      args:
+        INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
+        INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
     # Consumes the default queue AND the dedicated `parsing` (read_document /
     # parse_document) and `embeddings` (query embedding) queues. Without `parsing`
     # the read_document await never resolves; without `embeddings` every search

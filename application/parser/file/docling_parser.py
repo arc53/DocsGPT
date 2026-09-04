@@ -10,12 +10,20 @@ import importlib.util
 import logging
 import os
 import re
+import shutil
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
-from application.parser.file.base_parser import BaseParser, DocumentParseError
+from application.parser.file.base_parser import (
+    BaseParser,
+    DocumentParseError,
+    delegate_parse as _delegate,
+)
+from application.parser.file.ocr_parser import VALID_OCR_ENGINES as _VALID_OCR_ENGINES
+from application.parser.file.ocr_parser import collapse_cjk_spaces
 from application.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
@@ -67,6 +75,131 @@ def _apply_inference_settings() -> None:
         inference.compile_torch_models = settings.DOCLING_COMPILE_TORCH_MODELS
 
 
+
+
+def _resolve_ocr_engine(requested: Optional[str]) -> str:
+    """Resolve the OCR engine to build, degrading to ``auto`` when unavailable.
+
+    ``auto`` is docling's own selection (ocrmac on macOS, rapidocr on a
+    typical Linux server). The degradation is deliberate: OCR is switched on
+    by deployments that expect scans to work, so a missing engine must warn
+    and OCR with what exists rather than fail every parse.
+
+    Args:
+        requested: Engine name, or None to read ``settings.OCR_ENGINE``.
+
+    Returns:
+        One of ``_VALID_OCR_ENGINES``, guaranteed buildable here.
+    """
+    from application.core.settings import settings
+    from application.parser.file.base_parser import module_available
+
+    engine = str(requested or settings.OCR_ENGINE or "auto").strip().lower()
+    if engine not in _VALID_OCR_ENGINES:
+        logger.warning(
+            f"Unknown OCR_ENGINE {engine!r}; using docling auto-selection"
+        )
+        return "auto"
+    if engine == "tesseract" and shutil.which("tesseract") is None:
+        logger.warning(
+            "OCR_ENGINE=tesseract but no tesseract binary is on PATH (install "
+            "tesseract-ocr plus language packs: Docker builds need "
+            "INSTALL_TESSERACT=true); using docling auto-selection"
+        )
+        return "auto"
+    if engine == "ocrmac" and (
+        sys.platform != "darwin" or not module_available("ocrmac")
+    ):
+        logger.warning(
+            "OCR_ENGINE=ocrmac needs macOS with the ocrmac package; "
+            "using docling auto-selection"
+        )
+        return "auto"
+    if engine == "rapidocr" and not module_available("rapidocr"):
+        logger.warning(
+            "OCR_ENGINE=rapidocr but rapidocr is not installed; "
+            "using docling auto-selection"
+        )
+        return "auto"
+    return engine
+
+
+def _build_ocr_options(
+    engine: str, languages: Optional[List[str]], force_full_page_ocr: bool
+):
+    """docling OCR options for a resolved classic engine.
+
+    Returns None for ``auto`` (docling's default pipeline options already run
+    auto-selection) and on any build failure — the parse then proceeds on the
+    default engine rather than failing; the caller re-applies
+    ``force_full_page_ocr`` onto whatever options end up active.
+
+    Args:
+        engine: A ``_resolve_ocr_engine`` result other than ``deepseek``.
+        languages: Engine-specific language list; None uses the engine's
+            default (tesseract reads ``settings.OCR_LANGS``).
+        force_full_page_ocr: OCR whole pages instead of only bitmap regions.
+    """
+    if engine == "auto":
+        return None
+    from application.core.settings import settings
+
+    try:
+        if engine == "tesseract":
+            from docling.datamodel.pipeline_options import TesseractCliOcrOptions
+
+            from application.parser.file.ocr_parser import tesseract_languages
+
+            langs = (
+                languages
+                or [lang.strip() for lang in settings.OCR_LANGS.split("+") if lang.strip()]
+                or ["eng"]
+            )
+            # docling swallows tesseract's per-region failures: a language list
+            # with no installed pack logs an error per region and exports ''
+            # which the dropout guard then indexes as "text-sparse". Drop the
+            # packs that are not installed up front and say so.
+            installed = tesseract_languages()
+            if installed is not None:
+                missing = [lang for lang in langs if lang not in installed]
+                if missing:
+                    kept = [lang for lang in langs if lang in installed]
+                    if not kept and "eng" in installed:
+                        kept = ["eng"]
+                    logger.warning(
+                        "OCR_LANGS lists tesseract language pack(s) that are not installed: %s; "
+                        "OCR-ing with %s (install tesseract-ocr-<lang> for each missing pack)",
+                        "+".join(missing),
+                        "+".join(kept) if kept else "the requested list anyway",
+                    )
+                    langs = kept or langs
+            return TesseractCliOcrOptions(
+                lang=langs, force_full_page_ocr=force_full_page_ocr
+            )
+        if engine == "rapidocr":
+            from docling.datamodel.pipeline_options import RapidOcrOptions
+
+            return RapidOcrOptions(
+                lang=languages or ["english"],
+                force_full_page_ocr=force_full_page_ocr,
+            )
+        if engine == "ocrmac":
+            from docling.datamodel.pipeline_options import OcrMacOptions
+
+            if languages:
+                return OcrMacOptions(
+                    lang=languages, force_full_page_ocr=force_full_page_ocr
+                )
+            return OcrMacOptions(force_full_page_ocr=force_full_page_ocr)
+    except ImportError as e:
+        logger.warning(f"Failed to build {engine} OCR options: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error building {engine} OCR options: {e}")
+        return None
+    return None
+
+
 def _tabular_content_size(file: Path) -> int:
     """Effective content size of a tabular file, in bytes.
 
@@ -116,46 +249,6 @@ def _exceeds_tabular_gate(file: Path) -> bool:
     if max_bytes <= 0:
         return False
     return _tabular_content_size(file) > max_bytes
-
-
-def _delegate(
-    parser: BaseParser, file: Path, errors: str
-) -> Union[str, List[str]]:
-    """Run a lightweight fallback parser, normalizing its failures.
-
-    Anything the fallback raises is converted to ``DocumentParseError``,
-    which matters twice over. The Celery tasks that own these paths list
-    ``DocumentParseError`` in ``dont_autoretry_for``, so a deterministic
-    content error now fails once instead of retrying four times (each retry
-    re-downloading the file from S3); and ``SimpleDirectoryReader.load_data``
-    catches only ``DocumentParseError``, so one poison spreadsheet is skipped
-    into ``failed_files`` instead of aborting an entire multi-file ingest.
-
-    This restores the symmetry with ``DoclingParser.parse_file``, whose own
-    failures are already wrapped — the delegation branch bypassed that.
-
-    Args:
-        parser: The lightweight parser to delegate to.
-        file: Path to the file being parsed.
-        errors: Decoding error policy, forwarded to the parser.
-
-    Returns:
-        The parsed text, or list of row strings.
-
-    Raises:
-        DocumentParseError: If the fallback parser fails for any reason.
-    """
-    try:
-        return parser.parse_file(file, errors)
-    except DocumentParseError:
-        raise
-    except Exception as e:
-        logger.error(
-            f"Lightweight parse of {file.name} failed: {e}", exc_info=True
-        )
-        raise DocumentParseError(
-            f"Failed to parse {file.name}: the file could not be read."
-        ) from e
 
 
 def _capped_markup_copy(file: Path) -> Optional[str]:
@@ -242,7 +335,7 @@ def _ocr_min_chars_per_page() -> int:
         return int(
             getattr(
                 settings,
-                "DOCLING_OCR_MIN_CHARS_PER_PAGE",
+                "OCR_MIN_CHARS_PER_PAGE",
                 _DEFAULT_OCR_MIN_CHARS_PER_PAGE,
             )
         )
@@ -339,7 +432,7 @@ class DoclingParser(BaseParser):
     - Advanced PDF layout analysis
     - Table structure recognition
     - Reading order detection
-    - OCR for scanned documents (supports RapidOCR)
+    - OCR for scanned documents (engine chosen by ``OCR_ENGINE``)
     - Unified DoclingDocument format
     - Export to Markdown
 
@@ -353,7 +446,7 @@ class DoclingParser(BaseParser):
         ocr_enabled: bool = True,
         table_structure: bool = True,
         export_format: str = "markdown",
-        use_rapidocr: bool = True,
+        ocr_engine: Optional[str] = None,
         ocr_languages: Optional[List[str]] = None,
         force_full_page_ocr: bool = False,
     ):
@@ -363,29 +456,36 @@ class DoclingParser(BaseParser):
             ocr_enabled: Enable OCR for bitmap/image regions in documents
             table_structure: Enable table structure recognition
             export_format: Output format ('markdown', 'text', 'html')
-            use_rapidocr: Use RapidOCR engine (default True, works well in Docker)
-            ocr_languages: List of OCR languages (default: ['english'])
+            ocr_engine: OCR engine when OCR is enabled — one of
+                ``tesseract | auto | ocrmac | rapidocr | deepseek``. None
+                reads ``settings.OCR_ENGINE`` at converter build time; an
+                unavailable engine degrades to docling's auto-selection with
+                a warning.
+            ocr_languages: Engine-specific language list; None keeps the
+                engine's own default (tesseract reads ``settings.OCR_LANGS``).
             force_full_page_ocr: Force OCR on entire page (False = smart hybrid OCR)
         """
         super().__init__()
         self.ocr_enabled = ocr_enabled
         self.table_structure = table_structure
         self.export_format = export_format
-        self.use_rapidocr = use_rapidocr
-        self.ocr_languages = ocr_languages or ["english"]
+        self.ocr_engine = ocr_engine
+        self.ocr_languages = ocr_languages
         self.force_full_page_ocr = force_full_page_ocr
+        # Engine the current converter was built for (None with OCR off);
+        # drives tesseract-specific post-processing of the export.
+        self._active_ocr_engine: Optional[str] = None
         self._converter = None
 
     def _create_converter(self):
-        """Create a docling converter with hybrid OCR configuration.
+        """Create a docling converter for the configured OCR engine.
 
-        Uses smart OCR approach:
-        - When ocr_enabled=True and force_full_page_ocr=False (default):
-          Layout model detects text vs bitmap regions, OCR only runs on bitmaps
-        - When ocr_enabled=True and force_full_page_ocr=True:
-          OCR runs on entire page (for scanned documents/images)
-        - When ocr_enabled=False:
-          No OCR, only native text extraction
+        - ``ocr_enabled=False``: no OCR, native text extraction only.
+        - Classic engines (tesseract / auto / ocrmac / rapidocr): the standard
+          PDF pipeline (layout + TableFormer) with that engine's OCR options.
+          ``force_full_page_ocr=False`` (default) OCRs only the bitmap regions
+          the layout model finds; True routes whole pages through OCR.
+        - ``deepseek``: the VLM pipeline instead (``_create_vlm_converter``).
 
         Returns:
             DocumentConverter instance
@@ -400,6 +500,11 @@ class DoclingParser(BaseParser):
 
         _apply_inference_settings()
 
+        engine = _resolve_ocr_engine(self.ocr_engine) if self.ocr_enabled else None
+        self._active_ocr_engine = engine
+        if engine == "deepseek":
+            return self._create_vlm_converter()
+
         pipeline_options = PdfPipelineOptions(
             do_ocr=self.ocr_enabled,
             do_table_structure=self.table_structure,
@@ -407,13 +512,15 @@ class DoclingParser(BaseParser):
         _apply_pipeline_caps(pipeline_options)
 
         if self.ocr_enabled:
-            ocr_options = self._get_ocr_options()
+            ocr_options = _build_ocr_options(
+                engine, self.ocr_languages, self.force_full_page_ocr
+            )
             if ocr_options is not None:
                 pipeline_options.ocr_options = ocr_options
             # Docling's *default* OCR options carry their own flag, so without
-            # this the setting was silently dropped whenever `_get_ocr_options`
-            # returned None (use_rapidocr=False) — including the dropout retry,
-            # whose whole point is forcing full-page OCR.
+            # this the setting was silently dropped whenever no explicit
+            # options were built (engine=auto, or a build failure) — including
+            # the dropout retry, whose whole point is forcing full-page OCR.
             active_ocr_options = getattr(pipeline_options, "ocr_options", None)
             if hasattr(active_ocr_options, "force_full_page_ocr"):
                 active_ocr_options.force_full_page_ocr = self.force_full_page_ocr
@@ -429,17 +536,64 @@ class DoclingParser(BaseParser):
             }
         )
 
+    def _create_vlm_converter(self):
+        """DeepSeek-OCR converter via docling's VLM pipeline.
+
+        Each page goes to an OpenAI-compatible endpoint (Ollama or vLLM;
+        ``OCR_DEEPSEEK_URL`` / ``OCR_DEEPSEEK_MODEL``) and the grounded output
+        is parsed back into a DoclingDocument. This replaces the *entire*
+        classic pipeline — no layout/TableFormer/OCR models load in the worker
+        (~370 MB RSS vs 1.0-1.6 GB measured), the compute lives in the model
+        server. Bench trade-offs (2026-08): best table/CJK/degraded-scan
+        quality of every engine tried, ~10-20 s/page on modest hardware, and
+        occasional silent drops of page-level elements (titles).
+        """
+        from docling.datamodel import vlm_model_specs
+        from docling.datamodel.pipeline_options import VlmPipelineOptions
+        from docling.document_converter import (
+            DocumentConverter,
+            ImageFormatOption,
+            InputFormat,
+            PdfFormatOption,
+        )
+        from docling.pipeline.vlm_pipeline import VlmPipeline
+
+        from application.core.settings import settings
+
+        vlm_options = vlm_model_specs.DEEPSEEKOCR_OLLAMA.model_copy(deep=True)
+        vlm_options.url = settings.OCR_DEEPSEEK_URL
+        vlm_options.params["model"] = settings.OCR_DEEPSEEK_MODEL
+        # docling's spec default is 90 s per request, which a laptop-hosted
+        # 3B model overruns; honour the same per-page budget the native
+        # backend gives the endpoint.
+        vlm_options.timeout = float(settings.OCR_DEEPSEEK_TIMEOUT)
+        pipeline_options = VlmPipelineOptions(
+            vlm_options=vlm_options, enable_remote_services=True
+        )
+        return DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_cls=VlmPipeline, pipeline_options=pipeline_options
+                ),
+                InputFormat.IMAGE: ImageFormatOption(
+                    pipeline_cls=VlmPipeline, pipeline_options=pipeline_options
+                ),
+            }
+        )
+
     def _init_parser(self) -> Dict:
         """Initialize the docling converter with hybrid OCR."""
+        from application.core.settings import settings
+
         logger.info("Initializing DoclingParser...")
         logger.info(f"  ocr_enabled={self.ocr_enabled}")
         logger.info(f"  force_full_page_ocr={self.force_full_page_ocr}")
-        logger.info(f"  use_rapidocr={self.use_rapidocr}")
+        logger.info(f"  ocr_engine={self.ocr_engine or settings.OCR_ENGINE}")
 
         if importlib.util.find_spec("docling.document_converter") is None:
             raise ImportError(
                 "docling is required for DoclingParser. "
-                "Install it with: pip install docling"
+                "Install it with: pip install -r application/requirements-docling.txt"
             )
 
         # Create converter with hybrid OCR (smart: text direct, bitmaps OCR'd)
@@ -450,33 +604,10 @@ class DoclingParser(BaseParser):
             "ocr_enabled": self.ocr_enabled,
             "table_structure": self.table_structure,
             "export_format": self.export_format,
-            "use_rapidocr": self.use_rapidocr,
+            "ocr_engine": self.ocr_engine,
             "ocr_languages": self.ocr_languages,
             "force_full_page_ocr": self.force_full_page_ocr,
         }
-
-    def _get_ocr_options(self):
-        """Get OCR options based on configuration.
-
-        Returns RapidOcrOptions if use_rapidocr is True and available,
-        otherwise returns None to use docling defaults.
-        """
-        if not self.use_rapidocr:
-            return None
-
-        try:
-            from docling.datamodel.pipeline_options import RapidOcrOptions
-
-            return RapidOcrOptions(
-                lang=self.ocr_languages,
-                force_full_page_ocr=self.force_full_page_ocr,
-            )
-        except ImportError as e:
-            logger.warning(f"Failed to import RapidOcrOptions: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Error creating RapidOcrOptions: {e}")
-            return None
 
     def _export_content(self, document) -> str:
         """Export document content in the configured format.
@@ -505,8 +636,25 @@ class DoclingParser(BaseParser):
                     f"Standard export minimal ({len(stripped_content)} chars), "
                     f"extracting {len(extracted_texts)} texts directly"
                 )
-                return "\n\n".join(extracted_texts)
+                content = "\n\n".join(extracted_texts)
 
+        return self._postprocess_ocr_text(content)
+
+    def _postprocess_ocr_text(self, content: str) -> str:
+        """Engine-specific cleanup of OCR'd text.
+
+        tesseract's CJK models space every glyph ("互相 保密 协议"); the native
+        backend collapses that in ``TesseractEngine`` and the docling path
+        needs the same treatment or Chinese scans index worse here than there.
+        Other engines (and OCR off) return the export untouched. Only the PDF
+        and image parsers construct with OCR on — the office/markup parsers
+        never OCR, so their born-digital text must not be rewritten. On a
+        hybrid-OCR PDF the collapse still covers the whole export, native
+        text included; deliberate spaces inside CJK runs are rare enough
+        there that indexing scans correctly wins.
+        """
+        if self.ocr_enabled and self._active_ocr_engine == "tesseract":
+            return collapse_cjk_spaces(content)
         return content
 
     def _ocr_guard_applies(self, file: Path) -> bool:
@@ -687,7 +835,7 @@ class DoclingParser(BaseParser):
 
 
 class DoclingPDFParser(DoclingParser):
-    """Docling-based PDF parser with advanced features and RapidOCR support.
+    """Docling-based PDF parser with advanced features and configurable OCR.
 
     Uses hybrid OCR approach by default:
     - Text regions: Direct PDF text extraction (fast)
@@ -700,7 +848,7 @@ class DoclingPDFParser(DoclingParser):
         self,
         ocr_enabled: bool = True,
         table_structure: bool = True,
-        use_rapidocr: bool = True,
+        ocr_engine: Optional[str] = None,
         ocr_languages: Optional[List[str]] = None,
         force_full_page_ocr: bool = False,
     ):
@@ -708,31 +856,60 @@ class DoclingPDFParser(DoclingParser):
             ocr_enabled=ocr_enabled,
             table_structure=table_structure,
             export_format="markdown",
-            use_rapidocr=use_rapidocr,
+            ocr_engine=ocr_engine,
             ocr_languages=ocr_languages,
             force_full_page_ocr=force_full_page_ocr,
         )
+
+
+    def ocr_pages(self, file: Path, indices: List[int]) -> Dict[int, str]:
+        """Convert only the given 0-based pages of ``file`` and return their text.
+
+        The counterpart of ``NativeOcrPdfParser.ocr_pages`` for the docling
+        backend: ``AnydocParser`` calls it for the scanned pages of a mixed
+        document. Each page is a separate ``convert`` with ``page_range`` so
+        the layout model sees one page at a time; a fully scanned page is one
+        bitmap region, which hybrid OCR reads in full.
+
+        Raises:
+            DocumentParseError: docling failed on a page.
+        """
+        if self._converter is None:
+            self._init_parser()
+        path = Path(file)
+        texts: Dict[int, str] = {}
+        for index in indices:
+            if index < 0:
+                continue
+            try:
+                result = self._converter.convert(str(path), page_range=(index + 1, index + 1))
+                texts[index] = self._export_content(result.document).strip()
+            except Exception as exc:
+                raise DocumentParseError(
+                    f"Failed to OCR page {index + 1} of {path.name} with docling: {exc}"
+                ) from exc
+        return texts
 
 
 class DoclingDocxParser(DoclingParser):
     """Docling-based DOCX parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
 
 class DoclingPPTXParser(DoclingParser):
     """Docling-based PPTX parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
 
 class DoclingXLSXParser(DoclingParser):
     """Docling-based XLSX parser with table structure."""
 
     def __init__(self):
-        super().__init__(table_structure=True, export_format="markdown")
+        super().__init__(ocr_enabled=False, table_structure=True, export_format="markdown")
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse an XLSX file, delegating oversized files to ``ExcelParser``."""
@@ -751,7 +928,7 @@ class DoclingHTMLParser(DoclingParser):
     """Docling-based HTML parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse HTML, truncating oversized element-dense markup first."""
@@ -759,7 +936,7 @@ class DoclingHTMLParser(DoclingParser):
 
 
 class DoclingImageParser(DoclingParser):
-    """Docling-based image parser with OCR and RapidOCR support.
+    """Docling-based image parser with configurable OCR.
 
     For images, force_full_page_ocr=True is used since images are entirely
     visual and require full OCR to extract any text.
@@ -768,14 +945,14 @@ class DoclingImageParser(DoclingParser):
     def __init__(
         self,
         ocr_enabled: bool = True,
-        use_rapidocr: bool = True,
+        ocr_engine: Optional[str] = None,
         ocr_languages: Optional[List[str]] = None,
         force_full_page_ocr: bool = True,
     ):
         super().__init__(
             ocr_enabled=ocr_enabled,
             export_format="markdown",
-            use_rapidocr=use_rapidocr,
+            ocr_engine=ocr_engine,
             ocr_languages=ocr_languages,
             force_full_page_ocr=force_full_page_ocr,
         )
@@ -785,7 +962,7 @@ class DoclingCSVParser(DoclingParser):
     """Docling-based CSV parser."""
 
     def __init__(self):
-        super().__init__(table_structure=True, export_format="markdown")
+        super().__init__(ocr_enabled=False, table_structure=True, export_format="markdown")
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse a CSV file, delegating oversized files to the plain ``CSVParser``."""
@@ -804,21 +981,21 @@ class DoclingMarkdownParser(DoclingParser):
     """Docling-based Markdown parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
 
 class DoclingAsciiDocParser(DoclingParser):
     """Docling-based AsciiDoc parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
 
 class DoclingVTTParser(DoclingParser):
     """Docling-based WebVTT (video text tracks) parser."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse WebVTT, truncating oversized cue-dense tracks first."""
@@ -829,4 +1006,4 @@ class DoclingXMLParser(DoclingParser):
     """Docling-based XML parser (USPTO, JATS)."""
 
     def __init__(self):
-        super().__init__(export_format="markdown")
+        super().__init__(ocr_enabled=False, export_format="markdown")

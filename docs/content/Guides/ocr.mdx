@@ -1,21 +1,245 @@
 ---
-title: OCR for Sources and Attachments
-description: How OCR works in DocsGPT, how to configure it, and what changes for source ingestion vs chat attachments.
+title: Document Parsing and OCR
+description: Which engine parses uploaded documents, how OCR works in DocsGPT, how to configure it, and what changes for source ingestion vs chat attachments.
 ---
 
 import { Callout } from 'nextra/components'
 
-# Docling OCR for Sources and Attachments
+# Document Parsing and OCR for Sources and Attachments
 
-DocsGPT uses Docling as the default parser layer for many document formats. OCR is optional and controlled by two settings:
+## Parser engine
+
+DocsGPT converts uploaded documents to Markdown before chunking, embedding or
+handing them to a model. The engine is selected with one setting:
 
 ```env
-DOCLING_OCR_ENABLED=false
-DOCLING_OCR_ATTACHMENTS_ENABLED=false
+DOC_PARSER_ENGINE=anydoc
 ```
 
-- `DOCLING_OCR_ENABLED`: OCR behavior for Source Docs ingestion.
-- `DOCLING_OCR_ATTACHMENTS_ENABLED`: OCR behavior for chat attachments uploaded from the message box.
+- `anydoc` (default): [firecrawl-anydoc](https://github.com/firecrawl/anydoc),
+  a Rust converter with no ML models. It reads PDF, DOCX, PPTX, XLSX and CSV
+  in milliseconds with ~100 MB peak memory; HTML/XHTML is converted with
+  `markdownify`, head-truncated at `MARKUP_MAX_BYTES`. Because anydoc is a
+  core dependency, source uploads and the `read_document` tool now also
+  accept its other formats — DOC, PPT/PPS/POT, XLS, ODT/ODS/ODP, RTF, XHTML
+  and the macro-enabled Office variants — on every engine (they are in the
+  `SUPPORTED_SOURCE_EXTENSIONS` whitelist; chat attachments are not
+  whitelisted by extension and take them too). It never performs OCR:
+  a scanned or image-only PDF is *detected* and handed to the fallback
+  parser — the active OCR backend when OCR is on (see below), Docling when
+  it is installed, the legacy text parsers otherwise — and if nothing can
+  read the file the upload fails with a clear error instead of storing an
+  empty document.
+- `docling`: the previous default. Docling's layout and table models produce
+  structured Markdown, support OCR, and back the `read_document` tool's
+  `structured` output, at the cost of a large dependency tree (torch,
+  transformers, ONNX models) and seconds to minutes per PDF. Switching back is
+  this one variable; nothing else changes.
+
+With `DOC_PARSER_ENGINE=anydoc`, Docling still handles what anydoc cannot when
+it is installed: the fallback for files anydoc rejects, `.adoc`/`.vtt`/`.xml`
+chat attachments (those suffixes are not in the source-upload whitelist),
+and — when it is the OCR backend — scanned PDFs and images. Without Docling
+those formats use the standard parsers; OCR still works through the native
+backend, and with OCR off images are only read when `PARSE_IMAGE_REMOTE=true`.
+
+## Installing tesseract
+
+Nothing OCR-related ships in the base install: the default engine,
+`tesseract`, is a ~35 MB system package that you opt into like any other OCR
+dependency. Locally:
+
+```bash
+# Debian/Ubuntu                      # macOS
+apt-get install tesseract-ocr tesseract-ocr-eng    brew install tesseract
+```
+
+Docker images build without it by default; opt in with the build argument:
+
+```bash
+docker build --build-arg INSTALL_TESSERACT=true ./application
+```
+
+`deployment/docker-compose.yaml` forwards the same switch, so setting
+`INSTALL_TESSERACT=true` in `.env` (or the shell) bakes tesseract plus the
+English pack into locally built backend and worker images; `setup.sh` writes
+it when you answer yes to the OCR question after choosing to build images
+locally. Pre-built Docker Hub images (`docker-compose-hub.yaml`) do not
+include it, so `setup.sh` leaves OCR at its default (off) for them; to OCR
+there, point `OCR_ENGINE=deepseek` at a DeepSeek-OCR endpoint or install
+`tesseract-ocr` in a derived image. With `OCR_ENABLED=true` and no binary on
+`PATH`, scanned pages fail with an install hint (text-layer documents are
+unaffected).
+
+<Callout type="warning" emoji="⚠️">
+**Upgrading:** earlier images always included docling, and OCR ran through the
+RapidOCR engine bundled with it, so no system package was needed. The default
+image now ships neither docling nor tesseract. If your deployment uses the
+`tesseract` engine (the default) with `OCR_ENABLED=true` or
+`OCR_ATTACHMENTS_ENABLED=true`, add `INSTALL_TESSERACT=true` to `.env` before
+rebuilding, or OCR of scanned pages stops working after the rebuild.
+</Callout>
+
+## Installing the docling engine
+
+docling is not part of the base install, and OCR does not need it (see
+[OCR backends](#ocr-backends)). Add it when you want its layout-model OCR,
+`.adoc`/`.vtt`/`.xml` attachment parsing, or `read_document`'s `structured`
+output:
+
+```bash
+pip install -r application/requirements-docling.txt
+```
+
+Docker images build without it by default; opt in with the build argument:
+
+```bash
+docker build --build-arg INSTALL_DOCLING=true ./application
+```
+
+`deployment/docker-compose.yaml` forwards the same switch, so setting
+`INSTALL_DOCLING=true` in `.env` (or the shell) bakes docling into locally
+built backend and worker images; `setup.sh` offers it as a follow-up to the
+OCR question. Compose reads build arguments from the shell or from the
+`.env` you pass with `--env-file .env` (not from the containers' `env_file`),
+so build with `docker compose --env-file .env -f deployment/docker-compose.yaml build`
+as `setup.sh` does. Pre-built Docker Hub images (`docker-compose-hub.yaml`)
+never include docling; install it in a derived image instead. Either way no
+code changes are needed — docling is picked up as
+the fallback engine (and, under `OCR_BACKEND=auto`, as the OCR backend) as
+soon as it is importable, and `DOC_PARSER_ENGINE=docling` makes it the
+primary parser.
+
+## OCR
+
+OCR is optional and controlled by two on/off settings, a backend and an
+engine choice:
+
+```env
+OCR_ENABLED=false
+OCR_ATTACHMENTS_ENABLED=false
+OCR_BACKEND=auto
+OCR_ENGINE=tesseract
+```
+
+- `OCR_ENABLED`: OCR behavior for Source Docs ingestion.
+- `OCR_ATTACHMENTS_ENABLED`: OCR behavior for chat attachments uploaded from the message box.
+- `OCR_BACKEND`: which stack performs the OCR (next section).
+- `OCR_ENGINE`: which recognition engine it uses ([Choosing the OCR engine](#choosing-the-ocr-engine)).
+
+The older names `DOCLING_OCR_ENABLED` and `DOCLING_OCR_ATTACHMENTS_ENABLED`
+are still accepted as aliases.
+
+Under the default anydoc engine, a scanned PDF reaches OCR through anydoc's
+own detection: anydoc refuses it ("OCR is required") and the OCR backend
+takes over as the fallback parser. If that fallback also extracts almost
+nothing — OCR off, or no engine available — the upload fails with a clear
+message instead of silently indexing an empty document.
+
+Mixed documents — text pages with scanned pages among them — convert
+through anydoc, which reads the text pages and skips the scanned ones. With
+OCR on, DocsGPT probes every page's text layer, OCRs the pages that have
+none through the active backend, and appends their text; the document's
+metadata records the count as `ocr_pages`. With OCR off, only the text pages
+are indexed.
+
+## OCR backends
+
+Docling is not the only way to OCR. The `native` backend renders the pages
+that need it with pypdfium2 and Pillow — both already core dependencies —
+and feeds them straight into tesseract or a DeepSeek-OCR endpoint. No ML
+models load in the worker, and nothing beyond the ~35 MB tesseract binary
+(see [Installing tesseract](#installing-tesseract)) is needed.
+
+| `OCR_BACKEND` | What runs | When to pick it |
+|---|---|---|
+| `auto` (default) | Docling when the docling extra is installed, `native` otherwise. | Leave it: a plain install gets working OCR from tesseract alone, and installing docling upgrades OCR without touching config. |
+| `native` | pypdfium2 + Pillow page rendering into `tesseract` or `deepseek`. Pages that carry a text layer are read directly and never OCR'd; pages without one are rendered at `OCR_RENDER_DPI` (200) and OCR'd. Multi-frame TIFFs are read frame by frame. | You do not want docling's dependency tree or memory footprint, or you have docling installed for `structured` output but want lightweight OCR. |
+| `docling` | Docling's layout-model pipeline: hybrid OCR (only the bitmap regions of a page), reading-order recovery, TableFormer table structure, and the `auto` / `ocrmac` / `rapidocr` engines. | Multi-column scans, scanned tables you need as Markdown tables under tesseract, or macOS `ocrmac`. Needs the docling extra. |
+
+The trade-off is the layout model. Under `native`, multi-column scans rely
+on tesseract's own page segmentation and tesseract yields tables as plain
+lines; DeepSeek-OCR emits Markdown tables itself, so it remains the quality
+path on either backend. Under `DOC_PARSER_ENGINE=docling` with the `native`
+backend, PDFs whose every page has a text layer still go through Docling
+(OCR off) for its structured Markdown; only documents with scanned pages
+take the native path.
+
+## Choosing the OCR engine
+
+Benchmarked 2026-08 on English, bilingual EN/ZH, table-heavy and degraded
+scans (all engines driven through docling so layout handling is identical):
+
+| `OCR_ENGINE` | Backends | Role | Notes |
+|---|---|---|---|
+| `tesseract` | native, docling | **recommended default** | Best classic-engine accuracy in the bench: perfect EN word recall on all docs, 0.000 CER on the bilingual page, 100% table cells, robust to mild degradation. ~35 MB of *system* packages, CPU-only. Needs the `tesseract` binary + language packs — an optional install like every OCR dependency (see [Installing tesseract](#installing-tesseract)); set languages via `OCR_LANGS` (e.g. `eng+chi_sim`). |
+| `deepseek` | native, docling | best quality, heavy on the *server* | DeepSeek-OCR against an OpenAI-compatible endpoint. Only engine that reconstructs totals rows as table rows; near-perfect CJK; barely affected by degradation. The ingestion worker stays light (no layout models); the model runs in Ollama or vLLM. Costs: a GPU/Apple-Silicon endpoint, ~seconds per page, and occasional silent drops of page-level elements (titles). |
+| `auto` | docling | convenience | docling picks: `ocrmac` on macOS (excellent, ~1 s/page), `rapidocr` on Linux — see below before relying on it server-side. Also docling's automatic fallback whenever the selected engine is not installed. The native backend runs tesseract for it. |
+| `ocrmac` | docling | macOS only | Best raw accuracy and fastest of all classic engines; irrelevant for Linux deploys. |
+| `rapidocr` | docling | pip-only fallback | No system packages needed, perfect on tables/CJK — but it silently shreds some long text lines into garbage at every setting tried, which is content loss for RAG ingestion. Avoid as a server default until fixed upstream. |
+
+For `deepseek`, point the worker at an OpenAI-compatible endpoint:
+
+```env
+OCR_ENGINE=deepseek
+OCR_DEEPSEEK_URL=http://localhost:11434/v1/chat/completions  # Ollama default
+OCR_DEEPSEEK_MODEL=deepseek-ocr:3b
+OCR_DEEPSEEK_TIMEOUT=300  # seconds per page request, both backends
+```
+
+Ollama works out of the box (`ollama pull deepseek-ocr:3b`); for real
+throughput serve `deepseek-ai/DeepSeek-OCR` with vLLM on a GPU and set the
+URL accordingly. The native backend sends pages one at a time, so a slow
+laptop-hosted model only needs a generous `OCR_DEEPSEEK_TIMEOUT`; docling's
+VLM pipeline honours the same timeout per request but keeps its own four
+concurrent requests.
+
+A selected engine that is not available degrades rather than failing parses:
+under docling, a missing tesseract binary or non-macOS `ocrmac` falls back to
+`auto` with a warning; under `native`, a docling-only engine becomes
+tesseract, and a missing tesseract binary fails the scanned file with an
+install hint (text-layer documents are unaffected).
+
+<Callout type="warning" emoji="⚠️">
+A language listed in `OCR_LANGS` whose tesseract pack is not installed fails
+every scanned page loudly (tesseract exits with "Error opening data file
+... chi_sim.traineddata"), on both backends. Install the pack before
+listing it: `apt-get install tesseract-ocr-chi-sim` in the image, or on
+macOS download `chi_sim.traineddata` into `$(brew --prefix)/share/tessdata`.
+</Callout>
+
+### DeepSeek through docling versus native
+
+`OCR_ENGINE=deepseek` behaves differently on the two backends, and the
+difference matters more than for tesseract:
+
+- **native** sends one request per page that lacks a text layer and reads
+  every other page directly. Pages go one at a time with
+  `OCR_DEEPSEEK_TIMEOUT` per request, so a slow model server just takes
+  longer.
+- **docling** uses its VLM pipeline, which *replaces* the whole converter:
+  every page of every PDF that reaches docling goes to the model, text layer
+  or not (a 39-page text PDF measured 721 s against 20 s on the other paths),
+  with four concurrent requests and `OCR_DEEPSEEK_TIMEOUT` per request. In testing it also
+  dropped page-level elements — a title, an intro paragraph — that the same
+  model kept through the native path, and it logs a burst of pydantic
+  serialization warnings per conversion. Its one advantage was table
+  structure: it was the only configuration that returned an invoice's
+  subtotal/VAT/total rows as table rows.
+
+Measured on the same scans (2026-09, MacBook Air, Ollama `deepseek-ocr:3b`):
+
+| Configuration | Scanned page | Image | Accuracy | Tables | Chinese |
+|---|---|---|---|---|---|
+| tesseract, native | 1-2 s | 1-2 s | exact | flat lines | clean |
+| deepseek, native | 15-30 s | 15-25 s | exact | Markdown table, totals as bold lines | clean |
+| tesseract, docling | 3-4 s | ~8 s | exact | Markdown body, totals shredded | clean |
+| deepseek, docling | ~20 s | ~20 s | drops titles/paragraphs | exact | clean |
+
+Recommendation: `native` with `tesseract` for throughput, `native` with
+`deepseek` for quality, `docling` with `tesseract` when you want its layout
+model, and `docling` with `deepseek` only for table-heavy scans where the
+costs above are acceptable.
 
 ## Processing Flow
 
@@ -24,7 +248,7 @@ DOCLING_OCR_ATTACHMENTS_ENABLED=false
 1. Files are uploaded through `/api/upload`.
 2. Ingestion runs asynchronously in Celery (`ingest_worker`).
 3. `SimpleDirectoryReader` parses files with `get_default_file_extractor`.
-4. For PDFs and image formats, Docling parsers are used. OCR in this path is controlled by `DOCLING_OCR_ENABLED`.
+4. Documents are parsed by the `DOC_PARSER_ENGINE` engine; images (and, under `anydoc`, scanned PDFs) reach the OCR backend. OCR in this path is controlled by `OCR_ENABLED`.
 5. Parsed text is chunked, embedded, and stored in the vector store.
 6. Retrieval during chat uses this indexed text and returns source citations.
 
@@ -32,23 +256,30 @@ DOCLING_OCR_ATTACHMENTS_ENABLED=false
 
 1. Files are uploaded through `/api/store_attachment`.
 2. Celery task `attachment_worker` parses and stores the attachment in Postgres (`attachments` table).
-3. OCR in this path is controlled by `DOCLING_OCR_ATTACHMENTS_ENABLED`.
+3. OCR in this path is controlled by `OCR_ATTACHMENTS_ENABLED`.
 4. Attachments are not vectorized and are not added to the source index.
 5. During answer generation, selected attachment IDs are loaded and passed directly to the LLM pipeline.
 
 ## How Docling OCR Works
 
-Docling OCR behavior is different for PDFs vs images:
+With `OCR_BACKEND=docling`, OCR behavior is different for PDFs vs images:
 
 - PDF parser defaults to hybrid OCR:
   - text regions: extracted directly
   - bitmap/image regions: OCR only where needed
 - Image parser defaults to full-page OCR (the whole image is visual content).
 
-By default, Docling parser classes use RapidOCR options (language default: `english`).
+The engine and its languages come from `OCR_ENGINE` and `OCR_LANGS` (see the
+table above). `INSTALL_TESSERACT=true` installs only the English tesseract
+pack; for other languages install their packs in the image (e.g.
+`apt-get install tesseract-ocr-chi-sim`) and list them in `OCR_LANGS`
+(`eng+chi_sim`).
 
-<Callout type="info" emoji="ℹ️">
-Parser internals like OCR language and force-full-page OCR are currently set by code defaults, not separate `.env` settings.
+<Callout type="warning" emoji="⚠️">
+Upgrading from a RapidOCR-based deployment? RapidOCR covered English *and*
+Chinese with no configuration. The tesseract default only OCRs the languages
+in `OCR_LANGS` (`eng` out of the box), so CJK scans stop ingesting until
+their packs are installed and listed.
 </Callout>
 
 ### Model compilation
@@ -79,18 +310,19 @@ This means OCR quality is especially important for text fallback paths and for m
 
 ## Recommended Configuration
 
-For most OCR-enabled use cases, enable both flags:
+For most OCR-enabled use cases, enable both flags and leave the backend on
+`auto`:
 
 ```env
-DOCLING_OCR_ENABLED=true
-DOCLING_OCR_ATTACHMENTS_ENABLED=true
+OCR_ENABLED=true
+OCR_ATTACHMENTS_ENABLED=true
 ```
 
 After changing these settings, restart the API and Celery worker.
 
 ## Legacy Fallback Notes
 
-- If Docling is unavailable, DocsGPT falls back to legacy parsers.
+- If Docling is unavailable, DocsGPT falls back to the native OCR parsers (OCR on) or the legacy parsers (OCR off) for the formats anydoc does not cover, and anydoc's refusals of scanned PDFs become upload errors only when no OCR is available.
 - With OCR disabled, text-based PDFs can still parse, but scanned/image-heavy content may produce little text.
-- For image parsing without Docling OCR, the legacy image parser only extracts text when `PARSE_IMAGE_REMOTE=true`.
+- For image parsing without OCR, the legacy image parser only extracts text when `PARSE_IMAGE_REMOTE=true`.
 

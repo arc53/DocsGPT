@@ -903,3 +903,14 @@ class TestSSRFValidation:
         with pytest.raises(ValueError, match="Invalid S3 endpoint_url"):
             s3_loader.load_data(input_data)
         mock_boto3.client.assert_not_called()
+
+
+def test_is_supported_document_follows_the_upload_whitelist():
+    from application.parser.file.constants import SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS
+    from application.parser.remote.s3_loader import S3Loader
+
+    for suffix in SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS:
+        key = f"bucket/file{suffix}"
+        assert S3Loader.is_text_file(None, key) or S3Loader.is_supported_document(None, key), suffix
+    assert S3Loader.is_supported_document(None, "bucket/file.doc")
+    assert not S3Loader.is_supported_document(None, "bucket/file.exe")

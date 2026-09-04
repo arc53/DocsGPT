@@ -272,7 +272,21 @@ class UploadFile(Resource):
                     # Office/e-book containers are ZIP-based formats but must
                     # be parsed as documents, not expanded as user archives.
                     is_office_format = safe_file.lower().endswith(
-                        (".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub")
+                        (
+                            ".docx",
+                            ".docm",
+                            ".xlsx",
+                            ".xlsm",
+                            ".xlsb",
+                            ".pptx",
+                            ".pptm",
+                            ".ppsx",
+                            ".ppsm",
+                            ".odt",
+                            ".ods",
+                            ".odp",
+                            ".epub",
+                        )
                     )
                     if zipfile.is_zipfile(temp_file_path) and not is_office_format:
                         extract_dir = os.path.join(upload_dir, "extracted")

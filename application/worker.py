@@ -1767,12 +1767,13 @@ def attachment_worker(self, file_info, user):
             scope={"kind": "attachment", "id": str(attachment_id)},
         )
 
-        # Attachments only: PDFs are read via their text layer where one
-        # exists (see ``ATTACHMENT_PDF_TEXT_FAST_PATH``). Source ingestion
+        # Attachments only: under the docling engine PDFs are read via their
+        # text layer where one exists (``ATTACHMENT_PDF_TEXT_FAST_PATH``; a
+        # no-op under anydoc, which is already that fast). Source ingestion
         # calls SimpleDirectoryReader without a ``file_extractor`` and so keeps
-        # the docling default, which is what retrieval quality depends on.
+        # the ``DOC_PARSER_ENGINE`` default map, which retrieval quality depends on.
         file_extractor = get_default_file_extractor(
-            ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED,
+            ocr_enabled=settings.OCR_ATTACHMENTS_ENABLED,
             pdf_text_fast_path=settings.ATTACHMENT_PDF_TEXT_FAST_PATH,
         )
         _parser = file_extractor.get(os.path.splitext(filename)[1].lower())
@@ -1805,7 +1806,7 @@ def attachment_worker(self, file_info, user):
         parser_metadata = {
             key: value
             for key, value in (attachment_document.extra_info or {}).items()
-            if key.startswith("transcript_")
+            if key.startswith("transcript_") or key == "parse_warnings"
         }
         if parser_metadata:
             metadata = {**metadata, **parser_metadata}

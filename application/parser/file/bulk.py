@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from application.parser.file.base import BaseReader
-from application.parser.file.base_parser import BaseParser, DocumentParseError
+from application.parser.file.base_parser import BaseParser, DocumentParseError, module_available
 from application.parser.file.docs_parser import DocxParser, PDFParser
 from application.parser.file.epub_parser import EpubParser
 from application.parser.file.html_parser import HTMLParser
@@ -49,28 +49,140 @@ def _wrap_pdf_fast_path(pdf_parser: BaseParser) -> BaseParser:
     )
 
 
-def get_default_file_extractor(
-    ocr_enabled: Optional[bool] = None,
-    pdf_text_fast_path: bool = False,
-) -> Dict[str, BaseParser]:
-    """Get the default file extractor.
+def _gained_format_entries() -> Dict[str, BaseParser]:
+    """Anydoc-only formats (legacy/macro Office, OpenDocument, RTF) for every map.
 
-    Uses docling parsers by default for advanced document processing.
-    Falls back to standard parsers if docling is not installed.
+    anydoc is a core dependency, so these suffixes are parseable under both
+    engines. When anydoc is somehow missing the entries are omitted and
+    ``SimpleDirectoryReader.load_data`` rejects such files with a
+    ``DocumentParseError`` naming the install, rather than reading OLE/zip
+    bytes as text.
+    """
+    from application.parser.file.anydoc_parser import (
+        ANYDOC_GAINED_SUFFIXES,
+        AnydocParser,
+        anydoc_available,
+    )
+
+    if not anydoc_available():
+        return {}
+    return {suffix: AnydocParser() for suffix in ANYDOC_GAINED_SUFFIXES}
+
+
+def _native_ocr_parsers(
+    text_parser: Optional[BaseParser] = None,
+) -> Optional[Tuple[BaseParser, Callable[[], BaseParser]]]:
+    """PDF parser and image-parser factory for the native OCR backend.
 
     Args:
-        ocr_enabled: Enable OCR in the docling parsers. Defaults to
-            ``settings.DOCLING_OCR_ENABLED``.
-        pdf_text_fast_path: Read PDFs via their embedded text layer
-            (pypdfium2) instead of docling, falling back to docling for scans.
-            Off by default: it trades docling's structural markdown for speed,
-            which suits attachments (read into a prompt) but not source
-            ingestion (chunked and embedded for retrieval).
+        text_parser: Parser for PDFs whose every page has a text layer (the
+            docling PDF parser under the docling engine); None reads text
+            layers with pypdfium2.
+
+    Returns:
+        ``(pdf_parser, image_parser_factory)``, or None when pypdfium2 or
+        Pillow is missing — both are core dependencies, so that is a broken
+        install, logged as such.
+    """
+    from application.parser.file.ocr_parser import (
+        NativeOcrImageParser,
+        NativeOcrPdfParser,
+        native_ocr_available,
+    )
+
+    if not native_ocr_available():
+        logging.error(
+            "OCR is enabled but pypdfium2/Pillow are not importable, so the native "
+            "OCR backend cannot run; scanned PDFs and images will not be OCR'd"
+        )
+        return None
+    return NativeOcrPdfParser(text_parser=text_parser), NativeOcrImageParser
+
+
+def _image_entries(factory: Callable[[], BaseParser], suffixes) -> Dict[str, BaseParser]:
+    """One parser instance per image suffix."""
+    return {suffix: factory() for suffix in suffixes}
+
+
+_LEGACY_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg")
+
+
+def _legacy_file_extractor(pdf_text_fast_path: bool = False, ocr_enabled: bool = False) -> Dict[str, BaseParser]:
+    """Parser map that needs neither docling nor anydoc.
+
+    Args:
+        pdf_text_fast_path: Put the pypdfium2 text-layer parser in front of
+            the PDF parser.
+        ocr_enabled: Use the native OCR parsers (tesseract / DeepSeek-OCR via
+            pypdfium2 + Pillow) for PDFs and images instead of the plain
+            pypdf / remote-service parsers.
+
+    Returns:
+        Dict[str, BaseParser]: Parser keyed by lower-case file suffix.
+    """
+    from application.parser.file.ocr_parser import IMAGE_SUFFIXES
+
+    pdf_parser: BaseParser = PDFParser()
+    images: Dict[str, BaseParser] = _image_entries(ImageParser, _LEGACY_IMAGE_SUFFIXES)
+    if ocr_enabled:
+        native = _native_ocr_parsers()
+        if native is not None:
+            pdf_parser, image_factory = native
+            images = _image_entries(image_factory, sorted(IMAGE_SUFFIXES))
+    if pdf_text_fast_path:
+        pdf_parser = _wrap_pdf_fast_path(pdf_parser)
+    return {
+        ".pdf": pdf_parser,
+        ".docx": DocxParser(),
+        ".csv": PandasCSVParser(),
+        ".xlsx": ExcelParser(),
+        ".epub": EpubParser(),
+        ".md": MarkdownParser(),
+        ".rst": RstParser(),
+        ".html": HTMLParser(),
+        ".xhtml": HTMLParser(),
+        ".mdx": MarkdownParser(),
+        ".json": JSONParser(),
+        ".pptx": PPTXParser(),
+        **images,
+        **_build_audio_parser_mapping(),
+        **_gained_format_entries(),
+    }
+
+
+def _docling_file_extractor(
+    ocr_enabled: bool,
+    pdf_text_fast_path: bool = False,
+    *,
+    missing_log_level: int = logging.WARNING,
+) -> Dict[str, BaseParser]:
+    """docling parser map, or the legacy map when docling is not installed.
+
+    With OCR on, ``OCR_BACKEND`` decides who OCRs: docling's own hybrid
+    pipeline, or the native parsers (``ocr_parser.py``) with the docling PDF
+    parser kept — OCR off — for PDFs that have a text layer on every page.
+    Without docling installed the legacy map takes over, itself using the
+    native OCR parsers when OCR is on.
+
+    The availability check has to happen here, not at parse time:
+    ``DoclingParser`` only imports docling inside ``_init_parser``, and the
+    ``ImportError`` that raises is not a ``DocumentParseError``, so a map
+    that handed out docling parsers on a docling-less install would abort
+    the whole ingest on its first file instead of degrading.
+
+    Args:
+        ocr_enabled: Enable OCR in the docling PDF/image parsers.
+        pdf_text_fast_path: Put the pypdfium2 text-layer parser in front of
+            the PDF parser (attachments only; see ``get_default_file_extractor``).
+        missing_log_level: Level at which a missing docling install is logged;
+            informational when docling is only the *fallback* engine.
 
     Returns:
         Dict[str, BaseParser]: Parser keyed by lower-case file suffix.
     """
     try:
+        if not module_available("docling"):
+            raise ImportError("docling is not installed")
         from application.parser.file.docling_parser import (
             DoclingPDFParser,
             DoclingDocxParser,
@@ -83,71 +195,160 @@ def get_default_file_extractor(
             DoclingVTTParser,
             DoclingXMLParser,
         )
-        if ocr_enabled is None:
-            ocr_enabled = settings.DOCLING_OCR_ENABLED
-        pdf_parser: BaseParser = DoclingPDFParser(ocr_enabled=ocr_enabled)
-        if pdf_text_fast_path:
-            pdf_parser = _wrap_pdf_fast_path(pdf_parser)
-        return {
-            # Documents
-            ".pdf": pdf_parser,
-            ".docx": DoclingDocxParser(),
-            ".pptx": DoclingPPTXParser(),
-            ".xlsx": DoclingXLSXParser(),
-            # Web formats
-            ".html": DoclingHTMLParser(),
-            ".xhtml": DoclingHTMLParser(),
-            # Data formats
-            ".csv": DoclingCSVParser(),
-            ".json": JSONParser(),  # Keep JSON parser (specialized handling)
-            # Text/markup formats
-            ".md": MarkdownParser(),  # Keep markdown parser (specialized handling)
-            ".mdx": MarkdownParser(),
-            ".rst": RstParser(),
-            ".adoc": DoclingAsciiDocParser(),
-            ".asciidoc": DoclingAsciiDocParser(),
-            # Images (with OCR) - only use Docling when OCR is enabled
-            ".png": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
-            ".jpg": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
-            ".jpeg": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
-            ".tiff": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
-            ".tif": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
-            ".bmp": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
-            ".webp": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
-            # Media/subtitles
-            ".vtt": DoclingVTTParser(),
-            **_build_audio_parser_mapping(),
-            # Specialized XML formats
-            ".xml": DoclingXMLParser(),
-            # Formats docling doesn't support - use standard parsers
-            ".epub": EpubParser(),
-        }
     except ImportError:
-        logging.warning(
-            "docling is not installed. Using standard parsers. "
-            "For advanced document parsing, install with: pip install docling"
+        logging.log(
+            missing_log_level,
+            "docling is not installed. Using standard parsers%s. For layout-model "
+            "parsing, install with: pip install -r application/requirements-docling.txt",
+            " with native OCR" if ocr_enabled else "",
         )
-        # Fallback to standard parsers
-        legacy_pdf: BaseParser = PDFParser()
-        if pdf_text_fast_path:
-            legacy_pdf = _wrap_pdf_fast_path(legacy_pdf)
-        return {
-            ".pdf": legacy_pdf,
-            ".docx": DocxParser(),
-            ".csv": PandasCSVParser(),
-            ".xlsx": ExcelParser(),
-            ".epub": EpubParser(),
-            ".md": MarkdownParser(),
-            ".rst": RstParser(),
-            ".html": HTMLParser(),
-            ".mdx": MarkdownParser(),
-            ".json": JSONParser(),
-            ".pptx": PPTXParser(),
-            ".png": ImageParser(),
-            ".jpg": ImageParser(),
-            ".jpeg": ImageParser(),
-            **_build_audio_parser_mapping(),
-        }
+        return _legacy_file_extractor(pdf_text_fast_path, ocr_enabled=ocr_enabled)
+
+    from application.parser.file.ocr_parser import IMAGE_SUFFIXES, resolve_ocr_backend
+
+    native = None
+    if ocr_enabled and resolve_ocr_backend() == "native":
+        native = _native_ocr_parsers(text_parser=DoclingPDFParser(ocr_enabled=False))
+    if native is not None:
+        pdf_parser, image_factory = native
+        images = _image_entries(image_factory, sorted(IMAGE_SUFFIXES))
+    else:
+        pdf_parser = DoclingPDFParser(ocr_enabled=ocr_enabled)
+        # Images (with OCR) - only use Docling when OCR is enabled
+        image_factory = (
+            (lambda: DoclingImageParser(ocr_enabled=True)) if ocr_enabled else ImageParser
+        )
+        images = _image_entries(image_factory, sorted(IMAGE_SUFFIXES))
+    if pdf_text_fast_path:
+        pdf_parser = _wrap_pdf_fast_path(pdf_parser)
+    return {
+        # Documents
+        ".pdf": pdf_parser,
+        ".docx": DoclingDocxParser(),
+        ".pptx": DoclingPPTXParser(),
+        ".xlsx": DoclingXLSXParser(),
+        # Web formats
+        ".html": DoclingHTMLParser(),
+        ".xhtml": DoclingHTMLParser(),
+        # Data formats
+        ".csv": DoclingCSVParser(),
+        ".json": JSONParser(),  # Keep JSON parser (specialized handling)
+        # Text/markup formats
+        ".md": MarkdownParser(),  # Keep markdown parser (specialized handling)
+        ".mdx": MarkdownParser(),
+        ".rst": RstParser(),
+        ".adoc": DoclingAsciiDocParser(),
+        ".asciidoc": DoclingAsciiDocParser(),
+        # Images: OCR'd by the selected backend when OCR is on, else ImageParser
+        **images,
+        # Media/subtitles
+        ".vtt": DoclingVTTParser(),
+        **_build_audio_parser_mapping(),
+        # Specialized XML formats
+        ".xml": DoclingXMLParser(),
+        # Formats docling doesn't support - use standard parsers
+        ".epub": EpubParser(),
+        # Formats only anydoc reads (legacy/macro Office, OpenDocument, RTF)
+        **_gained_format_entries(),
+    }
+
+
+def _anydoc_file_extractor(ocr_enabled: bool, pdf_text_fast_path: bool = False) -> Dict[str, BaseParser]:
+    """anydoc parser map, layered over the docling (or legacy) map.
+
+    anydoc takes every format it converts; each of those parsers gets the
+    base map's parser for the same suffix as ``fallback_parser``, so a
+    scanned PDF still reaches OCR — docling's when it is installed and
+    selected, the native OCR parser otherwise — and the legacy parser when
+    OCR is off. docling, when installed, also keeps serving what anydoc
+    cannot: ``.adoc``/``.vtt``/``.xml``. Images go to whichever OCR backend
+    is active. HTML goes to the markdownify-based ``HTMLMarkdownParser``.
+
+    ``pdf_text_fast_path`` is deliberately ignored here: anydoc already reads
+    the text layer in milliseconds *and* keeps headings/tables, and does its
+    own scanned-PDF detection, so putting pypdfium2 in front of it would
+    only lose structure.
+
+    Args:
+        ocr_enabled: Enable OCR in the docling fallback/image parsers.
+        pdf_text_fast_path: Honored only when anydoc is not installed and the
+            map degrades to the base engine.
+
+    Returns:
+        Dict[str, BaseParser]: Parser keyed by lower-case file suffix.
+    """
+    from application.parser.file.anydoc_parser import (
+        ANYDOC_SUFFIXES,
+        AnydocParser,
+        anydoc_available,
+    )
+    from application.parser.file.html_parser import HTMLMarkdownParser
+
+    if not anydoc_available():
+        logging.warning(
+            "firecrawl-anydoc is not installed; DOC_PARSER_ENGINE=anydoc is using "
+            "the %s parsers instead. Install with: pip install firecrawl-anydoc",
+            "docling" if module_available("docling") else "standard",
+        )
+        return _docling_file_extractor(ocr_enabled, pdf_text_fast_path)
+
+    base = _docling_file_extractor(
+        ocr_enabled, pdf_text_fast_path=False, missing_log_level=logging.INFO
+    )
+    extractor = dict(base)
+    for suffix in ANYDOC_SUFFIXES:
+        fallback = base.get(suffix)
+        if isinstance(fallback, AnydocParser):
+            # A gained-format entry from the base map is already a
+            # fallback-less AnydocParser — anydoc delegating to anydoc would
+            # just repeat the same failure.
+            continue
+        extractor[suffix] = AnydocParser(fallback_parser=fallback)
+    extractor[".html"] = HTMLMarkdownParser()
+    extractor[".xhtml"] = HTMLMarkdownParser()
+    return extractor
+
+
+def get_default_file_extractor(
+    ocr_enabled: Optional[bool] = None,
+    pdf_text_fast_path: bool = False,
+    engine: Optional[str] = None,
+) -> Dict[str, BaseParser]:
+    """Get the default file extractor.
+
+    The engine is ``settings.DOC_PARSER_ENGINE`` unless overridden:
+
+    * ``anydoc`` (default): firecrawl-anydoc for office/PDF/tabular formats,
+      markdownify for HTML, the active OCR backend for images and as the
+      fallback for scanned PDFs; docling (if installed) for the rest anydoc
+      rejects, legacy parsers otherwise.
+    * ``docling``: the docling map, with the legacy parsers when docling is
+      not installed.
+
+    Args:
+        ocr_enabled: Enable OCR for scanned PDFs and images, through the
+            backend ``OCR_BACKEND`` resolves to. Defaults to
+            ``settings.OCR_ENABLED``.
+        pdf_text_fast_path: Read PDFs via their embedded text layer
+            (pypdfium2) instead of docling, falling back to docling for scans.
+            Off by default: it trades docling's structural markdown for speed,
+            which suits attachments (read into a prompt) but not source
+            ingestion (chunked and embedded for retrieval). A no-op under the
+            anydoc engine, which is already that fast and keeps structure.
+        engine: ``"anydoc"`` or ``"docling"``; ``None`` reads the setting.
+
+    Returns:
+        Dict[str, BaseParser]: Parser keyed by lower-case file suffix.
+    """
+    if ocr_enabled is None:
+        ocr_enabled = settings.OCR_ENABLED
+    selected = (engine or getattr(settings, "DOC_PARSER_ENGINE", None) or "anydoc")
+    selected = str(selected).strip().lower()
+    if selected == "docling":
+        return _docling_file_extractor(ocr_enabled, pdf_text_fast_path)
+    if selected != "anydoc":
+        logging.warning("Unknown DOC_PARSER_ENGINE %r; using anydoc", selected)
+    return _anydoc_file_extractor(ocr_enabled, pdf_text_fast_path)
 
 
 # For backwards compatibility
@@ -311,6 +512,15 @@ class SimpleDirectoryReader(BaseReader):
                     data = parser.parse_file(input_file, errors=self.errors)
                     parser_metadata = parser.get_file_metadata(input_file)
                 else:
+                    from application.parser.file.anydoc_parser import ANYDOC_GAINED_SUFFIXES
+
+                    if suffix_lower in ANYDOC_GAINED_SUFFIXES:
+                        # Binary office formats only anydoc reads; without it
+                        # the standard read would index OLE/zip bytes as text.
+                        raise DocumentParseError(
+                            f"No parser is available for {suffix_lower} files: "
+                            "firecrawl-anydoc is not installed (pip install firecrawl-anydoc)"
+                        )
                     # do standard read
                     with open(input_file, "r", errors=self.errors) as f:
                         data = f.read()

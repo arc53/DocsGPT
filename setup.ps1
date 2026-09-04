@@ -513,10 +513,29 @@ function Configure-DocProcessing {
         Write-ColorText "PDF-as-image parsing enabled." -ForegroundColor "Green"
     }
 
-    $ocr_enabled = Read-Host "Enable OCR for document processing (Docling)? (y/N)"
+    # OCR needs the tesseract binary, an optional system package that only
+    # locally built images can include (INSTALL_TESSERACT build arg). The
+    # pre-built Docker Hub images ship without it, so there OCR stays off
+    # (its default) rather than being switched on to fail on every scan.
+    if ($COMPOSE_FILE -ne $COMPOSE_FILE_LOCAL) {
+        Write-ColorText "OCR for scanned PDFs and images stays off: the pre-built Docker Hub images do not include tesseract. To use OCR, rerun setup and choose option 5 (build images locally), or use a DeepSeek-OCR endpoint by adding OCR_ENABLED=true, OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> to .env." -ForegroundColor "Yellow"
+        return
+    }
+
+    $ocr_enabled = Read-Host "Enable OCR for scanned PDFs and images? (y/N)"
     if ($ocr_enabled -eq "y" -or $ocr_enabled -eq "Y") {
-        "DOCLING_OCR_ENABLED=true" | Add-Content -Path $ENV_FILE -Encoding utf8
-        Write-ColorText "Docling OCR enabled." -ForegroundColor "Green"
+        "OCR_ENABLED=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+        # Bakes tesseract into the locally built images (docker compose
+        # --env-file .env build).
+        "INSTALL_TESSERACT=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-ColorText "OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); for a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> in .env." -ForegroundColor "Green"
+        $docling_ocr = Read-Host "Also install the Docling layout engine for OCR (better tables/reading order, several GB heavier)? (y/N)"
+        if ($docling_ocr -eq "y" -or $docling_ocr -eq "Y") {
+            # Locally built images include docling via this build arg; it becomes
+            # the OCR backend automatically (OCR_BACKEND=auto).
+            "INSTALL_DOCLING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-ColorText "Docling will be built into locally built images (docker compose --env-file .env build). Pre-built Docker Hub images do not include it." -ForegroundColor "Green"
+        }
     }
 }
 
@@ -633,7 +652,14 @@ function Use-DocsPublicAPIEndpoint {
             throw "Docker compose pull failed with exit code $LASTEXITCODE"
         }
         
-        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+        # Locally built images must be rebuilt rather than reused:
+        # INSTALL_TESSERACT and INSTALL_DOCLING are build args, so a rerun that
+        # switches OCR on would otherwise keep the image built without them.
+        $up_args = @("up", "-d")
+        if ($COMPOSE_FILE -eq $COMPOSE_FILE_LOCAL) {
+            $up_args = @("up", "--build", "-d")
+        }
+        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" @up_args
         if ($LASTEXITCODE -ne 0) {
             throw "Docker compose up failed with exit code $LASTEXITCODE"
         }

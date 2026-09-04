@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -118,20 +118,106 @@ class Settings(BaseSettings):
     UPLOAD_MAX_ARCHIVE_DEPTH: int = Field(default=3, ge=0)
     PARSE_PDF_AS_IMAGE: bool = False
     PARSE_IMAGE_REMOTE: bool = False
-    DOCLING_OCR_ENABLED: bool = False  # Enable OCR for docling parsers (PDF, images)
-    DOCLING_OCR_ATTACHMENTS_ENABLED: bool = False  # Enable OCR for docling when parsing attachments
-    # Pages docling buffers in flight; its default of 100 drives worker RSS to ~3 GB on a mid-size PDF.
+    # Document parser for source ingestion, chat attachments and the
+    # read_document tool. "anydoc" (default): firecrawl-anydoc, a Rust
+    # converter with no ML models — milliseconds per file, ~100 MB peak RSS.
+    # "docling": the layout/table-model pipeline (optional install; needed
+    # for read_document's structured output and the docling OCR backend).
+    # Files anydoc cannot convert (scanned PDFs, malformed input) fall back to
+    # docling when it is installed, otherwise to the native OCR parsers (OCR
+    # on) or the legacy parsers. Rollback to the previous behaviour is this
+    # one variable.
+    DOC_PARSER_ENGINE: str = "anydoc"
+    # OCR for scanned PDFs and images. OCR_ENABLED covers source ingestion,
+    # OCR_ATTACHMENTS_ENABLED chat attachments. Which stack performs it is
+    # OCR_BACKEND; which engine, OCR_ENGINE. The DOCLING_OCR_* names are the
+    # pre-2026-09 spellings and stay accepted as aliases.
+    OCR_ENABLED: bool = Field(
+        default=False, validation_alias=AliasChoices("OCR_ENABLED", "DOCLING_OCR_ENABLED")
+    )
+    OCR_ATTACHMENTS_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("OCR_ATTACHMENTS_ENABLED", "DOCLING_OCR_ATTACHMENTS_ENABLED"),
+    )
+    # Which stack runs OCR when it is on:
+    #   auto    — docling when installed, otherwise native.
+    #   docling — the layout-model pipeline (hybrid region OCR, reading order,
+    #             table structure); needs the optional docling extra.
+    #   native  — pypdfium2/Pillow page rendering straight into tesseract or a
+    #             DeepSeek-OCR endpoint (application/parser/file/ocr_parser.py).
+    #             No ML models in the worker; tables come out as text lines
+    #             under tesseract.
+    OCR_BACKEND: str = "auto"
+    # Pages docling's threaded pipeline buffers in flight; the library
+    # default (100) drives worker RSS to ~3 GB on a mid-size PDF.
     DOCLING_PIPELINE_QUEUE_MAX_SIZE: int = 2
     DOCLING_COMPILE_TORCH_MODELS: bool = False
     DOCLING_TABULAR_MAX_BYTES: int = 2_000_000
     DOCLING_MARKUP_MAX_BYTES: int = 8_000_000
-    # Chars-per-page floor below which an OCR'd parse is treated as a docling dropout rather than
-    # content: retried once on a fresh converter, then failed loudly instead of indexing an empty
-    # document. Long-running workers were seen returning zero chars per page with no error. 0 disables.
-    DOCLING_OCR_MIN_CHARS_PER_PAGE: int = 20
-    # Read PDF *attachments* via their text layer (pypdfium2), falling back to docling when there
-    # is none. Attachments go into a prompt, where docling's structure does not earn its tens of
-    # seconds per file. Source ingestion is unaffected and always uses docling.
+    # HTML/XHTML larger than this (bytes) are head-truncated before the
+    # markdownify parser runs (the anydoc engine's HTML path). The tree that
+    # path builds costs ~50x the input — 30 MB of HTML measured at 1.6 GB RSS —
+    # and the upload cap is 100 MB, so the gate is what keeps one upload from
+    # taking the ingest worker down. 0 disables it.
+    MARKUP_MAX_BYTES: int = 8_000_000
+    # Trust-check anydoc's PDF output (application/parser/file/pdf_trust.py):
+    # flag composite (Type0) fonts without a ToUnicode map, and CJK-declaring
+    # PDFs whose extracted text has almost no CJK — the two classes where
+    # anydoc drops text silently. A flagged file re-parses on the docling
+    # fallback when docling is installed; otherwise the anydoc output is kept
+    # and the document gets extra_info["parse_warnings"]. ~30 ms per scanned MB.
+    PDF_TRUST_CHECK: bool = True
+    # Rewrite dot-leader / whitespace-aligned table runs in anydoc's PDF
+    # markdown into GFM tables (application/parser/file/tableize.py). Off by
+    # default: it rewrites content on a heuristic (>=3 uniform label+numbers
+    # lines) validated only on a small corpus so far.
+    ANYDOC_TABLEIZE: bool = False
+    # OCR engine used when OCR is on (OCR_ENABLED / OCR_ATTACHMENTS_ENABLED).
+    # Benched 2026-08 on EN/ZH/table/degraded scans (docs/Guides/ocr has the
+    # menu):
+    #   tesseract — recommended: best classic-engine accuracy (perfect EN word
+    #     recall, 0.000 bilingual CER, 100% table cells), ~35 MB, CPU-only.
+    #     Needs the system binary + language packs: an optional install like
+    #     every OCR dependency (build with INSTALL_TESSERACT=true, or apt/brew
+    #     install tesseract-ocr for a local run). Both backends.
+    #   deepseek — DeepSeek-OCR against an Ollama/vLLM endpoint
+    #     (OCR_DEEPSEEK_*). Best table/CJK quality; the worker stays light
+    #     (no layout models) but each page costs seconds on the model server.
+    #     Both backends.
+    #   auto — docling's pick: ocrmac on macOS (excellent), rapidocr on Linux
+    #     (silently shreds some long text lines — avoid as a server default).
+    #   ocrmac | rapidocr — force one of those.
+    # auto/ocrmac/rapidocr exist only inside docling; the native backend runs
+    # tesseract for them. An engine that is not installed degrades (docling:
+    # to "auto") with a warning instead of failing the parse.
+    OCR_ENGINE: str = "tesseract"
+    # Tesseract language packs, "+"-separated (e.g. "eng+chi_sim+deu"). Other
+    # engines keep their own defaults — their language codes differ.
+    OCR_LANGS: str = "eng"
+    OCR_DEEPSEEK_URL: str = "http://localhost:11434/v1/chat/completions"
+    OCR_DEEPSEEK_MODEL: str = "deepseek-ocr:3b"
+    # Seconds allowed per page request to the DeepSeek endpoint, on both
+    # backends (native sends pages one at a time; docling's VLM pipeline
+    # keeps its own concurrency). A 3B model on a laptop needs minutes; a
+    # vLLM GPU deployment, seconds.
+    OCR_DEEPSEEK_TIMEOUT: float = 300.0
+    # Native backend only: resolution at which pages without a text layer are
+    # rendered before OCR. 200 suits tesseract; clamped to 72-600.
+    OCR_RENDER_DPI: int = 200
+    # Chars-per-page floor below which an OCR'd PDF/image parse is treated as an OCR
+    # dropout (long-running docling workers were observed returning zero characters for
+    # every scanned page after a long scanned PDF, with no error) rather than as content.
+    # docling retries once on a fresh full-page-OCR converter; both backends then fail
+    # loudly instead of indexing an empty document. 0 disables the guard.
+    OCR_MIN_CHARS_PER_PAGE: int = Field(
+        default=20, validation_alias=AliasChoices("OCR_MIN_CHARS_PER_PAGE", "DOCLING_OCR_MIN_CHARS_PER_PAGE")
+    )
+    # Read PDF *attachments* via their embedded text layer (pypdfium2) instead
+    # of docling, falling back to docling when there is no text layer to read.
+    # Attachments go into a prompt, so docling's structural markdown earns far
+    # less than the tens of seconds per file it costs; source ingestion is
+    # unaffected and always uses docling, because chunking and retrieval do
+    # depend on that structure.
     ATTACHMENT_PDF_TEXT_FAST_PATH: bool = True
     # Median chars per sampled page below which a PDF is treated as a scan and handed to docling.
     # Measured on real uploads: scans at 0-17 chars/page, text-layer documents at 433-6834.

@@ -1,6 +1,6 @@
 """Comprehensive tests for application/parser/file/docling_parser.py
 
-Covers: DoclingParser (init, _init_parser, _get_ocr_options, _export_content,
+Covers: DoclingParser (init, _init_parser, OCR engine selection, _export_content,
 parse_file), subclass initialization, error handling.
 """
 
@@ -27,8 +27,8 @@ class TestDoclingParserInit:
         assert parser.ocr_enabled is True
         assert parser.table_structure is True
         assert parser.export_format == "markdown"
-        assert parser.use_rapidocr is True
-        assert parser.ocr_languages == ["english"]
+        assert parser.ocr_engine is None  # None -> settings.OCR_ENGINE at build
+        assert parser.ocr_languages is None  # None -> the engine's own default
         assert parser.force_full_page_ocr is False
         assert parser._converter is None
 
@@ -39,14 +39,14 @@ class TestDoclingParserInit:
             ocr_enabled=False,
             table_structure=False,
             export_format="text",
-            use_rapidocr=False,
+            ocr_engine="rapidocr",
             ocr_languages=["german"],
             force_full_page_ocr=True,
         )
         assert parser.ocr_enabled is False
         assert parser.table_structure is False
         assert parser.export_format == "text"
-        assert parser.use_rapidocr is False
+        assert parser.ocr_engine == "rapidocr"
         assert parser.ocr_languages == ["german"]
         assert parser.force_full_page_ocr is True
 
@@ -90,44 +90,182 @@ class TestDoclingParserInitParser:
 
 
 @pytest.mark.unit
-class TestGetOCROptions:
+class TestOcrEngineSelection:
+    """``OCR_ENGINE`` resolution and per-engine option building."""
 
-    def test_returns_none_when_rapidocr_disabled(self):
+    @pytest.fixture
+    def settings(self):
+        from application.core.settings import settings
+
+        return settings
+
+    def test_default_setting_is_tesseract(self):
+        # Field defaults, not the live settings: a developer's ``.env`` may
+        # legitimately set other engines/languages.
+        from application.core.settings import Settings
+
+        defaults = Settings.model_construct()
+        assert defaults.OCR_ENGINE == "tesseract"
+        assert defaults.OCR_LANGS == "eng"
+        assert defaults.OCR_BACKEND == "auto"
+
+    def test_none_reads_setting(self, settings, monkeypatch):
+        from application.parser.file.docling_parser import _resolve_ocr_engine
+
+        monkeypatch.setattr(settings, "OCR_ENGINE", "auto")
+        assert _resolve_ocr_engine(None) == "auto"
+
+    def test_unknown_engine_degrades_to_auto(self):
+        from application.parser.file.docling_parser import _resolve_ocr_engine
+
+        assert _resolve_ocr_engine("easyocr") == "auto"
+
+    def test_tesseract_without_binary_degrades_to_auto(self, monkeypatch):
+        from application.parser.file import docling_parser as dp
+
+        monkeypatch.setattr(dp.shutil, "which", lambda name: None)
+        assert dp._resolve_ocr_engine("tesseract") == "auto"
+
+    def test_tesseract_with_binary_selected(self, monkeypatch):
+        from application.parser.file import docling_parser as dp
+
+        monkeypatch.setattr(dp.shutil, "which", lambda name: "/usr/bin/tesseract")
+        assert dp._resolve_ocr_engine("tesseract") == "tesseract"
+
+    def test_ocrmac_off_darwin_degrades_to_auto(self, monkeypatch):
+        from application.parser.file import docling_parser as dp
+
+        monkeypatch.setattr(dp.sys, "platform", "linux")
+        assert dp._resolve_ocr_engine("ocrmac") == "auto"
+
+    def test_rapidocr_missing_degrades_to_auto(self, monkeypatch):
+        import sys
+
+        from application.parser.file import docling_parser as dp
+
+        monkeypatch.setitem(sys.modules, "rapidocr", None)
+        assert dp._resolve_ocr_engine("rapidocr") == "auto"
+
+    def test_deepseek_passes_through(self):
+        from application.parser.file.docling_parser import _resolve_ocr_engine
+
+        assert _resolve_ocr_engine("deepseek") == "deepseek"
+
+    def test_build_auto_returns_none(self):
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        assert _build_ocr_options("auto", None, True) is None
+
+    def test_build_tesseract_reads_ocr_langs(self, settings, monkeypatch):
+        pytest.importorskip("docling")
+        import application.parser.file.ocr_parser as op
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        # Pack inventory unknown: the resolved list is passed through untouched
+        # (a host with tesseract but no chi_sim pack would otherwise drop it).
+        monkeypatch.setattr(op, "tesseract_languages", lambda: None)
+        monkeypatch.setattr(settings, "OCR_LANGS", "eng+chi_sim")
+        options = _build_ocr_options("tesseract", None, True)
+
+        assert type(options).__name__ == "TesseractCliOcrOptions"
+        assert options.lang == ["eng", "chi_sim"]
+        assert options.force_full_page_ocr is True
+
+    def test_build_tesseract_explicit_languages_win(self, monkeypatch):
+        pytest.importorskip("docling")
+        import application.parser.file.ocr_parser as op
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        # Pack inventory unknown: the requested list is passed through untouched.
+        monkeypatch.setattr(op, "tesseract_languages", lambda: None)
+        options = _build_ocr_options("tesseract", ["deu"], False)
+        assert options.lang == ["deu"]
+
+    def test_build_rapidocr(self):
+        pytest.importorskip("docling")
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        options = _build_ocr_options("rapidocr", None, False)
+        assert type(options).__name__ == "RapidOcrOptions"
+        assert options.lang == ["english"]
+
+    def test_build_import_failure_returns_none(self, monkeypatch):
+        import sys
+
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        monkeypatch.setitem(sys.modules, "docling.datamodel.pipeline_options", None)
+        assert _build_ocr_options("tesseract", ["eng"], False) is None
+        assert _build_ocr_options("ocrmac", None, False) is None
+
+    def test_build_generic_failure_returns_none(self, monkeypatch):
+        import sys
+        import types
+
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        fake = types.ModuleType("docling.datamodel.pipeline_options")
+
+        def _boom(**kwargs):
+            raise RuntimeError("bad options")
+
+        fake.RapidOcrOptions = _boom
+        monkeypatch.setitem(sys.modules, "docling.datamodel.pipeline_options", fake)
+        assert _build_ocr_options("rapidocr", None, False) is None
+
+
+@pytest.mark.unit
+class TestDeepseekVlmConverter:
+    """OCR_ENGINE=deepseek swaps the whole pipeline for docling's VLM route."""
+
+    @pytest.fixture(autouse=True)
+    def _requires_docling(self):
+        pytest.importorskip("docling")
+
+    def test_deepseek_builds_vlm_converter(self, monkeypatch):
+        from application.core.settings import settings
         from application.parser.file.docling_parser import DoclingParser
 
-        parser = DoclingParser(use_rapidocr=False)
-        assert parser._get_ocr_options() is None
+        monkeypatch.setattr(settings, "OCR_DEEPSEEK_URL", "http://gpu-host:8000/v1/chat/completions")
+        monkeypatch.setattr(settings, "OCR_DEEPSEEK_MODEL", "deepseek-ocr-x")
 
-    def test_returns_options_when_available(self):
+        built = {}
+
+        def _capture_converter(format_options):
+            built["format_options"] = format_options
+            return MagicMock()
+
+        monkeypatch.setattr(
+            "docling.document_converter.DocumentConverter", _capture_converter
+        )
+        parser = DoclingParser(ocr_enabled=True, ocr_engine="deepseek")
+        parser._create_converter()
+
+        from docling.datamodel.base_models import InputFormat
+        from docling.pipeline.vlm_pipeline import VlmPipeline
+
+        pdf_option = built["format_options"][InputFormat.PDF]
+        image_option = built["format_options"][InputFormat.IMAGE]
+        assert pdf_option.pipeline_cls is VlmPipeline
+        assert image_option.pipeline_cls is VlmPipeline
+        vlm = pdf_option.pipeline_options.vlm_options
+        assert vlm.url == "http://gpu-host:8000/v1/chat/completions"
+        assert vlm.params["model"] == "deepseek-ocr-x"
+        assert pdf_option.pipeline_options.enable_remote_services is True
+
+    def test_deepseek_ignored_when_ocr_disabled(self, monkeypatch):
         from application.parser.file.docling_parser import DoclingParser
 
-        parser = DoclingParser(use_rapidocr=True, ocr_languages=["english"])
+        vlm_called = []
+        monkeypatch.setattr(
+            DoclingParser,
+            "_create_vlm_converter",
+            lambda self: vlm_called.append(True),
+        )
+        monkeypatch.setattr("docling.document_converter.DocumentConverter", MagicMock())
+        DoclingParser(ocr_enabled=False, ocr_engine="deepseek")._create_converter()
 
-        mock_options = MagicMock()
-        with patch(
-            "application.parser.file.docling_parser.DoclingParser._get_ocr_options",
-            return_value=mock_options,
-        ):
-            result = parser._get_ocr_options()
-            assert result is mock_options
-
-    def test_returns_none_on_import_error(self):
-        from application.parser.file.docling_parser import DoclingParser
-
-        parser = DoclingParser(use_rapidocr=True)
-
-        # Simulate the ImportError path
-        original = parser._get_ocr_options
-
-        def patched_get_ocr():
-            try:
-                raise ImportError("No RapidOcrOptions")
-            except ImportError:
-                return None
-
-        parser._get_ocr_options = patched_get_ocr
-        assert parser._get_ocr_options() is None
-        parser._get_ocr_options = original
+        assert vlm_called == []
 
 
 # =====================================================================
@@ -431,38 +569,57 @@ class TestDoclingSubclasses:
 
 @pytest.mark.unit
 class TestDoclingParserGaps:
-    def test_get_ocr_options_import_error_returns_none(self):
-        """Cover lines 148-150: ImportError returns None."""
-        from application.parser.file.docling_parser import DoclingParser
-
-        parser = DoclingParser(ocr_enabled=True, use_rapidocr=True)
-        with patch.dict("sys.modules", {"docling.datamodel.pipeline_options": None}):
-            # Force re-import to trigger ImportError
-            with patch(
-                "builtins.__import__", side_effect=ImportError("no module")
-            ):
-                result = parser._get_ocr_options()
-                assert result is None
-
-    def test_get_ocr_options_generic_error_returns_none(self):
-        """Cover lines 151-153: generic Exception returns None."""
-        from application.parser.file.docling_parser import DoclingParser
-
-        parser = DoclingParser(ocr_enabled=True, use_rapidocr=True)
-        with patch(
-            "builtins.__import__",
-            side_effect=RuntimeError("unexpected"),
-        ):
-            result = parser._get_ocr_options()
-            assert result is None
-
     def test_csv_parser_init(self):
         """Cover line 289: DoclingCSVParser.__init__ calls super."""
         from application.parser.file.docling_parser import DoclingCSVParser
 
         parser = DoclingCSVParser()
         assert parser.export_format == "markdown"
-        assert parser.ocr_enabled is True
+        assert parser.ocr_enabled is False
+
+
+@pytest.mark.unit
+class TestNonOcrParsersLeaveTextAlone:
+    """Office/markup docling parsers never OCR, so the tesseract CJK
+    post-processing must not touch their born-digital exports."""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "DoclingDocxParser",
+            "DoclingPPTXParser",
+            "DoclingXLSXParser",
+            "DoclingHTMLParser",
+            "DoclingCSVParser",
+            "DoclingMarkdownParser",
+            "DoclingAsciiDocParser",
+            "DoclingVTTParser",
+            "DoclingXMLParser",
+        ],
+    )
+    def test_ocr_is_off_by_construction(self, name):
+        from application.parser.file import docling_parser as dp
+
+        assert getattr(dp, name)().ocr_enabled is False
+
+    def test_cjk_spaces_survive_in_a_docx_export(self, monkeypatch):
+        from application.core.settings import settings
+        from application.parser.file.docling_parser import DoclingDocxParser
+
+        monkeypatch.setattr(settings, "OCR_ENGINE", "tesseract")
+        parser = DoclingDocxParser()
+        # Simulate what _create_converter records for an OCR-on parser; the
+        # docx parser is OCR-off so the collapse must stay inert regardless.
+        parser._active_ocr_engine = "tesseract"
+        text = "\u5f20 \u4e09 \u548c \u674e \u56db\n\uff21\uff22\uff23 \uff24\uff25\uff26"
+        assert parser._postprocess_ocr_text(text) == text
+
+    def test_pdf_parser_with_tesseract_still_collapses(self):
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        parser._active_ocr_engine = "tesseract"
+        assert parser._postprocess_ocr_text("\u4e92\u76f8 \u4fdd\u5bc6") == "\u4e92\u76f8\u4fdd\u5bc6"
 
 
 # =====================================================================
@@ -910,6 +1067,12 @@ class TestApplyInferenceSettings:
     and buys nothing for one-shot parses.
     """
 
+    @pytest.fixture(autouse=True)
+    def _requires_docling(self):
+        # These tests reach into docling.datamodel.settings for real; a base
+        # install (docling is an optional extra) skips them.
+        pytest.importorskip("docling")
+
     def test_disables_torch_compile_by_default(self, monkeypatch):
         from application.parser.file.docling_parser import _apply_inference_settings
 
@@ -1041,7 +1204,7 @@ def _set_threshold(monkeypatch, value: int) -> None:
             return getattr(real_settings, name)
 
     stub = _Stub()
-    stub.DOCLING_OCR_MIN_CHARS_PER_PAGE = value
+    stub.OCR_MIN_CHARS_PER_PAGE = value
     monkeypatch.setattr("application.core.settings.settings", stub)
 
 
@@ -1219,11 +1382,11 @@ class TestOCRDropoutGuard:
         assert create.call_count == 1
 
     def test_guard_does_not_apply_to_non_ocr_formats(self):
-        """DOCX parsers inherit ocr_enabled=True but never OCR anything."""
+        """DOCX parsers construct with OCR off: they never OCR anything."""
         from application.parser.file.docling_parser import DoclingDocxParser
 
         parser = DoclingDocxParser()
-        assert parser.ocr_enabled is True
+        assert parser.ocr_enabled is False
         converter = MagicMock()
         converter.convert.return_value = _mock_conversion("Hi", pages=1)
         parser._converter = converter
@@ -1412,6 +1575,12 @@ class TestOCRDropoutHelpers:
 class TestForceFullPageOCRWiring:
     """``force_full_page_ocr`` must reach the pipeline for any OCR engine."""
 
+    @pytest.fixture(autouse=True)
+    def _requires_docling(self):
+        # Builds real ``docling.datamodel.pipeline_options``; a base install
+        # (docling is an optional extra) skips these.
+        pytest.importorskip("docling")
+
     def _pipeline_options(self, monkeypatch, **kwargs):
         import docling.datamodel.pipeline_options as dpo
 
@@ -1430,11 +1599,11 @@ class TestForceFullPageOCRWiring:
         DoclingParser(**kwargs)._create_converter()
         return built[0]
 
-    def test_forced_without_rapidocr(self, monkeypatch):
+    def test_forced_with_default_auto_options(self, monkeypatch):
         options = self._pipeline_options(
             monkeypatch,
             ocr_enabled=True,
-            use_rapidocr=False,
+            ocr_engine="auto",
             force_full_page_ocr=True,
         )
         assert options.ocr_options.force_full_page_ocr is True
@@ -1443,7 +1612,101 @@ class TestForceFullPageOCRWiring:
         options = self._pipeline_options(
             monkeypatch,
             ocr_enabled=True,
-            use_rapidocr=False,
+            ocr_engine="auto",
             force_full_page_ocr=False,
         )
         assert options.ocr_options.force_full_page_ocr is False
+
+
+@pytest.mark.unit
+class TestDoclingTesseractPostprocessing:
+    """docling's tesseract path gets the same CJK glyph-space cleanup as the native engine."""
+
+    def _parser_with_export(self, engine, ocr_enabled=True):
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=ocr_enabled)
+        parser._active_ocr_engine = engine
+        document = MagicMock()
+        document.export_to_markdown.return_value = "## 互相 保密 协议\n\nhello world 你 好"
+        return parser, document
+
+    def test_tesseract_output_collapses_cjk_spaces(self):
+        parser, document = self._parser_with_export("tesseract")
+        assert parser._export_content(document) == "## 互相保密协议\n\nhello world 你好"
+
+    def test_other_engines_untouched(self):
+        parser, document = self._parser_with_export("deepseek")
+        assert parser._export_content(document) == "## 互相 保密 协议\n\nhello world 你 好"
+
+    def test_ocr_off_untouched(self):
+        parser, document = self._parser_with_export("tesseract", ocr_enabled=False)
+        assert parser._export_content(document) == "## 互相 保密 协议\n\nhello world 你 好"
+
+
+@pytest.mark.unit
+class TestDoclingOcrPages:
+    def test_converts_each_requested_page_with_page_range(self, tmp_path):
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        converter = MagicMock()
+
+        def convert(source, page_range=None):
+            result = MagicMock()
+            result.document.export_to_markdown.return_value = f"page {page_range[0]} text " * 5
+            return result
+
+        converter.convert.side_effect = convert
+        parser._converter = converter
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+
+        texts = parser.ocr_pages(pdf, [2, 0])
+
+        assert set(texts) == {2, 0}
+        assert texts[2].startswith("page 3 text")
+        assert texts[0].startswith("page 1 text")
+        assert [c.kwargs["page_range"] for c in converter.convert.call_args_list] == [(3, 3), (1, 1)]
+
+    def test_failure_is_a_parse_error(self, tmp_path):
+        from application.parser.file.base_parser import DocumentParseError
+        from application.parser.file.docling_parser import DoclingPDFParser
+
+        parser = DoclingPDFParser(ocr_enabled=True)
+        parser._converter = MagicMock()
+        parser._converter.convert.side_effect = RuntimeError("boom")
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        with pytest.raises(DocumentParseError, match="page 1 of doc.pdf"):
+            parser.ocr_pages(pdf, [0])
+
+
+@pytest.mark.unit
+class TestTesseractLanguageFilter:
+    def test_uninstalled_packs_are_dropped_with_a_warning(self, monkeypatch, caplog):
+        pytest.importorskip("docling")
+        import application.parser.file.ocr_parser as op
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        monkeypatch.setattr(op, "tesseract_languages", lambda: frozenset({"eng", "osd"}))
+        with caplog.at_level("WARNING"):
+            options = _build_ocr_options("tesseract", ["eng", "chi_sim"], False)
+        assert options.lang == ["eng"]
+        assert "chi_sim" in caplog.text
+
+    def test_all_packs_missing_falls_back_to_eng(self, monkeypatch):
+        pytest.importorskip("docling")
+        import application.parser.file.ocr_parser as op
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        monkeypatch.setattr(op, "tesseract_languages", lambda: frozenset({"eng"}))
+        assert _build_ocr_options("tesseract", ["xyz"], False).lang == ["eng"]
+
+    def test_unknown_inventory_keeps_the_list(self, monkeypatch):
+        pytest.importorskip("docling")
+        import application.parser.file.ocr_parser as op
+        from application.parser.file.docling_parser import _build_ocr_options
+
+        monkeypatch.setattr(op, "tesseract_languages", lambda: None)
+        assert _build_ocr_options("tesseract", ["eng", "deu"], False).lang == ["eng", "deu"]

@@ -1,10 +1,11 @@
 """In-process document parsing for the ``read_document`` tool, run on the Celery parsing worker.
 
 ``parse_document_bytes`` turns untrusted document bytes into a bounded, shaped
-result (markdown/text/structured/chunks) using the BACKEND parsers (Docling by
-default). It applies the same untrusted-content safeguards as uploads — an
-extension whitelist, a byte cap, ``safe_filename`` staging into a temp file, and
-temp cleanup — so a hostile filename or document is treated as inert data.
+result (markdown/text/structured/chunks) using the BACKEND parsers (the engine
+selected by ``DOC_PARSER_ENGINE``; ``structured`` output always needs Docling).
+It applies the same untrusted-content safeguards as uploads — an extension
+whitelist, a byte cap, ``safe_filename`` staging into a temp file, and temp
+cleanup — so a hostile filename or document is treated as inert data.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ _MAX_PAGE_SELECTOR_TOKENS = 20_000
 
 _VALID_OUTPUTS = ("markdown", "text", "structured", "chunks")
 _VALID_OCR = ("auto", "on", "off")
-_VALID_ENGINES = ("auto", "docling", "fast")
+_VALID_ENGINES = ("auto", "docling", "anydoc", "fast")
 
 
 def truncate_text_head_tail(text: str, max_bytes: Optional[int] = None) -> str:
@@ -102,7 +103,13 @@ def _max_input_bytes() -> int:
     return int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 25 * 1024 * 1024))
 
 
-_ZIP_CONTAINER_EXTENSIONS = frozenset({".docx", ".xlsx", ".pptx", ".epub"})
+# Every zip-packaged format a parser map can route: OOXML and its macro/
+# binary variants, OpenDocument, EPUB. Chat attachments have no extension
+# whitelist, so the anydoc engine can receive any of these.
+_ZIP_CONTAINER_EXTENSIONS = frozenset({
+    ".docx", ".docm", ".xlsx", ".xlsm", ".xlsb", ".pptx", ".pptm", ".ppsx", ".ppsm",
+    ".odt", ".ods", ".odp", ".epub",
+})
 
 
 def _zip_bomb_reason(source: Union[bytes, str, Path], suffix: str) -> Optional[str]:
@@ -162,7 +169,15 @@ def _resolve_ocr_enabled(ocr: str) -> bool:
         return True
     if ocr == "off":
         return False
-    return bool(getattr(settings, "DOCLING_OCR_ENABLED", False))
+    return bool(getattr(settings, "OCR_ENABLED", False))
+
+
+def _effective_engine(engine: str) -> str:
+    """Resolve ``auto`` to the server's ``DOC_PARSER_ENGINE``; other values pass through."""
+    if engine != "auto":
+        return engine
+    configured = getattr(settings, "DOC_PARSER_ENGINE", None) or "anydoc"
+    return str(configured).strip().lower()
 
 
 def _pick_parser(suffix: str, *, ocr_enabled: bool, engine: str):
@@ -171,25 +186,44 @@ def _pick_parser(suffix: str, *, ocr_enabled: bool, engine: str):
         legacy = _legacy_parser_for(suffix)
         if legacy is not None:
             return legacy
-    extractor = get_default_file_extractor(ocr_enabled=ocr_enabled)
+        from application.parser.file.anydoc_parser import ANYDOC_GAINED_SUFFIXES
+
+        if suffix in ANYDOC_GAINED_SUFFIXES:
+            # anydoc-only office formats have no legacy parser. Falling through
+            # would run the configured engine the caller explicitly opted out
+            # of; images/audio/.txt still fall through (no legacy alternative).
+            return None
+    if engine in ("docling", "anydoc"):
+        extractor = get_default_file_extractor(ocr_enabled=ocr_enabled, engine=engine)
+    else:
+        extractor = get_default_file_extractor(ocr_enabled=ocr_enabled)
     return extractor.get(suffix)
 
 
 def _legacy_parser_for(suffix: str):
     """Return a non-Docling parser for ``suffix`` (the ``fast`` engine), or None."""
     from application.parser.file.docs_parser import DocxParser, PDFParser
+    from application.parser.file.epub_parser import EpubParser
     from application.parser.file.html_parser import HTMLParser
+    from application.parser.file.json_parser import JSONParser
     from application.parser.file.markdown_parser import MarkdownParser
+    from application.parser.file.pptx_parser import PPTXParser
+    from application.parser.file.rst_parser import RstParser
     from application.parser.file.tabular_parser import ExcelParser, PandasCSVParser
 
     legacy = {
         ".pdf": PDFParser,
         ".docx": DocxParser,
+        ".pptx": PPTXParser,
         ".csv": PandasCSVParser,
         ".xlsx": ExcelParser,
         ".html": HTMLParser,
+        ".xhtml": HTMLParser,
+        ".epub": EpubParser,
         ".md": MarkdownParser,
         ".mdx": MarkdownParser,
+        ".rst": RstParser,
+        ".json": JSONParser,
     }
     cls = legacy.get(suffix)
     return cls() if cls is not None else None
@@ -203,6 +237,17 @@ def _parse_to_text(parser: Any, path: Path) -> str:
     if isinstance(parsed, list):
         return "\n\n".join(str(part) for part in parsed)
     return str(parsed)
+
+
+def _is_native_ocr_parser(parser: Any) -> bool:
+    """True for the native OCR PDF parser (OCR_BACKEND=native): a docling table pass would OCR the scan again."""
+    if parser is None:
+        return False
+    try:
+        from application.parser.file.ocr_parser import NativeOcrPdfParser
+    except Exception:
+        return False
+    return isinstance(parser, NativeOcrPdfParser)
 
 
 def _is_docling_parser(parser: Any) -> bool:
@@ -491,7 +536,29 @@ def _shape(
         }
 
     parser = _pick_parser(suffix, ocr_enabled=ocr_enabled, engine=engine)
-    wants_tables = include_tables and engine != "fast" and output != "chunks"
+    # Under OCR_BACKEND=native with the docling engine the PDF parser is the
+    # native OCR parser wrapping a DoclingParser as its text_parser. A PDF
+    # with a text layer on every page is handed to that parser untouched, so
+    # when tables are wanted run it directly: the single docling conversion
+    # below then yields both the markdown and the tables. Scans and mixed
+    # documents keep the native parser (and the exclusion just below).
+    if include_tables and output != "chunks" and _is_native_ocr_parser(parser):
+        delegate = parser.text_layer_delegate(path)
+        if _is_docling_parser(delegate):
+            parser = delegate
+    # Tables come from a Docling conversion, so they are only collected when
+    # a Docling parser is actually in play: under anydoc/fast a table pass
+    # would be a second, full docling conversion that costs more than the
+    # whole read, and under OCR_BACKEND=native the PDF parser is the native
+    # OCR parser (docling only as its text_parser), where a vanilla
+    # DocumentConverter pass would OCR the scan a second time with docling's
+    # default engine, ignoring OCR_ENGINE.
+    wants_tables = (
+        include_tables
+        and output != "chunks"
+        and _effective_engine(engine) == "docling"
+        and not _is_native_ocr_parser(parser)
+    )
 
     # A Docling-backed parser already converts the whole document to produce its text.
     # When tables are also requested, reuse that single conversion for both the markdown
@@ -513,7 +580,21 @@ def _shape(
 
     if parser is None:
         # A whitelisted extension with no dedicated parser (e.g. .txt) reads as plain
-        # text, matching SimpleDirectoryReader's standard-read fallback.
+        # text, matching SimpleDirectoryReader's standard-read fallback. Binary
+        # office formats that only anydoc reads must not: without anydoc they
+        # would come back as OLE/zip bytes decoded as text.
+        from application.parser.file.anydoc_parser import ANYDOC_GAINED_SUFFIXES
+
+        if suffix in ANYDOC_GAINED_SUFFIXES:
+            if engine == "fast":
+                return {
+                    "error": f"The fast engine has no parser for {suffix} files; "
+                    "use engine='anydoc' or 'auto'."
+                }
+            return {
+                "error": f"No parser is available for {suffix} files: firecrawl-anydoc "
+                "is not installed (pip install firecrawl-anydoc)"
+            }
         text = path.read_text(errors="ignore")
     else:
         text = _parse_to_text(parser, path)
