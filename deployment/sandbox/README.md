@@ -202,8 +202,13 @@ Run a dedicated parsing worker that consumes the `parsing` queue:
 celery -A application.app.celery worker -Q parsing -l INFO
 ```
 
-It can be GPU-enabled with its own env (`OCR_ENABLED=true` plus GPU
-libraries) so OCR-heavy parsing runs on a separate, optionally larger pool.
+It takes its own env, so parse-heavy work runs on a separate, optionally larger
+pool. A GPU helps it only with the docling extra installed
+(`INSTALL_DOCLING=true`), whose layout and table models run on torch:
+`OCR_ENABLED=true` alone keeps the CPU-only native backend with the default
+`OCR_ENGINE=tesseract`, which GPU libraries do not accelerate. Setting
+`OCR_ENGINE=deepseek` instead moves the OCR cost onto the Ollama/vLLM endpoint
+and leaves this worker light.
 
 **Dev / single-worker setups:** without a dedicated parsing worker the default
 worker must also consume `parsing`, or the tool's await never resolves:
