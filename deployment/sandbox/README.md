@@ -188,8 +188,10 @@ Daytona render output matches the Jupyter-backend output.
 
 Document reading no longer runs in this sandbox. The `read_document` tool and the
 workflow native-file extract branch enqueue a `parse_document` Celery task that
-parses the document **in the backend** (Docling, already in
-`application/requirements.txt`) and awaits the result. The task is routed to a
+parses the document **in the backend** (the `DOC_PARSER_ENGINE` parser — anydoc
+by default; Docling only when the optional
+`application/requirements-docling.txt` extra is installed) and awaits the
+result. The task is routed to a
 dedicated **`parsing` queue** (`settings.DOCUMENT_PARSE_QUEUE`, default
 `"parsing"`) so a parse enqueued from inside a Celery worker (headless/scheduled
 agent) is served by a separate worker and never self-deadlocks the awaiting one.

@@ -523,7 +523,7 @@ function Configure-DocProcessing {
         # Bakes tesseract into the locally built images (docker compose
         # --env-file .env build).
         "INSTALL_TESSERACT=true" | Add-Content -Path $ENV_FILE -Encoding utf8
-        Write-ColorText "OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); set OCR_ENGINE=deepseek in .env for a DeepSeek-OCR endpoint instead." -ForegroundColor "Green"
+        Write-ColorText "OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); for a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> in .env." -ForegroundColor "Green"
         $docling_ocr = Read-Host "Also install the Docling layout engine for OCR (better tables/reading order, several GB heavier)? (y/N)"
         if ($docling_ocr -eq "y" -or $docling_ocr -eq "Y") {
             # Locally built images include docling via this build arg; it becomes
@@ -647,7 +647,14 @@ function Use-DocsPublicAPIEndpoint {
             throw "Docker compose pull failed with exit code $LASTEXITCODE"
         }
         
-        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+        # Locally built images must be rebuilt rather than reused:
+        # INSTALL_TESSERACT and INSTALL_DOCLING are build args, so a rerun that
+        # switches OCR on would otherwise keep the image built without them.
+        $up_args = @("up", "-d")
+        if ($COMPOSE_FILE -eq $COMPOSE_FILE_LOCAL) {
+            $up_args = @("up", "--build", "-d")
+        }
+        & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" @up_args
         if ($LASTEXITCODE -ne 0) {
             throw "Docker compose up failed with exit code $LASTEXITCODE"
         }

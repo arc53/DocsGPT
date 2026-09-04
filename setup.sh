@@ -377,7 +377,7 @@ configure_doc_processing() {
         # Bakes tesseract into the locally built images (docker compose
         # --env-file .env build).
         echo "INSTALL_TESSERACT=true" >> "$ENV_FILE"
-        echo -e "${GREEN}OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); set OCR_ENGINE=deepseek in .env for a DeepSeek-OCR endpoint instead.${NC}"
+        echo -e "${GREEN}OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); for a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> in .env.${NC}"
         read -p "$(echo -e "${DEFAULT_FG}Also install the Docling layout engine for OCR (better tables/reading order, several GB heavier)? (y/N): ${NC}")" docling_ocr
         if [[ "$docling_ocr" =~ ^[yY]$ ]]; then
             # Locally built images include docling via this build arg; it becomes
@@ -469,7 +469,14 @@ use_docs_public_api_endpoint() {
     check_and_start_docker
 
     echo -e "\n${NC}Starting Docker Compose...${NC}"
-    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull && docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
+    # Locally built images must be rebuilt rather than reused: INSTALL_TESSERACT
+    # and INSTALL_DOCLING are build args, so a rerun that switches OCR on would
+    # otherwise keep the image that was built without them.
+    up_args=(up -d)
+    if [ "$COMPOSE_FILE" = "$COMPOSE_FILE_LOCAL" ]; then
+        up_args=(up --build -d)
+    fi
+    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull && docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "${up_args[@]}"
     docker_compose_status=$? # Capture exit status of docker compose
 
     echo "Docker Compose Exit Status: $docker_compose_status"
