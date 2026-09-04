@@ -2865,7 +2865,10 @@ class TestAttachmentPreview:
         assert response.headers["Cache-Control"] == "no-store"
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
         mock_storage.generate_presigned_url.assert_called_once_with(
-            self.upload_path, expires_in=300, content_type="image/png"
+            self.upload_path,
+            expires_in=300,
+            content_type="image/png",
+            cache_control="no-store",
         )
         mock_storage.get_file.assert_not_called()
 

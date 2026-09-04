@@ -339,6 +339,10 @@ class AttachmentPreview(Resource):
                     upload_path,
                     expires_in=_ATTACHMENT_PREVIEW_PRESIGNED_TTL_SECONDS,
                     content_type=content_type,
+                    # The S3 object response needs its own directive: the
+                    # Flask 302's no-store does not cover the redirected
+                    # bytes, which would otherwise stay cacheable.
+                    cache_control="no-store",
                 )
                 response = redirect(image_url, code=302)
                 # no-store: preview URLs are identity-authorized, so neither

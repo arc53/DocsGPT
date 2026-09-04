@@ -140,6 +140,7 @@ class S3Storage(BaseStorage):
         path: str,
         expires_in: int = 300,
         content_type: Optional[str] = None,
+        cache_control: Optional[str] = None,
     ) -> str:
         """Return a short-lived presigned GET URL for a private object (TTL <= 1h)."""
         path = self._validate_path(path)
@@ -147,6 +148,8 @@ class S3Storage(BaseStorage):
         params = {"Bucket": self.bucket_name, "Key": path}
         if content_type:
             params["ResponseContentType"] = content_type
+        if cache_control:
+            params["ResponseCacheControl"] = cache_control
         return self.s3.generate_presigned_url(
             "get_object",
             Params=params,
