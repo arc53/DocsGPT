@@ -229,7 +229,12 @@ export default function Conversation() {
       } else {
         const filesAttached = completedAttachments
           .filter((a) => a.id)
-          .map((a) => ({ id: a.id as string, fileName: a.fileName }));
+          .map((a) => ({
+            id: a.id as string,
+            fileName: a.fileName,
+            mimeType: a.mimeType,
+            previewUrl: a.previewUrl,
+          }));
 
         if (!isRetry)
           dispatch(

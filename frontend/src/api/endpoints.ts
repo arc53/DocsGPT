@@ -103,6 +103,12 @@ const endpoints = {
       `/api/delete_chunk?id=${docId}&chunk_id=${chunkId}`,
     UPDATE_CHUNK: '/api/update_chunk',
     STORE_ATTACHMENT: '/api/store_attachment',
+    ATTACHMENT_PREVIEW: (id: string, shareId?: string | null) => {
+      const params = new URLSearchParams();
+      if (shareId) params.set('share', shareId);
+      const qs = params.toString();
+      return `/api/attachment/${encodeURIComponent(id)}/preview${qs ? `?${qs}` : ''}`;
+    },
     STT: '/api/stt',
     TTS: '/api/tts',
     LIVE_STT_START: '/api/stt/live/start',

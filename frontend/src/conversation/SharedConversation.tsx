@@ -112,7 +112,12 @@ export const SharedConversation = () => {
 
     const filesAttached = completedAttachments
       .filter((a) => a.id)
-      .map((a) => ({ id: a.id as string, fileName: a.fileName }));
+      .map((a) => ({
+        id: a.id as string,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+        previewUrl: a.previewUrl,
+      }));
 
     !isRetry &&
       dispatch(
@@ -159,6 +164,7 @@ export const SharedConversation = () => {
           handleQuestionSubmission={handleQuestionSubmission}
           queries={queries}
           status={status}
+          shareId={identifier}
         />
         <div className="flex w-full max-w-290 flex-col items-center gap-4 pb-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12">
           {apiKey ? (

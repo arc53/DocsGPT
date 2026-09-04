@@ -31,13 +31,100 @@ import { isToolCallRunning } from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
 import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
-import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
+import {
+  FEEDBACK,
+  MESSAGE_TYPE,
+  QueryAttachment,
+  ResearchState,
+} from './conversationModels';
 import MarkdownAnswer from './MarkdownAnswer';
 import ResearchProgress from './ResearchProgress';
 import { ToolCallsType } from './types';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
+import { useAttachmentPreviewUrl } from './useAttachmentPreview';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
+
+/**
+ * Thumbnail for a sent image attachment. A ``blob:`` snapshot URL can be
+ * dead (reloaded history, shared link opened in another session) — then
+ * the image errors and we fall back to the document icon, exactly as if
+ * there had never been a preview.
+ */
+export function AttachmentPreviewImage({
+  previewUrl,
+  fileName,
+}: {
+  previewUrl: string;
+  fileName: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
+        <img
+          src={DocumentationDark}
+          alt="Attachment"
+          className="h-3.75 w-3.75 object-fill"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-muted mr-2 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg">
+      <img
+        src={previewUrl}
+        alt={fileName}
+        title={fileName}
+        className="h-full w-full object-cover"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
+}
+
+/**
+ * One sent-attachment chip. A separate component so the preview hook
+ * (one fetch per attachment) runs unconditionally per chip instead of
+ * inside the parent's variable-length ``.map()``.
+ */
+function BubbleAttachmentChip({
+  file,
+  token,
+  shareId,
+}: {
+  file: QueryAttachment;
+  token: string | null;
+  shareId?: string | null;
+}) {
+  // Priority: live snapshot URL -> fetched bytes by ID -> generic icon.
+  const previewUrl = useAttachmentPreviewUrl(file, token, shareId);
+
+  return (
+    <div
+      title={file.fileName}
+      className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-sm"
+    >
+      {previewUrl ? (
+        <AttachmentPreviewImage
+          previewUrl={previewUrl}
+          fileName={file.fileName}
+        />
+      ) : (
+        <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
+          <img
+            src={DocumentationDark}
+            alt="Attachment"
+            className="h-3.75 w-3.75 object-fill"
+          />
+        </div>
+      )}
+      <span className="max-w-37.5 truncate font-normal">{file.fileName}</span>
+    </div>
+  );
+}
 
 const ConversationBubble = forwardRef<
   HTMLDivElement,
@@ -64,7 +151,12 @@ const ConversationBubble = forwardRef<
       updated?: boolean,
       index?: number,
     ) => void;
-    filesAttached?: { id: string; fileName: string }[];
+    filesAttached?: QueryAttachment[];
+    /**
+     * Share identifier when rendering inside a shared conversation view.
+     * Image fetches for history rows then use share-scoped authorization.
+     */
+    shareId?: string | null;
     /**
      * Every artifact in the conversation, for resolving inline links. Refs
      * are conversation-scoped, so a link may point at an earlier turn's file.
@@ -98,6 +190,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
+    shareId,
     conversationArtifacts,
     onOpenArtifact,
     onToolAction,
@@ -109,6 +202,7 @@ const ConversationBubble = forwardRef<
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
+  const token = useSelector(selectToken);
   const [isEditClicked, setIsEditClicked] = useState(false);
   const [editInputBox, setEditInputBox] = useState<string>('');
   const messageRef = useRef<HTMLDivElement>(null);
@@ -144,22 +238,12 @@ const ConversationBubble = forwardRef<
           {filesAttached && filesAttached.length > 0 && (
             <div className="mr-5 mb-4 flex flex-wrap justify-end gap-2">
               {filesAttached.map((file, index) => (
-                <div
+                <BubbleAttachmentChip
                   key={index}
-                  title={file.fileName}
-                  className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-sm"
-                >
-                  <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
-                    <img
-                      src={DocumentationDark}
-                      alt="Attachment"
-                      className="h-3.75 w-3.75 object-fill"
-                    />
-                  </div>
-                  <span className="max-w-37.5 truncate font-normal">
-                    {file.fileName}
-                  </span>
-                </div>
+                  file={file}
+                  token={token}
+                  shareId={shareId}
+                />
               ))}
             </div>
           )}

@@ -50,6 +50,11 @@ type ConversationMessagesProps = {
   isSplitView?: boolean;
   /** Active agent id; threaded into SchedulerToolCallCard. */
   agentId?: string;
+  /**
+   * Share identifier when rendering a shared conversation view, so image
+   * attachment fetches use share-scoped authorization.
+   */
+  shareId?: string | null;
 };
 
 const MS_VIEWPORT_SELECTOR = '[data-slot="message-scroller-viewport"]';
@@ -72,6 +77,7 @@ export default function ConversationMessages({
   onToolAction,
   isSplitView = false,
   agentId,
+  shareId,
 }: ConversationMessagesProps) {
   const { t } = useTranslation();
 
@@ -291,6 +297,7 @@ export default function ConversationMessages({
                       questionNumber={index}
                       sources={query.sources}
                       filesAttached={query.attachments}
+                      shareId={shareId}
                     />
                   </MessageScrollerItem>
                   {responseView && (

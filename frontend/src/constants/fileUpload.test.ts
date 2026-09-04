@@ -1,14 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   ATTACHMENT_FILE_ACCEPT_ATTR,
+  ATTACHMENT_IMAGE_EXTENSIONS,
   ATTACHMENT_PARSER_EXTENSIONS,
+  createImagePreviewUrl,
   getFileExtension,
   hasAttachmentParser,
+  isImageFile,
+  isImageFileName,
   looksLikeText,
   parseUploadErrorMessage,
   parseUploadErrorsByIndex,
   partitionAttachmentFiles,
+  revokeImagePreviewUrl,
 } from './fileUpload';
 
 const file = (name: string, body: BlobPart = 'x', type = '') =>
@@ -236,5 +241,112 @@ describe('parseUploadErrorsByIndex', () => {
     expect(
       parseUploadErrorsByIndex('{"errors":[{"error":"no index"}]}').size,
     ).toBe(0);
+  });
+});
+
+describe('isImageFileName', () => {
+  it('accepts parser-supported image suffixes', () => {
+    for (const name of [
+      'photo.png',
+      'photo.jpg',
+      'photo.jpeg',
+      'scan.tiff',
+      'scan.tif',
+      'diagram.bmp',
+      'shot.webp',
+    ]) {
+      expect(isImageFileName(name)).toBe(true);
+    }
+  });
+
+  it('is case-insensitive', () => {
+    expect(isImageFileName('PHOTO.PNG')).toBe(true);
+    expect(isImageFileName('Photo.JpG')).toBe(true);
+  });
+
+  it('rejects documents, audio, and suffix-less names', () => {
+    for (const name of [
+      'report.pdf',
+      'notes.txt',
+      'song.mp3',
+      'clip.webm',
+      'archive.zip',
+      'noextension',
+      '.png',
+    ]) {
+      expect(isImageFileName(name)).toBe(false);
+    }
+  });
+
+  it('only lists suffixes the attachment pipeline can parse', () => {
+    for (const ext of ATTACHMENT_IMAGE_EXTENSIONS) {
+      expect(ext.startsWith('.')).toBe(true);
+      expect(ATTACHMENT_PARSER_EXTENSIONS).toContain(ext);
+    }
+    expect(ATTACHMENT_IMAGE_EXTENSIONS).not.toContain('.pdf');
+    expect(ATTACHMENT_IMAGE_EXTENSIONS).not.toContain('.mp3');
+  });
+});
+
+describe('isImageFile', () => {
+  it('trusts an image mime type even with an odd name', () => {
+    expect(isImageFile({ type: 'image/png', name: 'blob' })).toBe(true);
+    expect(isImageFile({ type: 'IMAGE/JPEG', name: 'blob' })).toBe(true);
+  });
+
+  it('falls back to the suffix when the picker reports no type', () => {
+    expect(isImageFile({ type: '', name: 'photo.png' })).toBe(true);
+    expect(isImageFile({ name: 'photo.png' })).toBe(true);
+  });
+
+  it('rejects documents even when the mime type is present', () => {
+    expect(isImageFile({ type: 'application/pdf', name: 'doc.pdf' })).toBe(
+      false,
+    );
+    expect(isImageFile({ type: '', name: 'notes.txt' })).toBe(false);
+  });
+});
+
+describe('createImagePreviewUrl / revokeImagePreviewUrl', () => {
+  const realCreate = URL.createObjectURL;
+  const realRevoke = URL.revokeObjectURL;
+  const created: unknown[] = [];
+  const revoked: string[] = [];
+
+  beforeEach(() => {
+    created.length = 0;
+    revoked.length = 0;
+    URL.createObjectURL = ((obj: unknown) => {
+      created.push(obj);
+      return 'blob:mock-url';
+    }) as typeof URL.createObjectURL;
+    URL.revokeObjectURL = ((url: string) => {
+      revoked.push(url);
+    }) as typeof URL.revokeObjectURL;
+  });
+
+  afterEach(() => {
+    URL.createObjectURL = realCreate;
+    URL.revokeObjectURL = realRevoke;
+  });
+
+  it('creates a preview URL for images only', () => {
+    const image = new File(['bytes'], 'photo.png', { type: 'image/png' });
+    expect(createImagePreviewUrl(image)).toBe('blob:mock-url');
+    expect(created).toEqual([image]);
+  });
+
+  it('creates no preview URL for PDFs/documents', () => {
+    const pdf = new File(['bytes'], 'doc.pdf', { type: 'application/pdf' });
+    expect(createImagePreviewUrl(pdf)).toBeUndefined();
+    expect(created).toEqual([]);
+  });
+
+  it('revokes blob URLs and ignores anything else', () => {
+    revokeImagePreviewUrl('blob:mock-url');
+    expect(revoked).toEqual(['blob:mock-url']);
+    revokeImagePreviewUrl(undefined);
+    revokeImagePreviewUrl('https://example.com/photo.png');
+    expect(revoked).toEqual(['blob:mock-url']);
   });
 });

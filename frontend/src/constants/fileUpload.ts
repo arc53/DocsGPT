@@ -144,6 +144,83 @@ export function getFileExtension(name: string): string {
 }
 
 /**
+ * Image suffixes the attachment pipeline can parse. This is the image
+ * subset of ``ATTACHMENT_PARSER_EXTENSIONS`` — it mirrors the backend's
+ * image support (application/parser/file/constants.py), so update both
+ * together. Used as the fallback image check when the picker reports no
+ * (or an untrustworthy) mime type.
+ */
+export const ATTACHMENT_IMAGE_EXTENSIONS: readonly string[] = [
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.tiff',
+  '.tif',
+  '.bmp',
+  '.webp',
+];
+
+/** Whether a file name has an image suffix the backend can parse. */
+export function isImageFileName(name: string): boolean {
+  return ATTACHMENT_IMAGE_EXTENSIONS.includes(getFileExtension(name));
+}
+
+/**
+ * Whether an upload should get an image preview. The picker's mime type
+ * decides first; the suffix is the fallback for pickers that report none
+ * (mobile) or lie about it — never the other way round.
+ */
+export function isImageFile(file: { type?: string; name: string }): boolean {
+  if (
+    typeof file.type === 'string' &&
+    file.type.toLowerCase().startsWith('image/')
+  ) {
+    return true;
+  }
+  return isImageFileName(file.name);
+}
+
+/**
+ * A short-lived ``blob:`` URL for an image preview, or ``undefined`` for
+ * non-images. The caller owns the URL: hand it to ``revokeImagePreviewUrl``
+ * once no chip or conversation bubble shows it anymore. Never throws —
+ * hosts without ``URL.createObjectURL`` simply get no preview.
+ */
+export function createImagePreviewUrl(file: File): string | undefined {
+  if (!isImageFile(file)) return undefined;
+  try {
+    if (
+      typeof URL !== 'undefined' &&
+      typeof URL.createObjectURL === 'function'
+    ) {
+      return URL.createObjectURL(file);
+    }
+  } catch {
+    // No blob-URL support here — the attachment still uploads, it just
+    // renders with the generic document icon.
+  }
+  return undefined;
+}
+
+/**
+ * Release a URL from ``createImagePreviewUrl``. Safe to call with
+ * ``undefined``, non-blob URLs, or an already-revoked URL.
+ */
+export function revokeImagePreviewUrl(previewUrl: string | undefined): void {
+  if (!previewUrl || !previewUrl.startsWith('blob:')) return;
+  try {
+    if (
+      typeof URL !== 'undefined' &&
+      typeof URL.revokeObjectURL === 'function'
+    ) {
+      URL.revokeObjectURL(previewUrl);
+    }
+  } catch {
+    // Already revoked — nothing to do.
+  }
+}
+
+/**
  * Whether the backend has a parser for this suffix. False is not a refusal:
  * the file then has to read as text. Never decided by the mime type the
  * picker reports — mobile pickers ignore `accept` and lie about types.

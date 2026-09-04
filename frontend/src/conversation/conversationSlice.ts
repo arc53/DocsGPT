@@ -6,6 +6,7 @@ import {
 } from '@reduxjs/toolkit';
 
 import conversationService from '../api/services/conversationService';
+import { revokeImagePreviewUrl } from '../constants/fileUpload';
 import {
   sseEventReceived,
   type SSEEvent,
@@ -49,6 +50,25 @@ export function mapServerQueryToClient(raw: any): Query {
   // renderer from rendering a blank bubble for in-flight rows and
   // matches the shape live-stream queries start with.
   const toolCalls = Array.isArray(raw?.tool_calls) ? raw.tool_calls : undefined;
+  // The server projects attachments as {id, fileName, mime_type}; the
+  // client snapshot shape is {id, fileName, mimeType, previewUrl}.
+  // Normalise here so reloads and live rows render through one type.
+  const attachments = Array.isArray(raw?.attachments)
+    ? raw.attachments
+        .filter(
+          (a: unknown): a is Record<string, unknown> =>
+            !!a &&
+            typeof (a as Record<string, unknown>).id === 'string' &&
+            typeof (a as Record<string, unknown>).fileName === 'string',
+        )
+        .map((a: Record<string, unknown>) => ({
+          id: a.id as string,
+          fileName: a.fileName as string,
+          mimeType: (a.mime_type ?? a.mimeType ?? undefined) as
+            string | undefined,
+          previewUrl: (a.previewUrl ?? undefined) as string | undefined,
+        }))
+    : undefined;
   const sources = Array.isArray(raw?.sources) ? raw.sources : undefined;
   const query: Query = {
     prompt: raw?.prompt ?? '',
@@ -57,7 +77,7 @@ export function mapServerQueryToClient(raw: any): Query {
     sources: sources && sources.length > 0 ? sources : undefined,
     tool_calls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
     workflow_run_id: raw?.workflow_run_id ?? undefined,
-    attachments: raw?.attachments ?? undefined,
+    attachments,
     messageId: raw?.message_id ?? undefined,
     messageStatus: status,
     requestId: raw?.request_id ?? undefined,
@@ -1236,5 +1256,48 @@ conversationListenerMiddleware.startListening({
         error,
       );
     }
+  },
+});
+
+// Listener (not a reducer): releasing an object URL is a browser side
+// effect, and reducers must stay replay-safe. Outgoing query snapshots
+// unmount with their bubbles, so no live <img> references these URLs
+// afterwards — revoking here cannot blank a rendered preview.
+function revokeSnapshotPreviewUrls(queries: Query[]): void {
+  for (const query of queries) {
+    for (const attachment of query.attachments ?? []) {
+      revokeImagePreviewUrl(attachment.previewUrl);
+    }
+  }
+}
+
+conversationListenerMiddleware.startListening({
+  actionCreator: setConversation,
+  effect: (_action, listenerApi) => {
+    revokeSnapshotPreviewUrls(
+      (listenerApi.getOriginalState() as RootState).conversation.queries,
+    );
+  },
+});
+
+conversationListenerMiddleware.startListening({
+  actionCreator: resetConversation,
+  effect: (_action, listenerApi) => {
+    revokeSnapshotPreviewUrls(
+      (listenerApi.getOriginalState() as RootState).conversation.queries,
+    );
+  },
+});
+
+conversationListenerMiddleware.startListening({
+  actionCreator: resendQuery,
+  effect: (action, listenerApi) => {
+    // Only the trimmed tail unmounts; the kept row stays rendered, so
+    // its snapshot is left alone.
+    const { index } = action.payload;
+    const queries = (listenerApi.getOriginalState() as RootState).conversation
+      .queries;
+    if (index < 0 || index >= queries.length) return;
+    revokeSnapshotPreviewUrls(queries.slice(index + 1));
   },
 });

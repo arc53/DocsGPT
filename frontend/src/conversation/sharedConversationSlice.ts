@@ -264,19 +264,25 @@ export const sharedConversationSlice = createSlice({
       state.queries[index].thought = '';
     },
     saveToLocalStorage(state) {
+      // Persist without session-local blob preview URLs: they die with
+      // the document, and a reloaded row must resolve its image through
+      // the preview endpoint (by ID + share identifier) instead.
+      const last = state.queries[state.queries.length - 1];
+      const storable = {
+        ...last,
+        attachments: last?.attachments?.map((a) => ({
+          id: a.id,
+          fileName: a.fileName,
+          mimeType: a.mimeType,
+        })),
+      };
       const previousQueriesStr = localStorage.getItem(state.identifier);
       previousQueriesStr
         ? localStorage.setItem(
             state.identifier,
-            JSON.stringify([
-              ...JSON.parse(previousQueriesStr),
-              state.queries[state.queries.length - 1],
-            ]),
+            JSON.stringify([...JSON.parse(previousQueriesStr), storable]),
           )
-        : localStorage.setItem(
-            state.identifier,
-            JSON.stringify([state.queries[state.queries.length - 1]]),
-          );
+        : localStorage.setItem(state.identifier, JSON.stringify([storable]));
     },
   },
   extraReducers(builder) {

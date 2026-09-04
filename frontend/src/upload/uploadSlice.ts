@@ -1,5 +1,11 @@
-import { createSelector, createSlice, PayloadAction } from '@reduxjs/toolkit';
+import {
+  createListenerMiddleware,
+  createSelector,
+  createSlice,
+  PayloadAction,
+} from '@reduxjs/toolkit';
 
+import { revokeImagePreviewUrl } from '../constants/fileUpload';
 import {
   DismissedEntry,
   isDismissed,
@@ -46,6 +52,15 @@ export interface Attachment {
    */
   attachmentId?: string;
   token_count?: number;
+  /** Picker-reported mime type (e.g. ``image/png``), when known. */
+  mimeType?: string;
+  /**
+   * Session-local ``blob:`` preview URL for image attachments, created at
+   * upload time. Never persisted — it dies with the document. Revoked when
+   * the chip is removed/cleared and, after a send transfers ownership to
+   * the query snapshot, when that query leaves the conversation state.
+   */
+  previewUrl?: string;
   /** Why a ``failed`` attachment failed, when known (server or client gate). */
   errorMessage?: string;
 }
@@ -426,5 +441,59 @@ export const selectCompletedAttachments = createSelector(
   (attachments) => attachments.filter((att) => att.status === 'completed'),
 );
 export const selectUploadTasks = (state: RootState) => state.upload.tasks;
+
+/** Preview URLs referenced by any live query snapshot (both chat scopes). */
+function collectLiveQueryPreviewUrls(state: RootState): Set<string> {
+  const live = new Set<string>();
+  const scopes = [state.conversation.queries, state.sharedConversation.queries];
+  for (const queries of scopes) {
+    for (const query of queries ?? []) {
+      for (const attachment of query.attachments ?? []) {
+        if (attachment.previewUrl) live.add(attachment.previewUrl);
+      }
+    }
+  }
+  return live;
+}
+
+// Listener (not a reducer): releasing an object URL is a browser side
+// effect, and reducers must stay replay-safe — re-running a reducer (Redux
+// DevTools time-travel) must never destroy URLs live state still shows.
+export const uploadListenerMiddleware = createListenerMiddleware();
+
+uploadListenerMiddleware.startListening({
+  actionCreator: removeAttachment,
+  effect: (action, listenerApi) => {
+    // A row still present in the composer was never snapshotted into a
+    // query (sends clear the composer in the same synchronous handler),
+    // so no bubble can reference this URL.
+    const original = listenerApi.getOriginalState() as RootState;
+    const removed = original.upload.attachments.find(
+      (att) => att.id === action.payload,
+    );
+    revokeImagePreviewUrl(removed?.previewUrl);
+  },
+});
+
+uploadListenerMiddleware.startListening({
+  actionCreator: clearAttachments,
+  effect: (_action, listenerApi) => {
+    const original = listenerApi.getOriginalState() as RootState;
+    const dropped = original.upload.attachments.filter(
+      (att) => att.status !== 'uploading' && att.status !== 'processing',
+    );
+    if (dropped.length === 0) return;
+    // A just-sent row's URL may already live on in its query snapshot
+    // (the send handler snapshotted first): the bubble fetches by ID as
+    // a fallback, but keeping the instant URL avoids a flash + refetch.
+    const state = listenerApi.getState() as RootState;
+    const live = collectLiveQueryPreviewUrls(state);
+    for (const att of dropped) {
+      if (att.previewUrl && !live.has(att.previewUrl)) {
+        revokeImagePreviewUrl(att.previewUrl);
+      }
+    }
+  },
+});
 
 export default uploadSlice.reducer;
