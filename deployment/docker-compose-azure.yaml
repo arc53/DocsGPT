@@ -14,6 +14,8 @@ services:
       context: ../application
       args:
         INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
+        # Off by default; deployments running OCR_ENABLED=true with tesseract
+        # must set INSTALL_TESSERACT=true before rebuilding (see docker-compose.yaml).
         INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
     env_file:
       - ../.env
@@ -39,6 +41,8 @@ services:
       context: ../application
       args:
         INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
+        # Off by default; deployments running OCR_ENABLED=true with tesseract
+        # must set INSTALL_TESSERACT=true before rebuilding (see docker-compose.yaml).
         INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
     # `parsing` queue carries read_document/parse_document; required for its await to resolve.
     command: celery -A application.app.celery worker -l INFO -Q docsgpt,parsing

@@ -367,7 +367,7 @@ configure_doc_processing() {
     # pre-built Docker Hub images ship without it, so there OCR stays off
     # (its default) rather than being switched on to fail on every scan.
     if [[ "$COMPOSE_FILE" != "$COMPOSE_FILE_LOCAL" ]]; then
-        echo -e "${YELLOW}OCR for scanned PDFs and images stays off: the pre-built Docker Hub images do not include tesseract. To use OCR, rerun setup and choose option 5 (build images locally), or point OCR_ENGINE=deepseek at a DeepSeek-OCR endpoint in .env.${NC}"
+        echo -e "${YELLOW}OCR for scanned PDFs and images stays off: the pre-built Docker Hub images do not include tesseract. To use OCR, rerun setup and choose option 5 (build images locally), or use a DeepSeek-OCR endpoint by adding OCR_ENABLED=true, OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> to .env.${NC}"
         return
     fi
 
