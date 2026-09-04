@@ -72,10 +72,12 @@ there, point `OCR_ENGINE=deepseek` at a DeepSeek-OCR endpoint or install
 unaffected).
 
 <Callout type="warning" emoji="⚠️">
-**Upgrading:** earlier images always included tesseract. If your deployment
-runs `OCR_ENABLED=true` with the `tesseract` engine, add
-`INSTALL_TESSERACT=true` to `.env` before rebuilding, or OCR of scanned pages
-stops working after the rebuild.
+**Upgrading:** earlier images always included docling, and OCR ran through the
+RapidOCR engine bundled with it, so no system package was needed. The default
+image now ships neither docling nor tesseract. If your deployment uses the
+`tesseract` engine (the default) with `OCR_ENABLED=true` or
+`OCR_ATTACHMENTS_ENABLED=true`, add `INSTALL_TESSERACT=true` to `.env` before
+rebuilding, or OCR of scanned pages stops working after the rebuild.
 </Callout>
 
 ## Installing the docling engine
