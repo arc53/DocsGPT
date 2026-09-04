@@ -13,7 +13,7 @@ git clone https://github.com/arc53/DocsGPT.git
 cd DocsGPT/docs
 ```
 
-The docs folder contains the markdown files that make up the documentation. The majority of the files are in the pages directory. Some notable files in this folder include:
+The docs directory houses the markdown source files for this documentation, with the core content primarily organized within the pages sub-directory.
 
 `index.mdx`: The main documentation file.
 `_app.js`: This file is used to customize the default Next.js application shell.
