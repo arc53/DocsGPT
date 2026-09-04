@@ -259,6 +259,13 @@ class OpenAILLM(BaseLLM):
         # fallback restream of the already-delivered answer.
         self._stream_reached_finish = False
         self._imported_response_id = None
+        # Hash of the system head the current Responses chain already holds.
+        # The server appends a re-sent system message after the stored
+        # transcript instead of deduping it, so a chained round only carries
+        # the head when it changed.
+        self._chain_system_hash = None
+        # Prompt-cache routing key (the user id), set by the agent per call.
+        self._prompt_cache_key = None
         # Files-API ids for inline ``file_data`` content parts already
         # uploaded, keyed by content hash. First-line cache for the
         # in-request tool loop; the Redis-backed cross-request cache
@@ -304,6 +311,7 @@ class OpenAILLM(BaseLLM):
             "call_ids": sorted(self._last_response_call_ids or ()),
             "reasoning_items": self._last_reasoning_items,
             "reasoning_for_calls": self._reasoning_for_calls,
+            "system_hash": self._chain_system_hash,
         }
 
     def import_responses_state(self, state: dict | None) -> bool:
@@ -318,6 +326,7 @@ class OpenAILLM(BaseLLM):
         self._last_response_call_ids = set(state.get("call_ids") or ())
         self._last_reasoning_items = list(state.get("reasoning_items") or [])
         self._reasoning_for_calls = dict(state.get("reasoning_for_calls") or {})
+        self._chain_system_hash = state.get("system_hash")
         return True
 
     def start_responses_turn(self) -> None:
@@ -327,6 +336,7 @@ class OpenAILLM(BaseLLM):
         self._last_response_id = None
         self._last_response_call_ids = set()
         self._imported_response_id = None
+        self._chain_system_hash = None
         self._last_finish_reason = None
 
     def _resolve_file_part(self, item):
@@ -1099,6 +1109,19 @@ class OpenAILLM(BaseLLM):
         ]
         return head + carried + messages[last_assistant + 1:]
 
+    @staticmethod
+    def _system_fingerprint(messages):
+        """Hash of the system messages' content; ``None`` when there are none."""
+        parts = [
+            m.get("content")
+            for m in messages
+            if isinstance(m, dict) and m.get("role") == "system"
+        ]
+        if not parts:
+            return None
+        encoded = json.dumps(parts, sort_keys=True, default=str).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
     def _build_responses_input(self, messages, previous_response_id):
         """Build the Responses ``input`` list, honouring store-mode chaining.
 
@@ -1119,11 +1142,21 @@ class OpenAILLM(BaseLLM):
         """
         chained = bool(previous_response_id and settings.OPENAI_RESPONSES_STORE)
         if not chained:
+            self._chain_system_hash = self._system_fingerprint(messages)
             return self._to_responses_input(messages, chained=False), None
 
-        input_items = self._to_responses_input(
-            self._trim_for_previous_response(messages), chained=True
-        )
+        trimmed = self._trim_for_previous_response(messages)
+        head_hash = self._system_fingerprint(trimmed)
+        if head_hash and head_hash == self._chain_system_hash:
+            # The server appends a re-sent system message after the stored
+            # transcript instead of replacing it (measured on Azure: 11,239
+            # vs 5,635 input tokens for the same chained turn), so an
+            # unchanged head stays home. After a compression the head also
+            # carries the summary, which made every tool round re-append it.
+            trimmed = [m for m in trimmed if m.get("role") != "system"]
+        elif head_hash:
+            self._chain_system_hash = head_hash
+        input_items = self._to_responses_input(trimmed, chained=True)
         expected = set(self._last_response_call_ids or ())
         if expected:
             kept, dropped = [], []
@@ -1156,6 +1189,7 @@ class OpenAILLM(BaseLLM):
                     "request the provider would reject",
                     sorted(missing),
                 )
+                self._chain_system_hash = self._system_fingerprint(messages)
                 return self._to_responses_input(messages, chained=False), None
         return input_items, previous_response_id
 
@@ -1258,6 +1292,18 @@ class OpenAILLM(BaseLLM):
         # carryover working whether or not the response is also retained
         # server-side (store=true).
         params["include"] = ["reasoning.encrypted_content"]
+        # Backstop against a chain that outgrows the model's native window:
+        # the provider drops middle items instead of failing every request.
+        if getattr(settings, "OPENAI_RESPONSES_TRUNCATION_AUTO", False):
+            params["truncation"] = "auto"
+        # Prompt-cache hints. The key pins a conversation to one cache shard;
+        # retention asks for the extended tier where the deployment offers it.
+        cache_key = getattr(self, "_prompt_cache_key", None)
+        if cache_key and getattr(settings, "OPENAI_PROMPT_CACHE_KEY", False):
+            params["prompt_cache_key"] = str(cache_key)
+        retention = getattr(settings, "OPENAI_PROMPT_CACHE_RETENTION", None)
+        if retention:
+            params["prompt_cache_retention"] = retention
         return params
 
     @staticmethod

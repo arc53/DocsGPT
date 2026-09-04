@@ -592,6 +592,22 @@ class LLMHandler(ABC):
             include_tool_calls=include_tool_calls,
         )
 
+    @staticmethod
+    def _reset_responses_chain(agent, metadata) -> None:
+        """After a compression the rebuilt local messages ARE the context.
+
+        Forget the provider-side chain so the next call is not prepended with
+        the uncompressed transcript (prod: 236k input tokens billed for a
+        four-message rebuilt input), and stamp the compression epoch so later
+        turns do not chain onto pre-compression responses either.
+        """
+        starter = getattr(getattr(agent, "llm", None), "start_responses_turn", None)
+        if callable(starter):
+            starter()
+        timestamp = getattr(metadata, "timestamp", None)
+        if timestamp is not None:
+            agent.last_compression_at = timestamp
+
     def _perform_mid_execution_compression(
         self, agent, messages: List[Dict]
     ) -> tuple[bool, Optional[List[Dict]]]:
@@ -661,11 +677,18 @@ class LLMHandler(ABC):
                 logger.warning("Compression not performed")
                 return False, None
 
-            # Check if compression actually reduced tokens
+            # Check if compression actually reduced tokens — and produced
+            # anything at all: a 0-token "summary" replaced a 494k-token
+            # conversation with nothing in prod (2026-08-27).
             if result.metadata:
-                if result.metadata.compressed_token_count >= result.metadata.original_token_count:
+                if (
+                    result.metadata.compressed_token_count <= 0
+                    or result.metadata.compressed_token_count
+                    >= result.metadata.original_token_count
+                ):
                     logger.warning(
-                        "Compression did not reduce token count; falling back to minimal pruning"
+                        "Compression did not reduce token count (or produced an "
+                        "empty summary); falling back to minimal pruning"
                     )
                     pruned = self._prune_messages_minimal(messages)
                     if pruned:
@@ -685,10 +708,15 @@ class LLMHandler(ABC):
                     agent.conversation_id, result.metadata.to_dict()
                 )
 
-            # Update agent's compressed summary for downstream persistence
+            # Update agent's compressed summary for downstream persistence.
+            # ``compress_mid_execution`` already wrote the compression point
+            # and the row above is the visible summary, so this IS saved —
+            # leaving the flag False made the route persist both again
+            # (prod: every mid-execution compression stored twice).
             agent.compressed_summary = result.compressed_summary
             agent.compression_metadata = result.metadata.to_dict() if result.metadata else None
-            agent.compression_saved = False
+            agent.compression_saved = True
+            self._reset_responses_chain(agent, result.metadata)
 
             # Reset the context limit flag so tools can continue
             agent.context_limit_reached = False
@@ -827,7 +855,9 @@ class LLMHandler(ABC):
 
             agent.compressed_summary = compressed_summary
             agent.compression_metadata = metadata.to_dict()
+            # Nothing reached the DB on this path; the route persists once.
             agent.compression_saved = False
+            self._reset_responses_chain(agent, metadata)
             agent.context_limit_reached = False
             agent.current_token_count = 0
 

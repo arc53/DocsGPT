@@ -1,20 +1,22 @@
 """High-level compression orchestration."""
 
 import logging
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from application.api.answer.services.compression.service import CompressionService
 from application.api.answer.services.compression.threshold_checker import (
     CompressionThresholdChecker,
 )
 from application.api.answer.services.compression.types import CompressionResult
-from application.api.answer.services.conversation_service import ConversationService
 from application.core.model_utils import (
     get_api_key_for_provider,
     get_provider_from_model_id,
 )
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
+
+if TYPE_CHECKING:  # pragma: no cover - annotation only
+    from application.api.answer.services.conversation_service import ConversationService
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ class CompressionOrchestrator:
 
     def __init__(
         self,
-        conversation_service: ConversationService,
+        conversation_service: "ConversationService",
         threshold_checker: Optional[CompressionThresholdChecker] = None,
     ):
         """
@@ -89,6 +91,23 @@ class CompressionOrchestrator:
                 current_query_tokens,
                 user_id=registry_user_id,
             ):
+                compression_meta = conversation.get("compression_metadata") or {}
+                points = compression_meta.get("compression_points") or []
+                if compression_meta.get("is_compressed") and points:
+                    # A saved summary applies to every later turn, not only
+                    # the turn that made it (measured in prod: the full raw
+                    # history was replayed on the very next turn).
+                    summary, recent = self._read_only_service(
+                        model_id
+                    ).get_compressed_context(conversation)
+                    return CompressionResult.success_from_existing(
+                        summary,
+                        recent,
+                        last_compression_at=(
+                            compression_meta.get("last_compression_at")
+                            or points[-1].get("timestamp")
+                        ),
+                    )
                 # No compression needed, return full history
                 queries = conversation.get("queries", [])
                 return CompressionResult.success_no_compression(queries)
@@ -108,6 +127,12 @@ class CompressionOrchestrator:
                 f"Error in compress_if_needed: {str(e)}", exc_info=True
             )
             return CompressionResult.failure(str(e))
+
+    def _read_only_service(self, model_id: str) -> CompressionService:
+        """A service for applying saved compression points; no LLM is involved."""
+        return CompressionService(
+            llm=None, model_id=model_id, conversation_service=self.conversation_service
+        )
 
     def _perform_compression(
         self,
@@ -171,7 +196,8 @@ class CompressionOrchestrator:
                 conversation_service=self.conversation_service,
             )
 
-            # Compress all queries up to the latest
+            # Compress everything since the last compression point up to the
+            # latest query; the earlier queries are already in that point.
             queries_count = len(conversation.get("queries", []))
             compress_up_to = queries_count - 1
 
@@ -179,14 +205,41 @@ class CompressionOrchestrator:
                 logger.warning("No queries to compress")
                 return CompressionResult.success_no_compression([])
 
+            points = (conversation.get("compression_metadata") or {}).get(
+                "compression_points"
+            ) or []
+            start_index = 0
+            if points:
+                try:
+                    start_index = int(points[-1].get("query_index", -1)) + 1
+                except (TypeError, ValueError):
+                    start_index = 0
+            if start_index > compress_up_to:
+                logger.info(
+                    f"No new queries since the last compression point for "
+                    f"conversation {conversation_id}; reusing its summary"
+                )
+                summary, recent = compression_service.get_compressed_context(
+                    conversation
+                )
+                return CompressionResult.success_from_existing(
+                    summary, recent, last_compression_at=points[-1].get("timestamp")
+                )
+
             logger.info(
                 f"Initiating compression for conversation {conversation_id}: "
-                f"compressing all {queries_count} queries (0-{compress_up_to})"
+                f"compressing queries {start_index}-{compress_up_to} of "
+                f"{queries_count}"
+                + (
+                    f" on top of the summary at query {points[-1].get('query_index')}"
+                    if points
+                    else ""
+                )
             )
 
             # Perform compression and save to DB
             metadata = compression_service.compress_and_save(
-                conversation_id, conversation, compress_up_to
+                conversation_id, conversation, compress_up_to, start_index=start_index
             )
 
             logger.info(

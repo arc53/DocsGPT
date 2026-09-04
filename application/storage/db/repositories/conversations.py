@@ -506,6 +506,21 @@ class ConversationsRepository:
         # Shape-gate: see ``set_compression_flags``.
         if not looks_like_uuid(conversation_id):
             return False
+        # Idempotent on the same point: two persist paths (the mid-execution
+        # handler and the route's end-of-stream save) used to both append it.
+        last_point = self._conn.execute(
+            text(
+                "SELECT compression_metadata -> 'compression_points' -> -1 "
+                "FROM conversations WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": conversation_id},
+        ).scalar()
+        if (
+            isinstance(last_point, dict)
+            and last_point.get("query_index") == point.get("query_index")
+            and last_point.get("compressed_summary") == point.get("compressed_summary")
+        ):
+            return True
         result = self._conn.execute(
             text(
                 """

@@ -8,6 +8,7 @@ from application.agents.agent_creator import AgentCreator
 from application.agents.default_tools import synthesized_default_tools
 from application.api.answer.services.compression import CompressionOrchestrator
 from application.api.answer.services.compression.token_counter import TokenCounter
+from application.api.answer.services.compression.types import is_compression_summary_row
 from application.api.answer.services.conversation_service import ConversationService
 from application.prompts.composer import compose_preset, is_composed_preset
 from application.api.answer.services.prompt_renderer import (
@@ -146,6 +147,9 @@ class StreamProcessor:
         self._required_tool_actions: Optional[Dict[str, Set[Optional[str]]]] = None
         self.compressed_summary: Optional[str] = None
         self.compressed_summary_tokens: int = 0
+        # When the conversation's history was last compressed (DB point or
+        # one made this turn); the agent stamps it on the turn's metadata.
+        self.last_compression_at: Optional[Any] = None
         self._agent_data: Optional[Dict[str, Any]] = None
 
     def initialize(self):
@@ -313,6 +317,7 @@ class StreamProcessor:
                         ),
                     }
                     for query in conversation.get("queries", [])
+                    if not is_compression_summary_row(query)
                 ]
         else:
             # model_user_id keeps history trim aligned with the BYOM's
@@ -355,10 +360,11 @@ class StreamProcessor:
                         ),
                     }
                     for query in conversation.get("queries", [])
+                    if not is_compression_summary_row(query)
                 ]
                 return
 
-            if result.compression_performed and result.compressed_summary:
+            if result.compressed_summary:
                 self.compressed_summary = result.compressed_summary
                 self.compressed_summary_tokens = TokenCounter.count_message_tokens(
                     [{"content": result.compressed_summary}]
@@ -366,11 +372,17 @@ class StreamProcessor:
                 logger.info(
                     f"Using compressed summary ({self.compressed_summary_tokens} tokens) "
                     f"+ {len(result.recent_queries)} recent messages"
+                    + ("" if result.compression_performed else " (saved compression point)")
                 )
+            self.last_compression_at = result.last_compression_at
 
             self.history = result.as_history()
             # Preserve metadata from recent queries (as_history only has prompt/response)
-            recent = result.recent_queries if result.recent_queries else conversation.get("queries", [])
+            recent = [
+                q
+                for q in (result.recent_queries or conversation.get("queries", []))
+                if not is_compression_summary_row(q)
+            ]
             for i, entry in enumerate(self.history):
                 # Match by index from the end of recent queries
                 offset = len(recent) - len(self.history)
@@ -1741,6 +1753,7 @@ class StreamProcessor:
             "llm_params": self.data.get("llm_params") or {},
             "multimodal_content": request_multimodal,
             "compressed_summary": self.compressed_summary,
+            "last_compression_at": self.last_compression_at,
             "llm": llm,
             "llm_handler": llm_handler,
             "tool_executor": tool_executor,

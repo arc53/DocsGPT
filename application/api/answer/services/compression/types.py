@@ -4,6 +4,16 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+# ``prompt`` of the visible summary row appended after a compression. These
+# rows are display-only: their content already reaches the model through the
+# system prompt (``compressed_summary``), so history replay skips them.
+COMPRESSION_SUMMARY_PROMPT = "[Context Compression Summary]"
+
+
+def is_compression_summary_row(query: Any) -> bool:
+    """True for the visible summary row written by ``append_compression_message``."""
+    return isinstance(query, dict) and query.get("prompt") == COMPRESSION_SUMMARY_PROMPT
+
 
 @dataclass
 class CompressionMetadata:
@@ -42,10 +52,17 @@ class CompressionResult:
     metadata: Optional[CompressionMetadata] = None
     error: Optional[str] = None
     compression_performed: bool = False
+    # When the conversation was last compressed — the point this turn's
+    # history reflects, whether it was made now or reused from the DB.
+    last_compression_at: Optional[Any] = None
 
     @classmethod
     def success_with_compression(
-        cls, summary: str, queries: List[Dict], metadata: CompressionMetadata
+        cls,
+        summary: str,
+        queries: List[Dict],
+        metadata: CompressionMetadata,
+        last_compression_at: Optional[Any] = None,
     ) -> "CompressionResult":
         """Create a successful result with compression."""
         return cls(
@@ -54,6 +71,31 @@ class CompressionResult:
             recent_queries=queries,
             metadata=metadata,
             compression_performed=True,
+            last_compression_at=(
+                last_compression_at
+                if last_compression_at is not None
+                else getattr(metadata, "timestamp", None)
+            ),
+        )
+
+    @classmethod
+    def success_from_existing(
+        cls,
+        summary: Optional[str],
+        queries: List[Dict],
+        last_compression_at: Optional[Any] = None,
+    ) -> "CompressionResult":
+        """A previously saved compression point applied to this turn.
+
+        No LLM call was made; the summary and the queries after its point
+        are what the turn replays instead of the raw history.
+        """
+        return cls(
+            success=True,
+            compressed_summary=summary,
+            recent_queries=queries,
+            compression_performed=False,
+            last_compression_at=last_compression_at,
         )
 
     @classmethod
@@ -81,6 +123,8 @@ class CompressionResult:
         """
         out: List[Dict[str, str]] = []
         for q in self.recent_queries:
+            if is_compression_summary_row(q):
+                continue
             entry: Dict[str, str] = {
                 "prompt": q["prompt"],
                 "response": q["response"],

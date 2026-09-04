@@ -157,7 +157,7 @@ class TestCompressConversation:
                 {"query_index": 0, "compressed_summary": "Previous summary"}
             ]
 
-    def test_zero_compressed_tokens_ratio(self, mock_llm, sample_conversation):
+    def test_zero_compressed_tokens_is_rejected(self, mock_llm, sample_conversation):
         mock_builder = MagicMock()
         mock_builder.build_prompt.return_value = [
             {"role": "system", "content": "C"},
@@ -175,8 +175,10 @@ class TestCompressConversation:
             MockTC.count_query_tokens.return_value = 1000
             MockTC.count_message_tokens.return_value = 0
 
-            result = svc.compress_conversation(sample_conversation, 2)
-            assert result.compression_ratio == 0
+            # An empty summary must never become a compression point (it
+            # replaced a 494k-token conversation with nothing in prod).
+            with pytest.raises(ValueError, match="empty summary"):
+                svc.compress_conversation(sample_conversation, 2)
 
     def test_llm_error_propagates(self, sample_conversation):
         llm = MagicMock()

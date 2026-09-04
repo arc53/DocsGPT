@@ -46,8 +46,9 @@ class CompressionThresholdChecker:
             True if tokens >= threshold% of context window
         """
         try:
-            # Calculate total tokens in conversation
-            total_tokens = TokenCounter.count_conversation_tokens(conversation)
+            # What the next turn will replay: summary + queries after the
+            # last compression point, or the raw history when never compressed.
+            total_tokens = TokenCounter.count_effective_conversation_tokens(conversation)
             total_tokens += current_query_tokens
 
             # Get context window limit for model
