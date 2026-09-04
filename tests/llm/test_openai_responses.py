@@ -1550,3 +1550,59 @@ def test_responses_gen_stream_retries_without_tools(monkeypatch):
     assert len(create.calls) == 2
     assert "tools" in create.calls[0]
     assert "tools" not in create.calls[1]
+
+
+@pytest.mark.unit
+def test_record_chat_usage_captures_cache_write_bin(monkeypatch):
+    """Newer OpenAI-family deployments report cache writes next to cache reads."""
+    llm = _make_llm(monkeypatch, ModelCapabilities(api_flavor="chat_completions"))
+    llm._record_chat_usage(_ns(
+        prompt_tokens=10,
+        completion_tokens=7,
+        total_tokens=17,
+        prompt_tokens_details=_ns(cached_tokens=4, cache_write_tokens=6),
+        completion_tokens_details=None,
+    ))
+    assert llm._last_usage["prompt_tokens_details"] == {
+        "cached_tokens": 4,
+        "cache_write_tokens": 6,
+    }
+
+
+@pytest.mark.unit
+def test_record_responses_metadata_captures_cache_write_bin(monkeypatch):
+    llm = _make_llm(monkeypatch, _responses_caps())
+    llm._record_responses_metadata(_ns(
+        id="resp_1",
+        usage=_ns(
+            input_tokens=10,
+            output_tokens=7,
+            total_tokens=17,
+            input_tokens_details=_ns(cached_tokens=0, cache_write_tokens=9),
+            output_tokens_details=None,
+        ),
+    ))
+    # A pure cache-write turn (first request of a prefix) has reads=0 and
+    # writes>0; both bins were reported, so both are recorded — a reported
+    # zero is "no cache hits", not "unknown".
+    assert llm._last_usage["prompt_tokens_details"] == {
+        "cached_tokens": 0,
+        "cache_write_tokens": 9,
+    }
+
+
+@pytest.mark.unit
+def test_record_responses_metadata_omits_unreported_cache_bins(monkeypatch):
+    """A provider that says nothing about caching must persist as NULL, not 0."""
+    llm = _make_llm(monkeypatch, _responses_caps())
+    llm._record_responses_metadata(_ns(
+        id="resp_2",
+        usage=_ns(
+            input_tokens=10,
+            output_tokens=7,
+            total_tokens=17,
+            input_tokens_details=None,
+            output_tokens_details=None,
+        ),
+    ))
+    assert "prompt_tokens_details" not in llm._last_usage

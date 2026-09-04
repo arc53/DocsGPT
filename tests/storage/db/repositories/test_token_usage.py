@@ -290,3 +290,32 @@ class TestBucketedTotals:
         )
         assert len(rows) == 1
         assert rows[0]["prompt_tokens"] == 10
+
+
+class TestCacheBins:
+    def _row(self, pg_conn, user_id):
+        return pg_conn.execute(
+            text(
+                "SELECT cached_tokens, cache_write_tokens FROM token_usage "
+                "WHERE user_id = :u ORDER BY id DESC LIMIT 1"
+            ),
+            {"u": user_id},
+        ).fetchone()
+
+    def test_persists_cache_bins(self, pg_conn):
+        repo = TokenUsageRepository(pg_conn)
+        repo.insert(
+            user_id="cache-user",
+            prompt_tokens=1000,
+            generated_tokens=10,
+            cached_tokens=800,
+            cache_write_tokens=100,
+        )
+        assert tuple(self._row(pg_conn, "cache-user")) == (800, 100)
+
+    def test_cache_bins_default_to_null_not_zero(self, pg_conn):
+        """NULL means "provider did not report"; 0 means "reported no cache
+        activity". Keeping them distinct is what makes a hit-rate query honest."""
+        repo = TokenUsageRepository(pg_conn)
+        repo.insert(user_id="cache-user-2", prompt_tokens=10, generated_tokens=1)
+        assert tuple(self._row(pg_conn, "cache-user-2")) == (None, None)

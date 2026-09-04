@@ -600,3 +600,115 @@ class TestCountPromptTokens:
         ]
         tokens = _count_prompt_tokens(messages, tools=None)
         assert tokens > 0
+
+
+# ── prompt-cache breakdown ────────────────────────────────────────────────────
+#
+# Providers report ``cached_tokens`` (and, on newer OpenAI-family models,
+# ``cache_write_tokens``) as breakdowns of ``prompt_tokens``. The prompt bin
+# stays the provider total (never subtract the details back out); the two
+# sub-bins ride alongside so persistence and the finish events can chart a
+# cache hit rate.
+
+
+class _ReportingLLM:
+    decoded_token = {"sub": "user_1"}
+    user_api_key = None
+    agent_id = None
+    token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+
+    def __init__(self, details):
+        self._last_usage = {
+            "prompt_tokens": 1000,
+            "completion_tokens": 10,
+            "total_tokens": 1010,
+        }
+        if details is not None:
+            self._last_usage["prompt_tokens_details"] = details
+        self._last_usage_claimed = False
+        self.emitted = []
+
+    def _emit_gen_finished_log(self, model, **kwargs):
+        self.emitted.append(kwargs)
+
+
+@pytest.mark.unit
+def test_prefer_provider_usage_carries_cache_bins():
+    from application.usage import _prefer_provider_usage
+
+    llm = _ReportingLLM({"cached_tokens": 800, "cache_write_tokens": 100})
+    usage = _prefer_provider_usage(llm, {"prompt_tokens": 1, "generated_tokens": 1})
+    assert usage["prompt_tokens"] == 1000
+    assert usage["generated_tokens"] == 10
+    assert usage["cached_tokens"] == 800
+    assert usage["cache_write_tokens"] == 100
+
+
+@pytest.mark.unit
+def test_prefer_provider_usage_maps_anthropic_cache_creation_to_writes():
+    from application.usage import _prefer_provider_usage
+
+    llm = _ReportingLLM({"cached_tokens": 3, "cache_creation_tokens": 9})
+    usage = _prefer_provider_usage(llm, {"prompt_tokens": 1, "generated_tokens": 1})
+    assert usage["cached_tokens"] == 3
+    assert usage["cache_write_tokens"] == 9
+
+
+@pytest.mark.unit
+def test_prefer_provider_usage_without_details_has_no_cache_keys():
+    from application.usage import _prefer_provider_usage
+
+    llm = _ReportingLLM(None)
+    usage = _prefer_provider_usage(llm, {"prompt_tokens": 1, "generated_tokens": 1})
+    assert "cached_tokens" not in usage
+    assert "cache_write_tokens" not in usage
+
+
+@pytest.mark.unit
+def test_prefer_provider_usage_keeps_the_rest_of_the_call_record():
+    from application.usage import _prefer_provider_usage
+
+    llm = _ReportingLLM(None)
+    usage = _prefer_provider_usage(
+        llm, {"prompt_tokens": 1, "generated_tokens": 1, "model": "m"}
+    )
+    assert usage["model"] == "m"
+
+
+@pytest.mark.unit
+def test_decorator_persists_and_emits_cache_bins(monkeypatch):
+    _install_fake_token_repo(monkeypatch)
+    llm = _ReportingLLM({"cached_tokens": 800, "cache_write_tokens": 100})
+
+    @gen_token_usage
+    def wrapped(self, model, messages, stream, tools, **kwargs):
+        _ = (model, messages, stream, tools, kwargs)
+        return "ok"
+
+    wrapped(llm, "m", [{"role": "user", "content": "hi"}], False, None)
+
+    row = _FakeTokenUsageRepo.last_instance.inserted[0]
+    assert row["prompt_tokens"] == 1000
+    assert row["cached_tokens"] == 800
+    assert row["cache_write_tokens"] == 100
+    assert llm.emitted[0]["cached_tokens"] == 800
+    assert llm.emitted[0]["cache_write_tokens"] == 100
+
+
+@pytest.mark.unit
+def test_decorator_omits_cache_bins_when_provider_reports_none(monkeypatch):
+    _install_fake_token_repo(monkeypatch)
+    llm = _ReportingLLM(None)
+
+    @gen_token_usage
+    def wrapped(self, model, messages, stream, tools, **kwargs):
+        _ = (model, messages, stream, tools, kwargs)
+        return "ok"
+
+    wrapped(llm, "m", [{"role": "user", "content": "hi"}], False, None)
+
+    row = _FakeTokenUsageRepo.last_instance.inserted[0]
+    assert row["cached_tokens"] is None
+    assert row["cache_write_tokens"] is None
+    assert llm.emitted[0]["cached_tokens"] is None
+    assert llm.emitted[0]["cache_write_tokens"] is None

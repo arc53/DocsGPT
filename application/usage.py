@@ -131,6 +131,11 @@ def _persist_call_usage(llm, call_usage):
                 agent_id=str(agent_id) if agent_id else None,
                 prompt_tokens=call_usage["prompt_tokens"],
                 generated_tokens=call_usage["generated_tokens"],
+                # Present only when the provider reported the breakdown;
+                # persisted as NULL otherwise so "unknown" never reads as
+                # "0% cache hits".
+                cached_tokens=call_usage.get("cached_tokens"),
+                cache_write_tokens=call_usage.get("cache_write_tokens"),
                 source=(
                     getattr(llm, "_token_usage_source", None) or "agent_stream"
                 ),
@@ -151,6 +156,12 @@ def _prefer_provider_usage(llm: Any, call_usage: Dict[str, int]) -> Dict[str, in
     ``*_tokens_details`` breakdowns (``cached_tokens``,
     ``reasoning_tokens``) back out of these bins — that would break
     parity with what providers bill.
+
+    The prompt-cache sub-bins ARE carried alongside (``cached_tokens``,
+    ``cache_write_tokens``; Anthropic's ``cache_creation_tokens`` maps to
+    the latter) so persistence and the finish events can chart them. They
+    are added only when the provider reported them. The rest of
+    ``call_usage`` (e.g. ``model``) is preserved rather than replaced.
     """
     reported = getattr(llm, "_last_usage", None)
     if not isinstance(reported, dict):
@@ -174,10 +185,22 @@ def _prefer_provider_usage(llm: Any, call_usage: Dict[str, int]) -> Dict[str, in
         # Slotted/immutable LLM stand-ins can't record the claim; this
         # call still gets the provider counts, which is correct for them.
         pass
-    return {
+    merged = {
+        **call_usage,
         "prompt_tokens": int(prompt or 0),
         "generated_tokens": int(completion or 0),
     }
+    details = reported.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        cached = details.get("cached_tokens")
+        written = details.get("cache_write_tokens")
+        if written is None:
+            written = details.get("cache_creation_tokens")
+        if cached is not None:
+            merged["cached_tokens"] = int(cached or 0)
+        if written is not None:
+            merged["cache_write_tokens"] = int(written or 0)
+    return merged
 
 
 def gen_token_usage(func):
@@ -224,6 +247,8 @@ def gen_token_usage(func):
                         prompt_tokens=call_usage["prompt_tokens"],
                         completion_tokens=call_usage["generated_tokens"],
                         latency_ms=int((time.monotonic() - started_at) * 1000),
+                        cached_tokens=call_usage.get("cached_tokens"),
+                        cache_write_tokens=call_usage.get("cache_write_tokens"),
                         error=error,
                     )
                 except Exception:
@@ -272,6 +297,8 @@ def stream_token_usage(func):
                         prompt_tokens=call_usage["prompt_tokens"],
                         completion_tokens=call_usage["generated_tokens"],
                         latency_ms=int((time.monotonic() - started_at) * 1000),
+                        cached_tokens=call_usage.get("cached_tokens"),
+                        cache_write_tokens=call_usage.get("cache_write_tokens"),
                         error=error,
                     )
                 except Exception:

@@ -46,6 +46,8 @@ export interface Attachment {
    */
   attachmentId?: string;
   token_count?: number;
+  /** Why a ``failed`` attachment failed, when known (server or client gate). */
+  errorMessage?: string;
 }
 
 export type UploadTaskStatus =
