@@ -66,6 +66,9 @@ For OpenAI models that support it, DocsGPT can call the newer **Responses API** 
 
 - `reasoning_effort` — per-model reasoning effort hint (for example `medium`) declared in the model catalog.
 - `OPENAI_RESPONSES_STORE` (default `false`) — when `true`, lets OpenAI persist Responses API state server-side and chains calls with `previous_response_id`. When `false`, DocsGPT requests encrypted reasoning items and persists those ciphertext items itself so reasoning survives tool calls and later conversation turns without OpenAI retaining the response.
+- `OPENAI_RESPONSES_CHAIN_ACROSS_TURNS` (default `true`) and `OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS` (default: the model's `context_window`) — in store mode a new user turn chains onto the previous response, which keeps the provider's stored transcript and its prompt cache warm. The chain is bounded: once the previous turn's reported prompt reaches the budget, or after the conversation history has been compressed, the next turn starts from DocsGPT's own saved history instead. Chained tool rounds do not re-send an unchanged system message.
+- `OPENAI_RESPONSES_TRUNCATION_AUTO` (default `false`) — send `truncation: "auto"` so the provider drops the oldest conversation items instead of failing a request that exceeds the model's window.
+- `OPENAI_PROMPT_CACHE_KEY` (default `true`) and `OPENAI_PROMPT_CACHE_RETENTION` (default unset) — prompt-cache hints on Responses API calls: an opaque per-user `prompt_cache_key` (a hash, never the user id itself), and a `prompt_cache_retention` value such as `24h` where the provider supports it.
 - `V1_SESSION_TTL_SECONDS` (default `86400`) — lifetime of the hashed Redis mapping used to associate OpenAI-compatible client session headers with hidden DocsGPT conversations. Explicit DocsGPT conversation IDs always take precedence.
 
 See [App Configuration](/Deploying/DocsGPT-Settings) for the full settings reference.

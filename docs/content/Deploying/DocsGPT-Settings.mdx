@@ -497,6 +497,11 @@ See [Access Control, Roles & Teams](/Deploying/Access-Control) for the full mode
 | Setting | Default | Description |
 | --- | --- | --- |
 | `OPENAI_RESPONSES_STORE` | `false` | When `true`, allows OpenAI to persist [Responses API](/Models/cloud-providers#openai-responses-api-and-reasoning) state server-side. |
+| `OPENAI_RESPONSES_CHAIN_ACROSS_TURNS` | `true` | In store mode, chain a new user turn onto the previous turn's response with `previous_response_id`. Set to `false` for stateless turns that always rebuild from the saved history. |
+| `OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS` | unset | Stop chaining across turns once the previous turn's reported prompt reached this many tokens; the turn then starts from the saved (compressible) history. Unset means the model's `context_window`. |
+| `OPENAI_RESPONSES_TRUNCATION_AUTO` | `false` | Send `truncation: "auto"` on Responses API calls so the provider drops the oldest conversation items instead of rejecting a request that exceeds the model's window. |
+| `OPENAI_PROMPT_CACHE_KEY` | `true` | Send an opaque per-user `prompt_cache_key` (a hash, never the user id itself) on Responses API calls so a user's requests route to the same prompt-cache shard. |
+| `OPENAI_PROMPT_CACHE_RETENTION` | unset | Value for `prompt_cache_retention` on Responses API calls, for example `24h`, where the provider offers extended prompt-cache retention. |
 | `V1_SESSION_TTL_SECONDS` | `86400` | Redis correlation lifetime, in seconds, for OpenAI-compatible client sessions. Raw external session IDs are hashed and never stored. |
 | `TITLE_MODEL_ID` | unset | Optional model ID used for asynchronous first-party conversation titles. When unset, the answer model is used. Hidden API conversations never invoke title generation. |
 

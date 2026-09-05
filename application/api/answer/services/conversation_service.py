@@ -14,6 +14,10 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text as sql_text
 
 from application.core.settings import settings
+from application.api.answer.services.compression.types import (
+    COMPRESSION_SUMMARY_MARKER,
+    COMPRESSION_SUMMARY_PROMPT,
+)
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.conversations import (
@@ -603,7 +607,9 @@ class ConversationService:
                     str(conv["id"]) if conv is not None else conversation_id
                 )
                 repo.append_message(conv_pg_id, {
-                    "prompt": "[Context Compression Summary]",
+                    "prompt": COMPRESSION_SUMMARY_PROMPT,
+                    # Durable marker: replay filters on this, not on the label.
+                    "metadata": {COMPRESSION_SUMMARY_MARKER: True},
                     "response": summary,
                     "thought": "",
                     "sources": [],

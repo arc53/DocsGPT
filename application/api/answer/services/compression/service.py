@@ -11,6 +11,8 @@ from application.api.answer.services.compression.prompt_builder import (
 from application.api.answer.services.compression.token_counter import TokenCounter
 from application.api.answer.services.compression.types import (
     CompressionMetadata,
+    is_compression_summary_row,
+    latest_usable_compression_point,
 )
 from application.core.settings import settings
 
@@ -51,6 +53,8 @@ class CompressionService:
         self,
         conversation: Dict[str, Any],
         compress_up_to_index: int,
+        start_index: int = 0,
+        persist_query_index: Optional[int] = None,
     ) -> CompressionMetadata:
         """
         Compress conversation history up to specified index.
@@ -58,6 +62,12 @@ class CompressionService:
         Args:
             conversation: Full conversation document
             compress_up_to_index: Last query index to include in compression
+            start_index: First query index that is new since the previous
+                compression point (earlier queries are already summarised).
+            persist_query_index: Index to record on the point when the
+                conversation passed in is a shortened, synthetic one (the
+                mid-execution path) and its positions do not match the
+                saved conversation's. Defaults to ``compress_up_to_index``.
 
         Returns:
             CompressionMetadata with compression details
@@ -74,8 +84,24 @@ class CompressionService:
                     f"(conversation has {len(queries)} queries)"
                 )
 
-            # Get queries to compress
-            queries_to_compress = queries[: compress_up_to_index + 1]
+            if start_index < 0 or start_index > compress_up_to_index:
+                raise ValueError(
+                    f"Nothing to compress: start_index {start_index} is past "
+                    f"compress_up_to_index {compress_up_to_index}"
+                )
+            # Only the queries after the previous compression point are new;
+            # the earlier ones are already inside that point's summary, and so
+            # is the visible summary row that follows the point.
+            queries_to_compress = [
+                q
+                for q in queries[start_index : compress_up_to_index + 1]
+                if not is_compression_summary_row(q)
+            ]
+            if not queries_to_compress:
+                raise ValueError(
+                    "Nothing to compress: no new queries since the last "
+                    "compression point"
+                )
 
             # Check if there are existing compressions. ``compression_metadata``
             # is a nullable JSONB column, so a never-compressed conversation
@@ -85,14 +111,27 @@ class CompressionService:
                 "compression_points", []
             )
 
+            previous_summary_tokens = 0
+            usable_point = latest_usable_compression_point(existing_compressions)
+            existing_compressions = [usable_point] if usable_point else []
             if existing_compressions:
+                # Each point already folds in the ones before it, so only
+                # the latest usable one matters — and it is part of what
+                # the new summary replaces.
+                previous_summary_tokens = TokenCounter.count_message_tokens(
+                    [{"content": existing_compressions[0].get("compressed_summary", "")}]
+                )
                 logger.info(
-                    f"Found {len(existing_compressions)} previous compression(s) - "
-                    f"will incorporate into new summary"
+                    "Found a previous compression point (query %s) - "
+                    "the new summary builds on it",
+                    existing_compressions[0].get("query_index"),
                 )
 
-            # Calculate original token count
-            original_tokens = TokenCounter.count_query_tokens(queries_to_compress)
+            # Calculate original token count: everything the new summary replaces
+            original_tokens = (
+                TokenCounter.count_query_tokens(queries_to_compress)
+                + previous_summary_tokens
+            )
 
             # Log tool call stats
             self._log_tool_call_stats(queries_to_compress)
@@ -105,7 +144,7 @@ class CompressionService:
             # Call LLM to generate compression
             logger.info(
                 f"Starting compression: {len(queries_to_compress)} queries "
-                f"(messages 0-{compress_up_to_index}, {original_tokens} tokens) "
+                f"(messages {start_index}-{compress_up_to_index}, {original_tokens} tokens) "
                 f"using model {self.model_id}"
             )
 
@@ -126,6 +165,13 @@ class CompressionService:
                 [{"content": compressed_summary}]
             )
 
+            # An empty summary is not a compression: it replaced a 494k-token
+            # conversation with nothing in prod (2026-08-27) while reporting
+            # success.
+            if not compressed_summary.strip() or compressed_tokens <= 0:
+                raise ValueError(
+                    "Compression produced an empty summary; keeping original history"
+                )
             # Calculate compression ratio
             compression_ratio = (
                 original_tokens / compressed_tokens if compressed_tokens > 0 else 0
@@ -151,7 +197,11 @@ class CompressionService:
             # Build compression metadata
             compression_metadata = CompressionMetadata(
                 timestamp=datetime.now(timezone.utc),
-                query_index=compress_up_to_index,
+                query_index=(
+                    persist_query_index
+                    if persist_query_index is not None
+                    else compress_up_to_index
+                ),
                 compressed_summary=compressed_summary,
                 original_token_count=original_tokens,
                 compressed_token_count=compressed_tokens,
@@ -171,6 +221,8 @@ class CompressionService:
         conversation_id: str,
         conversation: Dict[str, Any],
         compress_up_to_index: int,
+        start_index: int = 0,
+        persist_query_index: Optional[int] = None,
     ) -> CompressionMetadata:
         """
         Compress conversation and save to database.
@@ -192,7 +244,12 @@ class CompressionService:
             )
 
         # Perform compression
-        metadata = self.compress_conversation(conversation, compress_up_to_index)
+        metadata = self.compress_conversation(
+            conversation,
+            compress_up_to_index,
+            start_index=start_index,
+            persist_query_index=persist_query_index,
+        )
 
         # Save to database
         self.conversation_service.update_compression_metadata(
@@ -238,8 +295,16 @@ class CompressionService:
                     return None, []
                 return None, queries
 
-            # Get the most recent compression point
-            latest_compression = compression_points[-1]
+            # The most recent point that can actually stand in for the
+            # history it covers. An empty saved summary must not slice the
+            # raw history away and replace it with nothing.
+            latest_compression = latest_usable_compression_point(compression_points)
+            if latest_compression is None:
+                logger.warning(
+                    "No usable compression point (saved summaries are empty) - "
+                    "using full history"
+                )
+                return None, conversation.get("queries", []) or []
             compressed_summary = latest_compression.get("compressed_summary")
             last_compressed_index = latest_compression.get("query_index")
             compressed_tokens = latest_compression.get("compressed_token_count", 0)
@@ -248,7 +313,13 @@ class CompressionService:
             # Get only messages after compression point
             queries = conversation.get("queries", [])
             total_queries = len(queries)
-            recent_queries = queries[last_compressed_index + 1 :]
+            # The visible summary rows appended after a compression are not
+            # history: their content already rides in the system prompt.
+            recent_queries = [
+                q
+                for q in queries[last_compressed_index + 1 :]
+                if not is_compression_summary_row(q)
+            ]
 
             logger.info(
                 f"Using compressed context: summary ({compressed_tokens} tokens, "

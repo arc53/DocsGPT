@@ -381,6 +381,58 @@ class TestCompressionMetadata:
         points = fetched["compression_metadata"]["compression_points"]
         assert [p["summary"] for p in points] == ["p2", "p3", "p4"]
 
+    def test_append_compression_point_ignores_an_identical_point(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        point = {"query_index": 3, "compressed_summary": "S", "original_token_count": 90}
+        assert repo.append_compression_point(conv["id"], point, max_points=3) is True
+        # Two persist paths used to append the same point twice.
+        assert repo.append_compression_point(conv["id"], dict(point), max_points=3) is True
+        later = {"query_index": 5, "compressed_summary": "S2", "original_token_count": 40}
+        assert repo.append_compression_point(conv["id"], later, max_points=3) is True
+        points = repo.get(conv["id"], "user-1")["compression_metadata"]["compression_points"]
+        assert [p["query_index"] for p in points] == [3, 5]
+
+    def test_append_compression_point_dedupes_across_concurrent_sessions(self, pg_engine):
+        """The duplicate check runs inside the UPDATE, under the row lock, so
+        two sessions racing to persist the same point store it once."""
+        import threading
+        import time
+
+        with pg_engine.connect() as setup:
+            with setup.begin():
+                conv = _repo(setup).create("user-1", "c")
+        point = {"query_index": 3, "compressed_summary": "S", "original_token_count": 90}
+        results, errors = [], []
+
+        def append(hold_before_commit):
+            try:
+                with pg_engine.connect() as conn:
+                    with conn.begin():
+                        results.append(
+                            _repo(conn).append_compression_point(
+                                conv["id"], dict(point), max_points=3
+                            )
+                        )
+                        time.sleep(hold_before_commit)
+            except Exception as exc:  # pragma: no cover - surfaced by the assertion
+                errors.append(exc)
+
+        first = threading.Thread(target=append, args=(0.5,))
+        second = threading.Thread(target=append, args=(0.0,))
+        first.start()
+        time.sleep(0.1)  # second blocks on the row lock until first commits
+        second.start()
+        first.join()
+        second.join()
+
+        assert not errors
+        assert results == [True, True]
+        with pg_engine.connect() as conn:
+            fetched = _repo(conn).get(conv["id"], "user-1")
+        points = fetched["compression_metadata"]["compression_points"]
+        assert [p["query_index"] for p in points] == [3]
+
 
 class TestResolveAgentRef:
     """The repo must translate Mongo ObjectId-shaped ``agent_id`` values

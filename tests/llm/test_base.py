@@ -1127,7 +1127,9 @@ class TestPerformMidExecutionCompressionAdditional:
         assert success is True
         assert msgs == rebuilt
         assert agent.compressed_summary == "compressed text"
-        assert agent.compression_saved is False
+        # The DB path already wrote the point and the summary row; the
+        # route must not persist them again.
+        assert agent.compression_saved is True
         assert agent.context_limit_reached is False
 
     def test_compression_not_performed_returns_false(self, monkeypatch):
@@ -1867,7 +1869,9 @@ class TestMidExecutionCompressionMetadata:
             agent, [{"role": "user", "content": "hi"}]
         )
         assert success is True
-        assert agent.compression_saved is False
+        # The DB path already wrote the point and the summary row; the
+        # route must not persist them again.
+        assert agent.compression_saved is True
         assert agent.context_limit_reached is False
         assert agent.current_token_count == 0
         mock_conv_service.append_compression_message.assert_called_once()
@@ -2231,7 +2235,9 @@ class TestPerformMidExecutionCompressionSuccess:
             )
         assert success is True
         assert result_msgs == rebuilt
-        assert agent.compression_saved is False
+        # The DB path already wrote the point and the summary row; the
+        # route must not persist them again.
+        assert agent.compression_saved is True
 
 
 @pytest.mark.unit

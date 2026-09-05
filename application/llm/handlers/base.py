@@ -592,6 +592,58 @@ class LLMHandler(ABC):
             include_tool_calls=include_tool_calls,
         )
 
+    @staticmethod
+    def _carry_current_summary(conversation: Dict, agent) -> Dict:
+        """Attach the summary the agent is already running under as the
+        synthetic conversation's latest compression point.
+
+        The synthetic conversation is rebuilt from the in-flight messages,
+        which hold only the turns replayed this turn plus the current one;
+        the earlier history exists solely as the summary in the system
+        prompt. Without this point the compressor would summarise the recent
+        turns alone and the new summary would replace, not extend, the old
+        one. ``query_index`` is -1 because every synthetic query is newer
+        than the summary.
+        """
+        summary = getattr(agent, "compressed_summary", None)
+        if not conversation or not summary or not str(summary).strip():
+            return conversation
+        from application.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
+
+        tokens = TokenCounter.count_message_tokens([{"content": summary}])
+        conversation["compression_metadata"] = {
+            "is_compressed": True,
+            "compression_points": [
+                {
+                    "timestamp": getattr(agent, "last_compression_at", None),
+                    "query_index": -1,
+                    "compressed_summary": summary,
+                    "compressed_token_count": tokens,
+                    "original_token_count": tokens,
+                    "carried": True,
+                }
+            ],
+        }
+        return conversation
+
+    @staticmethod
+    def _reset_responses_chain(agent, metadata) -> None:
+        """After a compression the rebuilt local messages ARE the context.
+
+        Forget the provider-side chain so the next call is not prepended with
+        the uncompressed transcript (prod: 236k input tokens billed for a
+        four-message rebuilt input), and stamp the compression epoch so later
+        turns do not chain onto pre-compression responses either.
+        """
+        starter = getattr(getattr(agent, "llm", None), "start_responses_turn", None)
+        if callable(starter):
+            starter()
+        timestamp = getattr(metadata, "timestamp", None)
+        if timestamp is not None:
+            agent.last_compression_at = timestamp
+
     def _perform_mid_execution_compression(
         self, agent, messages: List[Dict]
     ) -> tuple[bool, Optional[List[Dict]]]:
@@ -623,11 +675,22 @@ class LLMHandler(ABC):
                 agent.conversation_id, agent.initial_user_id
             )
 
+            persist_query_index = None
             if conversation:
-                # Merge current in-flight messages (including tool calls)
+                # Merge current in-flight messages (including tool calls).
+                # The synthetic conversation holds only the turns replayed
+                # this turn plus the in-flight one, so the summary already in
+                # the system prompt rides along as its latest point, and the
+                # persisted point is indexed against the SAVED conversation,
+                # not this shortened list.
+                saved_count = len(conversation.get("queries") or [])
+                if saved_count:
+                    persist_query_index = saved_count - 1
                 conversation_from_msgs = self._build_conversation_from_messages(messages)
                 if conversation_from_msgs:
-                    conversation = conversation_from_msgs
+                    conversation = self._carry_current_summary(
+                        conversation_from_msgs, agent
+                    )
             else:
                 logger.warning(
                     "Could not load conversation for compression; attempting in-memory compression"
@@ -645,6 +708,7 @@ class LLMHandler(ABC):
                 model_id=agent.model_id,
                 decoded_token=getattr(agent, "decoded_token", {}),
                 current_conversation=conversation,
+                persist_query_index=persist_query_index,
             )
 
             if not result.success:
@@ -661,11 +725,18 @@ class LLMHandler(ABC):
                 logger.warning("Compression not performed")
                 return False, None
 
-            # Check if compression actually reduced tokens
+            # Check if compression actually reduced tokens — and produced
+            # anything at all: a 0-token "summary" replaced a 494k-token
+            # conversation with nothing in prod (2026-08-27).
             if result.metadata:
-                if result.metadata.compressed_token_count >= result.metadata.original_token_count:
+                if (
+                    result.metadata.compressed_token_count <= 0
+                    or result.metadata.compressed_token_count
+                    >= result.metadata.original_token_count
+                ):
                     logger.warning(
-                        "Compression did not reduce token count; falling back to minimal pruning"
+                        "Compression did not reduce token count (or produced an "
+                        "empty summary); falling back to minimal pruning"
                     )
                     pruned = self._prune_messages_minimal(messages)
                     if pruned:
@@ -685,10 +756,15 @@ class LLMHandler(ABC):
                     agent.conversation_id, result.metadata.to_dict()
                 )
 
-            # Update agent's compressed summary for downstream persistence
+            # Update agent's compressed summary for downstream persistence.
+            # ``compress_mid_execution`` already wrote the compression point
+            # and the row above is the visible summary, so this IS saved —
+            # leaving the flag False made the route persist both again
+            # (prod: every mid-execution compression stored twice).
             agent.compressed_summary = result.compressed_summary
             agent.compression_metadata = result.metadata.to_dict() if result.metadata else None
-            agent.compression_saved = False
+            agent.compression_saved = True
+            self._reset_responses_chain(agent, result.metadata)
 
             # Reset the context limit flag so tools can continue
             agent.context_limit_reached = False
@@ -739,6 +815,8 @@ class LLMHandler(ABC):
                     "Cannot perform in-memory compression: no user/assistant turns found"
                 )
                 return False, None
+            # The summary already in play must survive this compression too.
+            conversation = self._carry_current_summary(conversation, agent)
 
             compression_model = (
                 settings.COMPRESSION_MODEL_OVERRIDE
@@ -815,19 +893,25 @@ class LLMHandler(ABC):
                     return True, pruned
                 return False, None
 
-            # Attach metadata to synthetic conversation
-            conversation["compression_metadata"] = {
-                "is_compressed": True,
-                "compression_points": [metadata.to_dict()],
+            # Attach metadata to a copy of the synthetic conversation (the
+            # one handed to the compressor keeps its carried point).
+            context_conversation = {
+                **conversation,
+                "compression_metadata": {
+                    "is_compressed": True,
+                    "compression_points": [metadata.to_dict()],
+                },
             }
 
             compressed_summary, recent_queries = (
-                compression_service.get_compressed_context(conversation)
+                compression_service.get_compressed_context(context_conversation)
             )
 
             agent.compressed_summary = compressed_summary
             agent.compression_metadata = metadata.to_dict()
+            # Nothing reached the DB on this path; the route persists once.
             agent.compression_saved = False
+            self._reset_responses_chain(agent, metadata)
             agent.context_limit_reached = False
             agent.current_token_count = 0
 

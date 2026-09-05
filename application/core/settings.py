@@ -369,6 +369,22 @@ class Settings(BaseSettings):
     # True persists Responses API calls server-side so previous_response_id can chain turns.
     # False keeps them stateless, carrying reasoning across the tool loop as encrypted items.
     OPENAI_RESPONSES_STORE: bool = False
+    # Cross-turn ``previous_response_id`` chaining (store mode only). The
+    # chained transcript lives on the provider and is invisible to every
+    # local guard, so it is bounded: a turn starts from the local history
+    # when the previous turn's reported prompt already reached the budget
+    # (default: the model's context window) or when the conversation was
+    # compressed after that turn was produced.
+    OPENAI_RESPONSES_CHAIN_ACROSS_TURNS: bool = True
+    OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS: Optional[int] = None
+    # ``truncation: "auto"`` lets the provider drop the oldest input items
+    # instead of failing every request once a chain exceeds the model's window.
+    OPENAI_RESPONSES_TRUNCATION_AUTO: bool = False
+    # Prompt-cache hints on the Responses API: route a user's calls to the
+    # same cache shard (opaque per-user key), and request extended retention
+    # where offered.
+    OPENAI_PROMPT_CACHE_KEY: bool = True
+    OPENAI_PROMPT_CACHE_RETENTION: Optional[str] = None
     OPENAI_REASONING_SUMMARY: str = "auto"
 
     # Lets OpenAI-compatible clients identify a logical chat by session header, which

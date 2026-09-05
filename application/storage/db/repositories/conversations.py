@@ -506,34 +506,49 @@ class ConversationsRepository:
         # Shape-gate: see ``set_compression_flags``.
         if not looks_like_uuid(conversation_id):
             return False
+        # Idempotent on the same point: two persist paths (the mid-execution
+        # handler and the route's end-of-stream save) used to both append it.
+        # The duplicate check lives inside the UPDATE so it runs under the
+        # row lock — a separate SELECT would let two sessions both pass it.
+        # A point without ``query_index``/``compressed_summary`` never matches
+        # (NULL comparisons are false), so it is always appended.
+        dup_index = point.get("query_index")
+        dup_summary = point.get("compressed_summary")
         result = self._conn.execute(
             text(
                 """
                 UPDATE conversations SET
-                    compression_metadata = jsonb_set(
-                        COALESCE(compression_metadata, '{}'::jsonb),
-                        '{compression_points}',
-                        COALESCE(
-                            (
-                                SELECT jsonb_agg(elem ORDER BY rn)
-                                FROM (
-                                    SELECT
-                                        elem,
-                                        row_number() OVER () AS rn,
-                                        count(*) OVER () AS cnt
-                                    FROM jsonb_array_elements(
-                                        COALESCE(
-                                            compression_metadata -> 'compression_points',
-                                            '[]'::jsonb
-                                        ) || jsonb_build_array(CAST(:point AS jsonb))
-                                    ) AS elem
-                                ) ranked
-                                WHERE rn > cnt - :max_points
+                    compression_metadata = CASE
+                        WHEN (compression_metadata -> 'compression_points' -> -1
+                              ->> 'query_index') = CAST(:dup_index AS text)
+                         AND (compression_metadata -> 'compression_points' -> -1
+                              ->> 'compressed_summary') = CAST(:dup_summary AS text)
+                        THEN compression_metadata
+                        ELSE jsonb_set(
+                            COALESCE(compression_metadata, '{}'::jsonb),
+                            '{compression_points}',
+                            COALESCE(
+                                (
+                                    SELECT jsonb_agg(elem ORDER BY rn)
+                                    FROM (
+                                        SELECT
+                                            elem,
+                                            row_number() OVER () AS rn,
+                                            count(*) OVER () AS cnt
+                                        FROM jsonb_array_elements(
+                                            COALESCE(
+                                                compression_metadata -> 'compression_points',
+                                                '[]'::jsonb
+                                            ) || jsonb_build_array(CAST(:point AS jsonb))
+                                        ) AS elem
+                                    ) ranked
+                                    WHERE rn > cnt - :max_points
+                                ),
+                                '[]'::jsonb
                             ),
-                            '[]'::jsonb
-                        ),
-                        true
-                    ),
+                            true
+                        )
+                    END,
                     updated_at = now()
                 WHERE id = CAST(:id AS uuid)
                 """
@@ -542,6 +557,8 @@ class ConversationsRepository:
                 "id": conversation_id,
                 "point": json.dumps(point, cls=PGNativeJSONEncoder),
                 "max_points": int(max_points),
+                "dup_index": None if dup_index is None else str(dup_index),
+                "dup_summary": None if dup_summary is None else str(dup_summary),
             },
         )
         return result.rowcount > 0

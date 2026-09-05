@@ -1,7 +1,9 @@
+import hashlib
 import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional
 
 from application.agents.tool_executor import (
@@ -30,6 +32,50 @@ from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_epoch(value: Any) -> Optional[datetime]:
+    """Parse a compression timestamp as stored anywhere it lands.
+
+    ``compression_points[].timestamp`` is written as an ISO datetime,
+    ``compression_metadata.last_compression_at`` as ``str(datetime)`` (space
+    separator), and the per-turn ``compression_epoch`` as whichever of those
+    the agent carried. All must compare equal.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _cache_key_for_user(user_id: Any) -> Optional[str]:
+    """Opaque, stable prompt-cache routing key for a user.
+
+    The key only needs to be the same for every call the user makes; it
+    must not carry the identifier itself to the provider.
+    """
+    if not user_id:
+        return None
+    return hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[:32]
+
+
+def _epoch_text(value: Any) -> Optional[str]:
+    """Serialize a compression timestamp for message metadata."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
 
 
 class BaseAgent(ABC):
@@ -64,6 +110,7 @@ class BaseAgent(ABC):
         limited_request_mode: Optional[bool] = False,
         request_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["request_limit"],
         compressed_summary: Optional[str] = None,
+        last_compression_at: Optional[Any] = None,
         llm=None,
         llm_handler=None,
         tool_executor: Optional[ToolExecutor] = None,
@@ -160,6 +207,10 @@ class BaseAgent(ABC):
         self.limited_request_mode = limited_request_mode
         self.request_limit = request_limit
         self.compressed_summary = compressed_summary
+        # When the conversation was last compressed (any path). Stamped onto
+        # each turn's metadata so a later turn never chains onto a Responses
+        # id produced before a compression.
+        self.last_compression_at = last_compression_at
         self.current_token_count = 0
         self.context_limit_reached = False
         self.conversation_id: Optional[str] = None
@@ -314,13 +365,25 @@ class BaseAgent(ABC):
             **stored_metadata,
             "responses_state": state,
             "usage": getattr(self.llm, "_last_usage", None),
+            "compression_epoch": _epoch_text(getattr(self, "last_compression_at", None)),
         }
         metadata = {key: value for key, value in metadata.items() if value is not None}
         if metadata:
             yield {"metadata": metadata}
 
     def _previous_response_id(self) -> Optional[str]:
-        """Return the immediately preceding compatible Responses API id."""
+        """Return the preceding turn's Responses id when chaining onto it is safe.
+
+        Chaining keeps the provider's stored transcript (and its prompt cache)
+        warm across turns, but that transcript is invisible to every local
+        guard, so it is bounded. No chaining across turns when the operator
+        turned it off, when the previous turn's reported prompt already
+        reached the chain budget (default: the model's context window), or
+        when the conversation was compressed after that turn was produced —
+        the compressed local history is the context then, not the server's.
+        """
+        if not getattr(settings, "OPENAI_RESPONSES_CHAIN_ACROSS_TURNS", True):
+            return None
         if not self.chat_history:
             return None
         turn = self.chat_history[-1]
@@ -333,13 +396,49 @@ class BaseAgent(ABC):
         current_chain_key = (
             chain_key_factory() if callable(chain_key_factory) else None
         )
-        if (
+        if not (
             current_chain_key
             and meta.get("response_chain_key") == current_chain_key
             and meta.get("response_id")
         ):
+            return None
+
+        current_epoch = _parse_epoch(getattr(self, "last_compression_at", None))
+        if current_epoch is not None:
+            turn_epoch = _parse_epoch(meta.get("compression_epoch"))
+            if turn_epoch is None or turn_epoch < current_epoch:
+                logger.info(
+                    "Responses chain reset: the conversation was compressed after "
+                    "the previous turn; starting from the compressed local history"
+                )
+                return None
+
+        usage = meta.get("usage") if isinstance(meta.get("usage"), dict) else {}
+        try:
+            prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        except (TypeError, ValueError):
+            prompt_tokens = 0
+        if not prompt_tokens:
+            # No provider-reported usage on the previous turn (older rows,
+            # estimate-only providers): nothing to bound against.
             return meta["response_id"]
-        return None
+        budget = getattr(settings, "OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS", None)
+        if not budget:
+            from application.core.model_utils import get_token_limit
+
+            budget = get_token_limit(
+                getattr(self, "model_id", None),
+                user_id=getattr(self, "model_user_id", None) or getattr(self, "user", None),
+            )
+        if budget and prompt_tokens >= int(budget):
+            logger.info(
+                "Responses chain budget reached (%s >= %s prompt tokens on the "
+                "previous turn); starting this turn from the local history",
+                prompt_tokens,
+                budget,
+            )
+            return None
+        return meta["response_id"]
 
     def _previous_responses_state(self) -> Optional[Dict[str, Any]]:
         """Return continuity state from the immediately preceding turn."""
@@ -1238,6 +1337,23 @@ class BaseAgent(ABC):
             previous_response_id = self._previous_response_id()
             if previous_response_id:
                 gen_kwargs["previous_response_id"] = previous_response_id
+                if not preserve_responses_state and hasattr(
+                    self.llm, "_chain_system_hash"
+                ):
+                    # The system head the chain last saw, so the first
+                    # chained call of this turn skips an unchanged system
+                    # message instead of appending a copy server-side.
+                    state = self._previous_responses_state() or {}
+                    self.llm._chain_system_hash = state.get("system_hash")
+        if hasattr(self.llm, "_prompt_cache_key"):
+            # Route a user's calls to the same cache shard. Keyed by user, not
+            # conversation: a new conversation has no id until its first turn
+            # is saved, and a key that appears on turn two would look up a
+            # different shard from the one turn one populated. Hashed so the
+            # identifier itself never reaches the provider.
+            self.llm._prompt_cache_key = _cache_key_for_user(
+                getattr(self, "initial_user_id", None) or getattr(self, "user", None)
+            )
 
         # Forward OpenAI sampling params (temperature, max_tokens, top_p, ...).
         if self.llm_params:
