@@ -35,6 +35,20 @@ export interface ResearchState {
   tokens_used?: number;
 }
 
+/**
+ * The display snapshot of a sent attachment, copied from the composer
+ * state into the query row at send time. ``previewUrl`` is a session-local
+ * ``blob:`` URL (images only): present while this session owns the upload,
+ * absent for documents and for rows reloaded from the server — renderers
+ * must fall back to the document icon without it.
+ */
+export interface QueryAttachment {
+  id: string;
+  fileName: string;
+  mimeType?: string;
+  previewUrl?: string;
+}
+
 export interface ConversationState {
   queries: Query[];
   status: Status;
@@ -74,7 +88,7 @@ export interface Query {
   // Non-fatal notice (e.g. some workflow input documents were dropped). Shown
   // alongside the answer; unlike ``error`` it does not fail the turn or end the stream.
   notice?: string;
-  attachments?: { id: string; fileName: string }[];
+  attachments?: QueryAttachment[];
   structured?: boolean;
   schema?: object;
   research?: ResearchState;

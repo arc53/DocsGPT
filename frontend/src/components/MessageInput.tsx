@@ -48,6 +48,7 @@ import { useArmedSend } from './message-input/armedSend';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
+  createImagePreviewUrl,
   getFileExtension,
   parseUploadErrorMessage,
   parseUploadErrorsByIndex,
@@ -314,6 +315,10 @@ type MessageInputProps = {
   onQueuedQuestionConsumed?: () => void;
 };
 
+/**
+ * Chat composer: message input with file attachments (image thumbnails),
+ * voice input, send gating, and tool/source triggers.
+ */
 export default function MessageInput({
   onSubmit,
   loading,
@@ -543,6 +548,9 @@ export default function MessageInput({
               progress: 0,
               status: 'uploading' as const,
               taskId: '',
+              mimeType: file.type || undefined,
+              // Images only — documents keep no preview URL.
+              previewUrl: createImagePreviewUrl(file),
             }),
           );
         });
@@ -833,6 +841,9 @@ export default function MessageInput({
           progress: 0,
           status: 'uploading' as const,
           taskId: '',
+          mimeType: file.type || undefined,
+          // Images only — documents keep no preview URL.
+          previewUrl: createImagePreviewUrl(file),
         };
 
         dispatch(addAttachment(newAttachment));

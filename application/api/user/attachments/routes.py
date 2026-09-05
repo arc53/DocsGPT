@@ -15,6 +15,11 @@ from application.cache import get_redis_instance
 from application.core.settings import settings
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.attachments import AttachmentsRepository
+from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.shared_conversations import (
+    SharedConversationsRepository,
+)
 from application.storage.db.session import db_readonly
 from application.stt.constants import (
     SUPPORTED_AUDIO_EXTENSIONS,
@@ -62,6 +67,38 @@ attachments_ns = Namespace(
 _AGENT_IMAGE_CHUNK_BYTES = 64 * 1024
 _AGENT_IMAGE_PRESIGNED_TTL_SECONDS = 300
 _AGENT_IMAGE_REDIRECT_CACHE_SECONDS = _AGENT_IMAGE_PRESIGNED_TTL_SECONDS - 60
+_ATTACHMENT_PREVIEW_PRESIGNED_TTL_SECONDS = 300
+
+# Raster image MIME types the preview endpoint may serve. SVG (and any
+# other non-raster image type) is deliberately absent: the share-scoped
+# preview URL needs no auth headers, so a navigated-to SVG would execute
+# script in the application origin (stored XSS). Raster formats are inert
+# both in <img> and as documents.
+_ATTACHMENT_PREVIEW_RASTER_MIME_TYPES = frozenset(
+    {
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/tiff",
+        "image/bmp",
+    }
+)
+
+# Suffix -> MIME for the same set. A controlled map rather than
+# mimetypes.guess_type: the stdlib table is version-dependent (e.g. .webp
+# is absent on some supported Pythons, which would otherwise refuse
+# legitimate uploads), and only pipeline-storable suffixes are listed.
+_ATTACHMENT_PREVIEW_SUFFIX_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+    ".bmp": "image/bmp",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
 
 
 def _stream_file(file_obj, size_bytes: int):
@@ -167,6 +204,169 @@ def _parse_bool_form_value(value: str | None) -> bool:
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _attachment_preview_content_type(att: dict) -> str | None:
+    """Image-only Content-Type for an attachment row.
+
+    Prefers the server-derived stored ``mime_type``; falls back to the
+    controlled suffix map for legacy rows that predate it (or whose
+    stored type the stdlib cannot name, e.g. ``.webp``). Returns None for
+    anything outside the raster allowlist — notably SVG, which must never
+    be served here (see ``_ATTACHMENT_PREVIEW_RASTER_MIME_TYPES``).
+
+    Args:
+        att: Attachment row dict with ``mime_type``/``filename`` keys.
+
+    Returns:
+        The ``image/*`` Content-Type to serve, or None to refuse.
+    """
+    stored = (att.get("mime_type") or "").split(";")[0].strip().lower()
+    if stored in _ATTACHMENT_PREVIEW_RASTER_MIME_TYPES:
+        return stored
+    suffix = os.path.splitext(att.get("filename") or "")[1].lower()
+    return _ATTACHMENT_PREVIEW_SUFFIX_MIME_TYPES.get(suffix)
+
+
+def _resolve_share_attachment_scope(conn, share_id: str, attachment_id: str):
+    """Resolve ``(owner_user_id, allowed)`` for share-scoped preview access.
+
+    Mirrors GetPubliclySharedConversations: the share identifier is the
+    capability, and only attachments of the share's visible messages
+    (``first_n_queries``) are in scope — never the owner's other files.
+    Returns ``(None, False)`` unless every check passes.
+    """
+    if not looks_like_uuid(share_id):
+        return None, False
+    shared = SharedConversationsRepository(conn).find_by_uuid(share_id)
+    if not shared or not shared.get("conversation_id"):
+        return None, False
+    owner_user = shared.get("user_id")
+    if not owner_user:
+        return None, False
+    conv_pg_id = str(shared["conversation_id"])
+    conversation = ConversationsRepository(conn).get_owned(conv_pg_id, owner_user)
+    if conversation is None:
+        return None, False
+    messages = ConversationsRepository(conn).get_messages(conv_pg_id)
+    first_n = shared.get("first_n_queries") or 0
+    for msg in messages[:first_n]:
+        for candidate in msg.get("attachments") or []:
+            if str(candidate) == str(attachment_id):
+                return owner_user, True
+    return owner_user, False
+
+
+@attachments_ns.route("/attachment/<string:attachment_id>/preview")
+class AttachmentPreview(Resource):
+    @api.doc(
+        description="Serve a stored image attachment's bytes for chat thumbnail "
+        "previews. Owner JWT/API-key auth, or a share identifier for attachments "
+        "visible in that shared conversation."
+    )
+    def get(self, attachment_id):
+        """Serve one stored image attachment's bytes for preview rendering.
+
+        Args:
+            attachment_id: Route-minted attachment UUID (``legacy_mongo_id``).
+
+        Returns:
+            The image bytes (local storage) or a short-lived presigned
+            redirect (S3) with ``no-store`` caching; 404 for missing,
+            foreign, non-image, or oversized attachments, 401 when owner
+            authentication is absent or invalid.
+        """
+        try:
+            share_id = request.args.get("share")
+            with db_readonly() as conn:
+                attachments_repo = AttachmentsRepository(conn)
+                if share_id:
+                    owner_user, allowed = _resolve_share_attachment_scope(
+                        conn, share_id, attachment_id
+                    )
+                    if not allowed:
+                        return make_response(
+                            jsonify({"success": False, "message": "Image not found"}),
+                            404,
+                        )
+                    # get_any: the id the client holds is the route-minted
+                    # UUID (legacy_mongo_id), not necessarily the row PK.
+                    att = attachments_repo.get_any(attachment_id, owner_user)
+                else:
+                    auth_user = _resolve_authenticated_user()
+                    if hasattr(auth_user, "status_code"):
+                        return auth_user
+                    if not auth_user:
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "Authentication required",
+                                }
+                            ),
+                            401,
+                        )
+                    att = attachments_repo.get_any(attachment_id, auth_user)
+                if not att:
+                    return make_response(
+                        jsonify({"success": False, "message": "Image not found"}),
+                        404,
+                    )
+                content_type = _attachment_preview_content_type(att)
+                # The path comes from the user-scoped DB row, never from the
+                # request — no filesystem path is exposable here.
+                upload_path = att.get("upload_path") or att.get("path")
+                if not content_type or not upload_path:
+                    return make_response(
+                        jsonify({"success": False, "message": "Image not found"}),
+                        404,
+                    )
+
+            from application.api.user.base import storage
+
+            size_bytes = storage.get_file_size(upload_path)
+            if size_bytes < 0 or size_bytes > settings.UPLOAD_MAX_FILE_BYTES:
+                current_app.logger.warning(
+                    "Rejected oversized attachment preview for %s", attachment_id
+                )
+                return make_response(
+                    jsonify({"success": False, "message": "Image not found"}),
+                    404,
+                )
+
+            if settings.STORAGE_TYPE == "s3":
+                image_url = storage.generate_presigned_url(
+                    upload_path,
+                    expires_in=_ATTACHMENT_PREVIEW_PRESIGNED_TTL_SECONDS,
+                    content_type=content_type,
+                    # The S3 object response needs its own directive: the
+                    # Flask 302's no-store does not cover the redirected
+                    # bytes, which would otherwise stay cacheable.
+                    cache_control="no-store",
+                )
+                response = redirect(image_url, code=302)
+                # no-store: preview URLs are identity-authorized, so neither
+                # the bytes nor the redirect may sit in a shared cache.
+                response.headers.set("Cache-Control", "no-store")
+                response.headers.set("X-Content-Type-Options", "nosniff")
+                return response
+
+            file_obj = storage.get_file(upload_path)
+            response = Response(
+                _stream_file(file_obj, size_bytes),
+                content_type=content_type,
+                direct_passthrough=True,
+            )
+            response.headers.set("Cache-Control", "no-store")
+            response.headers.set("X-Content-Type-Options", "nosniff")
+            return response
+        except Exception as err:
+            current_app.logger.error(
+                f"Error serving attachment preview: {err}", exc_info=True
+            )
+            return make_response(
+                jsonify({"success": False, "message": "Image not found"}), 404
+            )
 
 
 @attachments_ns.route("/store_attachment")

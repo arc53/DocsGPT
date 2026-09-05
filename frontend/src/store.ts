@@ -9,6 +9,7 @@ import {
 } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
 import notificationsReducer from './notifications/notificationsSlice';
+import { uploadListenerMiddleware } from './upload/uploadSlice';
 import { getStoredRecentDocs } from './preferences/preferenceApi';
 import {
   Preference,
@@ -85,6 +86,7 @@ const store = configureStore({
     getDefaultMiddleware().concat(
       prefListenerMiddleware.middleware,
       conversationListenerMiddleware.middleware,
+      uploadListenerMiddleware.middleware,
     ),
 });
 

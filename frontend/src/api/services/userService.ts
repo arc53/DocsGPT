@@ -378,6 +378,16 @@ const userService = {
       // Accept header is the same opt-in via content negotiation.
       disposition === 'url' ? { Accept: 'application/json' } : {},
     ),
+  /** Fetch stored image bytes for a chat attachment preview. */
+  getAttachmentPreview: (
+    attachmentId: string,
+    token: string | null,
+    shareId?: string | null,
+  ): Promise<Response> =>
+    apiClient.get(
+      endpoints.USER.ATTACHMENT_PREVIEW(attachmentId, shareId),
+      token,
+    ),
   restoreArtifactVersion: (
     artifactId: string,
     version: number,

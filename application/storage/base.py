@@ -65,6 +65,7 @@ class BaseStorage(ABC):
         path: str,
         expires_in: int = 300,
         content_type: Optional[str] = None,
+        cache_control: Optional[str] = None,
     ) -> str:
         """Return a short-lived presigned download URL; not all backends support it.
 
@@ -72,6 +73,7 @@ class BaseStorage(ABC):
             path: Path to the file
             expires_in: TTL of the signed URL in seconds
             content_type: Optional response Content-Type override
+            cache_control: Optional response Cache-Control override
 
         Returns:
             str: A presigned URL granting time-limited read access

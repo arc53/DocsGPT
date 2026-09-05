@@ -308,6 +308,33 @@ class TestS3StoragePresignedUrl:
             ExpiresIn=300,
         )
 
+    @pytest.mark.unit
+    def test_generate_presigned_url_can_override_cache_control(
+        self, s3_storage, mock_boto3_client
+    ):
+        """ResponseCacheControl must reach the signed params so identity-
+        authorized previews are not left cacheable at the object level."""
+        mock_boto3_client.generate_presigned_url.return_value = "https://signed"
+
+        result = s3_storage.generate_presigned_url(
+            "inputs/user123/attachments/photo.png",
+            expires_in=300,
+            content_type="image/png",
+            cache_control="no-store",
+        )
+
+        assert result == "https://signed"
+        mock_boto3_client.generate_presigned_url.assert_called_once_with(
+            "get_object",
+            Params={
+                "Bucket": "test-bucket",
+                "Key": "inputs/user123/attachments/photo.png",
+                "ResponseContentType": "image/png",
+                "ResponseCacheControl": "no-store",
+            },
+            ExpiresIn=300,
+        )
+
 
 class TestS3StorageDeleteFile:
     """Test file deletion functionality."""

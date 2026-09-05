@@ -361,6 +361,7 @@ class GetPubliclySharedConversations(Resource):
                                             "fileName": attachment.get(
                                                 "filename", "Unknown file"
                                             ),
+                                            "mime_type": attachment.get("mime_type"),
                                         }
                                     )
                             except Exception as e:

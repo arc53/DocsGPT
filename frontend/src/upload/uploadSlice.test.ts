@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { configureStore } from '@reduxjs/toolkit';
 
 import notificationsReducer, {
   sseEventReceived,
@@ -7,9 +9,12 @@ import notificationsReducer, {
 import reducer, {
   addAttachment,
   addUploadTask,
+  clearAttachments,
   dismissUploadTask,
+  removeAttachment,
   updateAttachment,
   updateUploadTask,
+  uploadListenerMiddleware,
   type Attachment,
   type UploadTask,
 } from './uploadSlice';
@@ -543,5 +548,120 @@ describe('upload race — SSE auto-created duplicate absorbed on sourceId bind',
     expect(task.id).toBe('client-1');
     expect(task.status).toBe('completed');
     expect(task.progress).toBe(100);
+  });
+});
+
+describe('attachment preview URL lifecycle', () => {
+  const realRevoke = URL.revokeObjectURL;
+  let revoked: string[];
+
+  /** Completed image-attachment fixture with a live preview URL. */
+  const imgAtt = (over: Partial<Attachment> = {}): Attachment => ({
+    id: 'a1',
+    fileName: 'photo.png',
+    progress: 100,
+    status: 'completed',
+    taskId: 't1',
+    mimeType: 'image/png',
+    previewUrl: 'blob:photo-1',
+    ...over,
+  });
+
+  // Reducers stay pure: revocation runs in uploadListenerMiddleware.
+  // These tests drive a real store so the listeners fire.
+  /** Static slice stub holding a fixed query list for live-URL checks. */
+  const stubScope = (
+    queries: { attachments?: { previewUrl?: string }[] }[],
+  ) => {
+    const initial = { queries, status: 'idle' as const };
+    return (state = initial) => state;
+  };
+
+  /** Test store: real upload slice + query stubs + listener middleware. */
+  const makeStore = (
+    conversationQueries: { attachments?: { previewUrl?: string }[] }[] = [],
+  ) =>
+    configureStore({
+      reducer: {
+        upload: reducer,
+        conversation: stubScope(conversationQueries),
+        sharedConversation: stubScope([]),
+      },
+      middleware: (getDefault) =>
+        getDefault().concat(uploadListenerMiddleware.middleware),
+    });
+
+  /** Let queued listener effects run to completion. */
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  beforeEach(() => {
+    revoked = [];
+    URL.revokeObjectURL = ((url: string) => {
+      revoked.push(url);
+    }) as typeof URL.revokeObjectURL;
+  });
+
+  afterEach(() => {
+    URL.revokeObjectURL = realRevoke;
+  });
+
+  it('reducers stay pure: remove/clear change state without revoking', () => {
+    let state = reducer(undefined, addAttachment(imgAtt()));
+    state = reducer(state, removeAttachment('a1'));
+    expect(state.attachments).toHaveLength(0);
+    state = reducer(undefined, addAttachment(imgAtt()));
+    state = reducer(state, clearAttachments());
+    expect(state.attachments).toHaveLength(0);
+    expect(revoked).toEqual([]);
+  });
+
+  it('removeAttachment revokes the removed preview URL', async () => {
+    const store = makeStore();
+    store.dispatch(addAttachment(imgAtt()));
+    store.dispatch(removeAttachment('a1'));
+    await flush();
+    expect(store.getState().upload.attachments).toHaveLength(0);
+    expect(revoked).toEqual(['blob:photo-1']);
+  });
+
+  it('removeAttachment leaves other rows and their URLs alone', async () => {
+    const store = makeStore();
+    store.dispatch(addAttachment(imgAtt()));
+    store.dispatch(
+      addAttachment(imgAtt({ id: 'a2', previewUrl: 'blob:photo-2' })),
+    );
+    store.dispatch(removeAttachment('a1'));
+    await flush();
+    expect(store.getState().upload.attachments.map((a) => a.id)).toEqual([
+      'a2',
+    ]);
+    expect(revoked).toEqual(['blob:photo-1']);
+  });
+
+  it('clearAttachments revokes dropped previews but keeps query-referenced ones', async () => {
+    const store = makeStore([
+      { attachments: [{ previewUrl: 'blob:photo-2' }] },
+    ]);
+    store.dispatch(addAttachment(imgAtt()));
+    store.dispatch(
+      addAttachment(imgAtt({ id: 'a2', previewUrl: 'blob:photo-2' })),
+    );
+    store.dispatch(clearAttachments());
+    await flush();
+    expect(store.getState().upload.attachments).toHaveLength(0);
+    expect(revoked).toEqual(['blob:photo-1']);
+  });
+
+  it('clearAttachments keeps in-flight rows without revoking them', async () => {
+    const store = makeStore();
+    store.dispatch(
+      addAttachment(imgAtt({ id: 'up', status: 'uploading', progress: 10 })),
+    );
+    store.dispatch(clearAttachments());
+    await flush();
+    expect(store.getState().upload.attachments.map((a) => a.id)).toEqual([
+      'up',
+    ]);
+    expect(revoked).toEqual([]);
   });
 });
