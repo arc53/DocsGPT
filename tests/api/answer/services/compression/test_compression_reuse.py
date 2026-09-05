@@ -244,3 +244,97 @@ class TestHistoryHelpers:
         assert result.success and not result.compression_performed
         assert result.compressed_summary == "S"
         assert result.last_compression_at == EPOCH
+
+
+@pytest.mark.unit
+class TestSummaryRowMarker:
+    """The visible summary row is recognised by its persisted marker; a user
+    who types the label text as a question keeps that turn."""
+
+    def test_marked_row_is_a_summary_row(self):
+        from application.api.answer.services.compression.types import (
+            COMPRESSION_SUMMARY_MARKER,
+            is_compression_summary_row,
+        )
+
+        row = {"prompt": "anything", "response": "S", "metadata": {COMPRESSION_SUMMARY_MARKER: True}}
+        assert is_compression_summary_row(row) is True
+
+    def test_legacy_row_without_metadata_is_a_summary_row(self):
+        from application.api.answer.services.compression.types import is_compression_summary_row
+
+        assert is_compression_summary_row({"prompt": COMPRESSION_SUMMARY_PROMPT, "response": "S"}) is True
+        assert is_compression_summary_row(
+            {"prompt": COMPRESSION_SUMMARY_PROMPT, "response": "S", "metadata": {}}
+        ) is True
+
+    def test_user_turn_with_the_label_text_is_kept(self):
+        from application.api.answer.services.compression.types import is_compression_summary_row
+
+        real_turn = {
+            "prompt": COMPRESSION_SUMMARY_PROMPT,
+            "response": "an answer",
+            "metadata": {"usage": {"prompt_tokens": 10}, "response_id": "resp_1"},
+        }
+        assert is_compression_summary_row(real_turn) is False
+        with_tools = {"prompt": COMPRESSION_SUMMARY_PROMPT, "response": "r", "tool_calls": [{"tool_name": "x"}]}
+        assert is_compression_summary_row(with_tools) is False
+        result = CompressionResult.success_no_compression([real_turn])
+        assert [h["prompt"] for h in result.as_history()] == [COMPRESSION_SUMMARY_PROMPT]
+
+
+@pytest.mark.unit
+class TestIncrementalTailExcludesSummaryRows:
+    def test_compress_conversation_skips_the_summary_row_in_the_tail(self):
+        llm = MagicMock()
+        llm.gen.return_value = "<summary>new</summary>"
+        svc = CompressionService(llm=llm, model_id="m")
+        svc.prompt_builder = MagicMock(version="v1.0")
+        svc.prompt_builder.build_prompt.return_value = [{"role": "user", "content": "p"}]
+        conv = _compressed_conversation()
+        # A mid-execution compression appends its visible row right after the point.
+        conv["queries"].insert(2, {"prompt": COMPRESSION_SUMMARY_PROMPT, "response": "S"})
+
+        svc.compress_conversation(conv, compress_up_to_index=4, start_index=2)
+
+        queries, existing = svc.prompt_builder.build_prompt.call_args[0]
+        assert [q["prompt"] for q in queries] == ["q2", "q3"]
+        assert existing == [POINT]
+
+    def test_only_summary_rows_since_the_point_is_rejected(self):
+        svc = CompressionService(llm=MagicMock(), model_id="m")
+        conv = _compressed_conversation()
+        conv["queries"] = conv["queries"][:2] + [{"prompt": COMPRESSION_SUMMARY_PROMPT, "response": "S"}]
+        with pytest.raises(ValueError, match="Nothing to compress"):
+            svc.compress_conversation(conv, compress_up_to_index=2, start_index=2)
+
+    @patch(
+        "application.api.answer.services.compression.orchestrator.get_provider_from_model_id",
+        return_value="openai",
+    )
+    @patch(
+        "application.api.answer.services.compression.orchestrator.get_api_key_for_provider",
+        return_value="sk",
+    )
+    @patch("application.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("application.api.answer.services.compression.orchestrator.CompressionService")
+    @patch("application.api.answer.services.compression.orchestrator.settings")
+    def test_orchestrator_reuses_summary_when_only_summary_rows_follow_the_point(
+        self, mock_settings, MockCompressionService, MockLLMCreator, _key, _provider,
+        orchestrator, conversation_service, threshold_checker,
+    ):
+        mock_settings.COMPRESSION_MODEL_OVERRIDE = None
+        conv = _compressed_conversation()
+        conv["queries"] = conv["queries"][:2] + [{"prompt": COMPRESSION_SUMMARY_PROMPT, "response": "S"}]
+        conversation_service.get_conversation.return_value = conv
+        threshold_checker.should_compress.return_value = True
+        MockLLMCreator.create_llm.return_value = MagicMock()
+        svc = MagicMock()
+        svc.get_compressed_context.return_value = ("S", [])
+        MockCompressionService.return_value = svc
+
+        result = orchestrator.compress_if_needed("conv1", "user1", "m", {"sub": "user1"})
+
+        assert result.success and not result.compression_performed
+        assert result.compressed_summary == "S"
+        svc.compress_and_save.assert_not_called()

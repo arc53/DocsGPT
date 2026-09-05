@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import uuid
@@ -55,6 +56,17 @@ def _parse_epoch(value: Any) -> Optional[datetime]:
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _cache_key_for_user(user_id: Any) -> Optional[str]:
+    """Opaque, stable prompt-cache routing key for a user.
+
+    The key only needs to be the same for every call the user makes; it
+    must not carry the identifier itself to the provider.
+    """
+    if not user_id:
+        return None
+    return hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[:32]
 
 
 def _epoch_text(value: Any) -> Optional[str]:
@@ -1337,8 +1349,9 @@ class BaseAgent(ABC):
             # Route a user's calls to the same cache shard. Keyed by user, not
             # conversation: a new conversation has no id until its first turn
             # is saved, and a key that appears on turn two would look up a
-            # different shard from the one turn one populated.
-            self.llm._prompt_cache_key = (
+            # different shard from the one turn one populated. Hashed so the
+            # identifier itself never reaches the provider.
+            self.llm._prompt_cache_key = _cache_key_for_user(
                 getattr(self, "initial_user_id", None) or getattr(self, "user", None)
             )
 

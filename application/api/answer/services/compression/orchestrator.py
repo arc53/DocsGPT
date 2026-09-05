@@ -7,7 +7,10 @@ from application.api.answer.services.compression.service import CompressionServi
 from application.api.answer.services.compression.threshold_checker import (
     CompressionThresholdChecker,
 )
-from application.api.answer.services.compression.types import CompressionResult
+from application.api.answer.services.compression.types import (
+    CompressionResult,
+    is_compression_summary_row,
+)
 from application.core.model_utils import (
     get_api_key_for_provider,
     get_provider_from_model_id,
@@ -214,7 +217,12 @@ class CompressionOrchestrator:
                     start_index = int(points[-1].get("query_index", -1)) + 1
                 except (TypeError, ValueError):
                     start_index = 0
-            if start_index > compress_up_to:
+            new_queries = [
+                q
+                for q in conversation.get("queries", [])[start_index:]
+                if not is_compression_summary_row(q)
+            ]
+            if start_index > compress_up_to or not new_queries:
                 logger.info(
                     f"No new queries since the last compression point for "
                     f"conversation {conversation_id}; reusing its summary"

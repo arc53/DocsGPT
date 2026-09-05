@@ -82,8 +82,18 @@ class CompressionService:
                     f"compress_up_to_index {compress_up_to_index}"
                 )
             # Only the queries after the previous compression point are new;
-            # the earlier ones are already inside that point's summary.
-            queries_to_compress = queries[start_index : compress_up_to_index + 1]
+            # the earlier ones are already inside that point's summary, and so
+            # is the visible summary row that follows the point.
+            queries_to_compress = [
+                q
+                for q in queries[start_index : compress_up_to_index + 1]
+                if not is_compression_summary_row(q)
+            ]
+            if not queries_to_compress:
+                raise ValueError(
+                    "Nothing to compress: no new queries since the last "
+                    "compression point"
+                )
 
             # Check if there are existing compressions. ``compression_metadata``
             # is a nullable JSONB column, so a never-compressed conversation

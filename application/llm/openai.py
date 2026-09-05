@@ -264,7 +264,7 @@ class OpenAILLM(BaseLLM):
         # transcript instead of deduping it, so a chained round only carries
         # the head when it changed.
         self._chain_system_hash = None
-        # Prompt-cache routing key (the user id), set by the agent per call.
+        # Opaque per-user prompt-cache routing key, set by the agent per call.
         self._prompt_cache_key = None
         # Files-API ids for inline ``file_data`` content parts already
         # uploaded, keyed by content hash. First-line cache for the
@@ -1293,7 +1293,7 @@ class OpenAILLM(BaseLLM):
         # server-side (store=true).
         params["include"] = ["reasoning.encrypted_content"]
         # Backstop against a chain that outgrows the model's native window:
-        # the provider drops middle items instead of failing every request.
+        # the provider drops the oldest input items instead of failing.
         if getattr(settings, "OPENAI_RESPONSES_TRUNCATION_AUTO", False):
             params["truncation"] = "auto"
         # Prompt-cache hints. The key pins a conversation to one cache shard;

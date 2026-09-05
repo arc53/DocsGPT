@@ -4,15 +4,32 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-# ``prompt`` of the visible summary row appended after a compression. These
-# rows are display-only: their content already reaches the model through the
-# system prompt (``compressed_summary``), so history replay skips them.
+# The visible summary row appended after a compression. These rows are
+# display-only: their content already reaches the model through the system
+# prompt (``compressed_summary``), so history replay skips them. New rows carry
+# ``metadata[COMPRESSION_SUMMARY_MARKER]``; the prompt text is the display label.
 COMPRESSION_SUMMARY_PROMPT = "[Context Compression Summary]"
+COMPRESSION_SUMMARY_MARKER = "compression_summary"
 
 
 def is_compression_summary_row(query: Any) -> bool:
-    """True for the visible summary row written by ``append_compression_message``."""
-    return isinstance(query, dict) and query.get("prompt") == COMPRESSION_SUMMARY_PROMPT
+    """True for the visible summary row written by ``append_compression_message``.
+
+    Rows written since the marker exists are recognised by it alone. Rows
+    written before it are recognised by the label only when nothing marks them
+    as a real turn (no tool calls, no per-turn metadata), so a user who types
+    the label text as a question keeps that turn in their history.
+    """
+    if not isinstance(query, dict):
+        return False
+    metadata = query.get("metadata")
+    if isinstance(metadata, dict) and metadata.get(COMPRESSION_SUMMARY_MARKER) is True:
+        return True
+    return (
+        query.get("prompt") == COMPRESSION_SUMMARY_PROMPT
+        and not query.get("tool_calls")
+        and not metadata
+    )
 
 
 @dataclass

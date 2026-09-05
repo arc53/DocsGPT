@@ -377,11 +377,12 @@ class Settings(BaseSettings):
     # compressed after that turn was produced.
     OPENAI_RESPONSES_CHAIN_ACROSS_TURNS: bool = True
     OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS: Optional[int] = None
-    # ``truncation: "auto"`` lets the provider drop middle items instead of
-    # failing every request once a chain exceeds the model's native window.
+    # ``truncation: "auto"`` lets the provider drop the oldest input items
+    # instead of failing every request once a chain exceeds the model's window.
     OPENAI_RESPONSES_TRUNCATION_AUTO: bool = False
     # Prompt-cache hints on the Responses API: route a user's calls to the
-    # same cache shard, and request extended retention where offered.
+    # same cache shard (opaque per-user key), and request extended retention
+    # where offered.
     OPENAI_PROMPT_CACHE_KEY: bool = True
     OPENAI_PROMPT_CACHE_RETENTION: Optional[str] = None
     OPENAI_REASONING_SUMMARY: str = "auto"

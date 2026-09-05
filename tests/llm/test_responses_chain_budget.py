@@ -297,3 +297,18 @@ def test_emit_responses_metadata_records_compression_epoch(monkeypatch):
     events = list(agent._emit_responses_metadata())
     assert events and events[0]["metadata"]["compression_epoch"] == "2026-09-03T10:00:00+00:00"
     assert events[0]["metadata"]["response_id"] == "resp_9"
+
+
+# ── cache key is opaque ─────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_cache_key_for_user_is_opaque_and_stable():
+    from application.agents.base import _cache_key_for_user
+
+    key = _cache_key_for_user("user_2Vhzgd63RSgixvvbF8Z2nhtqnE9")
+    assert key and "user_2Vhzgd" not in key
+    assert len(key) == 32 and all(c in "0123456789abcdef" for c in key)
+    assert key == _cache_key_for_user("user_2Vhzgd63RSgixvvbF8Z2nhtqnE9")
+    assert key != _cache_key_for_user("someone-else")
+    assert _cache_key_for_user(None) is None

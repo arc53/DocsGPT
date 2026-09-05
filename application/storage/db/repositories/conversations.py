@@ -517,6 +517,8 @@ class ConversationsRepository:
         ).scalar()
         if (
             isinstance(last_point, dict)
+            and point.get("query_index") is not None
+            and point.get("compressed_summary") is not None
             and last_point.get("query_index") == point.get("query_index")
             and last_point.get("compressed_summary") == point.get("compressed_summary")
         ):

@@ -381,6 +381,18 @@ class TestCompressionMetadata:
         points = fetched["compression_metadata"]["compression_points"]
         assert [p["summary"] for p in points] == ["p2", "p3", "p4"]
 
+    def test_append_compression_point_ignores_an_identical_point(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        point = {"query_index": 3, "compressed_summary": "S", "original_token_count": 90}
+        assert repo.append_compression_point(conv["id"], point, max_points=3) is True
+        # Two persist paths used to append the same point twice.
+        assert repo.append_compression_point(conv["id"], dict(point), max_points=3) is True
+        later = {"query_index": 5, "compressed_summary": "S2", "original_token_count": 40}
+        assert repo.append_compression_point(conv["id"], later, max_points=3) is True
+        points = repo.get(conv["id"], "user-1")["compression_metadata"]["compression_points"]
+        assert [p["query_index"] for p in points] == [3, 5]
+
 
 class TestResolveAgentRef:
     """The repo must translate Mongo ObjectId-shaped ``agent_id`` values
