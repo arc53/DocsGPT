@@ -1423,10 +1423,12 @@ class OpenAILLM(BaseLLM):
         if rid:
             self._last_response_id = rid
         # The provider recorded this request, so the head it carried (or
-        # kept) is now the chain's head.
-        if self._pending_system_hash is not None:
-            self._chain_system_hash = self._pending_system_hash
-            self._pending_system_hash = None
+        # kept) is now the chain's head — including "no head at all", when
+        # an unchained request went out without a system message: a stale
+        # hash would let a later chained request omit a head this
+        # transcript never received.
+        self._chain_system_hash = self._pending_system_hash
+        self._pending_system_hash = None
         self._last_response_call_ids = self._function_call_ids(response)
         usage = getattr(response, "usage", None)
         if usage is not None:

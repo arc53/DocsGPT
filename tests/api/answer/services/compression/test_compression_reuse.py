@@ -499,3 +499,34 @@ class TestUnusableSavedPoints:
 
         assert result.compression_performed
         assert svc.compress_and_save.call_args.kwargs["start_index"] == 2
+
+
+@pytest.mark.unit
+class TestUsablePointPredicates:
+    """Each rejection predicate of ``is_usable_compression_point`` on its own."""
+
+    def _with_later_point(self, **point):
+        conv = _compressed_conversation()
+        conv["queries"].append({"prompt": "q4", "response": "r4"})
+        conv["compression_metadata"]["compression_points"].append(
+            {"timestamp": "2026-09-04T09:00:00+00:00", "query_index": 3, **point}
+        )
+        return conv
+
+    def test_a_positive_count_does_not_rescue_a_blank_summary(self):
+        conv = self._with_later_point(compressed_summary="   ", compressed_token_count=12)
+        summary, recent = CompressionService(llm=None, model_id="m").get_compressed_context(conv)
+        assert summary == "S"
+        assert [q["prompt"] for q in recent] == ["q2", "q3", "q4"]
+
+    def test_a_zero_count_does_not_rescue_a_non_blank_summary(self):
+        conv = self._with_later_point(compressed_summary="newer", compressed_token_count=0)
+        summary, recent = CompressionService(llm=None, model_id="m").get_compressed_context(conv)
+        assert summary == "S"
+        assert [q["prompt"] for q in recent] == ["q2", "q3", "q4"]
+
+    def test_a_missing_count_with_a_summary_is_usable(self):
+        conv = self._with_later_point(compressed_summary="newer")
+        summary, recent = CompressionService(llm=None, model_id="m").get_compressed_context(conv)
+        assert summary == "newer"
+        assert [q["prompt"] for q in recent] == ["q4"]

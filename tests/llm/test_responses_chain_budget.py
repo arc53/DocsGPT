@@ -402,3 +402,17 @@ def test_output_capped_response_still_records_chain_state(monkeypatch):
     assert llm._responses_gen("gpt-5.6", _messages(), tools=None) == "partial"
     assert llm._last_response_id == "resp_len"
     assert llm._chain_system_hash is not None
+
+
+@pytest.mark.unit
+def test_recorded_request_without_a_head_clears_the_committed_hash(monkeypatch):
+    llm = _make_llm(monkeypatch)
+    llm._build_responses_input(_messages("sys v1"), None)
+    _accepted(llm, "resp_1")
+    # An unchained fallback with no system message at all is recorded: the
+    # new transcript holds no head, so the old hash must not survive it.
+    llm._build_responses_input([{"role": "user", "content": "q"}], None)
+    _accepted(llm, "resp_2")
+    assert llm._chain_system_hash is None
+    chained, _ = llm._build_responses_input(_messages("sys v1"), "resp_2")
+    assert _roles(chained) == ["system", "user"]
