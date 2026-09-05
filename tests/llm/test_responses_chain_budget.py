@@ -354,3 +354,51 @@ def test_failed_chained_request_resends_changed_head_on_retry(monkeypatch):
     _accepted(llm, "resp_2")
     after, _ = llm._build_responses_input(_messages("sys v2"), "resp_2")
     assert _roles(after) == ["user"]
+
+
+# ── a failed non-streaming response must not become chain state ─────────────
+
+
+@pytest.mark.unit
+def test_failed_response_records_no_chain_state(monkeypatch):
+    llm = _make_llm(monkeypatch)
+    # An accepted turn with head "sys v1".
+    llm._build_responses_input(_messages("sys v1"), None)
+    _accepted(llm, "resp_ok")
+    committed = llm._chain_system_hash
+
+    failed = types.SimpleNamespace(
+        id="resp_bad", status="failed", error=types.SimpleNamespace(message="boom"),
+        incomplete_details=None, output=[], usage=None,
+    )
+    llm.client.responses.create = MagicMock(return_value=failed)
+    with pytest.raises(RuntimeError):
+        llm._responses_gen(
+            "gpt-5.6", _messages("sys v2"), tools=None, previous_response_id="resp_ok"
+        )
+
+    # Neither the failed id nor the head it carried became chain state
+    # (the in-turn id is cleared before every request; the retry chains via
+    # the caller's previous_response_id)...
+    assert llm._last_response_id != "resp_bad"
+    assert llm._chain_system_hash == committed
+    # ...so the retry chains onto resp_ok and re-sends the changed head.
+    retry, prev = llm._build_responses_input(_messages("sys v2"), "resp_ok")
+    assert prev == "resp_ok"
+    assert _roles(retry) == ["system", "user"]
+
+
+@pytest.mark.unit
+def test_output_capped_response_still_records_chain_state(monkeypatch):
+    llm = _make_llm(monkeypatch)
+    capped = types.SimpleNamespace(
+        id="resp_len", status="incomplete",
+        incomplete_details=types.SimpleNamespace(reason="max_output_tokens"),
+        output=[types.SimpleNamespace(type="message", content=[
+            types.SimpleNamespace(type="output_text", text="partial")])],
+        usage=None, error=None,
+    )
+    llm.client.responses.create = MagicMock(return_value=capped)
+    assert llm._responses_gen("gpt-5.6", _messages(), tools=None) == "partial"
+    assert llm._last_response_id == "resp_len"
+    assert llm._chain_system_hash is not None

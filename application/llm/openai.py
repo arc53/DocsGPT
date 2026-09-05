@@ -1551,11 +1551,13 @@ class OpenAILLM(BaseLLM):
             "OpenAI Responses request completed id=%s",
             getattr(response, "id", None),
         )
-        self._record_responses_metadata(response)
         content, tool_calls, reasoning_items = self._parse_responses_output(
             response
         )
-        self._last_reasoning_items = reasoning_items
+        # Chain state (response id, head hash, reasoning items) is recorded
+        # only for a response the provider actually completed — a failed one
+        # must not become the id the next call chains onto, nor commit a head
+        # the stored transcript never received.
         details = getattr(response, "incomplete_details", None)
         incomplete_reason = getattr(details, "reason", None)
         if getattr(response, "status", None) == "incomplete":
@@ -1564,6 +1566,9 @@ class OpenAILLM(BaseLLM):
                     self._responses_status_error(response)
                     or "Responses API incomplete: unknown reason"
                 )
+            # Cut off by the output cap: the input was accepted and stored.
+            self._record_responses_metadata(response)
+            self._last_reasoning_items = reasoning_items
             self._last_finish_reason = "length"
             if tools:
                 return _RespChoice(
@@ -1574,6 +1579,8 @@ class OpenAILLM(BaseLLM):
         status_error = self._responses_status_error(response)
         if status_error:
             raise RuntimeError(status_error)
+        self._record_responses_metadata(response)
+        self._last_reasoning_items = reasoning_items
         if tools:
             self._remember_reasoning(tool_calls, reasoning_items)
             message = _RespMessage(
