@@ -376,6 +376,29 @@ class TestTransformActions:
 
         assert transform_actions([]) == []
 
+    def test_ignores_non_dict_properties(self):
+        """A schema whose ``properties`` is not a mapping must not raise."""
+        from application.api.user.tools.routes import transform_actions
+
+        actions = [{"name": "noop", "parameters": {"type": "object", "properties": None}}]
+        result = transform_actions(actions)
+        assert result[0]["active"] is True
+
+    def test_ignores_non_dict_param_details(self):
+        """Malformed property values are skipped instead of raising TypeError."""
+        from application.api.user.tools.routes import transform_actions
+
+        actions = [
+            {
+                "name": "list_profiles",
+                "parameters": {"properties": {"type": "object", "query": {"type": "string"}}},
+            }
+        ]
+        result = transform_actions(actions)
+        props = result[0]["parameters"]["properties"]
+        assert props["type"] == "object"
+        assert props["query"]["filled_by_llm"] is True
+
 
 # ---------------------------------------------------------------------------
 # Route: AvailableTools
