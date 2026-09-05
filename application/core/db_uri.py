@@ -32,6 +32,10 @@ def _rewrite_uri_prefixes(v, rewrites):
     through so downstream consumers (SQLAlchemy, libpq) can produce
     their own error messages rather than us silently eating a
     misconfiguration.
+
+    URI schemes are case-insensitive (RFC 3986 §3.1), so comparison is
+    performed against the lower-cased value while the original casing of
+    the remainder of the URI is preserved.
     """
     if v is None:
         return None
@@ -41,7 +45,7 @@ def _rewrite_uri_prefixes(v, rewrites):
     if not v or v.lower() == "none":
         return None
     for prefix, target in rewrites:
-        if v.startswith(prefix):
+        if v.lower().startswith(prefix):
             return target + v[len(prefix):]
     return v
 
