@@ -58,6 +58,11 @@ def _roles(items):
     return [i.get("role") for i in items if isinstance(i, dict) and i.get("role")]
 
 
+def _accepted(llm, rid="resp_1"):
+    """The provider accepted the request just built: record its response."""
+    llm._record_responses_metadata(types.SimpleNamespace(id=rid, output=[], usage=None))
+
+
 # ── chained system head ──────────────────────────────────────────────────────
 
 
@@ -69,6 +74,7 @@ def test_chained_input_omits_unchanged_system_head(monkeypatch):
     first, prev = llm._build_responses_input(_messages(), None)
     assert prev is None
     assert "system" in _roles(first)
+    _accepted(llm)
 
     chained, prev = llm._build_responses_input(_messages(), "resp_1")
     assert prev == "resp_1"
@@ -79,9 +85,11 @@ def test_chained_input_omits_unchanged_system_head(monkeypatch):
 def test_chained_input_resends_changed_system_head(monkeypatch):
     llm = _make_llm(monkeypatch)
     llm._build_responses_input(_messages("sys v1"), None)
+    _accepted(llm)
 
     chained, _ = llm._build_responses_input(_messages("sys v2"), "resp_1")
     assert _roles(chained) == ["system", "user"]
+    _accepted(llm, "resp_2")
 
     # ...and the new head becomes the one the chain holds.
     again, _ = llm._build_responses_input(_messages("sys v2"), "resp_2")
@@ -92,6 +100,7 @@ def test_chained_input_resends_changed_system_head(monkeypatch):
 def test_chained_system_head_hash_roundtrips_through_state(monkeypatch):
     llm = _make_llm(monkeypatch)
     llm._build_responses_input(_messages(), None)
+    _accepted(llm)
     state = llm.export_responses_state()
     assert state.get("system_hash")
 
@@ -105,6 +114,7 @@ def test_chained_system_head_hash_roundtrips_through_state(monkeypatch):
 def test_start_responses_turn_forgets_system_head(monkeypatch):
     llm = _make_llm(monkeypatch)
     llm._build_responses_input(_messages(), None)
+    _accepted(llm)
     llm.start_responses_turn()
     chained, _ = llm._build_responses_input(_messages(), "resp_1")
     # A fresh chain has no head on the server yet, so the head is sent.
@@ -312,3 +322,35 @@ def test_cache_key_for_user_is_opaque_and_stable():
     assert key == _cache_key_for_user("user_2Vhzgd63RSgixvvbF8Z2nhtqnE9")
     assert key != _cache_key_for_user("someone-else")
     assert _cache_key_for_user(None) is None
+
+
+# ── the head hash commits only once the provider accepted the request ───────
+
+
+@pytest.mark.unit
+def test_system_hash_commits_only_when_the_response_is_recorded(monkeypatch):
+    llm = _make_llm(monkeypatch)
+    llm._build_responses_input(_messages(), None)
+    # Not recorded (the request failed before the provider stored it): a
+    # chained follow-up must still carry the head.
+    chained, _ = llm._build_responses_input(_messages(), "resp_1")
+    assert _roles(chained) == ["system", "user"]
+    _accepted(llm)
+    chained, _ = llm._build_responses_input(_messages(), "resp_1")
+    assert _roles(chained) == ["user"]
+
+
+@pytest.mark.unit
+def test_failed_chained_request_resends_changed_head_on_retry(monkeypatch):
+    llm = _make_llm(monkeypatch)
+    llm._build_responses_input(_messages("sys v1"), None)
+    _accepted(llm)
+    first, _ = llm._build_responses_input(_messages("sys v2"), "resp_1")
+    assert _roles(first) == ["system", "user"]
+    # Transport error before any chunk: nothing recorded. The same-primary
+    # retry chains onto resp_1 again, whose stored head is still "sys v1".
+    retry, _ = llm._build_responses_input(_messages("sys v2"), "resp_1")
+    assert _roles(retry) == ["system", "user"]
+    _accepted(llm, "resp_2")
+    after, _ = llm._build_responses_input(_messages("sys v2"), "resp_2")
+    assert _roles(after) == ["user"]

@@ -264,6 +264,11 @@ class OpenAILLM(BaseLLM):
         # transcript instead of deduping it, so a chained round only carries
         # the head when it changed.
         self._chain_system_hash = None
+        # The head hash a request in flight would establish; it becomes
+        # ``_chain_system_hash`` only once the provider records the response,
+        # so a failed request leaves the chain's head unchanged and a retry
+        # re-sends the head.
+        self._pending_system_hash = None
         # Opaque per-user prompt-cache routing key, set by the agent per call.
         self._prompt_cache_key = None
         # Files-API ids for inline ``file_data`` content parts already
@@ -327,6 +332,7 @@ class OpenAILLM(BaseLLM):
         self._last_reasoning_items = list(state.get("reasoning_items") or [])
         self._reasoning_for_calls = dict(state.get("reasoning_for_calls") or {})
         self._chain_system_hash = state.get("system_hash")
+        self._pending_system_hash = None
         return True
 
     def start_responses_turn(self) -> None:
@@ -337,6 +343,7 @@ class OpenAILLM(BaseLLM):
         self._last_response_call_ids = set()
         self._imported_response_id = None
         self._chain_system_hash = None
+        self._pending_system_hash = None
         self._last_finish_reason = None
 
     def _resolve_file_part(self, item):
@@ -1142,7 +1149,9 @@ class OpenAILLM(BaseLLM):
         """
         chained = bool(previous_response_id and settings.OPENAI_RESPONSES_STORE)
         if not chained:
-            self._chain_system_hash = self._system_fingerprint(messages)
+            # The full head goes out; it becomes the chain's head only once
+            # the provider records the response.
+            self._pending_system_hash = self._system_fingerprint(messages)
             return self._to_responses_input(messages, chained=False), None
 
         trimmed = self._trim_for_previous_response(messages)
@@ -1154,8 +1163,12 @@ class OpenAILLM(BaseLLM):
             # unchanged head stays home. After a compression the head also
             # carries the summary, which made every tool round re-append it.
             trimmed = [m for m in trimmed if m.get("role") != "system"]
-        elif head_hash:
-            self._chain_system_hash = head_hash
+            self._pending_system_hash = self._chain_system_hash
+        else:
+            # A changed (or first) head is sent; only a recorded response
+            # makes it the chain's head, so a failed request and its retry
+            # still carry it.
+            self._pending_system_hash = head_hash or self._chain_system_hash
         input_items = self._to_responses_input(trimmed, chained=True)
         expected = set(self._last_response_call_ids or ())
         if expected:
@@ -1189,7 +1202,7 @@ class OpenAILLM(BaseLLM):
                     "request the provider would reject",
                     sorted(missing),
                 )
-                self._chain_system_hash = self._system_fingerprint(messages)
+                self._pending_system_hash = self._system_fingerprint(messages)
                 return self._to_responses_input(messages, chained=False), None
         return input_items, previous_response_id
 
@@ -1409,6 +1422,11 @@ class OpenAILLM(BaseLLM):
         rid = getattr(response, "id", None)
         if rid:
             self._last_response_id = rid
+        # The provider recorded this request, so the head it carried (or
+        # kept) is now the chain's head.
+        if self._pending_system_hash is not None:
+            self._chain_system_hash = self._pending_system_hash
+            self._pending_system_hash = None
         self._last_response_call_ids = self._function_call_ids(response)
         usage = getattr(response, "usage", None)
         if usage is not None:

@@ -10,6 +10,7 @@ from application.api.answer.services.compression.threshold_checker import (
 from application.api.answer.services.compression.types import (
     CompressionResult,
     is_compression_summary_row,
+    latest_usable_compression_point,
 )
 from application.core.model_utils import (
     get_api_key_for_provider,
@@ -96,10 +97,13 @@ class CompressionOrchestrator:
             ):
                 compression_meta = conversation.get("compression_metadata") or {}
                 points = compression_meta.get("compression_points") or []
-                if compression_meta.get("is_compressed") and points:
+                usable_point = latest_usable_compression_point(points)
+                if compression_meta.get("is_compressed") and usable_point:
                     # A saved summary applies to every later turn, not only
                     # the turn that made it (measured in prod: the full raw
-                    # history was replayed on the very next turn).
+                    # history was replayed on the very next turn). A point
+                    # whose summary is empty is not one: the raw history
+                    # stays.
                     summary, recent = self._read_only_service(
                         model_id
                     ).get_compressed_context(conversation)
@@ -108,7 +112,7 @@ class CompressionOrchestrator:
                         recent,
                         last_compression_at=(
                             compression_meta.get("last_compression_at")
-                            or points[-1].get("timestamp")
+                            or usable_point.get("timestamp")
                         ),
                     )
                 # No compression needed, return full history
@@ -145,6 +149,7 @@ class CompressionOrchestrator:
         decoded_token: Dict[str, Any],
         user_id: Optional[str] = None,
         model_user_id: Optional[str] = None,
+        persist_query_index: Optional[int] = None,
     ) -> CompressionResult:
         """
         Perform the actual compression operation.
@@ -211,18 +216,22 @@ class CompressionOrchestrator:
             points = (conversation.get("compression_metadata") or {}).get(
                 "compression_points"
             ) or []
+            # Build on the latest point that can stand in for the history it
+            # covers; an empty saved summary does not move the start.
+            usable_point = latest_usable_compression_point(points)
             start_index = 0
-            if points:
+            if usable_point:
                 try:
-                    start_index = int(points[-1].get("query_index", -1)) + 1
+                    start_index = int(usable_point.get("query_index", -1)) + 1
                 except (TypeError, ValueError):
                     start_index = 0
+            start_index = max(start_index, 0)
             new_queries = [
                 q
                 for q in conversation.get("queries", [])[start_index:]
                 if not is_compression_summary_row(q)
             ]
-            if start_index > compress_up_to or not new_queries:
+            if usable_point and (start_index > compress_up_to or not new_queries):
                 logger.info(
                     f"No new queries since the last compression point for "
                     f"conversation {conversation_id}; reusing its summary"
@@ -231,23 +240,31 @@ class CompressionOrchestrator:
                     conversation
                 )
                 return CompressionResult.success_from_existing(
-                    summary, recent, last_compression_at=points[-1].get("timestamp")
+                    summary, recent, last_compression_at=usable_point.get("timestamp")
                 )
 
+            if usable_point:
+                covered = usable_point.get("query_index")
+                on_top = (
+                    " on top of the summary carried into this turn"
+                    if isinstance(covered, int) and covered < 0
+                    else f" on top of the summary at query {covered}"
+                )
+            else:
+                on_top = ""
             logger.info(
                 f"Initiating compression for conversation {conversation_id}: "
                 f"compressing queries {start_index}-{compress_up_to} of "
-                f"{queries_count}"
-                + (
-                    f" on top of the summary at query {points[-1].get('query_index')}"
-                    if points
-                    else ""
-                )
+                f"{queries_count}{on_top}"
             )
 
             # Perform compression and save to DB
             metadata = compression_service.compress_and_save(
-                conversation_id, conversation, compress_up_to, start_index=start_index
+                conversation_id,
+                conversation,
+                compress_up_to,
+                start_index=start_index,
+                persist_query_index=persist_query_index,
             )
 
             logger.info(
@@ -284,6 +301,7 @@ class CompressionOrchestrator:
         decoded_token: Dict[str, Any],
         current_conversation: Optional[Dict[str, Any]] = None,
         model_user_id: Optional[str] = None,
+        persist_query_index: Optional[int] = None,
     ) -> CompressionResult:
         """
         Perform compression during tool execution.
@@ -325,6 +343,7 @@ class CompressionOrchestrator:
                 decoded_token,
                 user_id=user_id,
                 model_user_id=model_user_id,
+                persist_query_index=persist_query_index,
             )
 
         except Exception as e:

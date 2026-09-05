@@ -5,7 +5,10 @@ from typing import Any, Dict, List
 
 from application.utils import num_tokens_from_string
 from application.core.settings import settings
-from application.api.answer.services.compression.types import is_compression_summary_row
+from application.api.answer.services.compression.types import (
+    is_compression_summary_row,
+    latest_usable_compression_point,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +151,11 @@ class TokenCounter:
             points = metadata.get("compression_points") or []
             if not (metadata.get("is_compressed") and points):
                 return TokenCounter.count_query_tokens(queries)
-            latest = points[-1] or {}
+            latest = latest_usable_compression_point(points)
+            if latest is None:
+                # Only unusable (empty) points: the raw history is what the
+                # next turn will replay.
+                return TokenCounter.count_query_tokens(queries)
             try:
                 last_index = int(latest.get("query_index", -1))
             except (TypeError, ValueError):

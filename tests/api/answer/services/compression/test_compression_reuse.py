@@ -338,3 +338,164 @@ class TestIncrementalTailExcludesSummaryRows:
         assert result.success and not result.compression_performed
         assert result.compressed_summary == "S"
         svc.compress_and_save.assert_not_called()
+
+
+@pytest.mark.unit
+class TestAbsolutePersistIndex:
+    def test_compress_conversation_persists_the_given_absolute_index(self):
+        llm = MagicMock()
+        llm.gen.return_value = "<summary>new</summary>"
+        svc = CompressionService(llm=llm, model_id="m")
+        svc.prompt_builder = MagicMock(version="v1.0")
+        svc.prompt_builder.build_prompt.return_value = [{"role": "user", "content": "p"}]
+        conv = {"queries": [{"prompt": "q18", "response": "r"}, {"prompt": "q19", "response": ""}]}
+
+        metadata = svc.compress_conversation(conv, compress_up_to_index=1, persist_query_index=19)
+
+        assert metadata.query_index == 19
+
+    @patch(
+        "application.api.answer.services.compression.orchestrator.get_provider_from_model_id",
+        return_value="openai",
+    )
+    @patch(
+        "application.api.answer.services.compression.orchestrator.get_api_key_for_provider",
+        return_value="sk",
+    )
+    @patch("application.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("application.api.answer.services.compression.orchestrator.CompressionService")
+    @patch("application.api.answer.services.compression.orchestrator.settings")
+    def test_mid_execution_builds_on_the_carried_summary_and_persists_the_absolute_index(
+        self, mock_settings, MockCompressionService, MockLLMCreator, _key, _provider,
+        orchestrator, conversation_service,
+    ):
+        mock_settings.COMPRESSION_MODEL_OVERRIDE = None
+        MockLLMCreator.create_llm.return_value = MagicMock()
+        metadata = MagicMock()
+        metadata.compression_ratio = 3.0
+        metadata.original_token_count = 30
+        metadata.compressed_token_count = 10
+        metadata.timestamp = "2026-09-03T10:00:00+00:00"
+        svc = MagicMock()
+        svc.compress_and_save.return_value = metadata
+        svc.get_compressed_context.return_value = ("new", [])
+        MockCompressionService.return_value = svc
+        conversation_service.get_conversation.return_value = {"queries": [], "compression_metadata": {}}
+        synthetic = {
+            "queries": [{"prompt": "q18", "response": "r"}, {"prompt": "q19", "response": ""}],
+            "compression_metadata": {
+                "is_compressed": True,
+                "compression_points": [{"query_index": -1, "compressed_summary": "prior",
+                                        "compressed_token_count": 5, "original_token_count": 5}],
+            },
+        }
+
+        result = orchestrator.compress_mid_execution(
+            "conv1", "user1", "m", {"sub": "user1"}, current_conversation=synthetic,
+            persist_query_index=19,
+        )
+
+        assert result.success and result.compression_performed
+        args, kwargs = svc.compress_and_save.call_args
+        assert kwargs["start_index"] == 0          # every synthetic query is newer than the summary
+        assert kwargs["persist_query_index"] == 19  # indexed against the database conversation
+
+
+@pytest.mark.unit
+class TestUnusableSavedPoints:
+    """A saved point with an empty summary (older versions wrote them) must
+    never make a turn drop history."""
+
+    def _conversation_with_empty_point(self):
+        return {
+            "queries": [
+                {"prompt": "q0", "response": "first saved turn"},
+                {"prompt": "q1", "response": "second saved turn"},
+            ],
+            "compression_metadata": {
+                "is_compressed": True,
+                "last_compression_at": EPOCH,
+                "compression_points": [{
+                    "timestamp": EPOCH, "query_index": 1, "compressed_summary": "",
+                    "original_token_count": 493541, "compressed_token_count": 0,
+                }],
+            },
+            "agent_id": "agent-1",
+        }
+
+    def test_reuse_ignores_an_empty_point_and_keeps_history(
+        self, orchestrator, conversation_service, threshold_checker
+    ):
+        conversation_service.get_conversation.return_value = self._conversation_with_empty_point()
+        threshold_checker.should_compress.return_value = False
+
+        result = orchestrator.compress_if_needed("conv1", "user1", "m", {"sub": "user1"})
+
+        assert result.success is True
+        assert result.compressed_summary is None
+        assert [q["prompt"] for q in result.recent_queries] == ["q0", "q1"]
+        assert [h["prompt"] for h in result.as_history()] == ["q0", "q1"]
+
+    def test_effective_count_ignores_an_empty_point(self):
+        conv = self._conversation_with_empty_point()
+        assert TokenCounter.count_effective_conversation_tokens(conv) == (
+            TokenCounter.count_conversation_tokens(conv)
+        )
+
+    def test_get_compressed_context_ignores_an_empty_point(self):
+        summary, recent = CompressionService(llm=None, model_id="m").get_compressed_context(
+            self._conversation_with_empty_point()
+        )
+        assert summary is None
+        assert [q["prompt"] for q in recent] == ["q0", "q1"]
+
+    def test_get_compressed_context_falls_back_to_the_latest_usable_point(self):
+        conv = _compressed_conversation()
+        conv["queries"].append({"prompt": "q4", "response": "r4"})
+        conv["compression_metadata"]["compression_points"].append(
+            {"timestamp": "2026-09-04T09:00:00+00:00", "query_index": 3,
+             "compressed_summary": "   ", "compressed_token_count": 0}
+        )
+        summary, recent = CompressionService(llm=None, model_id="m").get_compressed_context(conv)
+        assert summary == "S"
+        assert [q["prompt"] for q in recent] == ["q2", "q3", "q4"]
+
+    @patch(
+        "application.api.answer.services.compression.orchestrator.get_provider_from_model_id",
+        return_value="openai",
+    )
+    @patch(
+        "application.api.answer.services.compression.orchestrator.get_api_key_for_provider",
+        return_value="sk",
+    )
+    @patch("application.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("application.api.answer.services.compression.orchestrator.CompressionService")
+    @patch("application.api.answer.services.compression.orchestrator.settings")
+    def test_recompression_starts_after_the_latest_usable_point(
+        self, mock_settings, MockCompressionService, MockLLMCreator, _key, _provider,
+        orchestrator, conversation_service, threshold_checker,
+    ):
+        mock_settings.COMPRESSION_MODEL_OVERRIDE = None
+        conv = _compressed_conversation()
+        conv["queries"].append({"prompt": "q4", "response": "r4"})
+        conv["compression_metadata"]["compression_points"].append(
+            {"timestamp": "2026-09-04T09:00:00+00:00", "query_index": 3,
+             "compressed_summary": "", "compressed_token_count": 0}
+        )
+        conversation_service.get_conversation.return_value = conv
+        threshold_checker.should_compress.return_value = True
+        MockLLMCreator.create_llm.return_value = MagicMock()
+        metadata = MagicMock()
+        metadata.compression_ratio = 3.0
+        metadata.original_token_count = 30
+        metadata.compressed_token_count = 10
+        metadata.timestamp = "2026-09-05T10:00:00+00:00"
+        svc = MagicMock()
+        svc.compress_and_save.return_value = metadata
+        svc.get_compressed_context.return_value = ("S2", [])
+        MockCompressionService.return_value = svc
+
+        result = orchestrator.compress_if_needed("conv1", "user1", "m", {"sub": "user1"})
+
+        assert result.compression_performed
+        assert svc.compress_and_save.call_args.kwargs["start_index"] == 2

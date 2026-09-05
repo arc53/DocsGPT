@@ -12,6 +12,36 @@ COMPRESSION_SUMMARY_PROMPT = "[Context Compression Summary]"
 COMPRESSION_SUMMARY_MARKER = "compression_summary"
 
 
+def is_usable_compression_point(point: Any) -> bool:
+    """True when a saved compression point can stand in for the history it
+    covers: a non-blank summary and, when recorded, a positive token count.
+
+    Earlier versions persisted points with an empty summary (a 494k-token
+    conversation was "compressed" to 0 tokens in production); reusing such a
+    point would drop the history it covers and replace it with nothing.
+    """
+    if not isinstance(point, dict):
+        return False
+    summary = point.get("compressed_summary")
+    if not isinstance(summary, str) or not summary.strip():
+        return False
+    count = point.get("compressed_token_count")
+    if count is None:
+        return True
+    try:
+        return int(count) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def latest_usable_compression_point(points: Any) -> Optional[Dict[str, Any]]:
+    """The most recent point that ``is_usable_compression_point``, or None."""
+    for point in reversed(list(points or [])):
+        if is_usable_compression_point(point):
+            return point
+    return None
+
+
 def is_compression_summary_row(query: Any) -> bool:
     """True for the visible summary row written by ``append_compression_message``.
 
