@@ -34,6 +34,21 @@ In your agent configuration, enable the MCP tools you want the agent to use.
 
 </Steps>
 
+## Example: Parallel Search
+
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) provides public web search and page extraction without a Parallel account or API key. Free access is rate limited.
+
+1. Follow **Step 2** above and name the server **Parallel Search**.
+2. Enter `https://search.parallel.ai/mcp` as the server URL and select **None** for authentication. DocsGPT automatically uses Streamable HTTP for this URL.
+3. Click **Test Connection**. The discovered tools should include `web_search` and `web_fetch`. Click **Save**.
+4. Enable the saved MCP tool in your agent configuration. Start a conversation and ask, for example: "Search the web for the official Python documentation on virtual environments and fetch the relevant page."
+
+`web_search` returns web results with source URLs and excerpts. `web_fetch` extracts text from public URLs. To stop an agent from using these tools, remove the MCP tool from that agent's configuration.
+
+<Callout type="warning">
+Once enabled, the agent can call these tools during conversations. Queries, requested URLs, and any supplied objectives or context are sent to Parallel. Only enable the connection for agents whose data may be shared with this service.
+</Callout>
+
 ## Authentication Types
 
 | Auth Type | Config Fields |
