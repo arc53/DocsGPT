@@ -19,6 +19,20 @@ declare module 'styled-components' {
       base: string;
       highlight: string;
     };
+    accent?: {
+      base: string;
+      hover: string;
+      strong: string;
+      contrast: string;
+      soft: string;
+      link: string;
+    };
+    hairline?: string;
+    danger?: {
+      text: string;
+      soft: string;
+      border: string;
+    };
     /** Present only in DocsGPTWidget theme (always provided when these styled components render) */
     dimensions?: {
       size: string;

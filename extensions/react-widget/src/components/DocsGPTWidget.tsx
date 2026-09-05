@@ -7,6 +7,8 @@ import {
   RocketIcon,
   ExclamationTriangleIcon,
   Cross2Icon,
+  EnterFullScreenIcon,
+  ExitFullScreenIcon,
 } from '@radix-ui/react-icons';
 import {
   FEEDBACK,
@@ -26,17 +28,21 @@ import {
   type StreamEvent,
 } from '../utils/streamEvents';
 
-const LikeIcon = (props: React.SVGProps<SVGSVGElement>) => (
+type ToggleIconProps = { filled?: boolean } & React.SVGProps<SVGSVGElement>;
+
+const LikeIcon = ({ filled, ...props }: ToggleIconProps) => (
   <svg
     width="14"
     height="14"
     viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
     xmlns="http://www.w3.org/2000/svg"
     {...props}
   >
     <path
       d="M9.39995 5.89997V3.09999C9.39995 2.54304 9.1787 2.0089 8.78487 1.61507C8.39105 1.22125 7.85691 1 7.29996 1L4.49998 7.29996V14.9999H12.3959C12.7336 15.0037 13.0612 14.8854 13.3185 14.6667C13.5757 14.448 13.7453 14.1437 13.7959 13.8099L14.7619 7.50996C14.7924 7.30931 14.7788 7.10444 14.7222 6.90954C14.6657 6.71464 14.5674 6.53437 14.4342 6.38123C14.301 6.22808 14.1362 6.10572 13.951 6.02262C13.7659 5.93952 13.5649 5.89767 13.3619 5.89997H9.39995ZM4.49998 14.9999H2.39999C2.02869 14.9999 1.6726 14.8524 1.41005 14.5899C1.1475 14.3273 1 13.9712 1 13.5999V8.69995C1 8.32865 1.1475 7.97256 1.41005 7.71001C1.6726 7.44746 2.02869 7.29996 2.39999 7.29996H4.49998"
-      fill="none"
+      fill={filled ? 'currentColor' : 'none'}
     />
     <path
       d="M4.49998 7.29996L7.29996 1C7.85691 1 8.39105 1.22125 8.78487 1.61507C9.1787 2.0089 9.39995 2.54304 9.39995 3.09999V5.89997H13.3619C13.5649 5.89767 13.7659 5.93952 13.951 6.02262C14.1362 6.10572 14.301 6.22808 14.4342 6.38123C14.5674 6.53437 14.6657 6.71464 14.7223 6.90954C14.7788 7.10444 14.7924 7.30931 14.7619 7.50996L13.7959 13.8099C13.7453 14.1437 13.5757 14.448 13.3185 14.6667C13.0612 14.8854 12.7336 15.0037 12.3959 14.9999H4.49998M4.49998 7.29996V14.9999M4.49998 7.29996H2.39999C2.02869 7.29996 1.6726 7.44746 1.41005 7.71001C1.1475 7.97256 1 8.32865 1 8.69995V13.5999C1 13.9712 1.1475 14.3273 1.41005 14.5899C1.6726 14.8524 2.02869 14.9999 2.39999 14.9999H4.49998"
@@ -47,17 +53,19 @@ const LikeIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const DislikeIcon = (props: React.SVGProps<SVGSVGElement>) => (
+const DislikeIcon = ({ filled, ...props }: ToggleIconProps) => (
   <svg
     width="14"
     height="14"
     viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
     xmlns="http://www.w3.org/2000/svg"
     {...props}
   >
     <path
       d="M6.37776 10.1001V12.9C6.37776 13.457 6.599 13.9911 6.99282 14.3849C7.38664 14.7788 7.92077 15 8.47772 15L11.2777 8.70011V1.00025H3.38181C3.04419 0.996436 2.71656 1.11477 2.45929 1.33344C2.20203 1.55212 2.03246 1.8564 1.98184 2.19023L1.01585 8.49012C0.985398 8.69076 0.998931 8.89563 1.05551 9.09053C1.1121 9.28543 1.21038 9.46569 1.34355 9.61884C1.47671 9.77198 1.64159 9.89434 1.82674 9.97744C2.01189 10.0605 2.2129 10.1024 2.41583 10.1001H6.37776ZM11.2777 1.00025H13.1466C13.5428 0.993247 13.9277 1.13195 14.2284 1.39002C14.5291 1.64809 14.7245 2.00758 14.7776 2.40023V7.30014C14.7245 7.69279 14.5291 8.05227 14.2284 8.31035C13.9277 8.56842 13.5428 8.70712 13.1466 8.70011H11.2777"
-      fill="none"
+      fill={filled ? 'currentColor' : 'none'}
     />
     <path
       d="M11.2777 8.70011L8.47772 15C7.92077 15 7.38664 14.7788 6.99282 14.3849C6.599 13.9911 6.37776 13.457 6.37776 12.9V10.1001H2.41583C2.2129 10.1024 2.01189 10.0605 1.82674 9.97744C1.64159 9.89434 1.47671 9.77198 1.34355 9.61884C1.21038 9.46569 1.1121 9.28543 1.05551 9.09053C0.998931 8.89563 0.985398 8.69076 1.01585 8.49012L1.98184 2.19023C2.03246 1.8564 2.20203 1.55212 2.45929 1.33344C2.71656 1.11477 3.04419 0.996436 3.38181 1.00025H11.2777M11.2777 8.70011V1.00025M11.2777 8.70011H13.1466C13.5428 8.70712 13.9277 8.56842 14.2284 8.31035C14.5291 8.05227 14.7245 7.69279 14.7776 7.30014V2.40023C14.7245 2.00758 14.5291 1.64809 14.2284 1.39002C13.9277 1.13195 13.5428 0.993247 13.1466 1.00025H11.2777"
@@ -161,11 +169,25 @@ const themes = {
     },
     secondary: {
       text: '#A1A1AA',
-      bg: '#38383b',
+      bg: '#33343A',
     },
     shimmer: {
       base: '#A1A1AA',
       highlight: '#FAFAFA',
+    },
+    accent: {
+      base: '#8860DB',
+      hover: '#9B7BE4',
+      strong: '#6D42C5',
+      contrast: '#FFFFFF',
+      soft: 'rgba(136, 96, 219, 0.18)',
+      link: '#A78BFA',
+    },
+    hairline: 'rgba(255, 255, 255, 0.08)',
+    danger: {
+      text: '#F87171',
+      soft: 'rgba(248, 113, 113, 0.10)',
+      border: 'rgba(248, 113, 113, 0.32)',
     },
   },
   light: {
@@ -176,14 +198,36 @@ const themes = {
       bg: '#fff',
     },
     secondary: {
-      text: '#A1A1AA',
-      bg: '#F6F6F6',
+      text: '#71717A',
+      bg: '#F4F4F5',
     },
     shimmer: {
       base: '#71717A',
       highlight: '#D4D4D8',
     },
+    accent: {
+      base: '#8860DB',
+      hover: '#7A4FD0',
+      strong: '#6D42C5',
+      contrast: '#FFFFFF',
+      soft: 'rgba(136, 96, 219, 0.12)',
+      link: '#6D42C5',
+    },
+    hairline: 'rgba(0, 0, 0, 0.08)',
+    danger: {
+      text: '#B91C1C',
+      soft: 'rgba(185, 28, 28, 0.06)',
+      border: 'rgba(185, 28, 28, 0.24)',
+    },
   },
+};
+
+const radii = {
+  sm: '8px',
+  md: '12px',
+  lg: '18px',
+  panel: '16px',
+  full: '9999px',
 };
 
 const sizesConfig = {
@@ -203,77 +247,68 @@ const sizesConfig = {
     maxHeight: custom.maxHeight || '70vh',
   }),
 };
-const createBox = keyframes`
-   0% {
-        transform: scale(0.6);
-      }
-      90% {
-        transform: scale(1.02);
-      }
-      100% {
-        transform: scale(1);
-      }
-`;
-const closeBox = keyframes`
-  0% {
-        transform: scale(1); 
-      }
-      10% {
-        transform: scale(1.02); 
-      }
-      100% {
-        transform: scale(0.6);
-      }
-`;
 
+type Dimensions = {
+  size: string;
+  width: string;
+  height: string;
+  maxWidth?: string;
+  maxHeight?: string;
+};
+const expandedDimensions = (base: Dimensions): Dimensions => ({
+  ...base,
+  width: 'min(880px, calc(100vw - 32px))',
+  height: 'min(900px, calc(100vh - 32px))',
+  maxWidth: 'calc(100vw - 32px)',
+  maxHeight: 'calc(100vh - 32px)',
+});
 const openContainer = keyframes`
-      0% {
-        width: 200px;
-        height: 100px;
-      }
-      100% {
-        width: ${(props) => props.theme.dimensions!.width};
-        height: ${(props) => props.theme.dimensions!.height};
-        border-radius: 12px;
-      }`;
+  from {
+    width: 200px;
+    height: 100px;
+  }
+`;
 const closeContainer = keyframes`
-  0% {
-        width: ${(props) => props.theme.dimensions!.width};
-        height: ${(props) => props.theme.dimensions!.height};
-        border-radius: 12px;
-      }
-      100% {
-        width: 200px;
-        height: 100px;
-      }
+  to {
+    width: 200px;
+    height: 100px;
+  }
 `;
-const fadeIn = keyframes`
+const reducedIn = keyframes`
   from {
-        opacity: 0;
-        width: ${(props) => props.theme.dimensions!.width};
-        height: ${(props) => props.theme.dimensions!.height};
-        transform: scale(0.9);
-      }
-      to {
-        opacity: 1;
-        transform: scale(1);
-        width: ${(props) => props.theme.dimensions!.width};
-        height: ${(props) => props.theme.dimensions!.height};
-      }
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 `;
-
-const fadeOut = keyframes`
+const reducedOut = keyframes`
   from {
-        opacity: 1;
-        width: ${(props) => props.theme.dimensions!.width};
-        height: ${(props) => props.theme.dimensions!.height};
-      }
-      to {
-        opacity: 0;
-        transform: scale(0.9);
-        width: ${(props) => props.theme.dimensions!.width};
-        height: ${(props) => props.theme.dimensions!.height};
-      }
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+`;
+const panelIn = keyframes`
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+`;
+const panelOut = keyframes`
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.94) translateY(8px);
+  }
 `;
 const scaleAnimation = keyframes`
   from {
@@ -310,60 +345,83 @@ const WidgetContainer = styled.div<{ $modal?: boolean }>`
   right: ${(props) => (props.$modal ? '50%' : '10px')};
   bottom: ${(props) => (props.$modal ? '50%' : '10px')};
   z-index: 1001;
-  transform-origin: 100% 100%;
   display: block;
   &.modal {
     transform: translate(50%, 50%);
   }
-  &.open {
-    animation: css ${createBox} 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
-  }
-  &.close {
-    animation: css ${closeBox} 250ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
-  }
   align-items: center;
   text-align: left;
+
+  @media only screen and (max-width: 768px) {
+    right: 0;
+    bottom: 0;
+    &.modal {
+      transform: none;
+    }
+  }
 `;
 
 const StyledContainer = styled.div<{ $isOpen: boolean }>`
   all: initial;
+  box-sizing: border-box;
   max-height: ${(props) => props.theme.dimensions!.maxHeight};
   max-width: ${(props) => props.theme.dimensions!.maxWidth};
   width: ${(props) => props.theme.dimensions!.width};
   height: ${(props) => props.theme.dimensions!.height};
   position: relative;
   flex-direction: column;
-  justify-content: space-between;
   bottom: 0;
   left: 0;
   background-color: ${(props) => props.theme.primary.bg};
-  font-family: sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   display: flex;
-  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: ${radii.panel};
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.05),
-    0 2px 4px rgba(0, 0, 0, 0.1);
-  padding: 26px 26px 0px 26px;
+    0 12px 44px rgba(0, 0, 0, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  transform-origin: ${(props) =>
+    props.theme.dimensions!.size === 'large' ? 'center' : '100% 100%'};
   animation: ${({ $isOpen, theme }) =>
     theme.dimensions!.size === 'large'
       ? $isOpen
         ? css`
-            ${fadeIn} 150ms ease-in forwards
+            ${panelIn} 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards
           `
         : css`
-            ${fadeOut} 150ms ease-in forwards
+            ${panelOut} 180ms cubic-bezier(0.4, 0, 1, 1) forwards
           `
       : $isOpen
         ? css`
-            ${openContainer} 150ms ease-in forwards
+            ${openContainer} 150ms ease-in
           `
         : css`
             ${closeContainer} 250ms ease-in forwards
           `};
+  transition:
+    width 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 280ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: ${({ $isOpen }) =>
+      $isOpen
+        ? css`
+            ${reducedIn} 120ms ease-out forwards
+          `
+        : css`
+            ${reducedOut} 120ms ease-in forwards
+          `};
+    transition: none;
+  }
+
   @media only screen and (max-width: 768px) {
-    max-height: 100vh;
-    max-width: 80vw;
-    overflow: auto;
+    width: 100vw;
+    height: 100dvh;
+    max-width: 100vw;
+    max-height: 100dvh;
+    border-radius: 0;
   }
 `;
 
@@ -381,13 +439,20 @@ const FloatingButton = styled.div<{
   align-items: center;
   bottom: 16px;
   color: white;
-  font-family: sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
   right: 16px;
   font-weight: 500;
-  border-radius: 9999px;
+  border-radius: ${radii.full};
   background: ${(props) => props.$bgcolor};
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.18),
+    0 2px 6px rgba(0, 0, 0, 0.12);
   cursor: pointer;
+  transition:
+    transform 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
   animation: ${(props) =>
     props.$isAnimatingButton
       ? css`
@@ -395,89 +460,28 @@ const FloatingButton = styled.div<{
         `
       : 'none'};
   &:hover {
-    transform: scale(1.1);
-    transition: transform 0.2s ease-in-out;
+    transform: translateY(-2px);
+    box-shadow:
+      0 12px 30px rgba(0, 0, 0, 0.22),
+      0 3px 8px rgba(0, 0, 0, 0.14);
   }
-  &:not(:hover) {
-    transition: transform 0.2s ease-in-out;
-  }
-`;
-const CancelButton = styled.button`
-  cursor: pointer;
-  position: absolute;
-  top: 0;
-  right: 0;
-  margin: 8px;
-  width: 30px;
-  padding: 0;
-  background-color: transparent;
-  border: none;
-  outline: none;
-  color: inherit;
-  transition: opacity 0.3s ease;
-  opacity: 0.6;
-  &:hover {
-    opacity: 1;
-  }
-  .white-filter {
-    filter: invert(100%);
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+    animation: none;
   }
 `;
-
-const Header = styled.div`
-  display: flex;
-  align-items: flex-start;
-`;
-
-const ContentWrapper = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-left: 8px;
-`;
-
-const Title = styled.h3`
-  font-size: 14px;
-  font-weight: normal;
-  color: ${(props) => props.theme.primary.text};
-  margin: 0;
-`;
-
-const Description = styled.p`
-  font-size: 13.75px;
-  color: ${(props) => props.theme.secondary.text};
-  margin: 0;
-  padding: 0;
-`;
-
-const Conversation = styled.div`
-  height: 100%;
-  border-radius: 6px;
-  text-align: left;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: ${(props) => props.theme.secondary.bg} transparent; /* thumb color track color */
-`;
-const ActionsRow = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  clear: both;
-  padding: 0 2px 2px 2px;
-`;
-const ActionButton = styled.button`
+const IconButton = styled.button`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 6px;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: ${radii.sm};
   background-color: transparent;
   color: ${(props) => props.theme.secondary.text};
-  font-size: 11px;
-  font-family: sans-serif;
   cursor: pointer;
   transition:
     background-color 0.15s ease,
@@ -489,66 +493,267 @@ const ActionButton = styled.button`
   }
 
   &:focus-visible {
-    outline: 2px solid #8860db;
+    outline: 2px solid ${(props) => props.theme.accent!.base};
     outline-offset: 1px;
   }
 `;
+
+const ExpandButton = styled(IconButton)`
+  @media only screen and (max-width: 768px) {
+    display: none;
+  }
+`;
+
+const Header = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 12px 12px 12px 16px;
+  border-bottom: 1px solid ${(props) => props.theme.hairline};
+`;
+
+const Avatar = styled.img`
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: ${radii.full};
+  object-fit: cover;
+`;
+
+const ContentWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+`;
+
+const HeaderActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+`;
+
+const Title = styled.h3`
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: ${(props) => props.theme.primary.text};
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+`;
+
+const Description = styled.p`
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: ${(props) => props.theme.secondary.text};
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+`;
+
+const Conversation = styled.div`
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  text-align: left;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  scrollbar-width: thin;
+  scrollbar-color: ${(props) => props.theme.secondary.bg} transparent; /* thumb color track color */
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: ${(props) => props.theme.secondary.bg};
+    border-radius: ${radii.full};
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+`;
+const ActionsRow = styled.div<{ $pinned?: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  opacity: ${(props) => (props.$pinned ? 1 : 0)};
+  transition: opacity 0.15s ease;
+
+  @media (hover: none) {
+    opacity: 1;
+  }
+`;
+const reactPop = keyframes`
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+`;
+const ActionButton = styled.button<{
+  $active?: boolean;
+  $tone?: 'accent' | 'danger';
+}>`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 7px;
+  border: none;
+  border-radius: ${radii.sm};
+  background-color: transparent;
+  color: ${(props) => props.theme.secondary.text};
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    background-color: ${(props) => props.theme.secondary.bg};
+    color: ${(props) => props.theme.primary.text};
+  }
+
+  &:active {
+    transform: scale(0.92);
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${(props) => props.theme.accent!.base};
+    outline-offset: 1px;
+  }
+
+  ${(props) =>
+    props.$active &&
+    css`
+      color: ${props.$tone === 'danger'
+        ? props.theme.danger!.text
+        : props.theme.accent!.base};
+      background-color: ${props.$tone === 'danger'
+        ? props.theme.danger!.soft
+        : props.theme.accent!.soft};
+
+      &:hover {
+        color: ${props.$tone === 'danger'
+          ? props.theme.danger!.text
+          : props.theme.accent!.base};
+        background-color: ${props.$tone === 'danger'
+          ? props.theme.danger!.soft
+          : props.theme.accent!.soft};
+      }
+
+      svg {
+        animation: ${reactPop} 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        svg {
+          animation: none;
+        }
+      }
+    `}
+`;
+const Turn = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+`;
+const ActionHint = styled.span`
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: ${(props) => props.theme.danger!.text};
+  animation: ${settleIn} 0.18s ease-out;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+`;
 const MessageBubble = styled.div<{ $type: MESSAGE_TYPE }>`
-  display: block;
-  font-size: 16px;
-  position: relative;
-  width: 100%;
-  float: right;
-  margin: 0px;
+  display: flex;
+  flex-direction: column;
+  align-items: ${(props) =>
+    props.$type === 'QUESTION' ? 'flex-end' : 'flex-start'};
+  gap: 6px;
+  min-width: 0;
+  font-size: 15px;
   animation: ${settleIn} 0.22s ease-out;
 
   @media (prefers-reduced-motion: reduce) {
     animation: none;
   }
-  /* Contains the floated Message so the bubble keeps its height. */
-  &::after {
-    content: '';
-    display: table;
-    clear: both;
+
+  &:hover .dgpt-actions,
+  &:focus-within .dgpt-actions {
+    opacity: 1;
   }
 `;
 const Message = styled.div<{ $type: MESSAGE_TYPE }>`
-  background: ${(props) =>
-    props.$type === 'QUESTION'
-      ? 'linear-gradient(to bottom right, #8860DB, #6D42C5)'
-      : props.theme.secondary.bg};
-  color: ${(props) =>
-    props.$type === 'ANSWER' ? props.theme.primary.text : '#fff'};
-  border: none;
-  float: ${(props) => (props.$type === 'QUESTION' ? 'right' : 'left')};
-  max-width: ${(props) => (props.$type === 'ANSWER' ? '90%' : '80%')};
-  overflow: auto;
-  margin: 4px;
   display: block;
-  line-height: 1.5;
-  padding: 12px;
-  border-radius: 6px;
+  min-width: 0;
+  line-height: 1.6;
   overflow-wrap: break-word;
+  ${(props) =>
+    props.$type === 'QUESTION'
+      ? css`
+          max-width: 85%;
+          padding: 10px 16px;
+          border-radius: ${radii.lg};
+          border-bottom-right-radius: ${radii.sm};
+          background: linear-gradient(
+            to bottom right,
+            ${props.theme.accent!.base},
+            ${props.theme.accent!.strong}
+          );
+          color: ${props.theme.accent!.contrast};
+        `
+      : css`
+          width: 100%;
+          padding: 0;
+          background: transparent;
+          color: ${props.theme.primary.text};
+        `}
 `;
 const Markdown = styled.div`
   a {
-    color: #9971ec;
+    color: ${(props) => props.theme.accent!.link};
     text-decoration: underline;
     text-underline-offset: 2px;
   }
 
   a:hover {
-    color: #8860db;
+    color: ${(props) => props.theme.accent!.base};
   }
 
   pre {
-    padding: 8px;
-    width: 90%;
+    box-sizing: border-box;
+    padding: 12px;
+    width: 100%;
+    margin: 12px 0;
     font-size: 12px;
-    border-radius: 6px;
+    line-height: 1.5;
+    border-radius: ${radii.md};
     overflow-x: auto;
-    background-color: #1b1c1f;
-    color: #fff;
+    background-color: ${(props) => props.theme.secondary.bg};
+    border: 1px solid ${(props) => props.theme.hairline};
+    color: ${(props) => props.theme.primary.text};
   }
 
   h1 {
@@ -569,17 +774,16 @@ const Markdown = styled.div`
 
   code:not(pre code) {
     border-radius: 6px;
-    padding: 1px 3px;
-    font-size: 12px;
-    display: inline-block;
-    background-color: #646464;
-    color: #fff;
+    padding: 1.5px 5px;
+    font-size: 0.875em;
+    background-color: ${(props) => props.theme.secondary.bg};
+    border: 1px solid ${(props) => props.theme.hairline};
+    color: ${(props) => props.theme.primary.text};
   }
 
   code {
     white-space: pre-wrap;
     overflow-wrap: break-word;
-    word-break: break-all;
   }
 
   ul {
@@ -604,15 +808,15 @@ const Markdown = styled.div`
     line-height: 1.625;
   }
   .dgpt-table-container {
-    margin: 20px 0;
+    margin: 16px 0;
     width: 100%;
-    overflow-x: scroll !important;
-    border: 1px solid #a2a2ab;
-    border-radius: 6px;
+    overflow-x: auto;
+    border: 1px solid ${(props) => props.theme.hairline};
+    border-radius: ${radii.md};
     -webkit-overflow-scrolling: touch;
     -ms-overflow-style: scrollbar;
     scrollbar-width: thin;
-    scrollbar-color: #a2a2ab #38383b;
+    scrollbar-color: ${(props) => props.theme.secondary.bg} transparent;
   }
 
   table,
@@ -633,7 +837,7 @@ const Markdown = styled.div`
   td,
   .dgpt-td {
     padding: 10px;
-    border-bottom: 1px solid #a2a2ab;
+    border-bottom: 1px solid ${(props) => props.theme.hairline};
     font-size: 14px;
   }
   th {
@@ -644,16 +848,34 @@ const Markdown = styled.div`
   }
 `;
 const ErrorAlert = styled.div`
-  color: #b91c1c;
-  border: 0.1px solid #b91c1c;
   display: flex;
-  padding: 4px;
-  margin: 11.2px;
-  opacity: 90%;
-  max-width: 70%;
+  align-items: flex-start;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 14px;
   font-weight: 400;
-  border-radius: 6px;
-  justify-content: space-evenly;
+  color: ${(props) => props.theme.danger!.text};
+  background-color: ${(props) => props.theme.danger!.soft};
+  border: 1px solid ${(props) => props.theme.danger!.border};
+  border-radius: ${radii.md};
+`;
+const ErrorBody = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+`;
+const ErrorTitle = styled.h5`
+  margin: 0 0 2px 0;
+  font-size: 13px;
+  font-weight: 600;
+`;
+const ErrorText = styled.span`
+  font-size: 12.5px;
+  line-height: 1.5;
+  opacity: 0.9;
+  overflow-wrap: break-word;
 `;
 const shimmerSweep = keyframes`
   to {
@@ -673,9 +895,7 @@ const StatusLine = styled.div`
   align-items: center;
   gap: 8px;
   min-width: 0;
-  /* Message floats; without this the row wraps beside it. */
-  clear: both;
-  margin: 4px;
+  max-width: 100%;
   font-size: 12px;
   font-family: sans-serif;
   color: ${(props) => props.theme.secondary.text};
@@ -717,10 +937,10 @@ const ShimmerText = styled.span`
 `;
 // Reasoning trace from `thought` events.
 const Thought = styled.div`
-  clear: both;
-  margin: 4px;
-  padding-left: 8px;
-  border-left: 2px solid ${(props) => props.theme.secondary.bg};
+  width: 100%;
+  box-sizing: border-box;
+  padding-left: 10px;
+  border-left: 2px solid ${(props) => props.theme.hairline};
   font-size: 12px;
   font-family: sans-serif;
   font-style: italic;
@@ -732,19 +952,24 @@ const RetryButton = styled.button`
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
-  padding: 6px 10px;
-  border: 1px solid #b91c1c33;
-  border-radius: 8px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border: 1px solid ${(props) => props.theme.danger!.border};
+  border-radius: ${radii.full};
   background-color: transparent;
-  color: #b91c1c;
+  color: ${(props) => props.theme.danger!.text};
   font-size: 12px;
-  font-family: sans-serif;
+  font-family: inherit;
   cursor: pointer;
   transition: background-color 0.15s ease;
 
-  &:hover {
-    background-color: #b91c1c14;
+  &:hover:not(:disabled) {
+    background-color: ${(props) => props.theme.danger!.soft};
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 `;
 // Shown only while scrolled away from the latest turn.
@@ -762,9 +987,9 @@ const ScrollToLatest = styled.button`
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 9999px;
-  background-color: #8860db;
-  color: #fff;
+  border-radius: ${radii.full};
+  background-color: ${(props) => props.theme.accent!.base};
+  color: ${(props) => props.theme.accent!.contrast};
   line-height: 0;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
@@ -776,18 +1001,32 @@ const ConversationArea = styled.div`
   flex: 1;
   min-height: 0;
 `;
+const Composer = styled.div`
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 12px 16px 0 16px;
+  border-top: 1px solid ${(props) => props.theme.hairline};
+`;
 const PromptContainer = styled.form`
-  /* Sole source of the gap above the composer. */
-  margin: 16px 12px 0 12px;
-  padding: 5px 5px 5px 4px;
+  box-sizing: border-box;
+  padding: 4px 4px 4px 6px;
   background-color: ${(props) => props.theme.secondary.bg};
-  border: none;
-  border-radius: 14px;
+  border: 1px solid ${(props) => props.theme.hairline};
+  border-radius: 24px;
   min-height: ${(props) =>
     props.theme.dimensions!.size == 'large' ? '40px' : '23px'};
   max-height: 150px;
   display: flex;
   align-items: end;
+  gap: 6px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:focus-within {
+    border-color: ${(props) => props.theme.accent!.base};
+    box-shadow: 0 0 0 3px ${(props) => props.theme.accent!.soft};
+  }
 `;
 const StyledTextarea = styled.textarea`
   box-sizing: border-box;
@@ -795,12 +1034,11 @@ const StyledTextarea = styled.textarea`
   border: none;
   padding: ${(props) =>
     props.theme.dimensions!.size === 'large'
-      ? '18px 12px 14px 12px'
-      : '8px 12px 4px 12px'};
+      ? '18px 6px 14px 10px'
+      : '9px 6px 5px 10px'};
   background-color: transparent;
-  font-size: 16px;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  font-family: inherit;
   border-radius: 6px;
   color: ${(props) => props.theme.text};
   outline: none;
@@ -815,125 +1053,153 @@ const StyledTextarea = styled.textarea`
   max-height: 140px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #38383b transparent;
+  scrollbar-color: ${(props) => props.theme.hairline} transparent;
   &::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   &::-webkit-scrollbar-thumb {
-    background-color: #38383b;
-    border-radius: 6px;
+    background-color: ${(props) => props.theme.hairline};
+    border-radius: ${radii.full};
   }
   &::-webkit-scrollbar-track {
     background: transparent;
   }
   &::placeholder {
     text-align: left;
+    color: ${(props) => props.theme.secondary.text};
   }
 `;
 const StyledButton = styled.button`
   display: flex;
   justify-content: center;
   align-items: center;
-  background-image: linear-gradient(to bottom right, #5af0ec, #e80d9d);
-  background-color: rgba(0, 0, 0, 0.3);
-  border-radius: 6px;
+  flex-shrink: 0;
+  background-color: ${(props) => props.theme.accent!.base};
+  color: ${(props) => props.theme.accent!.contrast};
+  border-radius: ${radii.full};
   min-width: ${(props) =>
-    props.theme.dimensions!.size === 'large' ? '60px' : '40px'};
+    props.theme.dimensions!.size === 'large' ? '44px' : '36px'};
+  width: ${(props) =>
+    props.theme.dimensions!.size === 'large' ? '44px' : '36px'};
   height: ${(props) =>
-    props.theme.dimensions!.size === 'large' ? '60px' : '40px'};
-  margin-left: 8px;
+    props.theme.dimensions!.size === 'large' ? '44px' : '36px'};
+  margin: 0;
   padding: 0px;
-
   border: none;
   cursor: pointer;
   outline: none;
-  &:hover {
-    opacity: 90%;
+  transition:
+    background-color 0.15s ease,
+    opacity 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background-color: ${(props) => props.theme.accent!.hover};
   }
+
+  &:focus-visible {
+    outline: 2px solid ${(props) => props.theme.accent!.base};
+    outline-offset: 2px;
+  }
+
   &:disabled {
-    background-image: linear-gradient(to bottom right, #2d938f, #b31877);
+    opacity: 0.4;
+    cursor: default;
   }
 `;
 const HeroContainer = styled.div`
-  position: relative;
-  width: 90%;
-  max-width: 500px;
-  background-image: linear-gradient(to bottom right, #5af0ec, #ff1bf4);
-  border-radius: 10px;
-  margin: 16px auto;
-  padding: 2px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 460px;
+  margin: auto;
+  padding: 4px;
 `;
 const HeroWrapper = styled.div`
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  gap: 8px;
-  align-items: middle;
-  background-color: ${(props) => props.theme.primary.bg};
-  border-radius: 10px;
+  align-items: flex-start;
+  gap: 10px;
+  box-sizing: border-box;
+  background-color: ${(props) => props.theme.secondary.bg};
+  border: 1px solid ${(props) => props.theme.hairline};
+  border-radius: ${radii.md};
   font-weight: normal;
-  padding: 12px;
+  padding: 16px;
+`;
+const HeroBadge = styled.div`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: ${radii.sm};
+  color: ${(props) => props.theme.accent!.base};
+  background-color: ${(props) => props.theme.accent!.soft};
 `;
 const HeroTitle = styled.h3`
-  color: ${(props) => props.theme.text};
-  font-size: 16px;
+  color: ${(props) => props.theme.primary.text};
+  font-size: 15px;
+  font-weight: 600;
   margin: 0px;
   padding: 0px;
 `;
 const HeroDescription = styled.p`
-  color: ${(props) => props.theme.text};
-  font-size: 12px;
-  line-height: 1.5;
+  color: ${(props) => props.theme.secondary.text};
+  font-size: 12.5px;
+  line-height: 1.55;
   margin: 0px;
   padding: 0px;
 `;
 const Hyperlink = styled.a`
-  color: #9971ec;
+  color: ${(props) => props.theme.accent!.link};
   text-decoration: none;
+  &:hover {
+    text-decoration: underline;
+  }
 `;
 const Tagline = styled.div`
   text-align: center;
   display: block;
   color: ${(props) => props.theme.secondary.text};
-  padding: 12px;
-  font-size: 12px;
+  padding: 7px 12px 9px 12px;
+  font-size: 11px;
 `;
 
 const SourcesList = styled.div`
   display: flex;
-  margin: 12px 0px;
+  width: 100%;
+  margin: 0;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
 `;
 
-const SourceLink = styled.a`
-  color: ${(props) => props.theme.primary.text};
-  text-decoration: none;
+const SourceChip = styled.span`
+  color: ${(props) => props.theme.secondary.text};
   background: ${(props) => props.theme.secondary.bg};
-  padding: 4px 12px;
-  border-radius: 85px;
-  font-size: 14px;
-  transition: opacity 0.2s ease;
-  display: inline-block;
-  text-align: center;
-  max-width: 25%;
+  border: 1px solid ${(props) => props.theme.hairline};
+  padding: 3px 10px;
+  border-radius: ${radii.full};
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  max-width: min(100%, 220px);
+  line-height: 1.6;
+`;
+const SourceLabel = styled.span`
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.5;
-
-  &:hover {
-    opacity: 0.8;
-  }
 `;
 
 const ExtraButton = styled.button`
-  color: #9971ec;
+  color: ${(props) => props.theme.accent!.link};
   background: transparent;
-  border-radius: 85px;
-  padding: 4px 12px;
-  font-size: 14px;
+  border-radius: ${radii.full};
+  padding: 3px 8px;
+  font-size: 12px;
+  font-family: inherit;
   border: none;
   cursor: pointer;
   transition: opacity 0.2s ease;
@@ -955,15 +1221,9 @@ const SourcesComponent = ({
   return (
     <SourcesList>
       {visibleSources.map((source, idx) => (
-        <SourceLink
-          key={idx}
-          href={source.source}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={source.title}
-        >
-          {source.title}
-        </SourceLink>
+        <SourceChip key={idx} title={source.title}>
+          <SourceLabel>{source.title}</SourceLabel>
+        </SourceChip>
       ))}
       {sources.length > 3 && (
         <ExtraButton onClick={() => setShowAll(!showAll)}>
@@ -977,20 +1237,16 @@ const SourcesComponent = ({
 const Hero = ({
   title,
   description,
-  theme,
 }: {
   title: string;
   description: string;
-  theme: string;
 }) => {
   return (
     <HeroContainer>
       <HeroWrapper>
-        <RocketIcon
-          color={theme === 'light' ? 'black' : 'white'}
-          width={24}
-          height={24}
-        />
+        <HeroBadge>
+          <RocketIcon width={18} height={18} />
+        </HeroBadge>
         <HeroTitle>{title}</HeroTitle>
         <HeroDescription>{description}</HeroDescription>
       </HeroWrapper>
@@ -1001,7 +1257,7 @@ export const DocsGPTWidget = (props: WidgetProps) => {
   const {
     buttonIcon = 'https://d3dg1063dc54p9.cloudfront.net/widget/chat.svg',
     buttonText = 'Ask a question',
-    buttonBg = 'linear-gradient(to bottom right, #5AF0EC, #E80D9D)',
+    buttonBg = 'linear-gradient(to bottom right, #8860DB, #6D42C5)',
     defaultOpen = false,
     ...coreProps
   } = props;
@@ -1009,7 +1265,7 @@ export const DocsGPTWidget = (props: WidgetProps) => {
   const [open, setOpen] = React.useState<boolean>(defaultOpen);
   const [isAnimatingButton, setIsAnimatingButton] = React.useState(false);
   const [isFloatingButtonVisible, setIsFloatingButtonVisible] =
-    React.useState(true);
+    React.useState(!defaultOpen);
 
   React.useEffect(() => {
     if (isFloatingButtonVisible)
@@ -1052,7 +1308,7 @@ export const WidgetCore = ({
   heroTitle = 'Welcome to DocsGPT !',
   heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
   size = 'medium',
-  theme = 'dark',
+  theme = 'light',
   collectFeedback = true,
   isOpen = false,
   showSources = true,
@@ -1068,10 +1324,13 @@ export const WidgetCore = ({
   );
   // Auto-follow the stream only while already near the bottom.
   const [isPinnedToLatest, setIsPinnedToLatest] = React.useState(true);
+  const [isExpanded, setIsExpanded] = React.useState(false);
   const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
+  const [feedbackErrorIndex, setFeedbackErrorIndex] = React.useState<
+    number | null
+  >(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const isBubbleHovered = useRef<boolean>(false);
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -1131,8 +1390,19 @@ export const WidgetCore = ({
     else scrollToLatest();
   }, [queries.length, queries[queries.length - 1]?.response, status]);
 
+  const setFeedbackAt = (index: number, value?: FEEDBACK) =>
+    setQueries((prev: Query[]) =>
+      prev.map((q, i) => {
+        if (i !== index) return q;
+        const updated = { ...q };
+        if (value) updated.feedback = value;
+        else delete updated.feedback;
+        return updated;
+      }),
+    );
+
   async function handleFeedback(feedback: FEEDBACK, index: number) {
-    let query = queries[index];
+    const query = queries[index];
     if (!query.response || !conversationId) {
       console.log(
         'Cannot submit feedback: missing response or conversation ID',
@@ -1140,59 +1410,34 @@ export const WidgetCore = ({
       return;
     }
 
-    // If clicking the same feedback button that's already active, remove the feedback by sending null
-    if (query.feedback === feedback) {
-      try {
-        const response = await sendFeedback(
-          {
-            question: query.prompt,
-            answer: query.response,
-            feedback: null,
-            apikey: apiKey,
-            conversation_id: conversationId,
-            question_index: index,
-          },
-          apiHost,
-        );
+    const previous = query.feedback;
+    const next = previous === feedback ? undefined : feedback;
 
-        if (response.status === 200) {
-          const updatedQuery = { ...query };
-          delete updatedQuery.feedback;
-          setQueries((prev: Query[]) =>
-            prev.map((q, i) => (i === index ? updatedQuery : q)),
-          );
-        }
-      } catch (err) {
-        console.error('Failed to submit feedback:', err);
-      }
-      return;
-    }
+    setFeedbackAt(index, next);
 
     try {
       const response = await sendFeedback(
         {
           question: query.prompt,
           answer: query.response,
-          feedback: feedback,
+          feedback: next ?? null,
           apikey: apiKey,
           conversation_id: conversationId,
           question_index: index,
         },
         apiHost,
       );
-
-      if (response.status === 200) {
-        setQueries((prev: Query[]) => {
-          return prev.map((q, i) => {
-            if (i === index) {
-              return { ...q, feedback: feedback };
-            }
-            return q;
-          });
-        });
+      if (response.status !== 200) {
+        throw new Error(`Feedback rejected with status ${response.status}`);
       }
     } catch (err) {
-      console.error('Failed to submit feedback:', err);
+      console.warn('Feedback not saved:', err);
+      setFeedbackAt(index, previous);
+      setFeedbackErrorIndex(index);
+      setTimeout(
+        () => setFeedbackErrorIndex((cur) => (cur === index ? null : cur)),
+        2600,
+      );
     }
   }
 
@@ -1331,7 +1576,7 @@ export const WidgetCore = ({
         1600,
       );
     } catch (err) {
-      console.error('Copy failed:', err);
+      console.warn('Copy failed:', err);
     }
   };
 
@@ -1422,10 +1667,15 @@ export const WidgetCore = ({
     );
   };
 
-  const dimensions =
+  const baseDimensions =
     typeof size === 'object' && 'custom' in size
       ? sizesConfig.getCustom(size.custom)
       : sizesConfig[size];
+  const canExpand = size !== 'large';
+  const dimensions =
+    canExpand && isExpanded
+      ? expandedDimensions(baseDimensions)
+      : baseDimensions;
   if (!mounted) return null;
 
   return (
@@ -1437,31 +1687,37 @@ export const WidgetCore = ({
           $modal={size === 'large'}
         >
           <StyledContainer $isOpen={isOpen}>
-            <div>
-              <CancelButton onClick={handleClose}>
-                <Cross2Icon
-                  width={24}
-                  height={24}
-                  color={theme === 'light' ? 'black' : 'white'}
-                />
-              </CancelButton>
-              <Header>
-                <img
-                  style={{
-                    transform: 'translateY(-5px)',
-                    maxWidth: '42px',
-                    maxHeight: '42px',
-                  }}
-                  onError={handleImageError}
-                  src={avatar}
-                  alt="docs-gpt"
-                />
-                <ContentWrapper>
-                  <Title>{title}</Title>
-                  <Description>{description}</Description>
-                </ContentWrapper>
-              </Header>
-            </div>
+            <Header>
+              <Avatar onError={handleImageError} src={avatar} alt="" />
+              <ContentWrapper>
+                <Title>{title}</Title>
+                <Description>{description}</Description>
+              </ContentWrapper>
+              <HeaderActions>
+                {canExpand && (
+                  <ExpandButton
+                    type="button"
+                    onClick={() => setIsExpanded((prev) => !prev)}
+                    aria-label={isExpanded ? 'Collapse chat' : 'Expand chat'}
+                    aria-expanded={isExpanded}
+                    title={isExpanded ? 'Collapse' : 'Expand'}
+                  >
+                    {isExpanded ? (
+                      <ExitFullScreenIcon width={16} height={16} />
+                    ) : (
+                      <EnterFullScreenIcon width={16} height={16} />
+                    )}
+                  </ExpandButton>
+                )}
+                <IconButton
+                  type="button"
+                  onClick={handleClose}
+                  aria-label="Close chat"
+                >
+                  <Cross2Icon width={18} height={18} />
+                </IconButton>
+              </HeaderActions>
+            </Header>
             <ConversationArea>
               <Conversation
                 ref={conversationRef}
@@ -1470,7 +1726,7 @@ export const WidgetCore = ({
                 {queries.length > 0 ? (
                   queries?.map((query, index) => {
                     return (
-                      <React.Fragment key={index}>
+                      <Turn key={index}>
                         {query.prompt && (
                           <MessageBubble $type="QUESTION">
                             <Message
@@ -1487,12 +1743,7 @@ export const WidgetCore = ({
                           </MessageBubble>
                         )}
                         {query.response ? (
-                          <MessageBubble
-                            onMouseOver={() => {
-                              isBubbleHovered.current = true;
-                            }}
-                            $type="ANSWER"
-                          >
+                          <MessageBubble $type="ANSWER">
                             {showSources &&
                               query.sources &&
                               query.sources.length > 0 &&
@@ -1532,7 +1783,13 @@ export const WidgetCore = ({
                             </Message>
                             {renderStatusLine(query, index)}
 
-                            <ActionsRow>
+                            <ActionsRow
+                              className="dgpt-actions"
+                              $pinned={
+                                Boolean(query.feedback) ||
+                                feedbackErrorIndex === index
+                              }
+                            >
                               <ActionButton
                                 type="button"
                                 onClick={(e) => {
@@ -1562,15 +1819,12 @@ export const WidgetCore = ({
                                     }}
                                     aria-label="Good response"
                                     aria-pressed={query.feedback === 'LIKE'}
+                                    title="Good response"
+                                    $active={query.feedback === 'LIKE'}
+                                    $tone="accent"
                                   >
                                     <LikeIcon
-                                      style={{
-                                        stroke:
-                                          query.feedback === 'LIKE'
-                                            ? '#8860DB'
-                                            : 'currentColor',
-                                      }}
-                                      fill="none"
+                                      filled={query.feedback === 'LIKE'}
                                     />
                                   </ActionButton>
                                   <ActionButton
@@ -1581,18 +1835,20 @@ export const WidgetCore = ({
                                     }}
                                     aria-label="Bad response"
                                     aria-pressed={query.feedback === 'DISLIKE'}
+                                    title="Bad response"
+                                    $active={query.feedback === 'DISLIKE'}
+                                    $tone="danger"
                                   >
                                     <DislikeIcon
-                                      style={{
-                                        stroke:
-                                          query.feedback === 'DISLIKE'
-                                            ? '#ed8085'
-                                            : 'currentColor',
-                                      }}
-                                      fill="none"
+                                      filled={query.feedback === 'DISLIKE'}
                                     />
                                   </ActionButton>
                                 </>
+                              )}
+                              {feedbackErrorIndex === index && (
+                                <ActionHint role="status">
+                                  Couldn&apos;t save
+                                </ActionHint>
                               )}
                             </ActionsRow>
                           </MessageBubble>
@@ -1601,15 +1857,13 @@ export const WidgetCore = ({
                             {query.error ? (
                               <ErrorAlert>
                                 <ExclamationTriangleIcon
-                                  width={22}
-                                  height={22}
-                                  color="#b91c1c"
+                                  width={18}
+                                  height={18}
+                                  style={{ flexShrink: 0, marginTop: '1px' }}
                                 />
-                                <div>
-                                  <h5 style={{ margin: 2 }}>Network Error</h5>
-                                  <span style={{ margin: 2, fontSize: '13px' }}>
-                                    {query.error}
-                                  </span>
+                                <ErrorBody>
+                                  <ErrorTitle>Network Error</ErrorTitle>
+                                  <ErrorText>{query.error}</ErrorText>
                                   <RetryButton
                                     type="button"
                                     onClick={() => handleRetry(index)}
@@ -1618,7 +1872,7 @@ export const WidgetCore = ({
                                     <RetryIcon />
                                     Try again
                                   </RetryButton>
-                                </div>
+                                </ErrorBody>
                               </ErrorAlert>
                             ) : (
                               <MessageBubble $type="ANSWER">
@@ -1630,15 +1884,11 @@ export const WidgetCore = ({
                             )}
                           </div>
                         )}
-                      </React.Fragment>
+                      </Turn>
                     );
                   })
                 ) : (
-                  <Hero
-                    title={heroTitle}
-                    description={heroDescription}
-                    theme={theme}
-                  />
+                  <Hero title={heroTitle} description={heroDescription} />
                 )}
               </Conversation>
               {!isPinnedToLatest && queries.length > 0 && (
@@ -1651,7 +1901,7 @@ export const WidgetCore = ({
                 </ScrollToLatest>
               )}
             </ConversationArea>
-            <div>
+            <Composer>
               <PromptContainer onSubmit={handleSubmit}>
                 <StyledTextarea
                   id="chatInput"
@@ -1671,14 +1921,14 @@ export const WidgetCore = ({
                     onClick={stopGenerating}
                     aria-label="Stop generating"
                   >
-                    <StopIcon width={18} height={18} color="white" />
+                    <StopIcon width={16} height={16} />
                   </StyledButton>
                 ) : (
                   <StyledButton
                     disabled={prompt.trim().length == 0}
                     aria-label="Send message"
                   >
-                    <PaperPlaneIcon width={18} height={18} color="white" />
+                    <PaperPlaneIcon width={16} height={16} />
                   </StyledButton>
                 )}
               </PromptContainer>
@@ -1688,7 +1938,7 @@ export const WidgetCore = ({
                   DocsGPT
                 </Hyperlink>
               </Tagline>
-            </div>
+            </Composer>
           </StyledContainer>
         </WidgetContainer>
       }

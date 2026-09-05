@@ -58,7 +58,7 @@ export function fetchAnswerStreaming({
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
-    
+
         let buffer = '';
 
         const emit = (rawLine: string) => {
@@ -106,7 +106,7 @@ export function fetchAnswerStreaming({
           resolve();
           return;
         }
-        console.error('Connection failed:', error);
+        console.warn('Connection failed:', error);
         reject(error);
       });
   });
