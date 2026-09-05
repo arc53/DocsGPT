@@ -5,6 +5,7 @@ import tempfile
 import mimetypes
 from typing import List, Optional
 from application.core.url_validation import SSRFError, validate_url
+from application.parser.file.constants import SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS
 from application.parser.remote.base import BaseRemote
 from application.parser.schema.base import Document
 
@@ -15,6 +16,61 @@ except ImportError:
     boto3 = None
 
 logger = logging.getLogger(__name__)
+
+
+# Plain-text suffixes the loader reads directly (no document parser).
+_TEXT_EXTENSIONS = {
+        ".txt",
+        ".md",
+        ".markdown",
+        ".rst",
+        ".json",
+        ".xml",
+        ".yaml",
+        ".yml",
+        ".py",
+        ".js",
+        ".ts",
+        ".jsx",
+        ".tsx",
+        ".java",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".go",
+        ".rs",
+        ".rb",
+        ".php",
+        ".swift",
+        ".kt",
+        ".scala",
+        ".html",
+        ".css",
+        ".scss",
+        ".sass",
+        ".less",
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".fish",
+        ".sql",
+        ".r",
+        ".m",
+        ".mat",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".config",
+        ".env",
+        ".gitignore",
+        ".dockerignore",
+        ".editorconfig",
+        ".log",
+        ".csv",
+        ".tsv",
+    }
 
 
 class S3Loader(BaseRemote):
@@ -128,58 +184,7 @@ class S3Loader(BaseRemote):
 
     def is_text_file(self, file_path: str) -> bool:
         """Determine if a file is a text file based on extension."""
-        text_extensions = {
-            ".txt",
-            ".md",
-            ".markdown",
-            ".rst",
-            ".json",
-            ".xml",
-            ".yaml",
-            ".yml",
-            ".py",
-            ".js",
-            ".ts",
-            ".jsx",
-            ".tsx",
-            ".java",
-            ".c",
-            ".cpp",
-            ".h",
-            ".hpp",
-            ".cs",
-            ".go",
-            ".rs",
-            ".rb",
-            ".php",
-            ".swift",
-            ".kt",
-            ".scala",
-            ".html",
-            ".css",
-            ".scss",
-            ".sass",
-            ".less",
-            ".sh",
-            ".bash",
-            ".zsh",
-            ".fish",
-            ".sql",
-            ".r",
-            ".m",
-            ".mat",
-            ".ini",
-            ".cfg",
-            ".conf",
-            ".config",
-            ".env",
-            ".gitignore",
-            ".dockerignore",
-            ".editorconfig",
-            ".log",
-            ".csv",
-            ".tsv",
-        }
+        text_extensions = _TEXT_EXTENSIONS
 
         file_lower = file_path.lower()
         for ext in text_extensions:
@@ -197,7 +202,9 @@ class S3Loader(BaseRemote):
 
     def is_supported_document(self, file_path: str) -> bool:
         """Check if file is a supported document type for parsing."""
-        document_extensions = {
+        # The upload whitelist plus the historical S3 list, so an object the
+        # upload API accepts is never silently skipped here.
+        document_extensions = (set(SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS) - _TEXT_EXTENSIONS) | {
             ".pdf",
             ".docx",
             ".doc",

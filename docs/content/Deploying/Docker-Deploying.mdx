@@ -48,7 +48,7 @@ The fastest way to try out DocsGPT is by using the public API endpoint. This req
     Navigate to the root directory of the DocsGPT repository in your terminal and run:
 
     ```bash
-    docker compose -f deployment/docker-compose.yaml up -d
+    docker compose --env-file .env -f deployment/docker-compose.yaml up -d
     ```
 
     The `-d` flag runs Docker Compose in detached mode (in the background).

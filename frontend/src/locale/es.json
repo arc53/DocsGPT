@@ -765,7 +765,7 @@
       "start": "Comenzar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
-      "info": "Por favor, sube archivos .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limitados a 25MB",
+      "info": "Por favor, sube archivos .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip limitados a 25MB",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
       "train": "Entrenar",

@@ -110,8 +110,9 @@ class CrawlerLoader(BaseRemote):
         language = language_tag.get('lang', 'en') if language_tag else "en"
 
         markdownified = markdownify(html_content, heading_style="ATX", newline_style="BACKSLASH")
-        # Reduce sequences of more than two newlines to exactly three
-        markdownified = re.sub(r'\n{3,}', '\n\n\n', markdownified)
+        # Collapse runs of blank lines to a single one — the same shape
+        # ``html_to_markdown`` gives uploaded HTML files.
+        markdownified = re.sub(r'\n{3,}', '\n\n', markdownified)
         return title, language, markdownified
 
     def _extract_links(self, html_content, current_url):

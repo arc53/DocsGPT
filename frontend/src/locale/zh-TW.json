@@ -765,7 +765,7 @@
       "start": "開始對話",
       "name": "名稱",
       "choose": "選擇檔案",
-      "info": "請上傳限制為25MB的.pdf、.txt、.rst、.csv、.xlsx、.docx、.md、.html、.epub、.json、.pptx、.zip檔案",
+      "info": "請上傳限制為25MB的.pdf、.txt、.rst、.csv、.xlsx、.xlsm、.xlsb、.xls、.ods、.docx、.docm、.doc、.odt、.rtf、.md、.html、.xhtml、.png、.jpg、.jpeg、.epub、.json、.pptx、.pptm、.ppt、.pps、.ppsx、.ppsm、.pot、.odp、.zip檔案",
       "uploadedFiles": "已上傳檔案",
       "cancel": "取消",
       "train": "訓練",

@@ -29,6 +29,8 @@ Use these commands once the dev prerequisites above are satisfied.
 ```bash
 source .venv/bin/activate  # macOS/Linux
 uv pip install -r application/requirements.txt  # or: pip install -r application/requirements.txt
+# Optional docling parser engine (OCR / read_document structured output):
+# uv pip install -r application/requirements-docling.txt
 ```
 
 Run the API. For local dev, prefer the ASGI entrypoint under uvicorn — it

@@ -23,8 +23,8 @@ RUN wget -q -O - https://sh.rustup.rs | sh -s -- -y
 # Clean up to reduce container size
 RUN apt-get remove --purge -y wget unzip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements.txt
-COPY requirements.txt .
+# Copy requirements manifests
+COPY requirements.txt requirements-docling.txt ./
 
 # Setup Python virtual environment
 RUN python3.12 -m venv /venv
@@ -37,6 +37,15 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir tiktoken && \
     pip install --no-cache-dir -r requirements.txt
 
+# Optional docling parser engine (DOC_PARSER_ENGINE=docling, the docling OCR
+# backend, read_document's structured output) — OFF by default: it pulls the
+# layout/OCR model stack and adds gigabytes to the image. anydoc (in
+# requirements.txt) is the default parser and needs none of it, and OCR runs
+# natively on tesseract (below, also opt-in) without it.
+ARG INSTALL_DOCLING=false
+RUN if [ "$INSTALL_DOCLING" = "true" ]; then \
+        pip install --no-cache-dir -r requirements-docling.txt; \
+    fi
 
 # Final Stage
 FROM ubuntu:24.04 as final
@@ -52,6 +61,20 @@ RUN apt-get update && \
         && \
     ln -s /usr/bin/python3.12 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
+
+# Optional tesseract OCR engine (OCR_ENABLED=true with OCR_ENGINE=tesseract,
+# the default engine) — OFF by default like every other OCR dependency; OCR
+# itself is off unless configured. Opt in with --build-arg
+# INSTALL_TESSERACT=true (setup.sh writes it to .env when OCR is enabled);
+# ~35 MB of system packages. Extra language packs are a deployment concern
+# (apt: tesseract-ocr-<lang>, then list them in OCR_LANGS). A DeepSeek-OCR
+# endpoint (OCR_ENGINE=deepseek) needs none of this.
+ARG INSTALL_TESSERACT=false
+RUN if [ "$INSTALL_TESSERACT" = "true" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Set working directory
 WORKDIR /app

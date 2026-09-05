@@ -508,3 +508,257 @@ class TestGetDefaultFileExtractor:
             mock_fn.return_value = {".pdf": MagicMock(), ".md": MagicMock()}
             result = mock_fn()
             assert ".pdf" in result
+
+
+# =====================================================================
+# DOC_PARSER_ENGINE switch
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestParserEngineSwitch:
+    """``get_default_file_extractor`` honours ``DOC_PARSER_ENGINE`` / ``engine``."""
+
+    @pytest.fixture
+    def settings(self):
+        from application.core.settings import settings
+
+        return settings
+
+    @pytest.fixture(autouse=True)
+    def _default_ocr_settings(self, monkeypatch):
+        """Pin the OCR knobs to their defaults so a developer's ``.env`` (OCR on,
+        native backend) cannot change which parsers the maps hand out here."""
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "OCR_ENABLED", False)
+        monkeypatch.setattr(settings, "OCR_BACKEND", "auto")
+
+    def test_default_engine_is_anydoc(self, settings, monkeypatch):
+        pytest.importorskip("anydoc")
+        from application.parser.file.anydoc_parser import ANYDOC_SUFFIXES, AnydocParser
+        from application.parser.file.bulk import get_default_file_extractor
+        from application.parser.file.html_parser import HTMLMarkdownParser
+
+        monkeypatch.setattr(settings, "DOC_PARSER_ENGINE", "anydoc")
+        extractor = get_default_file_extractor()
+
+        for suffix in ANYDOC_SUFFIXES:
+            assert isinstance(extractor[suffix], AnydocParser), suffix
+        assert isinstance(extractor[".html"], HTMLMarkdownParser)
+        assert isinstance(extractor[".xhtml"], HTMLMarkdownParser)
+        # Specialised parsers are untouched by the engine choice.
+        assert type(extractor[".md"]).__name__ == "MarkdownParser"
+        assert type(extractor[".json"]).__name__ == "JSONParser"
+        assert type(extractor[".epub"]).__name__ == "EpubParser"
+
+    def test_anydoc_falls_back_to_docling_when_installed(self):
+        pytest.importorskip("anydoc")
+        pytest.importorskip("docling")
+        from application.parser.file.bulk import get_default_file_extractor
+
+        extractor = get_default_file_extractor(engine="anydoc")
+
+        assert type(extractor[".pdf"].fallback_parser).__name__ == "DoclingPDFParser"
+        assert type(extractor[".csv"].fallback_parser).__name__ == "DoclingCSVParser"
+        assert extractor[".doc"].fallback_parser is None  # nothing else reads .doc
+        # docling keeps the formats anydoc cannot read.
+        assert type(extractor[".vtt"]).__name__ == "DoclingVTTParser"
+
+    def test_anydoc_fallback_honours_ocr_flag(self):
+        pytest.importorskip("anydoc")
+        pytest.importorskip("docling")
+        from application.parser.file.bulk import get_default_file_extractor
+
+        extractor = get_default_file_extractor(engine="anydoc", ocr_enabled=True)
+
+        assert extractor[".pdf"].fallback_parser.ocr_enabled is True
+        assert type(extractor[".png"]).__name__ == "DoclingImageParser"
+
+    def test_anydoc_falls_back_to_legacy_without_docling(self, monkeypatch):
+        pytest.importorskip("anydoc")
+        import sys
+
+        from application.parser.file.bulk import get_default_file_extractor
+
+        monkeypatch.setitem(sys.modules, "docling", None)
+        extractor = get_default_file_extractor(engine="anydoc")
+
+        assert type(extractor[".pdf"].fallback_parser).__name__ == "PDFParser"
+        assert type(extractor[".xlsx"].fallback_parser).__name__ == "ExcelParser"
+        assert type(extractor[".png"]).__name__ == "ImageParser"
+
+    def test_docling_engine_keeps_docling_map(self):
+        pytest.importorskip("docling")
+        from application.parser.file.bulk import get_default_file_extractor
+
+        extractor = get_default_file_extractor(engine="docling")
+
+        assert type(extractor[".pdf"]).__name__ == "DoclingPDFParser"
+        assert type(extractor[".html"]).__name__ == "DoclingHTMLParser"
+
+    def test_setting_selects_docling(self, settings, monkeypatch):
+        pytest.importorskip("docling")
+        from application.parser.file.bulk import get_default_file_extractor
+
+        monkeypatch.setattr(settings, "DOC_PARSER_ENGINE", "docling")
+        assert type(get_default_file_extractor()[".pdf"]).__name__ == "DoclingPDFParser"
+
+    def test_unknown_engine_uses_anydoc(self):
+        pytest.importorskip("anydoc")
+        from application.parser.file.anydoc_parser import AnydocParser
+        from application.parser.file.bulk import get_default_file_extractor
+
+        assert isinstance(get_default_file_extractor(engine="ghost")[".pdf"], AnydocParser)
+
+    def test_missing_anydoc_degrades_to_base_engine(self, monkeypatch):
+        import sys
+
+        from application.parser.file.bulk import get_default_file_extractor
+
+        monkeypatch.setitem(sys.modules, "anydoc", None)
+        extractor = get_default_file_extractor(engine="anydoc")
+
+        assert type(extractor[".pdf"]).__name__ in ("DoclingPDFParser", "PDFParser")
+        assert type(extractor[".html"]).__name__ in ("DoclingHTMLParser", "HTMLParser")
+
+    def test_missing_docling_map_is_usable(self, monkeypatch):
+        """Regression: with docling absent the map handed out docling parsers whose
+        ``init_parser`` raised ``ImportError`` — not a ``DocumentParseError`` — so
+        the first file aborted the whole ingest instead of degrading."""
+        import sys
+
+        from application.parser.file.bulk import get_default_file_extractor
+
+        monkeypatch.setitem(sys.modules, "docling", None)
+        extractor = get_default_file_extractor(engine="docling")
+
+        assert type(extractor[".pdf"]).__name__ == "PDFParser"
+        assert ".xhtml" in extractor
+        for suffix in (".pdf", ".docx", ".csv", ".xlsx", ".html", ".xhtml", ".pptx"):
+            extractor[suffix].init_parser()
+
+
+# =====================================================================
+# Gained formats (anydoc-only: legacy/macro Office, OpenDocument, RTF)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestGainedFormats:
+    def test_every_supported_extension_has_a_parser_under_both_engines(self):
+        """The invariant that keeps constants.py and the parser maps in lockstep.
+
+        Without it, an extension accepted at upload but missing from the map
+        falls to SimpleDirectoryReader's plain-text read — for a binary
+        format that means mojibake silently ingested and embedded.
+        (`.txt` is the one deliberate plain-text read.)
+        """
+        pytest.importorskip("anydoc")
+        from application.parser.file.bulk import get_default_file_extractor
+        from application.parser.file.constants import (
+            SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS,
+        )
+
+        for engine in ("anydoc", "docling"):
+            extractor = get_default_file_extractor(engine=engine)
+            missing = [
+                suffix
+                for suffix in SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS
+                if suffix != ".txt" and suffix not in extractor
+            ]
+            assert missing == [], (engine, missing)
+
+    def test_gained_formats_map_to_anydoc_under_both_engines(self):
+        pytest.importorskip("anydoc")
+        from application.parser.file.anydoc_parser import (
+            ANYDOC_GAINED_SUFFIXES,
+            AnydocParser,
+        )
+        from application.parser.file.bulk import get_default_file_extractor
+
+        for engine in ("anydoc", "docling"):
+            extractor = get_default_file_extractor(engine=engine)
+            for suffix in ANYDOC_GAINED_SUFFIXES:
+                assert isinstance(extractor[suffix], AnydocParser), (engine, suffix)
+
+    def test_gained_formats_never_fall_back_to_anydoc_itself(self):
+        pytest.importorskip("anydoc")
+        from application.parser.file.anydoc_parser import AnydocParser
+        from application.parser.file.bulk import get_default_file_extractor
+
+        extractor = get_default_file_extractor(engine="anydoc")
+        assert extractor[".doc"].fallback_parser is None
+        assert extractor[".rtf"].fallback_parser is None
+        # ...while the core five keep their real fallback.
+        assert extractor[".pdf"].fallback_parser is not None
+        assert not isinstance(extractor[".pdf"].fallback_parser, AnydocParser)
+
+    def test_gained_entries_absent_without_anydoc(self, monkeypatch):
+        import sys
+
+        from application.parser.file.bulk import get_default_file_extractor
+
+        monkeypatch.setitem(sys.modules, "anydoc", None)
+        extractor = get_default_file_extractor(engine="docling")
+        assert ".doc" not in extractor  # degrades to the pre-anydoc map
+
+    def test_rtf_converts_end_to_end(self, tmp_path):
+        pytest.importorskip("anydoc")
+        from application.parser.file.bulk import get_default_file_extractor
+
+        path = tmp_path / "note.rtf"
+        path.write_text(r"{\rtf1\ansi Hello {\b bold} world.\par Second paragraph.}")
+        parser = get_default_file_extractor()[".rtf"]
+        parser.init_parser()
+
+        out = parser.parse_file(path)
+
+        assert "Hello **bold** world." in out
+        assert "Second paragraph." in out
+
+    def test_odt_converts_end_to_end(self, tmp_path):
+        pytest.importorskip("anydoc")
+        import zipfile
+
+        from application.parser.file.bulk import get_default_file_extractor
+
+        path = tmp_path / "doc.odt"
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr(
+                "mimetype",
+                "application/vnd.oasis.opendocument.text",
+                compress_type=zipfile.ZIP_STORED,
+            )
+            z.writestr(
+                "META-INF/manifest.xml",
+                '<?xml version="1.0"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">'
+                '<manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/>'
+                '<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/></manifest:manifest>',
+            )
+            z.writestr(
+                "content.xml",
+                '<?xml version="1.0"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+                'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:text>'
+                '<text:h text:outline-level="1">Title</text:h><text:p>Body text here.</text:p>'
+                "</office:text></office:body></office:document-content>",
+            )
+        parser = get_default_file_extractor()[".odt"]
+
+        out = parser.parse_file(path)
+
+        assert "# Title" in out
+        assert "Body text here." in out
+
+
+def test_gained_suffix_without_a_parser_is_rejected_not_read_as_text(tmp_path):
+    """Without anydoc an OLE .doc must not be indexed as decoded binary garbage."""
+    from application.parser.file.base_parser import DocumentParseError
+    from application.parser.file.bulk import SimpleDirectoryReader
+
+    path = tmp_path / "legacy.doc"
+    path.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64)
+    reader = SimpleDirectoryReader(input_files=[str(path)], file_extractor={".pdf": object()})
+
+    with pytest.raises(DocumentParseError, match="firecrawl-anydoc"):
+        reader.load_data()

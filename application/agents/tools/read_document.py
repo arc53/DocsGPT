@@ -102,7 +102,8 @@ class ReadDocumentTool(Tool):
                             "enum": ["markdown", "text", "structured", "chunks"],
                             "description": "Shape of the parsed result (default: markdown). Note: "
                             "`structured` always uses the Docling engine regardless of `engine` "
-                            "(the `fast` engine is markdown/text only).",
+                            "(requires the optional docling install; the other engines are "
+                            "markdown/text only).",
                         },
                         "ocr": {
                             "type": "string",
@@ -115,9 +116,11 @@ class ReadDocumentTool(Tool):
                         },
                         "engine": {
                             "type": "string",
-                            "enum": ["auto", "docling", "fast"],
-                            "description": "Parser engine (default: auto). `fast` is a lighter "
-                            "markdown/text-only engine; it is ignored when `output='structured'`, "
+                            "enum": ["auto", "docling", "anydoc", "fast"],
+                            "description": "Parser engine (default: auto = the server's configured "
+                            "engine). `anydoc` is the fast Markdown converter, `docling` the "
+                            "layout-model engine (optional install, needed for tables/OCR), "
+                            "`fast` a plain-text legacy path. Ignored when `output='structured'`, "
                             "which always uses Docling.",
                         },
                         "max_chars": {

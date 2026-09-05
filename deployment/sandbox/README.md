@@ -188,8 +188,10 @@ Daytona render output matches the Jupyter-backend output.
 
 Document reading no longer runs in this sandbox. The `read_document` tool and the
 workflow native-file extract branch enqueue a `parse_document` Celery task that
-parses the document **in the backend** (Docling, already in
-`application/requirements.txt`) and awaits the result. The task is routed to a
+parses the document **in the backend** (the `DOC_PARSER_ENGINE` parser — anydoc
+by default; Docling only when the optional
+`application/requirements-docling.txt` extra is installed) and awaits the
+result. The task is routed to a
 dedicated **`parsing` queue** (`settings.DOCUMENT_PARSE_QUEUE`, default
 `"parsing"`) so a parse enqueued from inside a Celery worker (headless/scheduled
 agent) is served by a separate worker and never self-deadlocks the awaiting one.
@@ -200,8 +202,13 @@ Run a dedicated parsing worker that consumes the `parsing` queue:
 celery -A application.app.celery worker -Q parsing -l INFO
 ```
 
-It can be GPU-enabled with its own env (`DOCLING_OCR_ENABLED=true` plus GPU
-libraries) so OCR-heavy parsing runs on a separate, optionally larger pool.
+It takes its own env, so parse-heavy work runs on a separate, optionally larger
+pool. A GPU helps it only with the docling extra installed
+(`INSTALL_DOCLING=true`), whose layout and table models run on torch:
+`OCR_ENABLED=true` alone keeps the CPU-only native backend with the default
+`OCR_ENGINE=tesseract`, which GPU libraries do not accelerate. Setting
+`OCR_ENGINE=deepseek` instead moves the OCR cost onto the Ollama/vLLM endpoint
+and leaves this worker light.
 
 **Dev / single-worker setups:** without a dedicated parsing worker the default
 worker must also consume `parsing`, or the tool's await never resolves:
