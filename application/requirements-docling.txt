@@ -784,7 +784,7 @@ pylatexenc==2.11
     # via docling-slim
 pyparsing==3.3.2
     # via httplib2
-pypdf==6.15.0
+pypdf==6.16.1
     # via docsgpt
 pypdfium2==5.12.1
     # via
