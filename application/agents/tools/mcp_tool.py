@@ -26,6 +26,7 @@ from application.core.settings import settings
 from application.core.url_validation import SSRFError, validate_url
 from application.events.keys import stream_key
 from application.security.encryption import decrypt_credentials
+from application.security.mcp_trust import TrustContext, enforce_mcp_trust
 
 logger = logging.getLogger(__name__)
 
@@ -346,13 +347,28 @@ class MCPTool(Tool):
     def execute_action(self, action_name: str, **kwargs) -> Any:
         if not self.server_url:
             raise Exception("No MCP server configured")
-        if not self._client:
-            self._setup_client()
         cleaned_kwargs = {}
         for key, value in kwargs.items():
             if value == "" or value is None:
                 continue
             cleaned_kwargs[key] = value
+
+        # Pre-execution trust gate (opt-in / custom verifier). Blocks or warns
+        # before any network call to the MCP server — see issue #2501.
+        enforce_mcp_trust(
+            TrustContext(
+                server_uri=self.server_url,
+                tool_name="mcp_tool",
+                action_name=action_name,
+                arguments=cleaned_kwargs,
+                user_id=self.user_id,
+                transport_type=self.transport_type,
+                auth_type=self.auth_type,
+            )
+        )
+
+        if not self._client:
+            self._setup_client()
         try:
             result = self._run_async_operation(
                 "call_tool", action_name, **cleaned_kwargs
