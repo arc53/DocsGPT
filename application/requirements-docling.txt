@@ -784,7 +784,7 @@ pylatexenc==2.11
     # via docling-slim
 pyparsing==3.3.2
     # via httplib2
-pypdf==6.15.0
+pypdf==6.16.1
     # via docsgpt
 pypdfium2==5.12.1
     # via
@@ -938,7 +938,7 @@ secretstorage==3.5.0 ; sys_platform == 'linux'
     # via keyring
 semchunk==3.2.5
     # via docling-core
-setuptools==81.0.0
+setuptools==83.0.0
     # via torch
 shapely==2.1.2
     # via rapidocr
@@ -991,7 +991,7 @@ tokenizers==0.22.2
     #   transformers
 toml==0.10.2
     # via daytona
-torch==2.11.0 ; sys_platform != 'linux'
+torch==2.12.1+cpu ; sys_platform != 'linux'
     # via
     #   accelerate
     #   docling-ibm-models
@@ -1029,7 +1029,7 @@ tqdm==4.67.3
     #   rapidocr
     #   semchunk
     #   transformers
-transformers==5.8.1
+transformers==5.10.1
     # via
     #   docling-core
     #   docling-ibm-models
