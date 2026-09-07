@@ -679,7 +679,7 @@ pymilvus==3.0.1
     # via docsgpt
 pyparsing==3.3.2
     # via httplib2
-pypdf==6.15.0
+pypdf==6.16.1
     # via docsgpt
 pypdfium2==5.12.1
     # via docsgpt
