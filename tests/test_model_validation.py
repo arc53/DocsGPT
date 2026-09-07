@@ -2,13 +2,13 @@
 Tests for model validation and base_url functionality
 """
 import pytest
-from application.core.model_settings import (
+from docsgpt.core.model_settings import (
     AvailableModel,
     ModelCapabilities,
     ModelProvider,
     ModelRegistry,
 )
-from application.core.model_utils import (
+from docsgpt.core.model_utils import (
     get_base_url_for_model,
     validate_model_id,
 )
@@ -98,7 +98,7 @@ def test_get_base_url_for_model():
 @pytest.mark.unit
 def test_model_validation_error_message():
     """Test that validation provides helpful error messages"""
-    from application.api.answer.services.stream_processor import StreamProcessor
+    from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
     # Create processor with invalid model_id
     data = {"model_id": "invalid-model-xyz"}
@@ -122,7 +122,7 @@ def test_capabilities_reasoning_effort_defaults_none():
 @pytest.mark.unit
 def test_yaml_reasoning_effort_and_upstream_model_id(tmp_path):
     """Two distinct ids can share one upstream model, each with its own effort."""
-    from application.core.model_yaml import load_model_yamls
+    from docsgpt.core.model_yaml import load_model_yamls
 
     (tmp_path / "openai.yaml").write_text(
         "provider: openai\n"
@@ -153,7 +153,7 @@ def test_yaml_reasoning_effort_and_upstream_model_id(tmp_path):
 @pytest.mark.unit
 def test_yaml_invalid_reasoning_effort_rejected(tmp_path):
     """A bad reasoning_effort value aborts the YAML load."""
-    from application.core.model_yaml import ModelYAMLError, load_model_yamls
+    from docsgpt.core.model_yaml import ModelYAMLError, load_model_yamls
 
     (tmp_path / "openai.yaml").write_text(
         "provider: openai\n"
@@ -170,7 +170,7 @@ def test_yaml_invalid_reasoning_effort_rejected(tmp_path):
 @pytest.mark.unit
 def test_yaml_reasoning_effort_accepts_full_enum(tmp_path):
     """Every value OpenAI documents across the GPT-5 series must parse."""
-    from application.core.model_yaml import (
+    from docsgpt.core.model_yaml import (
         VALID_REASONING_EFFORTS,
         load_model_yamls,
     )
@@ -199,7 +199,7 @@ def test_yaml_reasoning_effort_accepts_full_enum(tmp_path):
 @pytest.mark.unit
 def test_openai_apply_reasoning_effort():
     """OpenAILLM injects reasoning_effort from capabilities; caller wins."""
-    from application.llm.openai import OpenAILLM
+    from docsgpt.llm.openai import OpenAILLM
 
     llm = OpenAILLM.__new__(OpenAILLM)
 

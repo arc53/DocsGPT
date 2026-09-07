@@ -2,7 +2,7 @@
 
 import pytest
 
-from application.api.answer.services.persistence_policy import (
+from docsgpt.api.answer.services.persistence_policy import (
     VISIBILITY_HIDDEN,
     VISIBILITY_LISTED,
     resolve_persistence,

@@ -1,4 +1,4 @@
-"""Comprehensive tests for application/agents/tools/api_body_serializer.py
+"""Comprehensive tests for docsgpt/agents/tools/api_body_serializer.py
 
 Covers: ContentType enum, RequestBodySerializer (JSON, form-urlencoded,
 multipart, text/plain, XML, octet-stream, unknown types), encoding rules,
@@ -10,7 +10,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
-from application.agents.tools.api_body_serializer import (
+from docsgpt.agents.tools.api_body_serializer import (
     ContentType,
     RequestBodySerializer,
 )
@@ -561,7 +561,7 @@ class TestApiBodySerializerMultipartParts:
 
     def test_multipart_field_name_not_percent_encoded(self):
         """RFC 7578: names are a quoted string, so 'file name' stays literal."""
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -575,7 +575,7 @@ class TestApiBodySerializerMultipartParts:
         assert "file%20name" not in result
 
     def test_multipart_field_name_escapes_quotes_and_newlines(self):
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -589,7 +589,7 @@ class TestApiBodySerializerMultipartParts:
 
     def test_multipart_dict_unknown_content_type(self):
         """Cover line 226: dict with unknown content type uses str()."""
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -604,7 +604,7 @@ class TestApiBodySerializerMultipartParts:
 
     def test_multipart_string_json_content_type(self):
         """Cover line 229: string value with application/json content type."""
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -619,7 +619,7 @@ class TestApiBodySerializerMultipartParts:
 
     def test_multipart_string_xml_content_type(self):
         """Cover line 229: string value with application/xml content type."""
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -634,7 +634,7 @@ class TestApiBodySerializerMultipartParts:
 
     def test_multipart_string_unknown_content_type(self):
         """Cover line 229: string with unknown content type falls through."""
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -653,7 +653,7 @@ class TestApiBodySerializerOctetStreamCoverage:
 
     def test_octet_stream_bytes_input(self):
         """Cover line 271: _serialize_octet_stream with bytes input."""
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             ContentType,
             RequestBodySerializer,
         )
@@ -664,7 +664,7 @@ class TestApiBodySerializerOctetStreamCoverage:
 
     def test_octet_stream_string_input(self):
         """Cover line 275: _serialize_octet_stream with string input."""
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             ContentType,
             RequestBodySerializer,
         )
@@ -677,7 +677,7 @@ class TestApiBodySerializerOctetStreamCoverage:
         """Cover line 279: _serialize_octet_stream with dict input (fallback to JSON)."""
         import json
 
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             ContentType,
             RequestBodySerializer,
         )

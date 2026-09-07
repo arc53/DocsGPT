@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from application.parser.chunking import Chunker
-from application.parser.chunking_creator import ChunkerCreator
-from application.parser.schema.base import Document
+from docsgpt.parser.chunking import Chunker
+from docsgpt.parser.chunking_creator import ChunkerCreator
+from docsgpt.parser.schema.base import Document
 
 
 def _docs():

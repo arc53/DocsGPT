@@ -6,8 +6,8 @@ import logging
 
 import pytest
 
-from application.core import log_context
-from application.core.logging_config import _ContextFilter
+from docsgpt.core import log_context
+from docsgpt.core.logging_config import _ContextFilter
 
 
 @pytest.fixture(autouse=True)
@@ -129,7 +129,7 @@ class TestFilterWiringEndToEnd:
     """
 
     def test_propagated_record_gets_stamped(self):
-        from application.core.logging_config import _install_context_filter
+        from docsgpt.core.logging_config import _install_context_filter
 
         captured: list[logging.LogRecord] = []
 

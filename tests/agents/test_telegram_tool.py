@@ -1,10 +1,10 @@
-"""Tests for application/agents/tools/telegram.py"""
+"""Tests for docsgpt/agents/tools/telegram.py"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.agents.tools.telegram import TelegramTool
+from docsgpt.agents.tools.telegram import TelegramTool
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ class TestTelegramExecuteAction:
         with pytest.raises(ValueError, match="Unknown action"):
             tool.execute_action("invalid")
 
-    @patch("application.agents.tools.telegram.requests.post")
+    @patch("docsgpt.agents.tools.telegram.requests.post")
     def test_send_message(self, mock_post, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -35,7 +35,7 @@ class TestTelegramExecuteAction:
         assert call_args[1]["data"]["text"] == "Hello"
         assert call_args[1]["data"]["chat_id"] == "12345"
 
-    @patch("application.agents.tools.telegram.requests.post")
+    @patch("docsgpt.agents.tools.telegram.requests.post")
     def test_send_image(self, mock_post, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -51,7 +51,7 @@ class TestTelegramExecuteAction:
         assert "bot123:ABC/sendPhoto" in call_args[0][0]
         assert call_args[1]["data"]["photo"] == "https://img.com/cat.jpg"
 
-    @patch("application.agents.tools.telegram.requests.post")
+    @patch("docsgpt.agents.tools.telegram.requests.post")
     def test_api_error_status(self, mock_post, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 403

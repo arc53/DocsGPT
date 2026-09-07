@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.user_logs import UserLogsRepository
+from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
 
 
 def _rows(conn, user_id):

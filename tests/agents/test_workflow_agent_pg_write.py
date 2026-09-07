@@ -39,8 +39,8 @@ def _make_agent(**overrides):
         "json_schema": None,
     }
     defaults.update(overrides)
-    with patch("application.agents.workflow_agent.log_activity", lambda **kw: lambda f: f):
-        from application.agents.workflow_agent import WorkflowAgent
+    with patch("docsgpt.agents.workflow_agent.log_activity", lambda **kw: lambda f: f):
+        from docsgpt.agents.workflow_agent import WorkflowAgent
 
         agent = WorkflowAgent(**defaults)
     return agent
@@ -114,7 +114,7 @@ class TestDetermineRunStatusPg:
 
     def test_completed_value_matches_pg_enum(self):
         """The string stored in Postgres must match ExecutionStatus.COMPLETED.value."""
-        from application.agents.workflows.schemas import ExecutionStatus
+        from docsgpt.agents.workflows.schemas import ExecutionStatus
 
         agent = _make_agent()
         agent._engine = MagicMock()
@@ -125,7 +125,7 @@ class TestDetermineRunStatusPg:
         assert status.value == "completed"
 
     def test_failed_value_matches_pg_enum(self):
-        from application.agents.workflows.schemas import ExecutionStatus
+        from docsgpt.agents.workflows.schemas import ExecutionStatus
 
         agent = _make_agent()
         agent._engine = MagicMock()

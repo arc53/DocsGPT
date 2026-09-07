@@ -3,16 +3,16 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-from application.api.user.workflows import routes as workflow_routes
-from application.agents.workflows.node_agent import WorkflowNodeAgentFactory
-from application.agents.workflows.schemas import (
+from docsgpt.api.user.workflows import routes as workflow_routes
+from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
+from docsgpt.agents.workflows.schemas import (
     NodeType,
     Workflow,
     WorkflowGraph,
     WorkflowNode,
 )
-from application.agents.workflows.workflow_engine import WorkflowEngine
-from application.api.user.workflows.routes import validate_workflow_structure
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.api.user.workflows.routes import validate_workflow_structure
 
 
 class StubNodeAgent:
@@ -81,7 +81,7 @@ def test_execute_agent_node_saves_structured_output_as_json(monkeypatch):
         staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_api_key_for_provider",
+        "docsgpt.core.model_utils.get_api_key_for_provider",
         lambda _provider: None,
     )
 
@@ -111,11 +111,11 @@ def test_execute_agent_node_normalizes_wrapped_schema_before_agent_create(monkey
         staticmethod(create_node_agent),
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_api_key_for_provider",
+        "docsgpt.core.model_utils.get_api_key_for_provider",
         lambda _provider: None,
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_model_capabilities",
+        "docsgpt.core.model_utils.get_model_capabilities",
         lambda _model_id, **_kwargs: {"supports_structured_output": True},
     )
 
@@ -136,7 +136,7 @@ def test_execute_agent_node_falls_back_to_text_when_schema_not_configured(monkey
         staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_api_key_for_provider",
+        "docsgpt.core.model_utils.get_api_key_for_provider",
         lambda _provider: None,
     )
 
@@ -381,11 +381,11 @@ def test_execute_agent_node_raises_when_structured_output_violates_schema(monkey
         staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_api_key_for_provider",
+        "docsgpt.core.model_utils.get_api_key_for_provider",
         lambda _provider: None,
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_model_capabilities",
+        "docsgpt.core.model_utils.get_model_capabilities",
         lambda _model_id, **_kwargs: {"supports_structured_output": True},
     )
 
@@ -407,11 +407,11 @@ def test_execute_agent_node_raises_when_schema_set_and_response_not_json(monkeyp
         staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_api_key_for_provider",
+        "docsgpt.core.model_utils.get_api_key_for_provider",
         lambda _provider: None,
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_model_capabilities",
+        "docsgpt.core.model_utils.get_model_capabilities",
         lambda _model_id, **_kwargs: {"supports_structured_output": True},
     )
 
@@ -445,15 +445,15 @@ class TestWorkflowEngineAdditionalCoverage:
             staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _: None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda _, **_kwargs: None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_model_capabilities",
+            "docsgpt.core.model_utils.get_model_capabilities",
             lambda _, **_kwargs: None,
         )
 
@@ -475,15 +475,15 @@ class TestWorkflowEngineAdditionalCoverage:
             staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _: "key",
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda _, **_kwargs: "openai",
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_model_capabilities",
+            "docsgpt.core.model_utils.get_model_capabilities",
             lambda _, **_kwargs: None,
         )
 
@@ -501,15 +501,15 @@ class TestWorkflowEngineAdditionalCoverage:
         node.config["model_id"] = "model-no-struct"
 
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _: "key",
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda _, **_kwargs: "openai",
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_model_capabilities",
+            "docsgpt.core.model_utils.get_model_capabilities",
             lambda _, **_kwargs: {"supports_structured_output": False},
         )
 
@@ -535,15 +535,15 @@ class TestWorkflowEngineAdditionalCoverage:
             staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _: None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda _, **_kwargs: None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_model_capabilities",
+            "docsgpt.core.model_utils.get_model_capabilities",
             lambda _, **_kwargs: {"supports_structured_output": True},
         )
 
@@ -566,15 +566,15 @@ class TestWorkflowEngineAdditionalCoverage:
             staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _: None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda _, **_kwargs: None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_model_capabilities",
+            "docsgpt.core.model_utils.get_model_capabilities",
             lambda _, **_kwargs: {"supports_structured_output": True},
         )
 
@@ -625,15 +625,15 @@ class TestAgentNodeProviderResolution:
             WorkflowNodeAgentFactory, "create", staticmethod(_capture)
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda name: f"key-for-{name}",
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda _, **_kwargs: registry_provider,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_model_capabilities",
+            "docsgpt.core.model_utils.get_model_capabilities",
             lambda _, **_kwargs: None,
         )
         list(engine._execute_agent_node(node))

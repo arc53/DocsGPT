@@ -1,11 +1,11 @@
-"""Tests for application/stt/faster_whisper_stt.py"""
+"""Tests for docsgpt/stt/faster_whisper_stt.py"""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.stt.faster_whisper_stt import FasterWhisperSTT
+from docsgpt.stt.faster_whisper_stt import FasterWhisperSTT
 
 
 @pytest.mark.unit

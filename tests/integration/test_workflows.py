@@ -27,7 +27,7 @@ from jose import jwt
 @pytest.fixture(scope="module")
 def app():
     """Create the real Flask app (connects to real Postgres)."""
-    from application.app import app as flask_app
+    from docsgpt.app import app as flask_app
     flask_app.config["TESTING"] = True
     return flask_app
 
@@ -40,7 +40,7 @@ def client(app):
     injected; otherwise the backend already returns {"sub": "local"}
     for every request so no token is needed.
     """
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     c = app.test_client()
     if settings.AUTH_TYPE in ("simple_jwt", "session_jwt"):

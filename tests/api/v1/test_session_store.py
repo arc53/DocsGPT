@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.api.v1.session_store import (
+from docsgpt.api.v1.session_store import (
     delete_conversation,
     identify_session,
     load_conversation,
@@ -52,10 +52,10 @@ def test_save_and_load_use_bounded_redis_ttl(monkeypatch):
     redis = MagicMock()
     redis.get.return_value = b"conv-1"
     monkeypatch.setattr(
-        "application.api.v1.session_store.get_redis_instance", lambda: redis
+        "docsgpt.api.v1.session_store.get_redis_instance", lambda: redis
     )
     monkeypatch.setattr(
-        "application.api.v1.session_store.settings.V1_SESSION_TTL_SECONDS", 123
+        "docsgpt.api.v1.session_store.settings.V1_SESSION_TTL_SECONDS", 123
     )
     session = identify_session({"X-Session-ID": "s"}, {"messages": []}, "a")
     save_conversation(session, "conv-1")
@@ -67,7 +67,7 @@ def test_save_and_load_use_bounded_redis_ttl(monkeypatch):
 def test_delete_conversation_invalidates_stale_mapping(monkeypatch):
     redis = MagicMock()
     monkeypatch.setattr(
-        "application.api.v1.session_store.get_redis_instance", lambda: redis
+        "docsgpt.api.v1.session_store.get_redis_instance", lambda: redis
     )
     session = identify_session({"X-Session-ID": "s"}, {"messages": []}, "a")
     delete_conversation(session)

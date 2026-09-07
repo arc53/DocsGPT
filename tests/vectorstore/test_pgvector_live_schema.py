@@ -13,9 +13,9 @@ from unittest.mock import patch
 
 import pytest
 
-from application.storage.db.bootstrap import ensure_vector_schema
-from application.vectorstore import pgvector as pgvector_module
-from application.vectorstore.pgvector import PGVectorStore
+from docsgpt.storage.db.bootstrap import ensure_vector_schema
+from docsgpt.vectorstore import pgvector as pgvector_module
+from docsgpt.vectorstore.pgvector import PGVectorStore
 
 pytestmark = pytest.mark.integration
 
@@ -88,7 +88,7 @@ def live_dsn(postgresql, monkeypatch):
         pytest.skip(f"pgvector extension unavailable: {exc}")
 
     dsn = _dsn(postgresql.info)
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     settings = settings_module.settings
     monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector", raising=False)
@@ -111,14 +111,14 @@ def stub_embeddings():
     """
     stub = _StubEmbeddings()
     with patch(
-        "application.vectorstore.base.get_embeddings", return_value=stub
+        "docsgpt.vectorstore.base.get_embeddings", return_value=stub
     ), patch(
-        "application.vectorstore.base.build_local_embeddings", return_value=stub
+        "docsgpt.vectorstore.base.build_local_embeddings", return_value=stub
     ), patch(
-        "application.vectorstore.model_registry.dimension_for",
+        "docsgpt.vectorstore.model_registry.dimension_for",
         return_value=STUB_DIM,
     ), patch(
-        "application.vectorstore.base.BaseVectorStore._get_embeddings",
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
         return_value=stub,
     ):
         yield stub
@@ -150,9 +150,9 @@ class TestBootHookCreatesTheSchema:
 
         wide = _WideStubEmbeddings()
         with patch(
-            "application.vectorstore.base.get_embeddings", return_value=wide
+            "docsgpt.vectorstore.base.get_embeddings", return_value=wide
         ), patch(
-            "application.vectorstore.model_registry.dimension_for",
+            "docsgpt.vectorstore.model_registry.dimension_for",
             return_value=wide.dimension,
         ):
             with pytest.raises(RuntimeError) as excinfo:
@@ -165,7 +165,7 @@ class TestBootHookCreatesTheSchema:
     def test_creates_graph_tables_when_graphrag_is_enabled(
         self, live_dsn, postgresql, stub_embeddings, monkeypatch
     ):
-        from application.core import settings as settings_module
+        from docsgpt.core import settings as settings_module
 
         monkeypatch.setattr(
             settings_module.settings, "GRAPHRAG_ENABLED", True, raising=False

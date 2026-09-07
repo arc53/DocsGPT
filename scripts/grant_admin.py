@@ -33,10 +33,10 @@ import dotenv  # noqa: E402
 
 dotenv.load_dotenv()
 
-from application.storage.db.repositories.auth_events import AuthEventsRepository  # noqa: E402
-from application.storage.db.repositories.user_roles import UserRolesRepository  # noqa: E402
-from application.storage.db.repositories.users import UsersRepository  # noqa: E402
-from application.storage.db.session import db_readonly, db_session  # noqa: E402
+from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository  # noqa: E402
+from docsgpt.storage.db.repositories.user_roles import UserRolesRepository  # noqa: E402
+from docsgpt.storage.db.repositories.users import UsersRepository  # noqa: E402
+from docsgpt.storage.db.session import db_readonly, db_session  # noqa: E402
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 logger = logging.getLogger("grant_admin")

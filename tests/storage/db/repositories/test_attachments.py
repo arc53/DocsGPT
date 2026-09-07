@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from application.storage.db.repositories.attachments import AttachmentsRepository
+from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 
 
 def _repo(conn) -> AttachmentsRepository:

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from application.guardrails.base import ScanContext
-from application.guardrails.checks.heuristics import GroundednessCheck, InjectionCheck
-from application.guardrails.checks.patterns import (
+from docsgpt.guardrails.base import ScanContext
+from docsgpt.guardrails.checks.heuristics import GroundednessCheck, InjectionCheck
+from docsgpt.guardrails.checks.patterns import (
     DenylistCheck,
     PIICheck,
     SecretsCheck,
     URLCheck,
 )
-from application.guardrails.types import Stage, apply_spans
+from docsgpt.guardrails.types import Stage, apply_spans
 
 
 @pytest.fixture

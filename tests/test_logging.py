@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from application.logging import build_stack_data
+from docsgpt.logging import build_stack_data
 
 
 @pytest.mark.unit
@@ -118,7 +118,7 @@ class TestBuildStackData:
 class TestLogActivity:
 
     def test_log_activity_decorator_yields(self):
-        from application.logging import log_activity
+        from docsgpt.logging import log_activity
 
         class FakeAgent:
             endpoint = "test"
@@ -131,12 +131,12 @@ class TestLogActivity:
             yield "chunk1"
             yield "chunk2"
 
-        with patch("application.logging._log_activity_to_db"):
+        with patch("docsgpt.logging._log_activity_to_db"):
             result = list(my_gen(FakeAgent()))
         assert result == ["chunk1", "chunk2"]
 
     def test_log_activity_handles_exception(self):
-        from application.logging import log_activity
+        from docsgpt.logging import log_activity
 
         class FakeAgent:
             endpoint = "test"
@@ -148,7 +148,7 @@ class TestLogActivity:
             yield "ok"
             raise RuntimeError("boom")
 
-        with patch("application.logging._log_activity_to_db"), pytest.raises(
+        with patch("docsgpt.logging._log_activity_to_db"), pytest.raises(
             RuntimeError, match="boom"
         ):
             list(failing_gen(FakeAgent()))
@@ -156,7 +156,7 @@ class TestLogActivity:
     def test_log_activity_emits_lifecycle_events(self, caplog):
         import logging as _logging
 
-        from application.logging import log_activity
+        from docsgpt.logging import log_activity
 
         class FakeAgent:
             endpoint = "test"
@@ -170,7 +170,7 @@ class TestLogActivity:
         def gen(agent, log_context=None):
             yield "x"
 
-        with patch("application.logging._log_activity_to_db"), \
+        with patch("docsgpt.logging._log_activity_to_db"), \
                 caplog.at_level(_logging.INFO, logger="root"):
             list(gen(FakeAgent()))
 
@@ -198,7 +198,7 @@ class TestLogActivity:
         # the inner activity_started event must link to the outer's id.
         import logging as _logging
 
-        from application.logging import log_activity
+        from docsgpt.logging import log_activity
 
         class FakeAgent:
             endpoint = "outer"
@@ -220,7 +220,7 @@ class TestLogActivity:
         def outer_gen(agent, log_context=None):
             yield from inner_gen(InnerAgent())
 
-        with patch("application.logging._log_activity_to_db"), \
+        with patch("docsgpt.logging._log_activity_to_db"), \
                 caplog.at_level(_logging.INFO, logger="root"):
             list(outer_gen(FakeAgent()))
 
@@ -235,7 +235,7 @@ class TestLogActivity:
     def test_log_activity_records_error_status_on_failure(self, caplog):
         import logging as _logging
 
-        from application.logging import log_activity
+        from docsgpt.logging import log_activity
 
         class FakeAgent:
             endpoint = "boom"
@@ -248,7 +248,7 @@ class TestLogActivity:
             yield "before"
             raise ValueError("bad thing")
 
-        with patch("application.logging._log_activity_to_db"), \
+        with patch("docsgpt.logging._log_activity_to_db"), \
                 caplog.at_level(_logging.INFO, logger="root"), \
                 pytest.raises(ValueError):
             list(failing(FakeAgent()))
@@ -265,7 +265,7 @@ class TestLogActivity:
         # every error dashboard.
         import logging as _logging
 
-        from application.logging import log_activity
+        from docsgpt.logging import log_activity
 
         class FakeAgent:
             endpoint = "stream"
@@ -277,7 +277,7 @@ class TestLogActivity:
         def erroring(agent, log_context=None):
             yield {"type": "error", "error": "No LLM class found for type foundry"}
 
-        with patch("application.logging._log_activity_to_db"), \
+        with patch("docsgpt.logging._log_activity_to_db"), \
                 caplog.at_level(_logging.INFO, logger="root"):
             list(erroring(FakeAgent()))
 
@@ -292,7 +292,7 @@ class TestLogActivity:
         # activity now gets the same aggregates on ``activity_finished``.
         import logging as _logging
 
-        from application.logging import log_activity
+        from docsgpt.logging import log_activity
 
         class FakeAgent:
             endpoint = "stream"
@@ -310,7 +310,7 @@ class TestLogActivity:
             yield "ignored-non-dict"
             yield {"unrecognised": "noop"}
 
-        with patch("application.logging._log_activity_to_db"), \
+        with patch("docsgpt.logging._log_activity_to_db"), \
                 caplog.at_level(_logging.INFO, logger="root"):
             list(streaming(FakeAgent()))
 
@@ -325,7 +325,7 @@ class TestLogActivity:
         # schemas don't get a missing-field hole on empty activities).
         import logging as _logging
 
-        from application.logging import log_activity
+        from docsgpt.logging import log_activity
 
         class FakeAgent:
             endpoint = "stream"
@@ -338,7 +338,7 @@ class TestLogActivity:
             return
             yield  # pragma: no cover — generator marker
 
-        with patch("application.logging._log_activity_to_db"), \
+        with patch("docsgpt.logging._log_activity_to_db"), \
                 caplog.at_level(_logging.INFO, logger="root"):
             list(empty(FakeAgent()))
 
@@ -355,14 +355,14 @@ class TestAccumulateResponseSummary:
     cases here than in end-to-end ``log_activity`` tests."""
 
     def _ctx(self):
-        from application.logging import LogContext
+        from docsgpt.logging import LogContext
 
         return LogContext(
             endpoint="e", activity_id="a", user="u", api_key="k", query="q"
         )
 
     def test_answer_appends_length(self):
-        from application.logging import _accumulate_response_summary
+        from docsgpt.logging import _accumulate_response_summary
 
         ctx = self._ctx()
         _accumulate_response_summary({"answer": "abcd"}, ctx)
@@ -371,7 +371,7 @@ class TestAccumulateResponseSummary:
         assert ctx.thought_length == 0
 
     def test_non_dict_items_are_ignored(self):
-        from application.logging import _accumulate_response_summary
+        from docsgpt.logging import _accumulate_response_summary
 
         ctx = self._ctx()
         for item in ("string", 123, None, ["list"], object()):
@@ -382,14 +382,14 @@ class TestAccumulateResponseSummary:
     def test_sources_must_be_list(self):
         # A malformed payload (sources=str) shouldn't crash the
         # accumulator — drop it silently rather than half-count it.
-        from application.logging import _accumulate_response_summary
+        from docsgpt.logging import _accumulate_response_summary
 
         ctx = self._ctx()
         _accumulate_response_summary({"sources": "not-a-list"}, ctx)
         assert ctx.source_count == 0
 
     def test_tool_calls_counted(self):
-        from application.logging import _accumulate_response_summary
+        from docsgpt.logging import _accumulate_response_summary
 
         ctx = self._ctx()
         _accumulate_response_summary(

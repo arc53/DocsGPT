@@ -11,9 +11,9 @@ from unittest.mock import patch
 
 import pytest
 
-from application.scripts import reembed
-from application.vectorstore import pgvector as pgvector_module
-from application.vectorstore.pgvector import PGVectorStore
+from docsgpt.scripts import reembed
+from docsgpt.vectorstore import pgvector as pgvector_module
+from docsgpt.vectorstore.pgvector import PGVectorStore
 
 pytestmark = pytest.mark.integration
 
@@ -68,7 +68,7 @@ def live_dsn(postgresql, monkeypatch):
         pytest.skip(f"pgvector extension unavailable: {exc}")
 
     dsn = _dsn(postgresql.info)
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     settings = settings_module.settings
     monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector", raising=False)
@@ -83,7 +83,7 @@ def live_dsn(postgresql, monkeypatch):
 def _seed(dsn, source_id, texts, embeddings):
     """Create the schema and insert ``texts`` embedded by ``embeddings``."""
     with patch(
-        "application.vectorstore.base.BaseVectorStore._get_embeddings",
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
         return_value=embeddings,
     ):
         store = PGVectorStore(source_id=source_id, connection_string=dsn)
@@ -139,7 +139,7 @@ class TestReembedPgvectorLive:
 
         new_model = _Embeddings(9.0)
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=new_model,
         ):
             seen, written = reembed.reembed_pgvector("src-a", batch_size=2, dry_run=False)
@@ -154,7 +154,7 @@ class TestReembedPgvectorLive:
         _seed(live_dsn, "src-b", TEXTS, _Embeddings(1.0))
         new_model = _Embeddings(9.0)
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=new_model,
         ):
             seen, written = reembed.reembed_pgvector("src-b", batch_size=2, dry_run=True)
@@ -167,7 +167,7 @@ class TestReembedPgvectorLive:
         _seed(live_dsn, "src-c", TEXTS, _Embeddings(1.0))
         new_model = _Embeddings(9.0)
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=new_model,
         ):
             reembed.reembed_pgvector("src-c", batch_size=2, dry_run=False)
@@ -177,7 +177,7 @@ class TestReembedPgvectorLive:
         _seed(live_dsn, "src-d", TEXTS, _Embeddings(1.0))
         _seed(live_dsn, "src-e", TEXTS, _Embeddings(1.0))
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=_Embeddings(9.0),
         ):
             reembed.reembed_pgvector("src-d", batch_size=64, dry_run=False)
@@ -196,7 +196,7 @@ GRAPH_SOURCE = "11111111-2222-3333-4444-555555555555"
 
 def _seed_graph_node(dsn, source_id, name, seed):
     """Insert one graph node carrying a name embedding at ``seed``."""
-    from application.graphrag.store import GraphStore
+    from docsgpt.graphrag.store import GraphStore
 
     store = PGVectorStore(source_id=source_id, connection_string=dsn)
     conn = store._get_connection()
@@ -240,7 +240,7 @@ class TestGraphNodeReembedLive:
     """
 
     def test_node_names_are_re_embedded(self, live_dsn, monkeypatch):
-        from application.core import settings as settings_module
+        from docsgpt.core import settings as settings_module
 
         monkeypatch.setattr(
             settings_module.settings, "GRAPHRAG_ENABLED", True, raising=False
@@ -251,7 +251,7 @@ class TestGraphNodeReembedLive:
         assert all(v[0] == pytest.approx(1.0) for _, v in _node_vectors(live_dsn, GRAPH_SOURCE))
 
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=_Embeddings(9.0),
         ):
             reembed.reembed_pgvector(GRAPH_SOURCE, batch_size=64, dry_run=False)
@@ -263,7 +263,7 @@ class TestGraphNodeReembedLive:
         )
 
     def test_graph_is_left_alone_when_graphrag_is_off(self, live_dsn, monkeypatch):
-        from application.core import settings as settings_module
+        from docsgpt.core import settings as settings_module
 
         monkeypatch.setattr(
             settings_module.settings, "GRAPHRAG_ENABLED", False, raising=False
@@ -272,7 +272,7 @@ class TestGraphNodeReembedLive:
         _seed_graph_node(live_dsn, GRAPH_SOURCE, "Alpha", 1.0)
 
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=_Embeddings(9.0),
         ):
             reembed.reembed_pgvector(GRAPH_SOURCE, batch_size=64, dry_run=False)
@@ -280,7 +280,7 @@ class TestGraphNodeReembedLive:
         assert all(v[0] == pytest.approx(1.0) for _, v in _node_vectors(live_dsn, GRAPH_SOURCE))
 
     def test_dry_run_leaves_node_vectors_untouched(self, live_dsn, monkeypatch):
-        from application.core import settings as settings_module
+        from docsgpt.core import settings as settings_module
 
         monkeypatch.setattr(
             settings_module.settings, "GRAPHRAG_ENABLED", True, raising=False
@@ -289,7 +289,7 @@ class TestGraphNodeReembedLive:
         _seed_graph_node(live_dsn, GRAPH_SOURCE, "Alpha", 1.0)
 
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=_Embeddings(9.0),
         ):
             reembed.reembed_pgvector(GRAPH_SOURCE, batch_size=64, dry_run=True)

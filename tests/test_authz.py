@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 import pytest
 from flask import Flask, request
 
-from application.api.user import authz
+from docsgpt.api.user import authz
 
 
 @contextmanager

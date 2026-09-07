@@ -6,8 +6,8 @@ import types
 
 import pytest
 
-from application.parser import tokenization
-from application.parser.tokenization import (
+from docsgpt.parser import tokenization
+from docsgpt.parser.tokenization import (
     HuggingFaceCounter,
     TiktokenCounter,
     get_token_counter,

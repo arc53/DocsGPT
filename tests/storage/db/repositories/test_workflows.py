@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from application.storage.db.repositories.workflows import WorkflowsRepository
+from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
 
 def _repo(conn) -> WorkflowsRepository:
@@ -113,9 +113,9 @@ class TestDelete:
     def test_delete_reaps_run_artifacts(self, pg_conn, monkeypatch):
         # Run artifacts have no FK cascade off the workflow, so deleting the
         # workflow must explicitly reclaim their rows (quota) and bytes.
-        from application.storage.db.repositories.artifacts import ArtifactsRepository
-        from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
-        from application.storage.storage_creator import StorageCreator
+        from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+        from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+        from docsgpt.storage.storage_creator import StorageCreator
 
         deleted_paths: list[str] = []
 
@@ -148,8 +148,8 @@ class TestDelete:
     def test_delete_wrong_user_keeps_run_artifacts(self, pg_conn):
         # The ownership guard must run before any artifact cleanup, so a
         # non-owner delete can never reap another user's run artifacts.
-        from application.storage.db.repositories.artifacts import ArtifactsRepository
-        from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+        from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+        from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 
         repo = _repo(pg_conn)
         artifacts = ArtifactsRepository(pg_conn)

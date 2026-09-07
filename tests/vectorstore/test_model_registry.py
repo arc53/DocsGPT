@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from application.vectorstore import model_registry as reg
+from docsgpt.vectorstore import model_registry as reg
 
 
 class TestResolve:
@@ -107,7 +107,7 @@ class TestRegistryMatchesTheHub:
         "model", [m for m in reg.MODELS if m.provider == "fastembed"]
     )
     def test_entry_matches_repository_metadata(self, model):
-        from application.vectorstore.embeddings_local import _describe_from_repo
+        from docsgpt.vectorstore.embeddings_local import _describe_from_repo
 
         described = _describe_from_repo(model.repo)
         assert described is not None, f"{model.repo} declares no pooling metadata"

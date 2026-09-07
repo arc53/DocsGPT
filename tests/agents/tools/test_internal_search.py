@@ -1,4 +1,4 @@
-"""Comprehensive tests for application/agents/tools/internal_search.py
+"""Comprehensive tests for docsgpt/agents/tools/internal_search.py
 
 Covers: InternalSearchTool (search, list_files, path_filter, error handling,
 directory structure loading), build helpers, add_internal_search_tool,
@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.agents.tools.internal_search import (
+from docsgpt.agents.tools.internal_search import (
     INTERNAL_TOOL_ENTRY,
     INTERNAL_TOOL_ID,
     InternalSearchTool,
@@ -404,7 +404,7 @@ class TestBuildHelpers:
         }
 
         with patch(
-            "application.agents.tools.internal_search.sources_have_directory_structure",
+            "docsgpt.agents.tools.internal_search.sources_have_directory_structure",
             return_value=False,
         ):
             add_internal_search_tool(tools_dict, retriever_config)

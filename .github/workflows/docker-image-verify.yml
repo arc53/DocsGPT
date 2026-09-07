@@ -8,14 +8,15 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'application/Dockerfile'
-      - 'application/.dockerignore'
+      - 'docsgpt/Dockerfile'
+      - '.dockerignore'
+      - 'application/**'
       - 'application/requirements*.txt'
-      - 'application/scripts/prefetch_models.py'
-      - 'application/scripts/verify_offline.py'
-      - 'application/vectorstore/model_registry.py'
-      - 'application/parser/tokenization.py'
-      - 'application/vectorstore/embeddings_local.py'
+      - 'docsgpt/scripts/prefetch_models.py'
+      - 'docsgpt/scripts/verify_offline.py'
+      - 'docsgpt/vectorstore/model_registry.py'
+      - 'docsgpt/parser/tokenization.py'
+      - 'docsgpt/vectorstore/embeddings_local.py'
       - '.github/workflows/docker-image-verify.yml'
 
 permissions:
@@ -40,8 +41,8 @@ jobs:
       - name: Build the image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
-          file: ./application/Dockerfile
-          context: ./application
+          file: ./docsgpt/Dockerfile
+          context: .
           platforms: linux/amd64
           load: true
           tags: docsgpt:verify${{ matrix.variant }}
@@ -63,4 +64,4 @@ jobs:
           IMAGE: docsgpt:verify${{ matrix.variant }}
         run: |
           docker run --rm --network none "$IMAGE" \
-            python -m application.scripts.verify_offline
+            python -m docsgpt.scripts.verify_offline

@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.agents.classic_agent import ClassicAgent
-from application.api.answer.services.stream_processor import StreamProcessor
+from docsgpt.agents.classic_agent import ClassicAgent
+from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
 DOCS = [
     {"text": "Clause 4: reporting is due within 30 days.", "filename": "aml.pdf"},
@@ -72,8 +72,8 @@ class TestRetrievalReachesTheAgent:
 @pytest.mark.unit
 class TestDocumentsLandInTheUserTurn:
     def _agent(self, **kwargs):
-        with patch("application.llm.llm_creator.LLMCreator.create_llm"), patch(
-            "application.llm.handlers.handler_creator.LLMHandlerCreator.create_handler"
+        with patch("docsgpt.llm.llm_creator.LLMCreator.create_llm"), patch(
+            "docsgpt.llm.handlers.handler_creator.LLMHandlerCreator.create_handler"
         ):
             return ClassicAgent(
                 endpoint="stream",
@@ -110,7 +110,7 @@ class TestChunksPrecedence:
     """
 
     def _sp(self, request_chunks=None, source_chunks=None):
-        from application.storage.db.source_config import RetrievalConfig
+        from docsgpt.storage.db.source_config import RetrievalConfig
 
         sp = _processor()
         sp._agent_data = None

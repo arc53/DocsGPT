@@ -16,10 +16,10 @@ import pytest
 from flask import Flask
 from sqlalchemy import text
 
-from application.api.answer.services import stream_processor as sp_mod
-from application.api.v1.routes import v1_bp
-from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.api.answer.services import stream_processor as sp_mod
+from docsgpt.api.v1.routes import v1_bp
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
 # Reuse the route-level DB wiring + seed helpers from the tool-pause suite.
 from tests.api.v1.test_v1_tool_pause_finalization import (

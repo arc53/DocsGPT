@@ -1,4 +1,4 @@
-"""Tests for helper functions in application/api/user/agents/routes.py."""
+"""Tests for helper functions in docsgpt/api/user/agents/routes.py."""
 
 import json
 from contextlib import contextmanager
@@ -20,28 +20,28 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.agents.routes.db_session", _yield
+        "docsgpt.api.user.agents.routes.db_session", _yield
     ), patch(
-        "application.api.user.agents.routes.db_readonly", _yield
+        "docsgpt.api.user.agents.routes.db_readonly", _yield
     ):
         yield
 
 
 class TestNormalizeWorkflowReference:
     def test_none_returns_none(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             normalize_workflow_reference,
         )
         assert normalize_workflow_reference(None) is None
 
     def test_dict_returns_id_field(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             normalize_workflow_reference,
         )
         assert normalize_workflow_reference({"id": "w1"}) == "w1"
 
     def test_dict_returns_workflow_id_field(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             normalize_workflow_reference,
         )
         assert (
@@ -49,25 +49,25 @@ class TestNormalizeWorkflowReference:
         )
 
     def test_dict_with_underscore_id(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             normalize_workflow_reference,
         )
         assert normalize_workflow_reference({"_id": "wf-2"}) == "wf-2"
 
     def test_empty_string_returns_empty(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             normalize_workflow_reference,
         )
         assert normalize_workflow_reference("") == ""
 
     def test_plain_string_returned(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             normalize_workflow_reference,
         )
         assert normalize_workflow_reference("wf-123") == "wf-123"
 
     def test_json_string_dict(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             normalize_workflow_reference,
         )
         assert (
@@ -75,19 +75,19 @@ class TestNormalizeWorkflowReference:
         )
 
     def test_json_string_as_string(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             normalize_workflow_reference,
         )
         assert normalize_workflow_reference('"wf-str"') == "wf-str"
 
     def test_invalid_json_returns_original(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             normalize_workflow_reference,
         )
         assert normalize_workflow_reference("not-json-wf") == "not-json-wf"
 
     def test_non_string_non_dict_coerced(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             normalize_workflow_reference,
         )
         assert normalize_workflow_reference(42) == "42"
@@ -95,14 +95,14 @@ class TestNormalizeWorkflowReference:
 
 class TestResolveWorkflowForUser:
     def test_none_workflow_returns_none(self, pg_conn):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             _resolve_workflow_for_user,
         )
         pg_id, err = _resolve_workflow_for_user(pg_conn, None, "u")
         assert pg_id is None and err is None
 
     def test_not_found_returns_error(self, pg_conn, app):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             _resolve_workflow_for_user,
         )
         with app.app_context():
@@ -116,10 +116,10 @@ class TestResolveWorkflowForUser:
         assert err.status_code == 404
 
     def test_resolves_owned_workflow(self, pg_conn, app):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             _resolve_workflow_for_user,
         )
-        from application.storage.db.repositories.workflows import (
+        from docsgpt.storage.db.repositories.workflows import (
             WorkflowsRepository,
         )
 
@@ -135,13 +135,13 @@ class TestResolveWorkflowForUser:
 
 class TestResolveFolderId:
     def test_none_returns_none(self, pg_conn):
-        from application.api.user.agents.routes import _resolve_folder_id
+        from docsgpt.api.user.agents.routes import _resolve_folder_id
         pg_id, err = _resolve_folder_id(pg_conn, None, "u")
         assert pg_id is None
         assert err is None
 
     def test_not_found_returns_error(self, pg_conn, app):
-        from application.api.user.agents.routes import _resolve_folder_id
+        from docsgpt.api.user.agents.routes import _resolve_folder_id
 
         with app.app_context():
             pg_id, err = _resolve_folder_id(
@@ -151,8 +151,8 @@ class TestResolveFolderId:
         assert err.status_code == 404
 
     def test_resolves_owned_folder(self, pg_conn, app):
-        from application.api.user.agents.routes import _resolve_folder_id
-        from application.storage.db.repositories.agent_folders import (
+        from docsgpt.api.user.agents.routes import _resolve_folder_id
+        from docsgpt.storage.db.repositories.agent_folders import (
             AgentFoldersRepository,
         )
 
@@ -166,7 +166,7 @@ class TestResolveFolderId:
 
 class TestFormatAgentOutput:
     def test_basic_shape(self):
-        from application.api.user.agents.routes import _format_agent_output
+        from docsgpt.api.user.agents.routes import _format_agent_output
 
         agent = {
             "id": "agent-1",
@@ -191,21 +191,21 @@ class TestFormatAgentOutput:
         assert out["key"].startswith("secr") and out["key"].endswith("long")
 
     def test_no_key_masking(self):
-        from application.api.user.agents.routes import _format_agent_output
+        from docsgpt.api.user.agents.routes import _format_agent_output
 
         agent = {"id": "a", "name": "n", "chunks": None}
         out = _format_agent_output(agent, include_key_masked=False)
         assert "key" not in out
 
     def test_empty_key_returns_empty_string(self):
-        from application.api.user.agents.routes import _format_agent_output
+        from docsgpt.api.user.agents.routes import _format_agent_output
 
         agent = {"id": "a", "name": "n", "key": ""}
         out = _format_agent_output(agent)
         assert out["key"] == ""
 
     def test_with_folder_and_workflow(self):
-        from application.api.user.agents.routes import _format_agent_output
+        from docsgpt.api.user.agents.routes import _format_agent_output
 
         agent = {
             "id": "a", "name": "n",
@@ -218,7 +218,7 @@ class TestFormatAgentOutput:
 
 class TestBuildCreateKwargs:
     def test_classic_kwargs(self):
-        from application.api.user.agents.routes import _build_create_kwargs
+        from docsgpt.api.user.agents.routes import _build_create_kwargs
 
         data = {
             "description": "d",
@@ -233,7 +233,7 @@ class TestBuildCreateKwargs:
         assert out["chunks"] == 3
 
     def test_invalid_chunks_skipped(self, app):
-        from application.api.user.agents.routes import _build_create_kwargs
+        from docsgpt.api.user.agents.routes import _build_create_kwargs
 
         data = {"chunks": "abc"}
         with app.app_context():
@@ -243,7 +243,7 @@ class TestBuildCreateKwargs:
         assert "chunks" not in out
 
     def test_prompt_id_default_not_set(self):
-        from application.api.user.agents.routes import _build_create_kwargs
+        from docsgpt.api.user.agents.routes import _build_create_kwargs
 
         data = {"prompt_id": "default"}
         out = _build_create_kwargs(
@@ -252,7 +252,7 @@ class TestBuildCreateKwargs:
         assert "prompt_id" not in out
 
     def test_image_url_used_when_provided(self):
-        from application.api.user.agents.routes import _build_create_kwargs
+        from docsgpt.api.user.agents.routes import _build_create_kwargs
 
         out = _build_create_kwargs(
             {}, image_url="/upload/img.png", agent_type="classic",
@@ -260,7 +260,7 @@ class TestBuildCreateKwargs:
         assert out.get("image") == "/upload/img.png"
 
     def test_client_image_path_is_never_persisted(self):
-        from application.api.user.agents.routes import _build_create_kwargs
+        from docsgpt.api.user.agents.routes import _build_create_kwargs
 
         out = _build_create_kwargs(
             {"image": ".env"}, image_url="", agent_type="classic",

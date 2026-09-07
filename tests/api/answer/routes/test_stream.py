@@ -1,4 +1,4 @@
-"""Tests for application/api/answer/routes/stream.py"""
+"""Tests for docsgpt/api/answer/routes/stream.py"""
 
 import json
 import uuid
@@ -15,7 +15,7 @@ _AGENT_ID = "507f1f77bcf86cd799439012"
 def mock_stream_processor():
     """Create a mock StreamProcessor for stream tests."""
     with patch(
-        "application.api.answer.routes.stream.StreamProcessor"
+        "docsgpt.api.answer.routes.stream.StreamProcessor"
     ) as MockProcessor:
         processor = MagicMock()
         processor.decoded_token = {"sub": "test_user"}
@@ -35,7 +35,7 @@ def stream_client(mock_mongo_db, flask_app):
     """Create a test client with the stream route registered."""
     from flask_restx import Api
 
-    from application.api.answer.routes.stream import answer_ns
+    from docsgpt.api.answer.routes.stream import answer_ns
 
     api = Api(flask_app)
     api.add_namespace(answer_ns)
@@ -59,13 +59,13 @@ class TestStreamResourcePost:
             yield f'data: {json.dumps({"type": "end"})}\n\n'
 
         with patch(
-            "application.api.answer.routes.stream.StreamResource.validate_request",
+            "docsgpt.api.answer.routes.stream.StreamResource.validate_request",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.stream.StreamResource.check_usage",
+            "docsgpt.api.answer.routes.stream.StreamResource.check_usage",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.stream.StreamResource.complete_stream",
+            "docsgpt.api.answer.routes.stream.StreamResource.complete_stream",
             side_effect=fake_stream,
         ):
             resp = stream_client.post(
@@ -84,7 +84,7 @@ class TestStreamResourcePost:
     ):
         mock_stream_processor.decoded_token = None
         with patch(
-            "application.api.answer.routes.stream.StreamResource.validate_request",
+            "docsgpt.api.answer.routes.stream.StreamResource.validate_request",
             return_value=None,
         ):
             resp = stream_client.post(
@@ -101,10 +101,10 @@ class TestStreamResourcePost:
         self, stream_client, mock_stream_processor
     ):
         with patch(
-            "application.api.answer.routes.stream.StreamResource.validate_request",
+            "docsgpt.api.answer.routes.stream.StreamResource.validate_request",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.stream.StreamResource.check_usage",
+            "docsgpt.api.answer.routes.stream.StreamResource.check_usage",
         ) as mock_check:
             mock_check.return_value = ({"error": "Usage limit exceeded"}, 429)
             resp = stream_client.post(
@@ -119,7 +119,7 @@ class TestStreamResourcePost:
     ):
         mock_stream_processor.build_agent.side_effect = ValueError("bad data")
         with patch(
-            "application.api.answer.routes.stream.StreamResource.validate_request",
+            "docsgpt.api.answer.routes.stream.StreamResource.validate_request",
             return_value=None,
         ):
             resp = stream_client.post(
@@ -137,7 +137,7 @@ class TestStreamResourcePost:
     ):
         mock_stream_processor.build_agent.side_effect = RuntimeError("crash")
         with patch(
-            "application.api.answer.routes.stream.StreamResource.validate_request",
+            "docsgpt.api.answer.routes.stream.StreamResource.validate_request",
             return_value=None,
         ):
             resp = stream_client.post(
@@ -172,13 +172,13 @@ class TestStreamResourcePost:
 
         conv_id = str(uuid.uuid4())
         with patch(
-            "application.api.answer.routes.stream.StreamResource.validate_request",
+            "docsgpt.api.answer.routes.stream.StreamResource.validate_request",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.stream.StreamResource.check_usage",
+            "docsgpt.api.answer.routes.stream.StreamResource.check_usage",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.stream.StreamResource.complete_stream",
+            "docsgpt.api.answer.routes.stream.StreamResource.complete_stream",
             side_effect=fake_stream,
         ) as mock_complete:
             resp = stream_client.post(

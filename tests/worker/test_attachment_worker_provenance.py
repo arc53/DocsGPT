@@ -14,11 +14,11 @@ from unittest.mock import patch
 
 import pytest
 
-import application.storage.db.engine as engine_module
-from application.parser.file.base_parser import DocumentParseError
-from application.storage.db.repositories.attachments import AttachmentsRepository
-from application.storage.db.session import db_readonly
-from application.utils import get_encoding
+import docsgpt.storage.db.engine as engine_module
+from docsgpt.parser.file.base_parser import DocumentParseError
+from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
+from docsgpt.storage.db.session import db_readonly
+from docsgpt.utils import get_encoding
 
 
 class _StubTask:
@@ -45,18 +45,18 @@ def wired_engine(pg_engine, monkeypatch):
 @pytest.fixture()
 def storage_dir(tmp_path, monkeypatch):
     """LocalStorage rooted at tmp_path, patched into the worker."""
-    from application.storage.local import LocalStorage
+    from docsgpt.storage.local import LocalStorage
 
     storage = LocalStorage(base_dir=str(tmp_path))
     monkeypatch.setattr(
-        "application.storage.storage_creator.StorageCreator.get_storage",
+        "docsgpt.storage.storage_creator.StorageCreator.get_storage",
         classmethod(lambda cls: storage),
     )
     return tmp_path
 
 
 def _run_worker(file_info, user="prov-user"):
-    from application.worker import attachment_worker
+    from docsgpt.worker import attachment_worker
 
     return attachment_worker(_StubTask(), file_info, user)
 
@@ -123,7 +123,7 @@ class TestTruncationProvenance:
         dense = "統計資料表格內容分析、報告書類文書處理系統。設計開發運用管理。\n" * 10000
         info = _file_info(storage_dir)
         monkeypatch.setattr(
-            "application.worker.SimpleDirectoryReader",
+            "docsgpt.worker.SimpleDirectoryReader",
             lambda **kwargs: type("R", (), {"load_data": lambda self: [_Doc(dense)]})(),
         )
 
@@ -145,7 +145,7 @@ class TestTruncationProvenance:
         text = "plain short attachment content"
         info = _file_info(storage_dir)
         monkeypatch.setattr(
-            "application.worker.SimpleDirectoryReader",
+            "docsgpt.worker.SimpleDirectoryReader",
             lambda **kwargs: type("R", (), {"load_data": lambda self: [_Doc(text)]})(),
         )
 
@@ -165,7 +165,7 @@ class TestFailureProvenance:
         def _raise(**kwargs):
             raise DocumentParseError("Failed to parse broken.xlsx with docling: boom")
 
-        monkeypatch.setattr("application.worker.SimpleDirectoryReader", _raise)
+        monkeypatch.setattr("docsgpt.worker.SimpleDirectoryReader", _raise)
 
         with pytest.raises(DocumentParseError):
             _run_worker(info)
@@ -190,7 +190,7 @@ class TestFailureProvenance:
                 raise RuntimeError("transient blip")
             return type("R", (), {"load_data": lambda self: [_Doc("recovered fine")]})()
 
-        monkeypatch.setattr("application.worker.SimpleDirectoryReader", _flaky)
+        monkeypatch.setattr("docsgpt.worker.SimpleDirectoryReader", _flaky)
 
         with pytest.raises(RuntimeError):
             _run_worker(info)
@@ -208,7 +208,7 @@ class TestFailureProvenance:
         # An exception after the success write (e.g. event publishing) must
         # not replace stored content with a NULL-content failed row; the
         # extraction result is already durable.
-        from application.worker import record_attachment_failure
+        from docsgpt.worker import record_attachment_failure
 
         info = _file_info(storage_dir)
         _run_worker(info)
@@ -227,9 +227,9 @@ class TestFailureProvenance:
         def _raise(**kwargs):
             raise DocumentParseError("original parse error")
 
-        monkeypatch.setattr("application.worker.SimpleDirectoryReader", _raise)
+        monkeypatch.setattr("docsgpt.worker.SimpleDirectoryReader", _raise)
         monkeypatch.setattr(
-            "application.worker.db_session",
+            "docsgpt.worker.db_session",
             _raising_db_session,
         )
 
@@ -244,7 +244,7 @@ def _raising_db_session():
 @pytest.mark.usefixtures("wired_engine")
 class TestPoisonProvenance:
     def test_poison_guard_writes_failed_row(self):
-        from application.api.user.tasks import _emit_attachment_poison_event
+        from docsgpt.api.user.tasks import _emit_attachment_poison_event
 
         attachment_id = str(uuid.uuid4())
         bound = {
@@ -256,7 +256,7 @@ class TestPoisonProvenance:
             },
         }
 
-        with patch("application.events.publisher.publish_user_event"):
+        with patch("docsgpt.events.publisher.publish_user_event"):
             _emit_attachment_poison_event("store_attachment", bound)
 
         row = _fetch(attachment_id)

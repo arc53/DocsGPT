@@ -1,10 +1,10 @@
 """
 Tests targeting specific uncovered lines in:
-  - application/app.py
-  - application/celery_init.py
-  - application/wsgi.py
-  - application/agents/tools/internal_search.py
-  - application/seed/seeder.py
+  - docsgpt/app.py
+  - docsgpt/celery_init.py
+  - docsgpt/wsgi.py
+  - docsgpt/agents/tools/internal_search.py
+  - docsgpt/seed/seeder.py
 """
 
 import importlib
@@ -14,7 +14,7 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# application/seed/seeder.py  – line 155
+# docsgpt/seed/seeder.py  – line 155
 # Task result returned successfully but task.successful() is False
 # ---------------------------------------------------------------------------
 
@@ -24,12 +24,12 @@ class TestSeederSourceIngestionNotSuccessful:
     """Cover seeder.py line 155: task.successful() returns False."""
 
     def test_task_successful_false_returns_false(self):
-        from application.seed.seeder import DatabaseSeeder
+        from docsgpt.seed.seeder import DatabaseSeeder
 
         seeder = DatabaseSeeder()
 
-        with patch("application.seed.seeder.ingest_remote") as mock_ingest, patch(
-            "application.seed.seeder.db_readonly"
+        with patch("docsgpt.seed.seeder.ingest_remote") as mock_ingest, patch(
+            "docsgpt.seed.seeder.db_readonly"
         ) as mock_readonly:
             mock_readonly.return_value.__enter__.return_value = MagicMock()
             mock_task = MagicMock()
@@ -51,7 +51,7 @@ class TestSeederSourceIngestionNotSuccessful:
 
 
 # ---------------------------------------------------------------------------
-# application/agents/tools/internal_search.py
+# docsgpt/agents/tools/internal_search.py
 # Line 79: source_doc not found → continue
 # Lines 89-90: inner exception in directory structure loading
 # Lines 93-94: outer exception in _get_directory_structure
@@ -70,7 +70,7 @@ class TestExecuteListFilesEmptyPathPart:
 
     def test_path_with_double_slash_navigates_correctly(self):
         """Path with double-slash creates empty middle part, exercises line 164."""
-        from application.agents.tools.internal_search import InternalSearchTool
+        from docsgpt.agents.tools.internal_search import InternalSearchTool
 
         tool = InternalSearchTool({"source": {}})
         tool._dir_structure_loaded = True
@@ -85,7 +85,7 @@ class TestExecuteListFilesEmptyPathPart:
 
     def test_path_with_middle_double_slash_in_list_files(self):
         """line 164: double-slash in path creates empty part → continue."""
-        from application.agents.tools.internal_search import InternalSearchTool
+        from docsgpt.agents.tools.internal_search import InternalSearchTool
 
         tool = InternalSearchTool({"source": {}})
         tool._dir_structure_loaded = True
@@ -108,7 +108,7 @@ class TestSourcesHaveDirectoryStructureInnerException:
 
 
 # ---------------------------------------------------------------------------
-# application/celery_init.py  – lines 35-39
+# docsgpt/celery_init.py  – lines 35-39
 # dispose_engine called on worker_process_init signal
 # ---------------------------------------------------------------------------
 
@@ -119,11 +119,11 @@ class TestCeleryDisposEngineOnFork:
 
     def test_dispose_engine_called_on_fork(self):
         """Lines 35-39: dispose_engine is imported and called."""
-        import application.celery_init as celery_module
+        import docsgpt.celery_init as celery_module
 
         mock_dispose = Mock()
         with patch(
-            "application.storage.db.engine.dispose_engine", mock_dispose
+            "docsgpt.storage.db.engine.dispose_engine", mock_dispose
         ):
             # Call the signal handler directly
             celery_module._dispose_db_engine_on_fork()
@@ -132,15 +132,15 @@ class TestCeleryDisposEngineOnFork:
 
     def test_dispose_engine_import_error_returns_silently(self):
         """Lines 37-38: ImportError on dispose_engine import → return silently."""
-        import application.celery_init as celery_module
+        import docsgpt.celery_init as celery_module
 
-        with patch.dict("sys.modules", {"application.storage.db.engine": None}):
+        with patch.dict("sys.modules", {"docsgpt.storage.db.engine": None}):
             # Should not raise
             celery_module._dispose_db_engine_on_fork()
 
 
 # ---------------------------------------------------------------------------
-# application/app.py  – missing lines
+# docsgpt/app.py  – missing lines
 # Lines 30-32: Windows pathlib patch (platform.system() == "Windows")
 # Lines 51-61: JWT key file setup when AUTH_TYPE is simple_jwt/session_jwt
 # Lines 64-66: SIMPLE_JWT_TOKEN creation when AUTH_TYPE is simple_jwt
@@ -155,7 +155,7 @@ class TestAppHomeFunction:
 
     def test_home_localhost_redirects(self):
         """Lines 71-72: home() redirects when remote_addr is localhost."""
-        from application.app import app, home
+        from docsgpt.app import app, home
 
         with app.test_request_context("/", environ_base={"REMOTE_ADDR": "127.0.0.1"}):
             response = home()
@@ -164,7 +164,7 @@ class TestAppHomeFunction:
 
     def test_home_external_ip_returns_welcome(self):
         """Lines 73-74: home() returns welcome message for external IPs."""
-        from application.app import app, home
+        from docsgpt.app import app, home
 
         with app.test_request_context("/", environ_base={"REMOTE_ADDR": "8.8.8.8"}):
             response = home()
@@ -172,7 +172,7 @@ class TestAppHomeFunction:
 
     def test_home_docker_ip_redirects(self):
         """Line 71-72: home() redirects for Docker bridge IP."""
-        from application.app import app, home
+        from docsgpt.app import app, home
 
         with app.test_request_context("/", environ_base={"REMOTE_ADDR": "172.18.0.1"}):
             response = home()
@@ -286,13 +286,13 @@ class TestAppWindowsPathlib:
         original_posix_path = pathlib.PosixPath
 
         for mod in list(sys.modules.keys()):
-            if mod == "application.app":
+            if mod == "docsgpt.app":
                 del sys.modules[mod]
 
         try:
             with patch("platform.system", return_value="Windows"):
                 try:
-                    import application.app  # noqa: F401
+                    import docsgpt.app  # noqa: F401
                 except Exception:
                     pass
         finally:
@@ -301,7 +301,7 @@ class TestAppWindowsPathlib:
 
 
 # ---------------------------------------------------------------------------
-# application/wsgi.py  – line 5 (__main__ block)
+# docsgpt/wsgi.py  – line 5 (__main__ block)
 # Cannot be covered via import; skip with a note.
 # The import itself (lines 1-3) is covered by test_remaining_coverage.py.
 # ---------------------------------------------------------------------------
@@ -313,7 +313,7 @@ class TestWsgiMainGuard:
 
     def test_wsgi_app_attribute_accessible(self):
         """Lines 1-4: wsgi.py can be imported and app is accessible."""
-        import application.wsgi
+        import docsgpt.wsgi
 
-        importlib.reload(application.wsgi)
-        assert hasattr(application.wsgi, "app")
+        importlib.reload(docsgpt.wsgi)
+        assert hasattr(docsgpt.wsgi, "app")

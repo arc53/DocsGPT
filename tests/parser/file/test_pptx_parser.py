@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from application.parser.file.pptx_parser import PPTXParser
+from docsgpt.parser.file.pptx_parser import PPTXParser
 
 
 def test_pptx_init_parser():

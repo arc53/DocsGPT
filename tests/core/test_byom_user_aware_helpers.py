@@ -18,8 +18,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.core.model_registry import ModelRegistry
-from application.core.model_utils import (
+from docsgpt.core.model_registry import ModelRegistry
+from docsgpt.core.model_utils import (
     get_all_available_models,
     get_api_key_for_model,
     get_base_url_for_model,
@@ -28,7 +28,7 @@ from application.core.model_utils import (
     get_token_limit,
     validate_model_id,
 )
-from application.storage.db.repositories.user_custom_models import (
+from docsgpt.storage.db.repositories.user_custom_models import (
     UserCustomModelsRepository,
 )
 
@@ -61,7 +61,7 @@ def _make_settings(**overrides):
     s.MODELS_CONFIG_DIR = None
     s.DEFAULT_LLM_TOKEN_LIMIT = 128000
     # Concrete strings — module-level imports under patched settings
-    # (e.g. application.api.user.base's storage init) fail with
+    # (e.g. docsgpt.api.user.base's storage init) fail with
     # MagicMock attribute values.
     s.STORAGE_TYPE = "local"
     for k, v in overrides.items():
@@ -110,8 +110,8 @@ class TestHelpersThreadUserId:
     ):
         model_uuid, user_id = byom_model
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -122,8 +122,8 @@ class TestHelpersThreadUserId:
     ):
         model_uuid, user_id = byom_model
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -134,8 +134,8 @@ class TestHelpersThreadUserId:
     ):
         model_uuid, user_id = byom_model
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -150,8 +150,8 @@ class TestHelpersThreadUserId:
     ):
         model_uuid, user_id = byom_model
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -165,8 +165,8 @@ class TestHelpersThreadUserId:
     ):
         model_uuid, user_id = byom_model
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -181,8 +181,8 @@ class TestHelpersThreadUserId:
     ):
         model_uuid, user_id = byom_model
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -197,8 +197,8 @@ class TestHelpersThreadUserId:
     ):
         model_uuid, user_id = byom_model
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -213,8 +213,8 @@ class TestHelpersThreadUserId:
     ):
         model_uuid, user_id = byom_model
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -238,7 +238,7 @@ class TestSecurityNoCredLeakOnUndecryptableBYOM:
     def test_undecryptable_record_skipped_in_registry(
         self, pg_conn, monkeypatch
     ):
-        from application.storage.db.repositories.user_custom_models import (
+        from docsgpt.storage.db.repositories.user_custom_models import (
             UserCustomModelsRepository,
         )
 
@@ -260,8 +260,8 @@ class TestSecurityNoCredLeakOnUndecryptableBYOM:
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -276,13 +276,13 @@ class TestSecurityNoCredLeakOnUndecryptableBYOM:
     def test_llmcreator_refuses_user_model_with_no_api_key(self, pg_conn):
         """Belt-and-braces: even if a source=user AvailableModel slipped
         into the registry without an api_key, LLMCreator must refuse."""
-        from application.core.model_settings import (
+        from docsgpt.core.model_settings import (
             AvailableModel,
             ModelProvider,
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
             # Inject a malformed BYOM record directly to bypass the
             # registry-level guard tested above.
@@ -303,7 +303,7 @@ class TestSecurityNoCredLeakOnUndecryptableBYOM:
                 },
             )
 
-            from application.llm.llm_creator import LLMCreator
+            from docsgpt.llm.llm_creator import LLMCreator
 
             with pytest.raises(ValueError, match="no usable API key"):
                 LLMCreator.create_llm(
@@ -323,13 +323,13 @@ class TestSecurityDispatchSSRFGuard:
     guard or were inserted via direct DB edits."""
 
     def test_dispatch_rejects_user_model_with_unsafe_base_url(self, pg_conn):
-        from application.core.model_settings import (
+        from docsgpt.core.model_settings import (
             AvailableModel,
             ModelProvider,
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
             uuid = "0b7e0f4c-1234-5678-9abc-deadbeef0099"
             _seed_user_layer(
@@ -348,7 +348,7 @@ class TestSecurityDispatchSSRFGuard:
                 },
             )
 
-            from application.llm.llm_creator import LLMCreator
+            from docsgpt.llm.llm_creator import LLMCreator
 
             with pytest.raises(ValueError, match="Refusing to dispatch"):
                 LLMCreator.create_llm(
@@ -361,7 +361,7 @@ class TestSecurityDispatchSSRFGuard:
 
     def test_dispatch_allows_user_model_with_safe_base_url(self, pg_conn):
         """The SSRF guard must not break the happy path."""
-        from application.core.model_settings import (
+        from docsgpt.core.model_settings import (
             AvailableModel,
             ModelProvider,
         )
@@ -374,8 +374,8 @@ class TestSecurityDispatchSSRFGuard:
                 captured["base_url"] = kw.get("base_url")
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.security.safe_url.socket.getaddrinfo"
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.security.safe_url.socket.getaddrinfo"
         ) as gai:
             gai.return_value = [(None, None, None, None, ("104.18.0.1", 0))]
             reg = ModelRegistry()
@@ -396,8 +396,8 @@ class TestSecurityDispatchSSRFGuard:
                 },
             )
 
-            from application.llm.llm_creator import LLMCreator
-            from application.llm.providers import PROVIDERS_BY_NAME
+            from docsgpt.llm.llm_creator import LLMCreator
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
             with patch.object(
                 PROVIDERS_BY_NAME["openai_compatible"], "llm_class", _FakeLLM
@@ -423,11 +423,11 @@ class TestSecurityDispatchSSRFGuard:
         rebinding window — the pinned client is what does."""
         import httpx
 
-        from application.core.model_settings import (
+        from docsgpt.core.model_settings import (
             AvailableModel,
             ModelProvider,
         )
-        from application.security.safe_url import _PinnedHTTPSTransport
+        from docsgpt.security.safe_url import _PinnedHTTPSTransport
 
         captured: dict = {}
 
@@ -436,8 +436,8 @@ class TestSecurityDispatchSSRFGuard:
                 captured["http_client"] = kw.get("http_client")
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.security.safe_url.socket.getaddrinfo"
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.security.safe_url.socket.getaddrinfo"
         ) as gai:
             gai.return_value = [(None, None, None, None, ("104.18.0.1", 0))]
             reg = ModelRegistry()
@@ -458,8 +458,8 @@ class TestSecurityDispatchSSRFGuard:
                 },
             )
 
-            from application.llm.llm_creator import LLMCreator
-            from application.llm.providers import PROVIDERS_BY_NAME
+            from docsgpt.llm.llm_creator import LLMCreator
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
             with patch.object(
                 PROVIDERS_BY_NAME["openai_compatible"], "llm_class", _FakeLLM
@@ -491,7 +491,7 @@ class TestSecurityDispatchSSRFGuard:
         their endpoints are operator-trusted. Skipping avoids
         unnecessary DNS lookups and keeps the SDK's default httpx
         client behavior unchanged for the common path."""
-        from application.core.model_settings import (
+        from docsgpt.core.model_settings import (
             AvailableModel,
             ModelProvider,
         )
@@ -503,7 +503,7 @@ class TestSecurityDispatchSSRFGuard:
                 captured["http_client"] = kw.get("http_client")
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
             uuid = "0b7e0f4c-1234-5678-9abc-deadbeef0102"
             reg._builtin_models = {
@@ -517,8 +517,8 @@ class TestSecurityDispatchSSRFGuard:
                 )
             }
 
-            from application.llm.llm_creator import LLMCreator
-            from application.llm.providers import PROVIDERS_BY_NAME
+            from docsgpt.llm.llm_creator import LLMCreator
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
             with patch.object(
                 PROVIDERS_BY_NAME["openai_compatible"], "llm_class", _FakeLLM
@@ -544,10 +544,10 @@ class TestSharedAgentResolvesOwnerBYOM:
     against the *owner's* per-user layer, not the caller's."""
 
     def test_owner_byom_resolves_for_caller_request(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.user_custom_models import (
+        from docsgpt.storage.db.repositories.user_custom_models import (
             UserCustomModelsRepository,
         )
 
@@ -562,8 +562,8 @@ class TestSharedAgentResolvesOwnerBYOM:
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -588,9 +588,9 @@ class TestSharedAgentResolvesOwnerBYOM:
         the rephrase LLM gets the owner's api_key/base_url and dispatches
         the upstream model name (e.g. ``mistral-large-latest``) — not the
         registry UUID — when called with chat history + active docs."""
-        from application.llm.providers import PROVIDERS_BY_NAME
-        from application.retriever.classic_rag import ClassicRAG
-        from application.storage.db.repositories.user_custom_models import (
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
+        from docsgpt.retriever.classic_rag import ClassicRAG
+        from docsgpt.storage.db.repositories.user_custom_models import (
             UserCustomModelsRepository,
         )
 
@@ -623,8 +623,8 @@ class TestSharedAgentResolvesOwnerBYOM:
         )
 
         s = _make_settings(API_KEY="instance-secret")
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -654,10 +654,10 @@ class TestSharedAgentResolvesOwnerBYOM:
         agent record so _validate_and_set_model can reach the owner's
         BYOM layer. Without this, shared-agent BYOM defaults silently
         fall back to the system default for any non-owner caller."""
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.user_custom_models import (
+        from docsgpt.storage.db.repositories.user_custom_models import (
             UserCustomModelsRepository,
         )
 
@@ -671,8 +671,8 @@ class TestSharedAgentResolvesOwnerBYOM:
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
@@ -722,10 +722,10 @@ class TestCompressionThresholdHonorsByomContextWindow:
     BYOM context windows are honored (not the default 128k limit)."""
 
     def test_orchestrator_passes_user_id_to_should_compress(self, monkeypatch):
-        from application.api.answer.services.compression.orchestrator import (
+        from docsgpt.api.answer.services.compression.orchestrator import (
             CompressionOrchestrator,
         )
-        from application.api.answer.services.compression.threshold_checker import (
+        from docsgpt.api.answer.services.compression.threshold_checker import (
             CompressionThresholdChecker,
         )
 
@@ -770,9 +770,9 @@ class TestContinuationPreservesByomScope:
         """``resume_from_tool_actions`` reads ``model_user_id`` from the
         saved ``agent_config`` and forwards it to LLMCreator so the
         resumed dispatch resolves the owner's BYOM."""
-        from application.api.answer.services import stream_processor as sp_mod
-        from application.llm import llm_creator as llm_creator_mod
-        from application.llm.handlers import handler_creator as handler_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
+        from docsgpt.llm import llm_creator as llm_creator_mod
+        from docsgpt.llm.handlers import handler_creator as handler_mod
 
         captured: dict = {}
 
@@ -813,14 +813,14 @@ class TestContinuationPreservesByomScope:
         # ContinuationService is imported lazily inside the method —
         # patch the source module so the lookup at call time resolves
         # to our mock.
-        from application.api.answer.services import (
+        from docsgpt.api.answer.services import (
             continuation_service as cont_mod,
         )
 
         monkeypatch.setattr(
             cont_mod, "ContinuationService", lambda: cont_service
         )
-        from application.agents import tool_executor as te_mod
+        from docsgpt.agents import tool_executor as te_mod
 
         monkeypatch.setattr(
             te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None)
@@ -828,7 +828,7 @@ class TestContinuationPreservesByomScope:
 
         # Stub AgentCreator.create_agent so we don't need a full agent
         # tree — we're only exercising the LLMCreator forwarding.
-        from application.agents import agent_creator as ac_mod
+        from docsgpt.agents import agent_creator as ac_mod
 
         monkeypatch.setattr(
             ac_mod.AgentCreator, "create_agent", lambda *a, **kw: MagicMock()
@@ -867,7 +867,7 @@ class TestContinuationPreservesByomScope:
         to the continuation store."""
         import inspect
 
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         # complete_stream is the only callsite that constructs the
         # save dict. Confirm the parameter is in scope and the key is
@@ -891,7 +891,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
     sized against the default 128k, overfilling the upstream provider."""
 
     def _make_processor(self, model_user_id="owner", initial_user_id="caller"):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
 
@@ -913,7 +913,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
     def test_configure_retriever_passes_model_user_id_to_doc_budget(
         self, monkeypatch
     ):
-        from application.api.answer.services import stream_processor as sp_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
 
         captured: dict = {}
 
@@ -939,7 +939,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
     def test_load_conversation_history_passes_model_user_id_to_trim(
         self, monkeypatch
     ):
-        from application.api.answer.services import stream_processor as sp_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
 
         captured: dict = {}
 
@@ -1001,7 +1001,7 @@ class TestBaseAgentTokenLimitUsesModelUserId:
     owner-BYOM token-limit checks size against the caller's layer."""
 
     def _build_agent(self, model_user_id="owner", caller="caller"):
-        from application.agents.classic_agent import ClassicAgent
+        from docsgpt.agents.classic_agent import ClassicAgent
 
         # Stub LLM/handler/executor — we only exercise the get_token_limit
         # callsites in BaseAgent.
@@ -1025,7 +1025,7 @@ class TestBaseAgentTokenLimitUsesModelUserId:
             return 8000
 
         monkeypatch.setattr(
-            "application.core.model_utils.get_token_limit", _fake
+            "docsgpt.core.model_utils.get_token_limit", _fake
         )
 
         agent = self._build_agent(model_user_id="owner", caller="caller")
@@ -1041,7 +1041,7 @@ class TestBaseAgentTokenLimitUsesModelUserId:
             return 8000
 
         monkeypatch.setattr(
-            "application.core.model_utils.get_token_limit", _fake
+            "docsgpt.core.model_utils.get_token_limit", _fake
         )
 
         agent = self._build_agent(model_user_id="owner", caller="caller")
@@ -1057,7 +1057,7 @@ class TestBaseAgentTokenLimitUsesModelUserId:
             return 8000
 
         monkeypatch.setattr(
-            "application.core.model_utils.get_token_limit", _fake
+            "docsgpt.core.model_utils.get_token_limit", _fake
         )
 
         agent = self._build_agent(model_user_id="owner", caller="caller")
@@ -1078,7 +1078,7 @@ class TestBaseAgentTokenLimitUsesModelUserId:
             return 8000
 
         monkeypatch.setattr(
-            "application.core.model_utils.get_token_limit", _fake
+            "docsgpt.core.model_utils.get_token_limit", _fake
         )
 
         agent = self._build_agent(model_user_id=None, caller="worker-owner")
@@ -1099,7 +1099,7 @@ class TestNonAgentCallSitesUseUpstreamId:
     def test_handler_tool_loop_uses_upstream_id(self):
         """``handlers.base.handle_response`` re-calls the LLM after a
         tool invocation. The model arg must be the upstream name."""
-        from application.llm.handlers.base import LLMHandler
+        from docsgpt.llm.handlers.base import LLMHandler
 
         captured: dict = {}
 
@@ -1143,7 +1143,7 @@ class TestNonAgentCallSitesUseUpstreamId:
         """``conversation_service.save_conversation`` calls
         ``llm.gen(model=model_id, ...)`` to summarize. ``model_id`` is
         the registry UUID; must use ``llm.model_id`` instead."""
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -1180,7 +1180,7 @@ class TestNonAgentCallSitesUseUpstreamId:
         from inspect import getsourcefile
         from pathlib import Path
 
-        from application.api.answer.services.compression.service import (
+        from docsgpt.api.answer.services.compression.service import (
             CompressionService,
         )
 
@@ -1194,7 +1194,7 @@ class TestNonAgentCallSitesUseUpstreamId:
         from inspect import getsourcefile
         from pathlib import Path
 
-        from application.retriever.classic_rag import ClassicRAG
+        from docsgpt.retriever.classic_rag import ClassicRAG
 
         text = Path(getsourcefile(ClassicRAG)).read_text()
         assert "getattr(self.llm" in text
@@ -1235,20 +1235,20 @@ class TestAgentSendsUpstreamModelId:
                 return None
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
 
-            from application.llm.providers import PROVIDERS_BY_NAME
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
             with patch.object(
                 PROVIDERS_BY_NAME["openai_compatible"],
                 "llm_class",
                 _FakeOpenAILLM,
             ):
-                from application.agents.classic_agent import ClassicAgent
+                from docsgpt.agents.classic_agent import ClassicAgent
 
                 agent = ClassicAgent(
                     endpoint="https://x",

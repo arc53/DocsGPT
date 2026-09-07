@@ -14,13 +14,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.parser.schema.base import Document
-from application.storage.db.repositories.sources import SourcesRepository
+from docsgpt.parser.schema.base import Document
+from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 
 @pytest.fixture
 def _mock_remote_pipeline(monkeypatch):
-    from application import worker
+    from docsgpt import worker
 
     fake_loader = MagicMock(name="remote_loader")
     fake_loader.load_data.return_value = [
@@ -53,7 +53,7 @@ def _mock_remote_pipeline(monkeypatch):
 def _patch_delay(monkeypatch):
     delay = MagicMock(name="extract_graph_delay")
     monkeypatch.setattr(
-        "application.api.user.tasks.extract_graph.delay", delay
+        "docsgpt.api.user.tasks.extract_graph.delay", delay
     )
     return delay
 
@@ -68,7 +68,7 @@ def _seed_source(pg_conn, user, config):
 @pytest.mark.unit
 class TestGraphExtractionKey:
     def test_shape_and_state_sensitivity(self):
-        from application.worker import _source_updated_at, graph_extraction_key
+        from docsgpt.worker import _source_updated_at, graph_extraction_key
 
         sid = "11111111-1111-1111-1111-111111111111"
         key_a = graph_extraction_key(
@@ -88,7 +88,7 @@ class TestGraphExtractionKey:
         assert key_a == key_a_again
 
     def test_falls_back_to_date(self):
-        from application.worker import _source_updated_at
+        from docsgpt.worker import _source_updated_at
 
         assert _source_updated_at({"date": "2026-06-23T00:00:00+00:00"}) == (
             "2026-06-23T00:00:00+00:00"
@@ -103,10 +103,10 @@ class TestRemoteWorkerEnqueuesGraphExtraction:
         self, task_self, pg_conn, patch_worker_db, monkeypatch,
         _mock_remote_pipeline,
     ):
-        from application import worker
+        from docsgpt import worker
 
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: True
+            "docsgpt.graphrag.graphrag_available", lambda: True
         )
         delay = _patch_delay(monkeypatch)
 
@@ -137,10 +137,10 @@ class TestRemoteWorkerEnqueuesGraphExtraction:
         _mock_remote_pipeline,
     ):
         """Two enqueues for the same source state share a key (concurrent dups)."""
-        from application import worker
+        from docsgpt import worker
 
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: True
+            "docsgpt.graphrag.graphrag_available", lambda: True
         )
         delay = _patch_delay(monkeypatch)
 
@@ -169,10 +169,10 @@ class TestRemoteWorkerEnqueuesGraphExtraction:
         _mock_remote_pipeline,
     ):
         """A re-ingest clears the prior graph before re-enqueuing extraction."""
-        from application import worker
+        from docsgpt import worker
 
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: True
+            "docsgpt.graphrag.graphrag_available", lambda: True
         )
         reset = MagicMock(name="reset_graph")
         monkeypatch.setattr(worker, "_reset_graph_for_source", reset)
@@ -201,10 +201,10 @@ class TestRemoteWorkerEnqueuesGraphExtraction:
         self, task_self, pg_conn, patch_worker_db, monkeypatch,
         _mock_remote_pipeline,
     ):
-        from application import worker
+        from docsgpt import worker
 
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: True
+            "docsgpt.graphrag.graphrag_available", lambda: True
         )
         delay = _patch_delay(monkeypatch)
 
@@ -229,10 +229,10 @@ class TestRemoteWorkerEnqueuesGraphExtraction:
         self, task_self, pg_conn, patch_worker_db, monkeypatch,
         _mock_remote_pipeline,
     ):
-        from application import worker
+        from docsgpt import worker
 
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: False
+            "docsgpt.graphrag.graphrag_available", lambda: False
         )
         delay = _patch_delay(monkeypatch)
 
@@ -261,11 +261,11 @@ class TestEnqueueIsolatesBrokerFailures:
         self, pg_conn, patch_worker_db, monkeypatch
     ):
         """A broker hiccup in ``.delay`` must not fail an otherwise-good ingest."""
-        from application import worker
-        from application.storage.db.source_config import SourceConfig
+        from docsgpt import worker
+        from docsgpt.storage.db.source_config import SourceConfig
 
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: True
+            "docsgpt.graphrag.graphrag_available", lambda: True
         )
         monkeypatch.setattr(
             worker, "_reset_graph_for_source", lambda *a, **kw: None
@@ -275,7 +275,7 @@ class TestEnqueueIsolatesBrokerFailures:
             raise RuntimeError("broker down")
 
         monkeypatch.setattr(
-            "application.api.user.tasks.extract_graph.delay", _boom
+            "docsgpt.api.user.tasks.extract_graph.delay", _boom
         )
 
         config = {"kind": "graphrag", "retrieval": {"retriever": "graphrag"}}
@@ -289,11 +289,11 @@ class TestEnqueueIsolatesBrokerFailures:
         self, pg_conn, patch_worker_db, monkeypatch
     ):
         """A DB hiccup reading ``updated_at`` must also be swallowed."""
-        from application import worker
-        from application.storage.db.source_config import SourceConfig
+        from docsgpt import worker
+        from docsgpt.storage.db.source_config import SourceConfig
 
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: True
+            "docsgpt.graphrag.graphrag_available", lambda: True
         )
         monkeypatch.setattr(
             worker, "_reset_graph_for_source", lambda *a, **kw: None

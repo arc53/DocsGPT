@@ -18,7 +18,7 @@ import pytest
 
 @pytest.fixture
 def client():
-    from application.app import app as flask_app
+    from docsgpt.app import app as flask_app
 
     flask_app.config["TESTING"] = True
     return flask_app.test_client()
@@ -38,10 +38,10 @@ def _auth(sub="u1", roles=("user",), team_role=None):
     members = Mock()
     members.role_for.return_value = team_role
     return [
-        patch("application.app.handle_auth", return_value={"sub": sub}),
-        patch("application.app.resolve_roles", return_value=list(roles)),
-        patch("application.api.user.team_authz.db_readonly", lambda: _cm(Mock())),
-        patch("application.api.user.team_authz.TeamMembersRepository", return_value=members),
+        patch("docsgpt.app.handle_auth", return_value={"sub": sub}),
+        patch("docsgpt.app.resolve_roles", return_value=list(roles)),
+        patch("docsgpt.api.user.team_authz.db_readonly", lambda: _cm(Mock())),
+        patch("docsgpt.api.user.team_authz.TeamMembersRepository", return_value=members),
     ]
 
 
@@ -58,7 +58,7 @@ def _stop(patches):
 @pytest.mark.unit
 class TestTeamCreation:
     def test_unauthenticated_401(self, client):
-        with patch("application.app.handle_auth", return_value=None):
+        with patch("docsgpt.app.handle_auth", return_value=None):
             resp = client.post("/api/teams", json={"name": "Acme"})
         assert resp.status_code == 401
 
@@ -68,10 +68,10 @@ class TestTeamCreation:
         teams_repo.create.return_value = {"id": "t1", "name": "Acme", "slug": "acme"}
         members_repo = Mock()
         patches = _auth(sub="alice") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.TeamsRepository", return_value=teams_repo),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.TeamsRepository", return_value=teams_repo),
             patch(
-                "application.api.user.teams.routes.TeamMembersRepository",
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
         ]
@@ -113,10 +113,10 @@ class TestTeamAccessControl:
         members_repo.list_members.return_value = []
         members_repo.role_for.return_value = "team_member"
         patches = _auth(sub="bob", team_role="team_member") + [
-            patch("application.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.TeamsRepository", return_value=teams_repo),
+            patch("docsgpt.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.TeamsRepository", return_value=teams_repo),
             patch(
-                "application.api.user.teams.routes.TeamMembersRepository",
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
         ]
@@ -152,9 +152,9 @@ class TestTeamAccessControl:
     def test_team_admin_can_add_member(self, client):
         members_repo = Mock()
         patches = _auth(sub="alice", team_role="team_admin") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
             patch(
-                "application.api.user.teams.routes.TeamMembersRepository",
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
         ]
@@ -173,13 +173,13 @@ class TestTeamAccessControl:
         users_repo = Mock()
         users_repo.find_by_email.return_value = {"user_id": "resolved-sub"}
         patches = _auth(sub="alice", team_role="team_admin") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
             patch(
-                "application.api.user.teams.routes.TeamMembersRepository",
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
             patch(
-                "application.api.user.teams.routes.UsersRepository",
+                "docsgpt.api.user.teams.routes.UsersRepository",
                 return_value=users_repo,
             ),
         ]
@@ -199,9 +199,9 @@ class TestTeamAccessControl:
         users_repo = Mock()
         users_repo.find_by_email.return_value = None
         patches = _auth(sub="alice", team_role="team_admin") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
             patch(
-                "application.api.user.teams.routes.UsersRepository",
+                "docsgpt.api.user.teams.routes.UsersRepository",
                 return_value=users_repo,
             ),
         ]
@@ -219,8 +219,8 @@ class TestTeamAccessControl:
         teams_repo = Mock()
         teams_repo.get.return_value = {"id": "team-1", "owner_id": "alice"}
         patches = _auth(sub="bob", roles=("user",), team_role="team_admin") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.TeamsRepository", return_value=teams_repo),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.TeamsRepository", return_value=teams_repo),
         ]
         _apply(patches)
         try:
@@ -236,8 +236,8 @@ class TestTeamAccessControl:
 class TestSharingAuthz:
     def test_share_requires_ownership(self, client):
         patches = _auth(sub="bob", team_role="team_member") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.owns_resource", return_value=False),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=False),
         ]
         _apply(patches)
         try:
@@ -256,10 +256,10 @@ class TestSharingAuthz:
         grants_repo = Mock()
         grants_repo.grant.return_value = {"id": "g1", "access_level": "viewer"}
         patches = _auth(sub="alice", team_role="team_member") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
             patch(
-                "application.api.user.teams.routes.TeamResourceGrantsRepository",
+                "docsgpt.api.user.teams.routes.TeamResourceGrantsRepository",
                 return_value=grants_repo,
             ),
         ]
@@ -281,7 +281,7 @@ class TestSharingAuthz:
 
     def test_invalid_resource_type_rejected(self, client):
         patches = _auth(sub="alice", team_role="team_member") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
         ]
         _apply(patches)
         try:
@@ -298,10 +298,10 @@ class TestSharingAuthz:
         members_repo = Mock()
         members_repo.is_member.return_value = False
         patches = _auth(sub="alice", team_role="team_member") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
             patch(
-                "application.api.user.teams.routes.TeamMembersRepository",
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
         ]
@@ -325,14 +325,14 @@ class TestSharingAuthz:
         grants_repo = Mock()
         grants_repo.grant.return_value = {"id": "g1", "target_user_id": "bob"}
         patches = _auth(sub="alice", team_role="team_member") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
             patch(
-                "application.api.user.teams.routes.TeamMembersRepository",
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
             patch(
-                "application.api.user.teams.routes.TeamResourceGrantsRepository",
+                "docsgpt.api.user.teams.routes.TeamResourceGrantsRepository",
                 return_value=grants_repo,
             ),
         ]
@@ -356,8 +356,8 @@ class TestSharingAuthz:
         # Team grants are UUID-only (post-cutover); a legacy/non-UUID id must be
         # rejected cleanly, not cast-and-poison the txn into a generic error.
         patches = _auth(sub="alice", team_role="team_member") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
         ]
         _apply(patches)
         try:
@@ -385,8 +385,8 @@ class TestAdminOversight:
         teams_repo = Mock()
         teams_repo.list_all.return_value = [{"id": "t1", "member_count": 3}]
         patches = _auth(sub="root", roles=("admin", "user")) + [
-            patch("application.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.TeamsRepository", return_value=teams_repo),
+            patch("docsgpt.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.TeamsRepository", return_value=teams_repo),
         ]
         _apply(patches)
         try:
@@ -407,17 +407,17 @@ class TestTeamNotifications:
         teams_repo.get.return_value = {"id": "team-1", "name": "Acme"}
         publish = Mock()
         patches = _auth(sub="alice", team_role="team_admin") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
             patch(
-                "application.api.user.teams.routes.TeamMembersRepository",
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
             patch(
-                "application.api.user.teams.routes.TeamsRepository",
+                "docsgpt.api.user.teams.routes.TeamsRepository",
                 return_value=teams_repo,
             ),
-            patch("application.api.user.teams.routes.publish_user_event", publish),
+            patch("docsgpt.api.user.teams.routes.publish_user_event", publish),
         ]
         _apply(patches)
         try:
@@ -442,17 +442,17 @@ class TestTeamNotifications:
         teams_repo.get.return_value = {"id": "team-1", "name": "Acme"}
         publish = Mock()
         patches = _auth(sub="alice", team_role="team_admin") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
             patch(
-                "application.api.user.teams.routes.TeamMembersRepository",
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
             patch(
-                "application.api.user.teams.routes.TeamsRepository",
+                "docsgpt.api.user.teams.routes.TeamsRepository",
                 return_value=teams_repo,
             ),
-            patch("application.api.user.teams.routes.publish_user_event", publish),
+            patch("docsgpt.api.user.teams.routes.publish_user_event", publish),
         ]
         _apply(patches)
         try:
@@ -478,26 +478,26 @@ class TestTeamNotifications:
         teams_repo.get.return_value = {"id": "team-1", "name": "Acme"}
         publish = Mock()
         patches = _auth(sub="alice", team_role="team_member") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
             patch(
-                "application.api.user.teams.routes.TeamResourceGrantsRepository",
+                "docsgpt.api.user.teams.routes.TeamResourceGrantsRepository",
                 return_value=grants_repo,
             ),
             patch(
-                "application.api.user.teams.routes.TeamMembersRepository",
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
             patch(
-                "application.api.user.teams.routes.TeamsRepository",
+                "docsgpt.api.user.teams.routes.TeamsRepository",
                 return_value=teams_repo,
             ),
             patch(
-                "application.api.user.teams.routes._resource_display_name",
+                "docsgpt.api.user.teams.routes._resource_display_name",
                 return_value="My Agent",
             ),
-            patch("application.api.user.teams.routes.publish_user_event", publish),
+            patch("docsgpt.api.user.teams.routes.publish_user_event", publish),
         ]
         _apply(patches)
         try:
@@ -529,26 +529,26 @@ class TestTeamNotifications:
         teams_repo.get.return_value = {"id": "team-1", "name": "Acme"}
         publish = Mock()
         patches = _auth(sub="alice", team_role="team_member") + [
-            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
-            patch("application.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
             patch(
-                "application.api.user.teams.routes.TeamResourceGrantsRepository",
+                "docsgpt.api.user.teams.routes.TeamResourceGrantsRepository",
                 return_value=grants_repo,
             ),
             patch(
-                "application.api.user.teams.routes.TeamMembersRepository",
+                "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
             patch(
-                "application.api.user.teams.routes.TeamsRepository",
+                "docsgpt.api.user.teams.routes.TeamsRepository",
                 return_value=teams_repo,
             ),
             patch(
-                "application.api.user.teams.routes._resource_display_name",
+                "docsgpt.api.user.teams.routes._resource_display_name",
                 return_value="My Agent",
             ),
-            patch("application.api.user.teams.routes.publish_user_event", publish),
+            patch("docsgpt.api.user.teams.routes.publish_user_event", publish),
         ]
         _apply(patches)
         try:

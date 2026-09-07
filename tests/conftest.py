@@ -32,7 +32,7 @@ from __future__ import annotations
 import os
 
 # Disable the app's self-bootstrap (AUTO_CREATE_DB / AUTO_MIGRATE) before
-# any ``application.*`` module is imported. ``application/app.py`` runs
+# any ``application.*`` module is imported. ``docsgpt/app.py`` runs
 # ``ensure_database_ready`` at import time using whatever ``POSTGRES_URI``
 # is set in the environment — which in dev is the operator's local DB, not
 # the ephemeral ``pytest-postgresql`` cluster that the fixtures below spin
@@ -59,7 +59,7 @@ from sqlalchemy import create_engine
 # Postgres fixtures (ephemeral cluster via pytest-postgresql)
 # ---------------------------------------------------------------------------
 
-_ALEMBIC_INI = Path(__file__).resolve().parent.parent / "application" / "alembic.ini"
+_ALEMBIC_INI = Path(__file__).resolve().parent.parent / "docsgpt" / "alembic.ini"
 
 
 def _migrate_template_db(host, port, user, dbname, password, **kwargs) -> None:
@@ -103,7 +103,7 @@ def _sqlalchemy_url(pg_conn_info) -> str:
 
 @pytest.fixture(scope="session")
 def _alembic_ini_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "application" / "alembic.ini"
+    return Path(__file__).resolve().parent.parent / "docsgpt" / "alembic.ini"
 
 
 @pytest.fixture()
@@ -114,14 +114,14 @@ def pg_engine(postgresql, monkeypatch):
     (see ``_migrate_template_db``), so the full schema is present without
     running alembic here. ``POSTGRES_URI`` is patched in the environment
     for the duration of the test so any code that reads it via
-    ``application.core.settings`` sees the ephemeral DB.
+    ``docsgpt.core.settings`` sees the ephemeral DB.
     """
     url = _sqlalchemy_url(postgresql.info)
     monkeypatch.setenv("POSTGRES_URI", url)
 
     # Reset the settings cache so the new POSTGRES_URI is picked up if the
     # settings module is already imported.
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     monkeypatch.setattr(settings_module.settings, "POSTGRES_URI", url, raising=False)
 
@@ -156,14 +156,14 @@ def _no_real_redis(monkeypatch):
     with the ``openai_inline_file:*`` upload cache). Flipping the
     creation-failed flags makes the real accessors return None everywhere
     regardless of import style — consumers that did ``from
-    application.cache import get_redis_instance`` still hit these module
+    docsgpt.cache import get_redis_instance`` still hit these module
     globals at call time. Tests that want Redis behavior keep injecting
     fakes by patching the accessor at the consumer module, which bypasses
     this guard. A test targeting the accessor's own construction path
     must reset the two flags first.
     """
-    monkeypatch.setattr("application.cache._redis_instance", None)
-    monkeypatch.setattr("application.cache._redis_creation_failed", True)
+    monkeypatch.setattr("docsgpt.cache._redis_instance", None)
+    monkeypatch.setattr("docsgpt.cache._redis_creation_failed", True)
 
 
 @pytest.fixture(autouse=True)
@@ -176,11 +176,11 @@ def _no_worker_delegation(monkeypatch):
     pass/fail that depends on whether the developer happens to have a worker
     running. Tests covering delegation patch the setting back on themselves.
     """
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False, raising=False)
-    monkeypatch.setattr("application.cache._pubsub_redis_instance", None)
-    monkeypatch.setattr("application.cache._pubsub_redis_creation_failed", True)
+    monkeypatch.setattr("docsgpt.cache._pubsub_redis_instance", None)
+    monkeypatch.setattr("docsgpt.cache._pubsub_redis_creation_failed", True)
 
 
 @pytest.fixture
@@ -243,7 +243,7 @@ def decoded_token():
 
 @pytest.fixture
 def log_context():
-    from application.logging import LogContext
+    from docsgpt.logging import LogContext
 
     context = LogContext(
         endpoint="test_endpoint",
@@ -258,7 +258,7 @@ def log_context():
 @pytest.fixture
 def mock_llm_creator(mock_llm, monkeypatch):
     monkeypatch.setattr(
-        "application.llm.llm_creator.LLMCreator.create_llm", Mock(return_value=mock_llm)
+        "docsgpt.llm.llm_creator.LLMCreator.create_llm", Mock(return_value=mock_llm)
     )
     return mock_llm
 
@@ -266,7 +266,7 @@ def mock_llm_creator(mock_llm, monkeypatch):
 @pytest.fixture
 def mock_llm_handler_creator(mock_llm_handler, monkeypatch):
     monkeypatch.setattr(
-        "application.llm.handlers.handler_creator.LLMHandlerCreator.create_handler",
+        "docsgpt.llm.handlers.handler_creator.LLMHandlerCreator.create_handler",
         Mock(return_value=mock_llm_handler),
     )
     return mock_llm_handler
@@ -318,7 +318,7 @@ def mock_tool_manager(mock_tool, monkeypatch):
     manager = Mock()
     manager.load_tool = Mock(return_value=mock_tool)
     monkeypatch.setattr(
-        "application.agents.tool_executor.ToolManager", Mock(return_value=manager)
+        "docsgpt.agents.tool_executor.ToolManager", Mock(return_value=manager)
     )
     return manager
 

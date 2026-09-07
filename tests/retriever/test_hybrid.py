@@ -4,14 +4,14 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from application.retriever.hybrid_rag import fuse_with_scores, HybridRetriever
-from application.retriever.retriever_creator import RetrieverCreator
+from docsgpt.retriever.hybrid_rag import fuse_with_scores, HybridRetriever
+from docsgpt.retriever.retriever_creator import RetrieverCreator
 
 
 @pytest.fixture
 def _patch_llm_creator(mock_llm, monkeypatch):
     monkeypatch.setattr(
-        "application.retriever.classic_rag.LLMCreator.create_llm",
+        "docsgpt.retriever.classic_rag.LLMCreator.create_llm",
         Mock(return_value=mock_llm),
     )
     return mock_llm
@@ -82,8 +82,8 @@ class TestReciprocalRankFusion:
 
 @pytest.mark.unit
 class TestHybridGetData:
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_fuses_vector_and_keyword(self, _tok, mock_vc, _patch_llm_creator):
         docsearch = MagicMock()
         docsearch.search.return_value = [_make_doc("vec", source="vec")]
@@ -97,8 +97,8 @@ class TestHybridGetData:
         docsearch.keyword_search.assert_called_once()
         assert {d["text"] for d in docs} == {"vec", "kw"}
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_keyword_empty_equals_vector_only(self, _tok, mock_vc, _patch_llm_creator):
         vec_docs = [_make_doc("a", source="a"), _make_doc("b", source="b")]
 
@@ -110,12 +110,12 @@ class TestHybridGetData:
         hybrid_out = _make_hybrid().search("query")
 
         # Vector-only baseline: same vector hits, no keyword call.
-        from application.retriever.classic_rag import ClassicRAG
+        from docsgpt.retriever.classic_rag import ClassicRAG
 
         with patch(
-            "application.retriever.classic_rag.VectorCreator"
+            "docsgpt.retriever.classic_rag.VectorCreator"
         ) as mock_vc_classic, patch(
-            "application.retriever.classic_rag.num_tokens_from_string", return_value=10
+            "docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10
         ):
             ds_classic = MagicMock()
             ds_classic.search.return_value = list(vec_docs)
@@ -133,10 +133,10 @@ class TestHybridGetData:
 
         assert hybrid_out == classic_out
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_score_threshold_not_applied_to_fused(self, _tok, mock_vc, _patch_llm_creator):
-        from application.storage.db.source_config import RetrievalConfig
+        from docsgpt.storage.db.source_config import RetrievalConfig
 
         docsearch = MagicMock()
         docsearch.search.return_value = [_make_doc("a", source="a")]
@@ -151,15 +151,15 @@ class TestHybridGetData:
         assert "score_threshold" not in docsearch.search.call_args.kwargs
         assert "score_threshold" not in docsearch.keyword_search.call_args.kwargs
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_chunks_zero_returns_empty(self, _tok, mock_vc, _patch_llm_creator):
         rag = _make_hybrid(chunks=0)
         assert rag._get_data() == []
         mock_vc.create_vectorstore.assert_not_called()
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_store_error_continues(self, _tok, mock_vc, _patch_llm_creator):
         mock_vc.create_vectorstore.side_effect = RuntimeError("boom")
         rag = _make_hybrid()

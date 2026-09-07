@@ -1,4 +1,4 @@
-"""Comprehensive tests for application/parser/file/bulk.py
+"""Comprehensive tests for docsgpt/parser/file/bulk.py
 
 Covers: SimpleDirectoryReader (init, file discovery, load_data, directory
 structure building), get_default_file_extractor.
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.parser.schema.base import Document
+from docsgpt.parser.schema.base import Document
 
 
 # =====================================================================
@@ -47,54 +47,54 @@ def temp_dir_with_types(tmp_path):
 class TestSimpleDirectoryReaderInit:
 
     def test_init_with_dir(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         reader = SimpleDirectoryReader(input_dir=str(temp_dir))
         assert len(reader.input_files) >= 2
 
     def test_init_with_files(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         files = [str(temp_dir / "file1.md")]
         reader = SimpleDirectoryReader(input_files=files)
         assert len(reader.input_files) == 1
 
     def test_init_requires_input(self):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         with pytest.raises(ValueError, match="Must provide"):
             SimpleDirectoryReader()
 
     def test_exclude_hidden(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         reader = SimpleDirectoryReader(input_dir=str(temp_dir), exclude_hidden=True)
         filenames = [f.name for f in reader.input_files]
         assert ".hidden" not in filenames
 
     def test_include_hidden(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         reader = SimpleDirectoryReader(input_dir=str(temp_dir), exclude_hidden=False)
         filenames = [f.name for f in reader.input_files]
         assert ".hidden" in filenames
 
     def test_recursive(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         reader = SimpleDirectoryReader(input_dir=str(temp_dir), recursive=True)
         filenames = [f.name for f in reader.input_files]
         assert "file3.md" in filenames
 
     def test_non_recursive(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         reader = SimpleDirectoryReader(input_dir=str(temp_dir), recursive=False)
         filenames = [f.name for f in reader.input_files]
         assert "file3.md" not in filenames
 
     def test_required_exts(self, temp_dir_with_types):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         reader = SimpleDirectoryReader(
             input_dir=str(temp_dir_with_types), required_exts=[".md"]
@@ -105,7 +105,7 @@ class TestSimpleDirectoryReaderInit:
         assert "notes.txt" not in filenames
 
     def test_required_exts_case_insensitive(self, tmp_path):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         (tmp_path / "FILE.MD").write_text("content")
         reader = SimpleDirectoryReader(
@@ -114,7 +114,7 @@ class TestSimpleDirectoryReaderInit:
         assert len(reader.input_files) == 1
 
     def test_num_files_limit(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         reader = SimpleDirectoryReader(
             input_dir=str(temp_dir), num_files_limit=1, recursive=False
@@ -122,7 +122,7 @@ class TestSimpleDirectoryReaderInit:
         assert len(reader.input_files) <= 1
 
     def test_custom_file_extractor(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         mock_parser = MagicMock()
         reader = SimpleDirectoryReader(
@@ -141,7 +141,7 @@ class TestSimpleDirectoryReaderInit:
 class TestSimpleDirectoryReaderLoadData:
 
     def test_load_data_returns_documents(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         mock_parser = MagicMock()
         mock_parser.parser_config_set = True
@@ -166,8 +166,8 @@ class TestSimpleDirectoryReaderLoadData:
         traceback as the document text, so an unguarded loop turns a single
         corrupt PDF into a failed ingest for the whole zip/folder/sync.
         """
-        from application.parser.file.base_parser import DocumentParseError
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         (tmp_path / "good1.md").write_text("first")
         (tmp_path / "bad.md").write_text("corrupt")
@@ -203,8 +203,8 @@ class TestSimpleDirectoryReaderLoadData:
         Skipping there would hand ``load_data()[0]`` an empty list and turn a
         clear "this PDF could not be read" into an IndexError.
         """
-        from application.parser.file.base_parser import DocumentParseError
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         (tmp_path / "bad.pdf").write_text("not really a pdf")
 
@@ -224,8 +224,8 @@ class TestSimpleDirectoryReaderLoadData:
 
     def test_all_files_unparseable_raises(self, tmp_path):
         """Nothing parsed is a failed ingest, not an empty success."""
-        from application.parser.file.base_parser import DocumentParseError
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         (tmp_path / "a.md").write_text("x")
         (tmp_path / "b.md").write_text("y")
@@ -246,8 +246,8 @@ class TestSimpleDirectoryReaderLoadData:
 
     def test_skipped_file_still_advances_progress(self, tmp_path):
         """Progress must not stall on a skipped file."""
-        from application.parser.file.base_parser import DocumentParseError
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         (tmp_path / "good.md").write_text("ok")
         (tmp_path / "bad.md").write_text("bad")
@@ -273,7 +273,7 @@ class TestSimpleDirectoryReaderLoadData:
         assert [c[0] for c in calls] == [1, 2]
 
     def test_load_data_progress_callback_fires_per_file(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         reader = SimpleDirectoryReader(
             input_dir=str(temp_dir), recursive=False, exclude_hidden=True,
@@ -288,7 +288,7 @@ class TestSimpleDirectoryReaderLoadData:
         assert all(c[1] == total_files for c in calls)
 
     def test_load_data_progress_callback_errors_swallowed(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         reader = SimpleDirectoryReader(
             input_dir=str(temp_dir), recursive=False, exclude_hidden=True,
@@ -302,7 +302,7 @@ class TestSimpleDirectoryReaderLoadData:
         assert len(docs) >= 1
 
     def test_load_data_concatenate(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         mock_parser = MagicMock()
         mock_parser.parser_config_set = True
@@ -319,7 +319,7 @@ class TestSimpleDirectoryReaderLoadData:
         assert len(docs) == 1
 
     def test_load_data_with_file_metadata(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         def custom_metadata(filename):
             return {"custom_key": f"meta_{filename}"}
@@ -343,7 +343,7 @@ class TestSimpleDirectoryReaderLoadData:
             assert "custom_key" in doc.extra_info
 
     def test_load_data_inits_parser_if_not_set(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         mock_parser = MagicMock()
         mock_parser.parser_config_set = False
@@ -360,7 +360,7 @@ class TestSimpleDirectoryReaderLoadData:
         mock_parser.init_parser.assert_called()
 
     def test_load_data_standard_read_for_unknown_ext(self, tmp_path):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         (tmp_path / "file.xyz").write_text("xyz content")
         reader = SimpleDirectoryReader(
@@ -372,7 +372,7 @@ class TestSimpleDirectoryReaderLoadData:
         assert "xyz content" in docs[0].text
 
     def test_load_data_list_return_from_parser(self, tmp_path):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         (tmp_path / "multi.md").write_text("content")
         mock_parser = MagicMock()
@@ -388,7 +388,7 @@ class TestSimpleDirectoryReaderLoadData:
         assert len(docs) == 2
 
     def test_load_data_tracks_token_counts(self, tmp_path):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         (tmp_path / "test.md").write_text("hello world")
         mock_parser = MagicMock()
@@ -414,7 +414,7 @@ class TestSimpleDirectoryReaderLoadData:
 class TestBuildDirectoryStructure:
 
     def test_builds_structure(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         mock_parser = MagicMock()
         mock_parser.parser_config_set = True
@@ -431,7 +431,7 @@ class TestBuildDirectoryStructure:
         assert isinstance(reader.directory_structure, dict)
 
     def test_structure_contains_files_and_dirs(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         mock_parser = MagicMock()
         mock_parser.parser_config_set = True
@@ -453,7 +453,7 @@ class TestBuildDirectoryStructure:
                 assert "size_bytes" in val
 
     def test_structure_excludes_hidden(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         mock_parser = MagicMock()
         mock_parser.parser_config_set = True
@@ -469,7 +469,7 @@ class TestBuildDirectoryStructure:
         assert ".hidden" not in reader.directory_structure
 
     def test_no_structure_without_input_dir(self, temp_dir):
-        from application.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         files = [str(temp_dir / "file1.md")]
         mock_parser = MagicMock()
@@ -494,7 +494,7 @@ class TestBuildDirectoryStructure:
 class TestGetDefaultFileExtractor:
 
     def test_returns_dict(self):
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         with patch.dict("sys.modules", {"docling": None, "docling.document_converter": None}):
             result = get_default_file_extractor()
@@ -503,7 +503,7 @@ class TestGetDefaultFileExtractor:
 
     def test_fallback_parsers_on_import_error(self):
         with patch(
-            "application.parser.file.bulk.get_default_file_extractor"
+            "docsgpt.parser.file.bulk.get_default_file_extractor"
         ) as mock_fn:
             mock_fn.return_value = {".pdf": MagicMock(), ".md": MagicMock()}
             result = mock_fn()
@@ -521,7 +521,7 @@ class TestParserEngineSwitch:
 
     @pytest.fixture
     def settings(self):
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         return settings
 
@@ -529,16 +529,16 @@ class TestParserEngineSwitch:
     def _default_ocr_settings(self, monkeypatch):
         """Pin the OCR knobs to their defaults so a developer's ``.env`` (OCR on,
         native backend) cannot change which parsers the maps hand out here."""
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "OCR_ENABLED", False)
         monkeypatch.setattr(settings, "OCR_BACKEND", "auto")
 
     def test_default_engine_is_anydoc(self, settings, monkeypatch):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import ANYDOC_SUFFIXES, AnydocParser
-        from application.parser.file.bulk import get_default_file_extractor
-        from application.parser.file.html_parser import HTMLMarkdownParser
+        from docsgpt.parser.file.anydoc_parser import ANYDOC_SUFFIXES, AnydocParser
+        from docsgpt.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.html_parser import HTMLMarkdownParser
 
         monkeypatch.setattr(settings, "DOC_PARSER_ENGINE", "anydoc")
         extractor = get_default_file_extractor()
@@ -555,7 +555,7 @@ class TestParserEngineSwitch:
     def test_anydoc_falls_back_to_docling_when_installed(self):
         pytest.importorskip("anydoc")
         pytest.importorskip("docling")
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         extractor = get_default_file_extractor(engine="anydoc")
 
@@ -568,7 +568,7 @@ class TestParserEngineSwitch:
     def test_anydoc_fallback_honours_ocr_flag(self):
         pytest.importorskip("anydoc")
         pytest.importorskip("docling")
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         extractor = get_default_file_extractor(engine="anydoc", ocr_enabled=True)
 
@@ -579,7 +579,7 @@ class TestParserEngineSwitch:
         pytest.importorskip("anydoc")
         import sys
 
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         monkeypatch.setitem(sys.modules, "docling", None)
         extractor = get_default_file_extractor(engine="anydoc")
@@ -590,7 +590,7 @@ class TestParserEngineSwitch:
 
     def test_docling_engine_keeps_docling_map(self):
         pytest.importorskip("docling")
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         extractor = get_default_file_extractor(engine="docling")
 
@@ -599,22 +599,22 @@ class TestParserEngineSwitch:
 
     def test_setting_selects_docling(self, settings, monkeypatch):
         pytest.importorskip("docling")
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         monkeypatch.setattr(settings, "DOC_PARSER_ENGINE", "docling")
         assert type(get_default_file_extractor()[".pdf"]).__name__ == "DoclingPDFParser"
 
     def test_unknown_engine_uses_anydoc(self):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import AnydocParser
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.anydoc_parser import AnydocParser
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         assert isinstance(get_default_file_extractor(engine="ghost")[".pdf"], AnydocParser)
 
     def test_missing_anydoc_degrades_to_base_engine(self, monkeypatch):
         import sys
 
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         monkeypatch.setitem(sys.modules, "anydoc", None)
         extractor = get_default_file_extractor(engine="anydoc")
@@ -628,7 +628,7 @@ class TestParserEngineSwitch:
         the first file aborted the whole ingest instead of degrading."""
         import sys
 
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         monkeypatch.setitem(sys.modules, "docling", None)
         extractor = get_default_file_extractor(engine="docling")
@@ -655,8 +655,8 @@ class TestGainedFormats:
         (`.txt` is the one deliberate plain-text read.)
         """
         pytest.importorskip("anydoc")
-        from application.parser.file.bulk import get_default_file_extractor
-        from application.parser.file.constants import (
+        from docsgpt.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.constants import (
             SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS,
         )
 
@@ -671,11 +671,11 @@ class TestGainedFormats:
 
     def test_gained_formats_map_to_anydoc_under_both_engines(self):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import (
+        from docsgpt.parser.file.anydoc_parser import (
             ANYDOC_GAINED_SUFFIXES,
             AnydocParser,
         )
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         for engine in ("anydoc", "docling"):
             extractor = get_default_file_extractor(engine=engine)
@@ -684,8 +684,8 @@ class TestGainedFormats:
 
     def test_gained_formats_never_fall_back_to_anydoc_itself(self):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import AnydocParser
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.anydoc_parser import AnydocParser
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         extractor = get_default_file_extractor(engine="anydoc")
         assert extractor[".doc"].fallback_parser is None
@@ -697,7 +697,7 @@ class TestGainedFormats:
     def test_gained_entries_absent_without_anydoc(self, monkeypatch):
         import sys
 
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         monkeypatch.setitem(sys.modules, "anydoc", None)
         extractor = get_default_file_extractor(engine="docling")
@@ -705,7 +705,7 @@ class TestGainedFormats:
 
     def test_rtf_converts_end_to_end(self, tmp_path):
         pytest.importorskip("anydoc")
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         path = tmp_path / "note.rtf"
         path.write_text(r"{\rtf1\ansi Hello {\b bold} world.\par Second paragraph.}")
@@ -721,7 +721,7 @@ class TestGainedFormats:
         pytest.importorskip("anydoc")
         import zipfile
 
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         path = tmp_path / "doc.odt"
         with zipfile.ZipFile(path, "w") as z:
@@ -753,8 +753,8 @@ class TestGainedFormats:
 
 def test_gained_suffix_without_a_parser_is_rejected_not_read_as_text(tmp_path):
     """Without anydoc an OLE .doc must not be indexed as decoded binary garbage."""
-    from application.parser.file.base_parser import DocumentParseError
-    from application.parser.file.bulk import SimpleDirectoryReader
+    from docsgpt.parser.file.base_parser import DocumentParseError
+    from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
     path = tmp_path / "legacy.doc"
     path.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64)

@@ -54,10 +54,10 @@ def test_drain_output_stops_when_completed_without_control(broker_env):
 
 def test_drain_output_reports_error_when_redis_unavailable(monkeypatch):
     # No Redis: the tool must get a clear control/error chunk, not hang.
-    from application.devices.broker import DeviceBroker
+    from docsgpt.devices.broker import DeviceBroker
 
     monkeypatch.setattr(
-        "application.devices.broker.get_redis_instance", lambda: None
+        "docsgpt.devices.broker.get_redis_instance", lambda: None
     )
     broker = DeviceBroker()
     chunks = list(broker.drain_output("inv_missing", timeout=0.05))

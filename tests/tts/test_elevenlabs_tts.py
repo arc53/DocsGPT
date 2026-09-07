@@ -2,12 +2,12 @@ import base64
 import sys
 from types import ModuleType, SimpleNamespace
 
-from application.tts.elevenlabs import ElevenlabsTTS
+from docsgpt.tts.elevenlabs import ElevenlabsTTS
 
 
 def test_elevenlabs_text_to_speech_monkeypatched_client(monkeypatch):
     monkeypatch.setattr(
-        "application.tts.elevenlabs.settings",
+        "docsgpt.tts.elevenlabs.settings",
         SimpleNamespace(ELEVENLABS_API_KEY="api-key"),
     )
 

@@ -6,16 +6,16 @@ from unittest.mock import patch
 
 import pytest
 
-from application.parser.chunking import Chunker
-from application.parser.chunking_creator import ChunkerCreator
-from application.parser.chunking_strategies import (
+from docsgpt.parser.chunking import Chunker
+from docsgpt.parser.chunking_creator import ChunkerCreator
+from docsgpt.parser.chunking_strategies import (
     MarkdownChunker,
     ParentChildChunker,
     RecursiveChunker,
     SemanticChunker,
 )
-from application.parser.schema.base import Document
-from application.parser.tokenization import get_token_counter
+from docsgpt.parser.schema.base import Document
+from docsgpt.parser.tokenization import get_token_counter
 
 
 def _tok(text: str) -> int:
@@ -129,7 +129,7 @@ class TestParentChild:
         assert all("parent_text" in c.extra_info for c in out)
 
 
-_EMB_TARGET = "application.vectorstore.base.EmbeddingsSingleton.get_instance"
+_EMB_TARGET = "docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance"
 
 
 class _FakeEmbeddings:
@@ -145,7 +145,7 @@ class TestSemantic:
     @pytest.fixture(autouse=True)
     def _no_remote_embeddings(self, monkeypatch):
         """The resolver short-circuits to the remote API when this is set."""
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "EMBEDDINGS_BASE_URL", None)
 
@@ -274,7 +274,7 @@ class TestSemanticEmbeddingsResolution:
         chunker = SemanticChunker(max_tokens=2000, min_tokens=0)
 
         with patch(
-            "application.vectorstore.base.get_embeddings",
+            "docsgpt.vectorstore.base.get_embeddings",
             return_value=_FakeEmbeddings(vectors),
         ) as mock_resolver:
             out = chunker.chunk([Document(text=text, doc_id="d")])

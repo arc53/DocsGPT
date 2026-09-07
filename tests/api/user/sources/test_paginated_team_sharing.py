@@ -16,7 +16,7 @@ import pytest
 
 @pytest.fixture
 def client():
-    from application.app import app as flask_app
+    from docsgpt.app import app as flask_app
 
     flask_app.config["TESTING"] = True
     return flask_app.test_client()
@@ -45,12 +45,12 @@ def _source_row(sid, *, user_id):
 
 def _run(sub, repo, team_shared, client):
     patches = [
-        patch("application.app.handle_auth", return_value={"sub": sub}),
-        patch("application.app.resolve_roles", return_value=["user"]),
-        patch("application.api.user.sources.routes.db_readonly", lambda: _cm(Mock())),
-        patch("application.api.user.sources.routes.SourcesRepository", return_value=repo),
+        patch("docsgpt.app.handle_auth", return_value={"sub": sub}),
+        patch("docsgpt.app.resolve_roles", return_value=["user"]),
+        patch("docsgpt.api.user.sources.routes.db_readonly", lambda: _cm(Mock())),
+        patch("docsgpt.api.user.sources.routes.SourcesRepository", return_value=repo),
         patch(
-            "application.api.user.sources.routes.visible_with_access",
+            "docsgpt.api.user.sources.routes.visible_with_access",
             return_value=team_shared,
         ),
     ]

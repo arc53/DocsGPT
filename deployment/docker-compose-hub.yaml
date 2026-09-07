@@ -44,9 +44,9 @@ services:
     ports:
       - "7091:7091"
     volumes:
-      - ../application/indexes:/app/indexes
-      - ../application/inputs:/app/inputs
-      - ../application/vectors:/app/vectors
+      - ../docsgpt/indexes:/app/indexes
+      - ../docsgpt/inputs:/app/inputs
+      - ../docsgpt/vectors:/app/vectors
     depends_on:
       redis:
         condition: service_started
@@ -58,7 +58,7 @@ services:
     user: root
     image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-develop}${DOCSGPT_IMAGE_VARIANT:-}
     # `parsing` queue carries read_document/parse_document; required for its await to resolve.
-    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
     env_file:
       - ../.env
     environment:
@@ -68,9 +68,9 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     volumes:
-      - ../application/indexes:/app/indexes
-      - ../application/inputs:/app/inputs
-      - ../application/vectors:/app/vectors
+      - ../docsgpt/indexes:/app/indexes
+      - ../docsgpt/inputs:/app/inputs
+      - ../docsgpt/vectors:/app/vectors
     depends_on:
       redis:
         condition: service_started

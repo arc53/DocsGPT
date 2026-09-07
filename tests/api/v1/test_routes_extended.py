@@ -1,4 +1,4 @@
-"""Extended unit tests for application/api/v1/routes.py.
+"""Extended unit tests for docsgpt/api/v1/routes.py.
 
 Covers:
   - _extract_bearer_token helper
@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
-from application.api.v1.routes import (
+from docsgpt.api.v1.routes import (
     _extract_bearer_token,
     _get_model_name,
     v1_bp,
@@ -130,8 +130,8 @@ class TestChatCompletions:
     def _patch_mongo(self, monkeypatch, mongo=None):
         if mongo is None:
             mongo = self._make_mongo()
-        monkeypatch.setattr("application.api.v1.routes.MongoDB.get_client", lambda: mongo)
-        monkeypatch.setattr("application.api.v1.routes.settings.MONGO_DB_NAME", "testdb")
+        monkeypatch.setattr("docsgpt.api.v1.routes.MongoDB.get_client", lambda: mongo)
+        monkeypatch.setattr("docsgpt.api.v1.routes.settings.MONGO_DB_NAME", "testdb")
 
     def test_missing_auth_returns_401(self):
         app = _build_app()
@@ -181,7 +181,7 @@ class TestListModelsExtra:
 
 @contextmanager
 def _patch_v1_db(conn):
-    from application.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
 
     if AgentsRepository(conn).find_by_key("x") is None:
         AgentsRepository(conn).create("u-test", "Test Agent", "published", key="x")
@@ -190,7 +190,7 @@ def _patch_v1_db(conn):
     def _yield():
         yield conn
 
-    with patch("application.api.v1.routes.db_readonly", _yield):
+    with patch("docsgpt.api.v1.routes.db_readonly", _yield):
         yield
 
 
@@ -198,7 +198,7 @@ def _patch_v1_db(conn):
 def test_response_usage_reports_cumulative_turn_totals():
     from types import SimpleNamespace
 
-    from application.api.v1.routes import _response_usage
+    from docsgpt.api.v1.routes import _response_usage
 
     # Multi-round tool turns must report the accumulator's turn total,
     # not the final round's provider snapshot.
@@ -222,8 +222,8 @@ def test_response_usage_reports_cumulative_turn_totals():
 @pytest.mark.unit
 class TestLookupAgentHappy:
     def test_returns_agent_for_valid_key(self, pg_conn):
-        from application.api.v1.routes import _lookup_agent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.v1.routes import _lookup_agent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         AgentsRepository(pg_conn).create("u1", "Test", "published", key="k-ok")
 
@@ -233,21 +233,21 @@ class TestLookupAgentHappy:
         assert got["key"] == "k-ok"
 
     def test_returns_none_when_not_found(self, pg_conn):
-        from application.api.v1.routes import _lookup_agent
+        from docsgpt.api.v1.routes import _lookup_agent
 
         with _patch_v1_db(pg_conn):
             got = _lookup_agent("nope")
         assert got is None
 
     def test_returns_none_on_exception(self):
-        from application.api.v1.routes import _lookup_agent
+        from docsgpt.api.v1.routes import _lookup_agent
 
         @contextmanager
         def _broken():
             raise RuntimeError("db down")
             yield
 
-        with patch("application.api.v1.routes.db_readonly", _broken):
+        with patch("docsgpt.api.v1.routes.db_readonly", _broken):
             got = _lookup_agent("k")
         assert got is None
 
@@ -264,7 +264,7 @@ class TestListModelsPgConn:
         assert resp.status_code == 401
 
     def test_returns_agent_for_valid_key(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         app = _build_app()
         repo = AgentsRepository(pg_conn)
@@ -291,7 +291,7 @@ class TestListModelsPgConn:
             raise RuntimeError("boom")
             yield
 
-        with patch("application.api.v1.routes.db_readonly", _broken):
+        with patch("docsgpt.api.v1.routes.db_readonly", _broken):
             with app.test_client() as c:
                 resp = c.get(
                     "/v1/models",
@@ -348,10 +348,10 @@ class TestChatCompletionsHappyPath:
             "extra": {},
         }
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ), patch(
-            "application.api.v1.routes._V1AnswerHelper",
+            "docsgpt.api.v1.routes._V1AnswerHelper",
             return_value=fake_helper,
         ):
             with app.test_client() as c:
@@ -368,7 +368,7 @@ class TestChatCompletionsHappyPath:
     def test_null_n_is_treated_as_default(self, pg_conn):
         app = _build_app()
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=ValueError("reached translator"),
         ):
             with app.test_client() as c:
@@ -400,8 +400,8 @@ class TestChatCompletionsHappyPath:
         assert resp.get_json()["error"]["type"] == "invalid_request_error"
 
     def test_conversation_id_must_belong_to_authenticated_agent(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -447,18 +447,18 @@ class TestChatCompletionsHappyPath:
             "extra": {},
         }
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.load_conversation",
+            "docsgpt.api.v1.routes.load_conversation",
             return_value="deleted-conversation",
         ), patch(
-            "application.api.v1.routes._conversation_belongs_to_agent",
+            "docsgpt.api.v1.routes._conversation_belongs_to_agent",
             return_value=False,
         ), patch(
-            "application.api.v1.routes.delete_conversation",
+            "docsgpt.api.v1.routes.delete_conversation",
         ) as delete_mapping, patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ), patch(
-            "application.api.v1.routes._V1AnswerHelper",
+            "docsgpt.api.v1.routes._V1AnswerHelper",
             return_value=fake_helper,
         ):
             with app.test_client() as c:
@@ -474,7 +474,7 @@ class TestChatCompletionsHappyPath:
         delete_mapping.assert_called_once()
 
     def test_duplicate_resume_returns_conflict(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ResumeInProgressError,
         )
 
@@ -482,20 +482,20 @@ class TestChatCompletionsHappyPath:
         fake_processor = MagicMock()
         fake_processor.decoded_token = {"sub": "u-test"}
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             return_value={
                 "conversation_id": "conv-1",
                 "tool_actions": [{"call_id": "call-1", "result": "ok"}],
                 "messages": [],
             },
         ), patch(
-            "application.api.v1.routes._conversation_belongs_to_agent",
+            "docsgpt.api.v1.routes._conversation_belongs_to_agent",
             return_value=True,
         ), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ), patch(
-            "application.api.v1.routes.ContinuationService.claim_state",
+            "docsgpt.api.v1.routes.ContinuationService.claim_state",
             side_effect=ResumeInProgressError("Resume already in progress"),
         ):
             with app.test_client() as c:
@@ -530,7 +530,7 @@ class TestChatCompletionsHappyPath:
     def test_translate_error_returns_400(self, pg_conn):
         app = _build_app()
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=ValueError("bad"),
         ):
             with app.test_client() as c:
@@ -552,10 +552,10 @@ class TestChatCompletionsHappyPath:
             }
 
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=_fake_translate,
         ), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=MagicMock(decoded_token={"sub": "u"}),
         ):
             with app.test_client() as c:
@@ -576,10 +576,10 @@ class TestChatCompletionsHappyPath:
         fake_processor.build_agent.side_effect = ValueError("boom")
 
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=_fake_translate,
         ), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ):
             with app.test_client() as c:
@@ -600,10 +600,10 @@ class TestChatCompletionsHappyPath:
         fake_processor.build_agent.side_effect = RuntimeError("boom")
 
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=_fake_translate,
         ), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ):
             with app.test_client() as c:
@@ -645,16 +645,16 @@ class TestChatCompletionsHappyPath:
         }
 
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=_fake_translate,
         ), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ), patch(
-            "application.api.v1.routes._V1AnswerHelper",
+            "docsgpt.api.v1.routes._V1AnswerHelper",
             return_value=fake_helper,
         ), patch(
-            "application.api.v1.routes.translate_response",
+            "docsgpt.api.v1.routes.translate_response",
             return_value={"id": "x", "choices": []},
         ):
             with app.test_client() as c:
@@ -691,13 +691,13 @@ class TestChatCompletionsHappyPath:
         }
 
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=_fake_translate,
         ), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ), patch(
-            "application.api.v1.routes._V1AnswerHelper",
+            "docsgpt.api.v1.routes._V1AnswerHelper",
             return_value=fake_helper,
         ):
             with app.test_client() as c:
@@ -730,16 +730,16 @@ class TestChatCompletionsHappyPath:
         fake_helper.complete_stream.side_effect = _fake_helper_complete_stream
 
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=_fake_translate,
         ), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ), patch(
-            "application.api.v1.routes._V1AnswerHelper",
+            "docsgpt.api.v1.routes._V1AnswerHelper",
             return_value=fake_helper,
         ), patch(
-            "application.api.v1.routes.translate_stream_event",
+            "docsgpt.api.v1.routes.translate_stream_event",
             return_value=["data: chunk\n\n"],
         ):
             with app.test_client() as c:
@@ -793,16 +793,16 @@ class TestChatCompletionsHappyPath:
         fake_helper.complete_stream.side_effect = _fake_helper_complete_stream
 
         with _patch_v1_db(pg_conn), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=_fake_translate,
         ), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ), patch(
-            "application.api.v1.routes._V1AnswerHelper",
+            "docsgpt.api.v1.routes._V1AnswerHelper",
             return_value=fake_helper,
         ), patch(
-            "application.api.v1.routes.translate_stream_event",
+            "docsgpt.api.v1.routes.translate_stream_event",
             side_effect=_fake_translate_stream_event,
         ):
             with app.test_client() as c:

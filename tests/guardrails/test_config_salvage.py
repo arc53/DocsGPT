@@ -11,10 +11,10 @@ import logging
 
 import pytest
 
-from application.core.settings import settings
-from application.guardrails.config import AgentConfig, GuardrailsConfig
-from application.guardrails.guardrail_creator import GuardrailCreator
-from application.guardrails.runtime import resolve_config
+from docsgpt.core.settings import settings
+from docsgpt.guardrails.config import AgentConfig, GuardrailsConfig
+from docsgpt.guardrails.guardrail_creator import GuardrailCreator
+from docsgpt.guardrails.runtime import resolve_config
 
 TWO_CONTROLS = {
     "enabled": True,
@@ -88,13 +88,13 @@ class TestSalvage:
         assert GuardrailsConfig.parse(TWO_CONTROLS).mode == "scan_all"
 
     def test_drop_is_logged_with_the_reason(self, narrowed, caplog):
-        with caplog.at_level(logging.WARNING, logger="application.guardrails.config"):
+        with caplog.at_level(logging.WARNING, logger="docsgpt.guardrails.config"):
             GuardrailsConfig.parse(TWO_CONTROLS)
         assert "secrets:output" in caplog.text
         assert "not enabled on this instance" in caplog.text
 
     def test_unusable_config_still_degrades_to_disabled(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="application.guardrails.config"):
+        with caplog.at_level(logging.WARNING, logger="docsgpt.guardrails.config"):
             parsed = GuardrailsConfig.parse({"enabled": True, "mode": "not_a_mode"})
         assert parsed.enabled is False
         assert "unusable" in caplog.text

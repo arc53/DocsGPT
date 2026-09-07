@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 
-from application.sandbox.base import ExecResult
+from docsgpt.sandbox.base import ExecResult
 
 
 # --- Fakes mirroring the real Daytona SDK shapes -------------------------
@@ -146,7 +146,7 @@ def fake_sdk(monkeypatch):
 
 @pytest.fixture()
 def sandbox(fake_sdk):
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     return DaytonaSandbox(api_key="dtn_test", language="python")
 
@@ -155,14 +155,14 @@ def sandbox(fake_sdk):
 
 
 def test_requires_api_key(fake_sdk):
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     with pytest.raises(ValueError):
         DaytonaSandbox(api_key="")
 
 
 def test_config_forwards_optional_knobs(fake_sdk):
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     DaytonaSandbox(api_key="k", api_url="https://api.example", target="us")
     cfg = fake_sdk["config"]
@@ -172,7 +172,7 @@ def test_config_forwards_optional_knobs(fake_sdk):
 
 
 def test_config_omits_unset_knobs(fake_sdk):
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     DaytonaSandbox(api_key="k")
     assert set(fake_sdk["config"].keys()) == {"api_key"}
@@ -288,7 +288,7 @@ def test_close_handle_leaves_reopened_sandbox_intact(sandbox):
     _, old = sandbox._client.created[0]
     # Simulate a concurrent re-open: a new sandbox is registered for the same session.
     new = _FakeSandbox(sandbox_id="sbx-new", labels={"docsgpt_session_id": "conv-1"})
-    from application.sandbox.daytona import _Handle, _WORKSPACE_ROOT
+    from docsgpt.sandbox.daytona import _Handle, _WORKSPACE_ROOT
 
     sandbox._handles["conv-1"] = _Handle(new, new.id, _WORKSPACE_ROOT)
     sandbox._client.created.append((None, new))  # so client.get(new.id) could resolve
@@ -334,7 +334,7 @@ def test_open_ignores_existing_for_other_session(sandbox):
 
 
 def test_open_enforces_concurrency_cap(fake_sdk):
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     s = DaytonaSandbox(api_key="k", max_sandboxes=2)
     s.open("conv-1")
@@ -521,7 +521,7 @@ def test_get_file_returns_bytes(sandbox):
 
 
 def test_get_file_too_large_rejected(sandbox):
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     s = DaytonaSandbox(api_key="k", max_file_bytes=3)
     s.open("conv-1")
@@ -533,7 +533,7 @@ def test_get_file_too_large_rejected(sandbox):
 
 def test_get_file_post_download_size_guard(sandbox):
     """Oversized payloads are rejected even when get_file_info reports no size."""
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     s = DaytonaSandbox(api_key="k", max_file_bytes=3)
     s.open("conv-1")
@@ -591,7 +591,7 @@ def test_list_files_error_wrapped_as_ioerror(sandbox):
 
 def test_to_result_truncates_stdout_over_cap(fake_sdk):
     """Stdout beyond max_output_bytes is byte-capped, noted, and flagged truncated."""
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     s = DaytonaSandbox(api_key="k", max_output_bytes=10)
     resp = _FakeExecuteResponse(exit_code=0, artifacts=_FakeArtifacts(stdout="X" * 100))
@@ -603,7 +603,7 @@ def test_to_result_truncates_stdout_over_cap(fake_sdk):
 
 
 def test_to_result_keeps_small_stdout_intact(fake_sdk):
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     s = DaytonaSandbox(api_key="k", max_output_bytes=1000)
     res = s._to_result(_FakeExecuteResponse(exit_code=0, artifacts=_FakeArtifacts(stdout="hello")))
@@ -613,7 +613,7 @@ def test_to_result_keeps_small_stdout_intact(fake_sdk):
 
 def test_to_result_cap_disabled_by_default(fake_sdk):
     """max_output_bytes defaults to 0 (disabled): a large stdout is passed through whole."""
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     s = DaytonaSandbox(api_key="k")
     res = s._to_result(_FakeExecuteResponse(exit_code=0, artifacts=_FakeArtifacts(stdout="Y" * 5000)))
@@ -623,7 +623,7 @@ def test_to_result_cap_disabled_by_default(fake_sdk):
 
 def test_to_result_truncation_bounds_error_value(fake_sdk):
     """On a nonzero exit the capped stdout (not the raw buffer) is what feeds error_value."""
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     s = DaytonaSandbox(api_key="k", max_output_bytes=10)
     res = s._to_result(_FakeExecuteResponse(exit_code=1, artifacts=_FakeArtifacts(stdout="E" * 100)))
@@ -712,7 +712,7 @@ def test_with_workspace_cwd_no_future_import_is_prelude_prefix(sandbox):
 
 
 def test_split_leading_future_imports_multiple_with_comment():
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     code = "# header\nfrom __future__ import annotations\nfrom __future__ import division\nx = 1\n"
     hoisted, rest = DaytonaSandbox._split_leading_future_imports(code)
@@ -722,14 +722,14 @@ def test_split_leading_future_imports_multiple_with_comment():
 
 
 def test_split_leading_future_imports_none():
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     hoisted, rest = DaytonaSandbox._split_leading_future_imports("x = 1\n")
     assert hoisted == "" and rest == "x = 1\n"
 
 
 def test_split_leading_future_imports_adds_trailing_newline():
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     hoisted, rest = DaytonaSandbox._split_leading_future_imports("from __future__ import annotations")
     assert hoisted.endswith("\n")  # ensures the prelude begins on its own line
@@ -740,9 +740,9 @@ def test_split_leading_future_imports_adds_trailing_newline():
 
 
 def test_sandbox_creator_selects_daytona_backend(fake_sdk, monkeypatch):
-    from application.core.settings import settings
-    from application.sandbox import sandbox_creator as sc
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.core.settings import settings
+    from docsgpt.sandbox import sandbox_creator as sc
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     monkeypatch.setattr(settings, "DAYTONA_API_KEY", "dtn_test", raising=False)
     sc.SandboxCreator.reset()
@@ -754,8 +754,8 @@ def test_sandbox_creator_selects_daytona_backend(fake_sdk, monkeypatch):
 @pytest.mark.parametrize("configured", [0, -1, -5])
 def test_factory_clamps_nonpositive_auto_delete_interval(fake_sdk, monkeypatch, configured):
     """A never-expiring auto_delete_interval (<= 0) is replaced so orphans always expire."""
-    from application.core.settings import settings
-    from application.sandbox import sandbox_creator as sc
+    from docsgpt.core.settings import settings
+    from docsgpt.sandbox import sandbox_creator as sc
 
     monkeypatch.setattr(settings, "DAYTONA_API_KEY", "dtn_test", raising=False)
     monkeypatch.setattr(settings, "DAYTONA_AUTO_DELETE_INTERVAL", configured, raising=False)
@@ -766,8 +766,8 @@ def test_factory_clamps_nonpositive_auto_delete_interval(fake_sdk, monkeypatch, 
 
 
 def test_factory_forwards_max_sandboxes(fake_sdk, monkeypatch):
-    from application.core.settings import settings
-    from application.sandbox import sandbox_creator as sc
+    from docsgpt.core.settings import settings
+    from docsgpt.sandbox import sandbox_creator as sc
 
     monkeypatch.setattr(settings, "DAYTONA_API_KEY", "dtn_test", raising=False)
     monkeypatch.setattr(settings, "DAYTONA_MAX_SANDBOXES", 7, raising=False)
@@ -827,8 +827,8 @@ def test_manager_cold_starts_after_daytona_sandbox_deleted(fake_sdk):
     """End-to-end (SandboxManager + DaytonaSandbox): once the cloud sandbox is
     deleted, the next run transparently creates a FRESH sandbox instead of reusing
     the dead handle. This is the user-facing recovery contract Bug A breaks."""
-    from application.sandbox.daytona import DaytonaSandbox
-    from application.sandbox.manager import SandboxManager
+    from docsgpt.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.manager import SandboxManager
 
     backend = DaytonaSandbox(api_key="k")
     mgr = SandboxManager(backend, max_ttl=600)
@@ -865,7 +865,7 @@ def test_prime_passes_request_timeout(sandbox):
 
 def test_prime_retries_once_after_transport_error(sandbox):
     """A hung/failed prime is retried once (bounded) instead of being dropped."""
-    from application.sandbox.daytona import DaytonaSandbox  # noqa: F401 - fixture import parity
+    from docsgpt.sandbox.daytona import DaytonaSandbox  # noqa: F401 - fixture import parity
 
     client_cls = type(sandbox._client)
     orig_create = client_cls._create
@@ -919,7 +919,7 @@ def test_ensure_started_get_passes_request_timeout(sandbox):
 
 
 def test_reattach_list_passes_request_timeout(fake_sdk):
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     box = DaytonaSandbox(api_key="dtn_test", language="python")
     existing = _FakeSandbox("sbx-old", labels={"docsgpt_session_id": "conv-1"})
@@ -931,7 +931,7 @@ def test_reattach_list_passes_request_timeout(fake_sdk):
 def test_open_reattach_gone_falls_through_to_fresh_create(fake_sdk):
     """A labelled-but-deleted sandbox (prod: 404 'it has been deleted') must not
     win reattach: prime detects it is gone and open() creates a fresh one."""
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     box = DaytonaSandbox(api_key="dtn_test", language="python")
     ghost = _FakeSandbox("sbx-ghost", labels={"docsgpt_session_id": "conv-1"})
@@ -955,8 +955,8 @@ def test_open_does_not_cache_a_fresh_sandbox_that_vanished_during_prime(fake_sdk
     returns cached handles without revalidating them, so a dead id parked in
     ``_handles`` is replayed by every later ``open()`` for that session.
     """
-    from application.sandbox.base import SandboxGoneError
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.base import SandboxGoneError
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     box = DaytonaSandbox(api_key="dtn_test", language="python")
 
@@ -989,7 +989,7 @@ def test_open_keeps_a_live_sandbox_whose_prime_merely_failed(fake_sdk):
     workspace materializes on first use; failing the open here would reject a
     perfectly usable sandbox.
     """
-    from application.sandbox.daytona import DaytonaSandbox
+    from docsgpt.sandbox.daytona import DaytonaSandbox
 
     box = DaytonaSandbox(api_key="dtn_test", language="python")
 
@@ -1009,7 +1009,7 @@ def test_open_keeps_a_live_sandbox_whose_prime_merely_failed(fake_sdk):
 
 
 def test_put_file_gone_sandbox_raises_sandbox_gone_and_forgets(sandbox):
-    from application.sandbox.base import SandboxGoneError
+    from docsgpt.sandbox.base import SandboxGoneError
 
     sandbox.open("conv-1")
     _, created = sandbox._client.created[0]
@@ -1021,7 +1021,7 @@ def test_put_file_gone_sandbox_raises_sandbox_gone_and_forgets(sandbox):
 
 
 def test_get_file_gone_sandbox_raises_sandbox_gone_and_forgets(sandbox):
-    from application.sandbox.base import SandboxGoneError
+    from docsgpt.sandbox.base import SandboxGoneError
 
     sandbox.open("conv-1")
     _, created = sandbox._client.created[0]
@@ -1033,7 +1033,7 @@ def test_get_file_gone_sandbox_raises_sandbox_gone_and_forgets(sandbox):
 
 
 def test_list_files_gone_sandbox_raises_sandbox_gone_and_forgets(sandbox):
-    from application.sandbox.base import SandboxGoneError
+    from docsgpt.sandbox.base import SandboxGoneError
 
     sandbox.open("conv-1")
     _, created = sandbox._client.created[0]
@@ -1046,7 +1046,7 @@ def test_list_files_gone_sandbox_raises_sandbox_gone_and_forgets(sandbox):
 
 def test_put_file_alive_sandbox_keeps_plain_ioerror_and_handle(sandbox):
     """A transport error on a LIVE sandbox stays a plain IOError; handle kept."""
-    from application.sandbox.base import SandboxGoneError
+    from docsgpt.sandbox.base import SandboxGoneError
 
     sandbox.open("conv-1")
     _, created = sandbox._client.created[0]

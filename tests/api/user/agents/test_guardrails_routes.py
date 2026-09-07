@@ -1,4 +1,4 @@
-"""Tests for application/api/user/agents/guardrails.py and config validation.
+"""Tests for docsgpt/api/user/agents/guardrails.py and config validation.
 
 Uses the ephemeral ``pg_conn`` fixture so the repository code is real.
 """
@@ -22,13 +22,13 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.agents.guardrails.db_readonly", _yield
+        "docsgpt.api.user.agents.guardrails.db_readonly", _yield
     ):
         yield
 
 
 def _seed_agent(pg_conn, user="u-gr"):
-    from application.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
 
     return AgentsRepository(pg_conn).create(user, "guarded", "published")
 
@@ -41,7 +41,7 @@ def _seed_agent(pg_conn, user="u-gr"):
 @pytest.mark.unit
 class TestNormalizeAgentConfig:
     def _norm(self, raw):
-        from application.api.user.agents.routes import normalize_agent_config
+        from docsgpt.api.user.agents.routes import normalize_agent_config
 
         return normalize_agent_config(raw)
 
@@ -140,7 +140,7 @@ class TestNormalizeAgentConfig:
 @pytest.mark.unit
 class TestCatalogRoute:
     def _get(self, app, decoded_token={"sub": "u-gr"}):
-        from application.api.user.agents.guardrails import GuardrailCatalog
+        from docsgpt.api.user.agents.guardrails import GuardrailCatalog
 
         with app.test_request_context("/api/guardrails/catalog"):
             from flask import request
@@ -183,7 +183,7 @@ class TestCatalogRoute:
     def test_reports_the_instance_floor(self, app, monkeypatch):
         import json
 
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(
             settings,
@@ -199,7 +199,7 @@ class TestCatalogRoute:
     def test_floor_is_null_when_unset(self, app, monkeypatch):
         import json
 
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "GUARDRAILS_FLOOR", {})
         payload = json.loads(self._get(app).get_data(as_text=True))
@@ -214,7 +214,7 @@ class TestCatalogRoute:
 @pytest.mark.unit
 class TestEventsRoute:
     def _get(self, app, pg_conn, args="", decoded_token={"sub": "u-gr"}):
-        from application.api.user.agents.guardrails import GuardrailEvents
+        from docsgpt.api.user.agents.guardrails import GuardrailEvents
 
         with app.test_request_context(f"/api/guardrails/events{args}"):
             from flask import request
@@ -248,7 +248,7 @@ class TestEventsRoute:
     def test_returns_recorded_events(self, app, pg_conn):
         import json
 
-        from application.storage.db.repositories.guardrail_events import (
+        from docsgpt.storage.db.repositories.guardrail_events import (
             GuardrailEventsRepository,
         )
 
@@ -277,7 +277,7 @@ class TestEventsRoute:
 @pytest.mark.unit
 class TestSummaryRoute:
     def _get(self, app, pg_conn, args="", decoded_token={"sub": "u-gr"}):
-        from application.api.user.agents.guardrails import GuardrailSummary
+        from docsgpt.api.user.agents.guardrails import GuardrailSummary
 
         with app.test_request_context(f"/api/guardrails/summary{args}"):
             from flask import request
@@ -293,7 +293,7 @@ class TestSummaryRoute:
     def test_splits_blocked_from_flagged_from_unevaluated(self, app, pg_conn):
         import json
 
-        from application.storage.db.repositories.guardrail_events import (
+        from docsgpt.storage.db.repositories.guardrail_events import (
             GuardrailEventsRepository,
         )
 
@@ -331,7 +331,7 @@ class TestSummaryAgentScoping:
     """The agent-logs panel needs per-agent aggregates, not per-user ones."""
 
     def _get(self, app, pg_conn, args="", decoded_token={"sub": "u-gr"}):
-        from application.api.user.agents.guardrails import GuardrailSummary
+        from docsgpt.api.user.agents.guardrails import GuardrailSummary
 
         with app.test_request_context(f"/api/guardrails/summary{args}"):
             from flask import request
@@ -341,8 +341,8 @@ class TestSummaryAgentScoping:
                 return GuardrailSummary().get()
 
     def _seed(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.guardrail_events import (
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.guardrail_events import (
             GuardrailEventsRepository,
         )
 
@@ -400,7 +400,7 @@ class TestConfigRejectionDoesNotLeakInternals:
     """
 
     def test_the_static_message_is_not_derived_from_the_exception(self):
-        from application.api.user.agents.routes import (
+        from docsgpt.api.user.agents.routes import (
             INVALID_CONFIG_MESSAGE,
             normalize_agent_config,
         )
@@ -415,7 +415,7 @@ class TestConfigRejectionDoesNotLeakInternals:
         assert INVALID_CONFIG_MESSAGE not in detail
 
     def test_internal_validator_text_still_names_the_field(self):
-        from application.api.user.agents.routes import normalize_agent_config
+        from docsgpt.api.user.agents.routes import normalize_agent_config
 
         with pytest.raises(ValueError, match="timeout_ms"):
             normalize_agent_config({"guardrails": {"timeout_ms": 5}})

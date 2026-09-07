@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.conversations import ConversationsRepository
-from application.storage.db.repositories.pending_tool_state import PendingToolStateRepository
+from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.pending_tool_state import PendingToolStateRepository
 
 
 def _conv(conn) -> dict:

@@ -12,7 +12,7 @@ class TestBaseAnswerValidation:
     def test_validate_request_passes_with_required_fields(
         self, mock_mongo_db, flask_app
     ):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -23,7 +23,7 @@ class TestBaseAnswerValidation:
             assert result is None
 
     def test_validate_request_fails_without_question(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -36,7 +36,7 @@ class TestBaseAnswerValidation:
             assert "question" in result.json["message"].lower()
 
     def test_validate_with_conversation_id_required(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -49,7 +49,7 @@ class TestBaseAnswerValidation:
             assert "conversation_id" in result.json["message"].lower()
 
     def test_validate_passes_with_all_required_fields(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -65,7 +65,7 @@ class TestUsageChecking:
     pass
 
     def test_returns_none_when_no_api_key(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -88,7 +88,7 @@ class TestGPTModelRetrieval:
     pass
 
     def test_initializes_gpt_model(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -102,7 +102,7 @@ class TestConversationServiceIntegration:
     pass
 
     def test_initializes_conversation_service(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -117,7 +117,7 @@ class TestCompleteStreamMethod:
     pass
 
     def test_streams_answer_chunks(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -149,7 +149,7 @@ class TestCompleteStreamMethod:
             assert '"answer": "world!"' in answer_chunks[1]
 
     def test_streams_sources(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -180,7 +180,7 @@ class TestCompleteStreamMethod:
             assert '"title": "doc1.txt"' in source_chunks[0]
 
     def test_handles_error_during_streaming(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -209,7 +209,7 @@ class TestCompleteStreamMethod:
         Without the flag, sanitize_api_error substring-matches "quota" and rewrites the
         message into a misleading rate-limit notice.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -248,7 +248,7 @@ class TestCompleteStreamMethod:
         emitted as ``type: error`` -- the client treats an error event as terminal and
         disables reconnect -- and its text must not be run through sanitize_api_error.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -277,7 +277,7 @@ class TestCompleteStreamMethod:
 
     def test_non_user_facing_error_is_sanitized(self, mock_mongo_db, flask_app):
         """A raw error without the flag is still routed through sanitize_api_error."""
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -303,7 +303,7 @@ class TestCompleteStreamMethod:
             assert "Rate limit exceeded" in error_chunks[0]
 
     def test_saves_conversation_when_enabled(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -354,7 +354,7 @@ class TestCompleteStreamMethod:
         so tools needing a conversation home (``scheduler`` in an agentless
         chat) see it on the very first call.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -439,7 +439,7 @@ class TestCompleteStreamMethod:
         """A pure ``requires_client_execution`` pause must NOT publish a
         ``tool.approval.required`` event — the client resolves it, so the
         notification would be non-actionable noise."""
-        from application.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes import base as base_mod
 
         with flask_app.app_context(), patch.object(
             base_mod, "publish_user_event"
@@ -465,7 +465,7 @@ class TestCompleteStreamMethod:
     ):
         """A pause with an ``awaiting_approval`` call publishes once, and the
         payload surfaces only the approval call (not the client-side one)."""
-        from application.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes import base as base_mod
 
         with flask_app.app_context(), patch.object(
             base_mod, "publish_user_event"
@@ -505,7 +505,7 @@ class TestProcessResponseStream:
     def test_processes_complete_stream(self, mock_mongo_db, flask_app):
         import json
 
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -529,7 +529,7 @@ class TestProcessResponseStream:
     def test_handles_stream_error(self, mock_mongo_db, flask_app):
         import json
 
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -544,7 +544,7 @@ class TestProcessResponseStream:
             assert result["error"] == "Test error"
 
     def test_handles_malformed_stream_data(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -564,7 +564,7 @@ class TestErrorStreamGenerate:
     pass
 
     def test_generates_error_stream(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -588,9 +588,9 @@ def _patch_base_db(conn):
         yield conn
 
     with patch(
-        "application.api.answer.routes.base.db_readonly", _yield
+        "docsgpt.api.answer.routes.base.db_readonly", _yield
     ), patch(
-        "application.api.answer.routes.base.db_session", _yield
+        "docsgpt.api.answer.routes.base.db_session", _yield
     ):
         yield
 
@@ -598,7 +598,7 @@ def _patch_base_db(conn):
 @pytest.mark.unit
 class TestCheckUsagePgConn:
     def test_invalid_api_key_returns_401(self, pg_conn, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with _patch_base_db(pg_conn), flask_app.app_context():
             resource = BaseAnswerResource()
@@ -607,8 +607,8 @@ class TestCheckUsagePgConn:
         assert result.status_code == 401
 
     def test_no_limits_returns_none(self, pg_conn, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         AgentsRepository(pg_conn).create(
             "owner", "a", "published", key="k1",
@@ -620,8 +620,8 @@ class TestCheckUsagePgConn:
         assert result is None
 
     def test_within_limit_returns_none(self, pg_conn, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         AgentsRepository(pg_conn).create(
             "owner", "a", "published", key="k2",
@@ -633,9 +633,9 @@ class TestCheckUsagePgConn:
         assert result is None
 
     def test_token_limit_exceeded_returns_429(self, pg_conn, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.token_usage import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.token_usage import (
             TokenUsageRepository,
         )
 
@@ -655,9 +655,9 @@ class TestCheckUsagePgConn:
         assert result.status_code == 429
 
     def test_request_limit_exceeded_returns_429(self, pg_conn, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.token_usage import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.token_usage import (
             TokenUsageRepository,
         )
 
@@ -678,8 +678,8 @@ class TestCheckUsagePgConn:
     def test_string_True_limited_token_mode_parsed(self, pg_conn, flask_app):
         """Legacy Mongo sometimes stored ``limited_token_mode`` as the
         string 'True'; verify the parse branch."""
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         # Store bool=False in DB (limited_token_mode default). Test uses
         # string 'True' by mutating the row directly.

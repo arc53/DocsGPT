@@ -1,4 +1,4 @@
-"""Comprehensive tests for application/agents/tools/memory.py
+"""Comprehensive tests for docsgpt/agents/tools/memory.py
 
 Covers: MemoryTool initialization, path validation, all actions
 (view, create, str_replace, insert, delete, rename), directory operations,
@@ -87,19 +87,19 @@ def patched_memory(monkeypatch):
     """Patch the memory tool to use the in-memory fake repo."""
     _FakeMemoriesRepo.reset()
     monkeypatch.setattr(
-        "application.agents.tools.memory.MemoriesRepository", _FakeMemoriesRepo
+        "docsgpt.agents.tools.memory.MemoriesRepository", _FakeMemoriesRepo
     )
     monkeypatch.setattr(
-        "application.agents.tools.memory.db_session", _noop_conn
+        "docsgpt.agents.tools.memory.db_session", _noop_conn
     )
     monkeypatch.setattr(
-        "application.agents.tools.memory.db_readonly", _noop_conn
+        "docsgpt.agents.tools.memory.db_readonly", _noop_conn
     )
 
 
 @pytest.fixture
 def memory_tool(patched_memory):
-    from application.agents.tools.memory import MemoryTool
+    from docsgpt.agents.tools.memory import MemoryTool
     # Real UUID so ``_pg_enabled()`` returns True.
     return MemoryTool(
         tool_config={"tool_id": str(uuid.uuid4())},
@@ -116,7 +116,7 @@ def memory_tool(patched_memory):
 class TestMemoryToolInit:
 
     def test_init_with_config(self, patched_memory):
-        from application.agents.tools.memory import MemoryTool
+        from docsgpt.agents.tools.memory import MemoryTool
 
         tid = str(uuid.uuid4())
         tool = MemoryTool(tool_config={"tool_id": tid}, user_id="user1")
@@ -124,13 +124,13 @@ class TestMemoryToolInit:
         assert tool.user_id == "user1"
 
     def test_init_fallback_to_user_id(self, patched_memory):
-        from application.agents.tools.memory import MemoryTool
+        from docsgpt.agents.tools.memory import MemoryTool
 
         tool = MemoryTool(tool_config={}, user_id="user1")
         assert tool.tool_id == "default_user1"
 
     def test_init_no_user_no_config(self, patched_memory):
-        from application.agents.tools.memory import MemoryTool
+        from docsgpt.agents.tools.memory import MemoryTool
 
         tool = MemoryTool()
         assert tool.tool_id is not None  # UUID fallback
@@ -181,7 +181,7 @@ class TestPathValidation:
 class TestNoUser:
 
     def test_requires_user_id(self, patched_memory):
-        from application.agents.tools.memory import MemoryTool
+        from docsgpt.agents.tools.memory import MemoryTool
 
         tool = MemoryTool(tool_config={"tool_id": str(uuid.uuid4())}, user_id=None)
         result = tool.execute_action("view", path="/")
@@ -585,7 +585,7 @@ class TestSentinelShortCircuit:
 
     def test_default_tool_id_short_circuits(self, patched_memory):
         """A ``default_{user_id}`` sentinel tool_id must no-op."""
-        from application.agents.tools.memory import MemoryTool
+        from docsgpt.agents.tools.memory import MemoryTool
 
         tool = MemoryTool(tool_config={}, user_id="user1")
         assert tool.tool_id == "default_user1"
@@ -595,7 +595,7 @@ class TestSentinelShortCircuit:
         assert _FakeMemoriesRepo._store == {}
 
     def test_non_uuid_tool_id_short_circuits(self, patched_memory):
-        from application.agents.tools.memory import MemoryTool
+        from docsgpt.agents.tools.memory import MemoryTool
 
         tool = MemoryTool(tool_config={"tool_id": "not-a-uuid"}, user_id="user1")
         result = tool.execute_action("create", path="/x.txt", file_text="y")

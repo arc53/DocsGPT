@@ -1,4 +1,4 @@
-"""Unit tests for the OpenAI Responses API path in application/llm/openai.py.
+"""Unit tests for the OpenAI Responses API path in docsgpt/llm/openai.py.
 
 Covers the api_flavor gating, Chat-Completions -> Responses request
 translation, tool/structured-output mapping, reasoning-item carryover, the
@@ -11,17 +11,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.core.model_settings import ModelCapabilities
+from docsgpt.core.model_settings import ModelCapabilities
 
 
 def _make_llm(monkeypatch, capabilities=None, store_responses=False):
-    monkeypatch.setattr("application.llm.openai.OpenAI", MagicMock())
+    monkeypatch.setattr("docsgpt.llm.openai.OpenAI", MagicMock())
     monkeypatch.setattr(
-        "application.llm.openai.StorageCreator",
+        "docsgpt.llm.openai.StorageCreator",
         types.SimpleNamespace(get_storage=lambda: None),
     )
     monkeypatch.setattr(
-        "application.llm.openai.settings",
+        "docsgpt.llm.openai.settings",
         types.SimpleNamespace(
             OPENAI_API_KEY="k",
             API_KEY="k",
@@ -31,7 +31,7 @@ def _make_llm(monkeypatch, capabilities=None, store_responses=False):
             OPENAI_REASONING_SUMMARY="auto",
         ),
     )
-    from application.llm.openai import OpenAILLM
+    from docsgpt.llm.openai import OpenAILLM
 
     llm = OpenAILLM(api_key="k")
     llm.capabilities = capabilities
@@ -52,7 +52,7 @@ def _responses_caps(reasoning_effort=None):
 
 
 def _bare_agent():
-    from application.agents.base import BaseAgent
+    from docsgpt.agents.base import BaseAgent
 
     class _Agent(BaseAgent):
         def _gen_inner(self, query, log_context):
@@ -432,7 +432,7 @@ def test_build_responses_params_stateless(monkeypatch):
 @pytest.mark.unit
 def test_build_responses_params_summary_override(monkeypatch):
     llm = _make_llm(monkeypatch, _responses_caps(reasoning_effort="high"))
-    from application.llm import openai as openai_mod
+    from docsgpt.llm import openai as openai_mod
 
     monkeypatch.setattr(
         openai_mod.settings, "OPENAI_REASONING_SUMMARY", "detailed", raising=False
@@ -635,7 +635,7 @@ def test_record_responses_metadata_captures_usage_details(monkeypatch):
 
 @pytest.mark.unit
 def test_responses_gen_stream_text_and_tools(monkeypatch):
-    from application.llm.handlers.openai import OpenAILLMHandler
+    from docsgpt.llm.handlers.openai import OpenAILLMHandler
 
     llm = _make_llm(monkeypatch, _responses_caps())
     events = [
@@ -693,7 +693,7 @@ def test_responses_gen_stream_text_only(monkeypatch):
 
 @pytest.mark.unit
 def test_responses_gen_stream_parallel_tool_calls(monkeypatch):
-    from application.llm.handlers.openai import OpenAILLMHandler
+    from docsgpt.llm.handlers.openai import OpenAILLMHandler
 
     llm = _make_llm(monkeypatch, _responses_caps())
     events = [
@@ -752,7 +752,7 @@ def test_responses_gen_stream_incomplete_returns_partial_length(monkeypatch):
             "gpt-5.5", [{"role": "user", "content": "hi"}], tools=None
         )
     )
-    from application.llm.handlers.openai import OpenAILLMHandler
+    from docsgpt.llm.handlers.openai import OpenAILLMHandler
 
     assert out[0] == "partial"
     assert OpenAILLMHandler().parse_response(out[-1]).finish_reason == "length"
@@ -795,7 +795,7 @@ def test_responses_gen_stream_surfaces_done_only_refusal(monkeypatch):
 
 @pytest.mark.unit
 def test_responses_gen_nonstream_tools(monkeypatch):
-    from application.llm.handlers.openai import OpenAILLMHandler
+    from docsgpt.llm.handlers.openai import OpenAILLMHandler
 
     llm = _make_llm(monkeypatch, _responses_caps())
     response = _ns(
@@ -883,7 +883,7 @@ def test_public_gen_keeps_plain_string_contract_for_incomplete_text(monkeypatch)
         ],
     )
     llm.client.responses.create = MagicMock(return_value=response)
-    monkeypatch.setattr("application.cache.get_redis_instance", lambda: None)
+    monkeypatch.setattr("docsgpt.cache.get_redis_instance", lambda: None)
 
     result = llm.gen(
         model="gpt-5.5",
@@ -952,7 +952,7 @@ def test_responses_chain_key_scopes_model_endpoint_and_credential(monkeypatch):
 
     llm.api_key = "k"
     monkeypatch.setattr(
-        "application.llm.openai.settings.OPENAI_RESPONSES_STORE", True
+        "docsgpt.llm.openai.settings.OPENAI_RESPONSES_STORE", True
     )
     different_store_mode = llm.responses_chain_key()
 
@@ -969,7 +969,7 @@ def test_responses_chain_key_scopes_model_endpoint_and_credential(monkeypatch):
 @pytest.mark.unit
 def test_responses_metadata_persists_chain_key(monkeypatch):
     monkeypatch.setattr(
-        "application.agents.base.settings.OPENAI_RESPONSES_STORE", True
+        "docsgpt.agents.base.settings.OPENAI_RESPONSES_STORE", True
     )
     agent = _bare_agent()
     agent.llm = _ns(
@@ -988,7 +988,7 @@ def test_responses_metadata_persists_chain_key(monkeypatch):
 @pytest.mark.unit
 def test_store_false_metadata_omits_unstored_response_id(monkeypatch):
     monkeypatch.setattr(
-        "application.agents.base.settings.OPENAI_RESPONSES_STORE", False
+        "docsgpt.agents.base.settings.OPENAI_RESPONSES_STORE", False
     )
     agent = _bare_agent()
     agent.llm = _ns(
@@ -1010,7 +1010,7 @@ def test_store_false_metadata_omits_unstored_response_id(monkeypatch):
 
 @pytest.mark.unit
 def test_capability_field_rejects_bad_api_flavor():
-    from application.core.model_yaml import _CapabilityFields
+    from docsgpt.core.model_yaml import _CapabilityFields
 
     with pytest.raises(ValueError):
         _CapabilityFields(api_flavor="grpc")
@@ -1018,7 +1018,7 @@ def test_capability_field_rejects_bad_api_flavor():
 
 @pytest.mark.unit
 def test_capability_field_rejects_bad_reasoning_effort():
-    from application.core.model_yaml import _CapabilityFields
+    from docsgpt.core.model_yaml import _CapabilityFields
 
     with pytest.raises(ValueError):
         _CapabilityFields(reasoning_effort="extreme")
@@ -1026,7 +1026,7 @@ def test_capability_field_rejects_bad_reasoning_effort():
 
 @pytest.mark.unit
 def test_builtin_gpt55_opts_into_responses():
-    from application.core.model_yaml import BUILTIN_MODELS_DIR, load_model_yamls
+    from docsgpt.core.model_yaml import BUILTIN_MODELS_DIR, load_model_yamls
 
     catalogs = load_model_yamls([BUILTIN_MODELS_DIR])
     models = {m.id: m for c in catalogs for m in c.models}
@@ -1037,7 +1037,7 @@ def test_builtin_gpt55_opts_into_responses():
 
 @pytest.mark.unit
 def test_builtin_default_models_stay_chat_completions():
-    from application.core.model_yaml import BUILTIN_MODELS_DIR, load_model_yamls
+    from docsgpt.core.model_yaml import BUILTIN_MODELS_DIR, load_model_yamls
 
     catalogs = load_model_yamls([BUILTIN_MODELS_DIR])
     models = {m.id: m for c in catalogs for m in c.models}

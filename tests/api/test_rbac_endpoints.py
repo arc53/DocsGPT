@@ -11,7 +11,7 @@ import pytest
 
 @pytest.fixture
 def client():
-    from application.app import app as flask_app
+    from docsgpt.app import app as flask_app
 
     flask_app.config["TESTING"] = True
     return flask_app.test_client()
@@ -25,8 +25,8 @@ def _fake_readonly():
 @pytest.mark.unit
 class TestMeEndpoint:
     def test_returns_user_id_and_roles(self, client):
-        with patch("application.app.handle_auth", return_value={"sub": "u1"}), patch(
-            "application.app.resolve_roles", return_value=["user"]
+        with patch("docsgpt.app.handle_auth", return_value={"sub": "u1"}), patch(
+            "docsgpt.app.resolve_roles", return_value=["user"]
         ):
             resp = client.get("/api/user/me")
         assert resp.status_code == 200
@@ -35,15 +35,15 @@ class TestMeEndpoint:
         assert data["roles"] == ["user"]
 
     def test_echoes_admin_role(self, client):
-        with patch("application.app.handle_auth", return_value={"sub": "a1"}), patch(
-            "application.app.resolve_roles", return_value=["admin", "user"]
+        with patch("docsgpt.app.handle_auth", return_value={"sub": "a1"}), patch(
+            "docsgpt.app.resolve_roles", return_value=["admin", "user"]
         ):
             resp = client.get("/api/user/me")
         data = json.loads(resp.data)
         assert data["roles"] == ["admin", "user"]
 
     def test_unauthenticated_returns_401(self, client):
-        with patch("application.app.handle_auth", return_value=None):
+        with patch("docsgpt.app.handle_auth", return_value=None):
             resp = client.get("/api/user/me")
         assert resp.status_code == 401
 
@@ -51,24 +51,24 @@ class TestMeEndpoint:
 @pytest.mark.unit
 class TestAdminUsersEndpoint:
     def test_non_admin_forbidden(self, client):
-        with patch("application.app.handle_auth", return_value={"sub": "u1"}), patch(
-            "application.app.resolve_roles", return_value=["user"]
+        with patch("docsgpt.app.handle_auth", return_value={"sub": "u1"}), patch(
+            "docsgpt.app.resolve_roles", return_value=["user"]
         ):
             resp = client.get("/api/admin/users")
         assert resp.status_code == 403
 
     def test_unauthenticated_401(self, client):
-        with patch("application.app.handle_auth", return_value=None):
+        with patch("docsgpt.app.handle_auth", return_value=None):
             resp = client.get("/api/admin/users")
         assert resp.status_code == 401
 
     @staticmethod
     def _admin_get(client, repo, query=""):
         # The list endpoint resolves users (with last_seen) via AdminStatsRepository.
-        with patch("application.app.handle_auth", return_value={"sub": "a1"}), patch(
-            "application.app.resolve_roles", return_value=["admin", "user"]
-        ), patch("application.api.admin.routes.db_readonly", _fake_readonly), patch(
-            "application.api.admin.routes.AdminStatsRepository", return_value=repo
+        with patch("docsgpt.app.handle_auth", return_value={"sub": "a1"}), patch(
+            "docsgpt.app.resolve_roles", return_value=["admin", "user"]
+        ), patch("docsgpt.api.admin.routes.db_readonly", _fake_readonly), patch(
+            "docsgpt.api.admin.routes.AdminStatsRepository", return_value=repo
         ):
             return client.get(f"/api/admin/users{query}")
 
@@ -142,10 +142,10 @@ class TestChokepointOverwritesForgedRoles:
     """
 
     def test_forged_admin_ignored_in_session_jwt_mode(self, client):
-        from application.api.user import authz
+        from docsgpt.api.user import authz
 
         forged = lambda *a, **k: {"sub": "attacker", "roles": ["admin"]}  # noqa: E731
-        with patch("application.app.handle_auth", side_effect=forged), patch.object(
+        with patch("docsgpt.app.handle_auth", side_effect=forged), patch.object(
             authz.settings, "AUTH_TYPE", "session_jwt"
         ):
             admin_resp = client.get("/api/admin/users")
@@ -154,10 +154,10 @@ class TestChokepointOverwritesForgedRoles:
         assert json.loads(me_resp.data)["roles"] == ["user"]
 
     def test_forged_admin_ignored_in_no_auth_with_local_admin_off(self, client):
-        from application.api.user import authz
+        from docsgpt.api.user import authz
 
         forged = lambda *a, **k: {"sub": "local", "roles": ["admin"]}  # noqa: E731
-        with patch("application.app.handle_auth", side_effect=forged), patch.object(
+        with patch("docsgpt.app.handle_auth", side_effect=forged), patch.object(
             authz.settings, "AUTH_TYPE", None
         ), patch.object(authz.settings, "LOCAL_MODE_ADMIN", False):
             admin_resp = client.get("/api/admin/users")
@@ -168,13 +168,13 @@ class TestChokepointOverwritesForgedRoles:
     def test_forged_admin_ignored_in_oidc_mode_without_grant(self, client):
         # OIDC is the only privilege-bearing mode: drive a forged admin claim
         # through the real chokepoint with NO DB grant — must resolve to user.
-        from application.api.user import authz
+        from docsgpt.api.user import authz
 
         repo = Mock()
         repo.role_names_for.return_value = []  # no persisted grant
         forged = lambda *a, **k: {"sub": "attacker", "roles": ["admin"]}  # noqa: E731
-        with patch("application.app.handle_auth", side_effect=forged), patch(
-            "application.app.oidc_session_denied", return_value=False
+        with patch("docsgpt.app.handle_auth", side_effect=forged), patch(
+            "docsgpt.app.oidc_session_denied", return_value=False
         ), patch.object(authz.settings, "AUTH_TYPE", "oidc"), patch.object(
             authz, "db_readonly", _fake_readonly
         ), patch.object(authz, "UserRolesRepository", return_value=repo):
@@ -187,20 +187,20 @@ class TestChokepointOverwritesForgedRoles:
 
     def test_oidc_db_grant_yields_admin_end_to_end(self, client):
         # The DB grant (not any claim) is the source of admin, end-to-end.
-        from application.api.user import authz
+        from docsgpt.api.user import authz
 
         authz_repo = Mock()
         authz_repo.role_names_for.return_value = ["admin"]
         admin_repo = Mock()
         admin_repo.list_users.return_value = (0, [])
         with patch(
-            "application.app.handle_auth", return_value={"sub": "alice"}
-        ), patch("application.app.oidc_session_denied", return_value=False), patch.object(
+            "docsgpt.app.handle_auth", return_value={"sub": "alice"}
+        ), patch("docsgpt.app.oidc_session_denied", return_value=False), patch.object(
             authz.settings, "AUTH_TYPE", "oidc"
         ), patch.object(authz, "db_readonly", _fake_readonly), patch.object(
             authz, "UserRolesRepository", return_value=authz_repo
-        ), patch("application.api.admin.routes.db_readonly", _fake_readonly), patch(
-            "application.api.admin.routes.AdminStatsRepository", return_value=admin_repo
+        ), patch("docsgpt.api.admin.routes.db_readonly", _fake_readonly), patch(
+            "docsgpt.api.admin.routes.AdminStatsRepository", return_value=admin_repo
         ):
             admin_resp = client.get("/api/admin/users")
             me_resp = client.get("/api/user/me")

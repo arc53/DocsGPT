@@ -3,8 +3,8 @@
 
 import pytest
 
-from application.parser.connectors.base import BaseConnectorAuth, BaseConnectorLoader
-from application.parser.schema.base import Document
+from docsgpt.parser.connectors.base import BaseConnectorAuth, BaseConnectorLoader
+from docsgpt.parser.schema.base import Document
 
 
 class ConcreteAuth(BaseConnectorAuth):

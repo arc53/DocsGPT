@@ -1,4 +1,4 @@
-"""SSE publish wiring tests for ``application.worker``.
+"""SSE publish wiring tests for ``docsgpt.worker``.
 
 Each worker function emits ``publish_user_event`` envelopes at its
 queued / progress / completed / failed boundaries. The SSE frontend's
@@ -7,7 +7,7 @@ depend on this exact emit sequence, so a regression that silently drops
 a publish leaves the UI wedged on a stale "training" state until the
 polling fallback rescues it.
 
-These tests patch ``application.worker.publish_user_event`` with a
+These tests patch ``docsgpt.worker.publish_user_event`` with a
 capture list and assert the ordered call args per worker. Broader
 worker behaviour (PG side effects, pipeline correctness) is covered by
 the per-task test files in this directory; here we focus narrowly on
@@ -23,8 +23,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.parser.schema.base import Document
-from application.storage.db.repositories.sources import SourcesRepository
+from docsgpt.parser.schema.base import Document
+from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ class _PublishCapture:
 @pytest.fixture
 def publishes(monkeypatch):
     """Patch ``publish_user_event`` in the worker module and yield the capture."""
-    from application import worker
+    from docsgpt import worker
 
     cap = _PublishCapture()
     monkeypatch.setattr(worker, "publish_user_event", cap)
@@ -76,7 +76,7 @@ def _patch_ingest_pipeline_min(monkeypatch, *, raise_in_pipeline: bool = False):
     ``failed`` branch can be reached without otherwise rewriting the
     function.
     """
-    from application import worker
+    from docsgpt import worker
 
     fake_storage = MagicMock(name="storage")
     fake_storage.is_directory.return_value = False
@@ -121,7 +121,7 @@ class TestIngestWorkerPublishes:
     def test_happy_path_emits_queued_then_completed(
         self, patch_worker_db, task_self, monkeypatch, publishes
     ):
-        from application import worker
+        from docsgpt import worker
 
         _patch_ingest_pipeline_min(monkeypatch)
         caller_source_id = str(uuid.uuid4())
@@ -168,7 +168,7 @@ class TestIngestWorkerPublishes:
     def test_pipeline_failure_emits_queued_then_failed(
         self, patch_worker_db, task_self, monkeypatch, publishes
     ):
-        from application import worker
+        from docsgpt import worker
 
         _patch_ingest_pipeline_min(monkeypatch, raise_in_pipeline=True)
 
@@ -220,7 +220,7 @@ def _seed_source_for_reingest(pg_conn, *, user_id: str, name: str = "doc-set"):
 
 
 def _stub_reingest_storage_and_vectorstore(monkeypatch):
-    from application import worker
+    from docsgpt import worker
 
     fake_storage = MagicMock(name="storage")
     fake_storage.is_directory.return_value = True
@@ -232,7 +232,7 @@ def _stub_reingest_storage_and_vectorstore(monkeypatch):
     fake_store = MagicMock(name="vector_store")
     fake_store.get_chunks.return_value = []
     monkeypatch.setattr(
-        "application.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+        "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore",
         lambda *a, **kw: fake_store,
     )
     return fake_store
@@ -243,7 +243,7 @@ class TestReingestSourceWorkerPublishes:
     def test_with_changes_emits_queued_then_completed_with_chunk_counts(
         self, pg_conn, patch_worker_db, task_self, monkeypatch, publishes
     ):
-        from application import worker
+        from docsgpt import worker
 
         src = _seed_source_for_reingest(pg_conn, user_id="alice")
         source_id = str(src["id"])
@@ -293,7 +293,7 @@ class TestReingestSourceWorkerPublishes:
         chunk-diff loop. If it didn't publish a terminal event the
         toast would hang on ``training`` forever.
         """
-        from application import worker
+        from docsgpt import worker
 
         # Seed with the same directory_structure the reader will report,
         # so ``added_files`` and ``removed_files`` are both empty.
@@ -345,7 +345,7 @@ class TestReingestSourceWorkerPublishes:
         toast doesn't wedge. The worker re-raises after publishing,
         which is the documented contract for Celery retry handling.
         """
-        from application import worker
+        from docsgpt import worker
 
         with pytest.raises(ValueError, match="not found"):
             worker.reingest_source_worker(
@@ -370,7 +370,7 @@ class TestReingestSourceWorkerPublishes:
 
 
 def _stub_remote_pipeline(monkeypatch, *, raise_in_pipeline: bool = False):
-    from application import worker
+    from docsgpt import worker
 
     fake_loader = MagicMock(name="remote_loader")
     fake_loader.load_data.return_value = [
@@ -405,7 +405,7 @@ class TestRemoteWorkerPublishes:
     def test_upload_happy_path(
         self, tmp_path, task_self, monkeypatch, publishes
     ):
-        from application import worker
+        from docsgpt import worker
 
         _stub_remote_pipeline(monkeypatch)
 
@@ -438,7 +438,7 @@ class TestRemoteWorkerPublishes:
     def test_upload_failure_emits_failed(
         self, tmp_path, task_self, monkeypatch, publishes
     ):
-        from application import worker
+        from docsgpt import worker
 
         _stub_remote_pipeline(monkeypatch, raise_in_pipeline=True)
 
@@ -467,7 +467,7 @@ class TestRemoteWorkerPublishes:
 def _stub_connector_pipeline(
     monkeypatch, *, files_downloaded: int = 1, empty_result: bool = False
 ):
-    from application import worker
+    from docsgpt import worker
 
     fake_connector = MagicMock(name="connector")
     fake_connector.download_to_directory.return_value = {
@@ -519,7 +519,7 @@ def _stub_connector_pipeline(
 @pytest.mark.unit
 class TestIngestConnectorPublishes:
     def test_upload_happy_path(self, task_self, monkeypatch, publishes):
-        from application import worker
+        from docsgpt import worker
 
         _stub_connector_pipeline(monkeypatch)
 
@@ -552,7 +552,7 @@ class TestIngestConnectorPublishes:
         otherwise silent; without the publish the toast wedges on
         ``training`` until polling rescues it.
         """
-        from application import worker
+        from docsgpt import worker
 
         _stub_connector_pipeline(
             monkeypatch, files_downloaded=0, empty_result=True
@@ -586,7 +586,7 @@ class TestAttachmentWorkerPublishes:
     def test_happy_path_emits_full_progress_sequence(
         self, pg_conn, patch_worker_db, task_self, monkeypatch, publishes
     ):
-        from application import worker
+        from docsgpt import worker
 
         fake_doc = Document(
             text="hello world",
@@ -646,7 +646,7 @@ class TestAttachmentWorkerPublishes:
         terminal ``failed`` must still arrive so the toast unwedges,
         even though no ``current=80`` progress will follow.
         """
-        from application import worker
+        from docsgpt import worker
 
         fake_storage = MagicMock(name="storage")
         fake_storage.process_file.side_effect = RuntimeError("parse boom")
@@ -759,7 +759,7 @@ def _task_self_with_request_id():
 def _patch_mcp_tool(monkeypatch, fake_tool_class) -> None:
     """Replace the ``MCPTool`` symbol the worker imports at call time.
 
-    The worker runs ``from application.agents.tools.mcp_tool import MCPTool``
+    The worker runs ``from docsgpt.agents.tools.mcp_tool import MCPTool``
     inside the function body. Importing the real module is a circular
     dependency in this test process (it pulls in the user routes,
     which pull in the MCP namespace, which pulls in
@@ -771,10 +771,10 @@ def _patch_mcp_tool(monkeypatch, fake_tool_class) -> None:
     import sys
     import types
 
-    stub = types.ModuleType("application.agents.tools.mcp_tool")
+    stub = types.ModuleType("docsgpt.agents.tools.mcp_tool")
     stub.MCPTool = fake_tool_class
     monkeypatch.setitem(
-        sys.modules, "application.agents.tools.mcp_tool", stub
+        sys.modules, "docsgpt.agents.tools.mcp_tool", stub
     )
 
 
@@ -783,7 +783,7 @@ class TestMcpOauthPublishes:
     def test_happy_path_emits_progress_sequence_and_completed(
         self, monkeypatch, publishes, _task_self_with_request_id
     ):
-        from application import worker
+        from docsgpt import worker
 
         auth_url = "https://idp.example.com/authorize?state=happy-path"
         _patch_mcp_tool(
@@ -831,7 +831,7 @@ class TestMcpOauthPublishes:
         common failure mode (user cancels, provider 4xx). Must surface
         as a ``mcp.oauth.failed`` envelope so the toast unwedges.
         """
-        from application import worker
+        from docsgpt import worker
 
         _patch_mcp_tool(
             monkeypatch,
@@ -864,7 +864,7 @@ class TestMcpOauthPublishes:
         synthetic / shared channel. Polling-based status remains the
         path of record in that case.
         """
-        from application import worker
+        from docsgpt import worker
 
         _patch_mcp_tool(monkeypatch, _make_fake_mcp_tool_class())
 
@@ -902,7 +902,7 @@ class TestQueuedEventRetryGate:
     def test_ingest_worker_skips_queued_on_retry(
         self, patch_worker_db, task_self_retry, monkeypatch, publishes
     ):
-        from application import worker
+        from docsgpt import worker
 
         _patch_ingest_pipeline_min(monkeypatch)
 
@@ -925,7 +925,7 @@ class TestQueuedEventRetryGate:
     def test_remote_worker_skips_queued_on_retry(
         self, tmp_path, task_self_retry, monkeypatch, publishes
     ):
-        from application import worker
+        from docsgpt import worker
 
         _stub_remote_pipeline(monkeypatch)
 
@@ -944,7 +944,7 @@ class TestQueuedEventRetryGate:
     def test_ingest_connector_skips_queued_on_retry(
         self, task_self_retry, monkeypatch, publishes
     ):
-        from application import worker
+        from docsgpt import worker
 
         _stub_connector_pipeline(monkeypatch)
 
@@ -964,7 +964,7 @@ class TestQueuedEventRetryGate:
     def test_reingest_source_worker_skips_queued_on_retry(
         self, pg_conn, patch_worker_db, task_self_retry, monkeypatch, publishes
     ):
-        from application import worker
+        from docsgpt import worker
 
         src = _seed_source_for_reingest(pg_conn, user_id="alice")
         source_id = str(src["id"])
@@ -996,7 +996,7 @@ class TestQueuedEventRetryGate:
         """Sanity counterpart: ``retries == 0`` keeps the original
         queued+completed pair so the no-retry path is unchanged.
         """
-        from application import worker
+        from docsgpt import worker
 
         _patch_ingest_pipeline_min(monkeypatch)
 

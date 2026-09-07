@@ -23,16 +23,16 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.models.routes.db_session", _yield_conn
+        "docsgpt.api.user.models.routes.db_session", _yield_conn
     ), patch(
-        "application.api.user.models.routes.db_readonly", _yield_conn
+        "docsgpt.api.user.models.routes.db_readonly", _yield_conn
     ):
         yield
 
 
 @pytest.fixture(autouse=True)
 def _reset_registry():
-    from application.core.model_registry import ModelRegistry
+    from docsgpt.core.model_registry import ModelRegistry
 
     ModelRegistry.reset()
     yield
@@ -45,7 +45,7 @@ def _reset_registry():
 @pytest.mark.unit
 class TestAuth:
     def test_list_unauthenticated_returns_401(self, app):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
@@ -57,7 +57,7 @@ class TestAuth:
         assert resp.status_code == 401
 
     def test_create_unauthenticated_returns_401(self, app):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
@@ -84,13 +84,13 @@ class TestAuth:
 @pytest.mark.unit
 class TestCreate:
     def test_creates_and_returns_201_without_api_key(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
         # Mock DNS so the SSRF check passes for api.mistral.ai without
         # hitting the network.
-        with patch("application.security.safe_url.socket.getaddrinfo") as gai:
+        with patch("docsgpt.security.safe_url.socket.getaddrinfo") as gai:
             gai.return_value = [
                 (None, None, None, None, ("104.18.0.1", 0))
             ]
@@ -124,7 +124,7 @@ class TestCreate:
             assert v != "sk-mistral-test"
 
     def test_create_rejects_missing_required_fields(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
@@ -141,7 +141,7 @@ class TestCreate:
         assert resp.status_code == 400
 
     def test_create_rejects_loopback_url(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
@@ -169,11 +169,11 @@ class TestCreate:
         typos) must reject at the boundary so the DB never holds
         garbage that the registry would later silently drop.
         """
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
-        with patch("application.security.safe_url.socket.getaddrinfo") as gai:
+        with patch("docsgpt.security.safe_url.socket.getaddrinfo") as gai:
             gai.return_value = [
                 (None, None, None, None, ("104.18.0.1", 0))
             ]
@@ -199,11 +199,11 @@ class TestCreate:
 
     def test_create_accepts_image_alias_and_raw_mime(self, app, pg_conn):
         """The known ``image`` alias and raw MIME types both pass."""
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
-        with patch("application.security.safe_url.socket.getaddrinfo") as gai:
+        with patch("docsgpt.security.safe_url.socket.getaddrinfo") as gai:
             gai.return_value = [
                 (None, None, None, None, ("104.18.0.1", 0))
             ]
@@ -228,11 +228,11 @@ class TestCreate:
         assert resp.status_code == 201
 
     def test_create_accepts_responses_capabilities(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
-        with patch("application.security.safe_url.socket.getaddrinfo") as gai:
+        with patch("docsgpt.security.safe_url.socket.getaddrinfo") as gai:
             gai.return_value = [(None, None, None, None, ("104.18.0.1", 0))]
             with app.test_request_context(
                 "/api/user/models",
@@ -267,11 +267,11 @@ class TestCreate:
     def test_create_rejects_invalid_responses_capabilities(
         self, app, pg_conn, capability, value
     ):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
-        with patch("application.security.safe_url.socket.getaddrinfo") as gai:
+        with patch("docsgpt.security.safe_url.socket.getaddrinfo") as gai:
             gai.return_value = [(None, None, None, None, ("104.18.0.1", 0))]
             with app.test_request_context(
                 "/api/user/models",
@@ -294,11 +294,11 @@ class TestCreate:
         assert capability in resp.get_json()["error"]
 
     def test_create_rejects_private_ip_dns(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
-        with patch("application.security.safe_url.socket.getaddrinfo") as gai:
+        with patch("docsgpt.security.safe_url.socket.getaddrinfo") as gai:
             # Hostname resolves to a private IP only — must reject
             gai.return_value = [
                 (None, None, None, None, ("10.0.0.5", 0))
@@ -325,7 +325,7 @@ class TestCreate:
 
 
 def _create_via_repo(pg_conn, user_id="user-1", **kwargs):
-    from application.storage.db.repositories.user_custom_models import (
+    from docsgpt.storage.db.repositories.user_custom_models import (
         UserCustomModelsRepository,
     )
 
@@ -342,7 +342,7 @@ def _create_via_repo(pg_conn, user_id="user-1", **kwargs):
 @pytest.mark.unit
 class TestList:
     def test_lists_only_users_own(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
@@ -367,7 +367,7 @@ class TestList:
 @pytest.mark.unit
 class TestGet:
     def test_returns_404_for_other_users_model(self, app, pg_conn):
-        from application.api.user.models.routes import UserModelResource
+        from docsgpt.api.user.models.routes import UserModelResource
 
         created = _create_via_repo(pg_conn, user_id="alice")
         with app.test_request_context(
@@ -384,7 +384,7 @@ class TestGet:
 @pytest.mark.unit
 class TestPatch:
     def test_patch_updates_display_name(self, app, pg_conn):
-        from application.api.user.models.routes import UserModelResource
+        from docsgpt.api.user.models.routes import UserModelResource
 
         created = _create_via_repo(pg_conn, user_id="user-1")
         with app.test_request_context(
@@ -405,8 +405,8 @@ class TestPatch:
         """Critical PATCH semantic: empty/missing api_key in body must
         preserve the stored ciphertext (the UI sends a blank password
         field when the user wants to keep the existing key)."""
-        from application.api.user.models.routes import UserModelResource
-        from application.storage.db.repositories.user_custom_models import (
+        from docsgpt.api.user.models.routes import UserModelResource
+        from docsgpt.storage.db.repositories.user_custom_models import (
             UserCustomModelsRepository,
         )
 
@@ -436,13 +436,13 @@ class TestPatch:
 @pytest.mark.unit
 class TestDelete:
     def test_delete_removes_row_and_invalidates_cache(self, app, pg_conn):
-        from application.api.user.models.routes import UserModelResource
-        from application.core.model_registry import ModelRegistry
+        from docsgpt.api.user.models.routes import UserModelResource
+        from docsgpt.core.model_registry import ModelRegistry
 
         created = _create_via_repo(pg_conn, user_id="user-1")
         # Warm the registry's per-user cache via a lookup
         with patch(
-            "application.storage.db.session.db_readonly"
+            "docsgpt.storage.db.session.db_readonly"
         ) as ro:
             @contextmanager
             def _y():
@@ -475,11 +475,11 @@ class TestSecurityCreateRejectsBlankFields:
     LLMCreator to leak settings.API_KEY to the user-supplied URL."""
 
     def test_create_rejects_blank_api_key(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelsCollectionResource,
         )
 
-        with patch("application.security.safe_url.socket.getaddrinfo") as gai:
+        with patch("docsgpt.security.safe_url.socket.getaddrinfo") as gai:
             gai.return_value = [(None, None, None, None, ("104.18.0.1", 0))]
             with app.test_request_context(
                 "/api/user/models",
@@ -501,8 +501,8 @@ class TestSecurityCreateRejectsBlankFields:
         assert "api_key" in (body.get("error") or "").lower()
 
     def test_patch_rejects_blank_required_field(self, app, pg_conn):
-        from application.api.user.models.routes import UserModelResource
-        from application.storage.db.repositories.user_custom_models import (
+        from docsgpt.api.user.models.routes import UserModelResource
+        from docsgpt.storage.db.repositories.user_custom_models import (
             UserCustomModelsRepository,
         )
 
@@ -534,7 +534,7 @@ class TestPayloadConnectionTest:
     expect to validate their endpoint + key before committing."""
 
     def test_payload_test_rejects_unsafe_url(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelTestPayloadResource,
         )
 
@@ -559,14 +559,14 @@ class TestPayloadConnectionTest:
     def test_payload_test_returns_ok_when_upstream_responds_2xx(
         self, app, pg_conn
     ):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelTestPayloadResource,
         )
 
         # pinned_post is the IP-pinned dispatch helper. Patching it
         # bypasses both the SSRF guard and the network — the success
         # path we're verifying here is the route's response handling.
-        with patch("application.api.user.models.routes.pinned_post") as rp:
+        with patch("docsgpt.api.user.models.routes.pinned_post") as rp:
             rp.return_value = MagicMock(
                 status_code=200,
                 headers={"Content-Type": "application/json"},
@@ -596,11 +596,11 @@ class TestPayloadConnectionTest:
         assert call_args.kwargs["json"]["model"] == "mistral-large-latest"
 
     def test_payload_test_uses_responses_protocol(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelTestPayloadResource,
         )
 
-        with patch("application.api.user.models.routes.pinned_post") as rp:
+        with patch("docsgpt.api.user.models.routes.pinned_post") as rp:
             rp.return_value = MagicMock(
                 status_code=200,
                 headers={"Content-Type": "application/json"},
@@ -634,7 +634,7 @@ class TestPayloadConnectionTest:
         }
 
     def test_payload_test_unauthenticated_returns_401(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelTestPayloadResource,
         )
 
@@ -655,7 +655,7 @@ class TestPayloadConnectionTest:
         assert resp.status_code == 401
 
     def test_payload_test_missing_fields_returns_400(self, app, pg_conn):
-        from application.api.user.models.routes import (
+        from docsgpt.api.user.models.routes import (
             UserModelTestPayloadResource,
         )
 
@@ -678,7 +678,7 @@ class TestByIdConnectionTestAcceptsOverrides:
     so the test reflects in-flight edits (not the saved record)."""
 
     def _make_row(self, pg_conn):
-        from application.storage.db.repositories.user_custom_models import (
+        from docsgpt.storage.db.repositories.user_custom_models import (
             UserCustomModelsRepository,
         )
 
@@ -691,9 +691,9 @@ class TestByIdConnectionTestAcceptsOverrides:
         )
 
     def _post_test(self, app, pg_conn, model_id, body):
-        from application.api.user.models.routes import UserModelTestResource
+        from docsgpt.api.user.models.routes import UserModelTestResource
 
-        with patch("application.api.user.models.routes.pinned_post") as rp:
+        with patch("docsgpt.api.user.models.routes.pinned_post") as rp:
             rp.return_value = MagicMock(
                 status_code=200,
                 headers={"Content-Type": "application/json"},
@@ -758,8 +758,8 @@ class TestApiModelsListWithUser:
     def test_includes_user_models_when_authenticated(self, app, pg_conn):
         """GET /api/models with auth should surface the user's BYOM
         records alongside built-ins, each tagged with `source`."""
-        from application.api.user.models.routes import ModelsListResource
-        from application.core.model_registry import ModelRegistry
+        from docsgpt.api.user.models.routes import ModelsListResource
+        from docsgpt.core.model_registry import ModelRegistry
 
         created = _create_via_repo(
             pg_conn, user_id="user-1", display_name="My Mistral"
@@ -772,7 +772,7 @@ class TestApiModelsListWithUser:
             yield pg_conn
 
         with patch(
-            "application.storage.db.session.db_readonly", _yield
+            "docsgpt.storage.db.session.db_readonly", _yield
         ):
             ModelRegistry.reset()
             with app.test_request_context("/api/models"):

@@ -13,7 +13,7 @@ Intended use:
 
 This script is a thin wrapper around ``alembic upgrade head``. It exists
 separately so the same command is discoverable from the repo root without
-remembering the ``-c application/alembic.ini`` invocation.
+remembering the ``-c docsgpt/alembic.ini`` invocation.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from alembic import command
 from alembic.config import Config
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ALEMBIC_INI = REPO_ROOT / "application" / "alembic.ini"
+ALEMBIC_INI = REPO_ROOT / "docsgpt" / "alembic.ini"
 
 
 def main() -> int:

@@ -19,10 +19,10 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import text
 
-from application.core.settings import settings
-from application.storage.db.repositories.auth_events import AuthEventsRepository
-from application.storage.db.repositories.users import UsersRepository
-from application.storage.db.session import db_readonly, db_session
+from docsgpt.core.settings import settings
+from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
+from docsgpt.storage.db.session import db_readonly, db_session
 
 SCIM_TOKEN = "scim-test-token"
 AUTH = {"Authorization": f"Bearer {SCIM_TOKEN}"}
@@ -42,7 +42,7 @@ pytestmark = [
 @pytest.fixture(scope="module")
 def app():
     """Real Flask app; /scim/ paths bypass JWT auth so no handle_auth patching is needed."""
-    from application.app import app as flask_app
+    from docsgpt.app import app as flask_app
 
     flask_app.config["TESTING"] = True
     return flask_app
@@ -58,7 +58,7 @@ def scim_env(monkeypatch):
     """Enable SCIM on the settings singleton and stub the Redis denylist."""
     monkeypatch.setattr(settings, "SCIM_ENABLED", True)
     monkeypatch.setattr(settings, "SCIM_TOKEN", SCIM_TOKEN)
-    with patch("application.api.scim.routes.deny_user") as deny_user_mock:
+    with patch("docsgpt.api.scim.routes.deny_user") as deny_user_mock:
         yield SimpleNamespace(deny_user=deny_user_mock)
 
 

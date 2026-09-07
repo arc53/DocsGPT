@@ -1,6 +1,6 @@
 [project]
 name = "docsgpt"
-# Bump together with application/version.py and frontend/package.json.
+# Bump together with docsgpt/version.py and frontend/package.json.
 version = "0.19.0"
 description = "DocsGPT backend: chat with your documents, agents, and tools."
 readme = "README.md"
@@ -8,7 +8,7 @@ requires-python = ">=3.12"
 license = { file = "LICENSE" }
 
 # Direct dependencies only. Transitive pins live in uv.lock; the pip-facing
-# files under application/ (requirements*.txt) are exported from that lock by
+# files under docsgpt/ (requirements*.txt) are exported from that lock by
 # scripts/export_requirements.sh and must not be edited by hand.
 dependencies = [
   "a2wsgi==1.10.10",

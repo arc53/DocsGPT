@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from application.agents.tools.artifact_ref import make_ref, parse_ref, resolve_artifact_id
+from docsgpt.agents.tools.artifact_ref import make_ref, parse_ref, resolve_artifact_id
 
 
 class _FakeRepo:

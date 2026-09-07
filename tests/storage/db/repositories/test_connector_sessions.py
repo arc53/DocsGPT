@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from application.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 
 
 def _repo(conn) -> ConnectorSessionsRepository:

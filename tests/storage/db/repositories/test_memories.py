@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.memories import MemoriesRepository
+from docsgpt.storage.db.repositories.memories import MemoriesRepository
 
 
 def _repo(conn) -> MemoriesRepository:
@@ -133,7 +133,7 @@ class TestDefaultToolMemories:
     """Synthetic-id memory writes work; real-tool delete still cascades via trigger."""
 
     def test_synthetic_tool_id_memory_write_succeeds(self, pg_conn):
-        from application.agents.default_tools import default_tool_id
+        from docsgpt.agents.default_tools import default_tool_id
 
         repo = _repo(pg_conn)
         synthetic_id = default_tool_id("memory")
@@ -143,7 +143,7 @@ class TestDefaultToolMemories:
         assert got is not None and got["content"] == "built-in"
 
     def test_built_in_and_explicit_memory_are_separate_stores(self, pg_conn):
-        from application.agents.default_tools import default_tool_id
+        from docsgpt.agents.default_tools import default_tool_id
 
         repo = _repo(pg_conn)
         synthetic_id = default_tool_id("memory")
@@ -193,7 +193,7 @@ class TestDeleteOrphans:
         assert repo.get_by_path("u-live", tool_id, "/keep.txt") is not None
 
     def test_keeps_synthetic_default_tool_memory(self, pg_conn):
-        from application.agents.default_tools import default_tool_id
+        from docsgpt.agents.default_tools import default_tool_id
 
         repo = _repo(pg_conn)
         synthetic_id = default_tool_id("memory")
@@ -205,7 +205,7 @@ class TestDeleteOrphans:
     def test_sweeps_orphan_but_spares_synthetic_and_live(self, pg_conn):
         import uuid
 
-        from application.agents.default_tools import default_tool_id
+        from docsgpt.agents.default_tools import default_tool_id
 
         repo = _repo(pg_conn)
         synthetic_id = default_tool_id("memory")

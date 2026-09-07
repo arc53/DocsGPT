@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from application.stt.upload_limits import (
+from docsgpt.stt.upload_limits import (
     build_stt_file_size_limit_message,
     enforce_audio_file_size_limit,
     is_audio_filename,
@@ -8,7 +8,7 @@ from application.stt.upload_limits import (
 )
 
 
-@patch("application.stt.upload_limits.settings")
+@patch("docsgpt.stt.upload_limits.settings")
 def test_should_reject_stt_request_when_content_length_exceeds_limit(mock_settings):
     mock_settings.STT_MAX_FILE_SIZE_MB = 1
 
@@ -22,7 +22,7 @@ def test_should_reject_stt_request_when_content_length_exceeds_limit(mock_settin
     assert should_reject_stt_request("/api/upload", (2 * 1024 * 1024) + 1) is False
 
 
-@patch("application.stt.upload_limits.settings")
+@patch("docsgpt.stt.upload_limits.settings")
 def test_enforce_audio_file_size_limit_uses_configured_message(mock_settings):
     mock_settings.STT_MAX_FILE_SIZE_MB = 1
 

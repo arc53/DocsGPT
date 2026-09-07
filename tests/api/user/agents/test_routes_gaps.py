@@ -1,4 +1,4 @@
-"""Gap-coverage tests for application.api.user.agents.routes.
+"""Gap-coverage tests for docsgpt.api.user.agents.routes.
 
 No bson/ObjectId imports. The routes internally use ObjectId (patched where
 needed) and Mongo collections (mocked). Repository assertions use
@@ -37,35 +37,35 @@ class TestNormalizeWorkflowReferenceGaps:
     pass
 
     def test_handles_integer_zero(self):
-        from application.api.user.agents.routes import normalize_workflow_reference
+        from docsgpt.api.user.agents.routes import normalize_workflow_reference
 
         assert normalize_workflow_reference(0) == "0"
 
     def test_handles_list_converts_to_str(self):
-        from application.api.user.agents.routes import normalize_workflow_reference
+        from docsgpt.api.user.agents.routes import normalize_workflow_reference
 
         result = normalize_workflow_reference([1, 2])
         assert isinstance(result, str)
 
     def test_json_string_with_underscore_id(self):
-        from application.api.user.agents.routes import normalize_workflow_reference
+        from docsgpt.api.user.agents.routes import normalize_workflow_reference
 
         result = normalize_workflow_reference('{"_id": "abc"}')
         assert result == "abc"
 
     def test_json_string_with_workflow_id_key(self):
-        from application.api.user.agents.routes import normalize_workflow_reference
+        from docsgpt.api.user.agents.routes import normalize_workflow_reference
 
         result = normalize_workflow_reference('{"workflow_id": "wf99"}')
         assert result == "wf99"
 
     def test_whitespace_only_string_returns_empty(self):
-        from application.api.user.agents.routes import normalize_workflow_reference
+        from docsgpt.api.user.agents.routes import normalize_workflow_reference
 
         assert normalize_workflow_reference("  \t  ") == ""
 
     def test_dict_missing_all_id_keys_returns_none(self):
-        from application.api.user.agents.routes import normalize_workflow_reference
+        from docsgpt.api.user.agents.routes import normalize_workflow_reference
 
         result = normalize_workflow_reference({"other_key": "value"})
         assert result is None

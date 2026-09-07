@@ -18,8 +18,8 @@ def mock_settings():
 
 @pytest.fixture
 def auth(mock_settings):
-    with patch("application.parser.connectors.google_drive.auth.settings", mock_settings):
-        from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+    with patch("docsgpt.parser.connectors.google_drive.auth.settings", mock_settings):
+        from docsgpt.parser.connectors.google_drive.auth import GoogleDriveAuth
         return GoogleDriveAuth()
 
 
@@ -34,16 +34,16 @@ class TestGoogleDriveAuthInit:
     @pytest.mark.unit
     def test_init_missing_client_id_raises(self, mock_settings):
         mock_settings.GOOGLE_CLIENT_ID = None
-        with patch("application.parser.connectors.google_drive.auth.settings", mock_settings):
-            from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+        with patch("docsgpt.parser.connectors.google_drive.auth.settings", mock_settings):
+            from docsgpt.parser.connectors.google_drive.auth import GoogleDriveAuth
             with pytest.raises(ValueError, match="Google OAuth credentials not configured"):
                 GoogleDriveAuth()
 
     @pytest.mark.unit
     def test_init_missing_client_secret_raises(self, mock_settings):
         mock_settings.GOOGLE_CLIENT_SECRET = None
-        with patch("application.parser.connectors.google_drive.auth.settings", mock_settings):
-            from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+        with patch("docsgpt.parser.connectors.google_drive.auth.settings", mock_settings):
+            from docsgpt.parser.connectors.google_drive.auth import GoogleDriveAuth
             with pytest.raises(ValueError, match="Google OAuth credentials not configured"):
                 GoogleDriveAuth()
 
@@ -55,7 +55,7 @@ class TestGetAuthorizationUrl:
         mock_flow = MagicMock()
         mock_flow.authorization_url.return_value = ("https://accounts.google.com/auth?state=s1", "s1")
 
-        with patch("application.parser.connectors.google_drive.auth.Flow") as MockFlow:
+        with patch("docsgpt.parser.connectors.google_drive.auth.Flow") as MockFlow:
             MockFlow.from_client_config.return_value = mock_flow
             url = auth.get_authorization_url(state="s1")
 
@@ -69,7 +69,7 @@ class TestGetAuthorizationUrl:
 
     @pytest.mark.unit
     def test_raises_on_flow_error(self, auth):
-        with patch("application.parser.connectors.google_drive.auth.Flow") as MockFlow:
+        with patch("docsgpt.parser.connectors.google_drive.auth.Flow") as MockFlow:
             MockFlow.from_client_config.side_effect = Exception("flow error")
             with pytest.raises(Exception, match="flow error"):
                 auth.get_authorization_url()
@@ -91,7 +91,7 @@ class TestExchangeCodeForTokens:
         mock_flow = MagicMock()
         mock_flow.credentials = mock_creds
 
-        with patch("application.parser.connectors.google_drive.auth.Flow") as MockFlow:
+        with patch("docsgpt.parser.connectors.google_drive.auth.Flow") as MockFlow:
             MockFlow.from_client_config.return_value = mock_flow
             result = auth.exchange_code_for_tokens("auth_code_123")
 
@@ -115,7 +115,7 @@ class TestExchangeCodeForTokens:
         mock_flow = MagicMock()
         mock_flow.credentials = mock_creds
 
-        with patch("application.parser.connectors.google_drive.auth.Flow") as MockFlow:
+        with patch("docsgpt.parser.connectors.google_drive.auth.Flow") as MockFlow:
             MockFlow.from_client_config.return_value = mock_flow
             with pytest.raises(ValueError, match="did not return an access token"):
                 auth.exchange_code_for_tokens("code")
@@ -128,7 +128,7 @@ class TestExchangeCodeForTokens:
         mock_flow = MagicMock()
         mock_flow.credentials = mock_creds
 
-        with patch("application.parser.connectors.google_drive.auth.Flow") as MockFlow:
+        with patch("docsgpt.parser.connectors.google_drive.auth.Flow") as MockFlow:
             MockFlow.from_client_config.return_value = mock_flow
             with pytest.raises(ValueError, match="No refresh token received"):
                 auth.exchange_code_for_tokens("code")
@@ -146,7 +146,7 @@ class TestExchangeCodeForTokens:
         mock_flow = MagicMock()
         mock_flow.credentials = mock_creds
 
-        with patch("application.parser.connectors.google_drive.auth.Flow") as MockFlow:
+        with patch("docsgpt.parser.connectors.google_drive.auth.Flow") as MockFlow:
             MockFlow.from_client_config.return_value = mock_flow
             result = auth.exchange_code_for_tokens("code")
 
@@ -160,7 +160,7 @@ class TestRefreshAccessToken:
     @pytest.mark.unit
     def test_successful_refresh(self, auth):
         mock_request_cls = MagicMock()
-        with patch("application.parser.connectors.google_drive.auth.Credentials") as MockCreds, \
+        with patch("docsgpt.parser.connectors.google_drive.auth.Credentials") as MockCreds, \
              patch("google.auth.transport.requests.Request", mock_request_cls):
             mock_cred_instance = MagicMock()
             mock_cred_instance.token = "new_access"
@@ -184,7 +184,7 @@ class TestRefreshAccessToken:
 
     @pytest.mark.unit
     def test_refresh_failure_raises(self, auth):
-        with patch("application.parser.connectors.google_drive.auth.Credentials") as MockCreds, \
+        with patch("docsgpt.parser.connectors.google_drive.auth.Credentials") as MockCreds, \
              patch("google.auth.transport.requests.Request"):
             mock_cred_instance = MagicMock()
             mock_cred_instance.refresh.side_effect = Exception("refresh failed")
@@ -198,8 +198,8 @@ class TestCreateCredentialsFromTokenInfo:
 
     @pytest.mark.unit
     def test_creates_credentials(self, auth, mock_settings):
-        with patch("application.parser.connectors.google_drive.auth.Credentials") as MockCreds, \
-             patch("application.parser.connectors.google_drive.auth.settings", mock_settings):
+        with patch("docsgpt.parser.connectors.google_drive.auth.Credentials") as MockCreds, \
+             patch("docsgpt.parser.connectors.google_drive.auth.settings", mock_settings):
             mock_cred = MagicMock()
             mock_cred.token = "at"
             MockCreds.return_value = mock_cred
@@ -213,14 +213,14 @@ class TestCreateCredentialsFromTokenInfo:
 
     @pytest.mark.unit
     def test_missing_access_token_raises(self, auth, mock_settings):
-        with patch("application.parser.connectors.google_drive.auth.settings", mock_settings):
+        with patch("docsgpt.parser.connectors.google_drive.auth.settings", mock_settings):
             with pytest.raises(ValueError, match="No access token found"):
                 auth.create_credentials_from_token_info({})
 
     @pytest.mark.unit
     def test_credentials_without_valid_token_raises(self, auth, mock_settings):
-        with patch("application.parser.connectors.google_drive.auth.Credentials") as MockCreds, \
-             patch("application.parser.connectors.google_drive.auth.settings", mock_settings):
+        with patch("docsgpt.parser.connectors.google_drive.auth.Credentials") as MockCreds, \
+             patch("docsgpt.parser.connectors.google_drive.auth.settings", mock_settings):
             mock_cred = MagicMock()
             mock_cred.token = None
             MockCreds.return_value = mock_cred
@@ -238,7 +238,7 @@ class TestBuildDriveService:
         mock_creds.refresh_token = "rt"
         mock_creds.expired = False
 
-        with patch("application.parser.connectors.google_drive.auth.build") as mock_build:
+        with patch("docsgpt.parser.connectors.google_drive.auth.build") as mock_build:
             mock_build.return_value = MagicMock()
             service = auth.build_drive_service(mock_creds)
             mock_build.assert_called_once_with('drive', 'v3', credentials=mock_creds)
@@ -264,7 +264,7 @@ class TestBuildDriveService:
         mock_creds.refresh_token = "rt"
         mock_creds.expired = True
 
-        with patch("application.parser.connectors.google_drive.auth.build") as mock_build, \
+        with patch("docsgpt.parser.connectors.google_drive.auth.build") as mock_build, \
              patch("google.auth.transport.requests.Request"):
             mock_build.return_value = MagicMock()
             auth.build_drive_service(mock_creds)
@@ -302,7 +302,7 @@ class TestBuildDriveService:
         mock_resp = MagicMock()
         mock_resp.status = 500
 
-        with patch("application.parser.connectors.google_drive.auth.build") as mock_build:
+        with patch("docsgpt.parser.connectors.google_drive.auth.build") as mock_build:
             mock_build.side_effect = HttpError(mock_resp, b"error")
             with pytest.raises(ValueError, match="HTTP 500"):
                 auth.build_drive_service(mock_creds)
@@ -374,11 +374,11 @@ class TestGetTokenInfoFromSession:
         )
         return (
             patch(
-                "application.storage.db.repositories.connector_sessions.ConnectorSessionsRepository",
+                "docsgpt.storage.db.repositories.connector_sessions.ConnectorSessionsRepository",
                 fake_repo_cls,
             ),
             patch(
-                "application.storage.db.session.db_readonly",
+                "docsgpt.storage.db.session.db_readonly",
                 lambda: _FakeReadonlyCtx(),
             ),
         )

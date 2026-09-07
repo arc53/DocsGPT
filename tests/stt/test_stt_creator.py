@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from application.stt.stt_creator import STTCreator
+from docsgpt.stt.stt_creator import STTCreator
 
 
 @pytest.fixture

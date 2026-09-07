@@ -36,4 +36,4 @@ jobs:
         run: |
           uv lock --check
           bash scripts/export_requirements.sh
-          git diff --exit-code -- application/requirements.txt application/requirements-docling.txt application/requirements-milvus.txt
+          git diff --exit-code -- docsgpt/requirements.txt docsgpt/requirements-docling.txt docsgpt/requirements-milvus.txt

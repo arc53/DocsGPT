@@ -18,7 +18,7 @@ import pytest
 
 from flask import Flask
 
-from application.api.devices import pairing as pairing_module
+from docsgpt.api.devices import pairing as pairing_module
 
 
 class _StubRedis:

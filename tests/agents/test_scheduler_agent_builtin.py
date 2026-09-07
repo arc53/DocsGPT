@@ -12,17 +12,17 @@ import pytest
 from sqlalchemy import text
 
 # Pre-import to stabilise the ToolManager.load_tools walk's import order.
-import application.api.user.tools.mcp  # noqa: F401
+import docsgpt.api.user.tools.mcp  # noqa: F401
 
-from application.agents.default_tools import (  # noqa: E402
+from docsgpt.agents.default_tools import (  # noqa: E402
     BUILTIN_AGENT_TOOLS,
     builtin_agent_tools_for_management,
     default_tool_id,
     resolve_tool_by_id,
 )
-from application.agents.tool_executor import ToolExecutor  # noqa: E402
-from application.agents.tools.tool_manager import ToolManager  # noqa: E402
-from application.storage.db.repositories.schedules import (  # noqa: E402
+from docsgpt.agents.tool_executor import ToolExecutor  # noqa: E402
+from docsgpt.agents.tools.tool_manager import ToolManager  # noqa: E402
+from docsgpt.storage.db.repositories.schedules import (  # noqa: E402
     SchedulesRepository,
 )
 
@@ -36,9 +36,9 @@ def patch_scheduler_sessions(pg_conn):
         yield pg_conn
 
     with patch(
-        "application.agents.tools.scheduler.db_session", _ctx,
+        "docsgpt.agents.tools.scheduler.db_session", _ctx,
     ), patch(
-        "application.agents.tools.scheduler.db_readonly", _ctx,
+        "docsgpt.agents.tools.scheduler.db_readonly", _ctx,
     ):
         yield
 
@@ -98,7 +98,7 @@ class TestDualRegistration:
     """``scheduler`` is in both registries; same uuid5 resolves either way."""
 
     def test_scheduler_in_both_registries(self):
-        from application.agents.default_tools import (
+        from docsgpt.agents.default_tools import (
             BUILTIN_AGENT_TOOLS as BUILTINS,
             settings,
         )
@@ -106,7 +106,7 @@ class TestDualRegistration:
         assert "scheduler" in settings.DEFAULT_CHAT_TOOLS
 
     def test_same_synthetic_id_in_both_paths(self):
-        from application.agents.default_tools import (
+        from docsgpt.agents.default_tools import (
             builtin_agent_tool_ids,
             default_tool_ids,
         )
@@ -117,7 +117,7 @@ class TestDualRegistration:
 
     def test_synthesized_default_tools_includes_scheduler(self):
         """Agentless chats see scheduler in the default-tools synthesis."""
-        from application.agents.default_tools import synthesized_default_tools
+        from docsgpt.agents.default_tools import synthesized_default_tools
 
         rows = synthesized_default_tools(None)
         names = {r["name"] for r in rows}
@@ -125,7 +125,7 @@ class TestDualRegistration:
 
     def test_synthesized_builtin_agent_tools_includes_scheduler(self):
         """Agent picker still sees scheduler via the builtin registry."""
-        from application.agents.default_tools import (
+        from docsgpt.agents.default_tools import (
             builtin_agent_tools_for_management,
         )
 
@@ -146,7 +146,7 @@ class TestEndToEndAgentPickerToLLMSchema:
         def _use_conn():
             yield pg_conn
 
-        with patch("application.agents.tool_executor.db_readonly", _use_conn):
+        with patch("docsgpt.agents.tool_executor.db_readonly", _use_conn):
             executor = ToolExecutor(
                 user_api_key=agent["key"], user="alice",
                 agent_id=str(agent["id"]),

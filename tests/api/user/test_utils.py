@@ -14,7 +14,7 @@ class TestGetUserId:
     pass
 
     def test_returns_user_id_from_decoded_token(self, app):
-        from application.api.user.utils import get_user_id
+        from docsgpt.api.user.utils import get_user_id
 
         with app.test_request_context():
             from flask import request
@@ -23,13 +23,13 @@ class TestGetUserId:
             assert get_user_id() == "user_123"
 
     def test_returns_none_when_no_decoded_token(self, app):
-        from application.api.user.utils import get_user_id
+        from docsgpt.api.user.utils import get_user_id
 
         with app.test_request_context():
             assert get_user_id() is None
 
     def test_returns_none_when_decoded_token_has_no_sub(self, app):
-        from application.api.user.utils import get_user_id
+        from docsgpt.api.user.utils import get_user_id
 
         with app.test_request_context():
             from flask import request
@@ -43,7 +43,7 @@ class TestRequireAuth:
     pass
 
     def test_allows_authenticated_request(self, app):
-        from application.api.user.utils import require_auth
+        from docsgpt.api.user.utils import require_auth
 
         @require_auth
         def protected():
@@ -56,7 +56,7 @@ class TestRequireAuth:
             assert protected() == "ok"
 
     def test_returns_401_when_unauthenticated(self, app):
-        from application.api.user.utils import require_auth
+        from docsgpt.api.user.utils import require_auth
 
         @require_auth
         def protected():
@@ -72,7 +72,7 @@ class TestSuccessResponse:
     pass
 
     def test_default_success_response(self, app):
-        from application.api.user.utils import success_response
+        from docsgpt.api.user.utils import success_response
 
         with app.app_context():
             resp = success_response()
@@ -87,14 +87,14 @@ class TestErrorResponse:
     pass
 
     def test_error_response_custom_status(self, app):
-        from application.api.user.utils import error_response
+        from docsgpt.api.user.utils import error_response
 
         with app.app_context():
             resp = error_response("Not found", 404)
             assert resp.status_code == 404
 
     def test_error_response_extra_kwargs(self, app):
-        from application.api.user.utils import error_response
+        from docsgpt.api.user.utils import error_response
 
         with app.app_context():
             resp = error_response("Bad", 400, errors=["field1", "field2"])
@@ -126,7 +126,7 @@ class TestRequireFields:
     pass
 
     def test_allows_valid_request(self, app):
-        from application.api.user.utils import require_fields
+        from docsgpt.api.user.utils import require_fields
 
         @require_fields(["name", "email"])
         def handler():
@@ -139,7 +139,7 @@ class TestRequireFields:
 
 
     def test_rejects_empty_body(self, app):
-        from application.api.user.utils import require_fields
+        from docsgpt.api.user.utils import require_fields
 
         @require_fields(["name"])
         def handler():

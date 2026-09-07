@@ -5,8 +5,8 @@ from urllib.parse import urlparse
 import pytest
 import requests
 
-from application.parser.remote.crawler_markdown import CrawlerLoader
-from application.parser.schema.base import Document
+from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
+from docsgpt.parser.schema.base import Document
 
 
 class DummyResponse:
@@ -40,7 +40,7 @@ def _mock_validate_url(url):
 @pytest.fixture(autouse=True)
 def _patch_validate_url(monkeypatch):
     monkeypatch.setattr(
-        "application.parser.remote.crawler_markdown.validate_url",
+        "docsgpt.parser.remote.crawler_markdown.validate_url",
         _mock_validate_url,
     )
 
@@ -48,7 +48,7 @@ def _patch_validate_url(monkeypatch):
 @pytest.fixture(autouse=True)
 def _patch_tldextract(monkeypatch):
     monkeypatch.setattr(
-        "application.parser.remote.crawler_markdown._extract",
+        "docsgpt.parser.remote.crawler_markdown._extract",
         _fake_extract,
     )
 
@@ -61,7 +61,7 @@ def _patch_markdownify(monkeypatch):
         return outputs.get(html, html)
 
     monkeypatch.setattr(
-        "application.parser.remote.crawler_markdown.markdownify",
+        "docsgpt.parser.remote.crawler_markdown.markdownify",
         fake_markdownify,
     )
     return outputs
@@ -73,7 +73,7 @@ def _patch_pinned_request(monkeypatch, side_effect):
         return side_effect(url)
 
     monkeypatch.setattr(
-        "application.parser.remote.crawler_markdown.pinned_request",
+        "docsgpt.parser.remote.crawler_markdown.pinned_request",
         fake_pinned_request,
     )
 
@@ -164,13 +164,13 @@ def test_load_data_handles_fetch_errors(monkeypatch, _patch_markdownify, _patch_
 
 def test_load_data_returns_empty_on_ssrf_validation_failure(monkeypatch):
     """Test that SSRF validation failure returns empty list."""
-    from application.core.url_validation import SSRFError
+    from docsgpt.core.url_validation import SSRFError
 
     def raise_ssrf_error(url):
         raise SSRFError("Access to private IP not allowed")
 
     monkeypatch.setattr(
-        "application.parser.remote.crawler_markdown.validate_url",
+        "docsgpt.parser.remote.crawler_markdown.validate_url",
         raise_ssrf_error,
     )
 

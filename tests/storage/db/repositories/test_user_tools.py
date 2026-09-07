@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from application.storage.db.repositories.user_tools import UserToolsRepository
+from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
 
 def _repo(conn) -> UserToolsRepository:

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.conversations import (
+from docsgpt.storage.db.repositories.conversations import (
     ConversationsRepository,
     MessageUpdateOutcome,
 )
@@ -32,7 +32,7 @@ class TestCreate:
         assert doc["_id"] == doc["id"]
 
     def test_create_with_agent(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent_repo = AgentsRepository(pg_conn)
         agent = agent_repo.create("user-1", "a", "active")
@@ -440,7 +440,7 @@ class TestResolveAgentRef:
     ObjectId-era conversation service doesn't silently lose rows."""
 
     def test_create_translates_objectid_agent_id(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent_repo = AgentsRepository(pg_conn)
         legacy_oid = "507f1f77bcf86cd799439099"
@@ -452,7 +452,7 @@ class TestResolveAgentRef:
         assert str(conv["agent_id"]) == agent["id"]
 
     def test_create_passes_through_uuid_agent_id(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent_repo = AgentsRepository(pg_conn)
         agent = agent_repo.create("user-1", "a", "active")
@@ -477,7 +477,7 @@ class TestResolveAttachmentRefs:
     whole message."""
 
     def _create_attachment(self, pg_conn, legacy: str) -> str:
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
 

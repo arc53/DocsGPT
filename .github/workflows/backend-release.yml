@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'application/version.py'
+      - 'docsgpt/version.py'
   workflow_dispatch:
 
 permissions:
@@ -23,12 +23,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Read version from application/version.py
+      - name: Read version from docsgpt/version.py
         id: ver
         run: |
-          VERSION=$(python3 -c "g={}; exec(open('application/version.py').read(), g); print(g['__version__'])")
+          VERSION=$(python3 -c "g={}; exec(open('docsgpt/version.py').read(), g); print(g['__version__'])")
           if [ -z "$VERSION" ]; then
-            echo "::error::Could not read __version__ from application/version.py"
+            echo "::error::Could not read __version__ from docsgpt/version.py"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"

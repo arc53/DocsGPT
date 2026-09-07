@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from application.storage.db.source_config import (
+from docsgpt.storage.db.source_config import (
     ChunkingConfig,
     GraphConfig,
     PreScreenConfig,

@@ -1,4 +1,4 @@
-"""Unit tests for application.api.user.tools.routes."""
+"""Unit tests for docsgpt.api.user.tools.routes."""
 
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
@@ -21,7 +21,7 @@ class TestEncryptSecretFields:
     pass
 
     def test_encrypts_secret_keys(self):
-        from application.api.user.tools.routes import _encrypt_secret_fields
+        from docsgpt.api.user.tools.routes import _encrypt_secret_fields
 
         config = {"api_key": "my-secret", "base_url": "https://example.com"}
         config_requirements = {
@@ -29,7 +29,7 @@ class TestEncryptSecretFields:
             "base_url": {"secret": False},
         }
         with patch(
-            "application.api.user.tools.routes.encrypt_credentials",
+            "docsgpt.api.user.tools.routes.encrypt_credentials",
             return_value="encrypted-blob",
         ):
             result = _encrypt_secret_fields(config, config_requirements, "user1")
@@ -39,7 +39,7 @@ class TestEncryptSecretFields:
         assert result["base_url"] == "https://example.com"
 
     def test_returns_config_unchanged_when_no_secrets(self):
-        from application.api.user.tools.routes import _encrypt_secret_fields
+        from docsgpt.api.user.tools.routes import _encrypt_secret_fields
 
         config = {"base_url": "https://example.com"}
         config_requirements = {"base_url": {"secret": False}}
@@ -47,7 +47,7 @@ class TestEncryptSecretFields:
         assert result == config
 
     def test_skips_empty_secret_values(self):
-        from application.api.user.tools.routes import _encrypt_secret_fields
+        from docsgpt.api.user.tools.routes import _encrypt_secret_fields
 
         config = {"api_key": "", "base_url": "https://example.com"}
         config_requirements = {"api_key": {"secret": True}}
@@ -55,7 +55,7 @@ class TestEncryptSecretFields:
         assert result == config
 
     def test_skips_secret_key_not_in_config(self):
-        from application.api.user.tools.routes import _encrypt_secret_fields
+        from docsgpt.api.user.tools.routes import _encrypt_secret_fields
 
         config = {"base_url": "https://example.com"}
         config_requirements = {"api_key": {"secret": True}}
@@ -71,7 +71,7 @@ class TestValidateConfig:
     pass
 
     def test_returns_empty_on_valid_config(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {"api_key": "abc123"}
         config_requirements = {
@@ -81,7 +81,7 @@ class TestValidateConfig:
         assert errors == {}
 
     def test_reports_missing_required_field(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {}
         config_requirements = {
@@ -91,7 +91,7 @@ class TestValidateConfig:
         assert "api_key" in errors
 
     def test_skips_required_secret_when_existing_secrets(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {}
         config_requirements = {
@@ -101,7 +101,7 @@ class TestValidateConfig:
         assert errors == {}
 
     def test_validates_number_type(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {"timeout": "abc"}
         config_requirements = {
@@ -111,7 +111,7 @@ class TestValidateConfig:
         assert "timeout" in errors
 
     def test_validates_timeout_range_too_low(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {"timeout": "0"}
         config_requirements = {
@@ -122,7 +122,7 @@ class TestValidateConfig:
         assert "between 1 and 300" in errors["timeout"]
 
     def test_validates_timeout_range_too_high(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {"timeout": "500"}
         config_requirements = {
@@ -132,7 +132,7 @@ class TestValidateConfig:
         assert "timeout" in errors
 
     def test_valid_timeout(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {"timeout": "60"}
         config_requirements = {
@@ -142,7 +142,7 @@ class TestValidateConfig:
         assert errors == {}
 
     def test_validates_enum_value(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {"mode": "invalid"}
         config_requirements = {
@@ -152,7 +152,7 @@ class TestValidateConfig:
         assert "mode" in errors
 
     def test_valid_enum_value(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {"mode": "fast"}
         config_requirements = {
@@ -162,7 +162,7 @@ class TestValidateConfig:
         assert errors == {}
 
     def test_depends_on_skips_when_condition_not_met(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {"mode": "simple"}
         config_requirements = {
@@ -177,7 +177,7 @@ class TestValidateConfig:
         assert errors == {}
 
     def test_depends_on_validates_when_condition_met(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {"mode": "advanced"}
         config_requirements = {
@@ -192,7 +192,7 @@ class TestValidateConfig:
         assert "advanced_key" in errors
 
     def test_empty_string_not_treated_as_value_for_required(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {"api_key": ""}
         config_requirements = {
@@ -202,7 +202,7 @@ class TestValidateConfig:
         assert "api_key" in errors
 
     def test_uses_key_name_when_no_label(self):
-        from application.api.user.tools.routes import _validate_config
+        from docsgpt.api.user.tools.routes import _validate_config
 
         config = {}
         config_requirements = {
@@ -221,7 +221,7 @@ class TestMergeSecretsOnUpdate:
     pass
 
     def test_no_secret_keys_returns_new_config(self):
-        from application.api.user.tools.routes import _merge_secrets_on_update
+        from docsgpt.api.user.tools.routes import _merge_secrets_on_update
 
         new_config = {"base_url": "https://new.example.com"}
         existing_config = {"base_url": "https://old.example.com"}
@@ -233,7 +233,7 @@ class TestMergeSecretsOnUpdate:
         assert result == new_config
 
     def test_merges_existing_encrypted_with_new_secret(self):
-        from application.api.user.tools.routes import _merge_secrets_on_update
+        from docsgpt.api.user.tools.routes import _merge_secrets_on_update
 
         new_config = {"api_key": "new-key", "base_url": "https://example.com"}
         existing_config = {
@@ -245,10 +245,10 @@ class TestMergeSecretsOnUpdate:
             "base_url": {"secret": False},
         }
         with patch(
-            "application.api.user.tools.routes.decrypt_credentials",
+            "docsgpt.api.user.tools.routes.decrypt_credentials",
             return_value={"api_key": "old-key"},
         ), patch(
-            "application.api.user.tools.routes.encrypt_credentials",
+            "docsgpt.api.user.tools.routes.encrypt_credentials",
             return_value="new-blob",
         ) as mock_encrypt:
             result = _merge_secrets_on_update(
@@ -262,7 +262,7 @@ class TestMergeSecretsOnUpdate:
         assert encrypted_call["api_key"] == "new-key"
 
     def test_keeps_existing_secret_when_not_in_new_config(self):
-        from application.api.user.tools.routes import _merge_secrets_on_update
+        from docsgpt.api.user.tools.routes import _merge_secrets_on_update
 
         new_config = {"base_url": "https://example.com"}
         existing_config = {
@@ -274,10 +274,10 @@ class TestMergeSecretsOnUpdate:
             "base_url": {"secret": False},
         }
         with patch(
-            "application.api.user.tools.routes.decrypt_credentials",
+            "docsgpt.api.user.tools.routes.decrypt_credentials",
             return_value={"api_key": "old-key"},
         ), patch(
-            "application.api.user.tools.routes.encrypt_credentials",
+            "docsgpt.api.user.tools.routes.encrypt_credentials",
             return_value="new-blob",
         ) as mock_encrypt:
             _merge_secrets_on_update(
@@ -288,7 +288,7 @@ class TestMergeSecretsOnUpdate:
         assert encrypted_call["api_key"] == "old-key"
 
     def test_removes_encrypted_credentials_when_no_secrets(self):
-        from application.api.user.tools.routes import _merge_secrets_on_update
+        from docsgpt.api.user.tools.routes import _merge_secrets_on_update
 
         new_config = {"base_url": "https://example.com"}
         existing_config = {"base_url": "https://old.com"}
@@ -297,7 +297,7 @@ class TestMergeSecretsOnUpdate:
             "base_url": {"secret": False},
         }
         with patch(
-            "application.api.user.tools.routes.decrypt_credentials",
+            "docsgpt.api.user.tools.routes.decrypt_credentials",
             return_value={},
         ):
             result = _merge_secrets_on_update(
@@ -307,17 +307,17 @@ class TestMergeSecretsOnUpdate:
         assert "encrypted_credentials" not in result
 
     def test_strips_has_encrypted_credentials_flag(self):
-        from application.api.user.tools.routes import _merge_secrets_on_update
+        from docsgpt.api.user.tools.routes import _merge_secrets_on_update
 
         new_config = {"api_key": "k", "has_encrypted_credentials": True}
         existing_config = {"encrypted_credentials": "blob"}
         config_requirements = {"api_key": {"secret": True}}
 
         with patch(
-            "application.api.user.tools.routes.decrypt_credentials",
+            "docsgpt.api.user.tools.routes.decrypt_credentials",
             return_value={},
         ), patch(
-            "application.api.user.tools.routes.encrypt_credentials",
+            "docsgpt.api.user.tools.routes.encrypt_credentials",
             return_value="blob2",
         ):
             result = _merge_secrets_on_update(
@@ -335,7 +335,7 @@ class TestTransformActions:
     pass
 
     def test_sets_active_and_param_defaults(self):
-        from application.api.user.tools.routes import transform_actions
+        from docsgpt.api.user.tools.routes import transform_actions
 
         actions = [
             {
@@ -357,7 +357,7 @@ class TestTransformActions:
         assert props["limit"]["filled_by_llm"] is True
 
     def test_handles_action_without_parameters(self):
-        from application.api.user.tools.routes import transform_actions
+        from docsgpt.api.user.tools.routes import transform_actions
 
         actions = [{"name": "ping"}]
         result = transform_actions(actions)
@@ -365,14 +365,14 @@ class TestTransformActions:
         assert "parameters" not in result[0]
 
     def test_handles_empty_properties(self):
-        from application.api.user.tools.routes import transform_actions
+        from docsgpt.api.user.tools.routes import transform_actions
 
         actions = [{"name": "noop", "parameters": {"properties": {}}}]
         result = transform_actions(actions)
         assert result[0]["active"] is True
 
     def test_handles_empty_list(self):
-        from application.api.user.tools.routes import transform_actions
+        from docsgpt.api.user.tools.routes import transform_actions
 
         assert transform_actions([]) == []
 
@@ -385,7 +385,7 @@ class TestAvailableTools:
     pass
 
     def test_returns_tools_metadata(self, app):
-        from application.api.user.tools.routes import AvailableTools
+        from docsgpt.api.user.tools.routes import AvailableTools
 
         mock_tool = Mock()
         mock_tool.__doc__ = "My Tool\nA great tool description"
@@ -396,7 +396,7 @@ class TestAvailableTools:
         mock_manager.tools = {"my_tool": mock_tool}
 
         with patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
+            "docsgpt.api.user.tools.routes.tool_manager", mock_manager
         ):
             with app.test_request_context("/api/available_tools"):
                 from flask import request
@@ -413,7 +413,7 @@ class TestAvailableTools:
         assert data["data"][0]["description"] == "A great tool description"
 
     def test_returns_400_on_error(self, app):
-        from application.api.user.tools.routes import AvailableTools
+        from docsgpt.api.user.tools.routes import AvailableTools
 
         mock_tool = Mock()
         mock_tool.__doc__ = "Bad Tool"
@@ -423,7 +423,7 @@ class TestAvailableTools:
         mock_manager.tools = {"bad_tool": mock_tool}
 
         with patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
+            "docsgpt.api.user.tools.routes.tool_manager", mock_manager
         ):
             with app.test_request_context("/api/available_tools"):
                 from flask import request
@@ -434,7 +434,7 @@ class TestAvailableTools:
         assert response.status_code == 400
 
     def test_single_line_docstring(self, app):
-        from application.api.user.tools.routes import AvailableTools
+        from docsgpt.api.user.tools.routes import AvailableTools
 
         mock_tool = Mock()
         mock_tool.__doc__ = "Simple Tool"
@@ -445,7 +445,7 @@ class TestAvailableTools:
         mock_manager.tools = {"simple": mock_tool}
 
         with patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
+            "docsgpt.api.user.tools.routes.tool_manager", mock_manager
         ):
             with app.test_request_context("/api/available_tools"):
                 from flask import request
@@ -466,7 +466,7 @@ class TestGetTools:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import GetTools
+        from docsgpt.api.user.tools.routes import GetTools
 
         with app.test_request_context("/api/get_tools"):
             from flask import request
@@ -504,7 +504,7 @@ class TestCreateTool:
 
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import CreateTool
+        from docsgpt.api.user.tools.routes import CreateTool
 
         with app.test_request_context(
             "/api/create_tool", method="POST", json={}
@@ -517,7 +517,7 @@ class TestCreateTool:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.tools.routes import CreateTool
+        from docsgpt.api.user.tools.routes import CreateTool
 
         with app.test_request_context(
             "/api/create_tool",
@@ -532,13 +532,13 @@ class TestCreateTool:
         assert response.status_code == 400
 
     def test_returns_404_tool_not_found(self, app):
-        from application.api.user.tools.routes import CreateTool
+        from docsgpt.api.user.tools.routes import CreateTool
 
         mock_manager = Mock()
         mock_manager.tools = {}
 
         with patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
+            "docsgpt.api.user.tools.routes.tool_manager", mock_manager
         ):
             with app.test_request_context(
                 "/api/create_tool",
@@ -559,14 +559,14 @@ class TestCreateTool:
         assert response.status_code == 404
 
     def test_returns_400_on_validation_error(self, app):
-        from application.api.user.tools.routes import CreateTool
+        from docsgpt.api.user.tools.routes import CreateTool
 
         tool_instance = self._make_tool_instance()
         mock_manager = Mock()
         mock_manager.tools = {"my_tool": tool_instance}
 
         with patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
+            "docsgpt.api.user.tools.routes.tool_manager", mock_manager
         ):
             with app.test_request_context(
                 "/api/create_tool",
@@ -588,7 +588,7 @@ class TestCreateTool:
         assert response.json["message"] == "Validation failed"
 
     def test_returns_400_on_actions_error(self, app):
-        from application.api.user.tools.routes import CreateTool
+        from docsgpt.api.user.tools.routes import CreateTool
 
         tool_instance = Mock()
         tool_instance.get_actions_metadata.side_effect = Exception("boom")
@@ -596,7 +596,7 @@ class TestCreateTool:
         mock_manager.tools = {"my_tool": tool_instance}
 
         with patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
+            "docsgpt.api.user.tools.routes.tool_manager", mock_manager
         ):
             with app.test_request_context(
                 "/api/create_tool",
@@ -627,7 +627,7 @@ class TestUpdateTool:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import UpdateTool
+        from docsgpt.api.user.tools.routes import UpdateTool
 
         with app.test_request_context(
             "/api/update_tool", method="POST", json={"id": "abc"}
@@ -640,7 +640,7 @@ class TestUpdateTool:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.tools.routes import UpdateTool
+        from docsgpt.api.user.tools.routes import UpdateTool
 
         with app.test_request_context(
             "/api/update_tool", method="POST", json={}
@@ -666,7 +666,7 @@ class TestUpdateToolConfig:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import UpdateToolConfig
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
 
         with app.test_request_context(
             "/api/update_tool_config",
@@ -681,7 +681,7 @@ class TestUpdateToolConfig:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.tools.routes import UpdateToolConfig
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
 
         with app.test_request_context(
             "/api/update_tool_config",
@@ -707,7 +707,7 @@ class TestUpdateToolActions:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import UpdateToolActions
+        from docsgpt.api.user.tools.routes import UpdateToolActions
 
         with app.test_request_context(
             "/api/update_tool_actions",
@@ -722,7 +722,7 @@ class TestUpdateToolActions:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.tools.routes import UpdateToolActions
+        from docsgpt.api.user.tools.routes import UpdateToolActions
 
         with app.test_request_context(
             "/api/update_tool_actions",
@@ -746,7 +746,7 @@ class TestUpdateToolStatus:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
 
         with app.test_request_context(
             "/api/update_tool_status",
@@ -761,7 +761,7 @@ class TestUpdateToolStatus:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
 
         with app.test_request_context(
             "/api/update_tool_status",
@@ -785,7 +785,7 @@ class TestDeleteTool:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import DeleteTool
+        from docsgpt.api.user.tools.routes import DeleteTool
 
         with app.test_request_context(
             "/api/delete_tool", method="POST", json={"id": "x"}
@@ -798,7 +798,7 @@ class TestDeleteTool:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.tools.routes import DeleteTool
+        from docsgpt.api.user.tools.routes import DeleteTool
 
         with app.test_request_context(
             "/api/delete_tool", method="POST", json={}
@@ -821,13 +821,13 @@ class TestParseSpec:
     pass
 
     def test_parses_json_spec_successfully(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
 
         metadata = {"title": "Pet API"}
         actions = [{"name": "listPets"}]
 
         with patch(
-            "application.api.user.tools.routes.parse_spec",
+            "docsgpt.api.user.tools.routes.parse_spec",
             return_value=(metadata, actions),
         ):
             with app.test_request_context(
@@ -846,7 +846,7 @@ class TestParseSpec:
         assert response.json["actions"] == actions
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
 
         with app.test_request_context(
             "/api/parse_spec",
@@ -861,7 +861,7 @@ class TestParseSpec:
         assert response.status_code == 401
 
     def test_returns_400_empty_spec(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
 
         with app.test_request_context(
             "/api/parse_spec",
@@ -877,7 +877,7 @@ class TestParseSpec:
         assert "Empty spec content" in response.json["message"]
 
     def test_returns_400_whitespace_only_spec(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
 
         with app.test_request_context(
             "/api/parse_spec",
@@ -892,7 +892,7 @@ class TestParseSpec:
         assert response.status_code == 400
 
     def test_returns_400_no_spec_provided(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
 
         with app.test_request_context(
             "/api/parse_spec",
@@ -909,14 +909,14 @@ class TestParseSpec:
         assert "No spec provided" in response.json["message"]
 
     def test_parses_file_upload(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
         from io import BytesIO
 
         metadata = {"title": "API"}
         actions = [{"name": "a1"}]
 
         with patch(
-            "application.api.user.tools.routes.parse_spec",
+            "docsgpt.api.user.tools.routes.parse_spec",
             return_value=(metadata, actions),
         ):
             with app.test_request_context(
@@ -934,13 +934,13 @@ class TestParseSpec:
         assert response.json["success"] is True
 
     def test_rejects_oversized_spec_upload(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
         from io import BytesIO
 
         with patch(
-            "application.api.user.tools.routes.settings.PARSE_SPEC_MAX_BYTES", 4
+            "docsgpt.api.user.tools.routes.settings.PARSE_SPEC_MAX_BYTES", 4
         ), patch(
-            "application.api.user.tools.routes.parse_spec"
+            "docsgpt.api.user.tools.routes.parse_spec"
         ) as parse_mock, app.test_request_context(
             "/api/parse_spec",
             method="POST",
@@ -955,12 +955,12 @@ class TestParseSpec:
         parse_mock.assert_not_called()
 
     def test_rejects_oversized_json_spec(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
 
         with patch(
-            "application.api.user.tools.routes.settings.PARSE_SPEC_MAX_BYTES", 4
+            "docsgpt.api.user.tools.routes.settings.PARSE_SPEC_MAX_BYTES", 4
         ), patch(
-            "application.api.user.tools.routes.parse_spec"
+            "docsgpt.api.user.tools.routes.parse_spec"
         ) as parse_mock, app.test_request_context(
             "/api/parse_spec",
             method="POST",
@@ -974,7 +974,7 @@ class TestParseSpec:
         parse_mock.assert_not_called()
 
     def test_returns_400_file_no_filename(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
         from io import BytesIO
 
         with app.test_request_context(
@@ -992,10 +992,10 @@ class TestParseSpec:
         assert "No file selected" in response.json["message"]
 
     def test_returns_400_on_value_error(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
 
         with patch(
-            "application.api.user.tools.routes.parse_spec",
+            "docsgpt.api.user.tools.routes.parse_spec",
             side_effect=ValueError("bad spec"),
         ):
             with app.test_request_context(
@@ -1012,10 +1012,10 @@ class TestParseSpec:
         assert "Invalid specification format" in response.json["error"]
 
     def test_returns_500_on_generic_error(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
 
         with patch(
-            "application.api.user.tools.routes.parse_spec",
+            "docsgpt.api.user.tools.routes.parse_spec",
             side_effect=RuntimeError("unexpected"),
         ):
             with app.test_request_context(
@@ -1032,7 +1032,7 @@ class TestParseSpec:
         assert "Failed to parse specification" in response.json["error"]
 
     def test_returns_400_invalid_file_encoding(self, app):
-        from application.api.user.tools.routes import ParseSpec
+        from docsgpt.api.user.tools.routes import ParseSpec
         from io import BytesIO
 
         bad_bytes = b"\x80\x81\x82\x83"
@@ -1060,7 +1060,7 @@ class TestGetArtifact:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import GetArtifact
+        from docsgpt.api.user.tools.routes import GetArtifact
 
         with app.test_request_context("/api/artifact/abc"):
             from flask import request
@@ -1083,15 +1083,15 @@ def _patch_tools_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.tools.routes.db_session", _yield
+        "docsgpt.api.user.tools.routes.db_session", _yield
     ), patch(
-        "application.api.user.tools.routes.db_readonly", _yield
+        "docsgpt.api.user.tools.routes.db_readonly", _yield
     ):
         yield
 
 
 def _seed_tool(pg_conn, user="u-tools", name="read_webpage", config=None):
-    from application.storage.db.repositories.user_tools import UserToolsRepository
+    from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
     repo = UserToolsRepository(pg_conn)
     return repo.create(
         user,
@@ -1106,12 +1106,12 @@ def _seed_tool(pg_conn, user="u-tools", name="read_webpage", config=None):
 
 class TestGetToolsHappy:
     def test_returns_user_tools(self, app, pg_conn):
-        from application.agents.default_tools import (
+        from docsgpt.agents.default_tools import (
             BUILTIN_AGENT_TOOLS,
             loaded_builtin_agent_tools,
             loaded_default_tools,
         )
-        from application.api.user.tools.routes import GetTools
+        from docsgpt.api.user.tools.routes import GetTools
 
         user = "u-get-tools"
         _seed_tool(pg_conn, user=user, name="read_webpage")
@@ -1146,7 +1146,7 @@ class TestGetToolsHappy:
         assert len(builtins) == (builtins_count - dual) + dual
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.tools.routes import GetTools
+        from docsgpt.api.user.tools.routes import GetTools
 
         @contextmanager
         def _broken():
@@ -1154,7 +1154,7 @@ class TestGetToolsHappy:
             yield
 
         with patch(
-            "application.api.user.tools.routes.db_readonly", _broken
+            "docsgpt.api.user.tools.routes.db_readonly", _broken
         ), app.test_request_context("/api/get_tools"):
             from flask import request
             request.decoded_token = {"sub": "u"}
@@ -1164,7 +1164,7 @@ class TestGetToolsHappy:
 
 class TestCreateToolHappy:
     def test_creates_tool_successfully(self, app, pg_conn):
-        from application.api.user.tools.routes import CreateTool
+        from docsgpt.api.user.tools.routes import CreateTool
 
         user = "u-create-tool"
 
@@ -1188,7 +1188,7 @@ class TestCreateToolHappy:
         assert "id" in body
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.tools.routes import CreateTool
+        from docsgpt.api.user.tools.routes import CreateTool
 
         @contextmanager
         def _broken():
@@ -1196,7 +1196,7 @@ class TestCreateToolHappy:
             yield
 
         with patch(
-            "application.api.user.tools.routes.db_session", _broken
+            "docsgpt.api.user.tools.routes.db_session", _broken
         ), app.test_request_context(
             "/api/create_tool",
             method="POST",
@@ -1215,7 +1215,7 @@ class TestCreateToolHappy:
 
 class TestUpdateToolHappy:
     def test_returns_404_not_found(self, app, pg_conn):
-        from application.api.user.tools.routes import UpdateTool
+        from docsgpt.api.user.tools.routes import UpdateTool
 
         with _patch_tools_db(pg_conn), app.test_request_context(
             "/api/update_tool",
@@ -1231,8 +1231,8 @@ class TestUpdateToolHappy:
         assert response.status_code == 404
 
     def test_updates_tool_display_name(self, app, pg_conn):
-        from application.api.user.tools.routes import UpdateTool
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.api.user.tools.routes import UpdateTool
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
 
@@ -1254,7 +1254,7 @@ class TestUpdateToolHappy:
 
 class TestUpdateToolConfigHappy:
     def test_returns_404_not_found(self, app, pg_conn):
-        from application.api.user.tools.routes import UpdateToolConfig
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
 
         with _patch_tools_db(pg_conn), app.test_request_context(
             "/api/update_tool_config",
@@ -1270,7 +1270,7 @@ class TestUpdateToolConfigHappy:
         assert response.status_code == 404
 
     def test_updates_config(self, app, pg_conn):
-        from application.api.user.tools.routes import UpdateToolConfig
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
 
         user = "u-cfg"
         tool = _seed_tool(pg_conn, user=user)
@@ -1291,7 +1291,7 @@ class TestUpdateToolConfigHappy:
 
 class TestUpdateToolActionsHappy:
     def test_returns_404_not_found(self, app, pg_conn):
-        from application.api.user.tools.routes import UpdateToolActions
+        from docsgpt.api.user.tools.routes import UpdateToolActions
 
         with _patch_tools_db(pg_conn), app.test_request_context(
             "/api/update_tool_actions",
@@ -1307,7 +1307,7 @@ class TestUpdateToolActionsHappy:
         assert response.status_code == 404
 
     def test_updates_actions(self, app, pg_conn):
-        from application.api.user.tools.routes import UpdateToolActions
+        from docsgpt.api.user.tools.routes import UpdateToolActions
 
         user = "u-actions"
         tool = _seed_tool(pg_conn, user=user)
@@ -1330,7 +1330,7 @@ class TestUpdateToolActionsHappy:
 
 class TestUpdateToolStatusHappy:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
 
         with app.test_request_context(
             "/api/update_tool_status",
@@ -1343,7 +1343,7 @@ class TestUpdateToolStatusHappy:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
 
         with app.test_request_context(
             "/api/update_tool_status",
@@ -1356,7 +1356,7 @@ class TestUpdateToolStatusHappy:
         assert response.status_code == 400
 
     def test_returns_404_not_found(self, app, pg_conn):
-        from application.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
 
         with _patch_tools_db(pg_conn), app.test_request_context(
             "/api/update_tool_status",
@@ -1372,8 +1372,8 @@ class TestUpdateToolStatusHappy:
         assert response.status_code == 404
 
     def test_updates_status(self, app, pg_conn):
-        from application.api.user.tools.routes import UpdateToolStatus
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
 
@@ -1395,7 +1395,7 @@ class TestUpdateToolStatusHappy:
 
 class TestDeleteToolHappy:
     def test_returns_404_not_found(self, app, pg_conn):
-        from application.api.user.tools.routes import DeleteTool
+        from docsgpt.api.user.tools.routes import DeleteTool
 
         with _patch_tools_db(pg_conn), app.test_request_context(
             "/api/delete_tool",
@@ -1408,8 +1408,8 @@ class TestDeleteToolHappy:
         assert response.status_code == 404
 
     def test_deletes_tool(self, app, pg_conn):
-        from application.api.user.tools.routes import DeleteTool
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.api.user.tools.routes import DeleteTool
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
 
@@ -1430,7 +1430,7 @@ class TestDeleteToolHappy:
 
 class TestGetArtifactHappy:
     def test_returns_404_tool_not_found(self, app, pg_conn):
-        from application.api.user.tools.routes import GetArtifact
+        from docsgpt.api.user.tools.routes import GetArtifact
 
         with _patch_tools_db(pg_conn), app.test_request_context(
             "/api/artifact/00000000-0000-0000-0000-000000000000"
@@ -1448,11 +1448,11 @@ class TestGetArtifactHappy:
 # ---------------------------------------------------------------------------
 class TestDefaultToolsRoutes:
     def test_get_tools_flags_defaults(self, app, pg_conn):
-        from application.agents.default_tools import (
+        from docsgpt.agents.default_tools import (
             default_tool_id,
             loaded_default_tools,
         )
-        from application.api.user.tools.routes import GetTools
+        from docsgpt.api.user.tools.routes import GetTools
 
         user = "u-def-get"
         with _patch_tools_db(pg_conn), app.test_request_context("/api/get_tools"):
@@ -1469,8 +1469,8 @@ class TestDefaultToolsRoutes:
 
     def test_get_tools_surfaces_scheduler_with_both_flags(self, app, pg_conn):
         """Dual-registered scheduler appears once with default+builtin flags."""
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import GetTools
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import GetTools
 
         user = "u-sched-dual"
         with _patch_tools_db(pg_conn), app.test_request_context("/api/get_tools"):
@@ -1489,8 +1489,8 @@ class TestDefaultToolsRoutes:
         assert row["name"] == "scheduler"
 
     def test_get_tools_status_reflects_opt_out(self, app, pg_conn):
-        from application.api.user.tools.routes import GetTools
-        from application.storage.db.repositories.users import UsersRepository
+        from docsgpt.api.user.tools.routes import GetTools
+        from docsgpt.storage.db.repositories.users import UsersRepository
 
         user = "u-def-optout"
         UsersRepository(pg_conn).set_default_tool_enabled(
@@ -1509,9 +1509,9 @@ class TestDefaultToolsRoutes:
         assert by_name["memory"]["status"] is True
 
     def test_update_tool_status_toggles_default_off(self, app, pg_conn):
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import UpdateToolStatus
-        from application.storage.db.repositories.users import UsersRepository
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.storage.db.repositories.users import UsersRepository
 
         user = "u-def-toggle"
         with _patch_tools_db(pg_conn), app.test_request_context(
@@ -1527,9 +1527,9 @@ class TestDefaultToolsRoutes:
         assert user_doc["tool_preferences"]["disabled_default_tools"] == ["memory"]
 
     def test_update_tool_status_toggles_default_back_on(self, app, pg_conn):
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import UpdateToolStatus
-        from application.storage.db.repositories.users import UsersRepository
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.storage.db.repositories.users import UsersRepository
 
         user = "u-def-on"
         UsersRepository(pg_conn).set_default_tool_enabled(user, "memory", False)
@@ -1546,9 +1546,9 @@ class TestDefaultToolsRoutes:
         assert user_doc["tool_preferences"]["disabled_default_tools"] == []
 
     def test_update_tool_toggles_default_via_status(self, app, pg_conn):
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import UpdateTool
-        from application.storage.db.repositories.users import UsersRepository
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import UpdateTool
+        from docsgpt.storage.db.repositories.users import UsersRepository
 
         user = "u-def-updtool"
         with _patch_tools_db(pg_conn), app.test_request_context(
@@ -1566,8 +1566,8 @@ class TestDefaultToolsRoutes:
         ]
 
     def test_delete_tool_rejects_default(self, app, pg_conn):
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import DeleteTool
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import DeleteTool
 
         user = "u-def-del"
         with _patch_tools_db(pg_conn), app.test_request_context(
@@ -1584,8 +1584,8 @@ class TestDefaultToolsRoutes:
     def test_update_tool_default_without_status_is_rejected(
         self, app, pg_conn
     ):
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import UpdateTool
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import UpdateTool
 
         user = "u-def-noedit"
         with _patch_tools_db(pg_conn), app.test_request_context(
@@ -1601,8 +1601,8 @@ class TestDefaultToolsRoutes:
         assert "not editable" in response.json["message"]
 
     def test_update_tool_config_rejects_default(self, app, pg_conn):
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import UpdateToolConfig
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
 
         user = "u-def-cfg"
         with _patch_tools_db(pg_conn), app.test_request_context(
@@ -1618,8 +1618,8 @@ class TestDefaultToolsRoutes:
         assert "config-free" in response.json["message"]
 
     def test_update_tool_actions_rejects_default(self, app, pg_conn):
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import UpdateToolActions
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import UpdateToolActions
 
         user = "u-def-act"
         with _patch_tools_db(pg_conn), app.test_request_context(
@@ -1643,9 +1643,9 @@ class TestDefaultToolsRoutes:
 # ---------------------------------------------------------------------------
 class TestDualRegisteredToggle:
     def test_update_tool_status_off_writes_disabled_default(self, app, pg_conn):
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import UpdateToolStatus
-        from application.storage.db.repositories.users import UsersRepository
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.storage.db.repositories.users import UsersRepository
 
         user = "u-sched-off"
         with _patch_tools_db(pg_conn), app.test_request_context(
@@ -1664,9 +1664,9 @@ class TestDualRegisteredToggle:
         )
 
     def test_update_tool_status_on_removes_disabled_default(self, app, pg_conn):
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import UpdateToolStatus
-        from application.storage.db.repositories.users import UsersRepository
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.storage.db.repositories.users import UsersRepository
 
         user = "u-sched-on"
         UsersRepository(pg_conn).set_default_tool_enabled(
@@ -1689,9 +1689,9 @@ class TestDualRegisteredToggle:
 
     def test_update_tool_status_round_trip(self, app, pg_conn):
         """Off → on returns to the empty-list baseline."""
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import UpdateToolStatus
-        from application.storage.db.repositories.users import UsersRepository
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import UpdateToolStatus
+        from docsgpt.storage.db.repositories.users import UsersRepository
 
         user = "u-sched-rt"
         scheduler_id = default_tool_id("scheduler")
@@ -1710,9 +1710,9 @@ class TestDualRegisteredToggle:
 
     def test_update_tool_with_status_writes_disabled_default(self, app, pg_conn):
         """The /api/update_tool route also honours the default branch first."""
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tools.routes import UpdateTool
-        from application.storage.db.repositories.users import UsersRepository
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tools.routes import UpdateTool
+        from docsgpt.storage.db.repositories.users import UsersRepository
 
         user = "u-sched-upd"
         with _patch_tools_db(pg_conn), app.test_request_context(

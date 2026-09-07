@@ -8,10 +8,10 @@ the request; the overflow is dropped (lossy by design).
 
 from unittest.mock import MagicMock
 
-from application.core.settings import settings
-from application.utils import get_encoding
-from application.vectorstore import base
-from application.vectorstore.base import RemoteEmbeddings
+from docsgpt.core.settings import settings
+from docsgpt.utils import get_encoding
+from docsgpt.vectorstore import base
+from docsgpt.vectorstore.base import RemoteEmbeddings
 
 
 def _capture_post(monkeypatch):
@@ -89,20 +89,20 @@ class TestInputLimitResolution:
     """The cap falls back to the model's own context window."""
 
     def _remote(self, model_name):
-        from application.vectorstore.base import RemoteEmbeddings
+        from docsgpt.vectorstore.base import RemoteEmbeddings
 
         return RemoteEmbeddings(
             api_url="http://embeddings", model_name=model_name, api_key=None
         )
 
     def test_explicit_setting_wins(self, monkeypatch):
-        from application.vectorstore import base
+        from docsgpt.vectorstore import base
 
         monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", 123)
         assert self._remote("granite-311m")._resolve_input_limit() == 123
 
     def test_registered_model_supplies_its_own_ceiling(self, monkeypatch):
-        from application.vectorstore import base
+        from docsgpt.vectorstore import base
 
         monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
         monkeypatch.setattr(base, "_embeddings_name_is_explicit", lambda: True)
@@ -117,27 +117,27 @@ class TestInputLimitResolution:
         settings default contribute mpnet's 384-token window would clip every
         chunk on a server that may well serve a 32k-context model.
         """
-        from application.vectorstore import base
+        from docsgpt.vectorstore import base
 
         monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
         monkeypatch.setattr(base, "_embeddings_name_is_explicit", lambda: False)
         assert self._remote("all-mpnet-base-v2")._resolve_input_limit() is None
 
     def test_explicit_setting_still_wins_over_an_unset_name(self, monkeypatch):
-        from application.vectorstore import base
+        from docsgpt.vectorstore import base
 
         monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", 512)
         monkeypatch.setattr(base, "_embeddings_name_is_explicit", lambda: False)
         assert self._remote("all-mpnet-base-v2")._resolve_input_limit() == 512
 
     def test_unknown_model_stays_unlimited(self, monkeypatch):
-        from application.vectorstore import base
+        from docsgpt.vectorstore import base
 
         monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
         assert self._remote("some-org/mystery")._resolve_input_limit() is None
 
     def test_non_positive_setting_falls_through_to_the_registry(self, monkeypatch):
-        from application.vectorstore import base
+        from docsgpt.vectorstore import base
 
         monkeypatch.setattr(base.settings, "EMBEDDINGS_MAX_INPUT_TOKENS", 0)
         monkeypatch.setattr(base, "_embeddings_name_is_explicit", lambda: True)
@@ -161,7 +161,7 @@ class TestEmbeddingsNameIsExplicit:
     """
 
     def _default(self):
-        from application.core.settings import Settings
+        from docsgpt.core.settings import Settings
 
         return Settings.model_fields["EMBEDDINGS_NAME"].default
 

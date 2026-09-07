@@ -1,0 +1,57 @@
+import logging
+
+from bs4 import BeautifulSoup
+
+from docsgpt.core.url_validation import SSRFError, validate_url
+from docsgpt.parser.remote.base import BaseRemote
+from docsgpt.parser.schema.base import Document
+from docsgpt.security.safe_url import pinned_request
+
+headers = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*"
+    ";q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Referer": "https://www.google.com/",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+
+class WebLoader(BaseRemote):
+    def load_data(self, inputs):
+        urls = inputs
+        if isinstance(urls, str):
+            urls = [urls]
+        documents = []
+        for url in urls:
+            try:
+                url = validate_url(url)
+            except SSRFError as e:
+                logging.warning(
+                    f"Skipping URL due to SSRF validation failure: {url} - {e}"
+                )
+                continue
+            try:
+                response = pinned_request("GET", url, headers=headers, timeout=30)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, "html.parser")
+                metadata = {"source": url}
+                if soup.title:
+                    title = soup.title.get_text(strip=True)
+                    if title:
+                        metadata["title"] = title
+                html_tag = soup.find("html")
+                if html_tag and html_tag.get("lang"):
+                    metadata["language"] = html_tag.get("lang")
+                documents.append(
+                    Document(
+                        soup.get_text(separator="\n", strip=True),
+                        extra_info=metadata,
+                    )
+                )
+            except Exception as e:
+                logging.error(f"Error processing URL {url}: {e}", exc_info=True)
+                continue
+        return documents

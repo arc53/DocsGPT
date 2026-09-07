@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from application.agents.tool_executor import ToolExecutor
+from docsgpt.agents.tool_executor import ToolExecutor
 
 
 @pytest.mark.unit

@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from flask import Flask
 
-from application.api.devices import routes as routes_module
+from docsgpt.api.devices import routes as routes_module
 
 
 @pytest.fixture
@@ -99,7 +99,7 @@ def test_patch_valid_name_trimmed_and_persisted(app, monkeypatch):
     monkeypatch.setattr(routes_module, "DevicesRepository", _Repo)
     monkeypatch.setattr(routes_module, "db_session", _Sess)
     monkeypatch.setattr(
-        "application.api.devices.pairing._upsert_remote_device_user_tool",
+        "docsgpt.api.devices.pairing._upsert_remote_device_user_tool",
         lambda conn, **kwargs: None,
     )
 

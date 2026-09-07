@@ -1,4 +1,4 @@
-"""Tests for ``application.worker.extract_graph_worker``.
+"""Tests for ``docsgpt.worker.extract_graph_worker``.
 
 The worker loads the source row, fetches its chunks from the vector store, and
 delegates to ``extract_graph_for_source``. ``graphrag_available``,
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 
 def _seed_source(pg_conn, config=None):
@@ -31,7 +31,7 @@ def _patch_store(monkeypatch, chunks):
     store = MagicMock(name="vectorstore")
     store.get_chunks.return_value = chunks
     monkeypatch.setattr(
-        "application.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+        "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore",
         lambda *a, **kw: store,
     )
     return store
@@ -42,7 +42,7 @@ class TestExtractGraphWorker:
     def test_fetches_chunks_and_calls_extraction(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         chunks = [
@@ -52,14 +52,14 @@ class TestExtractGraphWorker:
         store = _patch_store(monkeypatch, chunks)
 
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: True
+            "docsgpt.graphrag.graphrag_available", lambda: True
         )
         extract = MagicMock(
             name="extract_graph_for_source",
             return_value={"nodes": 3, "edges": 2, "chunks_processed": 2},
         )
         monkeypatch.setattr(
-            "application.graphrag.extraction.extract_graph_for_source", extract
+            "docsgpt.graphrag.extraction.extract_graph_for_source", extract
         )
 
         result = worker.extract_graph_worker(task_self, source_id, "alice")
@@ -75,15 +75,15 @@ class TestExtractGraphWorker:
     def test_unavailable_returns_status_no_extraction(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         store = _patch_store(monkeypatch, [])
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: False
+            "docsgpt.graphrag.graphrag_available", lambda: False
         )
         extract = MagicMock(name="extract_graph_for_source")
         monkeypatch.setattr(
-            "application.graphrag.extraction.extract_graph_for_source", extract
+            "docsgpt.graphrag.extraction.extract_graph_for_source", extract
         )
 
         result = worker.extract_graph_worker(task_self, "src-x", "alice")
@@ -95,19 +95,19 @@ class TestExtractGraphWorker:
     def test_empty_chunks_still_calls_extraction(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(monkeypatch, [])
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: True
+            "docsgpt.graphrag.graphrag_available", lambda: True
         )
         extract = MagicMock(
             name="extract_graph_for_source",
             return_value={"nodes": 0, "edges": 0, "chunks_processed": 0},
         )
         monkeypatch.setattr(
-            "application.graphrag.extraction.extract_graph_for_source", extract
+            "docsgpt.graphrag.extraction.extract_graph_for_source", extract
         )
 
         result = worker.extract_graph_worker(task_self, source_id, "alice")
@@ -119,15 +119,15 @@ class TestExtractGraphWorker:
     def test_publishes_completed_event(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(monkeypatch, [{"doc_id": "c1", "text": "alpha"}])
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: True
+            "docsgpt.graphrag.graphrag_available", lambda: True
         )
         monkeypatch.setattr(
-            "application.graphrag.extraction.extract_graph_for_source",
+            "docsgpt.graphrag.extraction.extract_graph_for_source",
             MagicMock(return_value={"nodes": 1, "edges": 0, "chunks_processed": 1}),
         )
         events = []
@@ -146,19 +146,19 @@ class TestExtractGraphWorker:
     def test_publishes_failed_event_on_error(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(monkeypatch, [{"doc_id": "c1", "text": "alpha"}])
         monkeypatch.setattr(
-            "application.graphrag.graphrag_available", lambda: True
+            "docsgpt.graphrag.graphrag_available", lambda: True
         )
 
         def _boom(*a, **kw):
             raise RuntimeError("extraction blew up")
 
         monkeypatch.setattr(
-            "application.graphrag.extraction.extract_graph_for_source", _boom
+            "docsgpt.graphrag.extraction.extract_graph_for_source", _boom
         )
         events = []
         monkeypatch.setattr(

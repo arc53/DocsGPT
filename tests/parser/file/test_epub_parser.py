@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 import sys
 import types
 
-from application.parser.file.epub_parser import EpubParser
+from docsgpt.parser.file.epub_parser import EpubParser
 
 
 @pytest.fixture

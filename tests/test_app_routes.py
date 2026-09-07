@@ -1,4 +1,4 @@
-"""Tests for application/app.py route handlers."""
+"""Tests for docsgpt/app.py route handlers."""
 
 import json
 from unittest.mock import patch
@@ -9,8 +9,8 @@ import pytest
 @pytest.fixture
 def app():
     """Import the Flask app with auth mocked to avoid JWT setup issues."""
-    with patch("application.app.handle_auth", return_value={"sub": "test_user"}):
-        from application.app import app as flask_app
+    with patch("docsgpt.app.handle_auth", return_value={"sub": "test_user"}):
+        from docsgpt.app import app as flask_app
         flask_app.config["TESTING"] = True
         yield flask_app
 
@@ -44,7 +44,7 @@ class TestConfigRoute:
     @pytest.mark.unit
     def test_returns_auth_config(self, client):
         # Pin AUTH_TYPE so the assertion doesn't depend on the dev .env.
-        with patch("application.app.settings") as mock_settings:
+        with patch("docsgpt.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = None
             response = client.get("/api/config")
         assert response.status_code == 200
@@ -55,8 +55,8 @@ class TestConfigRoute:
 
     @pytest.mark.unit
     def test_exposes_graphrag_available(self, client):
-        with patch("application.app.settings") as mock_settings, patch(
-            "application.graphrag.graphrag_available", return_value=True
+        with patch("docsgpt.app.settings") as mock_settings, patch(
+            "docsgpt.graphrag.graphrag_available", return_value=True
         ):
             mock_settings.AUTH_TYPE = None
             response = client.get("/api/config")
@@ -66,8 +66,8 @@ class TestConfigRoute:
 
     @pytest.mark.unit
     def test_graphrag_unavailable_when_flag_off(self, client):
-        with patch("application.app.settings") as mock_settings, patch(
-            "application.graphrag.graphrag_available", return_value=False
+        with patch("docsgpt.app.settings") as mock_settings, patch(
+            "docsgpt.graphrag.graphrag_available", return_value=False
         ):
             mock_settings.AUTH_TYPE = None
             response = client.get("/api/config")
@@ -77,7 +77,7 @@ class TestConfigRoute:
 
     @pytest.mark.unit
     def test_hybrid_available_when_pgvector(self, client):
-        with patch("application.app.settings") as mock_settings:
+        with patch("docsgpt.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = None
             mock_settings.VECTOR_STORE = "pgvector"
             response = client.get("/api/config")
@@ -87,7 +87,7 @@ class TestConfigRoute:
 
     @pytest.mark.unit
     def test_hybrid_unavailable_when_not_pgvector(self, client):
-        with patch("application.app.settings") as mock_settings:
+        with patch("docsgpt.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = None
             mock_settings.VECTOR_STORE = "faiss"
             response = client.get("/api/config")
@@ -97,7 +97,7 @@ class TestConfigRoute:
 
     @pytest.mark.unit
     def test_oidc_config_exposes_login_paths(self, client):
-        with patch("application.app.settings") as mock_settings:
+        with patch("docsgpt.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = "oidc"
             mock_settings.OIDC_PROVIDER_NAME = "Test SSO"
             response = client.get("/api/config")
@@ -116,7 +116,7 @@ class TestGenerateTokenRoute:
 
     @pytest.mark.unit
     def test_session_jwt_generates_token(self, client, app):
-        with patch("application.app.settings") as mock_settings:
+        with patch("docsgpt.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = "session_jwt"
             mock_settings.JWT_SECRET_KEY = "test_secret"
             response = client.get("/api/generate_token")
@@ -126,7 +126,7 @@ class TestGenerateTokenRoute:
 
     @pytest.mark.unit
     def test_non_session_jwt_returns_error(self, client, app):
-        with patch("application.app.settings") as mock_settings:
+        with patch("docsgpt.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = "none"
             response = client.get("/api/generate_token")
             assert response.status_code == 400
@@ -141,8 +141,8 @@ class TestSttRequestSizeLimits:
 
     @pytest.mark.unit
     def test_oversized_stt_request_rejected(self, client):
-        with patch("application.app.should_reject_stt_request", return_value=True), \
-             patch("application.app.build_stt_file_size_limit_message", return_value="Too large"):
+        with patch("docsgpt.app.should_reject_stt_request", return_value=True), \
+             patch("docsgpt.app.build_stt_file_size_limit_message", return_value="Too large"):
             response = client.post("/api/stt/upload", data=b"x" * 100)
             assert response.status_code == 413
 
@@ -152,7 +152,7 @@ class TestDocumentUploadRequestSizeLimits:
     @pytest.mark.unit
     def test_oversized_upload_rejected_before_multipart_parsing(self, client):
         with patch(
-            "application.app.settings.UPLOAD_MAX_REQUEST_BYTES",
+            "docsgpt.app.settings.UPLOAD_MAX_REQUEST_BYTES",
             32,
         ):
             response = client.post(
@@ -170,7 +170,7 @@ class TestDocumentUploadRequestSizeLimits:
     @pytest.mark.unit
     def test_internal_worker_upload_is_not_subject_to_user_limit(self, client):
         with patch(
-            "application.app.settings.UPLOAD_MAX_REQUEST_BYTES",
+            "docsgpt.app.settings.UPLOAD_MAX_REQUEST_BYTES",
             32,
         ):
             response = client.post(
@@ -184,7 +184,7 @@ class TestDocumentUploadRequestSizeLimits:
     @pytest.mark.unit
     def test_json_spec_uses_dedicated_request_limit(self, client):
         with patch(
-            "application.app.settings.PARSE_SPEC_MAX_BYTES",
+            "docsgpt.app.settings.PARSE_SPEC_MAX_BYTES",
             32,
         ):
             response = client.post(
@@ -208,13 +208,13 @@ class TestAuthenticateRequest:
 
     @pytest.mark.unit
     def test_auth_error_returns_401(self, client, app):
-        with patch("application.app.handle_auth", return_value={"error": "Invalid token"}):
+        with patch("docsgpt.app.handle_auth", return_value={"error": "Invalid token"}):
             response = client.get("/api/health")
             assert response.status_code == 401
 
     @pytest.mark.unit
     def test_no_token_sets_none(self, client, app):
-        with patch("application.app.handle_auth", return_value=None):
+        with patch("docsgpt.app.handle_auth", return_value=None):
             response = client.get("/api/health")
             assert response.status_code == 200
 
@@ -223,12 +223,12 @@ class TestAuthenticateRequest:
         # A stale/expired Bearer header must never 401 the oidc login
         # endpoints — they are the only path back to a fresh session. The oidc
         # routes are only live under AUTH_TYPE=oidc, so pin it here.
-        from application.core.settings import settings as _settings
+        from docsgpt.core.settings import settings as _settings
 
         with patch(
-            "application.app.handle_auth", return_value={"error": "invalid_token"}
+            "docsgpt.app.handle_auth", return_value={"error": "invalid_token"}
         ), patch(
-            "application.api.oidc.routes.get_redis_instance", return_value=None
+            "docsgpt.api.oidc.routes.get_redis_instance", return_value=None
         ), patch.object(_settings, "AUTH_TYPE", "oidc"):
             response = client.get(
                 "/api/auth/oidc/login", headers={"Authorization": "Bearer garbage"}

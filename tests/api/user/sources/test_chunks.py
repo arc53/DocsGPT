@@ -1,4 +1,4 @@
-"""Tests for application/api/user/sources/chunks.py."""
+"""Tests for docsgpt/api/user/sources/chunks.py."""
 
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
@@ -19,19 +19,19 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.sources.chunks.db_readonly", _yield
+        "docsgpt.api.user.sources.chunks.db_readonly", _yield
     ):
         yield
 
 
 def _seed_source(pg_conn, user="u", name="src"):
-    from application.storage.db.repositories.sources import SourcesRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
     return SourcesRepository(pg_conn).create(name, user_id=user)
 
 
 class TestResolveSource:
     def test_returns_none_for_missing(self, pg_conn):
-        from application.api.user.sources.chunks import _resolve_source
+        from docsgpt.api.user.sources.chunks import _resolve_source
         with _patch_db(pg_conn):
             assert (
                 _resolve_source(
@@ -41,7 +41,7 @@ class TestResolveSource:
             )
 
     def test_returns_source_when_found(self, pg_conn):
-        from application.api.user.sources.chunks import _resolve_source
+        from docsgpt.api.user.sources.chunks import _resolve_source
 
         src = _seed_source(pg_conn, user="u-resolve")
         with _patch_db(pg_conn):
@@ -52,7 +52,7 @@ class TestResolveSource:
 
 class TestGetChunks:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.chunks import GetChunks
+        from docsgpt.api.user.sources.chunks import GetChunks
 
         with app.test_request_context("/api/get_chunks?id=abc"):
             from flask import request
@@ -61,7 +61,7 @@ class TestGetChunks:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.sources.chunks import GetChunks
+        from docsgpt.api.user.sources.chunks import GetChunks
 
         with app.test_request_context("/api/get_chunks"):
             from flask import request
@@ -70,7 +70,7 @@ class TestGetChunks:
         assert response.status_code == 400
 
     def test_returns_400_on_resolve_error(self, app):
-        from application.api.user.sources.chunks import GetChunks
+        from docsgpt.api.user.sources.chunks import GetChunks
 
         @contextmanager
         def _broken():
@@ -78,7 +78,7 @@ class TestGetChunks:
             yield
 
         with patch(
-            "application.api.user.sources.chunks.db_readonly", _broken
+            "docsgpt.api.user.sources.chunks.db_readonly", _broken
         ), app.test_request_context("/api/get_chunks?id=abc"):
             from flask import request
             request.decoded_token = {"sub": "u"}
@@ -86,7 +86,7 @@ class TestGetChunks:
         assert response.status_code == 400
 
     def test_returns_404_when_source_missing(self, app, pg_conn):
-        from application.api.user.sources.chunks import GetChunks
+        from docsgpt.api.user.sources.chunks import GetChunks
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/get_chunks?id=00000000-0000-0000-0000-000000000000"
@@ -97,7 +97,7 @@ class TestGetChunks:
         assert response.status_code == 404
 
     def test_returns_paginated_chunks(self, app, pg_conn):
-        from application.api.user.sources.chunks import GetChunks
+        from docsgpt.api.user.sources.chunks import GetChunks
 
         user = "u-chunks"
         src = _seed_source(pg_conn, user=user)
@@ -109,7 +109,7 @@ class TestGetChunks:
         ]
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.chunks.get_vector_store",
+            "docsgpt.api.user.sources.chunks.get_vector_store",
             return_value=fake_store,
         ), app.test_request_context(
             f"/api/get_chunks?id={src['id']}&per_page=2&page=1"
@@ -123,7 +123,7 @@ class TestGetChunks:
         assert len(data["chunks"]) == 2
 
     def test_filters_by_path(self, app, pg_conn):
-        from application.api.user.sources.chunks import GetChunks
+        from docsgpt.api.user.sources.chunks import GetChunks
 
         user = "u-path"
         src = _seed_source(pg_conn, user=user)
@@ -135,7 +135,7 @@ class TestGetChunks:
         ]
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.chunks.get_vector_store",
+            "docsgpt.api.user.sources.chunks.get_vector_store",
             return_value=fake_store,
         ), app.test_request_context(
             f"/api/get_chunks?id={src['id']}&path=b/file.txt"
@@ -147,7 +147,7 @@ class TestGetChunks:
         assert response.json["total"] == 1
 
     def test_filters_by_search(self, app, pg_conn):
-        from application.api.user.sources.chunks import GetChunks
+        from docsgpt.api.user.sources.chunks import GetChunks
 
         user = "u-srch"
         src = _seed_source(pg_conn, user=user)
@@ -159,7 +159,7 @@ class TestGetChunks:
         ]
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.chunks.get_vector_store",
+            "docsgpt.api.user.sources.chunks.get_vector_store",
             return_value=fake_store,
         ), app.test_request_context(
             f"/api/get_chunks?id={src['id']}&search=cat"
@@ -171,13 +171,13 @@ class TestGetChunks:
         assert response.json["total"] == 1
 
     def test_returns_500_on_vector_store_error(self, app, pg_conn):
-        from application.api.user.sources.chunks import GetChunks
+        from docsgpt.api.user.sources.chunks import GetChunks
 
         user = "u-err"
         src = _seed_source(pg_conn, user=user)
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.chunks.get_vector_store",
+            "docsgpt.api.user.sources.chunks.get_vector_store",
             side_effect=RuntimeError("boom"),
         ), app.test_request_context(f"/api/get_chunks?id={src['id']}"):
             from flask import request
@@ -188,7 +188,7 @@ class TestGetChunks:
 
 class TestAddChunk:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.chunks import AddChunk
+        from docsgpt.api.user.sources.chunks import AddChunk
 
         with app.test_request_context(
             "/api/add_chunk", method="POST",
@@ -200,7 +200,7 @@ class TestAddChunk:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.sources.chunks import AddChunk
+        from docsgpt.api.user.sources.chunks import AddChunk
 
         with app.test_request_context(
             "/api/add_chunk", method="POST", json={"id": "x"}
@@ -213,7 +213,7 @@ class TestAddChunk:
     def test_returns_403_inaccessible_source(self, app, pg_conn):
         # No ownership and no team editor grant resolves to None, which the
         # owner-or-editor gate answers as 403 "Source not accessible".
-        from application.api.user.sources.chunks import AddChunk
+        from docsgpt.api.user.sources.chunks import AddChunk
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/add_chunk", method="POST",
@@ -228,7 +228,7 @@ class TestAddChunk:
         assert response.status_code == 403
 
     def test_adds_chunk(self, app, pg_conn):
-        from application.api.user.sources.chunks import AddChunk
+        from docsgpt.api.user.sources.chunks import AddChunk
 
         user = "u-add"
         src = _seed_source(pg_conn, user=user)
@@ -237,7 +237,7 @@ class TestAddChunk:
         fake_store.add_chunk.return_value = "chunk-id-1"
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.chunks.get_vector_store",
+            "docsgpt.api.user.sources.chunks.get_vector_store",
             return_value=fake_store,
         ), app.test_request_context(
             "/api/add_chunk", method="POST",
@@ -254,13 +254,13 @@ class TestAddChunk:
         assert response.json["chunk_id"] == "chunk-id-1"
 
     def test_returns_500_on_vector_error(self, app, pg_conn):
-        from application.api.user.sources.chunks import AddChunk
+        from docsgpt.api.user.sources.chunks import AddChunk
 
         user = "u-adderr"
         src = _seed_source(pg_conn, user=user)
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.chunks.get_vector_store",
+            "docsgpt.api.user.sources.chunks.get_vector_store",
             side_effect=RuntimeError("bad"),
         ), app.test_request_context(
             "/api/add_chunk", method="POST",
@@ -274,7 +274,7 @@ class TestAddChunk:
 
 class TestDeleteChunk:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.chunks import DeleteChunk
+        from docsgpt.api.user.sources.chunks import DeleteChunk
 
         with app.test_request_context(
             "/api/delete_chunk?id=x&chunk_id=y", method="DELETE"
@@ -287,7 +287,7 @@ class TestDeleteChunk:
     def test_returns_403_inaccessible_source(self, app, pg_conn):
         # No ownership and no team editor grant resolves to None, which the
         # owner-or-editor gate answers as 403 "Source not accessible".
-        from application.api.user.sources.chunks import DeleteChunk
+        from docsgpt.api.user.sources.chunks import DeleteChunk
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/delete_chunk?id=00000000-0000-0000-0000-000000000000&chunk_id=c",
@@ -299,7 +299,7 @@ class TestDeleteChunk:
         assert response.status_code == 403
 
     def test_deletes_chunk(self, app, pg_conn):
-        from application.api.user.sources.chunks import DeleteChunk
+        from docsgpt.api.user.sources.chunks import DeleteChunk
 
         user = "u-del"
         src = _seed_source(pg_conn, user=user)
@@ -308,7 +308,7 @@ class TestDeleteChunk:
         fake_store.delete_chunk.return_value = True
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.chunks.get_vector_store",
+            "docsgpt.api.user.sources.chunks.get_vector_store",
             return_value=fake_store,
         ), app.test_request_context(
             f"/api/delete_chunk?id={src['id']}&chunk_id=c", method="DELETE"
@@ -319,7 +319,7 @@ class TestDeleteChunk:
         assert response.status_code == 200
 
     def test_returns_404_chunk_not_found(self, app, pg_conn):
-        from application.api.user.sources.chunks import DeleteChunk
+        from docsgpt.api.user.sources.chunks import DeleteChunk
 
         user = "u-missing-chunk"
         src = _seed_source(pg_conn, user=user)
@@ -328,7 +328,7 @@ class TestDeleteChunk:
         fake_store.delete_chunk.return_value = False
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.chunks.get_vector_store",
+            "docsgpt.api.user.sources.chunks.get_vector_store",
             return_value=fake_store,
         ), app.test_request_context(
             f"/api/delete_chunk?id={src['id']}&chunk_id=c", method="DELETE"
@@ -341,7 +341,7 @@ class TestDeleteChunk:
 
 class TestUpdateChunk:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.chunks import UpdateChunk
+        from docsgpt.api.user.sources.chunks import UpdateChunk
 
         with app.test_request_context(
             "/api/update_chunk", method="PUT",
@@ -353,7 +353,7 @@ class TestUpdateChunk:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.sources.chunks import UpdateChunk
+        from docsgpt.api.user.sources.chunks import UpdateChunk
 
         with app.test_request_context(
             "/api/update_chunk", method="PUT", json={"id": "x"}
@@ -366,7 +366,7 @@ class TestUpdateChunk:
     def test_returns_403_inaccessible_source(self, app, pg_conn):
         # No ownership and no team editor grant resolves to None, which the
         # owner-or-editor gate answers as 403 "Source not accessible".
-        from application.api.user.sources.chunks import UpdateChunk
+        from docsgpt.api.user.sources.chunks import UpdateChunk
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/update_chunk", method="PUT",
@@ -381,7 +381,7 @@ class TestUpdateChunk:
         assert response.status_code == 403
 
     def test_returns_404_chunk_not_found(self, app, pg_conn):
-        from application.api.user.sources.chunks import UpdateChunk
+        from docsgpt.api.user.sources.chunks import UpdateChunk
 
         user = "u-upd-missing"
         src = _seed_source(pg_conn, user=user)
@@ -389,7 +389,7 @@ class TestUpdateChunk:
         fake_store.get_chunks.return_value = []
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.chunks.get_vector_store",
+            "docsgpt.api.user.sources.chunks.get_vector_store",
             return_value=fake_store,
         ), app.test_request_context(
             "/api/update_chunk", method="PUT",
@@ -401,7 +401,7 @@ class TestUpdateChunk:
         assert response.status_code == 404
 
     def test_updates_chunk(self, app, pg_conn):
-        from application.api.user.sources.chunks import UpdateChunk
+        from docsgpt.api.user.sources.chunks import UpdateChunk
 
         user = "u-upd"
         src = _seed_source(pg_conn, user=user)
@@ -418,7 +418,7 @@ class TestUpdateChunk:
         fake_store.delete_chunk.return_value = True
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.chunks.get_vector_store",
+            "docsgpt.api.user.sources.chunks.get_vector_store",
             return_value=fake_store,
         ), app.test_request_context(
             "/api/update_chunk", method="PUT",

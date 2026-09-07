@@ -7,16 +7,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.agents.agentic_agent import AgenticAgent
-from application.agents.classic_agent import ClassicAgent
-from application.agents.research_agent import ResearchAgent
-from application.agents.workflows.node_agent import (
+from docsgpt.agents.agentic_agent import AgenticAgent
+from docsgpt.agents.classic_agent import ClassicAgent
+from docsgpt.agents.research_agent import ResearchAgent
+from docsgpt.agents.workflows.node_agent import (
     WorkflowNodeAgenticAgent,
     WorkflowNodeAgentFactory,
     WorkflowNodeClassicAgent,
     WorkflowNodeResearchAgent,
 )
-from application.agents.workflows.schemas import (
+from docsgpt.agents.workflows.schemas import (
     AgentNodeConfig,
     AgentType,
     NodeType,
@@ -24,7 +24,7 @@ from application.agents.workflows.schemas import (
     WorkflowGraph,
     WorkflowNode,
 )
-from application.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +205,7 @@ class TestWorkflowEngineAgenticNode:
             staticmethod(capture_create),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _provider: None,
         )
 
@@ -243,7 +243,7 @@ class TestWorkflowEngineAgenticNode:
             staticmethod(capture_create),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _provider: None,
         )
 
@@ -276,7 +276,7 @@ class TestWorkflowEngineAgenticNode:
             staticmethod(capture_create),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _provider: None,
         )
 
@@ -309,7 +309,7 @@ class TestWorkflowEngineResearchNode:
             staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _provider: None,
         )
 
@@ -346,7 +346,7 @@ class TestWorkflowEngineResearchNode:
             staticmethod(capture_create),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _provider: None,
         )
 
@@ -375,7 +375,7 @@ class TestWorkflowEngineResearchNode:
             staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _provider: None,
         )
 
@@ -414,7 +414,7 @@ class TestWorkflowEngineClassicNodeNoRetrieverConfig:
             staticmethod(capture_create),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _provider: None,
         )
 
@@ -448,7 +448,7 @@ class TestWorkflowEngineStreamingEvents:
             staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _provider: None,
         )
 
@@ -475,7 +475,7 @@ class TestWorkflowEngineStreamingEvents:
             staticmethod(lambda **kwargs: StubNodeAgent(node_events)),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda _provider: None,
         )
 
@@ -510,7 +510,7 @@ class TestWorkflowNodeSourceAuthorization:
         """``_authorized_node_sources`` opens a connection; don't need a real one."""
         import contextlib
 
-        import application.storage.db.session as session
+        import docsgpt.storage.db.session as session
 
         @contextlib.contextmanager
         def _conn():
@@ -519,7 +519,7 @@ class TestWorkflowNodeSourceAuthorization:
         monkeypatch.setattr(session, "db_readonly", _conn)
 
     def test_owner_sources_survive(self, monkeypatch):
-        import application.api.user.team_sharing as ts
+        import docsgpt.api.user.team_sharing as ts
 
         self._stub_db(monkeypatch)
         monkeypatch.setattr(ts, "can_access", lambda *a, **k: True)
@@ -527,7 +527,7 @@ class TestWorkflowNodeSourceAuthorization:
         assert engine._authorized_node_sources(["s1", "s2"]) == ["s1", "s2"]
 
     def test_foreign_sources_are_dropped(self, monkeypatch):
-        import application.api.user.team_sharing as ts
+        import docsgpt.api.user.team_sharing as ts
 
         self._stub_db(monkeypatch)
         monkeypatch.setattr(ts, "can_access", lambda conn, k, sid, u: sid == "mine")
@@ -542,7 +542,7 @@ class TestWorkflowNodeSourceAuthorization:
         assert engine._authorized_node_sources(["s1"]) == []
 
     def test_authorization_error_fails_closed(self, monkeypatch):
-        import application.api.user.team_sharing as ts
+        import docsgpt.api.user.team_sharing as ts
 
         def _boom(*a, **k):
             raise RuntimeError("db down")
@@ -576,7 +576,7 @@ class TestWorkflowNodeDocumentsReachTheAgent:
                 return docs
 
         monkeypatch.setattr(
-            "application.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
             lambda *a, **k: _R(),
         )
         monkeypatch.setattr(
@@ -599,7 +599,7 @@ class TestWorkflowNodeDocumentsReachTheAgent:
             raise RuntimeError("vector store down")
 
         monkeypatch.setattr(
-            "application.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
             _boom,
         )
         monkeypatch.setattr(

@@ -11,8 +11,8 @@ from typing import Any, Dict, List
 
 import pytest
 
-import application.parser.document_reader as dr
-from application.parser.document_reader import (
+import docsgpt.parser.document_reader as dr
+from docsgpt.parser.document_reader import (
     bound_parse_payload,
     parse_document_bytes,
     truncate_text_head_tail,
@@ -229,7 +229,7 @@ def test_default_markdown_with_tables_converts_docling_once(monkeypatch):
     # engine=auto resolves to the server default; this test is about the docling path.
     monkeypatch.setattr(dr.settings, "DOC_PARSER_ENGINE", "docling")
 
-    from application.parser.file.docling_parser import DoclingParser
+    from docsgpt.parser.file.docling_parser import DoclingParser
 
     counter = {"instances": 0, "converts": 0}
 
@@ -546,7 +546,7 @@ def test_vanilla_converter_applies_inference_settings(monkeypatch, tmp_path):
 
     called = []
     monkeypatch.setattr(
-        "application.parser.file.docling_parser._apply_inference_settings",
+        "docsgpt.parser.file.docling_parser._apply_inference_settings",
         lambda: called.append(True),
     )
 
@@ -618,7 +618,7 @@ def test_structured_tables_render_blank_cells_as_strings(monkeypatch, tmp_path):
             return types.SimpleNamespace(document=_Doc())
 
     monkeypatch.setattr(
-        "application.parser.file.docling_parser._apply_inference_settings",
+        "docsgpt.parser.file.docling_parser._apply_inference_settings",
         lambda: None,
     )
     fake_docling = types.ModuleType("docling")
@@ -753,7 +753,7 @@ def test_tables_are_not_collected_when_the_pdf_parser_is_not_docling(monkeypatch
     """Under OCR_BACKEND=native the docling engine hands PDFs to the native OCR
     parser; a vanilla DocumentConverter table pass would OCR the scan again."""
 
-    from application.parser.file.ocr_parser import NativeOcrPdfParser
+    from docsgpt.parser.file.ocr_parser import NativeOcrPdfParser
 
     native = NativeOcrPdfParser()
     native._parser_config = {}
@@ -777,8 +777,8 @@ def test_tables_survive_native_ocr_delegation_for_text_only_pdfs(monkeypatch):
     to that parser, so tables must ride that single conversion instead of being
     dropped by the scan exclusion."""
 
-    from application.parser.file.docling_parser import DoclingParser
-    from application.parser.file.ocr_parser import NativeOcrPdfParser
+    from docsgpt.parser.file.docling_parser import DoclingParser
+    from docsgpt.parser.file.ocr_parser import NativeOcrPdfParser
 
     class _Docling(DoclingParser):
         def __init__(self):

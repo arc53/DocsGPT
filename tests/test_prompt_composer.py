@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from application.prompts.composer import (
+from docsgpt.prompts.composer import (
     FRAGMENTS_DIR,
     PRESET_VARIANTS,
     compose_preset,
@@ -88,8 +88,8 @@ class TestPersonaSlot:
     """
 
     def _render(self, persona):
-        from application.templates.namespaces import NamespaceManager
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.namespaces import NamespaceManager
+        from docsgpt.templates.template_engine import TemplateEngine
 
         context = NamespaceManager().build_context(persona=persona)
         return TemplateEngine().render(compose_preset("default"), context)

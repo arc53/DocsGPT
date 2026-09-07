@@ -1,13 +1,13 @@
-"""Tests for application/api/answer/services/compression/orchestrator.py"""
+"""Tests for docsgpt/api/answer/services/compression/orchestrator.py"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.api.answer.services.compression.orchestrator import (
+from docsgpt.api.answer.services.compression.orchestrator import (
     CompressionOrchestrator,
 )
-from application.api.answer.services.compression.types import (
+from docsgpt.api.answer.services.compression.types import (
     CompressionMetadata,
     CompressionResult,
 )
@@ -172,14 +172,14 @@ class TestCompressIfNeeded:
 @pytest.mark.unit
 class TestPerformCompression:
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_provider_from_model_id"
+        "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id"
     )
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_api_key_for_provider"
+        "docsgpt.api.answer.services.compression.orchestrator.get_api_key_for_provider"
     )
-    @patch("application.api.answer.services.compression.orchestrator.LLMCreator")
-    @patch("application.api.answer.services.compression.orchestrator.CompressionService")
-    @patch("application.api.answer.services.compression.orchestrator.settings")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.CompressionService")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.settings")
     def test_successful_compression(
         self,
         mock_settings,
@@ -228,13 +228,13 @@ class TestPerformCompression:
         mock_svc_instance.compress_and_save.assert_called_once()
 
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_provider_from_model_id"
+        "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id"
     )
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_api_key_for_provider"
+        "docsgpt.api.answer.services.compression.orchestrator.get_api_key_for_provider"
     )
-    @patch("application.api.answer.services.compression.orchestrator.LLMCreator")
-    @patch("application.api.answer.services.compression.orchestrator.settings")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.settings")
     def test_uses_compression_model_override(
         self,
         mock_settings,
@@ -253,7 +253,7 @@ class TestPerformCompression:
         conversation = {"queries": [{"prompt": "q", "response": "r"}], "agent_id": "a"}
 
         with patch(
-            "application.api.answer.services.compression.orchestrator.CompressionService"
+            "docsgpt.api.answer.services.compression.orchestrator.CompressionService"
         ) as MockCS:
             mock_svc = MagicMock()
             mock_svc.compress_and_save.return_value = MagicMock(
@@ -280,14 +280,14 @@ class TestPerformCompression:
             )
 
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_provider_from_model_id"
+        "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id"
     )
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_api_key_for_provider"
+        "docsgpt.api.answer.services.compression.orchestrator.get_api_key_for_provider"
     )
-    @patch("application.api.answer.services.compression.orchestrator.LLMCreator")
-    @patch("application.api.answer.services.compression.orchestrator.CompressionService")
-    @patch("application.api.answer.services.compression.orchestrator.settings")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.CompressionService")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.settings")
     def test_no_queries_returns_no_compression(
         self,
         mock_settings,
@@ -327,9 +327,9 @@ class TestPerformCompression:
         }
 
         with patch(
-            "application.api.answer.services.compression.orchestrator.settings"
+            "docsgpt.api.answer.services.compression.orchestrator.settings"
         ) as mock_settings, patch(
-            "application.api.answer.services.compression.orchestrator.get_provider_from_model_id",
+            "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id",
             side_effect=RuntimeError("provider error"),
         ):
             mock_settings.COMPRESSION_MODEL_OVERRIDE = None

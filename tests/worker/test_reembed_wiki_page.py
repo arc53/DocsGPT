@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.parser.schema.base import Document
-from application.storage.db.repositories.sources import SourcesRepository
+from docsgpt.parser.schema.base import Document
+from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 
 def _seed_source(pg_conn) -> str:
@@ -29,7 +29,7 @@ def _seed_source(pg_conn) -> str:
 
 def _patch_store(monkeypatch, store):
     monkeypatch.setattr(
-        "application.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+        "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore",
         lambda *a, **kw: store,
     )
 
@@ -40,7 +40,7 @@ def _patch_repo(monkeypatch, page):
     repo.get_by_path.return_value = page
     repo.set_embed_status.return_value = True
     monkeypatch.setattr(
-        "application.worker.WikiPagesRepository", lambda conn: repo
+        "docsgpt.worker.WikiPagesRepository", lambda conn: repo
     )
     return repo
 
@@ -55,7 +55,7 @@ def _patch_chunker(monkeypatch, chunks):
         return chunker
 
     monkeypatch.setattr(
-        "application.worker.ChunkerCreator.create_chunker",
+        "docsgpt.worker.ChunkerCreator.create_chunker",
         staticmethod(_create_chunker),
     )
     return calls
@@ -66,7 +66,7 @@ class TestReembedWikiPageWorker:
     def test_page_exists_reembeds(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
 
@@ -107,8 +107,8 @@ class TestReembedWikiPageWorker:
         check reads as the legacy model and reports as stale on every startup.
         Stamping here heals a source created before it was recorded.
         """
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         source_id = _seed_source(pg_conn)
         assert SourcesRepository(pg_conn).get_any(source_id, "alice")["model"] is None
@@ -128,7 +128,7 @@ class TestReembedWikiPageWorker:
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
         """Deleting a page embeds nothing, so it claims nothing about the model."""
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(monkeypatch, MagicMock(name="vector_store"))
@@ -143,7 +143,7 @@ class TestReembedWikiPageWorker:
     def test_page_missing_purges(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
 
@@ -165,7 +165,7 @@ class TestReembedWikiPageWorker:
     def test_embed_failure_sets_failed_and_reraises(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
 
@@ -191,17 +191,17 @@ class TestReembedWikiPageWorker:
 class TestReembedWikiPageTask:
     def test_idempotency_key_is_content_hash(self, pg_conn, monkeypatch):
         """A redelivery with the same content_hash key short-circuits the worker."""
-        from application.api.user import tasks
+        from docsgpt.api.user import tasks
 
         @contextmanager
         def _yield():
             yield pg_conn
 
         monkeypatch.setattr(
-            "application.api.user.idempotency.db_session", _yield
+            "docsgpt.api.user.idempotency.db_session", _yield
         )
         monkeypatch.setattr(
-            "application.api.user.idempotency.db_readonly", _yield
+            "docsgpt.api.user.idempotency.db_readonly", _yield
         )
 
         calls: list[str] = []

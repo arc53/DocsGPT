@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from application.agents.tools.artifact_generator import (
+from docsgpt.agents.tools.artifact_generator import (
     _KIND_INFO,
     _RENDERERS,
     ArtifactGeneratorTool,
@@ -60,7 +60,7 @@ def test_validate_rejects_unknown_key():
 
 def _patch_reversion(monkeypatch, tool):
     """Stub render + persist so _reversion runs without a sandbox or DB; capture kwargs."""
-    import application.agents.tools.artifact_generator as ag
+    import docsgpt.agents.tools.artifact_generator as ag
 
     captured: dict = {}
 
@@ -148,7 +148,7 @@ def test_render_cleans_scratch_but_leaves_session_open(monkeypatch):
     """_render drops its per-render scratch dir but must NOT close the shared session."""
     manager = _FakeRenderManager()
     monkeypatch.setattr(
-        "application.sandbox.sandbox_creator.SandboxCreator.get_manager", lambda: manager
+        "docsgpt.sandbox.sandbox_creator.SandboxCreator.get_manager", lambda: manager
     )
 
     out = _tool()._render("pdf", {"title": "t", "blocks": []})
@@ -387,7 +387,7 @@ def test_spec_synopsis_covers_every_schema_key():
     The synopsis is a hand-written mirror of _SCHEMAS; this guards drift when a
     kind or key is added without updating what the model is told.
     """
-    from application.agents.tools.artifact_generator import _SCHEMAS, _SPEC_SYNOPSIS
+    from docsgpt.agents.tools.artifact_generator import _SCHEMAS, _SPEC_SYNOPSIS
 
     for kind, schema in _SCHEMAS.items():
         assert kind in _SPEC_SYNOPSIS
@@ -398,7 +398,7 @@ def test_spec_synopsis_covers_every_schema_key():
 
 
 def test_create_and_rewrite_metadata_embed_spec_synopsis():
-    from application.agents.tools.artifact_generator import _SPEC_SYNOPSIS
+    from docsgpt.agents.tools.artifact_generator import _SPEC_SYNOPSIS
 
     actions = {a["name"]: a for a in _tool().get_actions_metadata()}
     create_spec = actions["create_artifact"]["parameters"]["properties"]["spec"]
@@ -413,7 +413,7 @@ def test_create_and_rewrite_metadata_embed_spec_synopsis():
 
 
 def test_spec_append_preserves_existing_items():
-    from application.agents.tools.artifact_generator import _apply_spec_append
+    from docsgpt.agents.tools.artifact_generator import _apply_spec_append
 
     spec = {"title": "Brief", "blocks": [{"type": "heading", "text": "Overview"}]}
     out = _apply_spec_append(spec, {"blocks": [{"type": "heading", "text": "Risks"}]})
@@ -424,14 +424,14 @@ def test_spec_append_preserves_existing_items():
 
 
 def test_spec_append_creates_missing_list():
-    from application.agents.tools.artifact_generator import _apply_spec_append
+    from docsgpt.agents.tools.artifact_generator import _apply_spec_append
 
     out = _apply_spec_append({"title": "x"}, {"blocks": [{"type": "paragraph", "text": "p"}]})
     assert out["spec"]["blocks"] == [{"type": "paragraph", "text": "p"}]
 
 
 def test_spec_append_rejects_non_list_values_and_targets():
-    from application.agents.tools.artifact_generator import _apply_spec_append
+    from docsgpt.agents.tools.artifact_generator import _apply_spec_append
 
     assert "error" in _apply_spec_append({}, {"blocks": "not-a-list"})
     assert "error" in _apply_spec_append({"title": "t"}, {"title": ["x"]})

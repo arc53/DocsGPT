@@ -3,13 +3,13 @@
 from unittest.mock import Mock
 
 import pytest
-from application.agents.agentic_agent import AgenticAgent
+from docsgpt.agents.agentic_agent import AgenticAgent
 
 
 @pytest.fixture
 def _no_tools(monkeypatch):
     monkeypatch.setattr(
-        "application.agents.tool_executor.ToolExecutor.get_tools",
+        "docsgpt.agents.tool_executor.ToolExecutor.get_tools",
         lambda self: {},
     )
 

@@ -1,12 +1,12 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from application.celery_init import make_celery
-from application.core.settings import settings
+from docsgpt.celery_init import make_celery
+from docsgpt.core.settings import settings
 
 
 @pytest.mark.unit
-@patch("application.celery_init.Celery")
+@patch("docsgpt.celery_init.Celery")
 def test_make_celery(mock_celery):
     app_name = "test_app_name"
 
@@ -23,7 +23,7 @@ def test_make_celery(mock_celery):
 
 @pytest.mark.unit
 def test_celeryconfig_durability_defaults():
-    from application import celeryconfig
+    from docsgpt import celeryconfig
 
     assert celeryconfig.task_acks_late is True
     assert celeryconfig.task_reject_on_worker_lost is True
@@ -60,7 +60,7 @@ def test_durable_task_retry_envelope_spans_a_multi_minute_outage():
 
     from celery.app.autoretry import add_autoretry_behaviour
 
-    from application.api.user.tasks import DURABLE_TASK
+    from docsgpt.api.user.tasks import DURABLE_TASK
 
     assert DURABLE_TASK["retry_backoff"] == 60
     # ``retry_kwargs`` must stay absent: celery captures it by reference and
@@ -146,8 +146,8 @@ def test_durable_tasks_never_retry_a_deterministic_parse_failure():
 
     from celery.app.autoretry import add_autoretry_behaviour
 
-    from application.api.user.tasks import DURABLE_TASK
-    from application.parser.file.base_parser import DocumentParseError
+    from docsgpt.api.user.tasks import DURABLE_TASK
+    from docsgpt.parser.file.base_parser import DocumentParseError
 
     assert DocumentParseError in DURABLE_TASK["dont_autoretry_for"]
 
@@ -191,8 +191,8 @@ def test_every_durable_task_carries_the_parse_failure_guard():
     point is that no durable task ends up with a NARROWER one, which is how
     seven of the nine came to retry a permanent parse failure four times.
     """
-    from application.api.user import tasks as user_tasks
-    from application.parser.file.base_parser import DocumentParseError
+    from docsgpt.api.user import tasks as user_tasks
+    from docsgpt.parser.file.base_parser import DocumentParseError
 
     durable = (
         "ingest",
@@ -217,8 +217,8 @@ def test_unparseable_file_raises_the_non_retryable_type():
     This used to be a bare ``ValueError``, which ``autoretry_for=(Exception,)``
     swept up regardless of the ``dont_autoretry_for`` tuple.
     """
-    from application.parser.embedding_pipeline import embed_and_store_documents
-    from application.parser.file.base_parser import DocumentParseError
+    from docsgpt.parser.embedding_pipeline import embed_and_store_documents
+    from docsgpt.parser.file.base_parser import DocumentParseError
 
     with pytest.raises(DocumentParseError, match="No text could be extracted"):
         embed_and_store_documents([], "/tmp", "src", None)
@@ -237,38 +237,38 @@ class TestReclaimIsSkippedForEmbeds:
 
     @staticmethod
     def _collects(task_name):
-        from application.celery_init import _reclaim_memory_after_task
+        from docsgpt.celery_init import _reclaim_memory_after_task
 
         task = MagicMock()
         task.name = task_name
-        with patch("application.celery_init.gc.collect") as collect, patch(
-            "application.celery_init._trim_native_heap"
+        with patch("docsgpt.celery_init.gc.collect") as collect, patch(
+            "docsgpt.celery_init._trim_native_heap"
         ):
             _reclaim_memory_after_task(task=task, task_id="t", state="SUCCESS")
         return collect.called
 
     def test_the_embed_task_is_skipped(self):
-        assert not self._collects("application.vectorstore.embeddings_tasks.embed_texts")
+        assert not self._collects("docsgpt.vectorstore.embeddings_tasks.embed_texts")
 
     def test_parsing_still_reclaims(self):
-        assert self._collects("application.api.user.tasks.parse_document")
+        assert self._collects("docsgpt.api.user.tasks.parse_document")
 
     def test_ingest_still_reclaims(self):
-        assert self._collects("application.api.user.tasks.ingest")
+        assert self._collects("docsgpt.api.user.tasks.ingest")
 
     def test_an_unnamed_sender_still_reclaims(self):
         """Unknown callers keep the old behaviour rather than silently skipping."""
-        from application.celery_init import _reclaim_memory_after_task
+        from docsgpt.celery_init import _reclaim_memory_after_task
 
-        with patch("application.celery_init.gc.collect") as collect, patch(
-            "application.celery_init._trim_native_heap"
+        with patch("docsgpt.celery_init.gc.collect") as collect, patch(
+            "docsgpt.celery_init._trim_native_heap"
         ):
             _reclaim_memory_after_task(task_id="t", state="SUCCESS")
         assert collect.called
 
     def test_the_skip_list_names_the_real_task(self):
         """A renamed task must not silently start paying the collect again."""
-        from application.celery_init import _NO_RECLAIM_TASKS
-        from application.vectorstore.embeddings_delegated import EMBED_TASK
+        from docsgpt.celery_init import _NO_RECLAIM_TASKS
+        from docsgpt.vectorstore.embeddings_delegated import EMBED_TASK
 
         assert EMBED_TASK in _NO_RECLAIM_TASKS

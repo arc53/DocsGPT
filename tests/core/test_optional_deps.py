@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from application.core import optional_deps
+from docsgpt.core import optional_deps
 
 
 class TestExtras:

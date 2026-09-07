@@ -1,7 +1,7 @@
 import types
 
 import pytest
-from application.llm.openai import OpenAILLM
+from docsgpt.llm.openai import OpenAILLM
 
 
 class FakeChatCompletions:

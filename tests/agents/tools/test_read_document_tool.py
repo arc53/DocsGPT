@@ -17,8 +17,8 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-import application.agents.tools.read_document as rd
-from application.agents.tools.read_document import ReadDocumentTool
+import docsgpt.agents.tools.read_document as rd
+from docsgpt.agents.tools.read_document import ReadDocumentTool
 
 _ART_ID = str(uuid.uuid4())
 
@@ -86,7 +86,7 @@ class _FakeAsyncResult:
 
 def _patch_task(monkeypatch, *, payload=None, exc=None):
     """Patch parse_document.apply_async so no broker is touched; capture call args."""
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     captured: Dict[str, Any] = {}
 
@@ -225,7 +225,7 @@ def test_artifact_ref_sets_last_artifact_id(monkeypatch):
 @pytest.mark.unit
 def test_parse_window_scales_with_the_input_size(monkeypatch):
     """A large input widens the await AND the task's per-call Celery time limits."""
-    from application.api.user.tasks import parse_task_time_limits, parse_timeout_for_size
+    from docsgpt.api.user.tasks import parse_task_time_limits, parse_timeout_for_size
 
     size = 8 * 1024 * 1024
     _stub_repo(monkeypatch, found=True, conv="conv-1", run=None, size=size)
@@ -263,7 +263,7 @@ def test_cross_tenant_rejected_before_enqueue(monkeypatch):
     _stub_repo(monkeypatch, found=True, conv="conv-OTHER", run=None)
     enqueued = {"called": False}
 
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     def _apply_async(*a, **k):
         enqueued["called"] = True
@@ -279,7 +279,7 @@ def test_cross_tenant_rejected_before_enqueue(monkeypatch):
 @pytest.mark.unit
 def test_missing_input_rejected_before_enqueue(monkeypatch):
     _stub_repo(monkeypatch, found=False, conv="conv-1", run=None)
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
     monkeypatch.setattr(
         tasks.parse_document, "apply_async",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not enqueue")),
@@ -342,7 +342,7 @@ def test_json_schema_validation_fails_cleanly(monkeypatch):
 @pytest.mark.unit
 def test_malformed_json_schema_rejected_before_enqueue(monkeypatch):
     _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
     monkeypatch.setattr(
         tasks.parse_document, "apply_async",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not enqueue")),
@@ -361,13 +361,13 @@ def test_dispatch_inline_when_in_worker(monkeypatch):
     # parsing queue self-deadlocks the worker that also serves it).
     monkeypatch.setattr(rd, "current_task", object())
 
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
     monkeypatch.setattr(
         tasks.parse_document, "apply_async",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not enqueue inside a worker")),
     )
 
-    import application.worker as worker
+    import docsgpt.worker as worker
     called: Dict[str, Any] = {}
 
     def _fake_run(artifact_id, parent, user_id, options):
@@ -391,7 +391,7 @@ def test_dispatch_enqueues_when_not_in_worker(monkeypatch):
     monkeypatch.setattr(rd, "current_task", None)
     captured = _patch_task(monkeypatch, payload={"status": "ok", "content": "queued", "truncated": False})
 
-    import application.worker as worker
+    import docsgpt.worker as worker
     monkeypatch.setattr(
         worker, "run_parse_document",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("web path must dispatch, not inline")),
@@ -418,14 +418,14 @@ def _inline(monkeypatch, run_parse, *, timeout=0.2) -> ReadDocumentTool:
     _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
     monkeypatch.setattr(rd, "current_task", object())
 
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
     monkeypatch.setattr(
         tasks.parse_document, "apply_async",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not enqueue inside a worker")),
     )
     monkeypatch.setattr(tasks, "parse_timeout_for_size", lambda size: timeout)
 
-    import application.worker as worker
+    import docsgpt.worker as worker
     monkeypatch.setattr(worker, "run_parse_document", run_parse)
     return _tool()
 
@@ -466,7 +466,7 @@ def test_inline_parse_times_out_on_the_signal_path(monkeypatch, caplog):
     before = signal.getsignal(signal.SIGALRM)
     tool = _inline(monkeypatch, _run, timeout=0.2)
     started = time.monotonic()
-    with caplog.at_level(logging.WARNING, logger="application.agents.tools.read_document"):
+    with caplog.at_level(logging.WARNING, logger="docsgpt.agents.tools.read_document"):
         out = tool.execute_action("read_document", input=_ART_ID, persist=False)
     elapsed = time.monotonic() - started
 
@@ -520,7 +520,7 @@ def test_the_inline_helper_thread_is_a_daemon():
     """A timed-out parse is abandoned, so its thread must not outlive the process.
 
     ``concurrent.futures`` registers its (non-daemon) workers with an atexit
-    hook that joins them, which is exactly why application/guardrails/engine.py
+    hook that joins them, which is exactly why docsgpt/guardrails/engine.py
     uses raw daemon threads for the same abandon-on-timeout shape.
     """
     seen: Dict[str, Any] = {}
@@ -572,7 +572,7 @@ def test_inline_parse_times_out_on_the_thread_path(monkeypatch, caplog):
     def _call():
         box["out"] = tool.execute_action("read_document", input=_ART_ID, persist=False)
 
-    with caplog.at_level(logging.WARNING, logger="application.agents.tools.read_document"):
+    with caplog.at_level(logging.WARNING, logger="docsgpt.agents.tools.read_document"):
         caller = threading.Thread(target=_call, name="fake-worker-pool-thread")
         caller.start()
         caller.join(2.0)
@@ -681,7 +681,7 @@ def test_inline_timeout_is_not_swallowed_by_the_parser_catch_all(monkeypatch, ca
             seen["cleaned_up"] = True
 
     tool = _inline(monkeypatch, _run, timeout=0.2)
-    with caplog.at_level(logging.WARNING, logger="application.agents.tools.read_document"):
+    with caplog.at_level(logging.WARNING, logger="docsgpt.agents.tools.read_document"):
         out = tool.execute_action("read_document", input=_ART_ID, persist=False)
 
     assert out == {"status": "error", "error": f"{_TIMED_OUT} {int(0.2)}s."}

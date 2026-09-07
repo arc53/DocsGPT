@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 class TestBraveOptionalParams:
     def test_result_filter_added_to_params(self):
-        from application.agents.tools.brave import BraveSearchTool
+        from docsgpt.agents.tools.brave import BraveSearchTool
 
         tool = BraveSearchTool(config={"token": "tk"})
         fake_response = MagicMock()
@@ -14,7 +14,7 @@ class TestBraveOptionalParams:
         fake_response.json.return_value = {"web": {"results": []}}
 
         with patch(
-            "application.agents.tools.brave.requests.get",
+            "docsgpt.agents.tools.brave.requests.get",
             return_value=fake_response,
         ) as mock_get:
             tool.execute_action(
@@ -28,7 +28,7 @@ class TestBraveOptionalParams:
         assert params.get("result_filter") == "news"
 
     def test_extra_snippets_flag(self):
-        from application.agents.tools.brave import BraveSearchTool
+        from docsgpt.agents.tools.brave import BraveSearchTool
 
         tool = BraveSearchTool(config={"token": "tk"})
         fake_response = MagicMock()
@@ -36,7 +36,7 @@ class TestBraveOptionalParams:
         fake_response.json.return_value = {"web": {"results": []}}
 
         with patch(
-            "application.agents.tools.brave.requests.get",
+            "docsgpt.agents.tools.brave.requests.get",
             return_value=fake_response,
         ) as mock_get:
             tool.execute_action(
@@ -46,7 +46,7 @@ class TestBraveOptionalParams:
         assert params.get("extra_snippets") == 1
 
     def test_summary_flag(self):
-        from application.agents.tools.brave import BraveSearchTool
+        from docsgpt.agents.tools.brave import BraveSearchTool
 
         tool = BraveSearchTool(config={"token": "tk"})
         fake_response = MagicMock()
@@ -54,7 +54,7 @@ class TestBraveOptionalParams:
         fake_response.json.return_value = {"web": {"results": []}}
 
         with patch(
-            "application.agents.tools.brave.requests.get",
+            "docsgpt.agents.tools.brave.requests.get",
             return_value=fake_response,
         ) as mock_get:
             tool.execute_action("brave_web_search", query="x", summary=True)

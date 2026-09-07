@@ -18,7 +18,7 @@ import pytest
 
 def _run(events, monkeypatch):
     """Drive ``run_agent_headless`` over a canned agent event stream."""
-    from application.agents import headless_runner as hr
+    from docsgpt.agents import headless_runner as hr
 
     agent = MagicMock(name="agent")
     agent.gen.return_value = iter(events)
@@ -41,14 +41,14 @@ def _run(events, monkeypatch):
         classmethod(lambda cls, *a, **kw: agent),
     )
 
-    with patch("application.core.model_utils.validate_model_id", return_value=True), \
-         patch("application.core.model_utils.get_default_model_id", return_value="m"), \
+    with patch("docsgpt.core.model_utils.validate_model_id", return_value=True), \
+         patch("docsgpt.core.model_utils.get_default_model_id", return_value="m"), \
          patch(
-             "application.core.model_utils.get_provider_from_model_id",
+             "docsgpt.core.model_utils.get_provider_from_model_id",
              return_value="openai",
          ), \
-         patch("application.core.model_utils.get_api_key_for_provider", return_value="k"), \
-         patch("application.utils.calculate_doc_token_budget", return_value=1000):
+         patch("docsgpt.core.model_utils.get_api_key_for_provider", return_value="k"), \
+         patch("docsgpt.utils.calculate_doc_token_budget", return_value=1000):
         return hr.run_agent_headless(
             {"user_id": "u1", "id": "agent-1", "default_model_id": "m"},
             "do the thing",

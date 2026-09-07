@@ -8,7 +8,7 @@ import { Callout } from 'nextra/components'
 # Observability
 
 DocsGPT bundles the OpenTelemetry SDK and auto-instrumentation packages
-in `application/requirements.txt` — they install with the rest of the
+in `docsgpt/requirements.txt` — they install with the rest of the
 backend deps. Telemetry is **off by default**; opt in by prefixing the
 launch command with `opentelemetry-instrument` and setting OTLP env
 vars.
@@ -42,12 +42,12 @@ services:
   backend:
     command: >
       opentelemetry-instrument gunicorn -w 1 -k uvicorn_worker.UvicornWorker
-      --bind 0.0.0.0:7091 --config application/gunicorn_conf.py
-      application.asgi:asgi_app
+      --bind 0.0.0.0:7091 --config docsgpt/gunicorn_conf.py
+      docsgpt.asgi:asgi_app
     environment:
       - OTEL_SERVICE_NAME=docsgpt-backend
   worker:
-    command: opentelemetry-instrument celery -A application.app.celery worker -l INFO -B
+    command: opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B
     environment:
       - OTEL_SERVICE_NAME=docsgpt-celery-worker
 ```
@@ -56,14 +56,14 @@ For local dev, prepend `dotenv run --` so the `OTEL_*` vars from `.env`
 reach `opentelemetry-instrument` before it boots the SDK:
 
 ```bash
-dotenv run -- opentelemetry-instrument flask --app application/app.py run --port=7091
-dotenv run -- opentelemetry-instrument celery -A application.app.celery worker -l INFO --pool=solo
+dotenv run -- opentelemetry-instrument flask --app docsgpt/app.py run --port=7091
+dotenv run -- opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO --pool=solo
 ```
 
 
 <Callout type="info" emoji="ℹ️">
   Logs are exported in-process when `OTEL_LOGS_EXPORTER=otlp` is set —
-  `application/core/logging_config.py` detects the flag and preserves
+  `docsgpt/core/logging_config.py` detects the flag and preserves
   the OTEL log handler. Without it, `logging` writes only to stdout.
 </Callout>
 

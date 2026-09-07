@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 
 
 def _alembic_ini() -> Path:
-    return Path(__file__).resolve().parents[3] / "application" / "alembic.ini"
+    return Path(__file__).resolve().parents[3] / "docsgpt" / "alembic.ini"
 
 
 def _run_alembic(url: str, *args: str) -> None:
@@ -123,7 +123,7 @@ class TestMigration0009RoundTrip:
 
     def test_downgrade_purges_synthetic_id_memory_rows(self, pg_engine):
         """Downgrade DELETEs synthetic-id memory rows so the FK can be restored."""
-        from application.agents.default_tools import default_tool_id
+        from docsgpt.agents.default_tools import default_tool_id
 
         url = pg_engine.url.render_as_string(hide_password=False)
         # Land on 0009 so synthetic-id rows are insertable (no FK yet).

@@ -14,7 +14,7 @@ def app():
 class TestModelsListResource:
 
     def test_returns_models(self, app):
-        from application.api.user.models.routes import ModelsListResource
+        from docsgpt.api.user.models.routes import ModelsListResource
 
         mock_model = Mock()
         mock_model.to_dict.return_value = {
@@ -28,7 +28,7 @@ class TestModelsListResource:
         mock_registry.default_model_id = "gpt-4"
 
         with patch(
-            "application.api.user.models.routes.ModelRegistry.get_instance",
+            "docsgpt.api.user.models.routes.ModelRegistry.get_instance",
             return_value=mock_registry,
         ):
             with app.test_request_context("/api/models"):
@@ -40,14 +40,14 @@ class TestModelsListResource:
         assert response.json["models"][0]["id"] == "gpt-4"
 
     def test_returns_empty_models(self, app):
-        from application.api.user.models.routes import ModelsListResource
+        from docsgpt.api.user.models.routes import ModelsListResource
 
         mock_registry = Mock()
         mock_registry.get_enabled_models.return_value = []
         mock_registry.default_model_id = None
 
         with patch(
-            "application.api.user.models.routes.ModelRegistry.get_instance",
+            "docsgpt.api.user.models.routes.ModelRegistry.get_instance",
             return_value=mock_registry,
         ):
             with app.test_request_context("/api/models"):
@@ -58,10 +58,10 @@ class TestModelsListResource:
         assert response.json["models"] == []
 
     def test_returns_500_on_error(self, app):
-        from application.api.user.models.routes import ModelsListResource
+        from docsgpt.api.user.models.routes import ModelsListResource
 
         with patch(
-            "application.api.user.models.routes.ModelRegistry.get_instance",
+            "docsgpt.api.user.models.routes.ModelRegistry.get_instance",
             side_effect=Exception("Registry error"),
         ):
             with app.test_request_context("/api/models"):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.tool_call_attempts import (
+from docsgpt.storage.db.repositories.tool_call_attempts import (
     ToolCallAttemptsRepository,
 )
 

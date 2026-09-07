@@ -12,7 +12,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from application.agents.tools.notes import NotesTool
+from docsgpt.agents.tools.notes import NotesTool
 
 
 class _FakeNotesRepo:
@@ -55,13 +55,13 @@ def _noop_conn():
 def notes_tool(monkeypatch):
     _FakeNotesRepo.reset()
     monkeypatch.setattr(
-        "application.agents.tools.notes.NotesRepository", _FakeNotesRepo
+        "docsgpt.agents.tools.notes.NotesRepository", _FakeNotesRepo
     )
     monkeypatch.setattr(
-        "application.agents.tools.notes.db_session", _noop_conn
+        "docsgpt.agents.tools.notes.db_session", _noop_conn
     )
     monkeypatch.setattr(
-        "application.agents.tools.notes.db_readonly", _noop_conn
+        "docsgpt.agents.tools.notes.db_readonly", _noop_conn
     )
     return NotesTool({"tool_id": str(uuid.uuid4())}, user_id="test_user")
 
@@ -127,13 +127,13 @@ def test_delete_nonexistent_note(notes_tool):
 def test_isolation_per_tool_id(monkeypatch):
     _FakeNotesRepo.reset()
     monkeypatch.setattr(
-        "application.agents.tools.notes.NotesRepository", _FakeNotesRepo
+        "docsgpt.agents.tools.notes.NotesRepository", _FakeNotesRepo
     )
     monkeypatch.setattr(
-        "application.agents.tools.notes.db_session", _noop_conn
+        "docsgpt.agents.tools.notes.db_session", _noop_conn
     )
     monkeypatch.setattr(
-        "application.agents.tools.notes.db_readonly", _noop_conn
+        "docsgpt.agents.tools.notes.db_readonly", _noop_conn
     )
 
     tool1 = NotesTool({"tool_id": str(uuid.uuid4())}, user_id="test_user")

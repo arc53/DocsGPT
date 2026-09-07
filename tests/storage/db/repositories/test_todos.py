@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.todos import TodosRepository
+from docsgpt.storage.db.repositories.todos import TodosRepository
 
 
 def _repo(conn) -> TodosRepository:

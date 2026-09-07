@@ -1,5 +1,5 @@
 import pytest
-from application.vectorstore.document_class import Document
+from docsgpt.vectorstore.document_class import Document
 
 
 @pytest.mark.unit

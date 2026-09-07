@@ -1,8 +1,8 @@
 from unittest.mock import MagicMock, patch
 
-from application.parser.file.audio_parser import AudioParser
-from application.parser.file.bulk import get_default_file_extractor
-from application.stt.upload_limits import AudioFileTooLargeError
+from docsgpt.parser.file.audio_parser import AudioParser
+from docsgpt.parser.file.bulk import get_default_file_extractor
+from docsgpt.stt.upload_limits import AudioFileTooLargeError
 
 
 def test_audio_init_parser():
@@ -13,9 +13,9 @@ def test_audio_init_parser():
     assert parser.parser_config_set
 
 
-@patch("application.stt.upload_limits.settings")
-@patch("application.parser.file.audio_parser.STTCreator.create_stt")
-@patch("application.parser.file.audio_parser.settings")
+@patch("docsgpt.stt.upload_limits.settings")
+@patch("docsgpt.parser.file.audio_parser.STTCreator.create_stt")
+@patch("docsgpt.parser.file.audio_parser.settings")
 def test_audio_parser_transcribes_file(
     mock_settings, mock_create_stt, mock_limit_settings, tmp_path
 ):
@@ -44,7 +44,7 @@ def test_audio_parser_transcribes_file(
     )
 
 
-@patch("application.stt.upload_limits.settings")
+@patch("docsgpt.stt.upload_limits.settings")
 def test_audio_parser_rejects_oversized_files(mock_limit_settings, tmp_path):
     mock_limit_settings.STT_MAX_FILE_SIZE_MB = 1
 

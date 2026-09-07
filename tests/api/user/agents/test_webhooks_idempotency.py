@@ -19,15 +19,15 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.agents.webhooks.db_session", _yield
+        "docsgpt.api.user.agents.webhooks.db_session", _yield
     ), patch(
-        "application.api.user.agents.webhooks.db_readonly", _yield
+        "docsgpt.api.user.agents.webhooks.db_readonly", _yield
     ):
         yield
 
 
 def _seed_agent(pg_conn, user="u", token="tk", **kw):
-    from application.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
     return AgentsRepository(pg_conn).create(
         user, "a", "published", incoming_webhook_token=token, **kw,
     )
@@ -42,13 +42,13 @@ def _apply_async_mock():
 
 class TestWebhookIdempotency:
     def test_no_header_enqueues_normally(self, app, pg_conn):
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         agent = _seed_agent(pg_conn, user="u-noh", token="tk-noh")
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/webhooks/agents/tk-noh", method="POST",
@@ -66,13 +66,13 @@ class TestWebhookIdempotency:
     def test_header_first_post_records_row(self, app, pg_conn):
         from sqlalchemy import text
 
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         agent = _seed_agent(pg_conn, user="u-first", token="tk-first")
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/webhooks/agents/tk-first", method="POST",
@@ -105,13 +105,13 @@ class TestWebhookIdempotency:
         """The Celery task body needs the key so ``with_idempotency`` can
         record terminal status and ``_derive_source_id`` can pick it up.
         """
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         agent = _seed_agent(pg_conn, user="u-fwd", token="tk-fwd")
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/webhooks/agents/tk-fwd", method="POST",
@@ -133,13 +133,13 @@ class TestWebhookIdempotency:
         )
 
     def test_same_header_second_post_returns_cached(self, app, pg_conn):
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         agent = _seed_agent(pg_conn, user="u-rep", token="tk-rep")
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             apply_mock,
         ):
             with app.test_request_context(
@@ -179,8 +179,8 @@ class TestWebhookIdempotency:
         from concurrent.futures import ThreadPoolExecutor
         from contextlib import contextmanager
 
-        from application.api.user.agents.webhooks import AgentWebhookListener
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         with pg_engine.begin() as conn:
             agent = AgentsRepository(conn).create(
@@ -218,13 +218,13 @@ class TestWebhookIdempotency:
         # module-attribute patches once before fanning out so every
         # thread sees the mock instead of racing on save/restore.
         with patch(
-            "application.api.user.agents.webhooks.db_session",
+            "docsgpt.api.user.agents.webhooks.db_session",
             _engine_session,
         ), patch(
-            "application.api.user.agents.webhooks.db_readonly",
+            "docsgpt.api.user.agents.webhooks.db_readonly",
             _engine_readonly,
         ), patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             apply_mock,
         ), ThreadPoolExecutor(max_workers=8) as ex:
             responses = list(ex.map(fire, range(8)))
@@ -243,14 +243,14 @@ class TestWebhookIdempotency:
         """
         from sqlalchemy import text as sql_text
 
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         agent_a = _seed_agent(pg_conn, user="u-a", token="tk-a")
         agent_b = _seed_agent(pg_conn, user="u-b", token="tk-b")
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             apply_mock,
         ):
             with app.test_request_context(
@@ -296,13 +296,13 @@ class TestWebhookIdempotency:
     def test_empty_header_treated_as_absent(self, app, pg_conn):
         from sqlalchemy import text
 
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         agent = _seed_agent(pg_conn, user="u-empty", token="tk-empty")
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/webhooks/agents/tk-empty", method="POST",
@@ -323,13 +323,13 @@ class TestWebhookIdempotency:
         assert count == 0
 
     def test_oversized_header_rejected_with_400(self, app, pg_conn):
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         agent = _seed_agent(pg_conn, user="u-big", token="tk-big")
         oversized = "x" * 257
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
         ) as mock_apply, app.test_request_context(
             "/api/webhooks/agents/tk-big", method="POST",
             json={"event": "x"},
@@ -351,14 +351,14 @@ class TestWebhookIdempotency:
         """
         from sqlalchemy import text
 
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         agent = _seed_agent(pg_conn, user="u-stale", token="tk-stale")
         apply_mock = _apply_async_mock()
 
         # First POST creates a dedup row.
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/webhooks/agents/tk-stale", method="POST",
@@ -388,7 +388,7 @@ class TestWebhookIdempotency:
 
         # Second POST with the same key must enqueue again, not silently dedup.
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/webhooks/agents/tk-stale", method="POST",

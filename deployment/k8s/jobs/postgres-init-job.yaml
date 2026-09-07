@@ -35,7 +35,7 @@ spec:
             name: docsgpt-secrets
         env:
         - name: FLASK_APP
-          value: "application/app.py"
+          value: "docsgpt/app.py"
         resources:
           limits:
             memory: "1Gi"

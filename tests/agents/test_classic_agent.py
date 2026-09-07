@@ -1,8 +1,8 @@
 from unittest.mock import Mock
 
 import pytest
-from application.agents.classic_agent import ClassicAgent
-from application.agents.tools.internal_search import INTERNAL_TOOL_ID
+from docsgpt.agents.classic_agent import ClassicAgent
+from docsgpt.agents.tools.internal_search import INTERNAL_TOOL_ID
 
 
 @pytest.fixture
@@ -13,7 +13,7 @@ def _no_tools(monkeypatch):
         return {}
 
     monkeypatch.setattr(
-        "application.agents.tool_executor.ToolExecutor.get_tools", _fake_get_tools
+        "docsgpt.agents.tool_executor.ToolExecutor.get_tools", _fake_get_tools
     )
 
 
@@ -21,7 +21,7 @@ def _no_tools(monkeypatch):
 def _no_dir_structure(monkeypatch):
     """Stub the DB-backed directory-structure lookup used by the search tool."""
     monkeypatch.setattr(
-        "application.agents.tools.internal_search.sources_have_directory_structure",
+        "docsgpt.agents.tools.internal_search.sources_have_directory_structure",
         lambda source: False,
     )
 
@@ -117,7 +117,7 @@ class TestClassicAgent:
             }
         }
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolExecutor.get_tools",
+            "docsgpt.agents.tool_executor.ToolExecutor.get_tools",
             lambda self: fake_tools,
         )
 

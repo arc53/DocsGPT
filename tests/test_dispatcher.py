@@ -4,14 +4,14 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.retriever.dispatcher import Dispatcher, build_dispatcher
-from application.storage.db.source_config import RetrievalConfig
+from docsgpt.retriever.dispatcher import Dispatcher, build_dispatcher
+from docsgpt.storage.db.source_config import RetrievalConfig
 
 
 @pytest.fixture
 def _patch_llm_creator(mock_llm, monkeypatch):
     monkeypatch.setattr(
-        "application.retriever.classic_rag.LLMCreator.create_llm",
+        "docsgpt.retriever.classic_rag.LLMCreator.create_llm",
         Mock(return_value=mock_llm),
     )
     return mock_llm
@@ -92,10 +92,10 @@ class TestDispatcherSharedBudget:
 class TestDispatcherParity:
     """All-classic sources through the Dispatcher == one ClassicRAG today."""
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_single_group_matches_classic_rag(self, _tok, mock_vc, _patch_llm_creator):
-        from application.retriever.classic_rag import ClassicRAG
+        from docsgpt.retriever.classic_rag import ClassicRAG
 
         docsearch = Mock()
         docsearch.search.return_value = [_make_doc("content one"), _make_doc("content two")]
@@ -121,10 +121,10 @@ class TestDispatcherParity:
 
         assert dispatched == baseline
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_no_sources_matches_classic_rag(self, _tok, mock_vc, _patch_llm_creator):
-        from application.retriever.classic_rag import ClassicRAG
+        from docsgpt.retriever.classic_rag import ClassicRAG
 
         docsearch = Mock()
         docsearch.search.return_value = [_make_doc("a")]
@@ -144,8 +144,8 @@ class TestDispatcherParity:
 
 @pytest.mark.unit
 class TestDispatcherStageSeam:
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_stage_applied_to_candidates(self, _tok, mock_vc, _patch_llm_creator):
         docsearch = Mock()
         docsearch.search.return_value = [_make_doc("keep"), _make_doc("drop")]
@@ -161,8 +161,8 @@ class TestDispatcherStageSeam:
         out = d.search("query")
         assert [doc["text"] for doc in out] == ["keep"]
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_default_stages_passthrough(self, _tok, mock_vc, _patch_llm_creator):
         docsearch = Mock()
         docsearch.search.return_value = [_make_doc("a")]
@@ -181,8 +181,8 @@ class TestDispatcherLenientRead:
         # An invalid dict that fails validation also falls back.
         assert Dispatcher._coerce_retrieval({"chunks": "abc"}) == RetrievalConfig()
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_garbage_config_retrieves_via_classic(self, _tok, mock_vc, _patch_llm_creator):
         docsearch = Mock()
         docsearch.search.return_value = [_make_doc("ok")]
@@ -203,8 +203,8 @@ class TestDispatcherLenientRead:
 class TestDispatcherPrescreen:
     """F1: prescreen bumps candidate_k, trims to max_keep, off == today."""
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_candidate_k_fetched_and_trimmed(self, _tok, mock_vc, _patch_llm_creator):
         docsearch = Mock()
         # Return 40 candidate docs; prescreen should trim to max_keep=3.
@@ -219,7 +219,7 @@ class TestDispatcherPrescreen:
         prescreen_llm.model_id = "m"
 
         with patch(
-            "application.retriever.stages.prescreen.LLMCreator.create_llm",
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
             return_value=prescreen_llm,
         ):
             d = Dispatcher(
@@ -248,9 +248,9 @@ class TestDispatcherPrescreen:
         assert prescreen_llm.gen.call_count == 4
         assert len(out) == 3
 
-    @patch("application.retriever.stages.prescreen.build_prescreen_stages")
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.stages.prescreen.build_prescreen_stages")
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_prescreen_none_no_extra_llm_calls(
         self, _tok, mock_vc, mock_build, _patch_llm_creator
     ):
@@ -258,7 +258,7 @@ class TestDispatcherPrescreen:
         docsearch.search.return_value = [_make_doc("one"), _make_doc("two")]
         mock_vc.create_vectorstore.return_value = docsearch
         # The dispatcher imports the symbol; patch where it's looked up.
-        import application.retriever.dispatcher as disp
+        import docsgpt.retriever.dispatcher as disp
 
         with patch.object(disp, "build_prescreen_stages", mock_build):
             mock_build.return_value = []
@@ -297,7 +297,7 @@ class TestDispatcherPrescreen:
 class TestKillSwitch:
     def test_disabled_falls_back_to_legacy(self, monkeypatch):
         monkeypatch.setattr(
-            "application.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
+            "docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
             False,
         )
         sentinel = object()
@@ -310,7 +310,7 @@ class TestKillSwitch:
 
     def test_enabled_returns_dispatcher(self, monkeypatch, _patch_llm_creator):
         monkeypatch.setattr(
-            "application.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
+            "docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
             True,
         )
         result = build_dispatcher(

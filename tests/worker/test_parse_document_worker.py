@@ -1,4 +1,4 @@
-"""Unit tests for ``application.worker.parse_document_worker``.
+"""Unit tests for ``docsgpt.worker.parse_document_worker``.
 
 The worker re-resolves the artifact through the run-scoped gate (independent of
 the tool), reads its bytes, shapes the result, and persists when asked. The DB,
@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-import application.worker as worker
+import docsgpt.worker as worker
 
 _ART_ID = str(uuid.uuid4())
 
@@ -65,7 +65,7 @@ def _patch_repo(monkeypatch, *, found: bool, run: Optional[str]):
 
 
 def _patch_parse(monkeypatch, result: Dict[str, Any]):
-    import application.parser.document_reader as dr
+    import docsgpt.parser.document_reader as dr
 
     monkeypatch.setattr(dr, "parse_document_bytes", lambda data, filename, **opts: result)
 
@@ -136,7 +136,7 @@ def test_persist_stores_full_result_and_returns_ref(monkeypatch):
         return {"artifact_id": "new-art", "version": 1, "filename": "x.json",
                 "mime_type": "application/json", "size": 10}
 
-    import application.sandbox.artifacts_capture as ac
+    import docsgpt.sandbox.artifacts_capture as ac
 
     monkeypatch.setattr(ac, "persist_new_artifact", _fake_persist)
 
@@ -158,7 +158,7 @@ def test_persist_quota_surfaces_as_artifact_error(monkeypatch):
     _patch_repo(monkeypatch, found=True, run="run-1")
     _patch_parse(monkeypatch, {"output": "markdown", "content": "x", "truncated": False})
 
-    import application.sandbox.artifacts_capture as ac
+    import docsgpt.sandbox.artifacts_capture as ac
 
     def _quota(**kwargs):
         raise ac.QuotaExceeded("artifact storage quota reached")
@@ -190,7 +190,7 @@ def test_result_payload_content_is_bounded(monkeypatch):
 
 @pytest.mark.unit
 def test_result_payload_chunks_are_bounded(monkeypatch):
-    import application.parser.document_reader as dr
+    import docsgpt.parser.document_reader as dr
 
     _patch_repo(monkeypatch, found=True, run="run-1")
     # Many oversized chunks: count is capped AND each chunk is windowed.
@@ -210,7 +210,7 @@ def test_result_payload_chunks_are_bounded(monkeypatch):
 
 def _capture_persist(monkeypatch):
     """Patch persist_new_artifact to record what would be stored; return the capture dict."""
-    import application.sandbox.artifacts_capture as ac
+    import docsgpt.sandbox.artifacts_capture as ac
 
     captured: Dict[str, Any] = {}
 

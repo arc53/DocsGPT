@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import patch
 
-from application.core.url_validation import (
+from docsgpt.core.url_validation import (
     SSRFError,
     validate_url,
     validate_url_safe,
@@ -62,13 +62,13 @@ class TestValidateUrl:
     """Tests for validate_url function."""
 
     def test_adds_scheme_if_missing(self):
-        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
             mock_resolve.return_value = "93.184.216.34"  # Public IP
             result = validate_url("example.com")
             assert result == "http://example.com"
 
     def test_preserves_https_scheme(self):
-        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
             mock_resolve.return_value = "93.184.216.34"
             result = validate_url("https://example.com")
             assert result == "https://example.com"
@@ -129,14 +129,14 @@ class TestValidateUrl:
         assert "scheme" in str(exc_info.value).lower()
 
     def test_blocks_hostname_resolving_to_private_ip(self):
-        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
             mock_resolve.return_value = "192.168.1.1"
             with pytest.raises(SSRFError) as exc_info:
                 validate_url("http://internal.example.com")
             assert "private" in str(exc_info.value).lower() or "internal" in str(exc_info.value).lower()
 
     def test_blocks_hostname_resolving_to_metadata_ip(self):
-        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
             mock_resolve.return_value = "169.254.169.254"
             with pytest.raises(SSRFError) as exc_info:
                 validate_url("http://evil.example.com")
@@ -147,13 +147,13 @@ class TestValidateUrl:
         assert result == "http://8.8.8.8"
 
     def test_allows_public_hostname(self):
-        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
             mock_resolve.return_value = "93.184.216.34"
             result = validate_url("https://example.com")
             assert result == "https://example.com"
 
     def test_raises_on_unresolvable_hostname(self):
-        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
             mock_resolve.return_value = None
             with pytest.raises(SSRFError) as exc_info:
                 validate_url("http://nonexistent.invalid")
@@ -177,7 +177,7 @@ class TestValidateUrlSafe:
     """Tests for validate_url_safe non-throwing function."""
 
     def test_returns_tuple_on_success(self):
-        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
             mock_resolve.return_value = "93.184.216.34"
             is_valid, url, error = validate_url_safe("https://example.com")
             assert is_valid is True
@@ -197,7 +197,7 @@ class TestValidateUrlSafe:
         assert "private" in error.lower() or "internal" in error.lower()
 
     def test_adds_scheme_when_missing(self):
-        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
             mock_resolve.return_value = "93.184.216.34"
             is_valid, url, error = validate_url_safe("example.com")
             assert is_valid is True
@@ -235,7 +235,7 @@ class TestValidateUrlExtended:
             validate_url("http://metadata")
 
     def test_allows_localhost_with_flag(self):
-        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
             mock_resolve.return_value = "192.168.1.1"
             result = validate_url(
                 "http://internal.local", allow_localhost=True
@@ -251,7 +251,7 @@ class TestValidateUrlExtended:
             validate_url("http://[fd00:ec2::254]")
 
     def test_blocks_hostname_resolving_to_loopback(self):
-        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
             mock_resolve.return_value = "127.0.0.1"
             with pytest.raises(SSRFError):
                 validate_url("http://sneaky.example.com")

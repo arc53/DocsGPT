@@ -20,7 +20,7 @@ import time
 
 import pytest
 
-from application.devices.broker import DeviceBroker
+from docsgpt.devices.broker import DeviceBroker
 
 
 def _b(value) -> bytes:
@@ -196,6 +196,6 @@ def fake_redis() -> FakeRedis:
 def broker_env(monkeypatch, fake_redis):
     """A ``DeviceBroker`` wired to a fresh ``FakeRedis``; returns (broker, fake)."""
     monkeypatch.setattr(
-        "application.devices.broker.get_redis_instance", lambda: fake_redis
+        "docsgpt.devices.broker.get_redis_instance", lambda: fake_redis
     )
     return DeviceBroker(), fake_redis

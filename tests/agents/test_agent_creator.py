@@ -1,6 +1,6 @@
 import pytest
-from application.agents.agent_creator import AgentCreator
-from application.agents.classic_agent import ClassicAgent
+from docsgpt.agents.agent_creator import AgentCreator
+from docsgpt.agents.classic_agent import ClassicAgent
 
 
 @pytest.mark.unit

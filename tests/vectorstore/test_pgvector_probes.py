@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.vectorstore import pgvector as pgvector_module
-from application.vectorstore.pgvector import PGVectorStore
+from docsgpt.vectorstore import pgvector as pgvector_module
+from docsgpt.vectorstore.pgvector import PGVectorStore
 
 
 @pytest.fixture(autouse=True)

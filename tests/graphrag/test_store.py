@@ -20,9 +20,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import application.graphrag.store as store_module
-from application.vectorstore import pgconn
-from application.vectorstore import pgvector as pgvector_module
+import docsgpt.graphrag.store as store_module
+from docsgpt.vectorstore import pgconn
+from docsgpt.vectorstore import pgvector as pgvector_module
 
 GraphStore = store_module.GraphStore
 
@@ -374,13 +374,13 @@ class TestGraphStoreLive:
 
     def test_the_vector_store_reuses_the_graph_store_pool(self, store, postgresql):
         """Same DSN, one pool: the graph store does not double the connections."""
-        from application.vectorstore.pgvector import PGVectorStore
+        from docsgpt.vectorstore.pgvector import PGVectorStore
 
         stub = MagicMock()
         stub.dimension = TEST_EMBEDDING_DIM
         stub.embed_query.return_value = [0.0] * TEST_EMBEDDING_DIM
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=stub,
         ):
             vector_store = PGVectorStore(
@@ -462,7 +462,7 @@ class TestGraphStoreParameterization:
         assert params == (embedding, sid, embedding, 5)
 
     def test_graph_overview_binds_source_and_clamps_limit(self):
-        from application.graphrag.store import GRAPH_OVERVIEW_MAX_LIMIT
+        from docsgpt.graphrag.store import GRAPH_OVERVIEW_MAX_LIMIT
 
         store, cursor = self._store_with_mock_conn()
         cursor.fetchall.return_value = []
@@ -499,7 +499,7 @@ class TestEmbeddingDim:
     """The graph table dimension is derived from the configured model (FIX 1)."""
 
     def test_uses_configured_model_dimension(self, monkeypatch):
-        from application.vectorstore import base as base_module
+        from docsgpt.vectorstore import base as base_module
 
         monkeypatch.setattr(base_module.settings, "EMBEDDINGS_BASE_URL", None)
         fake_embedding = MagicMock()
@@ -520,7 +520,7 @@ class TestEmbeddingDim:
         ``getattr`` with a default cannot catch that -- the attribute exists --
         so the width reached the DDL as ``vector(None)``.
         """
-        from application.vectorstore import base as base_module
+        from docsgpt.vectorstore import base as base_module
 
         monkeypatch.setattr(base_module.settings, "EMBEDDINGS_BASE_URL", None)
         fake_embedding = MagicMock()
@@ -536,7 +536,7 @@ class TestEmbeddingDim:
         assert store._embedding_dim() == store_module.DEFAULT_NAME_EMBEDDING_DIM
 
     def test_falls_back_to_default_dimension(self, monkeypatch):
-        from application.vectorstore import base as base_module
+        from docsgpt.vectorstore import base as base_module
 
         monkeypatch.setattr(base_module.settings, "EMBEDDINGS_BASE_URL", None)
         fake_embedding = object()
@@ -562,7 +562,7 @@ class TestEmbeddingDimResolution:
         monkeypatch.setattr(GraphStore, "_embedding_dim", _REAL_EMBEDDING_DIM)
 
         with patch(
-            "application.vectorstore.base.get_embeddings",
+            "docsgpt.vectorstore.base.get_embeddings",
             return_value=fake_embedding,
         ) as mock_resolver:
             store = GraphStore.__new__(GraphStore)

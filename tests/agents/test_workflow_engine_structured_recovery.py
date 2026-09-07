@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from application.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 
 
 def _engine() -> WorkflowEngine:

@@ -8,8 +8,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from application.agents.tool_executor import ToolExecutor
-from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +272,7 @@ class TestHandlerApprovalPause:
 class TestGenContinuationApproval:
 
     def _make_agent(self):
-        from application.agents.classic_agent import ClassicAgent
+        from docsgpt.agents.classic_agent import ClassicAgent
 
         mock_llm = Mock()
         mock_llm._supports_tools = True

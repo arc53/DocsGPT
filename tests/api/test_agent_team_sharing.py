@@ -16,7 +16,7 @@ import pytest
 
 @pytest.fixture
 def client():
-    from application.app import app as flask_app
+    from docsgpt.app import app as flask_app
 
     flask_app.config["TESTING"] = True
     return flask_app.test_client()
@@ -31,19 +31,19 @@ def _patches(sub, repo, team_access, *, prompt_name="Resolved Prompt", source_de
     if source_details is None:
         source_details = []
     return [
-        patch("application.app.handle_auth", return_value={"sub": sub}),
-        patch("application.app.resolve_roles", return_value=["user"]),
-        patch("application.api.user.agents.routes.db_readonly", lambda: _cm(Mock())),
-        patch("application.api.user.agents.routes.AgentsRepository", return_value=repo),
-        patch("application.api.user.agents.routes.team_access_for", return_value=team_access),
+        patch("docsgpt.app.handle_auth", return_value={"sub": sub}),
+        patch("docsgpt.app.resolve_roles", return_value=["user"]),
+        patch("docsgpt.api.user.agents.routes.db_readonly", lambda: _cm(Mock())),
+        patch("docsgpt.api.user.agents.routes.AgentsRepository", return_value=repo),
+        patch("docsgpt.api.user.agents.routes.team_access_for", return_value=team_access),
         # Resolve names by id (owner-agnostic) — patched so the test never
         # touches the DB; the route is what we're asserting wires them in.
         patch(
-            "application.api.user.agents.routes.resolve_prompt_name",
+            "docsgpt.api.user.agents.routes.resolve_prompt_name",
             return_value=prompt_name,
         ),
         patch(
-            "application.api.user.agents.routes.resolve_source_details",
+            "docsgpt.api.user.agents.routes.resolve_source_details",
             return_value=source_details,
         ),
     ]
@@ -160,12 +160,12 @@ class TestGetAgentResolvesNames:
 
 def _update_patches(sub, repo, team_access, can_access_mock):
     return [
-        patch("application.app.handle_auth", return_value={"sub": sub}),
-        patch("application.app.resolve_roles", return_value=["user"]),
-        patch("application.api.user.agents.routes.db_session", lambda: _cm(Mock())),
-        patch("application.api.user.agents.routes.AgentsRepository", return_value=repo),
-        patch("application.api.user.agents.routes.team_access_for", return_value=team_access),
-        patch("application.api.user.agents.routes.can_access", can_access_mock),
+        patch("docsgpt.app.handle_auth", return_value={"sub": sub}),
+        patch("docsgpt.app.resolve_roles", return_value=["user"]),
+        patch("docsgpt.api.user.agents.routes.db_session", lambda: _cm(Mock())),
+        patch("docsgpt.api.user.agents.routes.AgentsRepository", return_value=repo),
+        patch("docsgpt.api.user.agents.routes.team_access_for", return_value=team_access),
+        patch("docsgpt.api.user.agents.routes.can_access", can_access_mock),
     ]
 
 

@@ -132,7 +132,7 @@ Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for information abou
 
 ## Project Structure
 
-- **Application** - Backend Flask application.
+- **docsgpt** - Backend Flask application (the `docsgpt` Python package).
 
 - **Extensions** - Integrations and widgets (e.g., Chatwoot, React widget).
 

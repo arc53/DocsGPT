@@ -33,7 +33,7 @@ DocsGPT offers direct, streamlined support for the following cloud LLM providers
 | Novita AI                    | `novita`       | (See Novita docs)           |
 | HuggingFace Inference API    | `huggingface`  | `meta-llama/Llama-3.1-8B-Instruct` |
 
-DocsGPT also ships a **model catalog** (`application/core/models/*.yaml`) that the in-app model picker reads, so common models from these providers — including DeepSeek — appear ready to select once the matching API key is set.
+DocsGPT also ships a **model catalog** (`docsgpt/core/models/*.yaml`) that the in-app model picker reads, so common models from these providers — including DeepSeek — appear ready to select once the matching API key is set.
 
 ## Connecting to OpenAI-Compatible Cloud APIs
 
@@ -75,4 +75,4 @@ See [App Configuration](/Deploying/DocsGPT-Settings) for the full settings refer
 
 ## Adding Support for Other Cloud Providers
 
-If you wish to connect to a cloud provider that is not explicitly listed above or doesn't offer OpenAI API compatibility, you can extend DocsGPT to support it. Within the DocsGPT repository, navigate to the `application/llm` directory. Here, you will find Python files defining the existing LLM integrations.  You can use these files as examples to create a new module for your desired cloud provider.  After creating your new LLM module, you will need to register it within the `llm_creator.py` file. This process involves some coding, but it allows for virtually unlimited extensibility to connect to any cloud-based LLM service with an accessible API.
+If you wish to connect to a cloud provider that is not explicitly listed above or doesn't offer OpenAI API compatibility, you can extend DocsGPT to support it. Within the DocsGPT repository, navigate to the `docsgpt/llm` directory. Here, you will find Python files defining the existing LLM integrations.  You can use these files as examples to create a new module for your desired cloud provider.  After creating your new LLM module, you will need to register it within the `llm_creator.py` file. This process involves some coding, but it allows for virtually unlimited extensibility to connect to any cloud-based LLM service with an accessible API.

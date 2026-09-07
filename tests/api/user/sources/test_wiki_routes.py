@@ -1,4 +1,4 @@
-"""Tests for the wiki source routes in application/api/user/sources/routes.py."""
+"""Tests for the wiki source routes in docsgpt/api/user/sources/routes.py."""
 
 import uuid
 from contextlib import contextmanager
@@ -20,21 +20,21 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.sources.routes.db_session", _yield
+        "docsgpt.api.user.sources.routes.db_session", _yield
     ), patch(
-        "application.api.user.sources.routes.db_readonly", _yield
+        "docsgpt.api.user.sources.routes.db_readonly", _yield
     ):
         yield
 
 
 def _grant_team_access(pg_conn, owner, member, source_id, access_level):
-    from application.storage.db.repositories.team_members import (
+    from docsgpt.storage.db.repositories.team_members import (
         TeamMembersRepository,
     )
-    from application.storage.db.repositories.team_resource_grants import (
+    from docsgpt.storage.db.repositories.team_resource_grants import (
         TeamResourceGrantsRepository,
     )
-    from application.storage.db.repositories.teams import TeamsRepository
+    from docsgpt.storage.db.repositories.teams import TeamsRepository
 
     team = TeamsRepository(pg_conn).create(
         "Acme", f"acme-{uuid.uuid4().hex[:8]}", owner
@@ -50,7 +50,7 @@ def _grant_team_access(pg_conn, owner, member, source_id, access_level):
 
 class TestCreateWikiSource:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import CreateWikiSource
+        from docsgpt.api.user.sources.routes import CreateWikiSource
 
         with app.test_request_context(
             "/api/sources/wiki", method="POST", json={"name": "w"}
@@ -61,7 +61,7 @@ class TestCreateWikiSource:
         assert response.status_code == 401
 
     def test_returns_400_missing_name(self, app, pg_conn):
-        from application.api.user.sources.routes import CreateWikiSource
+        from docsgpt.api.user.sources.routes import CreateWikiSource
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/sources/wiki", method="POST", json={}
@@ -72,16 +72,16 @@ class TestCreateWikiSource:
         assert response.status_code == 400
 
     def test_creates_row_without_ingest(self, app, pg_conn):
-        from application.api.user.sources.routes import CreateWikiSource
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import CreateWikiSource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-wiki-create"
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reembed_wiki_page.delay"
+            "docsgpt.api.user.sources.routes.reembed_wiki_page.delay"
         ) as mock_reembed, patch(
-            "application.api.user.tasks.ingest.delay"
+            "docsgpt.api.user.tasks.ingest.delay"
         ) as mock_ingest, patch(
-            "application.api.user.tasks.reingest_source_task.delay"
+            "docsgpt.api.user.tasks.reingest_source_task.delay"
         ) as mock_reingest, app.test_request_context(
             "/api/sources/wiki", method="POST", json={"name": "My Wiki"}
         ):
@@ -98,7 +98,7 @@ class TestCreateWikiSource:
         # Wiki pages get embedded like any other source, so the row has to name
         # the model that did it. NULL reads as "the legacy model" to the boot
         # mismatch check, which then reports the source as stale forever.
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         assert row["model"] == settings.EMBEDDINGS_NAME
         # No seed content → no re-embed, and never any ingest/reingest task.
@@ -107,20 +107,20 @@ class TestCreateWikiSource:
         mock_reingest.assert_not_called()
 
     def test_seed_page_roundtrips_and_only_seed_reembeds(self, app, pg_conn):
-        from application.api.user.sources.routes import (
+        from docsgpt.api.user.sources.routes import (
             CreateWikiSource,
             WikiPage,
             WIKI_INDEX_PATH,
         )
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-wiki-seed"
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reembed_wiki_page.delay"
+            "docsgpt.api.user.sources.routes.reembed_wiki_page.delay"
         ) as mock_reembed, patch(
-            "application.api.user.tasks.ingest.delay"
+            "docsgpt.api.user.tasks.ingest.delay"
         ) as mock_ingest, patch(
-            "application.api.user.tasks.reingest_source_task.delay"
+            "docsgpt.api.user.tasks.reingest_source_task.delay"
         ) as mock_reingest, app.test_request_context(
             "/api/sources/wiki",
             method="POST",
@@ -154,7 +154,7 @@ class TestCreateWikiSource:
 
 class TestWikiPages:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import WikiPages
+        from docsgpt.api.user.sources.routes import WikiPages
 
         with app.test_request_context("/api/sources/x/wiki/pages"):
             from flask import request
@@ -163,9 +163,9 @@ class TestWikiPages:
         assert response.status_code == 401
 
     def test_owner_lists_pages(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPages
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+        from docsgpt.api.user.sources.routes import WikiPages
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.wiki_pages import WikiPagesRepository
 
         user = "u-wiki-list"
         src = SourcesRepository(pg_conn).create(
@@ -190,8 +190,8 @@ class TestWikiPages:
         assert via["/index.md"] == "agent"
 
     def test_non_owner_without_grant_404(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPages
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import WikiPages
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         owner = "u-wiki-owner"
         stranger = "u-wiki-stranger"
@@ -209,9 +209,9 @@ class TestWikiPages:
         assert response.status_code == 404
 
     def test_team_viewer_can_read(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPages
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+        from docsgpt.api.user.sources.routes import WikiPages
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.wiki_pages import WikiPagesRepository
 
         owner = "alice-wiki"
         viewer = "bob-wiki-viewer"
@@ -234,8 +234,8 @@ class TestWikiPages:
 
 class TestWikiPage:
     def test_returns_400_missing_path(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPage
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-wiki-page-nopath"
         src = SourcesRepository(pg_conn).create(
@@ -251,8 +251,8 @@ class TestWikiPage:
         assert response.status_code == 400
 
     def test_returns_400_traversal_path(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPage
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-wiki-page-traversal"
         src = SourcesRepository(pg_conn).create(
@@ -268,8 +268,8 @@ class TestWikiPage:
         assert response.status_code == 400
 
     def test_returns_404_unknown_page(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPage
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-wiki-page-missing"
         src = SourcesRepository(pg_conn).create(
@@ -285,9 +285,9 @@ class TestWikiPage:
         assert response.status_code == 404
 
     def test_returns_provenance_and_version(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPage
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.wiki_pages import WikiPagesRepository
 
         user = "u-wiki-page-provenance"
         src = SourcesRepository(pg_conn).create(
@@ -312,9 +312,9 @@ class TestWikiPage:
         assert page["updated_at"] is not None
 
     def test_non_owner_without_grant_404(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPage
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.wiki_pages import WikiPagesRepository
 
         owner = "u-wiki-pg-owner"
         stranger = "u-wiki-pg-stranger"
@@ -335,7 +335,7 @@ class TestWikiPage:
 
 class TestConvertSourceToWiki:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import ConvertSourceToWiki
+        from docsgpt.api.user.sources.routes import ConvertSourceToWiki
 
         with app.test_request_context(
             "/api/sources/x/wiki/convert", method="POST"
@@ -346,9 +346,9 @@ class TestConvertSourceToWiki:
         assert response.status_code == 401
 
     def test_blank_source_enabled_inline_no_task(self, app, pg_conn):
-        from application.api.user.sources.routes import ConvertSourceToWiki
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.source_config import SourceConfig
+        from docsgpt.api.user.sources.routes import ConvertSourceToWiki
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.source_config import SourceConfig
 
         user = "u-convert-blank"
         src = SourcesRepository(pg_conn).create(
@@ -357,7 +357,7 @@ class TestConvertSourceToWiki:
         sid = str(src["id"])
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.convert_source_to_wiki.delay"
+            "docsgpt.api.user.sources.routes.convert_source_to_wiki.delay"
         ) as mock_convert, app.test_request_context(
             f"/api/sources/{sid}/wiki/convert", method="POST"
         ):
@@ -375,8 +375,8 @@ class TestConvertSourceToWiki:
         assert cfg.retrieval.exposure == "agentic_tool"
 
     def test_fileful_source_enqueues_task(self, app, pg_conn):
-        from application.api.user.sources.routes import ConvertSourceToWiki
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import ConvertSourceToWiki
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-convert-files"
         src = SourcesRepository(pg_conn).create(
@@ -387,7 +387,7 @@ class TestConvertSourceToWiki:
 
         fake_task = type("T", (), {"id": "task-xyz"})()
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.convert_source_to_wiki.delay",
+            "docsgpt.api.user.sources.routes.convert_source_to_wiki.delay",
             return_value=fake_task,
         ) as mock_convert, app.test_request_context(
             f"/api/sources/{sid}/wiki/convert", method="POST"
@@ -406,11 +406,11 @@ class TestConvertSourceToWiki:
         )
 
     def test_in_progress_ingest_rejected_409(self, app, pg_conn):
-        from application.api.user.sources.routes import ConvertSourceToWiki
-        from application.storage.db.repositories.ingest_chunk_progress import (
+        from docsgpt.api.user.sources.routes import ConvertSourceToWiki
+        from docsgpt.storage.db.repositories.ingest_chunk_progress import (
             IngestChunkProgressRepository,
         )
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-convert-ingesting"
         src = SourcesRepository(pg_conn).create(
@@ -422,7 +422,7 @@ class TestConvertSourceToWiki:
         IngestChunkProgressRepository(pg_conn).init_progress(sid, 5)
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.convert_source_to_wiki.delay"
+            "docsgpt.api.user.sources.routes.convert_source_to_wiki.delay"
         ) as mock_convert, app.test_request_context(
             f"/api/sources/{sid}/wiki/convert", method="POST"
         ):
@@ -434,8 +434,8 @@ class TestConvertSourceToWiki:
         mock_convert.assert_not_called()
 
     def test_viewer_rejected_403(self, app, pg_conn):
-        from application.api.user.sources.routes import ConvertSourceToWiki
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import ConvertSourceToWiki
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         owner = "alice-convert"
         viewer = "bob-convert-viewer"
@@ -447,7 +447,7 @@ class TestConvertSourceToWiki:
         _grant_team_access(pg_conn, owner, viewer, sid, "viewer")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.convert_source_to_wiki.delay"
+            "docsgpt.api.user.sources.routes.convert_source_to_wiki.delay"
         ) as mock_convert, app.test_request_context(
             f"/api/sources/{sid}/wiki/convert", method="POST"
         ):
@@ -461,7 +461,7 @@ class TestConvertSourceToWiki:
 
 class TestWikiPageEdit:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import WikiPage
+        from docsgpt.api.user.sources.routes import WikiPage
 
         with app.test_request_context(
             "/api/sources/x/wiki/page", method="PUT", json={}
@@ -472,9 +472,9 @@ class TestWikiPageEdit:
         assert response.status_code == 401
 
     def test_owner_writes_and_enqueues_reembed(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPage
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.wiki_pages import WikiPagesRepository
 
         user = "u-edit-owner"
         src = SourcesRepository(pg_conn).create(
@@ -483,7 +483,7 @@ class TestWikiPageEdit:
         sid = str(src["id"])
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reembed_wiki_page.delay"
+            "docsgpt.api.user.sources.routes.reembed_wiki_page.delay"
         ) as mock_reembed, app.test_request_context(
             f"/api/sources/{sid}/wiki/page",
             method="PUT",
@@ -505,8 +505,8 @@ class TestWikiPageEdit:
         assert mock_reembed.call_args.kwargs["user"] == user
 
     def test_team_editor_reembeds_as_owner(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPage
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         owner = "alice-edit"
         editor = "bob-edit-editor"
@@ -517,7 +517,7 @@ class TestWikiPageEdit:
         _grant_team_access(pg_conn, owner, editor, sid, "editor")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reembed_wiki_page.delay"
+            "docsgpt.api.user.sources.routes.reembed_wiki_page.delay"
         ) as mock_reembed, app.test_request_context(
             f"/api/sources/{sid}/wiki/page",
             method="PUT",
@@ -532,9 +532,9 @@ class TestWikiPageEdit:
         assert mock_reembed.call_args.kwargs["user"] == owner
 
     def test_stale_version_returns_409(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPage
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.wiki_pages import WikiPagesRepository
 
         user = "u-edit-conflict"
         src = SourcesRepository(pg_conn).create(
@@ -546,7 +546,7 @@ class TestWikiPageEdit:
         WikiPagesRepository(pg_conn).upsert(sid, "/c.md", "v2", updated_by=user)
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reembed_wiki_page.delay"
+            "docsgpt.api.user.sources.routes.reembed_wiki_page.delay"
         ) as mock_reembed, app.test_request_context(
             f"/api/sources/{sid}/wiki/page",
             method="PUT",
@@ -560,8 +560,8 @@ class TestWikiPageEdit:
         mock_reembed.assert_not_called()
 
     def test_traversal_path_returns_400(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPage
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-edit-traversal"
         src = SourcesRepository(pg_conn).create(
@@ -570,7 +570,7 @@ class TestWikiPageEdit:
         sid = str(src["id"])
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reembed_wiki_page.delay"
+            "docsgpt.api.user.sources.routes.reembed_wiki_page.delay"
         ), app.test_request_context(
             f"/api/sources/{sid}/wiki/page",
             method="PUT",
@@ -582,8 +582,8 @@ class TestWikiPageEdit:
         assert response.status_code == 400
 
     def test_viewer_rejected_403(self, app, pg_conn):
-        from application.api.user.sources.routes import WikiPage
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import WikiPage
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         owner = "alice-edit-viewer"
         viewer = "bob-edit-viewer"
@@ -594,7 +594,7 @@ class TestWikiPageEdit:
         _grant_team_access(pg_conn, owner, viewer, sid, "viewer")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reembed_wiki_page.delay"
+            "docsgpt.api.user.sources.routes.reembed_wiki_page.delay"
         ) as mock_reembed, app.test_request_context(
             f"/api/sources/{sid}/wiki/page",
             method="PUT",

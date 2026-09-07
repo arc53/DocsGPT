@@ -26,7 +26,8 @@ services:
 
   backend:
     build:
-      context: ../application
+      context: ..
+      dockerfile: docsgpt/Dockerfile
       args:
         EXTRAS: ${EXTRAS:-}
         INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
@@ -43,9 +44,9 @@ services:
     ports:
       - "7091:7091"
     volumes:
-      - ../application/indexes:/app/application/indexes
-      - ../application/inputs:/app/application/inputs
-      - ../application/vectors:/app/application/vectors
+      - ../docsgpt/indexes:/app/docsgpt/indexes
+      - ../docsgpt/inputs:/app/docsgpt/inputs
+      - ../docsgpt/vectors:/app/docsgpt/vectors
     depends_on:
       redis:
         condition: service_started
@@ -54,7 +55,8 @@ services:
 
   worker:
     build:
-      context: ../application
+      context: ..
+      dockerfile: docsgpt/Dockerfile
       args:
         EXTRAS: ${EXTRAS:-}
         INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
@@ -62,7 +64,7 @@ services:
         # must set INSTALL_TESSERACT=true before rebuilding (see docker-compose.yaml).
         INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
     # `parsing` queue carries read_document/parse_document; required for its await to resolve.
-    command: celery -A application.app.celery worker -l INFO -Q docsgpt,parsing,embeddings
+    command: celery -A docsgpt.app.celery worker -l INFO -Q docsgpt,parsing,embeddings
     env_file:
       - ../.env
     environment:

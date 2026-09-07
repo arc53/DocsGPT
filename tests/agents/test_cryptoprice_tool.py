@@ -1,10 +1,10 @@
-"""Tests for application/agents/tools/cryptoprice.py"""
+"""Tests for docsgpt/agents/tools/cryptoprice.py"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.agents.tools.cryptoprice import CryptoPriceTool
+from docsgpt.agents.tools.cryptoprice import CryptoPriceTool
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ class TestCryptoPriceExecuteAction:
         with pytest.raises(ValueError, match="Unknown action"):
             tool.execute_action("invalid_action")
 
-    @patch("application.agents.tools.cryptoprice.requests.get")
+    @patch("docsgpt.agents.tools.cryptoprice.requests.get")
     def test_successful_price_fetch(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -31,7 +31,7 @@ class TestCryptoPriceExecuteAction:
         assert result["price"] == 65000
         assert "successfully" in result["message"]
 
-    @patch("application.agents.tools.cryptoprice.requests.get")
+    @patch("docsgpt.agents.tools.cryptoprice.requests.get")
     def test_currency_not_found(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -44,7 +44,7 @@ class TestCryptoPriceExecuteAction:
         assert "Couldn't find" in result["message"]
         assert "price" not in result
 
-    @patch("application.agents.tools.cryptoprice.requests.get")
+    @patch("docsgpt.agents.tools.cryptoprice.requests.get")
     def test_api_failure(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 500
@@ -55,7 +55,7 @@ class TestCryptoPriceExecuteAction:
         assert result["status_code"] == 500
         assert "Failed" in result["message"]
 
-    @patch("application.agents.tools.cryptoprice.requests.get")
+    @patch("docsgpt.agents.tools.cryptoprice.requests.get")
     def test_symbol_case_insensitive(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200

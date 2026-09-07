@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 
 
 class ScriptedHandler(LLMHandler):
@@ -238,16 +238,16 @@ class TestInMemoryCompressionNegativeSavings:
             "_build_conversation_from_messages",
             return_value={"queries": [{"prompt": "q1", "response": "a1"}]},
         ), patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             return_value="openai",
         ), patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="k",
         ), patch(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             return_value=Mock(),
         ), patch(
-            "application.api.answer.services.compression.service."
+            "docsgpt.api.answer.services.compression.service."
             "CompressionService.compress_conversation",
             side_effect=ValueError(
                 "Compression did not reduce token count (10 → 20); "

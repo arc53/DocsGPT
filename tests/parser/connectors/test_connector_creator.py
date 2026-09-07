@@ -19,11 +19,11 @@ class TestConnectorCreator:
         mock_settings.MICROSOFT_TENANT_ID = "tid"
         mock_settings.MONGO_DB_NAME = "test_db"
 
-        with patch("application.core.settings.settings", mock_settings), \
-             patch("application.parser.connectors.share_point.auth.settings", mock_settings), \
-             patch("application.parser.connectors.google_drive.auth.settings", mock_settings), \
-             patch("application.parser.connectors.share_point.auth.ConfidentialClientApplication"):
-            from application.parser.connectors.connector_creator import ConnectorCreator
+        with patch("docsgpt.core.settings.settings", mock_settings), \
+             patch("docsgpt.parser.connectors.share_point.auth.settings", mock_settings), \
+             patch("docsgpt.parser.connectors.google_drive.auth.settings", mock_settings), \
+             patch("docsgpt.parser.connectors.share_point.auth.ConfidentialClientApplication"):
+            from docsgpt.parser.connectors.connector_creator import ConnectorCreator
             self.ConnectorCreator = ConnectorCreator
             yield
 
@@ -51,13 +51,13 @@ class TestConnectorCreator:
     @pytest.mark.unit
     def test_create_auth_google_drive(self):
         auth = self.ConnectorCreator.create_auth("google_drive")
-        from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+        from docsgpt.parser.connectors.google_drive.auth import GoogleDriveAuth
         assert isinstance(auth, GoogleDriveAuth)
 
     @pytest.mark.unit
     def test_create_auth_share_point(self):
         auth = self.ConnectorCreator.create_auth("share_point")
-        from application.parser.connectors.share_point.auth import SharePointAuth
+        from docsgpt.parser.connectors.share_point.auth import SharePointAuth
         assert isinstance(auth, SharePointAuth)
 
     @pytest.mark.unit
@@ -72,7 +72,7 @@ class TestConnectorCreator:
 
     @pytest.mark.unit
     def test_create_connector_google_drive(self):
-        with patch("application.parser.connectors.google_drive.loader.GoogleDriveAuth") as MockAuth:
+        with patch("docsgpt.parser.connectors.google_drive.loader.GoogleDriveAuth") as MockAuth:
             mock_auth_instance = MagicMock()
             mock_auth_instance.get_token_info_from_session.return_value = {
                 "access_token": "at", "refresh_token": "rt"
@@ -85,12 +85,12 @@ class TestConnectorCreator:
             MockAuth.return_value = mock_auth_instance
 
             loader = self.ConnectorCreator.create_connector("google_drive", "session_tok")
-            from application.parser.connectors.google_drive.loader import GoogleDriveLoader
+            from docsgpt.parser.connectors.google_drive.loader import GoogleDriveLoader
             assert isinstance(loader, GoogleDriveLoader)
 
     @pytest.mark.unit
     def test_create_connector_share_point(self):
-        with patch("application.parser.connectors.share_point.loader.SharePointAuth") as MockAuth:
+        with patch("docsgpt.parser.connectors.share_point.loader.SharePointAuth") as MockAuth:
             mock_auth_instance = MagicMock()
             mock_auth_instance.get_token_info_from_session.return_value = {
                 "access_token": "at", "refresh_token": "rt"
@@ -98,5 +98,5 @@ class TestConnectorCreator:
             MockAuth.return_value = mock_auth_instance
 
             loader = self.ConnectorCreator.create_connector("share_point", "session_tok")
-            from application.parser.connectors.share_point.loader import SharePointLoader
+            from docsgpt.parser.connectors.share_point.loader import SharePointLoader
             assert isinstance(loader, SharePointLoader)

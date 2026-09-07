@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 
-from application.storage.db.repositories.workflows import WorkflowsRepository
-from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
-from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
+from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
+from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
 
 
 def _setup(conn) -> tuple[dict, dict, dict]:

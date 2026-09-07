@@ -1,4 +1,4 @@
-"""Unit tests for application/llm/handlers/anthropic.py.
+"""Unit tests for docsgpt/llm/handlers/anthropic.py.
 
 The handler is pure duck typing over the shapes ``AnthropicLLM`` emits, so
 these tests never import the anthropic SDK.
@@ -8,8 +8,8 @@ import types
 
 import pytest
 
-from application.llm.handlers.anthropic import AnthropicLLMHandler
-from application.llm.handlers.base import LLMHandler, ToolCall
+from docsgpt.llm.handlers.anthropic import AnthropicLLMHandler
+from docsgpt.llm.handlers.base import LLMHandler, ToolCall
 
 
 def text_block(text):
@@ -156,14 +156,14 @@ class TestIterateStream:
 class TestRegistration:
 
     def test_creator_returns_anthropic_handler(self):
-        from application.llm.handlers.handler_creator import LLMHandlerCreator
+        from docsgpt.llm.handlers.handler_creator import LLMHandlerCreator
 
         handler = LLMHandlerCreator.create_handler("anthropic")
         assert isinstance(handler, AnthropicLLMHandler)
         assert isinstance(handler, LLMHandler)
 
     def test_creator_case_insensitive(self):
-        from application.llm.handlers.handler_creator import LLMHandlerCreator
+        from docsgpt.llm.handlers.handler_creator import LLMHandlerCreator
 
         assert isinstance(
             LLMHandlerCreator.create_handler("Anthropic"), AnthropicLLMHandler

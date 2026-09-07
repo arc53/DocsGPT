@@ -1,4 +1,4 @@
-"""Comprehensive tests for application/parser/chunking.py
+"""Comprehensive tests for docsgpt/parser/chunking.py
 
 Covers: Chunker (init, separate_header_and_body, split_document,
 classic_chunk, chunk), edge cases, token counting.
@@ -6,8 +6,8 @@ classic_chunk, chunk), edge cases, token counting.
 
 import pytest
 
-from application.parser.chunking import Chunker
-from application.parser.schema.base import Document
+from docsgpt.parser.chunking import Chunker
+from docsgpt.parser.schema.base import Document
 
 
 # =====================================================================

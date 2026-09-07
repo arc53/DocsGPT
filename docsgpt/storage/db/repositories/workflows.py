@@ -1,0 +1,271 @@
+"""Repository for the ``workflows`` table.
+
+Covers CRUD on workflow metadata:
+
+- create / get / list / update / delete
+- graph version management
+"""
+
+from __future__ import annotations
+
+import copy
+from typing import Optional
+
+from sqlalchemy import Connection, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
+from docsgpt.storage.db.models import workflows_table
+
+
+class WorkflowsRepository:
+    def __init__(self, conn: Connection) -> None:
+        self._conn = conn
+
+    def create(
+        self,
+        user_id: str,
+        name: str,
+        description: str | None = None,
+        *,
+        legacy_mongo_id: str | None = None,
+    ) -> dict:
+        values: dict = {"user_id": user_id, "name": name}
+        if description is not None:
+            values["description"] = description
+        if legacy_mongo_id is not None:
+            values["legacy_mongo_id"] = legacy_mongo_id
+
+        stmt = pg_insert(workflows_table).values(**values).returning(workflows_table)
+        result = self._conn.execute(stmt)
+        return row_to_dict(result.fetchone())
+
+    def get(self, workflow_id: str, user_id: str) -> Optional[dict]:
+        result = self._conn.execute(
+            text(
+                "SELECT * FROM workflows "
+                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+            ),
+            {"id": workflow_id, "user_id": user_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_by_id(self, workflow_id: str) -> Optional[dict]:
+        """Fetch a workflow by ID without user check (for internal use)."""
+        result = self._conn.execute(
+            text("SELECT * FROM workflows WHERE id = CAST(:id AS uuid)"),
+            {"id": workflow_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_by_legacy_id(
+        self, legacy_mongo_id: str, user_id: str | None = None,
+    ) -> Optional[dict]:
+        """Fetch a workflow by its original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
+        sql = "SELECT * FROM workflows WHERE legacy_mongo_id = :legacy_id"
+        params: dict[str, str] = {"legacy_id": legacy_mongo_id}
+        if user_id is not None:
+            sql += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        result = self._conn.execute(text(sql), params)
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def list_for_user(self, user_id: str) -> list[dict]:
+        result = self._conn.execute(
+            text(
+                "SELECT * FROM workflows "
+                "WHERE user_id = :user_id ORDER BY created_at DESC"
+            ),
+            {"user_id": user_id},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
+    def update(self, workflow_id: str, user_id: str, fields: dict) -> bool:
+        allowed = {"name", "description", "current_graph_version"}
+        filtered = {k: v for k, v in fields.items() if k in allowed}
+        if not filtered:
+            return False
+
+        set_parts = [f"{col} = :{col}" for col in filtered]
+        set_parts.append("updated_at = now()")
+        params = {**filtered, "id": workflow_id, "user_id": user_id}
+
+        sql = (
+            f"UPDATE workflows SET {', '.join(set_parts)} "
+            "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+        )
+        result = self._conn.execute(text(sql), params)
+        return result.rowcount > 0
+
+    def increment_graph_version(self, workflow_id: str, user_id: str) -> Optional[int]:
+        """Atomically increment ``current_graph_version`` and return the new value."""
+        result = self._conn.execute(
+            text(
+                "UPDATE workflows "
+                "SET current_graph_version = current_graph_version + 1, "
+                "    updated_at = now() "
+                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id "
+                "RETURNING current_graph_version"
+            ),
+            {"id": workflow_id, "user_id": user_id},
+        )
+        row = result.fetchone()
+        return row[0] if row else None
+
+    def clone_to_user(
+        self,
+        workflow_id: str,
+        new_owner: str,
+        *,
+        from_owner: Optional[str] = None,
+        node_config_transform=None,
+    ) -> Optional[dict]:
+        """Deep-copy a workflow's current graph into a new workflow owned by ``new_owner``.
+
+        The runtime resolves ``agents.workflow_id`` strictly owner-scoped, so a
+        workflow reference can never be shared across users by id — it must be
+        copied. Only the current graph version is copied; the clone starts at
+        version 1. The source is resolved scoped to ``from_owner`` when given
+        (callers pass the expected owner so a stray id can't clone another
+        tenant's graph). Omitting ``from_owner`` resolves the source with NO
+        ownership check — only do that when ``workflow_id`` comes from trusted
+        server-side state, never from client input. Returns the new workflow
+        row, or None if the source is missing.
+
+        ``node_config_transform(node_type, config) -> dict`` lets the caller
+        rewrite each node's config as it is copied (it receives a deep copy) —
+        e.g. adoption strips refs the new owner can't resolve, since node
+        configs carry raw tool/source/model ids that are owner-scoped at run
+        time and would otherwise ride along as ghost references.
+        """
+        from docsgpt.storage.db.repositories.workflow_edges import (
+            WorkflowEdgesRepository,
+        )
+        from docsgpt.storage.db.repositories.workflow_nodes import (
+            WorkflowNodesRepository,
+        )
+
+        if not looks_like_uuid(workflow_id):
+            return None
+        source = (
+            self.get(workflow_id, from_owner)
+            if from_owner is not None
+            else self.get_by_id(workflow_id)
+        )
+        if source is None:
+            return None
+        try:
+            version = int(source.get("current_graph_version") or 1)
+        except (TypeError, ValueError):
+            version = 1
+        if version <= 0:
+            version = 1
+
+        clone = self.create(
+            new_owner, source.get("name") or "", description=source.get("description")
+        )
+        clone_id = str(clone["id"])
+
+        def _cloned_config(n: dict) -> dict:
+            config = n.get("config") or {}
+            if node_config_transform is not None:
+                config = node_config_transform(n["node_type"], copy.deepcopy(config))
+            return config if isinstance(config, dict) else {}
+
+        nodes_repo = WorkflowNodesRepository(self._conn)
+        node_rows = nodes_repo.find_by_version(workflow_id, version)
+        created_nodes = nodes_repo.bulk_create(
+            clone_id,
+            1,
+            [
+                {
+                    "node_id": n["node_id"],
+                    "node_type": n["node_type"],
+                    "title": n.get("title"),
+                    "description": n.get("description"),
+                    "position": n.get("position") or {"x": 0, "y": 0},
+                    "config": _cloned_config(n),
+                }
+                for n in node_rows
+            ],
+        )
+        uuid_by_node_id = {n["node_id"]: n["id"] for n in created_nodes}
+
+        edges_repo = WorkflowEdgesRepository(self._conn)
+        edge_rows = edges_repo.find_by_version(workflow_id, version)
+        translated = []
+        for e in edge_rows:
+            from_uuid = uuid_by_node_id.get(e.get("source_id"))
+            to_uuid = uuid_by_node_id.get(e.get("target_id"))
+            if not from_uuid or not to_uuid:
+                continue
+            translated.append(
+                {
+                    "edge_id": e["edge_id"],
+                    "from_node_id": from_uuid,
+                    "to_node_id": to_uuid,
+                    "source_handle": e.get("source_handle"),
+                    "target_handle": e.get("target_handle"),
+                    "config": e.get("config") or {},
+                }
+            )
+        edges_repo.bulk_create(clone_id, 1, translated)
+        return clone
+
+    def delete(self, workflow_id: str, user_id: str) -> bool:
+        # Run artifacts parent to ``workflow_runs`` (which cascade-delete with the
+        # workflow), but ``artifacts.workflow_run_id`` is a bare uuid with no FK, so
+        # the rows + bytes + the quota they consume would leak. Reclaim them BEFORE
+        # deleting the workflow, while the run rows still resolve the subquery.
+        # Ownership is confirmed first so this never reaps another user's artifacts.
+        from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+
+        if not looks_like_uuid(workflow_id):
+            return False
+        owned = (
+            self._conn.execute(
+                text(
+                    "SELECT 1 FROM workflows "
+                    "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                ),
+                {"id": workflow_id, "user_id": user_id},
+            ).fetchone()
+            is not None
+        )
+        if not owned:
+            return False
+
+        artifacts = ArtifactsRepository(self._conn)
+        paths = artifacts.storage_paths_for_workflow(workflow_id)
+        artifacts.delete_for_workflow(workflow_id)
+        result = self._conn.execute(
+            text(
+                "DELETE FROM workflows "
+                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+            ),
+            {"id": workflow_id, "user_id": user_id},
+        )
+        deleted = result.rowcount > 0
+        if deleted:
+            artifacts.reap_storage(paths)
+        return deleted
+
+    def delete_by_legacy_id(self, legacy_mongo_id: str, user_id: str) -> bool:
+        """Delete a workflow addressed by the Mongo ObjectId string.
+
+        The ``workflow_nodes`` and ``workflow_edges`` rows are removed
+        automatically via ``ON DELETE CASCADE``.
+        """
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
+        result = self._conn.execute(
+            text(
+                "DELETE FROM workflows "
+                "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
+            ),
+            {"legacy_id": legacy_mongo_id, "user_id": user_id},
+        )
+        return result.rowcount > 0

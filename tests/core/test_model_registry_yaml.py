@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.core.model_registry import ModelRegistry
-from application.core.model_yaml import (
+from docsgpt.core.model_registry import ModelRegistry
+from docsgpt.core.model_yaml import (
     BUILTIN_MODELS_DIR,
     load_model_yamls,
 )
@@ -167,7 +167,7 @@ class TestYAMLLoader:
 class TestRegistryPermutations:
     def test_openai_only(self):
         s = _make_settings(OPENAI_API_KEY="sk-test", LLM_PROVIDER="openai")
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["openai"] | EXPECTED_IDS["docsgpt"]
@@ -179,7 +179,7 @@ class TestRegistryPermutations:
             LLM_PROVIDER="openai",
             LLM_NAME="llama3,gemma",
         )
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         # Custom local endpoint suppresses both the openai catalog AND
@@ -188,7 +188,7 @@ class TestRegistryPermutations:
 
     def test_anthropic_only(self):
         s = _make_settings(ANTHROPIC_API_KEY="sk-ant")
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["anthropic"] | EXPECTED_IDS["docsgpt"]
@@ -200,7 +200,7 @@ class TestRegistryPermutations:
         s = _make_settings(
             LLM_PROVIDER="anthropic", API_KEY="key", LLM_NAME="claude-haiku-4-5"
         )
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         anthropic_ids = {
             m.id for m in reg.get_all_models() if m.provider.value == "anthropic"
@@ -209,42 +209,42 @@ class TestRegistryPermutations:
 
     def test_google_only(self):
         s = _make_settings(GOOGLE_API_KEY="g-test")
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["google"] | EXPECTED_IDS["docsgpt"]
 
     def test_groq_only(self):
         s = _make_settings(GROQ_API_KEY="g-test")
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["groq"] | EXPECTED_IDS["docsgpt"]
 
     def test_openrouter_only(self):
         s = _make_settings(OPEN_ROUTER_API_KEY="or-test")
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["openrouter"] | EXPECTED_IDS["docsgpt"]
 
     def test_novita_only(self):
         s = _make_settings(NOVITA_API_KEY="n-test")
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["novita"] | EXPECTED_IDS["docsgpt"]
 
     def test_huggingface_only(self):
         s = _make_settings(HUGGINGFACE_API_KEY="hf-test")
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["huggingface"] | EXPECTED_IDS["docsgpt"]
 
     def test_no_credentials_only_docsgpt(self):
         s = _make_settings()
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["docsgpt"]
@@ -261,7 +261,7 @@ class TestRegistryPermutations:
             HUGGINGFACE_API_KEY="x",
             OPENAI_API_BASE="x",
         )
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         all_expected = set()
@@ -279,13 +279,13 @@ class TestDefaultModelResolution:
         s = _make_settings(
             ANTHROPIC_API_KEY="sk-ant", LLM_NAME="claude-opus-4-7"
         )
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         assert reg.default_model_id == "claude-opus-4-7"
 
     def test_falls_back_to_first_model_when_no_match(self):
         s = _make_settings()
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         assert reg.default_model_id is not None
         assert reg.default_model_id in reg.models
@@ -298,7 +298,7 @@ class TestDefaultModelResolution:
 class TestUserIdForwardCompat:
     def test_lookup_methods_accept_user_id(self):
         s = _make_settings(OPENAI_API_KEY="sk-test")
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         # All lookup methods must accept user_id (currently ignored,
         # reserved for end-user BYOM).

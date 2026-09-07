@@ -1,10 +1,10 @@
-"""Tests for application/agents/tools/duckduckgo.py"""
+"""Tests for docsgpt/agents/tools/duckduckgo.py"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.agents.tools.duckduckgo import DuckDuckGoSearchTool
+from docsgpt.agents.tools.duckduckgo import DuckDuckGoSearchTool
 
 
 @pytest.fixture
@@ -88,7 +88,7 @@ class TestDuckDuckGoExecuteAction:
         call_kwargs = mock_client.images.call_args[1]
         assert call_kwargs["max_results"] == 50
 
-    @patch("application.agents.tools.duckduckgo.time.sleep")
+    @patch("docsgpt.agents.tools.duckduckgo.time.sleep")
     @patch.object(DuckDuckGoSearchTool, "_get_ddgs_client")
     def test_rate_limit_retries(self, mock_client_factory, mock_sleep, tool):
         mock_client = MagicMock()

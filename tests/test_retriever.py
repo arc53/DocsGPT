@@ -2,8 +2,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from application.retriever.base import BaseRetriever
-from application.retriever.retriever_creator import RetrieverCreator
+from docsgpt.retriever.base import BaseRetriever
+from docsgpt.retriever.retriever_creator import RetrieverCreator
 
 
 # ── BaseRetriever ──────────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ class TestRetrieverCreator:
 def _patch_llm_creator(mock_llm, monkeypatch):
     """Patch LLMCreator.create_llm to return the shared mock_llm fixture."""
     monkeypatch.setattr(
-        "application.retriever.classic_rag.LLMCreator.create_llm",
+        "docsgpt.retriever.classic_rag.LLMCreator.create_llm",
         Mock(return_value=mock_llm),
     )
     return mock_llm
@@ -99,7 +99,7 @@ def _patch_llm_creator(mock_llm, monkeypatch):
 
 def _make_rag(source=None, _patch_llm_creator=None, **overrides):
     """Helper – builds a ClassicRAG with sensible defaults."""
-    from application.retriever.classic_rag import ClassicRAG
+    from docsgpt.retriever.classic_rag import ClassicRAG
 
     defaults = dict(
         source=source or {"question": "hello"},
@@ -230,7 +230,7 @@ class TestClassicRAGLLMCreatorWiring:
     def test_passes_model_id_and_user_id_to_llmcreator(self, mock_llm, monkeypatch):
         captured = Mock(return_value=mock_llm)
         monkeypatch.setattr(
-            "application.retriever.classic_rag.LLMCreator.create_llm", captured
+            "docsgpt.retriever.classic_rag.LLMCreator.create_llm", captured
         )
 
         _make_rag(
@@ -249,7 +249,7 @@ class TestClassicRAGLLMCreatorWiring:
     def test_default_model_user_id_is_none(self, mock_llm, monkeypatch):
         captured = Mock(return_value=mock_llm)
         monkeypatch.setattr(
-            "application.retriever.classic_rag.LLMCreator.create_llm", captured
+            "docsgpt.retriever.classic_rag.LLMCreator.create_llm", captured
         )
 
         _make_rag()  # no model_user_id override
@@ -267,8 +267,8 @@ class TestClassicRAGGetData:
         rag = _make_rag(source={"question": "q"})
         assert rag._get_data() == []
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_returns_docs_with_metadata(self, mock_tokens, mock_vc, _patch_llm_creator):
         mock_docsearch = MagicMock()
         mock_doc = MagicMock()
@@ -290,8 +290,8 @@ class TestClassicRAGGetData:
         assert docs[0]["filename"] == "file.txt"
         assert docs[0]["source"] == "http://example.com"
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_dict_style_docs(self, mock_tokens, mock_vc, _patch_llm_creator):
         mock_docsearch = MagicMock()
         mock_docsearch.search.return_value = [
@@ -305,8 +305,8 @@ class TestClassicRAGGetData:
         assert len(docs) == 1
         assert docs[0]["text"] == "dict content"
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=100000)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=100000)
     def test_token_budget_respected(self, mock_tokens, mock_vc, _patch_llm_creator):
         mock_docsearch = MagicMock()
         mock_doc = MagicMock()
@@ -323,7 +323,7 @@ class TestClassicRAGGetData:
         # tokens (100000) exceed budget (90), so no docs should be added
         assert len(docs) == 0
 
-    @patch("application.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
     def test_vectorstore_error_continues(self, mock_vc, _patch_llm_creator):
         mock_vc.create_vectorstore.side_effect = RuntimeError("connection failed")
 
@@ -331,8 +331,8 @@ class TestClassicRAGGetData:
         docs = rag._get_data()
         assert docs == []
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_multiple_vectorstores(self, mock_tokens, mock_vc, _patch_llm_creator):
         mock_docsearch = MagicMock()
         mock_doc = MagicMock()
@@ -345,8 +345,8 @@ class TestClassicRAGGetData:
         docs = rag._get_data()
         assert len(docs) == 2
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_doc_missing_filename_uses_title(self, mock_tokens, mock_vc, _patch_llm_creator):
         mock_docsearch = MagicMock()
         mock_doc = MagicMock()
@@ -359,8 +359,8 @@ class TestClassicRAGGetData:
         docs = rag._get_data()
         assert docs[0]["filename"] == "MyTitle"
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_non_string_title_converted(self, mock_tokens, mock_vc, _patch_llm_creator):
         mock_docsearch = MagicMock()
         mock_doc = MagicMock()
@@ -376,8 +376,8 @@ class TestClassicRAGGetData:
 
 @pytest.mark.unit
 class TestClassicRAGSearch:
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_search_with_query_override(self, mock_tokens, mock_vc, _patch_llm_creator, mock_llm):
         mock_docsearch = MagicMock()
         mock_doc = MagicMock()
@@ -405,10 +405,10 @@ class TestClassicRAGSearch:
 class TestClassicRAGPerSource:
     """Per-source chunks / score_threshold / rephrase_query in the loop."""
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_per_source_chunks_changes_k(self, _tok, mock_vc, _patch_llm_creator):
-        from application.storage.db.source_config import RetrievalConfig
+        from docsgpt.storage.db.source_config import RetrievalConfig
 
         docsearch = MagicMock()
         doc = MagicMock()
@@ -429,10 +429,10 @@ class TestClassicRAGPerSource:
         # src_k=15 → k = max(30, 20) = 30.
         assert docsearch.search.call_args.kwargs["k"] == 30
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_per_source_score_threshold_passed(self, _tok, mock_vc, _patch_llm_creator):
-        from application.storage.db.source_config import RetrievalConfig
+        from docsgpt.storage.db.source_config import RetrievalConfig
 
         docsearch = MagicMock()
         docsearch.search.return_value = []
@@ -443,8 +443,8 @@ class TestClassicRAGPerSource:
         rag._get_data()
         assert docsearch.search.call_args.kwargs["score_threshold"] == 0.7
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_default_path_omits_score_threshold(self, _tok, mock_vc, _patch_llm_creator):
         docsearch = MagicMock()
         docsearch.search.return_value = []
@@ -454,12 +454,12 @@ class TestClassicRAGPerSource:
         rag._get_data()
         assert "score_threshold" not in docsearch.search.call_args.kwargs
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_rephrase_false_skips_llm_and_uses_original(
         self, _tok, mock_vc, _patch_llm_creator, mock_llm
     ):
-        from application.storage.db.source_config import RetrievalConfig
+        from docsgpt.storage.db.source_config import RetrievalConfig
 
         docsearch = MagicMock()
         docsearch.search.return_value = []
@@ -479,12 +479,12 @@ class TestClassicRAGPerSource:
         mock_llm.gen.assert_not_called()
         assert docsearch.search.call_args.args[0] == "original"
 
-    @patch("application.retriever.classic_rag.VectorCreator")
-    @patch("application.retriever.classic_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.classic_rag.VectorCreator")
+    @patch("docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10)
     def test_rephrase_true_uses_rephrased(
         self, _tok, mock_vc, _patch_llm_creator, mock_llm
     ):
-        from application.storage.db.source_config import RetrievalConfig
+        from docsgpt.storage.db.source_config import RetrievalConfig
 
         docsearch = MagicMock()
         docsearch.search.return_value = []

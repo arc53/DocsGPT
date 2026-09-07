@@ -1,4 +1,4 @@
-"""Unit tests for application/llm/openai.py — OpenAILLM.
+"""Unit tests for docsgpt/llm/openai.py — OpenAILLM.
 
 Extends coverage beyond test_openai_llm.py:
   - _truncate_base64_for_logging helper
@@ -23,7 +23,7 @@ import httpx
 import pytest
 from openai import BadRequestError
 
-from application.llm.openai import (
+from docsgpt.llm.openai import (
     OpenAILLM,
     _is_tools_unsupported_error,
     _truncate_base64_for_logging,
@@ -470,7 +470,7 @@ class TestBYOMCapabilityEnforcement:
         supports_structured_output=False,
         attachments=None,
     ):
-        from application.core.model_settings import ModelCapabilities
+        from docsgpt.core.model_settings import ModelCapabilities
         instance = OpenAILLM(
             api_key="sk-test",
             user_api_key=None,
@@ -1240,7 +1240,7 @@ class TestOpenAILLMConstructor:
     def test_base_url_from_param(self, monkeypatch):
         """Cover lines 72-82: base_url from parameter."""
         monkeypatch.setattr(
-            "application.llm.openai.settings",
+            "docsgpt.llm.openai.settings",
             types.SimpleNamespace(
                 OPENAI_API_KEY="k",
                 API_KEY="k",
@@ -1249,13 +1249,13 @@ class TestOpenAILLMConstructor:
             ),
         )
         monkeypatch.setattr(
-            "application.llm.openai.StorageCreator",
+            "docsgpt.llm.openai.StorageCreator",
             types.SimpleNamespace(get_storage=lambda: None),
         )
         from unittest.mock import MagicMock
 
         mock_openai = MagicMock()
-        monkeypatch.setattr("application.llm.openai.OpenAI", mock_openai)
+        monkeypatch.setattr("docsgpt.llm.openai.OpenAI", mock_openai)
         OpenAILLM(api_key="k", base_url="https://custom.api/v1")
         mock_openai.assert_called_once_with(
             api_key="k", base_url="https://custom.api/v1"
@@ -1264,7 +1264,7 @@ class TestOpenAILLMConstructor:
     def test_base_url_from_settings(self, monkeypatch):
         """Cover lines 80-82: base_url from settings."""
         monkeypatch.setattr(
-            "application.llm.openai.settings",
+            "docsgpt.llm.openai.settings",
             types.SimpleNamespace(
                 OPENAI_API_KEY="k",
                 API_KEY="k",
@@ -1273,13 +1273,13 @@ class TestOpenAILLMConstructor:
             ),
         )
         monkeypatch.setattr(
-            "application.llm.openai.StorageCreator",
+            "docsgpt.llm.openai.StorageCreator",
             types.SimpleNamespace(get_storage=lambda: None),
         )
         from unittest.mock import MagicMock
 
         mock_openai = MagicMock()
-        monkeypatch.setattr("application.llm.openai.OpenAI", mock_openai)
+        monkeypatch.setattr("docsgpt.llm.openai.OpenAI", mock_openai)
         OpenAILLM(api_key="k")
         mock_openai.assert_called_once_with(
             api_key="k", base_url="https://settings.api/v1"
@@ -1288,7 +1288,7 @@ class TestOpenAILLMConstructor:
     def test_default_base_url(self, monkeypatch):
         """Cover line 82: default base_url."""
         monkeypatch.setattr(
-            "application.llm.openai.settings",
+            "docsgpt.llm.openai.settings",
             types.SimpleNamespace(
                 OPENAI_API_KEY="k",
                 API_KEY="k",
@@ -1297,13 +1297,13 @@ class TestOpenAILLMConstructor:
             ),
         )
         monkeypatch.setattr(
-            "application.llm.openai.StorageCreator",
+            "docsgpt.llm.openai.StorageCreator",
             types.SimpleNamespace(get_storage=lambda: None),
         )
         from unittest.mock import MagicMock
 
         mock_openai = MagicMock()
-        monkeypatch.setattr("application.llm.openai.OpenAI", mock_openai)
+        monkeypatch.setattr("docsgpt.llm.openai.OpenAI", mock_openai)
         OpenAILLM(api_key="k")
         mock_openai.assert_called_once_with(
             api_key="k", base_url="https://api.openai.com/v1"
@@ -1944,14 +1944,14 @@ class TestInlineFilePartResolution:
     # -- Fix #2: Redis cache — cross-request dedup for /v1 replays --
 
     def _patch_redis(self, cache):
-        """Patch ``application.cache.get_redis_instance`` to return the
+        """Patch ``docsgpt.cache.get_redis_instance`` to return the
         provided fake redis (a dict-backed stub) — one context per test.
 
-        The helpers ``_inline_file_id_cache_*`` do ``from application.cache
+        The helpers ``_inline_file_id_cache_*`` do ``from docsgpt.cache
         import get_redis_instance`` INSIDE the function, so patching the
         module attribute is enough — no import-time capture to worry about.
         """
-        return patch("application.cache.get_redis_instance", return_value=cache)
+        return patch("docsgpt.cache.get_redis_instance", return_value=cache)
 
     class _FakeRedis:
         def __init__(self):
@@ -2069,7 +2069,7 @@ class TestKeylessConstruction:
 
     @pytest.mark.parametrize("blank", ["", None])
     def test_llm_accepts_blank_key(self, blank):
-        with patch("application.llm.openai.settings") as mock_settings:
+        with patch("docsgpt.llm.openai.settings") as mock_settings:
             mock_settings.OPENAI_API_KEY = blank
             mock_settings.API_KEY = blank
             mock_settings.OPENAI_BASE_URL = "http://localhost:11434/v1"
@@ -2078,9 +2078,9 @@ class TestKeylessConstruction:
 
     @pytest.mark.parametrize("blank", ["", None])
     def test_stt_accepts_blank_key(self, blank):
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
-        with patch("application.stt.openai_stt.settings") as mock_settings:
+        with patch("docsgpt.stt.openai_stt.settings") as mock_settings:
             mock_settings.OPENAI_API_KEY = blank
             mock_settings.API_KEY = blank
             mock_settings.OPENAI_BASE_URL = "http://localhost:11434/v1"

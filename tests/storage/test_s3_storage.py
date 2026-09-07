@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.storage.s3 import S3Storage
+from docsgpt.storage.s3 import S3Storage
 from botocore.exceptions import ClientError
 
 
@@ -45,7 +45,7 @@ class TestS3StorageInitialization:
     def test_init_creates_boto3_client_with_s3_credentials(self):
         """Should create boto3 S3 client with dedicated S3_* credentials."""
         with patch("boto3.client") as mock_client, patch(
-            "application.storage.s3.settings"
+            "docsgpt.storage.s3.settings"
         ) as mock_settings:
 
             mock_settings.S3_BUCKET_NAME = "docsgpt-test-bucket"
@@ -71,8 +71,8 @@ class TestS3StorageInitialization:
     def test_init_falls_back_to_sagemaker_credentials(self):
         """Should fall back to deprecated SAGEMAKER_* credentials when S3_* unset."""
         with patch("boto3.client") as mock_client, patch(
-            "application.storage.s3.settings"
-        ) as mock_settings, patch("application.storage.s3.logger") as mock_logger:
+            "docsgpt.storage.s3.settings"
+        ) as mock_settings, patch("docsgpt.storage.s3.logger") as mock_logger:
 
             mock_settings.S3_BUCKET_NAME = "docsgpt-test-bucket"
             mock_settings.S3_ACCESS_KEY_ID = None
@@ -98,7 +98,7 @@ class TestS3StorageInitialization:
     def test_init_with_custom_endpoint_and_path_style(self):
         """Should pass endpoint_url and path-style config for S3-compatible services."""
         with patch("boto3.client") as mock_client, patch(
-            "application.storage.s3.settings"
+            "docsgpt.storage.s3.settings"
         ) as mock_settings:
 
             mock_settings.S3_BUCKET_NAME = "my-bucket"
@@ -149,7 +149,7 @@ class TestS3StorageSaveFile:
         file_data = io.BytesIO(b"test content")
         path = "documents/test.txt"
 
-        with patch("application.storage.s3.settings") as mock_settings:
+        with patch("docsgpt.storage.s3.settings") as mock_settings:
             mock_settings.SAGEMAKER_REGION = "us-east-1"
             s3_storage.save_file(file_data, path, storage_class="STANDARD")
         mock_boto3_client.upload_fileobj.assert_called_once_with(

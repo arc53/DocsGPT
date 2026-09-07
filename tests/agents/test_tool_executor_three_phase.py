@@ -12,7 +12,7 @@ from unittest.mock import Mock
 import pytest
 from sqlalchemy import text
 
-from application.agents.tool_executor import ToolExecutor
+from docsgpt.agents.tool_executor import ToolExecutor
 
 
 @contextmanager
@@ -38,10 +38,10 @@ def _patch_db(monkeypatch, pg_conn):
         yield pg_conn
 
     targets = (
-        "application.agents.tool_executor",
-        "application.agents.tools.notes",
-        "application.agents.tools.todo_list",
-        "application.storage.db.session",
+        "docsgpt.agents.tool_executor",
+        "docsgpt.agents.tools.notes",
+        "docsgpt.agents.tools.todo_list",
+        "docsgpt.storage.db.session",
     )
     for module in targets:
         monkeypatch.setattr(f"{module}.db_session", _use_pg, raising=False)
@@ -94,7 +94,7 @@ class TestExecuteJournaling:
         """No reserved message (``save_conversation=False``) → row lands ``confirmed``, not ``executed``."""
         executor = ToolExecutor(user="u")
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(
                 parse_args=Mock(return_value=("t1", "test_action", {"q": "v"}))
             ),
@@ -119,7 +119,7 @@ class TestExecuteJournaling:
         self, pg_conn, mock_tool_manager, monkeypatch
     ):
         """The executor's message_id is carried onto the journal row, which stays ``executed``."""
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -138,7 +138,7 @@ class TestExecuteJournaling:
         executor = ToolExecutor(user="u")
         executor.message_id = message_uuid
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(
                 parse_args=Mock(return_value=("t1", "test_action", {}))
             ),
@@ -163,7 +163,7 @@ class TestExecuteJournaling:
         that reuses a deterministic call id (``functions.create_artifact:0``)
         across turns must journal a distinct row per turn, not silently drop the
         later one on the table-wide ``call_id`` primary key."""
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -178,7 +178,7 @@ class TestExecuteJournaling:
             request_id="req-c2", status="pending",
         )
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(
                 parse_args=Mock(return_value=("t1", "test_action", {}))
             ),
@@ -206,7 +206,7 @@ class TestExecuteJournaling:
     ):
         executor = ToolExecutor(user="u")
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(
                 parse_args=Mock(return_value=("t1", "test_action", {}))
             ),
@@ -229,7 +229,7 @@ class TestExecuteJournaling:
 @pytest.mark.unit
 class TestRepository:
     def test_proposed_then_confirmed_when_no_message(self, pg_conn):
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -247,10 +247,10 @@ class TestRepository:
         assert row["result"] == {"result": {"out": "ok"}}
 
     def test_mark_executed_with_message_stays_executed(self, pg_conn):
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -277,7 +277,7 @@ class TestRepository:
 
     def test_upsert_executed_without_message_confirms(self, pg_conn):
         """``upsert_executed`` (DB-outage fallback) with no ``message_id`` lands ``confirmed``."""
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -289,7 +289,7 @@ class TestRepository:
         assert row["result"] == {"result": {"out": "ok"}}
 
     def test_mark_failed_sets_error(self, pg_conn):
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -303,7 +303,7 @@ class TestRepository:
     def test_mark_failed_leaves_executed_row_untouched(self, pg_conn):
         """A late error for a reused ``call_id`` ("call_0"-style) must
         not flip an already-executed row (see ``mark_failed``)."""
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -320,7 +320,7 @@ class TestRepository:
     def test_mark_executed_guarded_to_proposed(self, pg_conn):
         """A reused ``call_id`` must not flip an already-terminal row back
         to executed (the status guard mirrors ``mark_failed``)."""
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -336,7 +336,7 @@ class TestRepository:
     def test_mark_executed_scoped_to_owner(self, pg_conn):
         """A colliding ``call_id`` from another tenant can't flip — or
         read its result into — this user's proposed row."""
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -353,7 +353,7 @@ class TestRepository:
         assert row["user_id"] == "victim"
 
     def test_mark_failed_scoped_to_owner(self, pg_conn):
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -368,7 +368,7 @@ class TestRepository:
         visible to per-user / per-agent analytics (was born unattributed)."""
         import uuid as _uuid
 
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -385,7 +385,7 @@ class TestRepository:
     def test_upsert_executed_wont_clobber_other_tenant(self, pg_conn):
         """A colliding fallback upsert must not upgrade another tenant's
         proposed row or overwrite its result."""
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -407,7 +407,7 @@ class TestDefaultToolJournaling:
     def test_synthetic_tool_id_is_journaled(
         self, pg_conn, mock_tool_manager, monkeypatch
     ):
-        from application.agents.default_tools import synthesize_default_tool
+        from docsgpt.agents.default_tools import synthesize_default_tool
 
         memory_row = synthesize_default_tool("memory")
         assert memory_row is not None
@@ -415,7 +415,7 @@ class TestDefaultToolJournaling:
 
         executor = ToolExecutor(user="u")
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(
                 parse_args=Mock(
                     return_value=(memory_row["id"], "memory_view", {"path": "/"})

@@ -10,7 +10,7 @@ import pytest
 from flask import Flask
 from sqlalchemy import text
 
-from application.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 
 @pytest.fixture
@@ -25,9 +25,9 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.schedules.routes.db_session", _yield,
+        "docsgpt.api.user.schedules.routes.db_session", _yield,
     ), patch(
-        "application.api.user.schedules.routes.db_readonly", _yield,
+        "docsgpt.api.user.schedules.routes.db_readonly", _yield,
     ):
         yield
 
@@ -49,7 +49,7 @@ def _make_agent(conn, user_id: str = "u1") -> str:
 
 class TestCreateRecurring:
     def test_unauthorized(self, app):
-        from application.api.user.schedules.routes import AgentSchedules
+        from docsgpt.api.user.schedules.routes import AgentSchedules
 
         with app.test_request_context(
             "/api/agents/x/schedules", method="POST", json={},
@@ -60,7 +60,7 @@ class TestCreateRecurring:
         assert resp.status_code == 401
 
     def test_agent_not_found(self, app, pg_conn):
-        from application.api.user.schedules.routes import AgentSchedules
+        from docsgpt.api.user.schedules.routes import AgentSchedules
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/agents/00000000-0000-0000-0000-000000000000/schedules",
@@ -74,7 +74,7 @@ class TestCreateRecurring:
         assert resp.status_code == 404
 
     def test_invalid_cron(self, app, pg_conn):
-        from application.api.user.schedules.routes import AgentSchedules
+        from docsgpt.api.user.schedules.routes import AgentSchedules
 
         agent_id = _make_agent(pg_conn)
         with _patch_db(pg_conn), app.test_request_context(
@@ -88,7 +88,7 @@ class TestCreateRecurring:
         assert resp.status_code == 400
 
     def test_create_success(self, app, pg_conn):
-        from application.api.user.schedules.routes import AgentSchedules
+        from docsgpt.api.user.schedules.routes import AgentSchedules
 
         agent_id = _make_agent(pg_conn)
         with _patch_db(pg_conn), app.test_request_context(
@@ -112,7 +112,7 @@ class TestCreateRecurring:
 
 class TestCreateOnce:
     def test_creates_once_with_run_at(self, app, pg_conn):
-        from application.api.user.schedules.routes import AgentSchedules
+        from docsgpt.api.user.schedules.routes import AgentSchedules
 
         agent_id = _make_agent(pg_conn)
         run_at = (_now() + timedelta(hours=2)).isoformat().replace(
@@ -138,7 +138,7 @@ class TestCreateOnce:
         assert body["schedule"]["run_at"] is not None
 
     def test_once_requires_run_at(self, app, pg_conn):
-        from application.api.user.schedules.routes import AgentSchedules
+        from docsgpt.api.user.schedules.routes import AgentSchedules
 
         agent_id = _make_agent(pg_conn)
         with _patch_db(pg_conn), app.test_request_context(
@@ -155,7 +155,7 @@ class TestCreateOnce:
         assert resp.status_code == 400
 
     def test_once_rejects_past_run_at(self, app, pg_conn):
-        from application.api.user.schedules.routes import AgentSchedules
+        from docsgpt.api.user.schedules.routes import AgentSchedules
 
         agent_id = _make_agent(pg_conn)
         past = (_now() - timedelta(hours=1)).isoformat().replace(
@@ -177,7 +177,7 @@ class TestCreateOnce:
 
     def test_recurring_default_when_trigger_type_omitted(self, app, pg_conn):
         """Backwards compat: a payload with cron but no trigger_type still works."""
-        from application.api.user.schedules.routes import AgentSchedules
+        from docsgpt.api.user.schedules.routes import AgentSchedules
 
         agent_id = _make_agent(pg_conn)
         with _patch_db(pg_conn), app.test_request_context(
@@ -198,7 +198,7 @@ class TestCreateOnce:
 
 class TestListForAgent:
     def test_list(self, app, pg_conn):
-        from application.api.user.schedules.routes import AgentSchedules
+        from docsgpt.api.user.schedules.routes import AgentSchedules
 
         agent_id = _make_agent(pg_conn)
         SchedulesRepository(pg_conn).create(
@@ -221,7 +221,7 @@ class TestGetEditPatchDelete:
         return SchedulesRepository(conn).create(**kwargs)
 
     def test_get_owner_scoped(self, app, pg_conn):
-        from application.api.user.schedules.routes import ScheduleResource
+        from docsgpt.api.user.schedules.routes import ScheduleResource
 
         agent_id = _make_agent(pg_conn)
         s = self._make(
@@ -239,7 +239,7 @@ class TestGetEditPatchDelete:
         assert resp.status_code == 404
 
     def test_pause_then_resume(self, app, pg_conn):
-        from application.api.user.schedules.routes import ScheduleResource
+        from docsgpt.api.user.schedules.routes import ScheduleResource
 
         agent_id = _make_agent(pg_conn)
         s = self._make(
@@ -272,7 +272,7 @@ class TestGetEditPatchDelete:
         assert body["schedule"]["next_run_at"] is not None
 
     def test_delete_owner_scoped(self, app, pg_conn):
-        from application.api.user.schedules.routes import ScheduleResource
+        from docsgpt.api.user.schedules.routes import ScheduleResource
 
         agent_id = _make_agent(pg_conn)
         s = self._make(
@@ -297,7 +297,7 @@ class TestGetEditPatchDelete:
         assert resp.status_code == 200
 
     def test_put_invalid_cron(self, app, pg_conn):
-        from application.api.user.schedules.routes import ScheduleResource
+        from docsgpt.api.user.schedules.routes import ScheduleResource
 
         agent_id = _make_agent(pg_conn)
         s = self._make(
@@ -318,7 +318,7 @@ class TestGetEditPatchDelete:
 
 class TestRunNow:
     def test_runs_returns_202(self, app, pg_conn):
-        from application.api.user.schedules.routes import ScheduleRunNow
+        from docsgpt.api.user.schedules.routes import ScheduleRunNow
 
         agent_id = _make_agent(pg_conn)
         s = SchedulesRepository(pg_conn).create(
@@ -327,7 +327,7 @@ class TestRunNow:
             next_run_at=_now() + timedelta(hours=1),
         )
         with _patch_db(pg_conn), patch(
-            "application.api.user.tasks.execute_scheduled_run",
+            "docsgpt.api.user.tasks.execute_scheduled_run",
             type("T", (), {"apply_async": staticmethod(lambda **k: None)}),
         ), app.test_request_context(
             f"/api/schedules/{s['id']}/run", method="POST",
@@ -339,7 +339,7 @@ class TestRunNow:
 
     def test_second_run_blocked_by_active(self, app, pg_conn):
         """Run-Now serializes via FOR UPDATE + has_active_run; second 409s."""
-        from application.api.user.schedules.routes import ScheduleRunNow
+        from docsgpt.api.user.schedules.routes import ScheduleRunNow
 
         agent_id = _make_agent(pg_conn)
         s = SchedulesRepository(pg_conn).create(
@@ -348,7 +348,7 @@ class TestRunNow:
             next_run_at=_now() + timedelta(hours=1),
         )
         with _patch_db(pg_conn), patch(
-            "application.api.user.tasks.execute_scheduled_run",
+            "docsgpt.api.user.tasks.execute_scheduled_run",
             type("T", (), {"apply_async": staticmethod(lambda **k: None)}),
         ), app.test_request_context(
             f"/api/schedules/{s['id']}/run", method="POST",
@@ -363,7 +363,7 @@ class TestRunNow:
 
 class TestMinInterval:
     def test_create_rejects_below_min_interval(self, app, pg_conn):
-        from application.api.user.schedules.routes import AgentSchedules
+        from docsgpt.api.user.schedules.routes import AgentSchedules
 
         agent_id = _make_agent(pg_conn)
         with _patch_db(pg_conn), app.test_request_context(
@@ -378,7 +378,7 @@ class TestMinInterval:
         assert "minimum interval" in resp.get_json()["message"]
 
     def test_put_rejects_below_min_interval(self, app, pg_conn):
-        from application.api.user.schedules.routes import ScheduleResource
+        from docsgpt.api.user.schedules.routes import ScheduleResource
 
         agent_id = _make_agent(pg_conn)
         s = SchedulesRepository(pg_conn).create(
@@ -399,7 +399,7 @@ class TestMinInterval:
 
 class TestResumeOnceStale:
     def test_stale_run_at_returns_clear_409(self, app, pg_conn):
-        from application.api.user.schedules.routes import ScheduleResource
+        from docsgpt.api.user.schedules.routes import ScheduleResource
 
         agent_id = _make_agent(pg_conn)
         s = SchedulesRepository(pg_conn).create(
@@ -426,7 +426,7 @@ class TestResumeOnceStale:
         assert "elapsed" in resp.get_json()["message"]
 
     def test_resume_accepts_new_run_at(self, app, pg_conn):
-        from application.api.user.schedules.routes import ScheduleResource
+        from docsgpt.api.user.schedules.routes import ScheduleResource
 
         agent_id = _make_agent(pg_conn)
         s = SchedulesRepository(pg_conn).create(
@@ -457,7 +457,7 @@ class TestResumeOnceStale:
 
 class TestRunList:
     def test_list_owner_scoped(self, app, pg_conn):
-        from application.api.user.schedules.routes import ScheduleRunList
+        from docsgpt.api.user.schedules.routes import ScheduleRunList
 
         agent_id = _make_agent(pg_conn)
         s = SchedulesRepository(pg_conn).create(
@@ -478,7 +478,7 @@ class TestUnexpectedExceptionMasked:
     """Unexpected exceptions log full trace + return generic 500 (no leak)."""
 
     def test_unexpected_repo_error_returns_generic_500(self, app, pg_conn):
-        from application.api.user.schedules.routes import ScheduleResource
+        from docsgpt.api.user.schedules.routes import ScheduleResource
 
         agent_id = _make_agent(pg_conn)
         s = SchedulesRepository(pg_conn).create(

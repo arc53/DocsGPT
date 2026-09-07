@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from application.storage.db.repositories.user_custom_models import (
+from docsgpt.storage.db.repositories.user_custom_models import (
     UserCustomModelsRepository,
 )
 

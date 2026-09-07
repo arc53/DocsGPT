@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 
-from application.storage.db.repositories.conversations import ConversationsRepository
-from application.storage.db.repositories.shared_conversations import SharedConversationsRepository
+from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.shared_conversations import SharedConversationsRepository
 
 
 def _conv(conn) -> dict:

@@ -12,21 +12,21 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.storage.db.session.db_readonly", _yield
+        "docsgpt.storage.db.session.db_readonly", _yield
     ):
         yield
 
 
 class TestGetDirectoryStructureFromDb:
     def test_returns_none_for_empty_active_docs(self):
-        from application.agents.tools.internal_search import InternalSearchTool
+        from docsgpt.agents.tools.internal_search import InternalSearchTool
 
         tool = InternalSearchTool({"source": {}})
         assert tool._get_directory_structure() is None
 
     def test_loads_single_source_structure(self, pg_conn):
-        from application.agents.tools.internal_search import InternalSearchTool
-        from application.storage.db.repositories.sources import (
+        from docsgpt.agents.tools.internal_search import InternalSearchTool
+        from docsgpt.storage.db.repositories.sources import (
             SourcesRepository,
         )
 
@@ -47,8 +47,8 @@ class TestGetDirectoryStructureFromDb:
         assert "file.txt" in got
 
     def test_loads_multiple_sources_merges(self, pg_conn):
-        from application.agents.tools.internal_search import InternalSearchTool
-        from application.storage.db.repositories.sources import (
+        from docsgpt.agents.tools.internal_search import InternalSearchTool
+        from docsgpt.storage.db.repositories.sources import (
             SourcesRepository,
         )
 
@@ -74,7 +74,7 @@ class TestGetDirectoryStructureFromDb:
         assert "src1" in got or "a.txt" in got
 
     def test_skips_missing_source(self, pg_conn):
-        from application.agents.tools.internal_search import InternalSearchTool
+        from docsgpt.agents.tools.internal_search import InternalSearchTool
 
         tool = InternalSearchTool({
             "source": {"active_docs": "00000000-0000-0000-0000-000000000000"},
@@ -87,16 +87,16 @@ class TestGetDirectoryStructureFromDb:
 
 class TestSourcesHaveDirectoryStructureDb:
     def test_false_no_active_docs(self):
-        from application.agents.tools.internal_search import (
+        from docsgpt.agents.tools.internal_search import (
             sources_have_directory_structure,
         )
         assert sources_have_directory_structure({}) is False
 
     def test_true_when_source_has_structure(self, pg_conn):
-        from application.agents.tools.internal_search import (
+        from docsgpt.agents.tools.internal_search import (
             sources_have_directory_structure,
         )
-        from application.storage.db.repositories.sources import (
+        from docsgpt.storage.db.repositories.sources import (
             SourcesRepository,
         )
 
@@ -111,10 +111,10 @@ class TestSourcesHaveDirectoryStructureDb:
         assert got is True
 
     def test_false_when_source_has_no_structure(self, pg_conn):
-        from application.agents.tools.internal_search import (
+        from docsgpt.agents.tools.internal_search import (
             sources_have_directory_structure,
         )
-        from application.storage.db.repositories.sources import (
+        from docsgpt.storage.db.repositories.sources import (
             SourcesRepository,
         )
 
@@ -126,10 +126,10 @@ class TestSourcesHaveDirectoryStructureDb:
         assert got is False
 
     def test_legacy_id_lookup(self, pg_conn):
-        from application.agents.tools.internal_search import (
+        from docsgpt.agents.tools.internal_search import (
             sources_have_directory_structure,
         )
-        from application.storage.db.repositories.sources import (
+        from docsgpt.storage.db.repositories.sources import (
             SourcesRepository,
         )
 

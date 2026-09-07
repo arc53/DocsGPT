@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.storage.db.repositories.conversations import HeartbeatState
+from docsgpt.storage.db.repositories.conversations import HeartbeatState
 
 
 def _reservation(message_id="11111111-1111-1111-1111-111111111111"):
@@ -59,8 +59,8 @@ def _service(state=HeartbeatState.STAMPED):
 @pytest.mark.unit
 class TestHeartbeatTicker:
     def _run(self, flask_app, gen, service=None, interval=0.05):
-        from application.api.answer.routes import base as base_mod
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -99,8 +99,8 @@ class TestHeartbeatTicker:
         assert service.heartbeat_message_state.call_count == settled
 
     def test_ticker_stops_on_client_abort(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes import base as base_mod
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -131,8 +131,8 @@ class TestHeartbeatTicker:
 
     def test_no_ticker_without_a_reserved_row(self, mock_mongo_db, flask_app):
         """Headless/continuation rounds have no row to stamp."""
-        from application.api.answer.routes import base as base_mod
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -177,8 +177,8 @@ class TestSupersededStreamCancellation:
     """A deleted row must stop the work, not just quiet the logs."""
 
     def _run_with_missing_row(self, flask_app, gen, interval=0.05):
-        from application.api.answer.routes import base as base_mod
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -227,8 +227,8 @@ class TestSupersededStreamCancellation:
 
     def test_live_row_is_never_cancelled(self, mock_mongo_db, flask_app):
         """The common case must be untouched."""
-        from application.api.answer.routes import base as base_mod
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -255,8 +255,8 @@ class TestSupersededStreamCancellation:
 
     def test_db_error_does_not_cancel_the_stream(self, mock_mongo_db, flask_app):
         """A transient blip must never be mistaken for a deleted row."""
-        from application.api.answer.routes import base as base_mod
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()

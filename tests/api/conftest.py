@@ -21,7 +21,7 @@ def mock_request_token(monkeypatch, decoded_token):
 
         return wrapper
 
-    monkeypatch.setattr("application.auth.api_key_required", lambda: mock_decorator)
+    monkeypatch.setattr("docsgpt.auth.api_key_required", lambda: mock_decorator)
     return decoded_token
 
 

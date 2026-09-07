@@ -1,4 +1,4 @@
-"""Tests for application/api/user/agents/sharing.py.
+"""Tests for docsgpt/api/user/agents/sharing.py.
 
 Uses the ephemeral ``pg_conn`` fixture to exercise the real PG repository
 code paths (agents, users).
@@ -23,15 +23,15 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.agents.sharing.db_session", _yield
+        "docsgpt.api.user.agents.sharing.db_session", _yield
     ), patch(
-        "application.api.user.agents.sharing.db_readonly", _yield
+        "docsgpt.api.user.agents.sharing.db_readonly", _yield
     ):
         yield
 
 
 def _make_agent(pg_conn, user_id="owner", *, shared=False, shared_token=None):
-    from application.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
     agent = AgentsRepository(pg_conn).create(
         user_id,
         "Agent",
@@ -49,7 +49,7 @@ def _make_agent(pg_conn, user_id="owner", *, shared=False, shared_token=None):
 
 class TestSharedAgentGet:
     def test_returns_400_missing_token(self, app):
-        from application.api.user.agents.sharing import SharedAgent
+        from docsgpt.api.user.agents.sharing import SharedAgent
 
         with app.test_request_context("/api/shared_agent"):
             from flask import request
@@ -58,7 +58,7 @@ class TestSharedAgentGet:
         assert response.status_code == 400
 
     def test_returns_404_for_unknown_token(self, app, pg_conn):
-        from application.api.user.agents.sharing import SharedAgent
+        from docsgpt.api.user.agents.sharing import SharedAgent
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/shared_agent?token=unknown"
@@ -69,7 +69,7 @@ class TestSharedAgentGet:
         assert response.status_code == 404
 
     def test_returns_agent_for_known_token(self, app, pg_conn):
-        from application.api.user.agents.sharing import SharedAgent
+        from docsgpt.api.user.agents.sharing import SharedAgent
 
         _make_agent(pg_conn, shared=True, shared_token="abc123")
 
@@ -85,7 +85,7 @@ class TestSharedAgentGet:
         assert data["shared"] is True
 
     def test_records_shared_with_different_user(self, app, pg_conn):
-        from application.api.user.agents.sharing import SharedAgent
+        from docsgpt.api.user.agents.sharing import SharedAgent
 
         _make_agent(pg_conn, user_id="owner", shared=True, shared_token="tk1")
 
@@ -98,7 +98,7 @@ class TestSharedAgentGet:
         assert response.status_code == 200
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.agents.sharing import SharedAgent
+        from docsgpt.api.user.agents.sharing import SharedAgent
 
         @contextmanager
         def _broken():
@@ -106,7 +106,7 @@ class TestSharedAgentGet:
             yield
 
         with patch(
-            "application.api.user.agents.sharing.db_readonly", _broken
+            "docsgpt.api.user.agents.sharing.db_readonly", _broken
         ), app.test_request_context("/api/shared_agent?token=x"):
             from flask import request
             request.decoded_token = None
@@ -116,7 +116,7 @@ class TestSharedAgentGet:
 
 class TestSharedAgents:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.sharing import SharedAgents
+        from docsgpt.api.user.agents.sharing import SharedAgents
 
         with app.test_request_context("/api/shared_agents"):
             from flask import request
@@ -125,7 +125,7 @@ class TestSharedAgents:
         assert response.status_code == 401
 
     def test_returns_empty_list_for_new_user(self, app, pg_conn):
-        from application.api.user.agents.sharing import SharedAgents
+        from docsgpt.api.user.agents.sharing import SharedAgents
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/shared_agents"
@@ -139,7 +139,7 @@ class TestSharedAgents:
     def test_returns_shared_agents_for_user(self, app, pg_conn):
         """After SharedAgent adds an agent to the user's shared_with_me, it
         should appear in SharedAgents."""
-        from application.api.user.agents.sharing import SharedAgent, SharedAgents
+        from docsgpt.api.user.agents.sharing import SharedAgent, SharedAgents
 
         _make_agent(pg_conn, user_id="owner", shared=True, shared_token="tk2")
 
@@ -162,7 +162,7 @@ class TestSharedAgents:
         assert response.json[0]["shared"] is True
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.agents.sharing import SharedAgents
+        from docsgpt.api.user.agents.sharing import SharedAgents
 
         @contextmanager
         def _broken():
@@ -170,7 +170,7 @@ class TestSharedAgents:
             yield
 
         with patch(
-            "application.api.user.agents.sharing.db_session", _broken
+            "docsgpt.api.user.agents.sharing.db_session", _broken
         ), app.test_request_context("/api/shared_agents"):
             from flask import request
             request.decoded_token = {"sub": "u"}
@@ -180,7 +180,7 @@ class TestSharedAgents:
 
 class TestShareAgent:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.sharing import ShareAgent
+        from docsgpt.api.user.agents.sharing import ShareAgent
 
         with app.test_request_context(
             "/api/share_agent", method="PUT", json={"id": "x", "shared": True}
@@ -191,7 +191,7 @@ class TestShareAgent:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.agents.sharing import ShareAgent
+        from docsgpt.api.user.agents.sharing import ShareAgent
 
         with app.test_request_context(
             "/api/share_agent", method="PUT", json={"shared": True}
@@ -202,7 +202,7 @@ class TestShareAgent:
         assert response.status_code == 400
 
     def test_returns_400_missing_shared(self, app):
-        from application.api.user.agents.sharing import ShareAgent
+        from docsgpt.api.user.agents.sharing import ShareAgent
 
         with app.test_request_context(
             "/api/share_agent", method="PUT", json={"id": "x"}
@@ -213,7 +213,7 @@ class TestShareAgent:
         assert response.status_code == 400
 
     def test_returns_404_agent_not_found(self, app, pg_conn):
-        from application.api.user.agents.sharing import ShareAgent
+        from docsgpt.api.user.agents.sharing import ShareAgent
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/share_agent",
@@ -226,8 +226,8 @@ class TestShareAgent:
         assert response.status_code == 404
 
     def test_shares_agent(self, app, pg_conn):
-        from application.api.user.agents.sharing import ShareAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.sharing import ShareAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = _make_agent(pg_conn, user_id="owner")
         agent_id = str(agent["id"])
@@ -250,8 +250,8 @@ class TestShareAgent:
         assert got["shared_metadata"]["shared_by"] == "alice"
 
     def test_unshares_agent(self, app, pg_conn):
-        from application.api.user.agents.sharing import ShareAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.sharing import ShareAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = _make_agent(pg_conn, user_id="owner", shared=True, shared_token="tk")
         agent_id = str(agent["id"])
@@ -270,7 +270,7 @@ class TestShareAgent:
         assert got["shared_token"] is None
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.agents.sharing import ShareAgent
+        from docsgpt.api.user.agents.sharing import ShareAgent
 
         @contextmanager
         def _broken():
@@ -278,7 +278,7 @@ class TestShareAgent:
             yield
 
         with patch(
-            "application.api.user.agents.sharing.db_session", _broken
+            "docsgpt.api.user.agents.sharing.db_session", _broken
         ), app.test_request_context(
             "/api/share_agent",
             method="PUT",

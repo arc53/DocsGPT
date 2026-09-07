@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from application.updates import version_check as vc_module
+from docsgpt.updates import version_check as vc_module
 
 
 class _FakeRepo:

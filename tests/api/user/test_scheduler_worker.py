@@ -8,11 +8,11 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import text
 
-from application.api.user.scheduler_worker import execute_scheduled_run_body
-from application.storage.db.repositories.schedule_runs import (
+from docsgpt.api.user.scheduler_worker import execute_scheduled_run_body
+from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
-from application.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 
 def _now() -> datetime:
@@ -49,11 +49,11 @@ def _make_pending_run(conn, *, user_id="u1"):
 @pytest.fixture
 def patched_engine(pg_engine, monkeypatch):
     monkeypatch.setattr(
-        "application.api.user.scheduler_worker.get_engine",
+        "docsgpt.api.user.scheduler_worker.get_engine",
         lambda: pg_engine,
     )
     monkeypatch.setattr(
-        "application.api.user.scheduler_worker.settings",
+        "docsgpt.api.user.scheduler_worker.settings",
         type("S", (), {
             "POSTGRES_URI": str(pg_engine.url),
             "SCHEDULE_AUTOPAUSE_FAILURES": 2,
@@ -71,7 +71,7 @@ def stub_events(monkeypatch):
         return "1-0"
 
     monkeypatch.setattr(
-        "application.api.user.scheduler_worker.publish_user_event",
+        "docsgpt.api.user.scheduler_worker.publish_user_event",
         _fake_publish,
     )
     return captured
@@ -82,7 +82,7 @@ class TestExecuteScheduledRunBody:
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "all done",
                 "tool_calls": [],
@@ -113,7 +113,7 @@ class TestExecuteScheduledRunBody:
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             side_effect=RuntimeError("boom"),
         ):
             result = execute_scheduled_run_body(str(run["id"]), "celery-2")
@@ -139,7 +139,7 @@ class TestExecuteScheduledRunBody:
                 _now() + timedelta(seconds=1),
             )
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             side_effect=RuntimeError("boom"),
         ):
             execute_scheduled_run_body(str(another_run["id"]), "celery-3")
@@ -154,7 +154,7 @@ class TestExecuteScheduledRunBody:
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "",
                 "tool_calls": [],
@@ -185,7 +185,7 @@ class TestExecuteScheduledRunBody:
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "",
                 "tool_calls": [],
@@ -223,7 +223,7 @@ class TestExecuteScheduledRunBody:
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "",
                 "tool_calls": [],
@@ -255,7 +255,7 @@ class TestExecuteScheduledRunBody:
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "",
                 "tool_calls": [{"tool_name": "telegram_send", "result": "ok"}],
@@ -290,7 +290,7 @@ class TestExecuteScheduledRunBody:
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "",
                 "tool_calls": [],
@@ -318,7 +318,7 @@ class TestExecuteScheduledRunBody:
         with pg_engine.begin() as conn:
             schedule, run, _ = _make_pending_run(conn)
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "",
                 "tool_calls": [],
@@ -382,7 +382,7 @@ class TestExecuteScheduledRunBody:
                 "denied": [], "error_type": None, "model_id": "fake",
             }
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless", _fake_run,
+            "docsgpt.api.user.scheduler_worker.run_agent_headless", _fake_run,
         ):
             execute_scheduled_run_body(str(run["id"]), "celery-h")
         assert len(captured.get("chat_history", [])) == 1
@@ -423,7 +423,7 @@ class TestExecuteScheduledRunBody:
             }
 
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             _fake_run,
         ):
             result = execute_scheduled_run_body(str(run["id"]), "celery-agentless")
@@ -484,7 +484,7 @@ class TestExecuteScheduledRunBody:
             }
 
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             _fake_run,
         ):
             execute_scheduled_run_body(str(run["id"]), "celery-no-snap")
@@ -516,7 +516,7 @@ class TestExecuteScheduledRunBody:
                 str(schedule["id"]), "u1", None, _now(),
             )
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "yes",
                 "tool_calls": [], "sources": [], "thought": "",
@@ -562,7 +562,7 @@ class TestExecuteScheduledRunBody:
                 str(schedule["id"]), "u1", agent_id, _now(),
             )
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "scheduled answer",
                 "tool_calls": [],

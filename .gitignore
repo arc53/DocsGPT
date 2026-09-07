@@ -179,7 +179,7 @@ frontend/*.njsproj
 frontend/*.sln
 frontend/*.sw?
 
-application/vectors/
+docsgpt/vectors/
 
 **/inputs
 
@@ -202,6 +202,6 @@ tests/e2e/node_modules/
 tests/e2e/playwright-report/
 tests/e2e/test-results/
 tests/e2e/.e2e-last-run.json
-application/core/models/foundry_test_internal.yaml
+docsgpt/core/models/foundry_test_internal.yaml
 bench/
 /benchmark/

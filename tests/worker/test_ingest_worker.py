@@ -1,4 +1,4 @@
-"""Smoke test for ``application.worker.ingest_worker``.
+"""Smoke test for ``docsgpt.worker.ingest_worker``.
 
 ``ingest_worker`` does **not** write to Postgres directly. Its PG
 side-effect (creating the ``sources`` row) goes through the
@@ -22,7 +22,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.parser.schema.base import Document
+from docsgpt.parser.schema.base import Document
 
 
 def _patch_ingest_pipeline(monkeypatch, captured):
@@ -34,7 +34,7 @@ def _patch_ingest_pipeline(monkeypatch, captured):
     with each ``upload_index`` payload so callers can assert on the
     derived ``source_id``.
     """
-    from application import worker
+    from docsgpt import worker
 
     fake_storage = MagicMock(name="storage")
     fake_storage.is_directory.return_value = False
@@ -77,7 +77,7 @@ def _spy_chunker(monkeypatch):
     chunker whose ``chunk`` passes documents through unchanged, so the
     config the worker threads into chunking can be asserted.
     """
-    from application import worker
+    from docsgpt import worker
 
     calls: list[dict] = []
 
@@ -98,7 +98,7 @@ class TestIngestWorker:
     def test_invokes_upload_index_with_expected_payload(
         self, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         captured: list[dict] = []
         _patch_ingest_pipeline(monkeypatch, captured)
@@ -135,7 +135,7 @@ class TestIngestWorkerConfigThreading:
     def test_no_config_uses_classic_defaults(
         self, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         captured: list[dict] = []
         _patch_ingest_pipeline(monkeypatch, captured)
@@ -162,7 +162,7 @@ class TestIngestWorkerConfigThreading:
     def test_non_default_config_is_threaded(
         self, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         captured: list[dict] = []
         _patch_ingest_pipeline(monkeypatch, captured)
@@ -199,7 +199,7 @@ class TestIngestWorkerDeterministicSourceId:
     def test_uses_uuid5_when_idempotency_key_present(
         self, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         captured: list[dict] = []
         _patch_ingest_pipeline(monkeypatch, captured)
@@ -235,7 +235,7 @@ class TestIngestWorkerDeterministicSourceId:
     def test_falls_back_to_uuid4_without_key(
         self, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         captured: list[dict] = []
         _patch_ingest_pipeline(monkeypatch, captured)
@@ -267,8 +267,8 @@ class TestIngestWorkerDeterministicSourceId:
         first call and assert the second call hits the existing-row
         branch instead of inserting again.
         """
-        from application import worker
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt import worker
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         captured: list[dict] = []
         _patch_ingest_pipeline(monkeypatch, captured)

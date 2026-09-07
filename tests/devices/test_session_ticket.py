@@ -16,9 +16,9 @@ from unittest.mock import patch
 import pytest
 from flask import Flask
 
-from application.api.devices import auth as auth_module
-from application.api.devices import session as session_module
-from application.devices.broker import DeviceBroker
+from docsgpt.api.devices import auth as auth_module
+from docsgpt.api.devices import session as session_module
+from docsgpt.devices.broker import DeviceBroker
 
 from .conftest import FakeRedis
 
@@ -161,7 +161,7 @@ def test_poll_to_sse_upgrade_with_issued_ticket_works(app):
     """The legitimate loop: /poll issues a ticket, session_events accepts it."""
     fake = FakeRedis()
     broker = DeviceBroker()
-    with patch("application.devices.broker.get_redis_instance", return_value=fake):
+    with patch("docsgpt.devices.broker.get_redis_instance", return_value=fake):
         # Queue work so /poll returns a ticket rather than 202.
         broker.dispatch_invocation(
             "dev_route", "user_route",
@@ -193,7 +193,7 @@ def test_session_events_rejects_mismatched_ticket(app):
     """A fabricated/mismatched session_id is 410 Gone, no stream opened."""
     fake = FakeRedis()
     broker = DeviceBroker()
-    with patch("application.devices.broker.get_redis_instance", return_value=fake):
+    with patch("docsgpt.devices.broker.get_redis_instance", return_value=fake):
         broker.dispatch_invocation(
             "dev_route", "user_route",
             {"invocation_id": "inv_b", "action": "run_command"},
@@ -216,7 +216,7 @@ def test_session_events_rejects_when_never_polled(app):
     """Opening the SSE stream without a prior poll is rejected (410)."""
     fake = FakeRedis()
     broker = DeviceBroker()
-    with patch("application.devices.broker.get_redis_instance", return_value=fake):
+    with patch("docsgpt.devices.broker.get_redis_instance", return_value=fake):
         with patch.object(session_module, "get_broker", return_value=broker):
             resp = _call(
                 app,

@@ -1,8 +1,8 @@
 import pytest
-from application.api.answer import answer
-from application.api.internal.routes import internal
-from application.api.user.routes import user
-from application.core.settings import settings
+from docsgpt.api.answer import answer
+from docsgpt.api.internal.routes import internal
+from docsgpt.api.user.routes import user
+from docsgpt.core.settings import settings
 from flask import Flask
 
 
@@ -30,8 +30,8 @@ class TestLogContextTeardown:
     def test_reset_is_idempotent(self):
         from flask import request
 
-        from application.app import _LOG_CTX_TOKEN_ATTR, _reset_log_context, app
-        from application.core import log_context
+        from docsgpt.app import _LOG_CTX_TOKEN_ATTR, _reset_log_context, app
+        from docsgpt.core import log_context
 
         with app.test_request_context("/"):
             token = log_context.bind(activity_id="abc", endpoint="stream")

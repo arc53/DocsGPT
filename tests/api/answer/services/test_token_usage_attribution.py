@@ -1,6 +1,6 @@
 """Token-usage attribution tests for the always-on inline-persist model.
 
-Persistence is owned by the per-call decorator in ``application.usage``.
+Persistence is owned by the per-call decorator in ``docsgpt.usage``.
 ``finalize_message`` no longer writes ``token_usage`` rows. These tests
 exercise the decorator path through ``stream_token_usage`` /
 ``gen_token_usage``:
@@ -63,7 +63,7 @@ class TestDecoratorAlwaysPersists:
     """Per-call inline persistence — no opt-in flag."""
 
     def test_primary_stream_writes_agent_stream_row(self, pg_conn):
-        from application.usage import stream_token_usage
+        from docsgpt.usage import stream_token_usage
 
         user_id = _seed_user(pg_conn)
 
@@ -81,7 +81,7 @@ class TestDecoratorAlwaysPersists:
                 yield "chunk-b"
 
         llm = _PrimaryLLM()
-        with _patch_db_session_for(("application.usage",), pg_conn):
+        with _patch_db_session_for(("docsgpt.usage",), pg_conn):
             for _ in llm._raw(
                 "m", [{"role": "user", "content": "hi"}], True, None,
             ):
@@ -102,7 +102,7 @@ class TestDecoratorAlwaysPersists:
 
     def test_side_channel_source_flows_to_row(self, pg_conn):
         """``_token_usage_source`` overrides the default ``agent_stream``."""
-        from application.usage import stream_token_usage
+        from docsgpt.usage import stream_token_usage
 
         user_id = _seed_user(pg_conn)
 
@@ -120,7 +120,7 @@ class TestDecoratorAlwaysPersists:
                 yield "chunk"
 
         llm = _RagLLM()
-        with _patch_db_session_for(("application.usage",), pg_conn):
+        with _patch_db_session_for(("docsgpt.usage",), pg_conn):
             for _ in llm._raw("m", [{"role": "user", "content": "q"}], True, None):
                 pass
 
@@ -137,7 +137,7 @@ class TestDecoratorAlwaysPersists:
         """``_request_id`` on the LLM (stamped by the route) lands in
         ``token_usage.request_id`` so ``count_in_range`` can DISTINCT it.
         """
-        from application.usage import stream_token_usage
+        from docsgpt.usage import stream_token_usage
 
         user_id = _seed_user(pg_conn)
         request_id = f"req-{uuid.uuid4().hex[:12]}"
@@ -156,7 +156,7 @@ class TestDecoratorAlwaysPersists:
                 yield "chunk"
 
         llm = _PrimaryLLM()
-        with _patch_db_session_for(("application.usage",), pg_conn):
+        with _patch_db_session_for(("docsgpt.usage",), pg_conn):
             # Call twice — the route invokes the LLM once per tool round.
             for _ in llm._raw("m", [{"role": "user", "content": "q"}], True, None):
                 pass
@@ -173,7 +173,7 @@ class TestDecoratorAlwaysPersists:
         assert all(r[0] == request_id for r in rows)
 
     def test_zero_count_call_is_skipped(self, pg_conn):
-        from application.usage import gen_token_usage
+        from docsgpt.usage import gen_token_usage
 
         user_id = _seed_user(pg_conn)
 
@@ -190,7 +190,7 @@ class TestDecoratorAlwaysPersists:
                 return None  # empty result → 0 generated tokens, 0 prompt tokens
 
         llm = _EmptyLLM()
-        with _patch_db_session_for(("application.usage",), pg_conn):
+        with _patch_db_session_for(("docsgpt.usage",), pg_conn):
             llm._raw("m", [], False, None)
 
         n = pg_conn.execute(
@@ -206,7 +206,7 @@ class TestDecoratorAlwaysPersists:
         constraint; the decorator skips before that to keep the stream
         running.
         """
-        from application.usage import stream_token_usage
+        from docsgpt.usage import stream_token_usage
 
         class _OrphanLLM:
             decoded_token = None
@@ -222,8 +222,8 @@ class TestDecoratorAlwaysPersists:
 
         llm = _OrphanLLM()
         with _patch_db_session_for(
-            ("application.usage",), pg_conn,
-        ), caplog.at_level(logging.WARNING, logger="application.usage"):
+            ("docsgpt.usage",), pg_conn,
+        ), caplog.at_level(logging.WARNING, logger="docsgpt.usage"):
             for _ in llm._raw("m", [{"role": "user", "content": "q"}], True, None):
                 pass
 

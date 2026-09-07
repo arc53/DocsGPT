@@ -1,4 +1,4 @@
-"""Smoke tests for application/asgi.py.
+"""Smoke tests for docsgpt/asgi.py.
 
 The goal isn't to re-test Flask or FastMCP internals — it's to catch
 regressions in the wiring: mounts resolve, CORS headers emit, lifespan
@@ -16,7 +16,7 @@ import pytest
 
 @pytest.mark.unit
 def test_asgi_app_imports():
-    from application.asgi import asgi_app
+    from docsgpt.asgi import asgi_app
 
     assert asgi_app is not None
 
@@ -26,7 +26,7 @@ def test_flask_route_served_through_starlette_mount():
     """GET /api/health should reach the Flask app via a2wsgi and return 200."""
     from starlette.testclient import TestClient
 
-    from application.asgi import asgi_app
+    from docsgpt.asgi import asgi_app
 
     with TestClient(asgi_app) as client:
         r = client.get("/api/health")
@@ -45,7 +45,7 @@ def test_mcp_endpoint_mounted_and_lifespan_runs():
     """
     from starlette.testclient import TestClient
 
-    from application.asgi import asgi_app
+    from docsgpt.asgi import asgi_app
 
     with TestClient(asgi_app) as client:
         # Minimal MCP initialize request. Doesn't need to succeed — we
@@ -84,7 +84,7 @@ def test_cors_headers_on_flask_route():
     """
     from starlette.testclient import TestClient
 
-    from application.asgi import asgi_app
+    from docsgpt.asgi import asgi_app
 
     with TestClient(asgi_app) as client:
         r = client.get("/api/health", headers={"Origin": "http://example.com"})
@@ -97,7 +97,7 @@ def test_cors_preflight_on_flask_route():
     """OPTIONS preflight on a Flask route should be handled by Starlette CORSMiddleware."""
     from starlette.testclient import TestClient
 
-    from application.asgi import asgi_app
+    from docsgpt.asgi import asgi_app
 
     with TestClient(asgi_app) as client:
         r = client.options(
@@ -120,7 +120,7 @@ def test_cors_preflight_allows_patch():
     /api/user/models/<id>) is otherwise blocked at preflight by browsers."""
     from starlette.testclient import TestClient
 
-    from application.asgi import asgi_app
+    from docsgpt.asgi import asgi_app
 
     with TestClient(asgi_app) as client:
         r = client.options(
@@ -140,7 +140,7 @@ def test_cors_preflight_on_mcp_route():
     """Browser clients hitting /mcp should be allowed to send session headers."""
     from starlette.testclient import TestClient
 
-    from application.asgi import asgi_app
+    from docsgpt.asgi import asgi_app
 
     with TestClient(asgi_app) as client:
         r = client.options(
@@ -163,8 +163,8 @@ def test_wsgi_threadpool_sized_from_settings():
     """The Flask thread pool is the app's request-capacity ceiling —
     it must be operator-tunable (prod incident 2026-07-05→07: 32 slots
     exhausted by SSE holders starved all other requests)."""
-    from application import asgi
-    from application.core.settings import settings
+    from docsgpt import asgi
+    from docsgpt.core.settings import settings
 
     assert asgi._WSGI_THREADPOOL == int(settings.WSGI_THREADPOOL_WORKERS)
     assert asgi._WSGI_THREADPOOL >= 64

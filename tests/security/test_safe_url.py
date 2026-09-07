@@ -1,4 +1,4 @@
-"""Unit tests for ``application.security.safe_url``.
+"""Unit tests for ``docsgpt.security.safe_url``.
 
 These tests must run offline, so every "valid public host" case mocks
 ``socket.getaddrinfo`` to return a known public IP. Cases that test
@@ -14,7 +14,7 @@ from unittest import mock
 import pytest
 import requests
 
-from application.security.safe_url import (
+from docsgpt.security.safe_url import (
     ResponseTooLargeError,
     UnsafeUserUrlError,
     _PinnedHTTPSTransport,

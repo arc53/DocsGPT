@@ -1,4 +1,4 @@
-"""Unit tests for application/llm/llama_cpp.py — LlamaCpp and LlamaSingleton.
+"""Unit tests for docsgpt/llm/llama_cpp.py — LlamaCpp and LlamaSingleton.
 
 Covers:
   - LlamaSingleton: get_instance, query_model (thread-safe)
@@ -43,19 +43,19 @@ def patch_llama_cpp(monkeypatch):
     sys.modules["llama_cpp"] = fake_mod
 
     # Clear any cached instances
-    if "application.llm.llama_cpp" in sys.modules:
-        del sys.modules["application.llm.llama_cpp"]
+    if "docsgpt.llm.llama_cpp" in sys.modules:
+        del sys.modules["docsgpt.llm.llama_cpp"]
 
     yield
 
     sys.modules.pop("llama_cpp", None)
-    if "application.llm.llama_cpp" in sys.modules:
-        del sys.modules["application.llm.llama_cpp"]
+    if "docsgpt.llm.llama_cpp" in sys.modules:
+        del sys.modules["docsgpt.llm.llama_cpp"]
 
 
 @pytest.fixture
 def fresh_singleton():
-    from application.llm.llama_cpp import LlamaSingleton
+    from docsgpt.llm.llama_cpp import LlamaSingleton
 
     LlamaSingleton._instances = {}
     return LlamaSingleton
@@ -63,7 +63,7 @@ def fresh_singleton():
 
 @pytest.fixture
 def llm(fresh_singleton):
-    from application.llm.llama_cpp import LlamaCpp
+    from docsgpt.llm.llama_cpp import LlamaCpp
 
     instance = LlamaCpp(api_key="k", user_api_key=None, llm_name="/path/to/model")
     return instance
@@ -118,7 +118,7 @@ class TestLlamaCppConstructor:
         assert llm.api_key == "k"
 
     def test_sets_user_api_key(self):
-        from application.llm.llama_cpp import LlamaCpp, LlamaSingleton
+        from docsgpt.llm.llama_cpp import LlamaCpp, LlamaSingleton
 
         LlamaSingleton._instances = {}
         instance = LlamaCpp(

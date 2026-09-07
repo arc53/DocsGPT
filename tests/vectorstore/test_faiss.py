@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from application.storage.local import LocalStorage
-from application.vectorstore.faiss import FaissStore
+from docsgpt.storage.local import LocalStorage
+from docsgpt.vectorstore.faiss import FaissStore
 
 
 class _FakeEmbeddings:
@@ -52,16 +52,16 @@ def storage(tmp_path):
 
 @pytest.fixture
 def make_store(storage):
-    from application.vectorstore.faiss import FaissStore
+    from docsgpt.vectorstore.faiss import FaissStore
 
     def _make(source_id="src", docs_init=None):
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=_FakeEmbeddings(),
         ), patch(
-            "application.vectorstore.faiss.StorageCreator.get_storage",
+            "docsgpt.vectorstore.faiss.StorageCreator.get_storage",
             return_value=storage,
-        ), patch("application.vectorstore.faiss.settings") as mock_settings:
+        ), patch("docsgpt.vectorstore.faiss.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = "test_model"
             return FaissStore(source_id, "key", docs_init=docs_init)
 
@@ -180,7 +180,7 @@ class TestFaissPersistence:
 @pytest.mark.unit
 class TestFaissStoreAssertEmbeddingDimensions:
     def test_dimension_mismatch_raises(self, populated):
-        with patch("application.vectorstore.faiss.settings") as mock_settings:
+        with patch("docsgpt.vectorstore.faiss.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = (
                 "huggingface_sentence-transformers/all-mpnet-base-v2"
             )
@@ -194,7 +194,7 @@ class TestFaissStoreAssertEmbeddingDimensions:
         perfectly valid remote configuration, so an unknown width is deferred,
         not treated as a mismatch.
         """
-        with patch("application.vectorstore.faiss.settings") as mock_settings:
+        with patch("docsgpt.vectorstore.faiss.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = (
                 "huggingface_sentence-transformers/all-mpnet-base-v2"
             )
@@ -203,7 +203,7 @@ class TestFaissStoreAssertEmbeddingDimensions:
             assert populated.assert_embedding_dimensions(embeddings) is None
 
     def test_dimension_match_passes(self, populated):
-        with patch("application.vectorstore.faiss.settings") as mock_settings:
+        with patch("docsgpt.vectorstore.faiss.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = (
                 "huggingface_sentence-transformers/all-mpnet-base-v2"
             )
@@ -215,33 +215,33 @@ class TestFaissStoreAssertEmbeddingDimensions:
         That skipped exactly the case it exists for: an index built with one
         model being opened under a different one.
         """
-        with patch("application.vectorstore.faiss.settings") as mock_settings:
+        with patch("docsgpt.vectorstore.faiss.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = "openai_text-embedding-ada-002"
             with pytest.raises(ValueError, match="Embedding dimension mismatch"):
                 populated.assert_embedding_dimensions(Mock(dimension=1536))
 
     def test_mismatch_message_points_at_the_reembed_script(self, populated):
-        with patch("application.vectorstore.faiss.settings") as mock_settings:
+        with patch("docsgpt.vectorstore.faiss.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = "granite-311m"
-            with pytest.raises(ValueError, match="application.scripts.reembed"):
+            with pytest.raises(ValueError, match="docsgpt.scripts.reembed"):
                 populated.assert_embedding_dimensions(Mock(dimension=768))
 
 
 @pytest.mark.unit
 class TestGetVectorstore:
     def test_empty_path_returns_base(self):
-        from application.vectorstore.faiss import get_vectorstore
+        from docsgpt.vectorstore.faiss import get_vectorstore
 
         assert get_vectorstore("") == "indexes"
 
     def test_normal_path(self):
-        from application.vectorstore.faiss import get_vectorstore
+        from docsgpt.vectorstore.faiss import get_vectorstore
 
         assert get_vectorstore("abc") == "indexes/abc"
 
     @pytest.mark.parametrize("bad", ["../etc", "..\\etc", "a/../../b"])
     def test_traversal_rejected(self, bad):
-        from application.vectorstore.faiss import get_vectorstore
+        from docsgpt.vectorstore.faiss import get_vectorstore
 
         with pytest.raises(ValueError, match="Invalid source_id path"):
             get_vectorstore(bad)

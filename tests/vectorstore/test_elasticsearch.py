@@ -6,12 +6,12 @@ import pytest
 def _make_es_store(source_id="test-source"):
     """Helper to create an ElasticsearchStore with mocked deps."""
     # Reset class-level connection
-    from application.vectorstore.elasticsearch import ElasticsearchStore
+    from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
     ElasticsearchStore._es_connection = None
 
     with patch(
-        "application.vectorstore.elasticsearch.settings"
+        "docsgpt.vectorstore.elasticsearch.settings"
     ) as mock_settings, patch.dict(
         "sys.modules", {"elasticsearch": MagicMock(), "elasticsearch.helpers": MagicMock()}
     ):
@@ -39,7 +39,7 @@ def _make_es_store(source_id="test-source"):
 @pytest.mark.unit
 class TestElasticsearchStoreInit:
     def test_source_id_cleaned(self):
-        store, _, _ = _make_es_store(source_id="application/indexes/abc123/")
+        store, _, _ = _make_es_store(source_id="docsgpt/indexes/abc123/")
         assert store.source_id == "abc123"
 
     def test_init_with_url(self):
@@ -48,12 +48,12 @@ class TestElasticsearchStoreInit:
         assert store.index_name == "test_index"
 
     def test_init_with_cloud_id(self):
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         ElasticsearchStore._es_connection = None
 
         with patch(
-            "application.vectorstore.elasticsearch.settings"
+            "docsgpt.vectorstore.elasticsearch.settings"
         ) as mock_settings, patch.dict(
             "sys.modules", {"elasticsearch": MagicMock()}
         ):
@@ -70,12 +70,12 @@ class TestElasticsearchStoreInit:
             assert store.docsearch is not None
 
     def test_init_no_url_no_cloud_id_raises(self):
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         ElasticsearchStore._es_connection = None
 
         with patch(
-            "application.vectorstore.elasticsearch.settings"
+            "docsgpt.vectorstore.elasticsearch.settings"
         ) as mock_settings, patch.dict(
             "sys.modules", {"elasticsearch": MagicMock()}
         ):
@@ -88,12 +88,12 @@ class TestElasticsearchStoreInit:
                 ElasticsearchStore(source_id="src", embeddings_key="k")
 
     def test_reuses_class_connection(self):
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         ElasticsearchStore._es_connection = None
 
         with patch(
-            "application.vectorstore.elasticsearch.settings"
+            "docsgpt.vectorstore.elasticsearch.settings"
         ) as mock_settings, patch.dict(
             "sys.modules", {"elasticsearch": MagicMock()}
         ):
@@ -245,7 +245,7 @@ class TestElasticsearchStoreIndex:
 @pytest.mark.unit
 class TestElasticsearchStoreConnectToElasticsearch:
     def test_connect_with_url(self):
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         with patch.dict("sys.modules", {"elasticsearch": MagicMock()}):
             import elasticsearch
@@ -261,7 +261,7 @@ class TestElasticsearchStoreConnectToElasticsearch:
             assert result is mock_es
 
     def test_connect_with_both_raises(self):
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         with patch.dict("sys.modules", {"elasticsearch": MagicMock()}):
             with pytest.raises(ValueError, match="Both es_url and cloud_id"):
@@ -270,14 +270,14 @@ class TestElasticsearchStoreConnectToElasticsearch:
                 )
 
     def test_connect_with_neither_raises(self):
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         with patch.dict("sys.modules", {"elasticsearch": MagicMock()}):
             with pytest.raises(ValueError, match="provide either"):
                 ElasticsearchStore.connect_to_elasticsearch()
 
     def test_connect_with_api_key(self):
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         with patch.dict("sys.modules", {"elasticsearch": MagicMock()}):
             import elasticsearch
