@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.parser.connectors._auth_utils import session_token_fingerprint
+from docsgpt.parser.connectors._auth_utils import session_token_fingerprint
 
 
 SECRET_TOKEN = "super-secret-session-token-ABCDEF1234567890"
@@ -51,12 +51,12 @@ def _patches(session_return: Optional[Dict[str, Any]]):
     )
     return (
         patch(
-            "application.storage.db.repositories.connector_sessions."
+            "docsgpt.storage.db.repositories.connector_sessions."
             "ConnectorSessionsRepository",
             fake_repo_cls,
         ),
         patch(
-            "application.storage.db.session.db_readonly",
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _FakeReadonlyCtx(),
         ),
     )
@@ -92,7 +92,7 @@ class TestConfluenceAuthDoesNotLeakToken:
 
     @pytest.mark.unit
     def test_invalid_session_does_not_interpolate_token(self) -> None:
-        from application.parser.connectors.confluence.auth import ConfluenceAuth
+        from docsgpt.parser.connectors.confluence.auth import ConfluenceAuth
 
         auth = ConfluenceAuth.__new__(ConfluenceAuth)
         repo_patch, ctx_patch = _patches(None)
@@ -109,7 +109,7 @@ class TestGoogleDriveAuthDoesNotLeakToken:
 
     @pytest.mark.unit
     def test_invalid_session_does_not_interpolate_token(self) -> None:
-        from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+        from docsgpt.parser.connectors.google_drive.auth import GoogleDriveAuth
 
         auth = GoogleDriveAuth.__new__(GoogleDriveAuth)
         repo_patch, ctx_patch = _patches(None)
@@ -130,7 +130,7 @@ class TestSharePointAuthDoesNotLeakToken:
 
     @pytest.mark.unit
     def test_invalid_session_does_not_interpolate_token(self) -> None:
-        from application.parser.connectors.share_point.auth import SharePointAuth
+        from docsgpt.parser.connectors.share_point.auth import SharePointAuth
 
         auth = SharePointAuth.__new__(SharePointAuth)
         repo_patch, ctx_patch = _patches(None)

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from application.storage.db.repositories.prompts import PromptsRepository
-from application.storage.db.repositories.sources import SourcesRepository
-from application.storage.db.repositories.user_tools import UserToolsRepository
+from docsgpt.storage.db.repositories.prompts import PromptsRepository
+from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
 
 class TestPromptsSharing:

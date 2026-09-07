@@ -57,7 +57,7 @@ apt-get install tesseract-ocr tesseract-ocr-eng    brew install tesseract
 Docker images build without it by default; opt in with the build argument:
 
 ```bash
-docker build --build-arg INSTALL_TESSERACT=true ./application
+docker build -f docsgpt/Dockerfile --build-arg INSTALL_TESSERACT=true .
 ```
 
 `deployment/docker-compose.yaml` forwards the same switch, so setting
@@ -94,7 +94,7 @@ docling is not part of the base install, and OCR does not need it (see
 output:
 
 ```bash
-pip install -r application/requirements-docling.txt   # or: uv sync --extra docling
+pip install -r docsgpt/requirements-docling.txt   # or: uv sync --extra docling
 ```
 
 That file is the core set plus the `docling` extra, exported from the same
@@ -108,7 +108,7 @@ layout, table-structure and RapidOCR models in so the first parse does not
 download them. Local builds opt in with the build argument:
 
 ```bash
-docker build --build-arg EXTRAS=docling ./application
+docker build -f docsgpt/Dockerfile --build-arg EXTRAS=docling .
 ```
 
 `deployment/docker-compose.yaml` forwards the same switch, so setting

@@ -16,7 +16,7 @@ import pytest
 from flask import Flask
 from sqlalchemy.exc import IntegrityError
 
-from application.api.devices import pairing as pairing_module
+from docsgpt.api.devices import pairing as pairing_module
 
 
 def _redis_or_skip():

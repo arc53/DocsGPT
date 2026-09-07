@@ -17,11 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from application.parser.file.base_parser import BaseParser, DocumentParseError
+from docsgpt.parser.file.base_parser import BaseParser, DocumentParseError
 
 anydoc = pytest.importorskip("anydoc")
 
-from application.parser.file.anydoc_parser import (  # noqa: E402 — after importorskip
+from docsgpt.parser.file.anydoc_parser import (  # noqa: E402 — after importorskip
     ANYDOC_SUFFIXES,
     AnydocParser,
     anydoc_available,
@@ -309,7 +309,7 @@ def test_init_parser_imports_for_real_not_just_find_spec(monkeypatch):
     """A wheel whose native extension fails to load has a spec but no importable
     module; that must surface at init, not as a bare ImportError from parse_file
     mid-ingest (which load_data does not catch)."""
-    from application.parser.file import anydoc_parser as mod
+    from docsgpt.parser.file import anydoc_parser as mod
 
     monkeypatch.setattr(mod, "anydoc_available", lambda: True)
     monkeypatch.setitem(sys.modules, "anydoc", None)
@@ -332,7 +332,7 @@ class _FakeDoclingFallback:
     """Registered as a DoclingParser subclass so ``_is_docling_backed`` is True."""
 
     def __new__(cls):
-        from application.parser.file.docling_parser import DoclingParser
+        from docsgpt.parser.file.docling_parser import DoclingParser
 
         class _Inner(DoclingParser):
             def __init__(self):
@@ -374,7 +374,7 @@ def test_trust_flagged_pdf_without_docling_keeps_output_and_warns():
 
 
 def test_trust_check_disabled_stamps_nothing(monkeypatch):
-    from application.parser.file import anydoc_parser as ap
+    from docsgpt.parser.file import anydoc_parser as ap
 
     monkeypatch.setattr(ap.settings, "PDF_TRUST_CHECK", False)
     parser = AnydocParser()
@@ -431,7 +431,7 @@ def test_trust_check_errors_never_fail_the_parse(monkeypatch, tmp_path):
     def _explode(path, markdown):
         raise RuntimeError("scanner bug")
 
-    import application.parser.file.pdf_trust as pt
+    import docsgpt.parser.file.pdf_trust as pt
 
     monkeypatch.setattr(pt, "verify_pdf_file", _explode)
     _fake_anydoc(monkeypatch, lambda path: "# converted fine")
@@ -442,7 +442,7 @@ def test_trust_check_errors_never_fail_the_parse(monkeypatch, tmp_path):
 
 
 def test_tableize_applied_when_enabled(monkeypatch, tmp_path):
-    from application.parser.file import anydoc_parser as ap
+    from docsgpt.parser.file import anydoc_parser as ap
 
     monkeypatch.setattr(ap.settings, "ANYDOC_TABLEIZE", True)
     monkeypatch.setattr(ap.settings, "PDF_TRUST_CHECK", False)
@@ -459,7 +459,7 @@ def test_tableize_applied_when_enabled(monkeypatch, tmp_path):
 
 
 def test_tableize_disabled_by_default(monkeypatch, tmp_path):
-    from application.parser.file import anydoc_parser as ap
+    from docsgpt.parser.file import anydoc_parser as ap
 
     monkeypatch.setattr(ap.settings, "PDF_TRUST_CHECK", False)
     flat = "Cash ..... 1,234 900\nDebt ..... 2,000 1,500\nEquity ..... 900 800"
@@ -471,7 +471,7 @@ def test_tableize_disabled_by_default(monkeypatch, tmp_path):
 
 
 def test_tableize_never_touches_docling_reroute(monkeypatch):
-    from application.parser.file import anydoc_parser as ap
+    from docsgpt.parser.file import anydoc_parser as ap
 
     monkeypatch.setattr(ap.settings, "ANYDOC_TABLEIZE", True)
     fallback = _FakeDoclingFallback()

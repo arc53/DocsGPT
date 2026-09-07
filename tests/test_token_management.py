@@ -3,8 +3,8 @@ Tests for token management and compression features.
 
 NOTE: These tests are for future planned features that are not yet implemented.
 They are skipped until the following modules are created:
-- application.compression (DocumentCompressor, HistoryCompressor, etc.)
-- application.core.token_budget (TokenBudgetManager)
+- docsgpt.compression (DocumentCompressor, HistoryCompressor, etc.)
+- docsgpt.core.token_budget (TokenBudgetManager)
 """
 # ruff: noqa: F821
 import pytest

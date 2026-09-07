@@ -7,7 +7,7 @@ in the parent conftest) so no data leaks between tests.
 from __future__ import annotations
 
 
-from application.storage.db.repositories.users import UsersRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 
 
 # ------------------------------------------------------------------
@@ -371,7 +371,7 @@ class TestListPaginated:
         assert total >= 2
         assert {"page-a", "page-b"} <= {r["user_id"] for r in rows}
         sample = next(r for r in rows if r["user_id"] == "page-a")
-        # the keys application/api/admin/routes.py projects must be real columns
+        # the keys docsgpt/api/admin/routes.py projects must be real columns
         assert "active" in sample and "created_at" in sample
 
     def test_first_positional_arg_is_the_filter(self, pg_conn):

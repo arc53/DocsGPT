@@ -53,7 +53,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
 
     *   **Option 1: Using a `.env` file (Recommended):**
         *   If you haven't already, create a file named `.env` in the **root directory** of your DocsGPT project.
-        *   Modify the `.env` file to adjust settings as needed. You can find a comprehensive list of configurable options in [`application/core/settings.py`](https://github.com/arc53/DocsGPT/blob/main/application/core/settings.py).
+        *   Modify the `.env` file to adjust settings as needed. You can find a comprehensive list of configurable options in [`docsgpt/core/settings.py`](https://github.com/arc53/DocsGPT/blob/main/docsgpt/core/settings.py).
 
     *   **Option 2: Exporting Environment Variables:**
         *   Alternatively, you can export environment variables directly in your terminal. However, using a `.env` file is generally more organized for development.
@@ -83,7 +83,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     For an offline or air-gapped machine, fetch it ahead of time instead:
 
     ```bash
-    python -m application.scripts.prefetch_models
+    python -m docsgpt.scripts.prefetch_models
     ```
 
 4.  **Install Backend Dependencies:**
@@ -91,7 +91,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     Navigate to the root of your DocsGPT repository and install the required Python packages:
 
     ```bash
-    pip install -r application/requirements.txt
+    pip install -r docsgpt/requirements.txt
     ```
 
     Dependencies are declared in `pyproject.toml` and locked in `uv.lock`; the
@@ -103,8 +103,8 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     feature (each file is the core set plus the extra):
 
     ```bash
-    pip install -r application/requirements-docling.txt   # docling parser engine: OCR backend, read_document structured output
-    pip install -r application/requirements-milvus.txt    # VECTOR_STORE=milvus
+    pip install -r docsgpt/requirements-docling.txt   # docling parser engine: OCR backend, read_document structured output
+    pip install -r docsgpt/requirements-milvus.txt    # VECTOR_STORE=milvus
     # or with uv: uv sync --extra docling --extra milvus
     ```
 
@@ -122,25 +122,25 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     For local development, run the ASGI composition under uvicorn. It serves the **whole** application, hot-reloads on source changes, and matches the production runtime:
 
     ```bash
-    uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
+    uvicorn docsgpt.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
     ```
 
-    This makes the backend accessible on `http://localhost:7091`. Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same `application.asgi:asgi_app` target.
+    This makes the backend accessible on `http://localhost:7091`. Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same `docsgpt.asgi:asgi_app` target.
 
     A plain Flask run is a faster inner loop (quick startup, the Werkzeug interactive debugger):
 
     ```bash
-    flask --app application/app.py run --host=0.0.0.0 --port=7091
+    flask --app docsgpt/app.py run --host=0.0.0.0 --port=7091
     ```
 
-    But it serves **only** the WSGI Flask app and omits the routes mounted on the ASGI shell in `application/asgi.py`: the `/mcp` FastMCP endpoint and the native-async SSE reconnect reader `GET /api/messages/<id>/events`. Under `flask run` those paths return 404 — chat still works (`POST /stream` is a Flask route), but a stream interrupted by a disconnect won't auto-resume on reconnect. Use `flask run` only when you don't need those routes.
+    But it serves **only** the WSGI Flask app and omits the routes mounted on the ASGI shell in `docsgpt/asgi.py`: the `/mcp` FastMCP endpoint and the native-async SSE reconnect reader `GET /api/messages/<id>/events`. Under `flask run` those paths return 404 — chat still works (`POST /stream` is a Flask route), but a stream interrupted by a disconnect won't auto-resume on reconnect. Use `flask run` only when you don't need those routes.
 
 6.  **Start the Celery Worker:**
 
     Open a new terminal window (and activate your virtual environment if you used one). Start the Celery worker to handle background tasks:
 
     ```bash
-    celery -A application.app.celery worker -l INFO
+    celery -A docsgpt.app.celery worker -l INFO
     ```
 
     This command will start the Celery worker, which processes tasks such as document parsing and vector embedding.
@@ -148,7 +148,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     **macOS note:** Due to a threading issue, start Celery with the solo pool:
 
     ```bash
-    python -m celery -A application.app.celery worker -l INFO --pool=solo
+    python -m celery -A docsgpt.app.celery worker -l INFO --pool=solo
     ```
 
 **Running in Debugger (VSCode):**

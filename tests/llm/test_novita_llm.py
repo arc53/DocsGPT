@@ -8,7 +8,7 @@ import types
 from unittest.mock import patch
 
 import pytest
-from application.llm.novita import NOVITA_BASE_URL, NovitaLLM
+from docsgpt.llm.novita import NOVITA_BASE_URL, NovitaLLM
 
 
 class FakeChatCompletions:
@@ -83,7 +83,7 @@ def test_novita_llm_uses_novita_base_url():
 @pytest.mark.unit
 def test_novita_llm_uses_novita_api_key():
     """Verify NovitaLLM prioritizes NOVITA_API_KEY from settings."""
-    with patch("application.llm.novita.settings") as mock_settings:
+    with patch("docsgpt.llm.novita.settings") as mock_settings:
         mock_settings.NOVITA_API_KEY = "novita-test-key"
         mock_settings.API_KEY = "fallback-key"
         mock_settings.OPENAI_BASE_URL = None
@@ -95,7 +95,7 @@ def test_novita_llm_uses_novita_api_key():
 @pytest.mark.unit
 def test_novita_llm_falls_back_to_api_key():
     """Verify NovitaLLM falls back to API_KEY when NOVITA_API_KEY is not set."""
-    with patch("application.llm.novita.settings") as mock_settings:
+    with patch("docsgpt.llm.novita.settings") as mock_settings:
         mock_settings.NOVITA_API_KEY = None
         mock_settings.API_KEY = "fallback-key"
         mock_settings.OPENAI_BASE_URL = None
@@ -107,7 +107,7 @@ def test_novita_llm_falls_back_to_api_key():
 @pytest.mark.unit
 def test_novita_llm_explicit_api_key_takes_precedence():
     """Verify explicitly passed API key takes precedence over settings."""
-    with patch("application.llm.novita.settings") as mock_settings:
+    with patch("docsgpt.llm.novita.settings") as mock_settings:
         mock_settings.NOVITA_API_KEY = "settings-key"
         mock_settings.API_KEY = "fallback-key"
         mock_settings.OPENAI_BASE_URL = None

@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from application.vectorstore.vector_creator import VectorCreator
+from docsgpt.vectorstore.vector_creator import VectorCreator
 
 
 @pytest.mark.unit

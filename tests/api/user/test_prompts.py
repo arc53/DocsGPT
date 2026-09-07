@@ -20,9 +20,9 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.prompts.routes.db_session", _yield_conn
+        "docsgpt.api.user.prompts.routes.db_session", _yield_conn
     ), patch(
-        "application.api.user.prompts.routes.db_readonly", _yield_conn
+        "docsgpt.api.user.prompts.routes.db_readonly", _yield_conn
     ):
         yield
 
@@ -32,7 +32,7 @@ class TestCreatePrompt:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.prompts.routes import CreatePrompt
+        from docsgpt.api.user.prompts.routes import CreatePrompt
 
         with app.test_request_context(
             "/api/create_prompt",
@@ -47,7 +47,7 @@ class TestCreatePrompt:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.prompts.routes import CreatePrompt
+        from docsgpt.api.user.prompts.routes import CreatePrompt
 
         with app.test_request_context(
             "/api/create_prompt",
@@ -67,7 +67,7 @@ class TestGetPrompts:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.prompts.routes import GetPrompts
+        from docsgpt.api.user.prompts.routes import GetPrompts
 
         with app.test_request_context("/api/get_prompts"):
             from flask import request
@@ -83,9 +83,9 @@ class TestGetSinglePrompt:
     pass
 
     def test_returns_default_prompt(self, app):
-        from application.api.user.prompts.routes import GetSinglePrompt
+        from docsgpt.api.user.prompts.routes import GetSinglePrompt
 
-        from application.prompts.composer import compose_preset
+        from docsgpt.prompts.composer import compose_preset
 
         with app.test_request_context("/api/get_single_prompt?id=default"):
             from flask import request
@@ -97,9 +97,9 @@ class TestGetSinglePrompt:
         assert response.json["content"] == compose_preset("default")
 
     def test_returns_creative_prompt(self, app):
-        from application.api.user.prompts.routes import GetSinglePrompt
+        from docsgpt.api.user.prompts.routes import GetSinglePrompt
 
-        from application.prompts.composer import compose_preset
+        from docsgpt.prompts.composer import compose_preset
 
         with app.test_request_context("/api/get_single_prompt?id=creative"):
             from flask import request
@@ -111,9 +111,9 @@ class TestGetSinglePrompt:
         assert response.json["content"] == compose_preset("creative")
 
     def test_returns_strict_prompt(self, app):
-        from application.api.user.prompts.routes import GetSinglePrompt
+        from docsgpt.api.user.prompts.routes import GetSinglePrompt
 
-        from application.prompts.composer import compose_preset
+        from docsgpt.prompts.composer import compose_preset
 
         with app.test_request_context("/api/get_single_prompt?id=strict"):
             from flask import request
@@ -126,7 +126,7 @@ class TestGetSinglePrompt:
 
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.prompts.routes import GetSinglePrompt
+        from docsgpt.api.user.prompts.routes import GetSinglePrompt
 
         with app.test_request_context("/api/get_single_prompt"):
             from flask import request
@@ -142,7 +142,7 @@ class TestDeletePrompt:
     pass
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.prompts.routes import DeletePrompt
+        from docsgpt.api.user.prompts.routes import DeletePrompt
 
         with app.test_request_context(
             "/api/delete_prompt",
@@ -162,7 +162,7 @@ class TestUpdatePrompt:
     pass
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.prompts.routes import UpdatePrompt
+        from docsgpt.api.user.prompts.routes import UpdatePrompt
 
         with app.test_request_context(
             "/api/update_prompt",
@@ -184,7 +184,7 @@ class TestUpdatePrompt:
 
 class TestCreatePromptHappyPath:
     def test_creates_prompt_returns_id(self, app, pg_conn):
-        from application.api.user.prompts.routes import CreatePrompt
+        from docsgpt.api.user.prompts.routes import CreatePrompt
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/create_prompt",
@@ -200,7 +200,7 @@ class TestCreatePromptHappyPath:
         assert "id" in response.json
 
     def test_create_error_returns_400(self, app, pg_conn):
-        from application.api.user.prompts.routes import CreatePrompt
+        from docsgpt.api.user.prompts.routes import CreatePrompt
 
         # Force repository error by closing the connection first
         @contextmanager
@@ -209,7 +209,7 @@ class TestCreatePromptHappyPath:
             yield  # unreachable
 
         with patch(
-            "application.api.user.prompts.routes.db_session", _broken
+            "docsgpt.api.user.prompts.routes.db_session", _broken
         ), app.test_request_context(
             "/api/create_prompt",
             method="POST",
@@ -225,7 +225,7 @@ class TestCreatePromptHappyPath:
 
 class TestGetPromptsHappyPath:
     def test_returns_builtin_plus_user_prompts(self, app, pg_conn):
-        from application.api.user.prompts.routes import CreatePrompt, GetPrompts
+        from docsgpt.api.user.prompts.routes import CreatePrompt, GetPrompts
 
         user = "user-list"
         # Seed two prompts via the same endpoint
@@ -253,7 +253,7 @@ class TestGetPromptsHappyPath:
         assert "alpha" in names and "beta" in names
 
     def test_get_error_returns_400(self, app):
-        from application.api.user.prompts.routes import GetPrompts
+        from docsgpt.api.user.prompts.routes import GetPrompts
 
         @contextmanager
         def _broken():
@@ -261,7 +261,7 @@ class TestGetPromptsHappyPath:
             yield
 
         with patch(
-            "application.api.user.prompts.routes.db_readonly", _broken
+            "docsgpt.api.user.prompts.routes.db_readonly", _broken
         ), app.test_request_context("/api/get_prompts"):
             from flask import request
 
@@ -273,7 +273,7 @@ class TestGetPromptsHappyPath:
 
 class TestGetSinglePromptHappyPath:
     def test_returns_private_prompt_content(self, app, pg_conn):
-        from application.api.user.prompts.routes import (
+        from docsgpt.api.user.prompts.routes import (
             CreatePrompt,
             GetSinglePrompt,
         )
@@ -302,7 +302,7 @@ class TestGetSinglePromptHappyPath:
         assert response.json["content"] == "hello world"
 
     def test_returns_404_for_unknown_prompt(self, app, pg_conn):
-        from application.api.user.prompts.routes import GetSinglePrompt
+        from docsgpt.api.user.prompts.routes import GetSinglePrompt
 
         bogus_id = str(uuid.uuid4())
         with _patch_db(pg_conn), app.test_request_context(
@@ -316,12 +316,12 @@ class TestGetSinglePromptHappyPath:
         assert response.status_code == 404
 
     def test_file_read_exception_returns_400(self, app):
-        from application.api.user.prompts.routes import GetSinglePrompt
+        from docsgpt.api.user.prompts.routes import GetSinglePrompt
 
         # Presets are composed in-process now, so the failure this covers is a
         # repository error on the custom-prompt path.
         with patch(
-            "application.api.user.prompts.routes.PromptsRepository",
+            "docsgpt.api.user.prompts.routes.PromptsRepository",
             side_effect=OSError("boom"),
         ), app.test_request_context("/api/get_single_prompt?id=some-custom-id"):
             from flask import request
@@ -334,7 +334,7 @@ class TestGetSinglePromptHappyPath:
 
 class TestDeletePromptHappyPath:
     def test_deletes_existing_prompt(self, app, pg_conn):
-        from application.api.user.prompts.routes import (
+        from docsgpt.api.user.prompts.routes import (
             CreatePrompt,
             DeletePrompt,
             GetSinglePrompt,
@@ -376,7 +376,7 @@ class TestDeletePromptHappyPath:
         assert check.status_code == 404
 
     def test_delete_returns_401_unauthenticated(self, app):
-        from application.api.user.prompts.routes import DeletePrompt
+        from docsgpt.api.user.prompts.routes import DeletePrompt
 
         with app.test_request_context(
             "/api/delete_prompt",
@@ -391,7 +391,7 @@ class TestDeletePromptHappyPath:
         assert response.status_code == 401
 
     def test_delete_error_returns_400(self, app):
-        from application.api.user.prompts.routes import DeletePrompt
+        from docsgpt.api.user.prompts.routes import DeletePrompt
 
         @contextmanager
         def _broken():
@@ -399,7 +399,7 @@ class TestDeletePromptHappyPath:
             yield
 
         with patch(
-            "application.api.user.prompts.routes.db_session", _broken
+            "docsgpt.api.user.prompts.routes.db_session", _broken
         ), app.test_request_context(
             "/api/delete_prompt",
             method="POST",
@@ -422,14 +422,14 @@ class TestLegacyMongoIdResolution:
     LEGACY_ID = "507f1f77bcf86cd799439011"
 
     def _seed_legacy(self, pg_conn, user: str, name: str, content: str):
-        from application.storage.db.repositories.prompts import PromptsRepository
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
 
         return PromptsRepository(pg_conn).create(
             user, name, content, legacy_mongo_id=self.LEGACY_ID,
         )
 
     def test_get_single_prompt_resolves_legacy_id(self, app, pg_conn):
-        from application.api.user.prompts.routes import GetSinglePrompt
+        from docsgpt.api.user.prompts.routes import GetSinglePrompt
 
         user = "legacy-user"
         self._seed_legacy(pg_conn, user, "orig", "legacy-body")
@@ -446,8 +446,8 @@ class TestLegacyMongoIdResolution:
         assert response.json["content"] == "legacy-body"
 
     def test_delete_prompt_resolves_legacy_id(self, app, pg_conn):
-        from application.api.user.prompts.routes import DeletePrompt
-        from application.storage.db.repositories.prompts import PromptsRepository
+        from docsgpt.api.user.prompts.routes import DeletePrompt
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
 
         user = "legacy-user-del"
         self._seed_legacy(pg_conn, user, "to-delete", "x")
@@ -469,8 +469,8 @@ class TestLegacyMongoIdResolution:
         ) is None
 
     def test_update_prompt_resolves_legacy_id(self, app, pg_conn):
-        from application.api.user.prompts.routes import UpdatePrompt
-        from application.storage.db.repositories.prompts import PromptsRepository
+        from docsgpt.api.user.prompts.routes import UpdatePrompt
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
 
         user = "legacy-user-upd"
         self._seed_legacy(pg_conn, user, "old-name", "old-content")
@@ -493,7 +493,7 @@ class TestLegacyMongoIdResolution:
 
 class TestUpdatePromptHappyPath:
     def test_updates_prompt(self, app, pg_conn):
-        from application.api.user.prompts.routes import (
+        from docsgpt.api.user.prompts.routes import (
             CreatePrompt,
             GetSinglePrompt,
             UpdatePrompt,
@@ -533,7 +533,7 @@ class TestUpdatePromptHappyPath:
         assert check.json["content"] == "v2"
 
     def test_update_returns_401_unauthenticated(self, app):
-        from application.api.user.prompts.routes import UpdatePrompt
+        from docsgpt.api.user.prompts.routes import UpdatePrompt
 
         with app.test_request_context(
             "/api/update_prompt",
@@ -548,7 +548,7 @@ class TestUpdatePromptHappyPath:
         assert response.status_code == 401
 
     def test_update_error_returns_400(self, app):
-        from application.api.user.prompts.routes import UpdatePrompt
+        from docsgpt.api.user.prompts.routes import UpdatePrompt
 
         @contextmanager
         def _broken():
@@ -556,7 +556,7 @@ class TestUpdatePromptHappyPath:
             yield
 
         with patch(
-            "application.api.user.prompts.routes.db_session", _broken
+            "docsgpt.api.user.prompts.routes.db_session", _broken
         ), app.test_request_context(
             "/api/update_prompt",
             method="POST",

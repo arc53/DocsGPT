@@ -1,11 +1,11 @@
-"""Tests for application/api/answer/services/compression/service.py"""
+"""Tests for docsgpt/api/answer/services/compression/service.py"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.api.answer.services.compression.service import CompressionService
-from application.api.answer.services.compression.types import CompressionMetadata
+from docsgpt.api.answer.services.compression.service import CompressionService
+from docsgpt.api.answer.services.compression.types import CompressionMetadata
 
 
 @pytest.fixture
@@ -48,11 +48,11 @@ def sample_conversation():
 
 @pytest.mark.unit
 class TestCompressionServiceInit:
-    @patch("application.api.answer.services.compression.service.settings")
+    @patch("docsgpt.api.answer.services.compression.service.settings")
     def test_default_prompt_builder(self, mock_settings, mock_llm):
         mock_settings.COMPRESSION_PROMPT_VERSION = "v1.0"
         with patch(
-            "application.api.answer.services.compression.service.CompressionPromptBuilder"
+            "docsgpt.api.answer.services.compression.service.CompressionPromptBuilder"
         ):
             svc = CompressionService(llm=mock_llm, model_id="gpt-4")
             assert svc.llm is mock_llm
@@ -81,7 +81,7 @@ class TestCompressConversation:
         )
 
         with patch(
-            "application.api.answer.services.compression.service.TokenCounter"
+            "docsgpt.api.answer.services.compression.service.TokenCounter"
         ) as MockTC:
             MockTC.count_query_tokens.return_value = 1000
             MockTC.count_message_tokens.return_value = 100
@@ -144,7 +144,7 @@ class TestCompressConversation:
         )
 
         with patch(
-            "application.api.answer.services.compression.service.TokenCounter"
+            "docsgpt.api.answer.services.compression.service.TokenCounter"
         ) as MockTC:
             MockTC.count_query_tokens.return_value = 500
             MockTC.count_message_tokens.return_value = 50
@@ -170,7 +170,7 @@ class TestCompressConversation:
         )
 
         with patch(
-            "application.api.answer.services.compression.service.TokenCounter"
+            "docsgpt.api.answer.services.compression.service.TokenCounter"
         ) as MockTC:
             MockTC.count_query_tokens.return_value = 1000
             MockTC.count_message_tokens.return_value = 0
@@ -195,7 +195,7 @@ class TestCompressConversation:
         )
 
         with patch(
-            "application.api.answer.services.compression.service.TokenCounter"
+            "docsgpt.api.answer.services.compression.service.TokenCounter"
         ) as MockTC:
             MockTC.count_query_tokens.return_value = 100
             with pytest.raises(RuntimeError, match="LLM error"):
@@ -222,7 +222,7 @@ class TestCompressAndSave:
         )
 
         with patch(
-            "application.api.answer.services.compression.service.TokenCounter"
+            "docsgpt.api.answer.services.compression.service.TokenCounter"
         ) as MockTC:
             MockTC.count_query_tokens.return_value = 500
             MockTC.count_message_tokens.return_value = 50
@@ -487,7 +487,7 @@ class TestBoundRecentQueries:
         self, mock_llm, monkeypatch
     ):
         monkeypatch.setattr(
-            "application.api.answer.services.compression.service.settings.COMPRESSION_RECENT_FIELD_MAX_TOKENS",
+            "docsgpt.api.answer.services.compression.service.settings.COMPRESSION_RECENT_FIELD_MAX_TOKENS",
             50,
             raising=False,
         )
@@ -507,7 +507,7 @@ class TestBoundRecentQueries:
 
     def test_oversized_tool_result_is_trimmed(self, mock_llm, monkeypatch):
         monkeypatch.setattr(
-            "application.api.answer.services.compression.service.settings.COMPRESSION_RECENT_FIELD_MAX_TOKENS",
+            "docsgpt.api.answer.services.compression.service.settings.COMPRESSION_RECENT_FIELD_MAX_TOKENS",
             50,
             raising=False,
         )
@@ -536,7 +536,7 @@ class TestBoundRecentQueries:
 
     def test_zero_cap_disables_bounding(self, mock_llm, monkeypatch):
         monkeypatch.setattr(
-            "application.api.answer.services.compression.service.settings.COMPRESSION_RECENT_FIELD_MAX_TOKENS",
+            "docsgpt.api.answer.services.compression.service.settings.COMPRESSION_RECENT_FIELD_MAX_TOKENS",
             0,
             raising=False,
         )

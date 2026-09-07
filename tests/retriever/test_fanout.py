@@ -1,6 +1,6 @@
 """Unit tests for the shared multi-source fan-out helpers.
 
-``application/retriever/fanout.py`` holds the pieces both ClassicRAG and the
+``docsgpt/retriever/fanout.py`` holds the pieces both ClassicRAG and the
 search service reuse: the worker cap, the single query embedding, and the
 order-preserving pool runner. These tests pin them directly, independent of
 either caller.
@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.retriever.fanout import (
+from docsgpt.retriever.fanout import (
     DEFAULT_MAX_PARALLEL_SOURCES,
     embed_questions,
     fetch_per_source,
@@ -51,7 +51,7 @@ class TestMaxParallelSources:
         assert self._cap(0) == 1
 
     def test_falls_back_to_module_settings(self, monkeypatch):
-        import application.retriever.fanout as fanout
+        import docsgpt.retriever.fanout as fanout
 
         monkeypatch.setattr(
             fanout, "settings", SimpleNamespace(RETRIEVAL_MAX_PARALLEL_SOURCES=3)
@@ -109,7 +109,7 @@ class TestRunSourceJobs:
 
     def test_worker_count_defaults_to_the_cap(self):
         with patch(
-            "application.retriever.fanout.max_parallel_sources", return_value=1
+            "docsgpt.retriever.fanout.max_parallel_sources", return_value=1
         ) as cap:
             run_source_jobs(lambda job: job, ["a", "b", "c"])
         cap.assert_called_once_with(3)
@@ -296,8 +296,8 @@ class TestBothCallersShareTheFanOut:
     """The duplication this helper replaced must not creep back in."""
 
     def test_classic_rag_and_the_search_service_both_delegate(self):
-        import application.retriever.classic_rag as classic_rag
-        import application.services.search_service as search_service
+        import docsgpt.retriever.classic_rag as classic_rag
+        import docsgpt.services.search_service as search_service
 
         assert classic_rag.fetch_per_source is fetch_per_source
         assert search_service.fetch_per_source is fetch_per_source

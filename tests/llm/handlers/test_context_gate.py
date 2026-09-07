@@ -11,8 +11,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.agents.base import BaseAgent
-from application.llm.handlers.base import (
+from docsgpt.agents.base import BaseAgent
+from docsgpt.llm.handlers.base import (
     LLMHandler,
     LLMResponse,
     ToolCall,
@@ -70,7 +70,7 @@ class TestBoundToolResponse:
 
     def test_oversized_result_is_truncated(self, monkeypatch):
         monkeypatch.setattr(
-            "application.core.settings.settings.TOOL_RESULT_MAX_TOKENS",
+            "docsgpt.core.settings.settings.TOOL_RESULT_MAX_TOKENS",
             30,
             raising=False,
         )
@@ -81,7 +81,7 @@ class TestBoundToolResponse:
 
     def test_zero_cap_disables_truncation(self, monkeypatch):
         monkeypatch.setattr(
-            "application.core.settings.settings.TOOL_RESULT_MAX_TOKENS",
+            "docsgpt.core.settings.settings.TOOL_RESULT_MAX_TOKENS",
             0,
             raising=False,
         )
@@ -92,7 +92,7 @@ class TestBoundToolResponse:
         """The message handed to the LLM is capped even though the executor
         returned the full result (journal/persistence keep the original)."""
         monkeypatch.setattr(
-            "application.core.settings.settings.TOOL_RESULT_MAX_TOKENS",
+            "docsgpt.core.settings.settings.TOOL_RESULT_MAX_TOKENS",
             30,
             raising=False,
         )
@@ -133,7 +133,7 @@ class TestEnforceContextWindow:
     def test_within_window_returns_messages_untouched(self, agent):
         messages = [{"role": "user", "content": "hello"}]
         with patch(
-            "application.core.model_utils.get_token_limit", return_value=1000
+            "docsgpt.core.model_utils.get_token_limit", return_value=1000
         ):
             assert agent._enforce_context_window(messages) is messages
 
@@ -143,7 +143,7 @@ class TestEnforceContextWindow:
             {"role": "tool", "tool_call_id": "1", "content": "word " * 2000},
         ]
         with patch(
-            "application.core.model_utils.get_token_limit", return_value=1000
+            "docsgpt.core.model_utils.get_token_limit", return_value=1000
         ):
             shrunk = agent._enforce_context_window(messages)
         tool_content = shrunk[1]["content"]
@@ -154,7 +154,7 @@ class TestEnforceContextWindow:
         # The bulk is NOT in tool messages, so shrinking cannot help.
         messages = [{"role": "user", "content": "word " * 3000}]
         with patch(
-            "application.core.model_utils.get_token_limit", return_value=100
+            "docsgpt.core.model_utils.get_token_limit", return_value=100
         ):
             with pytest.raises(ValueError, match="exceeds the model's context window"):
                 agent._enforce_context_window(messages)
@@ -196,7 +196,7 @@ class TestTinyCapTruncation:
         """keep==0 used to produce marker + FULL text (text[-0:] is the
         whole string) — a 'truncation' that grows the payload."""
         monkeypatch.setattr(
-            "application.core.settings.settings.TOOL_RESULT_MAX_TOKENS",
+            "docsgpt.core.settings.settings.TOOL_RESULT_MAX_TOKENS",
             1,
             raising=False,
         )

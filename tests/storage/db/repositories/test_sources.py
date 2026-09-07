@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from application.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 
 def _repo(conn) -> SourcesRepository:

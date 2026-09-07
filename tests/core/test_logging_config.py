@@ -1,7 +1,7 @@
 """Tests for setup_logging — in particular the OTEL log-handler hand-off.
 
 `opentelemetry-instrument` attaches an OTEL `LoggingHandler` to the root
-logger before our module-level `setup_logging()` runs in `application/app.py`.
+logger before our module-level `setup_logging()` runs in `docsgpt/app.py`.
 The default `dictConfig` call replaces `root.handlers`, which would silently
 drop the OTEL handler. setup_logging snapshots and re-attaches OTEL handlers
 when OTLP log export is enabled.
@@ -17,7 +17,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from application.core.logging_config import setup_logging
+from docsgpt.core.logging_config import setup_logging
 
 
 @pytest.fixture(autouse=True)
@@ -125,7 +125,7 @@ class TestAlembicDoesNotSilenceApplicationLoggers:
         import ast
         import pathlib
 
-        source = pathlib.Path("application/alembic/env.py").read_text()
+        source = pathlib.Path("docsgpt/alembic/env.py").read_text()
         calls = [
             node
             for node in ast.walk(ast.parse(source))
@@ -152,12 +152,12 @@ class TestAlembicDoesNotSilenceApplicationLoggers:
         probe.write_text(
             "import logging\n"
             "from logging.config import fileConfig\n"
-            "log = logging.getLogger('application.api.answer.routes.stream')\n"
-            "fileConfig('application/alembic.ini', disable_existing_loggers=True)\n"
-            "kept = logging.getLogger('application.api.answer.routes.stream')\n"
+            "log = logging.getLogger('docsgpt.api.answer.routes.stream')\n"
+            "fileConfig('docsgpt/alembic.ini', disable_existing_loggers=True)\n"
+            "kept = logging.getLogger('docsgpt.api.answer.routes.stream')\n"
             "print('default_disables', kept.disabled)\n"
             "kept.disabled = False\n"
-            "fileConfig('application/alembic.ini', disable_existing_loggers=False)\n"
+            "fileConfig('docsgpt/alembic.ini', disable_existing_loggers=False)\n"
             "print('flag_preserves', not kept.disabled)\n"
         )
         out = subprocess.run(
@@ -184,7 +184,7 @@ class TestMigrationsDoNotClobberAppLogging:
     def test_bootstrap_tells_env_py_to_leave_logging_alone(self, monkeypatch):
         from logging.config import fileConfig
 
-        from application.storage.db import bootstrap
+        from docsgpt.storage.db import bootstrap
 
         # Skip the best-effort revision precheck; it needs a live DB. It is
         # wrapped in try/except, so raising here lands on the "upgrade anyway"
@@ -217,13 +217,13 @@ class TestMigrationsDoNotClobberAppLogging:
         assert seen["configure_logger"] is False
         assert root.level == before_level
         assert marker in root.handlers
-        assert logging.getLogger("application.probe").isEnabledFor(logging.INFO)
+        assert logging.getLogger("docsgpt.probe").isEnabledFor(logging.INFO)
 
     def test_env_py_honours_the_opt_out(self):
         """The other half of the contract lives in env.py's module-level guard."""
         env_py = (
             pathlib.Path(__file__).resolve().parents[2]
-            / "application"
+            / "docsgpt"
             / "alembic"
             / "env.py"
         )

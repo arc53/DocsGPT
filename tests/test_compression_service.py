@@ -2,15 +2,15 @@ import pytest
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
-from application.api.answer.services.compression import CompressionService
-from application.api.answer.services.compression.threshold_checker import (
+from docsgpt.api.answer.services.compression import CompressionService
+from docsgpt.api.answer.services.compression.threshold_checker import (
     CompressionThresholdChecker,
 )
-from application.api.answer.services.compression.token_counter import TokenCounter
-from application.api.answer.services.compression.prompt_builder import (
+from docsgpt.api.answer.services.compression.token_counter import TokenCounter
+from docsgpt.api.answer.services.compression.prompt_builder import (
     CompressionPromptBuilder,
 )
-from application.core.settings import settings
+from docsgpt.core.settings import settings
 
 
 @pytest.fixture
@@ -113,7 +113,7 @@ class TestCompressionService:
         assert service.prompt_builder is not None
         assert service.prompt_builder.version == settings.COMPRESSION_PROMPT_VERSION
 
-    @patch("application.api.answer.services.compression.threshold_checker.get_token_limit")
+    @patch("docsgpt.api.answer.services.compression.threshold_checker.get_token_limit")
     def test_should_compress_below_threshold(
         self, mock_get_token_limit, threshold_checker, sample_conversation
     ):
@@ -127,7 +127,7 @@ class TestCompressionService:
 
         assert result is False
 
-    @patch("application.api.answer.services.compression.threshold_checker.get_token_limit")
+    @patch("docsgpt.api.answer.services.compression.threshold_checker.get_token_limit")
     def test_should_compress_above_threshold(
         self, mock_get_token_limit, threshold_checker, large_conversation
     ):
@@ -142,7 +142,7 @@ class TestCompressionService:
 
         assert result is True
 
-    @patch("application.api.answer.services.compression.threshold_checker.get_token_limit")
+    @patch("docsgpt.api.answer.services.compression.threshold_checker.get_token_limit")
     def test_should_compress_at_exact_threshold(
         self, mock_get_token_limit, threshold_checker
     ):
@@ -615,14 +615,14 @@ class TestCompressionService:
 
         assert token_count_with_system > token_count
 
-    @patch("application.api.answer.services.compression.threshold_checker.logger")
+    @patch("docsgpt.api.answer.services.compression.threshold_checker.logger")
     def test_error_handling_in_should_compress(
         self, mock_logger, threshold_checker, sample_conversation
     ):
         """Test error handling in should_compress"""
         # Force an error by making get_token_limit raise an exception
         with patch(
-            "application.api.answer.services.compression.threshold_checker.get_token_limit",
+            "docsgpt.api.answer.services.compression.threshold_checker.get_token_limit",
             side_effect=Exception("Test error"),
         ):
             result = threshold_checker.should_compress(
@@ -634,7 +634,7 @@ class TestCompressionService:
             # Should log the error
             assert mock_logger.error.called
 
-    @patch("application.api.answer.services.compression.service.logger")
+    @patch("docsgpt.api.answer.services.compression.service.logger")
     def test_error_handling_in_get_compressed_context(
         self, mock_logger, compression_service
     ):
@@ -672,7 +672,7 @@ class TestCompressionService:
         assert result.query_index == 1
         assert "ok" in result.compressed_summary
 
-    @patch("application.api.answer.services.compression.service.logger")
+    @patch("docsgpt.api.answer.services.compression.service.logger")
     def test_get_compressed_context_with_null_compression_metadata(
         self, mock_logger, compression_service, sample_conversation
     ):
@@ -758,20 +758,20 @@ class TestCompressionService:
 
         # Simulate 50 file scraping tool calls with realistic file contents
         file_paths = [
-            "application/app.py",
-            "application/api/answer/routes.py",
-            "application/api/answer/services/conversation_service.py",
-            "application/api/answer/services/compression_service.py",
-            "application/api/answer/services/stream_processor.py",
-            "application/agents/base.py",
-            "application/agents/react.py",
-            "application/llm/handlers/base.py",
-            "application/llm/llm_creator.py",
-            "application/core/settings.py",
-            "application/core/model_configs.py",
-            "application/utils.py",
-            "application/vectorstore/base.py",
-            "application/parser/file_parser.py",
+            "docsgpt/app.py",
+            "docsgpt/api/answer/routes.py",
+            "docsgpt/api/answer/services/conversation_service.py",
+            "docsgpt/api/answer/services/compression_service.py",
+            "docsgpt/api/answer/services/stream_processor.py",
+            "docsgpt/agents/base.py",
+            "docsgpt/agents/react.py",
+            "docsgpt/llm/handlers/base.py",
+            "docsgpt/llm/llm_creator.py",
+            "docsgpt/core/settings.py",
+            "docsgpt/core/model_configs.py",
+            "docsgpt/utils.py",
+            "docsgpt/vectorstore/base.py",
+            "docsgpt/parser/file_parser.py",
             "tests/test_compression_service.py",
             "tests/test_agent_token_tracking.py",
             "frontend/src/App.tsx",

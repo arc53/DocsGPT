@@ -1,0 +1,233 @@
+"""Prompt management routes."""
+
+
+from flask import current_app, jsonify, make_response, request
+from flask_restx import fields, Namespace, Resource
+
+from docsgpt.api import api
+from docsgpt.api.user.team_sharing import team_access_for, visible_with_access
+from docsgpt.storage.db.repositories.prompts import PromptsRepository
+from docsgpt.prompts.composer import compose_preset, is_composed_preset
+from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.utils import check_required_fields
+
+prompts_ns = Namespace(
+    "prompts", description="Prompt management operations", path="/api"
+)
+
+
+@prompts_ns.route("/create_prompt")
+class CreatePrompt(Resource):
+    create_prompt_model = api.model(
+        "CreatePromptModel",
+        {
+            "content": fields.String(
+                required=True, description="Content of the prompt"
+            ),
+            "name": fields.String(required=True, description="Name of the prompt"),
+        },
+    )
+
+    @api.expect(create_prompt_model)
+    @api.doc(description="Create a new prompt")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        data = request.get_json()
+        required_fields = ["content", "name"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+        user = decoded_token.get("sub")
+        try:
+            with db_session() as conn:
+                prompt = PromptsRepository(conn).create(user, data["name"], data["content"])
+            new_id = str(prompt["id"])
+        except Exception as err:
+            current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"id": new_id}), 200)
+
+
+@prompts_ns.route("/get_prompts")
+class GetPrompts(Resource):
+    @api.doc(description="Get all prompts for the user")
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                repo = PromptsRepository(conn)
+                prompts = repo.list_for_user(user)
+                owned_ids = {str(p["id"]) for p in prompts}
+                team_shared = visible_with_access(conn, user, "prompt")
+                shared_ids = [pid for pid in team_shared if pid not in owned_ids]
+                shared_prompts = repo.list_by_ids(shared_ids)
+            list_prompts = [
+                {"id": "default", "name": "default", "type": "public"},
+                {"id": "creative", "name": "creative", "type": "public"},
+                {"id": "strict", "name": "strict", "type": "public"},
+            ]
+            for prompt in prompts:
+                list_prompts.append(
+                    {
+                        "id": str(prompt["id"]),
+                        "name": prompt["name"],
+                        "type": "private",
+                    }
+                )
+            for prompt in shared_prompts:
+                list_prompts.append(
+                    {
+                        "id": str(prompt["id"]),
+                        "name": prompt["name"],
+                        "type": "team",
+                        "team_access": team_shared.get(str(prompt["id"])),
+                    }
+                )
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving prompts: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(list_prompts), 200)
+
+
+@prompts_ns.route("/get_single_prompt")
+class GetSinglePrompt(Resource):
+    @api.doc(params={"id": "ID of the prompt"}, description="Get a single prompt by ID")
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        prompt_id = request.args.get("id")
+        if not prompt_id:
+            return make_response(
+                jsonify({"success": False, "message": "ID is required"}), 400
+            )
+        try:
+            if is_composed_preset(prompt_id):
+                return make_response(
+                    jsonify({"content": compose_preset(prompt_id)}), 200
+                )
+            with db_readonly() as conn:
+                repo = PromptsRepository(conn)
+                prompt = repo.get_any(prompt_id, user)
+                if not prompt and team_access_for(conn, user, "prompt", prompt_id):
+                    # Team fallback: ownerless fetch only after a grant check.
+                    prompt = repo.get_for_rendering(prompt_id)
+            if not prompt:
+                return make_response(
+                    jsonify({"success": False, "message": "Prompt not found"}), 404
+                )
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving prompt: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"content": prompt["content"]}), 200)
+
+
+@prompts_ns.route("/delete_prompt")
+class DeletePrompt(Resource):
+    delete_prompt_model = api.model(
+        "DeletePromptModel",
+        {"id": fields.String(required=True, description="Prompt ID to delete")},
+    )
+
+    @api.expect(delete_prompt_model)
+    @api.doc(description="Delete a prompt by ID")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json()
+        required_fields = ["id"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+        try:
+            with db_session() as conn:
+                repo = PromptsRepository(conn)
+                prompt = repo.get_any(data["id"], user)
+                if not prompt:
+                    return make_response(
+                        jsonify({"success": False, "message": "Prompt not found"}),
+                        404,
+                    )
+                repo.delete(str(prompt["id"]), user)
+        except Exception as err:
+            current_app.logger.error(f"Error deleting prompt: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True}), 200)
+
+
+@prompts_ns.route("/update_prompt")
+class UpdatePrompt(Resource):
+    update_prompt_model = api.model(
+        "UpdatePromptModel",
+        {
+            "id": fields.String(required=True, description="Prompt ID to update"),
+            "name": fields.String(required=True, description="New name of the prompt"),
+            "content": fields.String(
+                required=True, description="New content of the prompt"
+            ),
+        },
+    )
+
+    @api.expect(update_prompt_model)
+    @api.doc(description="Update an existing prompt")
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json()
+        required_fields = ["id", "name", "content"]
+        missing_fields = check_required_fields(data, required_fields)
+        if missing_fields:
+            return missing_fields
+        try:
+            with db_session() as conn:
+                repo = PromptsRepository(conn)
+                prompt = repo.get_any(data["id"], user)
+                if prompt:
+                    repo.update(str(prompt["id"]), user, data["name"], data["content"])
+                else:
+                    # Team editor write path (viewer is read-only).
+                    access = team_access_for(conn, user, "prompt", data["id"])
+                    if access == "editor":
+                        result = repo.update_by_id(
+                            data["id"],
+                            data["name"],
+                            data["content"],
+                            expected_updated_at=data.get("expected_updated_at"),
+                        )
+                        if result is None:
+                            return make_response(
+                                jsonify(
+                                    {
+                                        "success": False,
+                                        "message": "Prompt was modified by someone else",
+                                        "code": "stale_write",
+                                    }
+                                ),
+                                409,
+                            )
+                    elif access == "viewer":
+                        return make_response(
+                            jsonify(
+                                {"success": False, "message": "Read-only: editor access required"}
+                            ),
+                            403,
+                        )
+                    else:
+                        return make_response(
+                            jsonify({"success": False, "message": "Prompt not found"}),
+                            404,
+                        )
+        except Exception as err:
+            current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True}), 200)

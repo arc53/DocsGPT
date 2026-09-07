@@ -10,16 +10,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from application.agents.workflow_agent import WorkflowAgent
-from application.agents.workflows.cel_evaluator import evaluate_cel
-from application.agents.workflows.schemas import (
+from docsgpt.agents.workflow_agent import WorkflowAgent
+from docsgpt.agents.workflows.cel_evaluator import evaluate_cel
+from docsgpt.agents.workflows.schemas import (
     NodeType,
     Workflow,
     WorkflowEdge,
     WorkflowGraph,
     WorkflowNode,
 )
-from application.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 
 
 def _engine() -> WorkflowEngine:
@@ -118,14 +118,14 @@ def patch_sandbox(monkeypatch):
         return list(state["captured"])
 
     monkeypatch.setattr(
-        "application.sandbox.sandbox_creator.SandboxCreator.get_manager", _get_manager
+        "docsgpt.sandbox.sandbox_creator.SandboxCreator.get_manager", _get_manager
     )
     monkeypatch.setattr(
-        "application.sandbox.artifacts_capture.snapshot_signatures",
+        "docsgpt.sandbox.artifacts_capture.snapshot_signatures",
         lambda *a, **k: state.__setitem__("snapshot_calls", state["snapshot_calls"] + 1) or {},
     )
     monkeypatch.setattr(
-        "application.sandbox.artifacts_capture.capture_artifacts", _capture
+        "docsgpt.sandbox.artifacts_capture.capture_artifacts", _capture
     )
     state["manager_holder"] = manager_holder
     return state
@@ -206,16 +206,16 @@ def test_execute_closes_run_session_once_at_end(monkeypatch):
     """The run-scoped sandbox session opened by a code node is closed once when execute() ends."""
     manager = _FakeManager(_Result(ok=True, stdout="ok"))
     monkeypatch.setattr(
-        "application.sandbox.sandbox_creator.SandboxCreator.get_manager", lambda: manager
+        "docsgpt.sandbox.sandbox_creator.SandboxCreator.get_manager", lambda: manager
     )
     monkeypatch.setattr(
-        "application.sandbox.sandbox_creator.SandboxCreator.peek_manager", lambda: manager
+        "docsgpt.sandbox.sandbox_creator.SandboxCreator.peek_manager", lambda: manager
     )
     monkeypatch.setattr(
-        "application.sandbox.artifacts_capture.snapshot_signatures", lambda *a, **k: {}
+        "docsgpt.sandbox.artifacts_capture.snapshot_signatures", lambda *a, **k: {}
     )
     monkeypatch.setattr(
-        "application.sandbox.artifacts_capture.capture_artifacts", lambda *a, **k: []
+        "docsgpt.sandbox.artifacts_capture.capture_artifacts", lambda *a, **k: []
     )
 
     start = WorkflowNode(
@@ -354,7 +354,7 @@ def test_code_node_json_schema_merges_artifact_reference(patch_sandbox):
 
 
 def test_code_node_timeout_clamped_to_cap(patch_sandbox, monkeypatch):
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "SANDBOX_EXEC_TIMEOUT", 30, raising=False)
     engine = _engine()
@@ -378,11 +378,11 @@ def test_materialize_code_inputs_rejects_oversize(monkeypatch):
     """A code-node input whose declared version ``size`` exceeds the cap raises before staging."""
     from contextlib import contextmanager
 
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "SANDBOX_MAX_INPUT_BYTES", 100, raising=False)
     monkeypatch.setattr(
-        "application.agents.tools.artifact_ref.resolve_artifact_id",
+        "docsgpt.agents.tools.artifact_ref.resolve_artifact_id",
         lambda repo, raw, **k: str(raw),
     )
 
@@ -405,11 +405,11 @@ def test_materialize_code_inputs_rejects_oversize(monkeypatch):
             raise AssertionError("bytes must not be read when declared size exceeds the cap")
 
     monkeypatch.setattr(
-        "application.storage.db.repositories.artifacts.ArtifactsRepository", _Repo
+        "docsgpt.storage.db.repositories.artifacts.ArtifactsRepository", _Repo
     )
-    monkeypatch.setattr("application.storage.db.session.db_readonly", _readonly)
+    monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", _readonly)
     monkeypatch.setattr(
-        "application.storage.storage_creator.StorageCreator.get_storage",
+        "docsgpt.storage.storage_creator.StorageCreator.get_storage",
         staticmethod(lambda: _Storage()),
     )
 
@@ -425,7 +425,7 @@ def test_materialize_code_inputs_dedupes_same_filename(monkeypatch):
     from contextlib import contextmanager
 
     monkeypatch.setattr(
-        "application.agents.tools.artifact_ref.resolve_artifact_id",
+        "docsgpt.agents.tools.artifact_ref.resolve_artifact_id",
         lambda repo, raw, **k: str(raw),
     )
 
@@ -451,11 +451,11 @@ def test_materialize_code_inputs_dedupes_same_filename(monkeypatch):
             return io.BytesIO(path.encode())
 
     monkeypatch.setattr(
-        "application.storage.db.repositories.artifacts.ArtifactsRepository", _Repo
+        "docsgpt.storage.db.repositories.artifacts.ArtifactsRepository", _Repo
     )
-    monkeypatch.setattr("application.storage.db.session.db_readonly", _readonly)
+    monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", _readonly)
     monkeypatch.setattr(
-        "application.storage.storage_creator.StorageCreator.get_storage",
+        "docsgpt.storage.storage_creator.StorageCreator.get_storage",
         staticmethod(lambda: _Storage()),
     )
 

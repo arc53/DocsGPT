@@ -15,13 +15,13 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-import application.agents.tools.attachment_bridge as bridge_mod
-from application.agents.tools.attachment_bridge import (
+import docsgpt.agents.tools.attachment_bridge as bridge_mod
+from docsgpt.agents.tools.attachment_bridge import (
     AttachmentBridgeError,
     bridge_attachment,
     match_attachment,
 )
-from application.sandbox.artifacts_capture import QuotaExceeded
+from docsgpt.sandbox.artifacts_capture import QuotaExceeded
 
 CONV = "11111111-1111-1111-1111-111111111111"
 USER = "user-1"
@@ -232,7 +232,7 @@ def test_bridge_missing_upload_path_errors(monkeypatch):
 def test_bridge_rejects_oversize_attachment_before_reading(monkeypatch):
     # An oversize attachment is rejected via its authoritative ``size`` column,
     # BEFORE the bytes are buffered into worker memory (a memory-DoS guard).
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     _FakeArtifactsRepo.bridged = {}
     storage, calls = _patch_bridge(monkeypatch)
@@ -248,7 +248,7 @@ def test_bridge_rejects_oversize_attachment_before_reading(monkeypatch):
 # code_executor wiring: fallback fires, stages bytes, succeeds
 # ---------------------------------------------------------------------------
 def _patch_code_executor_repo(monkeypatch):
-    import application.agents.tools.code_executor as ce
+    import docsgpt.agents.tools.code_executor as ce
 
     monkeypatch.setattr(ce, "db_readonly", _fake_db)
     monkeypatch.setattr(ce, "ArtifactsRepository", _FakeArtifactsRepo)
@@ -264,7 +264,7 @@ class _Manager:
 
 @pytest.mark.unit
 def test_code_executor_bridges_referenced_attachment_by_name(monkeypatch):
-    from application.agents.tools.code_executor import CodeExecutorTool
+    from docsgpt.agents.tools.code_executor import CodeExecutorTool
 
     storage, calls = _patch_bridge(monkeypatch, storage=_FakeStorage(b"PDFDATA"), persisted_id="art-A")
     _patch_code_executor_repo(monkeypatch)
@@ -291,7 +291,7 @@ def test_code_executor_bridges_referenced_attachment_by_name(monkeypatch):
 
 @pytest.mark.unit
 def test_code_executor_bridges_referenced_attachment_by_id(monkeypatch):
-    from application.agents.tools.code_executor import CodeExecutorTool
+    from docsgpt.agents.tools.code_executor import CodeExecutorTool
 
     _patch_bridge(monkeypatch, storage=_FakeStorage(b"X"), persisted_id="art-B")
     _patch_code_executor_repo(monkeypatch)
@@ -314,7 +314,7 @@ def test_code_executor_bridges_referenced_attachment_by_id(monkeypatch):
 
 @pytest.mark.unit
 def test_code_executor_idempotent_reuse_no_second_persist(monkeypatch):
-    from application.agents.tools.code_executor import CodeExecutorTool
+    from docsgpt.agents.tools.code_executor import CodeExecutorTool
 
     _storage, calls = _patch_bridge(monkeypatch, persisted_id="art-A")
     _patch_code_executor_repo(monkeypatch)
@@ -341,7 +341,7 @@ def test_code_executor_idempotent_reuse_no_second_persist(monkeypatch):
 
 @pytest.mark.unit
 def test_code_executor_rejects_foreign_attachment(monkeypatch):
-    from application.agents.tools.code_executor import CodeExecutorTool
+    from docsgpt.agents.tools.code_executor import CodeExecutorTool
 
     _patch_bridge(monkeypatch)
     _patch_code_executor_repo(monkeypatch)
@@ -358,7 +358,7 @@ def test_code_executor_rejects_foreign_attachment(monkeypatch):
 
 @pytest.mark.unit
 def test_code_executor_workflow_scope_does_not_bridge(monkeypatch):
-    from application.agents.tools.code_executor import CodeExecutorTool
+    from docsgpt.agents.tools.code_executor import CodeExecutorTool
 
     _storage, calls = _patch_bridge(monkeypatch)
     _patch_code_executor_repo(monkeypatch)
@@ -375,7 +375,7 @@ def test_code_executor_workflow_scope_does_not_bridge(monkeypatch):
 
 @pytest.mark.unit
 def test_code_executor_unresolvable_ref_still_errors(monkeypatch):
-    from application.agents.tools.code_executor import CodeExecutorTool
+    from docsgpt.agents.tools.code_executor import CodeExecutorTool
 
     _patch_bridge(monkeypatch)
     _patch_code_executor_repo(monkeypatch)
@@ -389,7 +389,7 @@ def test_code_executor_unresolvable_ref_still_errors(monkeypatch):
 @pytest.mark.unit
 def test_code_executor_existing_artifact_still_used(monkeypatch):
     """A ref that resolves to a real artifact uses it directly (no bridge regression)."""
-    from application.agents.tools.code_executor import CodeExecutorTool
+    from docsgpt.agents.tools.code_executor import CodeExecutorTool
 
     storage, calls = _patch_bridge(monkeypatch)
     _patch_code_executor_repo(monkeypatch)
@@ -402,7 +402,7 @@ def test_code_executor_existing_artifact_still_used(monkeypatch):
         }
     }
     monkeypatch.setattr(
-        "application.agents.tools.code_executor.StorageCreator.get_storage",
+        "docsgpt.agents.tools.code_executor.StorageCreator.get_storage",
         staticmethod(lambda: storage),
     )
     tool = CodeExecutorTool(
@@ -418,7 +418,7 @@ def test_code_executor_existing_artifact_still_used(monkeypatch):
 # read_document wiring
 # ---------------------------------------------------------------------------
 def _patch_read_document_repo(monkeypatch):
-    import application.agents.tools.read_document as rd
+    import docsgpt.agents.tools.read_document as rd
 
     monkeypatch.setattr(rd, "db_readonly", _fake_db)
     monkeypatch.setattr(rd, "ArtifactsRepository", _FakeArtifactsRepo)
@@ -426,8 +426,8 @@ def _patch_read_document_repo(monkeypatch):
 
 @pytest.mark.unit
 def test_read_document_bridges_attachment_then_enqueues(monkeypatch):
-    import application.agents.tools.read_document as rd
-    from application.agents.tools.read_document import ReadDocumentTool
+    import docsgpt.agents.tools.read_document as rd
+    from docsgpt.agents.tools.read_document import ReadDocumentTool
 
     _storage, calls = _patch_bridge(monkeypatch, persisted_id="art-RD")
     _patch_read_document_repo(monkeypatch)
@@ -440,7 +440,7 @@ def test_read_document_bridges_attachment_then_enqueues(monkeypatch):
         def get(self, timeout=None, disable_sync_subtasks=True):
             return {"status": "ok", "content": "parsed", "truncated": False}
 
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     def _apply_async(args=None, queue=None, **kw):
         captured["args"] = args
@@ -462,14 +462,14 @@ def test_read_document_bridges_attachment_then_enqueues(monkeypatch):
 
 @pytest.mark.unit
 def test_read_document_workflow_scope_does_not_bridge(monkeypatch):
-    from application.agents.tools.read_document import ReadDocumentTool
+    from docsgpt.agents.tools.read_document import ReadDocumentTool
 
     _storage, calls = _patch_bridge(monkeypatch)
     _patch_read_document_repo(monkeypatch)
     att = _attachment(filename="wf.pdf")
     _FakeAttachmentsRepo.rows = {att["id"]: att}
 
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
     monkeypatch.setattr(
         tasks.parse_document, "apply_async",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not enqueue")),

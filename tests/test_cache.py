@@ -2,13 +2,13 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from application.cache import (
+from docsgpt.cache import (
     gen_cache,
     gen_cache_key,
     get_redis_instance,
     stream_cache,
 )
-from application.utils import get_hash
+from docsgpt.utils import get_hash
 
 
 @pytest.mark.unit
@@ -36,7 +36,7 @@ def test_gen_cache_key_invalid_message_format():
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_cache_hit(mock_make_redis):
     mock_redis_instance = MagicMock()
     mock_make_redis.return_value = mock_redis_instance
@@ -57,7 +57,7 @@ def test_gen_cache_hit(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_cache_miss(mock_make_redis):
     mock_redis_instance = MagicMock()
     mock_make_redis.return_value = mock_redis_instance
@@ -80,7 +80,7 @@ def test_gen_cache_miss(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_hit(mock_make_redis):
     mock_redis_instance = MagicMock()
     mock_make_redis.return_value = mock_redis_instance
@@ -103,7 +103,7 @@ def test_stream_cache_hit(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_miss(mock_make_redis):
     mock_redis_instance = MagicMock()
     mock_make_redis.return_value = mock_redis_instance
@@ -128,7 +128,7 @@ def test_stream_cache_miss(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_preserves_json_chunk_types(mock_make_redis):
     mock_redis_instance = MagicMock()
     mock_make_redis.return_value = mock_redis_instance
@@ -154,7 +154,7 @@ def test_stream_cache_preserves_json_chunk_types(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_does_not_stringify_protocol_objects(mock_make_redis):
     mock_redis_instance = MagicMock()
     mock_make_redis.return_value = mock_redis_instance
@@ -180,13 +180,13 @@ def test_stream_cache_does_not_stringify_protocol_objects(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_rejects_legacy_protocol_object_repr(mock_make_redis):
     mock_redis_instance = MagicMock()
     mock_make_redis.return_value = mock_redis_instance
     mock_redis_instance.get.return_value = json.dumps([
         "partial",
-        "<application.llm.openai._RespChoice object at 0x123>",
+        "<docsgpt.llm.openai._RespChoice object at 0x123>",
     ]).encode("utf-8")
 
     @stream_cache
@@ -213,19 +213,19 @@ class TestGetRedisInstance:
 
     def setup_method(self):
         """Reset module-level redis state between tests."""
-        import application.cache as cache_mod
+        import docsgpt.cache as cache_mod
 
         cache_mod._redis_instance = None
         cache_mod._redis_creation_failed = False
 
     def teardown_method(self):
-        import application.cache as cache_mod
+        import docsgpt.cache as cache_mod
 
         cache_mod._redis_instance = None
         cache_mod._redis_creation_failed = False
 
-    @patch("application.cache.redis.Redis.from_url")
-    @patch("application.cache.settings")
+    @patch("docsgpt.cache.redis.Redis.from_url")
+    @patch("docsgpt.cache.settings")
     def test_creates_redis_instance(self, mock_settings, mock_from_url):
         mock_settings.CACHE_REDIS_URL = "redis://localhost:6379/0"
         mock_instance = MagicMock()
@@ -240,8 +240,8 @@ class TestGetRedisInstance:
             health_check_interval=10,
         )
 
-    @patch("application.cache.redis.Redis.from_url")
-    @patch("application.cache.settings")
+    @patch("docsgpt.cache.redis.Redis.from_url")
+    @patch("docsgpt.cache.settings")
     def test_returns_cached_instance(self, mock_settings, mock_from_url):
         mock_settings.CACHE_REDIS_URL = "redis://localhost:6379/0"
         mock_instance = MagicMock()
@@ -253,10 +253,10 @@ class TestGetRedisInstance:
         assert result1 is result2
         assert mock_from_url.call_count == 1
 
-    @patch("application.cache.redis.Redis.from_url")
-    @patch("application.cache.settings")
+    @patch("docsgpt.cache.redis.Redis.from_url")
+    @patch("docsgpt.cache.settings")
     def test_value_error_stops_retries(self, mock_settings, mock_from_url):
-        import application.cache as cache_mod
+        import docsgpt.cache as cache_mod
 
         mock_settings.CACHE_REDIS_URL = "invalid://url"
         mock_from_url.side_effect = ValueError("Invalid Redis URL")
@@ -272,10 +272,10 @@ class TestGetRedisInstance:
         assert result2 is None
         mock_from_url.assert_not_called()
 
-    @patch("application.cache.redis.Redis.from_url")
-    @patch("application.cache.settings")
+    @patch("docsgpt.cache.redis.Redis.from_url")
+    @patch("docsgpt.cache.settings")
     def test_connection_error_allows_retries(self, mock_settings, mock_from_url):
-        import application.cache as cache_mod
+        import docsgpt.cache as cache_mod
         import redis as redis_mod
 
         mock_settings.CACHE_REDIS_URL = "redis://unreachable:6379/0"
@@ -334,7 +334,7 @@ def test_gen_cache_key_different_models():
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_cache_bypasses_when_tools_provided(mock_make_redis):
     """When tools are provided, caching is bypassed."""
     mock_redis_instance = MagicMock()
@@ -353,7 +353,7 @@ def test_gen_cache_bypasses_when_tools_provided(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_cache_no_redis(mock_make_redis):
     """When redis is unavailable, function runs without caching."""
     mock_make_redis.return_value = None
@@ -369,7 +369,7 @@ def test_gen_cache_no_redis(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_cache_redis_get_error(mock_make_redis):
     """When redis.get raises, function falls through gracefully."""
     mock_redis_instance = MagicMock()
@@ -387,7 +387,7 @@ def test_gen_cache_redis_get_error(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_cache_redis_set_error(mock_make_redis):
     """When redis.set raises, the result is still returned."""
     mock_redis_instance = MagicMock()
@@ -406,7 +406,7 @@ def test_gen_cache_redis_set_error(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_cache_non_string_result_not_cached(mock_make_redis):
     """Non-string results should not be cached."""
     mock_redis_instance = MagicMock()
@@ -428,7 +428,7 @@ def test_gen_cache_non_string_result_not_cached(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_bypasses_when_tools_provided(mock_make_redis):
     """When tools are provided, streaming cache is bypassed."""
     mock_redis_instance = MagicMock()
@@ -447,7 +447,7 @@ def test_stream_cache_bypasses_when_tools_provided(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_skips_write_when_no_content_deltas(mock_make_redis):
     """A stream that emits only reasoning ("thought") dicts and a
     finish chunk — i.e. reasoning-only-stop, the silent-loss bug's
@@ -474,7 +474,7 @@ def test_stream_cache_skips_write_when_no_content_deltas(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_writes_when_any_content_chunk_seen(mock_make_redis):
     """The mirror case: a stream with even one str content delta is
     cached normally (the poison guard is minimal — only reasoning-only
@@ -496,7 +496,7 @@ def test_stream_cache_writes_when_any_content_chunk_seen(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_no_redis(mock_make_redis):
     """When redis is unavailable, streaming works without caching."""
     mock_make_redis.return_value = None
@@ -513,7 +513,7 @@ def test_stream_cache_no_redis(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_redis_get_error(mock_make_redis):
     """When redis.get raises during stream, falls through gracefully."""
     mock_redis_instance = MagicMock()
@@ -531,7 +531,7 @@ def test_stream_cache_redis_get_error(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_redis_set_error(mock_make_redis):
     """When redis.set raises during stream save, chunks are still yielded."""
     mock_redis_instance = MagicMock()
@@ -554,7 +554,7 @@ def test_stream_cache_redis_set_error(mock_make_redis):
 # =====================================================================
 
 
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_key_generation_failure_yields(mock_make_redis):
     """Cover lines 86-89: ValueError in gen_cache_key falls through to func."""
     mock_make_redis.return_value = None
@@ -783,7 +783,7 @@ def test_gen_cache_key_unserializable_extra_raises_value_error():
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_cache_does_not_serve_entry_from_other_response_format(mock_make_redis):
     fake = _FakeRedis()
     mock_make_redis.return_value = fake
@@ -812,7 +812,7 @@ def test_gen_cache_does_not_serve_entry_from_other_response_format(mock_make_red
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_does_not_replay_entry_from_other_response_format(mock_make_redis):
     """The reported bug: a workflow node whose schema changed replayed the
     old schema's cached stream for the rest of the TTL."""
@@ -849,7 +849,7 @@ def test_stream_cache_does_not_replay_entry_from_other_response_format(mock_make
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_cache_bypassed_for_previous_response_id(mock_make_redis):
     """A Responses API turn chained to a server-held id depends on state no
     key can capture, so it must not read or write the cache."""
@@ -871,7 +871,7 @@ def test_gen_cache_bypassed_for_previous_response_id(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_stream_cache_bypassed_for_previous_response_id(mock_make_redis):
     fake = MagicMock()
     mock_make_redis.return_value = fake
@@ -893,7 +893,7 @@ def test_stream_cache_bypassed_for_previous_response_id(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_cache_ignores_stream_payload_stored_under_same_key(mock_make_redis):
     """Belt-and-braces: even planted directly under the gen key, a stream
     envelope must never be handed back as a non-streaming answer."""
@@ -912,7 +912,7 @@ def test_gen_cache_ignores_stream_payload_stored_under_same_key(mock_make_redis)
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_gen_and_stream_caches_do_not_share_a_key_space(mock_make_redis):
     """A gen write must not overwrite the stream envelope for the same call.
 
@@ -952,7 +952,7 @@ def test_gen_and_stream_caches_do_not_share_a_key_space(mock_make_redis):
 
 
 @pytest.mark.unit
-@patch("application.cache.get_redis_instance")
+@patch("docsgpt.cache.get_redis_instance")
 def test_a_json_array_answer_is_never_replayed_as_stream_chunks(mock_make_redis):
     """A gen answer that happens to be a JSON array is not a chunk list.
 

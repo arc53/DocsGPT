@@ -13,7 +13,7 @@ the fast path must only appear when a caller explicitly asks for it.
 
 import pytest
 
-from application.parser.file.base_parser import BaseParser, DocumentParseError
+from docsgpt.parser.file.base_parser import BaseParser, DocumentParseError
 
 pypdfium2 = pytest.importorskip("pypdfium2")
 
@@ -66,7 +66,7 @@ class _RecordingFallback(BaseParser):
 
 @pytest.fixture
 def parser_cls():
-    from application.parser.file.pdfium_parser import PdfiumTextParser
+    from docsgpt.parser.file.pdfium_parser import PdfiumTextParser
 
     return PdfiumTextParser
 
@@ -162,7 +162,7 @@ def docling_engine(monkeypatch):
     # (docling is an optional extra) the engine degrades to the legacy
     # parsers and these tests do not apply.
     pytest.importorskip("docling")
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "DOC_PARSER_ENGINE", "docling")
     # A developer .env with OCR on (and OCR_BACKEND=native) would otherwise
@@ -172,7 +172,7 @@ def docling_engine(monkeypatch):
 
 def test_extractor_defaults_to_docling_for_pdf(docling_engine):
     """Sources must be unaffected: no fast path unless explicitly requested."""
-    from application.parser.file.bulk import get_default_file_extractor
+    from docsgpt.parser.file.bulk import get_default_file_extractor
 
     pdf_parser = get_default_file_extractor()[".pdf"]
 
@@ -180,8 +180,8 @@ def test_extractor_defaults_to_docling_for_pdf(docling_engine):
 
 
 def test_extractor_uses_fast_path_when_requested(docling_engine):
-    from application.parser.file.bulk import get_default_file_extractor
-    from application.parser.file.pdfium_parser import PdfiumTextParser
+    from docsgpt.parser.file.bulk import get_default_file_extractor
+    from docsgpt.parser.file.pdfium_parser import PdfiumTextParser
 
     pdf_parser = get_default_file_extractor(pdf_text_fast_path=True)[".pdf"]
 
@@ -192,8 +192,8 @@ def test_extractor_uses_fast_path_when_requested(docling_engine):
 def test_anydoc_engine_ignores_fast_path(monkeypatch):
     """anydoc already reads the text layer in milliseconds and keeps structure."""
     pytest.importorskip("anydoc")
-    from application.core.settings import settings
-    from application.parser.file.bulk import get_default_file_extractor
+    from docsgpt.core.settings import settings
+    from docsgpt.parser.file.bulk import get_default_file_extractor
 
     monkeypatch.setattr(settings, "DOC_PARSER_ENGINE", "anydoc")
 
@@ -203,7 +203,7 @@ def test_anydoc_engine_ignores_fast_path(monkeypatch):
 
 
 def test_fast_path_does_not_change_non_pdf_parsers(docling_engine):
-    from application.parser.file.bulk import get_default_file_extractor
+    from docsgpt.parser.file.bulk import get_default_file_extractor
 
     plain = get_default_file_extractor()
     fast = get_default_file_extractor(pdf_text_fast_path=True)

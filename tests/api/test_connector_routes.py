@@ -1,4 +1,4 @@
-"""Tests for application/api/connector/routes.py"""
+"""Tests for docsgpt/api/connector/routes.py"""
 
 import base64
 import json
@@ -89,8 +89,8 @@ class _InMemoryCollection:
 
 @pytest.fixture
 def app():
-    with patch("application.app.handle_auth", return_value={"sub": "test_user"}):
-        from application.app import app as flask_app
+    with patch("docsgpt.app.handle_auth", return_value={"sub": "test_user"}):
+        from docsgpt.app import app as flask_app
         flask_app.config["TESTING"] = True
         yield flask_app
 
@@ -104,8 +104,8 @@ def client(app):
 def mock_sessions(monkeypatch):
     sessions = _InMemoryCollection()
     sources = _InMemoryCollection()
-    monkeypatch.setattr("application.api.connector.routes.sessions_collection", sessions)
-    monkeypatch.setattr("application.api.connector.routes.sources_collection", sources)
+    monkeypatch.setattr("docsgpt.api.connector.routes.sessions_collection", sessions)
+    monkeypatch.setattr("docsgpt.api.connector.routes.sources_collection", sources)
     return {"sessions": sessions, "sources": sources}
 
 
@@ -124,7 +124,7 @@ class TestConnectorAuth:
 
     @pytest.mark.unit
     def test_unauthorized(self, client, app):
-        with patch("application.app.handle_auth", return_value=None):
+        with patch("docsgpt.app.handle_auth", return_value=None):
             resp = client.get("/api/connectors/auth?provider=google_drive")
             data = json.loads(resp.data)
             # decoded_token is None -> 401
@@ -212,7 +212,7 @@ class TestBuildCallbackRedirect:
 
     @pytest.mark.unit
     def test_builds_url(self):
-        from application.api.connector.routes import build_callback_redirect
+        from docsgpt.api.connector.routes import build_callback_redirect
         url = build_callback_redirect({"status": "success", "message": "OK"})
         assert url.startswith("/api/connectors/callback-status?")
         assert "status=success" in url
@@ -228,7 +228,7 @@ class TestConnectorsCallback:
     def _patch_connector_creator(self):
         """Patch ConnectorCreator at both module-level and local-import locations."""
         return patch(
-            "application.parser.connectors.connector_creator.ConnectorCreator",
+            "docsgpt.parser.connectors.connector_creator.ConnectorCreator",
         )
 
 

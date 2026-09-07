@@ -15,16 +15,16 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from application.agents.workflow_agent import WorkflowAgent, _MAX_INPUT_DOCUMENTS
-from application.agents.workflows.schemas import AgentNodeConfig
-from application.agents.workflows.workflow_engine import (
+from docsgpt.agents.workflow_agent import WorkflowAgent, _MAX_INPUT_DOCUMENTS
+from docsgpt.agents.workflows.schemas import AgentNodeConfig
+from docsgpt.agents.workflows.workflow_engine import (
     _EXTRACT_TRUNCATION_ID,
     WorkflowEngine,
 )
-from application.storage.db.repositories.artifacts import ArtifactsRepository
-from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
-from application.storage.local import LocalStorage
-from application.storage.storage_creator import StorageCreator
+from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+from docsgpt.storage.local import LocalStorage
+from docsgpt.storage.storage_creator import StorageCreator
 
 pytestmark = pytest.mark.integration
 
@@ -37,7 +37,7 @@ def _wire(pg_engine, tmp_path, monkeypatch) -> LocalStorage:
     """Point storage + the db session at the ephemeral fixtures."""
     storage = LocalStorage(base_dir=str(tmp_path))
     monkeypatch.setattr(StorageCreator, "_instance", storage, raising=False)
-    monkeypatch.setattr("application.storage.db.session.get_engine", lambda: pg_engine)
+    monkeypatch.setattr("docsgpt.storage.db.session.get_engine", lambda: pg_engine)
     return storage
 
 
@@ -120,7 +120,7 @@ def _patch_engine(monkeypatch, probe=None) -> None:
     _RecordingEngine.instances = []
     _RecordingEngine.probe = probe
     monkeypatch.setattr(
-        "application.agents.workflow_agent.WorkflowEngine", _RecordingEngine
+        "docsgpt.agents.workflow_agent.WorkflowEngine", _RecordingEngine
     )
 
 
@@ -228,7 +228,7 @@ def test_shared_agent_run_and_artifacts_owned_by_caller(pg_engine, tmp_path, mon
     # share token, so it needs a request context.
     from flask import Flask
 
-    from application.api.user.artifacts.authz import Principal, authorize_artifact
+    from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
 
     app = Flask(__name__)
     with app.test_request_context():
@@ -366,13 +366,13 @@ def test_quota_exceeded_fails_run_and_does_not_execute(pg_engine, tmp_path, monk
     agent = _agent(wf_id, attachments)
     _patch_engine(monkeypatch)
 
-    from application.sandbox.artifacts_capture import QuotaExceeded
+    from docsgpt.sandbox.artifacts_capture import QuotaExceeded
 
     def _raise_quota(**kwargs):
         raise QuotaExceeded("artifact storage quota reached")
 
     monkeypatch.setattr(
-        "application.sandbox.artifacts_capture.persist_new_artifact", _raise_quota
+        "docsgpt.sandbox.artifacts_capture.persist_new_artifact", _raise_quota
     )
 
     events = list(agent._gen_inner("summarize", log_context=None))
@@ -400,7 +400,7 @@ def test_quota_exceeded_fails_run_and_does_not_execute(pg_engine, tmp_path, monk
 
 def test_oversize_declared_attachment_skipped_with_notice(pg_engine, tmp_path, monkeypatch):
     """A declared-oversize attachment is dropped with a surfaced notice; the run still proceeds."""
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     storage = _wire(pg_engine, tmp_path, monkeypatch)
     wf_id = _make_workflow(pg_engine)
@@ -462,7 +462,7 @@ def test_extract_parse_opts_out_of_sync_subtask_guard(monkeypatch):
     engine.agent = agent
     engine.workflow_run_id = "run-extract"
 
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     captured: dict = {}
 
@@ -495,7 +495,7 @@ def test_extract_parse_opts_out_of_sync_subtask_guard(monkeypatch):
 
 def _engine_for_parse(monkeypatch, get_impl):
     """Engine wired to a fake ``parse_document`` whose ``get`` is ``get_impl``."""
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     agent = _agent(str(uuid.uuid4()), [])
     engine = WorkflowEngine.__new__(WorkflowEngine)
@@ -562,7 +562,7 @@ def test_parse_is_skipped_once_the_node_budget_is_spent(monkeypatch, caplog):
 
 def test_parse_without_a_deadline_keeps_the_size_scaled_window(monkeypatch):
     """The per-document scaling is the point of the feature; keep it intact."""
-    from application.api.user.tasks import parse_timeout_for_size
+    from docsgpt.api.user.tasks import parse_timeout_for_size
 
     engine, captured = _engine_for_parse(
         monkeypatch, lambda timeout: {"status": "ok", "content": "md"}
@@ -592,13 +592,13 @@ def test_node_extract_path_capped_with_truncation_note(pg_engine, tmp_path, monk
     engine = _RecordingEngine.instances[-1]
 
     # Cap the blocking-extract path below the doc count so the overflow truncates.
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 2, raising=False)
 
     # Stub the parsing worker so each non-text doc "parses" without a broker, and
     # count the blocking calls to prove the overflow docs are never enqueued.
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     parse_calls = {"n": 0}
 
@@ -646,11 +646,11 @@ def test_node_extract_cap_bounds_parse_attempts_even_when_every_parse_times_out(
     list(agent._gen_inner("summarize", log_context=None))
     engine = _RecordingEngine.instances[-1]
 
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 2, raising=False)
 
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     parse_calls = {"n": 0}
 
@@ -698,7 +698,7 @@ def _with_extraction(attachment: dict, content, extraction=_OK_EXTRACTION) -> di
 
 def _forbid_parse(monkeypatch) -> None:
     """Make any enqueue of the parsing worker a hard failure."""
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     def _apply_async(*a, **k):
         raise AssertionError("the document must not be re-parsed")
@@ -708,7 +708,7 @@ def _forbid_parse(monkeypatch) -> None:
 
 def _count_parses(monkeypatch, calls: dict) -> None:
     """Stub the parsing worker so each blocking parse succeeds and is counted."""
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     class _R:
         def get(self, timeout=None, disable_sync_subtasks=True):
@@ -758,7 +758,7 @@ def test_preextracted_attachment_text_is_reused_without_reparsing(
 
 def test_preextracted_text_is_bounded_head_and_tail(pg_engine, tmp_path, monkeypatch):
     """Reused text goes through the same head+tail window as the inline-text path."""
-    from application.parser.document_reader import _TEXT_MAX_BYTES
+    from docsgpt.parser.document_reader import _TEXT_MAX_BYTES
 
     storage = _wire(pg_engine, tmp_path, monkeypatch)
     big = "A" * (_TEXT_MAX_BYTES * 3)
@@ -841,7 +841,7 @@ def test_legacy_row_without_extraction_metadata_is_trusted(pg_engine, tmp_path, 
 
 def test_preextracted_docs_do_not_consume_the_extract_cap(pg_engine, tmp_path, monkeypatch):
     """Reused text costs no blocking parse, so it must not spend the per-node parse budget."""
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     storage = _wire(pg_engine, tmp_path, monkeypatch)
     attachments = [

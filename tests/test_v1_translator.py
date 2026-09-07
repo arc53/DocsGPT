@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from application.api.v1.translator import (
+from docsgpt.api.v1.translator import (
     StreamTranslationState,
     _get_client_tool_name,
     _split_leaked_reasoning,

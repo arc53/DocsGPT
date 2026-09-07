@@ -9,7 +9,7 @@
 #   bash scripts/export_requirements.sh
 #
 # Each exported file is a complete environment (core plus the named extra),
-# so `pip install -r application/requirements-docling.txt` on its own works,
+# so `pip install -r docsgpt/requirements-docling.txt` on its own works,
 # and installing it on top of requirements.txt only adds the extra's packages.
 set -euo pipefail
 
@@ -40,18 +40,18 @@ export_file() {
   echo "wrote $out ($(grep -cE '^[A-Za-z0-9]' "$out") packages)"
 }
 
-export_file application/requirements.txt \
+export_file docsgpt/requirements.txt \
 "Core runtime. Optional extras live in requirements-<extra>.txt:
   docling  DOC_PARSER_ENGINE=docling, docling OCR backend, read_document structured output
   milvus   VECTOR_STORE=milvus"
 
-INDEX_URL=https://download.pytorch.org/whl/cpu export_file application/requirements-docling.txt \
+INDEX_URL=https://download.pytorch.org/whl/cpu export_file docsgpt/requirements-docling.txt \
 "Core runtime plus the docling extra: DOC_PARSER_ENGINE=docling, the docling
 OCR backend (layout-model hybrid OCR, ocrmac/rapidocr engines), .adoc/.vtt/.xml
 attachment parsing, and read_document's 'structured' output. The default
 anydoc engine needs none of this, and OCR itself does not either:
 OCR_ENABLED=true with the tesseract binary (or a DeepSeek-OCR endpoint) runs
-through application/parser/file/ocr_parser.py.
+through docsgpt/parser/file/ocr_parser.py.
 On Linux torch comes from the CPU-only PyTorch index (no CUDA stack); a GPU
 deployment can reinstall torch from PyPI on top.
 pip resolves the extra index as expected. uv only takes a package from the
@@ -61,7 +61,7 @@ pins the index per package) or set UV_INDEX_STRATEGY=unsafe-best-match.
 Docker: --build-arg EXTRAS=docling" \
   --extra docling
 
-export_file application/requirements-milvus.txt \
+export_file docsgpt/requirements-milvus.txt \
 "Core runtime plus the milvus extra (VECTOR_STORE=milvus): pymilvus and the
 embedded milvus-lite server, which pulls pyarrow.
 Docker: --build-arg EXTRAS=milvus" \

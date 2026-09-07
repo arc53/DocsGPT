@@ -6,9 +6,9 @@ import pytest
 def _make_mongodb_store(source_id="test-source"):
     """Helper to create a MongoDBVectorStore with all external deps mocked."""
     with patch(
-        "application.vectorstore.base.BaseVectorStore._get_embeddings"
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings"
     ) as mock_get_emb, patch(
-        "application.vectorstore.mongodb.settings"
+        "docsgpt.vectorstore.mongodb.settings"
     ) as mock_settings, patch.dict(
         "sys.modules", {"pymongo": MagicMock()}
     ):
@@ -19,7 +19,7 @@ def _make_mongodb_store(source_id="test-source"):
         mock_settings.EMBEDDINGS_NAME = "test_model"
         mock_settings.MONGO_URI = "mongodb://localhost:27017"
 
-        from application.vectorstore.mongodb import MongoDBVectorStore
+        from docsgpt.vectorstore.mongodb import MongoDBVectorStore
 
         store = MongoDBVectorStore(
             source_id=source_id,
@@ -37,7 +37,7 @@ def _make_mongodb_store(source_id="test-source"):
 @pytest.mark.unit
 class TestMongoDBVectorStoreInit:
     def test_source_id_cleaned(self):
-        store, _, _ = _make_mongodb_store(source_id="application/indexes/abc123/")
+        store, _, _ = _make_mongodb_store(source_id="docsgpt/indexes/abc123/")
         assert store._source_id == "abc123"
 
 
@@ -269,7 +269,7 @@ class TestMongoDBVectorStoreDeleteChunk:
         store, mock_collection, _ = _make_mongodb_store()
         mock_collection.delete_one.return_value = Mock(deleted_count=1)
 
-        with patch("application.vectorstore.mongodb.ObjectId", create=True):
+        with patch("docsgpt.vectorstore.mongodb.ObjectId", create=True):
             # We need to mock bson.objectid.ObjectId
             with patch.dict("sys.modules", {"bson": MagicMock(), "bson.objectid": MagicMock()}):
                 from unittest.mock import MagicMock as MM

@@ -8,7 +8,7 @@ github:
 
 application:
 - changed-files:
-  - any-glob-to-any-file: 'application/**/*'
+  - any-glob-to-any-file: 'docsgpt/**/*'
 
 docs:
 - changed-files:

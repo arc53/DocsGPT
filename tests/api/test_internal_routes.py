@@ -1,4 +1,4 @@
-"""Tests for application/api/internal/routes.py.
+"""Tests for docsgpt/api/internal/routes.py.
 
 Uses the ephemeral ``pg_conn`` fixture so the sources repository writes
 happen against a real Postgres schema.
@@ -22,13 +22,13 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.internal.routes.db_session", _yield
+        "docsgpt.api.internal.routes.db_session", _yield
     ):
         yield
 
 
 def _make_app():
-    from application.api.internal.routes import internal
+    from docsgpt.api.internal.routes import internal
 
     app = Flask(__name__)
     app.register_blueprint(internal)
@@ -40,7 +40,7 @@ class TestVerifyInternalKey:
     def test_rejects_when_internal_key_not_configured(self):
         app = _make_app()
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", ""
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", ""
         ):
             with app.test_client() as c:
                 r = c.get("/api/download")
@@ -49,7 +49,7 @@ class TestVerifyInternalKey:
     def test_rejects_when_key_missing(self):
         app = _make_app()
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ):
             with app.test_client() as c:
                 r = c.get("/api/download")
@@ -58,7 +58,7 @@ class TestVerifyInternalKey:
     def test_rejects_when_key_mismatch(self):
         app = _make_app()
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ):
             with app.test_client() as c:
                 r = c.get("/api/download", headers={"X-Internal-Key": "wrong"})
@@ -69,12 +69,12 @@ class TestDownloadFile:
     def test_returns_404_for_missing_file(self, tmp_path):
         app = _make_app()
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ), patch(
-            "application.api.internal.routes.settings.UPLOAD_FOLDER",
+            "docsgpt.api.internal.routes.settings.UPLOAD_FOLDER",
             str(tmp_path),
         ), patch(
-            "application.api.internal.routes.current_dir", ""
+            "docsgpt.api.internal.routes.current_dir", ""
         ):
             with app.test_client() as c:
                 r = c.get(
@@ -90,12 +90,12 @@ class TestDownloadFile:
         (user_dir / "hello.txt").write_text("hi there")
 
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ), patch(
-            "application.api.internal.routes.settings.UPLOAD_FOLDER",
+            "docsgpt.api.internal.routes.settings.UPLOAD_FOLDER",
             str(tmp_path),
         ), patch(
-            "application.api.internal.routes.current_dir", ""
+            "docsgpt.api.internal.routes.current_dir", ""
         ):
             with app.test_client() as c:
                 r = c.get(
@@ -120,7 +120,7 @@ class TestUploadIndex:
     def test_rejects_without_auth(self):
         app = _make_app()
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ):
             with app.test_client() as c:
                 r = c.post("/api/upload_index")
@@ -129,7 +129,7 @@ class TestUploadIndex:
     def test_rejects_missing_user(self):
         app = _make_app()
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ):
             with app.test_client() as c:
                 r = c.post("/api/upload_index", headers=_AUTH, data={})
@@ -140,7 +140,7 @@ class TestUploadIndex:
         app = _make_app()
         form = {"user": "alice"}
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ):
             with app.test_client() as c:
                 r = c.post("/api/upload_index", headers=_AUTH, data=form)
@@ -149,18 +149,18 @@ class TestUploadIndex:
 
     def test_creates_new_source_for_non_faiss_store(self, pg_conn):
         """For non-faiss VECTOR_STORE the route skips file uploads entirely."""
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         app = _make_app()
         form = {**self._base_form(source_id="legacy-source-1")}
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ), patch(
-            "application.api.internal.routes.settings.VECTOR_STORE", "milvus"
+            "docsgpt.api.internal.routes.settings.VECTOR_STORE", "milvus"
         ), patch(
-            "application.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
+            "docsgpt.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
         ), patch(
-            "application.api.internal.routes.StorageCreator.get_storage",
+            "docsgpt.api.internal.routes.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), _patch_db(pg_conn):
             with app.test_client() as c:
@@ -173,7 +173,7 @@ class TestUploadIndex:
         assert found is not None
 
     def test_updates_existing_source(self, pg_conn):
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         repo = SourcesRepository(pg_conn)
         created = repo.create(
@@ -185,13 +185,13 @@ class TestUploadIndex:
         app = _make_app()
         form = {**self._base_form(source_id="legacy-src-2"), "tokens": "999"}
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ), patch(
-            "application.api.internal.routes.settings.VECTOR_STORE", "milvus"
+            "docsgpt.api.internal.routes.settings.VECTOR_STORE", "milvus"
         ), patch(
-            "application.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
+            "docsgpt.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
         ), patch(
-            "application.api.internal.routes.StorageCreator.get_storage",
+            "docsgpt.api.internal.routes.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), _patch_db(pg_conn):
             with app.test_client() as c:
@@ -211,13 +211,13 @@ class TestUploadIndex:
             "file_name_map": json.dumps({"a.txt": "Original A.txt"}),
         }
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ), patch(
-            "application.api.internal.routes.settings.VECTOR_STORE", "milvus"
+            "docsgpt.api.internal.routes.settings.VECTOR_STORE", "milvus"
         ), patch(
-            "application.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
+            "docsgpt.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
         ), patch(
-            "application.api.internal.routes.StorageCreator.get_storage",
+            "docsgpt.api.internal.routes.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), _patch_db(pg_conn):
             with app.test_client() as c:
@@ -232,13 +232,13 @@ class TestUploadIndex:
             "file_name_map": "also-not-json",
         }
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ), patch(
-            "application.api.internal.routes.settings.VECTOR_STORE", "milvus"
+            "docsgpt.api.internal.routes.settings.VECTOR_STORE", "milvus"
         ), patch(
-            "application.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
+            "docsgpt.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
         ), patch(
-            "application.api.internal.routes.StorageCreator.get_storage",
+            "docsgpt.api.internal.routes.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), _patch_db(pg_conn):
             with app.test_client() as c:
@@ -249,11 +249,11 @@ class TestUploadIndex:
         app = _make_app()
         form = self._base_form(source_id="legacy-src-5")
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ), patch(
-            "application.api.internal.routes.settings.VECTOR_STORE", "faiss"
+            "docsgpt.api.internal.routes.settings.VECTOR_STORE", "faiss"
         ), patch(
-            "application.api.internal.routes.StorageCreator.get_storage",
+            "docsgpt.api.internal.routes.StorageCreator.get_storage",
             return_value=MagicMock(),
         ):
             with app.test_client() as c:
@@ -273,11 +273,11 @@ class TestUploadIndex:
             "file_faiss": (io.BytesIO(b"faiss-data"), "index.faiss"),
         }
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ), patch(
-            "application.api.internal.routes.settings.VECTOR_STORE", "faiss"
+            "docsgpt.api.internal.routes.settings.VECTOR_STORE", "faiss"
         ), patch(
-            "application.api.internal.routes.StorageCreator.get_storage",
+            "docsgpt.api.internal.routes.StorageCreator.get_storage",
             return_value=MagicMock(),
         ):
             with app.test_client() as c:
@@ -299,13 +299,13 @@ class TestUploadIndex:
             "file_pkl": (io.BytesIO(b"pkl-data"), "index.pkl"),
         }
         with patch(
-            "application.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
+            "docsgpt.api.internal.routes.settings.INTERNAL_KEY", _TEST_KEY
         ), patch(
-            "application.api.internal.routes.settings.VECTOR_STORE", "faiss"
+            "docsgpt.api.internal.routes.settings.VECTOR_STORE", "faiss"
         ), patch(
-            "application.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
+            "docsgpt.api.internal.routes.settings.EMBEDDINGS_NAME", "emb"
         ), patch(
-            "application.api.internal.routes.StorageCreator.get_storage",
+            "docsgpt.api.internal.routes.StorageCreator.get_storage",
             return_value=fake_storage,
         ), _patch_db(pg_conn):
             with app.test_client() as c:

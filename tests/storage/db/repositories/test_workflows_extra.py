@@ -3,7 +3,7 @@
 
 class TestWorkflowsDeleteByLegacy:
     def test_delete_by_legacy_id_returns_true(self, pg_conn):
-        from application.storage.db.repositories.workflows import (
+        from docsgpt.storage.db.repositories.workflows import (
             WorkflowsRepository,
         )
         repo = WorkflowsRepository(pg_conn)
@@ -14,7 +14,7 @@ class TestWorkflowsDeleteByLegacy:
         assert got is True
 
     def test_delete_by_legacy_id_no_match(self, pg_conn):
-        from application.storage.db.repositories.workflows import (
+        from docsgpt.storage.db.repositories.workflows import (
             WorkflowsRepository,
         )
         got = WorkflowsRepository(pg_conn).delete_by_legacy_id(
@@ -23,7 +23,7 @@ class TestWorkflowsDeleteByLegacy:
         assert got is False
 
     def test_delete_by_legacy_id_wrong_user(self, pg_conn):
-        from application.storage.db.repositories.workflows import (
+        from docsgpt.storage.db.repositories.workflows import (
             WorkflowsRepository,
         )
         repo = WorkflowsRepository(pg_conn)

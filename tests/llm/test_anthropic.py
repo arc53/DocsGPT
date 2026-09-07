@@ -1,4 +1,4 @@
-"""Unit tests for application/llm/anthropic.py — AnthropicLLM (Messages API).
+"""Unit tests for docsgpt/llm/anthropic.py — AnthropicLLM (Messages API).
 
 Covers the migration off the retired Text Completions API:
   - system extraction into the top-level ``system`` parameter
@@ -170,12 +170,12 @@ def patch_anthropic():
         sys.modules.pop(key, None)
     sys.modules["anthropic"] = fake
 
-    if "application.llm.anthropic" in sys.modules:
-        del sys.modules["application.llm.anthropic"]
+    if "docsgpt.llm.anthropic" in sys.modules:
+        del sys.modules["docsgpt.llm.anthropic"]
     yield
     sys.modules.pop("anthropic", None)
-    if "application.llm.anthropic" in sys.modules:
-        del sys.modules["application.llm.anthropic"]
+    if "docsgpt.llm.anthropic" in sys.modules:
+        del sys.modules["docsgpt.llm.anthropic"]
 
 
 def _ctx_manager(data):
@@ -191,7 +191,7 @@ def _ctx_manager(data):
 
 @pytest.fixture
 def llm():
-    from application.llm.anthropic import AnthropicLLM
+    from docsgpt.llm.anthropic import AnthropicLLM
 
     instance = AnthropicLLM(api_key="test-key")
     instance.storage = types.SimpleNamespace(
@@ -214,23 +214,23 @@ def _sent(llm):
 class TestAnthropicConstructor:
 
     def test_api_key_set(self):
-        from application.llm.anthropic import AnthropicLLM
+        from docsgpt.llm.anthropic import AnthropicLLM
 
         assert AnthropicLLM(api_key="custom-key").api_key == "custom-key"
 
     def test_base_url_passed(self):
-        from application.llm.anthropic import AnthropicLLM
+        from docsgpt.llm.anthropic import AnthropicLLM
 
         instance = AnthropicLLM(api_key="k", base_url="https://custom.api")
         assert instance.anthropic.base_url == "https://custom.api"
 
     def test_no_base_url(self):
-        from application.llm.anthropic import AnthropicLLM
+        from docsgpt.llm.anthropic import AnthropicLLM
 
         assert AnthropicLLM(api_key="k").anthropic.base_url is None
 
     def test_provider_name(self):
-        from application.llm.anthropic import AnthropicLLM
+        from docsgpt.llm.anthropic import AnthropicLLM
 
         assert AnthropicLLM.provider_name == "anthropic"
 
@@ -620,7 +620,7 @@ class TestRawGen:
 
 
 # ---------------------------------------------------------------------------
-# OpenAI-shaped request params (application/api/v1/translator.py forwards the
+# OpenAI-shaped request params (docsgpt/api/v1/translator.py forwards the
 # caller's sampling params verbatim into ``llm_params``, which the agent merges
 # into the gen kwargs for every provider).
 # ---------------------------------------------------------------------------

@@ -1,9 +1,9 @@
 
-from application.llm.handlers.handler_creator import LLMHandlerCreator
-from application.llm.handlers.anthropic import AnthropicLLMHandler
-from application.llm.handlers.base import LLMHandler
-from application.llm.handlers.openai import OpenAILLMHandler
-from application.llm.handlers.google import GoogleLLMHandler
+from docsgpt.llm.handlers.handler_creator import LLMHandlerCreator
+from docsgpt.llm.handlers.anthropic import AnthropicLLMHandler
+from docsgpt.llm.handlers.base import LLMHandler
+from docsgpt.llm.handlers.openai import OpenAILLMHandler
+from docsgpt.llm.handlers.google import GoogleLLMHandler
 
 
 class TestLLMHandlerCreator:

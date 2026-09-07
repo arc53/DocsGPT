@@ -15,18 +15,18 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# 19. application/storage/base.py  (abstract methods – lines 25,38,56,69,82,95,108,124)
+# 19. docsgpt/storage/base.py  (abstract methods – lines 25,38,56,69,82,95,108,124)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestBaseStorageAbstract:
     def test_cannot_instantiate_base_storage(self):
-        from application.storage.base import BaseStorage
+        from docsgpt.storage.base import BaseStorage
 
         with pytest.raises(TypeError):
             BaseStorage()
 
     def test_concrete_subclass_must_implement_all(self):
-        from application.storage.base import BaseStorage
+        from docsgpt.storage.base import BaseStorage
 
         class PartialStorage(BaseStorage):
             def save_file(self, file_data, path, **kwargs):
@@ -36,7 +36,7 @@ class TestBaseStorageAbstract:
             PartialStorage()
 
     def test_concrete_subclass_works(self):
-        from application.storage.base import BaseStorage
+        from docsgpt.storage.base import BaseStorage
 
         class FullStorage(BaseStorage):
             def save_file(self, file_data, path, **kwargs):
@@ -75,24 +75,24 @@ class TestBaseStorageAbstract:
 
 
 # ---------------------------------------------------------------------------
-# 21. application/parser/connectors/base.py  (abstract methods – lines 33,46,59,72,77,102,120)
+# 21. docsgpt/parser/connectors/base.py  (abstract methods – lines 33,46,59,72,77,102,120)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestBaseConnectorAbstract:
     def test_cannot_instantiate_base_connector_auth(self):
-        from application.parser.connectors.base import BaseConnectorAuth
+        from docsgpt.parser.connectors.base import BaseConnectorAuth
 
         with pytest.raises(TypeError):
             BaseConnectorAuth()
 
     def test_cannot_instantiate_base_connector_loader(self):
-        from application.parser.connectors.base import BaseConnectorLoader
+        from docsgpt.parser.connectors.base import BaseConnectorLoader
 
         with pytest.raises(TypeError):
             BaseConnectorLoader("token")
 
     def test_sanitize_token_info(self):
-        from application.parser.connectors.base import BaseConnectorAuth
+        from docsgpt.parser.connectors.base import BaseConnectorAuth
 
         class ConcreteAuth(BaseConnectorAuth):
             def get_authorization_url(self, state=None):
@@ -125,42 +125,42 @@ class TestBaseConnectorAbstract:
 
 
 # ---------------------------------------------------------------------------
-# 9. application/agents/tools/spec_parser.py  (lines 58-59, 71-82, 173-176, 179-180)
+# 9. docsgpt/agents/tools/spec_parser.py  (lines 58-59, 71-82, 173-176, 179-180)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestSpecParser:
     def test_load_spec_yaml_error(self):
-        from application.agents.tools.spec_parser import _load_spec
+        from docsgpt.agents.tools.spec_parser import _load_spec
 
         with pytest.raises(ValueError, match="Invalid YAML"):
             _load_spec("foo: [invalid yaml")
 
     def test_load_spec_json_error(self):
-        from application.agents.tools.spec_parser import _load_spec
+        from docsgpt.agents.tools.spec_parser import _load_spec
 
         with pytest.raises(ValueError, match="Invalid JSON"):
             _load_spec("{bad json")
 
     def test_validate_spec_not_dict(self):
-        from application.agents.tools.spec_parser import _validate_spec
+        from docsgpt.agents.tools.spec_parser import _validate_spec
 
         with pytest.raises(ValueError, match="valid object"):
             _validate_spec("not a dict")
 
     def test_validate_spec_unsupported_version(self):
-        from application.agents.tools.spec_parser import _validate_spec
+        from docsgpt.agents.tools.spec_parser import _validate_spec
 
         with pytest.raises(ValueError, match="Unsupported"):
             _validate_spec({"openapi": "1.0", "paths": {"/a": {}}})
 
     def test_validate_spec_no_paths(self):
-        from application.agents.tools.spec_parser import _validate_spec
+        from docsgpt.agents.tools.spec_parser import _validate_spec
 
         with pytest.raises(ValueError, match="No API paths"):
             _validate_spec({"openapi": "3.0.0", "paths": {}})
 
     def test_extract_metadata_swagger(self):
-        from application.agents.tools.spec_parser import _extract_metadata
+        from docsgpt.agents.tools.spec_parser import _extract_metadata
 
         spec = {
             "swagger": "2.0",
@@ -174,7 +174,7 @@ class TestSpecParser:
         assert meta["title"] == "Test"
 
     def test_extract_metadata_openapi(self):
-        from application.agents.tools.spec_parser import _extract_metadata
+        from docsgpt.agents.tools.spec_parser import _extract_metadata
 
         spec = {
             "openapi": "3.0.0",
@@ -185,38 +185,38 @@ class TestSpecParser:
         assert meta["base_url"] == "https://api.example.com/v2"
 
     def test_generate_action_name_from_path(self):
-        from application.agents.tools.spec_parser import _generate_action_name
+        from docsgpt.agents.tools.spec_parser import _generate_action_name
 
         name = _generate_action_name({}, "get", "/users/{id}/profile")
         assert name.startswith("get_")
         assert "users" in name
 
     def test_generate_action_name_from_operation_id(self):
-        from application.agents.tools.spec_parser import _generate_action_name
+        from docsgpt.agents.tools.spec_parser import _generate_action_name
 
         name = _generate_action_name({"operationId": "getUser"}, "get", "/users")
         assert name == "getUser"
 
     def test_resolve_ref_unsupported_path(self):
-        from application.agents.tools.spec_parser import _resolve_ref
+        from docsgpt.agents.tools.spec_parser import _resolve_ref
 
         result = _resolve_ref({"$ref": "#/external/foo"}, {}, {})
         assert result is None
 
     def test_resolve_ref_not_dict(self):
-        from application.agents.tools.spec_parser import _resolve_ref
+        from docsgpt.agents.tools.spec_parser import _resolve_ref
 
         result = _resolve_ref("not a dict", {}, {})
         assert result is None
 
     def test_traverse_path_missing(self):
-        from application.agents.tools.spec_parser import _traverse_path
+        from docsgpt.agents.tools.spec_parser import _traverse_path
 
         result = _traverse_path({"a": {"b": 1}}, ["a", "c"])
         assert result is None
 
     def test_full_parse_spec(self):
-        from application.agents.tools.spec_parser import parse_spec
+        from docsgpt.agents.tools.spec_parser import parse_spec
 
         spec_str = json.dumps(
             {
@@ -240,21 +240,21 @@ class TestSpecParser:
 
 
 # ---------------------------------------------------------------------------
-# 18. application/agents/tools/tool_manager.py  (lines 27-34)
+# 18. docsgpt/agents/tools/tool_manager.py  (lines 27-34)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestToolManagerLoadTool:
     def test_load_tool_returns_tool_instance(self):
         with patch(
-            "application.agents.tools.tool_manager.pkgutil.iter_modules",
+            "docsgpt.agents.tools.tool_manager.pkgutil.iter_modules",
             return_value=[],
         ):
-            from application.agents.tools.tool_manager import ToolManager
+            from docsgpt.agents.tools.tool_manager import ToolManager
 
             manager = ToolManager({})
 
         mock_module = MagicMock()
-        from application.agents.tools.base import Tool
+        from docsgpt.agents.tools.base import Tool
 
         class FakeTool(Tool):
             def __init__(self, config, user_id=None):
@@ -272,7 +272,7 @@ class TestToolManagerLoadTool:
 
         mock_module.FakeTool = FakeTool
         with patch(
-            "application.agents.tools.tool_manager.importlib.import_module",
+            "docsgpt.agents.tools.tool_manager.importlib.import_module",
             return_value=mock_module,
         ):
             tool = manager.load_tool("notes", {"key": "val"}, user_id="user1")
@@ -283,15 +283,15 @@ class TestToolManagerLoadTool:
 
     def test_load_tool_without_user_id(self):
         with patch(
-            "application.agents.tools.tool_manager.pkgutil.iter_modules",
+            "docsgpt.agents.tools.tool_manager.pkgutil.iter_modules",
             return_value=[],
         ):
-            from application.agents.tools.tool_manager import ToolManager
+            from docsgpt.agents.tools.tool_manager import ToolManager
 
             manager = ToolManager({})
 
         mock_module = MagicMock()
-        from application.agents.tools.base import Tool
+        from docsgpt.agents.tools.base import Tool
 
         class FakeTool(Tool):
             def __init__(self, config):
@@ -308,7 +308,7 @@ class TestToolManagerLoadTool:
 
         mock_module.FakeTool = FakeTool
         with patch(
-            "application.agents.tools.tool_manager.importlib.import_module",
+            "docsgpt.agents.tools.tool_manager.importlib.import_module",
             return_value=mock_module,
         ):
             tool = manager.load_tool("api_tool", {"url": "http://test.com"})
@@ -317,7 +317,7 @@ class TestToolManagerLoadTool:
 
 
 # ---------------------------------------------------------------------------
-# 10. application/agents/tools/todo_list.py  (lines 57,82,86,170,173,181,192,218,235,259,281,285,293,304,312,323,328)
+# 10. docsgpt/agents/tools/todo_list.py  (lines 57,82,86,170,173,181,192,218,235,259,281,285,293,304,312,323,328)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
@@ -364,12 +364,12 @@ class TestTodoListToolEdgeCases:
                 return self.docs.pop(key, None)
 
         FakeCollection()
-        from application.agents.tools.todo_list import TodoListTool
+        from docsgpt.agents.tools.todo_list import TodoListTool
 
         return TodoListTool({"tool_id": "tt"}, user_id="u1")
 
     def test_no_user_id(self, monkeypatch):
-        from application.agents.tools.todo_list import TodoListTool
+        from docsgpt.agents.tools.todo_list import TodoListTool
 
         tool = TodoListTool({})
         result = tool.execute_action("list")
@@ -452,7 +452,7 @@ class TestTodoListToolEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# 15. application/agents/tools/notes.py  (lines 76,80,130,133,149,162,166,189,193,201)
+# 15. docsgpt/agents/tools/notes.py  (lines 76,80,130,133,149,162,166,189,193,201)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
@@ -492,7 +492,7 @@ class TestNotesToolEdgeCases:
                 return self.docs.pop(key, None)
 
         FakeCollection()
-        from application.agents.tools.notes import NotesTool
+        from docsgpt.agents.tools.notes import NotesTool
 
         return NotesTool({"tool_id": "nt"}, user_id="u1")
 
@@ -541,13 +541,13 @@ class TestNotesToolEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# 22. application/api/answer/services/prompt_renderer.py  (lines 68-73)
+# 22. docsgpt/api/answer/services/prompt_renderer.py  (lines 68-73)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestPromptRendererException:
     def test_render_prompt_raises_on_unexpected_error(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
-        from application.templates.template_engine import TemplateRenderError
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.templates.template_engine import TemplateRenderError
 
         renderer = PromptRenderer()
         with patch.object(
@@ -560,12 +560,12 @@ class TestPromptRendererException:
 
 
 # ---------------------------------------------------------------------------
-# 26. application/api/answer/services/compression/prompt_builder.py (lines 42-44,56,58)
+# 26. docsgpt/api/answer/services/compression/prompt_builder.py (lines 42-44,56,58)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestCompressionPromptBuilder:
     def test_load_prompt_file_not_found(self):
-        from application.api.answer.services.compression.prompt_builder import (
+        from docsgpt.api.answer.services.compression.prompt_builder import (
             CompressionPromptBuilder,
         )
 
@@ -573,7 +573,7 @@ class TestCompressionPromptBuilder:
             CompressionPromptBuilder(version="nonexistent_version")
 
     def test_build_prompt_basic(self):
-        from application.api.answer.services.compression.prompt_builder import (
+        from docsgpt.api.answer.services.compression.prompt_builder import (
             CompressionPromptBuilder,
         )
 
@@ -588,7 +588,7 @@ class TestCompressionPromptBuilder:
         assert "Hello" in msgs[1]["content"]
 
     def test_build_prompt_with_existing_compressions(self):
-        from application.api.answer.services.compression.prompt_builder import (
+        from docsgpt.api.answer.services.compression.prompt_builder import (
             CompressionPromptBuilder,
         )
 
@@ -603,13 +603,13 @@ class TestCompressionPromptBuilder:
 
 
 # ---------------------------------------------------------------------------
-# 27. application/api/answer/services/compression/service.py  (lines 215-216,222-224)
+# 27. docsgpt/api/answer/services/compression/service.py  (lines 215-216,222-224)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
 class TestCompressionServiceGetCompressedHistory:
     def test_no_compression_metadata(self):
-        from application.api.answer.services.compression import CompressionService
+        from docsgpt.api.answer.services.compression import CompressionService
 
         mock_llm = Mock()
         service = CompressionService(llm=mock_llm, model_id="gpt-4o")
@@ -621,7 +621,7 @@ class TestCompressionServiceGetCompressedHistory:
         assert len(queries) == 1
 
     def test_compressed_history_with_compression_points(self):
-        from application.api.answer.services.compression import CompressionService
+        from docsgpt.api.answer.services.compression import CompressionService
 
         mock_llm = Mock()
         service = CompressionService(llm=mock_llm, model_id="gpt-4o")
@@ -648,7 +648,7 @@ class TestCompressionServiceGetCompressedHistory:
         assert len(queries) == 1  # Only Q3 (after index 1)
 
     def test_queries_is_none(self):
-        from application.api.answer.services.compression import CompressionService
+        from docsgpt.api.answer.services.compression import CompressionService
 
         mock_llm = Mock()
         service = CompressionService(llm=mock_llm, model_id="gpt-4o")
@@ -663,7 +663,7 @@ class TestCompressionServiceGetCompressedHistory:
 
     def test_compressed_empty_points_queries_none(self):
         """Cover lines 215-216: compressed=True but empty points and queries=None."""
-        from application.api.answer.services.compression import CompressionService
+        from docsgpt.api.answer.services.compression import CompressionService
 
         mock_llm = Mock()
         service = CompressionService(llm=mock_llm, model_id="gpt-4o")
@@ -681,7 +681,7 @@ class TestCompressionServiceGetCompressedHistory:
 
     def test_compressed_with_full_data(self):
         """Cover lines 222-224: full retrieval of compression point data."""
-        from application.api.answer.services.compression import CompressionService
+        from docsgpt.api.answer.services.compression import CompressionService
 
         mock_llm = Mock()
         service = CompressionService(llm=mock_llm, model_id="gpt-4o")
@@ -711,19 +711,19 @@ class TestCompressionServiceGetCompressedHistory:
 
 
 # ---------------------------------------------------------------------------
-# 31. application/cache.py  (lines 53-55,72-73,76,94)
+# 31. docsgpt/cache.py  (lines 53-55,72-73,76,94)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestCacheFunctions:
     def test_gen_cache_key(self):
-        from application.cache import gen_cache_key
+        from docsgpt.cache import gen_cache_key
 
         key = gen_cache_key([{"role": "user", "content": "hi"}], model="gpt")
         assert isinstance(key, str)
         assert len(key) > 0
 
     def test_gen_cache_key_with_tools(self):
-        from application.cache import gen_cache_key
+        from docsgpt.cache import gen_cache_key
 
         key = gen_cache_key(
             [{"role": "user", "content": "hi"}], tools=["search"]
@@ -731,13 +731,13 @@ class TestCacheFunctions:
         assert isinstance(key, str)
 
     def test_gen_cache_key_invalid_messages(self):
-        from application.cache import gen_cache_key
+        from docsgpt.cache import gen_cache_key
 
         with pytest.raises(ValueError, match="dictionaries"):
             gen_cache_key(["not a dict"], model="gpt")
 
     def test_gen_cache_decorator_with_tools(self):
-        from application.cache import gen_cache
+        from docsgpt.cache import gen_cache
 
         @gen_cache
         def dummy(self, model, messages, stream, tools=None, *args, **kwargs):
@@ -747,7 +747,7 @@ class TestCacheFunctions:
         assert result == "raw_result"
 
     def test_gen_cache_decorator_cache_key_error(self):
-        from application.cache import gen_cache
+        from docsgpt.cache import gen_cache
 
         @gen_cache
         def dummy(self, model, messages, stream, tools=None, *args, **kwargs):
@@ -758,7 +758,7 @@ class TestCacheFunctions:
         assert result == "fallback"
 
     def test_gen_cache_decorator_caches(self):
-        from application.cache import gen_cache
+        from docsgpt.cache import gen_cache
 
         call_count = 0
 
@@ -770,13 +770,13 @@ class TestCacheFunctions:
 
         mock_redis = MagicMock()
         mock_redis.get.return_value = None
-        with patch("application.cache.get_redis_instance", return_value=mock_redis):
+        with patch("docsgpt.cache.get_redis_instance", return_value=mock_redis):
             result = dummy(None, "gpt", [{"role": "user", "content": "hi"}], False)
         assert result == "result"
         mock_redis.set.assert_called_once()
 
     def test_gen_cache_decorator_returns_cached(self):
-        from application.cache import gen_cache
+        from docsgpt.cache import gen_cache
 
         @gen_cache
         def dummy(self, model, messages, stream, tools=None, *args, **kwargs):
@@ -784,12 +784,12 @@ class TestCacheFunctions:
 
         mock_redis = MagicMock()
         mock_redis.get.return_value = b"cached_result"
-        with patch("application.cache.get_redis_instance", return_value=mock_redis):
+        with patch("docsgpt.cache.get_redis_instance", return_value=mock_redis):
             result = dummy(None, "gpt", [{"role": "user", "content": "hi"}], False)
         assert result == "cached_result"
 
     def test_stream_cache_decorator_with_tools(self):
-        from application.cache import stream_cache
+        from docsgpt.cache import stream_cache
 
         @stream_cache
         def dummy(self, model, messages, stream, tools=None, *args, **kwargs):
@@ -799,7 +799,7 @@ class TestCacheFunctions:
         assert "chunk" in chunks
 
     def test_stream_cache_returns_cached(self):
-        from application.cache import stream_cache
+        from docsgpt.cache import stream_cache
 
         @stream_cache
         def dummy(self, model, messages, stream, tools=None, *args, **kwargs):
@@ -807,7 +807,7 @@ class TestCacheFunctions:
 
         mock_redis = MagicMock()
         mock_redis.get.return_value = json.dumps(["cached_chunk"]).encode("utf-8")
-        with patch("application.cache.get_redis_instance", return_value=mock_redis):
+        with patch("docsgpt.cache.get_redis_instance", return_value=mock_redis):
             chunks = list(
                 dummy(None, "gpt", [{"role": "user", "content": "hi"}], True)
             )
@@ -815,23 +815,23 @@ class TestCacheFunctions:
 
 
 # ---------------------------------------------------------------------------
-# 23. application/parser/embedding_pipeline.py  (lines 43-45,65,69,85)
+# 23. docsgpt/parser/embedding_pipeline.py  (lines 43-45,65,69,85)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestEmbeddingPipeline:
     def test_sanitize_content_removes_nul(self):
-        from application.parser.embedding_pipeline import sanitize_content
+        from docsgpt.parser.embedding_pipeline import sanitize_content
 
         assert sanitize_content("hello\x00world") == "helloworld"
 
     def test_sanitize_content_empty(self):
-        from application.parser.embedding_pipeline import sanitize_content
+        from docsgpt.parser.embedding_pipeline import sanitize_content
 
         assert sanitize_content("") == ""
         assert sanitize_content(None) is None
 
     def test_add_text_to_store_with_retry_sets_source_id(self):
-        from application.parser.embedding_pipeline import (
+        from docsgpt.parser.embedding_pipeline import (
             add_text_to_store_with_retry,
         )
 
@@ -844,14 +844,14 @@ class TestEmbeddingPipeline:
         assert mock_doc.metadata["source_id"] == "src1"
 
     def test_embed_and_store_empty_docs(self):
-        from application.parser.embedding_pipeline import embed_and_store_documents
-        from application.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.embedding_pipeline import embed_and_store_documents
+        from docsgpt.parser.file.base_parser import DocumentParseError
 
         with pytest.raises(DocumentParseError, match="No text could be extracted"):
             embed_and_store_documents([], "/tmp/test", "src1", MagicMock())
 
     def test_embed_and_store_creates_folder(self, tmp_path):
-        from application.parser.embedding_pipeline import embed_and_store_documents
+        from docsgpt.parser.embedding_pipeline import embed_and_store_documents
 
         folder = str(tmp_path / "new_folder")
         mock_doc = MagicMock()
@@ -862,10 +862,10 @@ class TestEmbeddingPipeline:
         mock_task = MagicMock()
 
         with patch(
-            "application.parser.embedding_pipeline.VectorCreator.create_vectorstore",
+            "docsgpt.parser.embedding_pipeline.VectorCreator.create_vectorstore",
             return_value=mock_store,
         ), patch(
-            "application.parser.embedding_pipeline.settings"
+            "docsgpt.parser.embedding_pipeline.settings"
         ) as mock_settings:
             mock_settings.VECTOR_STORE = "elasticsearch"
             embed_and_store_documents([mock_doc], folder, "src1", mock_task)
@@ -874,12 +874,12 @@ class TestEmbeddingPipeline:
 
 
 # ---------------------------------------------------------------------------
-# 29. application/templates/template_engine.py  (lines 57-59,132,136,158-159)
+# 29. docsgpt/templates/template_engine.py  (lines 57-59,132,136,158-159)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestTemplateEngineEdge:
     def test_render_general_exception(self):
-        from application.templates.template_engine import (
+        from docsgpt.templates.template_engine import (
             TemplateEngine,
             TemplateRenderError,
         )
@@ -893,19 +893,19 @@ class TestTemplateEngineEdge:
                 engine.render("{{ x }}", {})
 
     def test_extract_tool_usages_empty(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         assert engine.extract_tool_usages("") == {}
 
     def test_extract_tool_usages_syntax_error(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         assert engine.extract_tool_usages("{{ tools.memory.") == {}
 
     def test_extract_tool_usages_getitem(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         usages = engine.extract_tool_usages("{{ tools['memory']['ls'] }}")
@@ -913,7 +913,7 @@ class TestTemplateEngineEdge:
         assert "ls" in usages["memory"]
 
     def test_extract_tool_usages_getattr(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         usages = engine.extract_tool_usages("{{ tools.notes.view }}")
@@ -922,7 +922,7 @@ class TestTemplateEngineEdge:
 
     def test_render_undefined_variable_raises(self):
         """Cover lines 57-59: UndefinedError raises TemplateRenderError."""
-        from application.templates.template_engine import (
+        from docsgpt.templates.template_engine import (
             TemplateEngine,
             TemplateRenderError,
         )
@@ -943,7 +943,7 @@ class TestTemplateEngineEdge:
 
     def test_record_with_empty_path(self):
         """Cover line 132: record() called with empty path is no-op."""
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         # Template with tools access but no sub-attr
@@ -954,7 +954,7 @@ class TestTemplateEngineEdge:
 
     def test_extract_tool_usages_getitem_non_const_key_breaks(self):
         """Cover lines 158-159: Getitem with non-Const key breaks path."""
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         # tools[variable] where variable is not a constant string
@@ -964,13 +964,13 @@ class TestTemplateEngineEdge:
 
 
 # ---------------------------------------------------------------------------
-# 30. application/api/answer/services/conversation_service.py  (lines 190-191,197,200,235,258,261)
+# 30. docsgpt/api/answer/services/conversation_service.py  (lines 190-191,197,200,235,258,261)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
 class TestConversationServiceEdge:
     def test_save_with_api_key_and_agent_id(self, monkeypatch):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -997,7 +997,7 @@ class TestConversationServiceEdge:
         }
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.dual_write",
+            "docsgpt.api.answer.services.conversation_service.dual_write",
             lambda repo_cls, fn: None,
         )
 
@@ -1028,12 +1028,12 @@ class TestConversationServiceEdge:
         assert captured["doc"]["is_shared_usage"] is True
 
     def test_update_compression_metadata(self, monkeypatch):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.dual_write",
+            "docsgpt.api.answer.services.conversation_service.dual_write",
             lambda repo_cls, fn: None,
         )
 
@@ -1052,12 +1052,12 @@ class TestConversationServiceEdge:
         mock_conv_col.update_one.assert_called_once()
 
     def test_append_compression_message(self, monkeypatch):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.dual_write",
+            "docsgpt.api.answer.services.conversation_service.dual_write",
             lambda repo_cls, fn: None,
         )
 
@@ -1073,7 +1073,7 @@ class TestConversationServiceEdge:
         mock_conv_col.update_one.assert_called_once()
 
     def test_append_compression_message_empty_summary(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -1087,7 +1087,7 @@ class TestConversationServiceEdge:
         mock_conv_col.update_one.assert_not_called()
 
     def test_get_compression_metadata(self, monkeypatch):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -1106,7 +1106,7 @@ class TestConversationServiceEdge:
         assert result["is_compressed"] is True
 
     def test_get_compression_metadata_not_found(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -1122,61 +1122,61 @@ class TestConversationServiceEdge:
 
 
 # ---------------------------------------------------------------------------
-# 32. application/parser/remote/crawler_markdown.py  (lines 28,36,38,53,58-59,62)
+# 32. docsgpt/parser/remote/crawler_markdown.py  (lines 28,36,38,53,58-59,62)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestCrawlerMarkdownEdge:
     def test_load_data_list_input(self):
-        from application.parser.remote.crawler_markdown import CrawlerLoader
+        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
 
         loader = CrawlerLoader(limit=1)
 
         with patch.object(loader, "_fetch_page", return_value=None):
             with patch(
-                "application.parser.remote.crawler_markdown.validate_url",
+                "docsgpt.parser.remote.crawler_markdown.validate_url",
                 side_effect=lambda u: u,
             ):
                 docs = loader.load_data(["https://example.com"])
         assert docs == []
 
     def test_load_data_ssrf_error(self):
-        from application.parser.remote.crawler_markdown import CrawlerLoader
-        from application.core.url_validation import SSRFError
+        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
+        from docsgpt.core.url_validation import SSRFError
 
         loader = CrawlerLoader(limit=1)
         with patch(
-            "application.parser.remote.crawler_markdown.validate_url",
+            "docsgpt.parser.remote.crawler_markdown.validate_url",
             side_effect=SSRFError("blocked"),
         ):
             docs = loader.load_data("http://169.254.169.254")
         assert docs == []
 
     def test_fetch_page_ssrf_error(self):
-        from application.parser.remote.crawler_markdown import CrawlerLoader
-        from application.core.url_validation import SSRFError
+        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
+        from docsgpt.core.url_validation import SSRFError
 
         loader = CrawlerLoader()
         with patch(
-            "application.parser.remote.crawler_markdown.validate_url",
+            "docsgpt.parser.remote.crawler_markdown.validate_url",
             side_effect=SSRFError("blocked"),
         ):
             result = loader._fetch_page("http://internal")
         assert result is None
 
     def test_fetch_page_request_error(self):
-        from application.parser.remote.crawler_markdown import CrawlerLoader
+        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
         import requests
 
         loader = CrawlerLoader()
         with patch(
-            "application.parser.remote.crawler_markdown.pinned_request",
+            "docsgpt.parser.remote.crawler_markdown.pinned_request",
             side_effect=requests.exceptions.ConnectionError("fail"),
         ):
             result = loader._fetch_page("http://fail.com")
         assert result is None
 
     def test_url_to_virtual_path(self):
-        from application.parser.remote.crawler_markdown import CrawlerLoader
+        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
 
         loader = CrawlerLoader()
         assert loader._url_to_virtual_path("https://example.com/") == "index.md"
@@ -1188,12 +1188,12 @@ class TestCrawlerMarkdownEdge:
 
 
 # ---------------------------------------------------------------------------
-# 34. application/agents/tools/api_body_serializer.py  (lines 145,155,159,162,166,271)
+# 34. docsgpt/agents/tools/api_body_serializer.py  (lines 145,155,159,162,166,271)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestApiBodySerializer:
     def test_serialize_form_value_dict_explode(self):
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -1207,7 +1207,7 @@ class TestApiBodySerializer:
         assert isinstance(result, list)
 
     def test_serialize_form_value_dict_no_explode(self):
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -1223,7 +1223,7 @@ class TestApiBodySerializer:
         assert "a" in result and "1" in result
 
     def test_serialize_form_value_list_explode(self):
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -1238,7 +1238,7 @@ class TestApiBodySerializer:
         assert len(result) == 3
 
     def test_serialize_form_value_list_no_explode(self):
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -1252,7 +1252,7 @@ class TestApiBodySerializer:
         assert isinstance(result, str)
 
     def test_serialize_form_value_scalar(self):
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -1266,7 +1266,7 @@ class TestApiBodySerializer:
         assert result == "42"
 
     def test_serialize_octet_stream_bytes(self):
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -1275,7 +1275,7 @@ class TestApiBodySerializer:
         assert "octet-stream" in headers["Content-Type"]
 
     def test_serialize_octet_stream_string(self):
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -1283,7 +1283,7 @@ class TestApiBodySerializer:
         assert body == b"text data"
 
     def test_serialize_octet_stream_dict(self):
-        from application.agents.tools.api_body_serializer import (
+        from docsgpt.agents.tools.api_body_serializer import (
             RequestBodySerializer,
         )
 
@@ -1292,13 +1292,13 @@ class TestApiBodySerializer:
 
 
 # ---------------------------------------------------------------------------
-# 37. application/agents/tools/memory.py  (lines 254,257,271,275,279)
+# 37. docsgpt/agents/tools/memory.py  (lines 254,257,271,275,279)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
 class TestMemoryToolValidatePath:
     def test_validate_path_traversal(self, monkeypatch):
-        from application.agents.tools.memory import MemoryTool
+        from docsgpt.agents.tools.memory import MemoryTool
 
         tool = MemoryTool({"tool_id": "t"}, user_id="u")
         assert tool._validate_path("/../etc/passwd") is None
@@ -1315,12 +1315,12 @@ class TestMemoryToolValidatePath:
 
 
 # ---------------------------------------------------------------------------
-# 8. application/parser/file/docling_parser.py  (lines 77-95,289,309)
+# 8. docsgpt/parser/file/docling_parser.py  (lines 77-95,289,309)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestDoclingParser:
     def test_init(self):
-        from application.parser.file.docling_parser import DoclingParser
+        from docsgpt.parser.file.docling_parser import DoclingParser
 
         p = DoclingParser(
             ocr_enabled=False, table_structure=False, export_format="text"
@@ -1329,7 +1329,7 @@ class TestDoclingParser:
         assert p._converter is None
 
     def test_create_converter_import(self):
-        from application.parser.file.docling_parser import DoclingParser
+        from docsgpt.parser.file.docling_parser import DoclingParser
 
         p = DoclingParser()
         mock_converter_mod = MagicMock()
@@ -1354,7 +1354,7 @@ class TestDoclingParser:
             assert converter is not None
 
     def test_subclass_constructors(self):
-        from application.parser.file.docling_parser import (
+        from docsgpt.parser.file.docling_parser import (
             DoclingImageParser,
             DoclingMarkdownParser,
         )
@@ -1367,12 +1367,12 @@ class TestDoclingParser:
 
 
 # ---------------------------------------------------------------------------
-# 12. application/core/model_settings.py  (lines 100,105,147,171,179,186,199-201,204,210,213,218,229,233,241,250)
+# 12. docsgpt/core/model_settings.py  (lines 100,105,147,171,179,186,199-201,204,210,213,218,229,233,241,250)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestModelRegistry:
     def test_model_capabilities_defaults(self):
-        from application.core.model_settings import ModelCapabilities
+        from docsgpt.core.model_settings import ModelCapabilities
 
         caps = ModelCapabilities()
         assert caps.supports_tools is False
@@ -1380,7 +1380,7 @@ class TestModelRegistry:
         assert caps.context_window == 128000
 
     def test_available_model_to_dict(self):
-        from application.core.model_settings import (
+        from docsgpt.core.model_settings import (
             AvailableModel,
             ModelCapabilities,
             ModelProvider,
@@ -1399,7 +1399,7 @@ class TestModelRegistry:
         assert d["supports_tools"] is True
 
     def test_parse_model_names(self):
-        from application.core.model_settings import ModelRegistry
+        from docsgpt.core.model_settings import ModelRegistry
 
         # Reset singleton for test
         ModelRegistry._instance = None
@@ -1412,7 +1412,7 @@ class TestModelRegistry:
             assert registry._parse_model_names("single") == ["single"]
 
     def test_model_registry_accessors(self):
-        from application.core.model_settings import (
+        from docsgpt.core.model_settings import (
             AvailableModel,
             ModelProvider,
             ModelRegistry,
@@ -1438,7 +1438,7 @@ class TestModelRegistry:
 
 
 # ---------------------------------------------------------------------------
-# 6. application/app.py  (lines 29-31,49-59,62-64,69-72,141)
+# 6. docsgpt/app.py  (lines 29-31,49-59,62-64,69-72,141)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestAppRoutes:
@@ -1486,7 +1486,7 @@ class TestAppRoutes:
 
 
 # ---------------------------------------------------------------------------
-# 3. application/api/user/conversations/routes.py  (lines 37-41,57-61,99-103,116,148-149,154-158,187,198-202,234,277-279)
+# 3. docsgpt/api/user/conversations/routes.py  (lines 37-41,57-61,99-103,116,148-149,154-158,187,198-202,234,277-279)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
@@ -1497,10 +1497,10 @@ class TestConversationRoutes:
 
         app = Flask(__name__)
         app.config["TESTING"] = True
-        from application.api import api
+        from docsgpt.api import api
 
         api.init_app(app)
-        from application.api.user.conversations.routes import conversations_ns
+        from docsgpt.api.user.conversations.routes import conversations_ns
 
         api.add_namespace(conversations_ns)
 
@@ -1515,7 +1515,7 @@ class TestConversationRoutes:
     def test_delete_conversation_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.conversations.routes.conversations_collection"
+                "docsgpt.api.user.conversations.routes.conversations_collection"
             ) as mc:
                 mc.delete_one.side_effect = Exception("db error")
                 resp = client.post("/api/delete_conversation?id=507f1f77bcf86cd799439011")
@@ -1524,7 +1524,7 @@ class TestConversationRoutes:
     def test_delete_all_conversations_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.conversations.routes.conversations_collection"
+                "docsgpt.api.user.conversations.routes.conversations_collection"
             ) as mc:
                 mc.delete_many.side_effect = Exception("db error")
                 resp = client.get("/api/delete_all_conversations")
@@ -1533,7 +1533,7 @@ class TestConversationRoutes:
     def test_get_conversations_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.conversations.routes.conversations_collection"
+                "docsgpt.api.user.conversations.routes.conversations_collection"
             ) as mc:
                 mc.find.side_effect = Exception("db error")
                 resp = client.get("/api/get_conversations")
@@ -1542,7 +1542,7 @@ class TestConversationRoutes:
     def test_get_single_conversation_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.conversations.routes.conversations_collection"
+                "docsgpt.api.user.conversations.routes.conversations_collection"
             ) as mc:
                 mc.find_one.side_effect = Exception("db error")
                 resp = client.get("/api/get_single_conversation?id=507f1f77bcf86cd799439011")
@@ -1552,9 +1552,9 @@ class TestConversationRoutes:
         conv_id = "507f1f77bcf86cd799439011"
         with app.test_client() as client:
             with patch(
-                "application.api.user.conversations.routes.conversations_collection"
+                "docsgpt.api.user.conversations.routes.conversations_collection"
             ) as mc, patch(
-                "application.api.user.conversations.routes.attachments_collection"
+                "docsgpt.api.user.conversations.routes.attachments_collection"
             ) as ac:
                 mc.find_one.return_value = {
                     "_id": conv_id,
@@ -1571,7 +1571,7 @@ class TestConversationRoutes:
     def test_update_conversation_name_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.conversations.routes.conversations_collection"
+                "docsgpt.api.user.conversations.routes.conversations_collection"
             ) as mc:
                 mc.update_one.side_effect = Exception("db error")
                 resp = client.post(
@@ -1583,7 +1583,7 @@ class TestConversationRoutes:
     def test_feedback_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.conversations.routes.conversations_collection"
+                "docsgpt.api.user.conversations.routes.conversations_collection"
             ) as mc:
                 mc.update_one.side_effect = Exception("db error")
                 resp = client.post(
@@ -1598,7 +1598,7 @@ class TestConversationRoutes:
 
 
 # ---------------------------------------------------------------------------
-# 7. application/api/user/prompts/routes.py  (lines 52-54,82-84,94,125-127,143,152-154,176,188-190)
+# 7. docsgpt/api/user/prompts/routes.py  (lines 52-54,82-84,94,125-127,143,152-154,176,188-190)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
@@ -1609,10 +1609,10 @@ class TestPromptRoutes:
 
         app = Flask(__name__)
         app.config["TESTING"] = True
-        from application.api import api
+        from docsgpt.api import api
 
         api.init_app(app)
-        from application.api.user.prompts.routes import prompts_ns
+        from docsgpt.api.user.prompts.routes import prompts_ns
 
         api.add_namespace(prompts_ns)
 
@@ -1627,7 +1627,7 @@ class TestPromptRoutes:
     def test_create_prompt_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.prompts.routes.prompts_collection"
+                "docsgpt.api.user.prompts.routes.prompts_collection"
             ) as mc:
                 mc.insert_one.side_effect = Exception("db error")
                 resp = client.post(
@@ -1639,7 +1639,7 @@ class TestPromptRoutes:
     def test_get_prompts_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.prompts.routes.prompts_collection"
+                "docsgpt.api.user.prompts.routes.prompts_collection"
             ) as mc:
                 mc.find.side_effect = Exception("db error")
                 resp = client.get("/api/get_prompts")
@@ -1653,7 +1653,7 @@ class TestPromptRoutes:
     def test_get_single_prompt_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.prompts.routes.prompts_collection"
+                "docsgpt.api.user.prompts.routes.prompts_collection"
             ) as mc:
                 mc.find_one.side_effect = Exception("db error")
                 resp = client.get(
@@ -1664,7 +1664,7 @@ class TestPromptRoutes:
     def test_delete_prompt_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.prompts.routes.prompts_collection"
+                "docsgpt.api.user.prompts.routes.prompts_collection"
             ) as mc:
                 mc.delete_one.side_effect = Exception("db error")
                 resp = client.post(
@@ -1676,7 +1676,7 @@ class TestPromptRoutes:
     def test_update_prompt_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.prompts.routes.prompts_collection"
+                "docsgpt.api.user.prompts.routes.prompts_collection"
             ) as mc:
                 mc.update_one.side_effect = Exception("db error")
                 resp = client.post(
@@ -1691,7 +1691,7 @@ class TestPromptRoutes:
 
 
 # ---------------------------------------------------------------------------
-# 33. application/parser/file/bulk.py  (lines 85-91,258)
+# 33. docsgpt/parser/file/bulk.py  (lines 85-91,258)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestBulkParserFallback:
@@ -1700,10 +1700,10 @@ class TestBulkParserFallback:
         # Patch the docling imports to trigger ImportError fallback
         with patch.dict(
             "sys.modules",
-            {"application.parser.file.docling_parser": None},
+            {"docsgpt.parser.file.docling_parser": None},
         ):
             import importlib
-            import application.parser.file.bulk as bulk_mod
+            import docsgpt.parser.file.bulk as bulk_mod
 
             importlib.reload(bulk_mod)
             # After reload, get_default_file_extractor should use fallback parsers
@@ -1715,7 +1715,7 @@ class TestBulkParserFallback:
 
 
 # ---------------------------------------------------------------------------
-# 16. application/parser/remote/s3_loader.py  (lines 13-14,24,225,230-232,293,299-302)
+# 16. docsgpt/parser/remote/s3_loader.py  (lines 13-14,24,225,230-232,293,299-302)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestS3Loader:
@@ -1729,7 +1729,7 @@ class TestS3Loader:
             "sys.modules",
             {"boto3": MagicMock(), "botocore": MagicMock(), "botocore.exceptions": MagicMock()},
         ):
-            from application.parser.remote.s3_loader import S3Loader
+            from docsgpt.parser.remote.s3_loader import S3Loader
 
             loader = S3Loader()
             endpoint, bucket = loader._normalize_endpoint_url(
@@ -1743,7 +1743,7 @@ class TestS3Loader:
             "sys.modules",
             {"boto3": MagicMock(), "botocore": MagicMock(), "botocore.exceptions": MagicMock()},
         ):
-            from application.parser.remote.s3_loader import S3Loader
+            from docsgpt.parser.remote.s3_loader import S3Loader
 
             loader = S3Loader()
             endpoint, bucket = loader._normalize_endpoint_url(
@@ -1757,7 +1757,7 @@ class TestS3Loader:
             "sys.modules",
             {"boto3": MagicMock(), "botocore": MagicMock(), "botocore.exceptions": MagicMock()},
         ):
-            from application.parser.remote.s3_loader import S3Loader
+            from docsgpt.parser.remote.s3_loader import S3Loader
 
             loader = S3Loader()
             assert loader.is_text_file("test.py") is True
@@ -1768,7 +1768,7 @@ class TestS3Loader:
             "sys.modules",
             {"boto3": MagicMock(), "botocore": MagicMock(), "botocore.exceptions": MagicMock()},
         ):
-            from application.parser.remote.s3_loader import S3Loader
+            from docsgpt.parser.remote.s3_loader import S3Loader
 
             loader = S3Loader()
             assert loader.is_supported_document("file.pdf") is True
@@ -1779,7 +1779,7 @@ class TestS3Loader:
             "sys.modules",
             {"boto3": MagicMock(), "botocore": MagicMock(), "botocore.exceptions": MagicMock()},
         ):
-            from application.parser.remote.s3_loader import S3Loader
+            from docsgpt.parser.remote.s3_loader import S3Loader
 
             loader = S3Loader()
             loader.s3_client = MagicMock()
@@ -1791,7 +1791,7 @@ class TestS3Loader:
             "sys.modules",
             {"boto3": MagicMock(), "botocore": MagicMock(), "botocore.exceptions": MagicMock()},
         ):
-            from application.parser.remote.s3_loader import S3Loader
+            from docsgpt.parser.remote.s3_loader import S3Loader
 
             loader = S3Loader()
             mock_body = MagicMock()
@@ -1806,7 +1806,7 @@ class TestS3Loader:
             "sys.modules",
             {"boto3": MagicMock(), "botocore": MagicMock(), "botocore.exceptions": MagicMock()},
         ):
-            from application.parser.remote.s3_loader import S3Loader
+            from docsgpt.parser.remote.s3_loader import S3Loader
 
             loader = S3Loader()
             mock_body = MagicMock()
@@ -1818,32 +1818,32 @@ class TestS3Loader:
 
 
 # ---------------------------------------------------------------------------
-# 35. application/api/user/base.py  (lines 73-74,129,152-153)
+# 35. docsgpt/api/user/base.py  (lines 73-74,129,152-153)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
 class TestUserBase:
     def test_ensure_user_doc_creates_missing_prefs(self, mock_mongo_db):
-        from application.api.user.base import ensure_user_doc
+        from docsgpt.api.user.base import ensure_user_doc
 
         user_doc = ensure_user_doc("new_user")
         assert user_doc is not None
 
     def test_resolve_tool_details_invalid_id(self, mock_mongo_db):
-        from application.api.user.base import resolve_tool_details
+        from docsgpt.api.user.base import resolve_tool_details
 
         result = resolve_tool_details(["not_a_valid_oid"])
         assert result == []
 
     def test_resolve_tool_details_empty(self, mock_mongo_db):
-        from application.api.user.base import resolve_tool_details
+        from docsgpt.api.user.base import resolve_tool_details
 
         result = resolve_tool_details([])
         assert result == []
 
 
 # ---------------------------------------------------------------------------
-# 4. application/api/user/agents/folders.py  (lines 64,90-91,100,125-126,132,136,145,153-154,160,173-174,192,209,219-220,238,265-266)
+# 4. docsgpt/api/user/agents/folders.py  (lines 64,90-91,100,125-126,132,136,145,153-154,160,173-174,192,209,219-220,238,265-266)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
@@ -1854,10 +1854,10 @@ class TestAgentFolderRoutes:
 
         app = Flask(__name__)
         app.config["TESTING"] = True
-        from application.api import api
+        from docsgpt.api import api
 
         api.init_app(app)
-        from application.api.user.agents.folders import agents_folders_ns
+        from docsgpt.api.user.agents.folders import agents_folders_ns
 
         api.add_namespace(agents_folders_ns)
 
@@ -1877,7 +1877,7 @@ class TestAgentFolderRoutes:
     def test_create_folder_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.agents.folders.agent_folders_collection"
+                "docsgpt.api.user.agents.folders.agent_folders_collection"
             ) as mc:
                 mc.insert_one.side_effect = Exception("db error")
                 resp = client.post(
@@ -1899,7 +1899,7 @@ class TestAgentFolderRoutes:
     def test_get_folder_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.agents.folders.agent_folders_collection"
+                "docsgpt.api.user.agents.folders.agent_folders_collection"
             ) as mc:
                 mc.find_one.side_effect = Exception("db error")
                 resp = client.get("/api/agents/folders/507f1f77bcf86cd799439011")
@@ -1927,7 +1927,7 @@ class TestAgentFolderRoutes:
     def test_update_folder_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.agents.folders.agent_folders_collection"
+                "docsgpt.api.user.agents.folders.agent_folders_collection"
             ) as mc:
                 mc.update_one.side_effect = Exception("db error")
                 resp = client.put(
@@ -1939,7 +1939,7 @@ class TestAgentFolderRoutes:
     def test_delete_folder_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.agents.folders.agent_folders_collection"
+                "docsgpt.api.user.agents.folders.agent_folders_collection"
             ) as mc:
                 mc.delete_one.side_effect = Exception("db error")
                 resp = client.delete("/api/agents/folders/507f1f77bcf86cd799439011")
@@ -1953,7 +1953,7 @@ class TestAgentFolderRoutes:
     def test_move_agent_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.agents.folders.agents_collection"
+                "docsgpt.api.user.agents.folders.agents_collection"
             ) as mc:
                 mc.find_one.side_effect = Exception("db error")
                 resp = client.post(
@@ -1970,7 +1970,7 @@ class TestAgentFolderRoutes:
     def test_bulk_move_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.agents.folders.agents_collection"
+                "docsgpt.api.user.agents.folders.agents_collection"
             ) as mc:
                 mc.update_many.side_effect = Exception("db error")
                 resp = client.post(
@@ -1981,7 +1981,7 @@ class TestAgentFolderRoutes:
 
 
 # ---------------------------------------------------------------------------
-# 13. application/api/internal/routes.py  (lines 77-79,93-104,124)
+# 13. docsgpt/api/internal/routes.py  (lines 77-79,93-104,124)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestInternalRoutes:
@@ -1991,7 +1991,7 @@ class TestInternalRoutes:
 
         app = Flask(__name__)
         app.config["TESTING"] = True
-        from application.api.internal.routes import internal
+        from docsgpt.api.internal.routes import internal
 
         app.register_blueprint(internal)
         return app
@@ -2002,7 +2002,7 @@ class TestInternalRoutes:
     def test_upload_index_no_user(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.internal.routes.settings"
+                "docsgpt.api.internal.routes.settings"
             ) as ms:
                 ms.INTERNAL_KEY = self._TEST_KEY
                 resp = client.post("/api/upload_index", headers=self._AUTH_HEADERS)
@@ -2011,7 +2011,7 @@ class TestInternalRoutes:
     def test_upload_index_no_name(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.internal.routes.settings"
+                "docsgpt.api.internal.routes.settings"
             ) as ms:
                 ms.INTERNAL_KEY = self._TEST_KEY
                 resp = client.post("/api/upload_index", data={"user": "u1"}, headers=self._AUTH_HEADERS)
@@ -2020,7 +2020,7 @@ class TestInternalRoutes:
     def test_upload_index_rejected_without_internal_key(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.internal.routes.settings"
+                "docsgpt.api.internal.routes.settings"
             ) as ms:
                 ms.INTERNAL_KEY = None
                 resp = client.post("/api/upload_index", data={"user": "u1"})
@@ -2028,7 +2028,7 @@ class TestInternalRoutes:
 
 
 # ---------------------------------------------------------------------------
-# 5. application/vectorstore/faiss.py  (lines 44-56,75-91)
+# 5. docsgpt/vectorstore/faiss.py  (lines 44-56,75-91)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestFaissStore:
@@ -2049,20 +2049,20 @@ class TestFaissStore:
             self.metadata = metadata
 
     def _make(self, storage, source_id="test", docs_init=None):
-        from application.vectorstore.faiss import FaissStore
+        from docsgpt.vectorstore.faiss import FaissStore
 
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=self._Embeddings(),
         ), patch(
-            "application.vectorstore.faiss.StorageCreator.get_storage",
+            "docsgpt.vectorstore.faiss.StorageCreator.get_storage",
             return_value=storage,
-        ), patch("application.vectorstore.faiss.settings") as ms:
+        ), patch("docsgpt.vectorstore.faiss.settings") as ms:
             ms.EMBEDDINGS_NAME = "test"
             return FaissStore(source_id, "key", docs_init=docs_init)
 
     def test_faiss_save_to_storage_writes_all_three_files(self, tmp_path):
-        from application.storage.local import LocalStorage
+        from docsgpt.storage.local import LocalStorage
 
         storage = LocalStorage(base_dir=str(tmp_path))
         store = self._make(storage, docs_init=[self._Doc("hello", {"source": "a"})])
@@ -2072,7 +2072,7 @@ class TestFaissStore:
             assert storage.file_exists(f"indexes/test/{name}"), name
 
     def test_faiss_init_load_from_storage(self, tmp_path):
-        from application.storage.local import LocalStorage
+        from docsgpt.storage.local import LocalStorage
 
         storage = LocalStorage(base_dir=str(tmp_path))
         self._make(storage, docs_init=[self._Doc("hello", {"source": "a"})]).save_local()
@@ -2083,7 +2083,7 @@ class TestFaissStore:
 
 
 # ---------------------------------------------------------------------------
-# 36. application/vectorstore/qdrant.py  (lines 60-66)
+# 36. docsgpt/vectorstore/qdrant.py  (lines 60-66)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestQdrantStoreIndexCreation:
@@ -2104,13 +2104,13 @@ class TestQdrantStoreIndexCreation:
             setattr(mock_settings, unset, None)
 
     def test_init_swallows_already_exists_error(self):
-        from application.vectorstore.qdrant import QdrantStore
+        from docsgpt.vectorstore.qdrant import QdrantStore
 
         emb = Mock(dimension=8)
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=emb,
-        ), patch("application.vectorstore.qdrant.settings") as mock_settings, patch(
+        ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings, patch(
             "qdrant_client.QdrantClient.create_payload_index",
             side_effect=Exception("Index already exists"),
         ):
@@ -2119,13 +2119,13 @@ class TestQdrantStoreIndexCreation:
         assert store._source_id == "test"
 
     def test_init_logs_other_setup_errors(self, caplog):
-        from application.vectorstore.qdrant import QdrantStore
+        from docsgpt.vectorstore.qdrant import QdrantStore
 
         emb = Mock(dimension=8)
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=emb,
-        ), patch("application.vectorstore.qdrant.settings") as mock_settings, patch(
+        ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings, patch(
             "qdrant_client.QdrantClient.create_payload_index",
             side_effect=Exception("connection refused"),
         ):
@@ -2136,19 +2136,19 @@ class TestQdrantStoreIndexCreation:
 
 
 # ---------------------------------------------------------------------------
-# 14. application/vectorstore/elasticsearch.py  (lines 41-42,57,71-72,196-203)
+# 14. docsgpt/vectorstore/elasticsearch.py  (lines 41-42,57,71-72,196-203)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestElasticsearchStoreBulkError:
     def test_add_texts_bulk_index_error(self):
         from unittest.mock import MagicMock, Mock, patch
 
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         ElasticsearchStore._es_connection = None
 
         with patch(
-            "application.vectorstore.elasticsearch.settings"
+            "docsgpt.vectorstore.elasticsearch.settings"
         ) as mock_settings, patch.dict(
             "sys.modules",
             {"elasticsearch": MagicMock(), "elasticsearch.helpers": MagicMock()},
@@ -2193,7 +2193,7 @@ class TestElasticsearchStoreBulkError:
                         )
 
     def test_connect_info_raises(self):
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         with patch.dict("sys.modules", {"elasticsearch": MagicMock()}):
             import elasticsearch
@@ -2209,7 +2209,7 @@ class TestElasticsearchStoreBulkError:
 
 
 # ---------------------------------------------------------------------------
-# 17. application/vectorstore/pgvector.py  (lines 43-44,103-106,271-274)
+# 17. docsgpt/vectorstore/pgvector.py  (lines 43-44,103-106,271-274)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestPGVectorStoreEdge:
@@ -2238,7 +2238,7 @@ class TestPGVectorStoreEdge:
 
 
 # ---------------------------------------------------------------------------
-# 25. application/api/user/agents/webhooks.py  (lines 53-57,112)
+# 25. docsgpt/api/user/agents/webhooks.py  (lines 53-57,112)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
@@ -2249,10 +2249,10 @@ class TestWebhookRoutes:
 
         app = Flask(__name__)
         app.config["TESTING"] = True
-        from application.api import api
+        from docsgpt.api import api
 
         api.init_app(app)
-        from application.api.user.agents.webhooks import agents_webhooks_ns
+        from docsgpt.api.user.agents.webhooks import agents_webhooks_ns
 
         api.add_namespace(agents_webhooks_ns)
 
@@ -2267,7 +2267,7 @@ class TestWebhookRoutes:
     def test_get_webhook_exception(self, app):
         with app.test_client() as client:
             with patch(
-                "application.api.user.agents.webhooks.agents_collection"
+                "docsgpt.api.user.agents.webhooks.agents_collection"
             ) as mc:
                 mc.find_one.side_effect = Exception("db error")
                 resp = client.get("/api/agent_webhook?id=507f1f77bcf86cd799439011")
@@ -2277,7 +2277,7 @@ class TestWebhookRoutes:
         agent_id = "507f1f77bcf86cd799439011"
         with app.test_client() as client:
             with patch(
-                "application.api.user.agents.webhooks.agents_collection"
+                "docsgpt.api.user.agents.webhooks.agents_collection"
             ) as mc:
                 mc.find_one.return_value = {"_id": agent_id}
                 resp = client.post(
@@ -2289,13 +2289,13 @@ class TestWebhookRoutes:
 
 
 # ---------------------------------------------------------------------------
-# 28. application/agents/workflows/workflow_engine.py  (lines 204,213-215,223,232-233,283-284,289,355,375)
+# 28. docsgpt/agents/workflows/workflow_engine.py  (lines 204,213-215,223,232-233,283-284,289,355,375)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestWorkflowEngineEdge:
     def test_parse_structured_output_empty(self):
-        from application.agents.workflows.workflow_engine import WorkflowEngine
-        from application.agents.workflows.schemas import WorkflowGraph
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+        from docsgpt.agents.workflows.schemas import WorkflowGraph
 
         mock_agent = MagicMock()
         mock_agent.chat_history = []
@@ -2306,8 +2306,8 @@ class TestWorkflowEngineEdge:
         assert result is None
 
     def test_parse_structured_output_valid_json(self):
-        from application.agents.workflows.workflow_engine import WorkflowEngine
-        from application.agents.workflows.schemas import WorkflowGraph
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+        from docsgpt.agents.workflows.schemas import WorkflowGraph
 
         mock_agent = MagicMock()
         mock_agent.chat_history = []
@@ -2318,8 +2318,8 @@ class TestWorkflowEngineEdge:
         assert result == {"key": "value"}
 
     def test_parse_structured_output_invalid_json(self):
-        from application.agents.workflows.workflow_engine import WorkflowEngine
-        from application.agents.workflows.schemas import WorkflowGraph
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+        from docsgpt.agents.workflows.schemas import WorkflowGraph
 
         mock_agent = MagicMock()
         mock_agent.chat_history = []
@@ -2329,8 +2329,8 @@ class TestWorkflowEngineEdge:
         assert success is False
 
     def test_normalize_node_json_schema_none(self):
-        from application.agents.workflows.workflow_engine import WorkflowEngine
-        from application.agents.workflows.schemas import WorkflowGraph
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+        from docsgpt.agents.workflows.schemas import WorkflowGraph
 
         mock_agent = MagicMock()
         mock_agent.chat_history = []
@@ -2339,9 +2339,9 @@ class TestWorkflowEngineEdge:
         assert engine._normalize_node_json_schema(None, "node") is None
 
     def test_format_template_fallback_on_error(self):
-        from application.agents.workflows.workflow_engine import WorkflowEngine
-        from application.agents.workflows.schemas import WorkflowGraph
-        from application.templates.template_engine import TemplateRenderError
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+        from docsgpt.agents.workflows.schemas import WorkflowGraph
+        from docsgpt.templates.template_engine import TemplateRenderError
 
         mock_agent = MagicMock()
         mock_agent.chat_history = []
@@ -2359,8 +2359,8 @@ class TestWorkflowEngineEdge:
         assert result == "{{ bad }}"
 
     def test_validate_structured_output_no_jsonschema(self):
-        from application.agents.workflows.workflow_engine import WorkflowEngine
-        from application.agents.workflows.schemas import WorkflowGraph
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+        from docsgpt.agents.workflows.schemas import WorkflowGraph
 
         mock_agent = MagicMock()
         mock_agent.chat_history = []
@@ -2368,14 +2368,14 @@ class TestWorkflowEngineEdge:
         engine = WorkflowEngine(graph, mock_agent)
 
         with patch(
-            "application.agents.workflows.workflow_engine.jsonschema", None
+            "docsgpt.agents.workflows.workflow_engine.jsonschema", None
         ):
             # Should not raise
             engine._validate_structured_output({"type": "object"}, {})
 
 
 # ---------------------------------------------------------------------------
-# application/app.py  (lines 29-31, 49-59, 62-64, 69-72, 141)
+# docsgpt/app.py  (lines 29-31, 49-59, 62-64, 69-72, 141)
 # ---------------------------------------------------------------------------
 
 
@@ -2411,7 +2411,7 @@ class TestAppJWTLogic:
 
     def test_stt_rejection_logic(self):
         """Cover lines 104-113: STT rejection function."""
-        from application.stt.upload_limits import (
+        from docsgpt.stt.upload_limits import (
             build_stt_file_size_limit_message,
         )
         msg = build_stt_file_size_limit_message()
@@ -2529,7 +2529,7 @@ class TestAppJWTSetup:
 
 
 # ---------------------------------------------------------------------------
-# Additional coverage for application/app.py
+# Additional coverage for docsgpt/app.py
 # Lines 29-31 (Windows path patch), 49-59 (JWT key file logic),
 # 62-64 (simple_jwt token), 69-72 (home route), 141 (app.run)
 # ---------------------------------------------------------------------------

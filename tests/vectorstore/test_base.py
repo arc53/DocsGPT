@@ -2,7 +2,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.vectorstore.base import (
+from docsgpt.vectorstore.base import (
     BaseVectorStore,
     EmbeddingsSingleton,
     RemoteEmbeddings,
@@ -30,7 +30,7 @@ class TestRemoteEmbeddings:
         emb = RemoteEmbeddings(api_url="http://host", model_name="m")
         assert "Authorization" not in emb.headers
 
-    @patch("application.vectorstore.base.requests.post")
+    @patch("docsgpt.vectorstore.base.requests.post")
     def test_embed_sends_correct_payload(self, mock_post):
         mock_resp = Mock()
         mock_resp.json.return_value = {
@@ -48,7 +48,7 @@ class TestRemoteEmbeddings:
         assert call_kwargs[1]["json"]["model"] == "model-v1"
         assert result == [[0.1, 0.2]]
 
-    @patch("application.vectorstore.base.requests.post")
+    @patch("docsgpt.vectorstore.base.requests.post")
     def test_embed_sorts_by_index(self, mock_post):
         mock_resp = Mock()
         mock_resp.json.return_value = {
@@ -64,7 +64,7 @@ class TestRemoteEmbeddings:
         result = emb._embed(["a", "b"])
         assert result == [[0.1, 0.2], [0.3, 0.4]]
 
-    @patch("application.vectorstore.base.requests.post")
+    @patch("docsgpt.vectorstore.base.requests.post")
     def test_embed_raises_on_error_response(self, mock_post):
         mock_resp = Mock()
         mock_resp.json.return_value = {"error": "rate limit exceeded"}
@@ -75,7 +75,7 @@ class TestRemoteEmbeddings:
         with pytest.raises(ValueError, match="rate limit exceeded"):
             emb._embed("test")
 
-    @patch("application.vectorstore.base.requests.post")
+    @patch("docsgpt.vectorstore.base.requests.post")
     def test_embed_raises_on_unexpected_format(self, mock_post):
         mock_resp = Mock()
         mock_resp.json.return_value = {"unexpected": True}
@@ -86,7 +86,7 @@ class TestRemoteEmbeddings:
         with pytest.raises(ValueError, match="Unexpected response format"):
             emb._embed("test")
 
-    @patch("application.vectorstore.base.requests.post")
+    @patch("docsgpt.vectorstore.base.requests.post")
     def test_embed_raises_on_non_dict_response(self, mock_post):
         mock_resp = Mock()
         mock_resp.json.return_value = [1, 2, 3]
@@ -97,7 +97,7 @@ class TestRemoteEmbeddings:
         with pytest.raises(ValueError, match="Unexpected response format"):
             emb._embed("test")
 
-    @patch("application.vectorstore.base.requests.post")
+    @patch("docsgpt.vectorstore.base.requests.post")
     def test_embed_query(self, mock_post):
         mock_resp = Mock()
         mock_resp.json.return_value = {
@@ -112,7 +112,7 @@ class TestRemoteEmbeddings:
         assert result == [0.1, 0.2, 0.3]
         assert emb.dimension == 3
 
-    @patch("application.vectorstore.base.requests.post")
+    @patch("docsgpt.vectorstore.base.requests.post")
     def test_embed_query_raises_on_bad_structure(self, mock_post):
         mock_resp = Mock()
         # Return multiple embeddings for a single query
@@ -129,7 +129,7 @@ class TestRemoteEmbeddings:
         with pytest.raises(ValueError, match="Unexpected result structure"):
             emb.embed_query("hello")
 
-    @patch("application.vectorstore.base.requests.post")
+    @patch("docsgpt.vectorstore.base.requests.post")
     def test_embed_documents(self, mock_post):
         mock_resp = Mock()
         mock_resp.json.return_value = {
@@ -151,7 +151,7 @@ class TestRemoteEmbeddings:
         emb = RemoteEmbeddings("http://host", "m")
         assert emb.embed_documents([]) == []
 
-    @patch("application.vectorstore.base.requests.post")
+    @patch("docsgpt.vectorstore.base.requests.post")
     def test_call_with_string(self, mock_post):
         mock_resp = Mock()
         mock_resp.json.return_value = {
@@ -164,7 +164,7 @@ class TestRemoteEmbeddings:
         result = emb("hello")
         assert result == [0.5]
 
-    @patch("application.vectorstore.base.requests.post")
+    @patch("docsgpt.vectorstore.base.requests.post")
     def test_call_with_list(self, mock_post):
         mock_resp = Mock()
         mock_resp.json.return_value = {
@@ -191,7 +191,7 @@ class TestEmbeddingsSingleton:
     def setup_method(self):
         EmbeddingsSingleton._instances = {}
 
-    @patch("application.vectorstore.base.OpenAIEmbeddings")
+    @patch("docsgpt.vectorstore.base.OpenAIEmbeddings")
     def test_get_instance_openai(self, mock_openai_cls):
         mock_instance = Mock()
         mock_openai_cls.return_value = mock_instance
@@ -199,7 +199,7 @@ class TestEmbeddingsSingleton:
         result = EmbeddingsSingleton.get_instance("openai_text-embedding-ada-002")
         assert result is mock_instance
 
-    @patch("application.vectorstore.base.OpenAIEmbeddings")
+    @patch("docsgpt.vectorstore.base.OpenAIEmbeddings")
     def test_singleton_returns_same_instance(self, mock_openai_cls):
         mock_instance = Mock()
         mock_openai_cls.return_value = mock_instance
@@ -209,7 +209,7 @@ class TestEmbeddingsSingleton:
         assert r1 is r2
         mock_openai_cls.assert_called_once()
 
-    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    @patch("docsgpt.vectorstore.base._get_embeddings_wrapper")
     def test_get_instance_huggingface(self, mock_get_wrapper):
         mock_wrapper_cls = Mock()
         mock_instance = Mock()
@@ -221,7 +221,7 @@ class TestEmbeddingsSingleton:
         )
         assert result is mock_instance
 
-    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    @patch("docsgpt.vectorstore.base._get_embeddings_wrapper")
     def test_get_instance_unknown_falls_back_to_wrapper(self, mock_get_wrapper):
         mock_wrapper_cls = Mock()
         mock_instance = Mock()
@@ -232,7 +232,7 @@ class TestEmbeddingsSingleton:
         mock_wrapper_cls.assert_called_once_with("custom_model_name")
         assert result is mock_instance
 
-    @patch("application.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.settings")
     def test_get_instance_uses_remote_when_base_url_set(self, mock_settings):
         """Direct callers (GraphRAG, semantic chunking) must route to the
         remote embeddings API instead of loading a local model."""
@@ -246,7 +246,7 @@ class TestEmbeddingsSingleton:
         assert result.model_name == "embeddinggemma"
         assert result.headers["Authorization"] == "Bearer sk-remote"
 
-    @patch("application.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.settings")
     def test_get_instance_remote_falls_back_to_settings_key(self, mock_settings):
         """When no key is passed, the remote dispatch uses EMBEDDINGS_KEY."""
         mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
@@ -258,8 +258,8 @@ class TestEmbeddingsSingleton:
         assert result.headers["Authorization"] == "Bearer sk-from-settings"
 
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base._get_embeddings_wrapper")
     def test_get_instance_hf_ignores_positional_key(
         self, mock_get_wrapper, mock_settings
     ):
@@ -281,8 +281,8 @@ class TestEmbeddingsSingleton:
         # The configured name is passed through; the registry maps it to a repo.
         mock_wrapper_cls.assert_called_once_with(HF_MPNET)
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base._get_embeddings_wrapper")
     def test_get_instance_hf_ignores_keyword_args(
         self, mock_get_wrapper, mock_settings
     ):
@@ -321,7 +321,7 @@ class TestBaseVectorStore:
         assert store.add_chunk("text") is None
         assert store.delete_chunk("id") is None
 
-    @patch("application.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.settings")
     def test_is_azure_configured_true(self, mock_settings):
         mock_settings.OPENAI_API_BASE = "https://azure.openai.com"
         mock_settings.OPENAI_API_VERSION = "2023-05-15"
@@ -330,7 +330,7 @@ class TestBaseVectorStore:
         store = ConcreteVectorStore()
         assert store.is_azure_configured()
 
-    @patch("application.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.settings")
     def test_is_azure_configured_false(self, mock_settings):
         mock_settings.OPENAI_API_BASE = None
         mock_settings.OPENAI_API_VERSION = None
@@ -339,7 +339,7 @@ class TestBaseVectorStore:
         store = ConcreteVectorStore()
         assert not store.is_azure_configured()
 
-    @patch("application.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.settings")
     def test_get_embeddings_remote(self, mock_settings):
         mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
 
@@ -349,8 +349,8 @@ class TestBaseVectorStore:
         assert isinstance(result, RemoteEmbeddings)
         assert result.api_url == "http://remote:8080"
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance")
     def test_get_embeddings_openai(self, mock_get_instance, mock_settings):
         mock_settings.EMBEDDINGS_BASE_URL = None
         mock_settings.OPENAI_API_BASE = None
@@ -364,8 +364,8 @@ class TestBaseVectorStore:
         result = store._get_embeddings("openai_text-embedding-ada-002", "sk-key")
         assert result is mock_emb
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance")
     def test_get_embeddings_openai_azure(self, mock_get_instance, mock_settings):
         mock_settings.EMBEDDINGS_BASE_URL = None
         mock_settings.OPENAI_API_BASE = "https://azure.openai.com"
@@ -380,8 +380,8 @@ class TestBaseVectorStore:
         result = store._get_embeddings("openai_text-embedding-ada-002", "sk-key")
         assert result is mock_emb
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance")
     @patch("os.path.exists", return_value=False)
     def test_get_embeddings_huggingface_no_local_model(
         self, mock_exists, mock_get_instance, mock_settings
@@ -396,8 +396,8 @@ class TestBaseVectorStore:
         )
         assert result is mock_emb
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance")
     def test_get_embeddings_registered_model_passes_configured_name(
         self, mock_get_instance, mock_settings
     ):
@@ -419,8 +419,8 @@ class TestBaseVectorStore:
             "huggingface_sentence-transformers/all-mpnet-base-v2"
         )
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance")
     def test_get_embeddings_generic(self, mock_get_instance, mock_settings):
         mock_settings.EMBEDDINGS_BASE_URL = None
         mock_emb = Mock()
@@ -437,7 +437,7 @@ class TestSearchWithScoresDefault:
     def test_pairs_hits_with_none(self):
         """A store that reports no score still satisfies the contract, so the
         retriever never has to special-case it."""
-        from application.vectorstore.base import BaseVectorStore
+        from docsgpt.vectorstore.base import BaseVectorStore
 
         class _Store(BaseVectorStore):
             def search(self, question, k=2, *args, **kwargs):
@@ -451,7 +451,7 @@ class TestSearchWithScoresDefault:
         assert store.search_with_scores("q", k=2) == [("a", None), ("b", None)]
 
     def test_handles_store_returning_none(self):
-        from application.vectorstore.base import BaseVectorStore
+        from docsgpt.vectorstore.base import BaseVectorStore
 
         class _Store(BaseVectorStore):
             def search(self, question, k=2, *args, **kwargs):
@@ -477,8 +477,8 @@ class TestGetEmbeddingsResolver:
     def setup_method(self):
         EmbeddingsSingleton._instances = {}
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base._get_embeddings_wrapper")
     @patch("os.path.exists", return_value=False)
     def test_defaults_from_settings_do_not_raise(
         self, _mock_exists, mock_get_wrapper, mock_settings
@@ -497,8 +497,8 @@ class TestGetEmbeddingsResolver:
         assert result is mock_instance
         assert set(EmbeddingsSingleton._instances) == {HF_MPNET}
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base._get_embeddings_wrapper")
     @patch("os.path.exists", return_value=False)
     def test_shares_cache_entry_with_vectorstore_helper(
         self, _mock_exists, mock_get_wrapper, mock_settings
@@ -518,8 +518,8 @@ class TestGetEmbeddingsResolver:
         assert set(EmbeddingsSingleton._instances) == {HF_MPNET}
         mock_wrapper_cls.assert_called_once()
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base._get_embeddings_wrapper")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base._get_embeddings_wrapper")
     def test_repeated_resolution_loads_one_model(
         self, mock_get_wrapper, mock_settings
     ):
@@ -543,7 +543,7 @@ class TestGetEmbeddingsResolver:
         assert set(EmbeddingsSingleton._instances) == {HF_MPNET}
         mock_wrapper_cls.assert_called_once_with(HF_MPNET)
 
-    @patch("application.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.settings")
     def test_remote_when_base_url_configured(self, mock_settings):
         mock_settings.EMBEDDINGS_BASE_URL = "http://remote:8080"
         mock_settings.EMBEDDINGS_NAME = HF_MPNET
@@ -556,8 +556,8 @@ class TestGetEmbeddingsResolver:
         assert result.model_name == HF_MPNET
         assert result.headers["Authorization"] == "Bearer sk-remote"
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance")
     def test_openai_passes_key(self, mock_get_instance, mock_settings):
         mock_settings.EMBEDDINGS_BASE_URL = None
         mock_settings.OPENAI_API_BASE = None
@@ -572,8 +572,8 @@ class TestGetEmbeddingsResolver:
             "openai_text-embedding-ada-002", openai_api_key="sk-from-settings"
         )
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance")
     def test_openai_azure_uses_deployment_name(
         self, mock_get_instance, mock_settings
     ):
@@ -591,8 +591,8 @@ class TestGetEmbeddingsResolver:
             "openai_text-embedding-ada-002", model="embed-deploy"
         )
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance")
     def test_openai_alias_also_reaches_the_azure_deployment(
         self, mock_get_instance, mock_settings
     ):
@@ -616,8 +616,8 @@ class TestGetEmbeddingsResolver:
             "text-embedding-ada-002", model="embed-deploy"
         )
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance")
     def test_openai_name_is_matched_case_insensitively(
         self, mock_get_instance, mock_settings
     ):
@@ -634,8 +634,8 @@ class TestGetEmbeddingsResolver:
             "OpenAI_Text-Embedding-Ada-002", openai_api_key="sk-from-settings"
         )
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.EmbeddingsSingleton.get_instance")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.EmbeddingsSingleton.get_instance")
     def test_explicit_arguments_win_over_settings(
         self, mock_get_instance, mock_settings
     ):
@@ -647,8 +647,8 @@ class TestGetEmbeddingsResolver:
 
         mock_get_instance.assert_called_once_with("some_custom_embedding")
 
-    @patch("application.vectorstore.base.settings")
-    @patch("application.vectorstore.base.get_embeddings")
+    @patch("docsgpt.vectorstore.base.settings")
+    @patch("docsgpt.vectorstore.base.get_embeddings")
     def test_vectorstore_helper_delegates_to_resolver(
         self, mock_resolver, _mock_settings
     ):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from application.storage.db.repositories.user_roles import UserRolesRepository
+from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
 
 
 def _repo(conn) -> UserRolesRepository:

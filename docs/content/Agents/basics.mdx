@@ -44,7 +44,7 @@ The main set of instructions or system [prompt](/Guides/Customising-prompts) tha
 
 ## Understanding Agent Types
 
-DocsGPT supports several agent types, each with a distinct way of processing information. The code for these can be found in the `application/agents/` directory.
+DocsGPT supports several agent types, each with a distinct way of processing information. The code for these can be found in the `docsgpt/agents/` directory.
 
 ### 1. Classic Agent
 
@@ -117,8 +117,8 @@ Once an agent is created, you can:
 
 You can bootstrap a fresh DocsGPT deployment with a curated set of agents by seeding them directly into the user-data store (Postgres).
 
-1. **Customize the configuration** – edit `application/seed/config/premade_agents.yaml` (or copy from `application/seed/config/agents_template.yaml`) to describe the agents you want to provision. Each entry lets you define prompts, tools, and optional data sources.
+1. **Customize the configuration** – edit `docsgpt/seed/config/premade_agents.yaml` (or copy from `docsgpt/seed/config/agents_template.yaml`) to describe the agents you want to provision. Each entry lets you define prompts, tools, and optional data sources.
 2. **Ensure dependencies are running** – Postgres must be reachable using `POSTGRES_URI` from `.env` (schema applied via `python scripts/db/init_postgres.py`), and a Celery worker should be available if any agent sources need to be ingested via `ingest_remote`.
-3. **Execute the seeder** – run `python -m application.seed.commands init`. Add `--force` when you need to reseed an existing environment.
+3. **Execute the seeder** – run `python -m docsgpt.seed.commands init`. Add `--force` when you need to reseed an existing environment.
 
 The seeder keeps templates under the `system` user so they appear in the UI for anyone to clone or customize. Environment variable placeholders such as `${MY_TOKEN}` inside tool configs are resolved during the seeding process.

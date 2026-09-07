@@ -13,9 +13,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.core.model_registry import ModelRegistry
-from application.core.model_settings import ModelProvider
-from application.storage.db.repositories.user_custom_models import (
+from docsgpt.core.model_registry import ModelRegistry
+from docsgpt.core.model_settings import ModelProvider
+from docsgpt.storage.db.repositories.user_custom_models import (
     UserCustomModelsRepository,
 )
 
@@ -66,8 +66,8 @@ class TestPerUserLayer:
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             reg = ModelRegistry()
@@ -87,8 +87,8 @@ class TestPerUserLayer:
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             reg = ModelRegistry()
@@ -110,8 +110,8 @@ class TestPerUserLayer:
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             reg = ModelRegistry()
@@ -144,11 +144,11 @@ class TestPerUserLayer:
         # without hitting a real broker. The P1 fix calls ``incr`` on
         # invalidate; here we just need it not to raise.
         fake_redis = MagicMock()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ), patch(
-            "application.cache.get_redis_instance", return_value=fake_redis
+            "docsgpt.cache.get_redis_instance", return_value=fake_redis
         ):
             reg = ModelRegistry()
             assert reg.get_model(created["id"], user_id="user-1") is not None
@@ -185,17 +185,17 @@ class TestLLMCreatorDispatchUsesUpstreamModelId:
                 captured["model_id"] = kwargs.get("model_id")
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
-            from application.llm.providers import PROVIDERS_BY_NAME
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
             with patch.object(
                 PROVIDERS_BY_NAME["openai_compatible"], "llm_class", _FakeLLM
             ):
-                from application.llm.llm_creator import LLMCreator
+                from docsgpt.llm.llm_creator import LLMCreator
 
                 LLMCreator.create_llm(
                     type="openai_compatible",
@@ -239,17 +239,17 @@ class TestLLMCreatorDispatchUsesUpstreamModelId:
                 captured["capabilities"] = kwargs.get("capabilities")
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             ModelRegistry()
-            from application.llm.providers import PROVIDERS_BY_NAME
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
             with patch.object(
                 PROVIDERS_BY_NAME["openai_compatible"], "llm_class", _FakeLLM
             ):
-                from application.llm.llm_creator import LLMCreator
+                from docsgpt.llm.llm_creator import LLMCreator
 
                 LLMCreator.create_llm(
                     type="openai_compatible",
@@ -285,8 +285,8 @@ class TestLLMCreatorDispatchUsesUpstreamModelId:
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             reg = ModelRegistry()
@@ -321,8 +321,8 @@ class TestLLMCreatorDispatchUsesUpstreamModelId:
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ):
             reg = ModelRegistry()
@@ -359,11 +359,11 @@ class TestCrossProcessInvalidation:
 
         fake_redis = MagicMock()
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ), patch(
-            "application.cache.get_redis_instance", return_value=fake_redis
+            "docsgpt.cache.get_redis_instance", return_value=fake_redis
         ):
             ModelRegistry().get_model("anything", user_id="user-1")
             ModelRegistry.invalidate_user("user-1")
@@ -375,7 +375,7 @@ class TestCrossProcessInvalidation:
         process's CRUD bumps the version and updates Postgres; peer's
         next post-TTL access sees the version mismatch and reloads,
         picking up the rotated key it never invalidated locally."""
-        from application.core import model_registry as registry_mod
+        from docsgpt.core import model_registry as registry_mod
 
         repo = UserCustomModelsRepository(pg_conn)
         created = repo.create(
@@ -401,11 +401,11 @@ class TestCrossProcessInvalidation:
         s = _make_settings()
         # Force TTL to 0 so any subsequent access takes the post-TTL
         # path without waiting 60s.
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ), patch(
-            "application.cache.get_redis_instance", return_value=_FakeRedis()
+            "docsgpt.cache.get_redis_instance", return_value=_FakeRedis()
         ), patch.object(
             registry_mod, "_USER_CACHE_TTL_SECONDS", 0.0
         ):
@@ -433,7 +433,7 @@ class TestCrossProcessInvalidation:
     def test_ttl_bounds_staleness_when_redis_unavailable(self, pg_conn):
         """Redis down → fall back to TTL-only invalidation. After the
         TTL elapses, peers reload regardless."""
-        from application.core import model_registry as registry_mod
+        from docsgpt.core import model_registry as registry_mod
 
         repo = UserCustomModelsRepository(pg_conn)
         created = repo.create(
@@ -445,11 +445,11 @@ class TestCrossProcessInvalidation:
         )
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             lambda: _yield(pg_conn),
         ), patch(
-            "application.cache.get_redis_instance", return_value=None
+            "docsgpt.cache.get_redis_instance", return_value=None
         ), patch.object(
             registry_mod, "_USER_CACHE_TTL_SECONDS", 0.0
         ):
@@ -469,7 +469,7 @@ class TestCrossProcessInvalidation:
     def test_unchanged_version_extends_ttl_without_db_read(self, pg_conn):
         """Hot path: TTL expires but Redis says no invalidation
         happened — extend the entry without re-reading Postgres."""
-        from application.core import model_registry as registry_mod
+        from docsgpt.core import model_registry as registry_mod
 
         repo = UserCustomModelsRepository(pg_conn)
         created = repo.create(
@@ -491,11 +491,11 @@ class TestCrossProcessInvalidation:
             yield pg_conn
 
         s = _make_settings()
-        with patch("application.core.settings.settings", s), patch(
-            "application.storage.db.session.db_readonly",
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
             _counting_db_readonly,
         ), patch(
-            "application.cache.get_redis_instance", return_value=fake_redis
+            "docsgpt.cache.get_redis_instance", return_value=fake_redis
         ), patch.object(
             registry_mod, "_USER_CACHE_TTL_SECONDS", 0.0
         ):

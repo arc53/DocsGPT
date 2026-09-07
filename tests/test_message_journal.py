@@ -1,4 +1,4 @@
-"""Unit tests for ``application/streaming/message_journal.py``.
+"""Unit tests for ``docsgpt/streaming/message_journal.py``.
 
 The journal hook is best-effort by contract — its failure modes are
 the most important thing to lock down so a streaming hiccup never
@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.streaming.message_journal import (
+from docsgpt.streaming.message_journal import (
     BatchedJournalWriter,
     record_event,
 )
@@ -41,11 +41,11 @@ class TestRecordEvent:
 
     def test_happy_path_writes_and_publishes(self):
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.MessageEventsRepository"
+            "docsgpt.streaming.message_journal.MessageEventsRepository"
         ) as mock_repo_cls, patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_repo = MagicMock()
@@ -75,11 +75,11 @@ class TestRecordEvent:
         live even if a future reconnect's snapshot is missing this row.
         """
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.MessageEventsRepository"
+            "docsgpt.streaming.message_journal.MessageEventsRepository"
         ), patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.side_effect = RuntimeError("pg down")
             mock_topic = MagicMock()
@@ -94,11 +94,11 @@ class TestRecordEvent:
 
     def test_publish_failure_does_not_raise(self):
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.MessageEventsRepository"
+            "docsgpt.streaming.message_journal.MessageEventsRepository"
         ) as mock_repo_cls, patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_repo_cls.return_value.record = MagicMock()
@@ -112,11 +112,11 @@ class TestRecordEvent:
 
     def test_payload_none_treated_as_empty_dict(self):
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.MessageEventsRepository"
+            "docsgpt.streaming.message_journal.MessageEventsRepository"
         ) as mock_repo_cls, patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_repo = MagicMock()
@@ -140,11 +140,11 @@ class TestRecordEvent:
         byte-identical.
         """
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.MessageEventsRepository"
+            "docsgpt.streaming.message_journal.MessageEventsRepository"
         ) as mock_repo_cls, patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_repo = MagicMock()
@@ -183,14 +183,14 @@ class TestRecordEvent:
         repo_instances = iter([repo_first, repo_readonly, repo_retry])
 
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.db_readonly"
+            "docsgpt.streaming.message_journal.db_readonly"
         ) as mock_readonly, patch(
-            "application.streaming.message_journal.MessageEventsRepository",
+            "docsgpt.streaming.message_journal.MessageEventsRepository",
             side_effect=lambda conn: next(repo_instances),
         ), patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_readonly.return_value.__enter__.return_value = MagicMock()
@@ -234,14 +234,14 @@ class TestRecordEvent:
         repo_instances = iter([repo_first, repo_readonly, repo_retry])
 
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.db_readonly"
+            "docsgpt.streaming.message_journal.db_readonly"
         ) as mock_readonly, patch(
-            "application.streaming.message_journal.MessageEventsRepository",
+            "docsgpt.streaming.message_journal.MessageEventsRepository",
             side_effect=lambda conn: next(repo_instances),
         ), patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_readonly.return_value.__enter__.return_value = MagicMock()
@@ -275,14 +275,14 @@ class TestRecordEvent:
         repo_instances = iter([repo_first, repo_readonly, repo_retry])
 
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.db_readonly"
+            "docsgpt.streaming.message_journal.db_readonly"
         ) as mock_readonly, patch(
-            "application.streaming.message_journal.MessageEventsRepository",
+            "docsgpt.streaming.message_journal.MessageEventsRepository",
             side_effect=lambda conn: next(repo_instances),
         ), patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_readonly.return_value.__enter__.return_value = MagicMock()
@@ -318,14 +318,14 @@ class TestRecordEvent:
         repo_instances = iter([repo_first, repo_readonly, repo_retry])
 
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.db_readonly"
+            "docsgpt.streaming.message_journal.db_readonly"
         ) as mock_readonly, patch(
-            "application.streaming.message_journal.MessageEventsRepository",
+            "docsgpt.streaming.message_journal.MessageEventsRepository",
             side_effect=lambda conn: next(repo_instances),
         ), patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_readonly.return_value.__enter__.return_value = MagicMock()
@@ -345,11 +345,11 @@ class TestRecordEvent:
         clients see the chunk.
         """
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.MessageEventsRepository"
+            "docsgpt.streaming.message_journal.MessageEventsRepository"
         ) as mock_repo_cls, patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_repo = MagicMock()
@@ -369,11 +369,11 @@ class TestRecordEvent:
         safe against an LLM emitting structured data with NULs.
         """
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.MessageEventsRepository"
+            "docsgpt.streaming.message_journal.MessageEventsRepository"
         ) as mock_repo_cls, patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_repo = MagicMock()
@@ -407,11 +407,11 @@ class TestRecordEvent:
         through identically.
         """
         with patch(
-            "application.streaming.message_journal.db_session"
+            "docsgpt.streaming.message_journal.db_session"
         ) as mock_session, patch(
-            "application.streaming.message_journal.MessageEventsRepository"
+            "docsgpt.streaming.message_journal.MessageEventsRepository"
         ) as mock_repo_cls, patch(
-            "application.streaming.message_journal.Topic"
+            "docsgpt.streaming.message_journal.Topic"
         ) as mock_topic_cls:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_repo = MagicMock()
@@ -445,14 +445,14 @@ class TestBatchedJournalWriter:
         """
         from unittest.mock import patch as _patch
 
-        session_cm = _patch("application.streaming.message_journal.db_session")
+        session_cm = _patch("docsgpt.streaming.message_journal.db_session")
         readonly_cm = _patch(
-            "application.streaming.message_journal.db_readonly"
+            "docsgpt.streaming.message_journal.db_readonly"
         )
         repo_cls = _patch(
-            "application.streaming.message_journal.MessageEventsRepository"
+            "docsgpt.streaming.message_journal.MessageEventsRepository"
         )
-        topic_cls = _patch("application.streaming.message_journal.Topic")
+        topic_cls = _patch("docsgpt.streaming.message_journal.Topic")
         return session_cm, readonly_cm, repo_cls, topic_cls
 
     def test_size_trigger_flushes_at_batch_size(self):
@@ -499,7 +499,7 @@ class TestBatchedJournalWriter:
         """
         session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
         with session_cm as mock_session, readonly_cm, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls, patch(
-            "application.streaming.message_journal.time.monotonic"
+            "docsgpt.streaming.message_journal.time.monotonic"
         ) as mock_mono:
             mock_session.return_value.__enter__.return_value = MagicMock()
             mock_repo = MagicMock()
@@ -668,7 +668,7 @@ class TestBatchedJournalWriter:
 
             writer = BatchedJournalWriter("msg-1", batch_size=1)
             with caplog.at_level(
-                logging.WARNING, logger="application.streaming.message_journal"
+                logging.WARNING, logger="docsgpt.streaming.message_journal"
             ):
                 for seq in range(25):
                     writer.record(seq, "answer", {"text": "x"})

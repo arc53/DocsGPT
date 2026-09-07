@@ -3,7 +3,7 @@
 Mirrors production (a Flask SSE generator behind a2wsgi's thread pool) without
 Postgres/Redis. ``/sse`` holds the connection open like an idle subscriber;
 ``DRAIN_HARNESS_COOPERATIVE=1`` makes it poll the real
-``application.core.shutdown.is_shutting_down`` flag (the fix), else it
+``docsgpt.core.shutdown.is_shutting_down`` flag (the fix), else it
 reproduces the pre-fix hang.
 """
 
@@ -17,7 +17,7 @@ from flask import Flask, Response
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from application.core.shutdown import is_shutting_down
+from docsgpt.core.shutdown import is_shutting_down
 
 _COOPERATIVE = os.environ.get("DRAIN_HARNESS_COOPERATIVE") == "1"
 _POLL_SECONDS = 1.0

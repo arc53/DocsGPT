@@ -7,11 +7,11 @@ import requests
 
 class TestReadWebpageErrors:
     def test_request_exception_returns_error_string(self):
-        from application.agents.tools.read_webpage import ReadWebpageTool
+        from docsgpt.agents.tools.read_webpage import ReadWebpageTool
 
         tool = ReadWebpageTool(config={})
         with patch(
-            "application.agents.tools.read_webpage.pinned_fetch_bytes",
+            "docsgpt.agents.tools.read_webpage.pinned_fetch_bytes",
             side_effect=requests.exceptions.RequestException("bad url"),
         ):
             got = tool.execute_action(
@@ -22,17 +22,17 @@ class TestReadWebpageErrors:
     def test_generic_exception_returns_error_string(self):
         from unittest.mock import MagicMock
 
-        from application.agents.tools.read_webpage import ReadWebpageTool
+        from docsgpt.agents.tools.read_webpage import ReadWebpageTool
 
         tool = ReadWebpageTool(config={})
         response = MagicMock()
         response.headers = {"Content-Type": "text/html"}
         response.raise_for_status.return_value = None
         with patch(
-            "application.agents.tools.read_webpage.markdownify",
+            "docsgpt.agents.tools.read_webpage.markdownify",
             side_effect=RuntimeError("boom"),
         ), patch(
-            "application.agents.tools.read_webpage.pinned_fetch_bytes",
+            "docsgpt.agents.tools.read_webpage.pinned_fetch_bytes",
             return_value=(b"<h1>hi</h1>", response),
         ):
             got = tool.execute_action(
@@ -45,7 +45,7 @@ class TestBaseAgentMinorBranches:
     """Cover 2 missing lines in agents/base.py (116, 160)."""
 
     def test_base_agent_with_llm_provided(self):
-        from application.agents.classic_agent import ClassicAgent
+        from docsgpt.agents.classic_agent import ClassicAgent
         from unittest.mock import MagicMock
 
         mock_llm = MagicMock()
@@ -63,7 +63,7 @@ class TestWorkflowNodesMinor:
     """Cover line 44 in workflow_nodes.py (likely default params branch)."""
 
     def test_bulk_create_empty_list_returns_empty(self, pg_conn):
-        from application.storage.db.repositories.workflow_nodes import (
+        from docsgpt.storage.db.repositories.workflow_nodes import (
             WorkflowNodesRepository,
         )
         got = WorkflowNodesRepository(pg_conn).bulk_create(

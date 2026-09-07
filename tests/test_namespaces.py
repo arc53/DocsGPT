@@ -3,9 +3,9 @@ from unittest.mock import patch
 
 import pytest
 
-from application.prompts.composer import compose_preset
+from docsgpt.prompts.composer import compose_preset
 
-from application.templates.namespaces import (
+from docsgpt.templates.namespaces import (
     ArtifactsNamespace,
     AttachmentsNamespace,
     NamespaceBuilder,
@@ -58,7 +58,7 @@ class TestSystemNamespace:
     def test_date_format(self):
         ns = SystemNamespace()
         fixed = datetime(2026, 1, 15, 10, 30, 45, tzinfo=timezone.utc)
-        with patch("application.templates.namespaces.datetime") as mock_dt:
+        with patch("docsgpt.templates.namespaces.datetime") as mock_dt:
             mock_dt.now.return_value = fixed
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = ns.build()
@@ -294,8 +294,8 @@ class TestArtifactsNamespace:
             yield object()
 
         with patch(
-            "application.storage.db.repositories.artifacts.ArtifactsRepository", _Repo
-        ), patch("application.storage.db.session.db_readonly", _fake_readonly):
+            "docsgpt.storage.db.repositories.artifacts.ArtifactsRepository", _Repo
+        ), patch("docsgpt.storage.db.session.db_readonly", _fake_readonly):
             artifact = ns.build(artifact_parent={"workflow_run_id": "run-9"})["artifact"]
             meta = artifact("art-7")
 
@@ -327,8 +327,8 @@ class TestArtifactsNamespace:
             yield object()
 
         with patch(
-            "application.storage.db.repositories.artifacts.ArtifactsRepository", _Repo
-        ), patch("application.storage.db.session.db_readonly", _fake_readonly):
+            "docsgpt.storage.db.repositories.artifacts.ArtifactsRepository", _Repo
+        ), patch("docsgpt.storage.db.session.db_readonly", _fake_readonly):
             artifact = ns.build(artifact_parent={"workflow_run_id": "run-9"})["artifact"]
             assert artifact("foreign") == {}
 
@@ -499,7 +499,7 @@ class TestEnabledToolGate:
     )
 
     def _render(self, **kwargs):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         return TemplateEngine().render(self.GATE, NamespaceManager().build_context(**kwargs))
 
@@ -531,7 +531,7 @@ class TestSystemNamespacePlatform:
     ]
 
     def test_platform_block_uses_public_base_url(self):
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         with (
             patch.object(settings, "PUBLIC_API_BASE_URL", "https://api.example.com/"),
@@ -547,7 +547,7 @@ class TestSystemNamespacePlatform:
     def test_platform_block_relative_when_public_base_url_unset(self):
         # API_URL must never leak into prompts — stock compose points it at
         # an internal hostname.
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         with (
             patch.object(settings, "PUBLIC_API_BASE_URL", None),
@@ -561,8 +561,8 @@ class TestSystemNamespacePlatform:
         assert result["api_base_url"] is None
 
     def test_api_base_url_survives_platform_render_failure(self):
-        from application.core.settings import settings
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.core.settings import settings
+        from docsgpt.templates.template_engine import TemplateEngine
 
         with (
             patch.object(settings, "PUBLIC_API_BASE_URL", "https://api.example.com"),
@@ -574,7 +574,7 @@ class TestSystemNamespacePlatform:
 
     def test_presets_render_platform_section(self):
 
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         context = NamespaceManager().build_context()
@@ -585,7 +585,7 @@ class TestSystemNamespacePlatform:
 
     def test_presets_omit_section_when_platform_empty(self):
 
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         context = NamespaceManager().build_context()

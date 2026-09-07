@@ -17,7 +17,7 @@ def _patch_db_readonly(pg_conn, monkeypatch):
         yield pg_conn
 
     monkeypatch.setattr(
-        "application.api.user.tools.routes.db_readonly", _use_pg_conn
+        "docsgpt.api.user.tools.routes.db_readonly", _use_pg_conn
     )
 
 
@@ -26,9 +26,9 @@ class TestGetArtifact:
     def test_note_artifact_success(
         self, pg_conn, _patch_db_readonly, flask_app, decoded_token
     ):
-        from application.api.user.tools.routes import GetArtifact
-        from application.storage.db.repositories.notes import NotesRepository
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.api.user.tools.routes import GetArtifact
+        from docsgpt.storage.db.repositories.notes import NotesRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         tool_row = UserToolsRepository(pg_conn).create(
             user_id=decoded_token["sub"], name="notes_tool"
@@ -57,9 +57,9 @@ class TestGetArtifact:
     def test_todo_artifact_success(
         self, pg_conn, _patch_db_readonly, flask_app, decoded_token
     ):
-        from application.api.user.tools.routes import GetArtifact
-        from application.storage.db.repositories.todos import TodosRepository
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.api.user.tools.routes import GetArtifact
+        from docsgpt.storage.db.repositories.todos import TodosRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         tool_row = UserToolsRepository(pg_conn).create(
             user_id=decoded_token["sub"], name="todo_tool"
@@ -96,9 +96,9 @@ class TestGetArtifact:
         self, pg_conn, _patch_db_readonly, flask_app, decoded_token
     ):
         """All todos are returned regardless of the 'all' query parameter."""
-        from application.api.user.tools.routes import GetArtifact
-        from application.storage.db.repositories.todos import TodosRepository
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.api.user.tools.routes import GetArtifact
+        from docsgpt.storage.db.repositories.todos import TodosRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         tool_row = UserToolsRepository(pg_conn).create(
             user_id=decoded_token["sub"], name="todo_tool"
@@ -142,7 +142,7 @@ class TestGetArtifact:
         """A non-UUID, non-legacy id falls through ``get_any`` on both
         repos without raising (id-shape dispatch keeps the UUID cast out
         of the path) and surfaces as a clean 404."""
-        from application.api.user.tools.routes import GetArtifact
+        from docsgpt.api.user.tools.routes import GetArtifact
 
         with flask_app.app_context():
             with flask_app.test_request_context():
@@ -155,7 +155,7 @@ class TestGetArtifact:
     def test_artifact_not_found_returns_404(
         self, _patch_db_readonly, flask_app, decoded_token
     ):
-        from application.api.user.tools.routes import GetArtifact
+        from docsgpt.api.user.tools.routes import GetArtifact
 
         non_existent_id = str(uuid.uuid4())
 
@@ -171,9 +171,9 @@ class TestGetArtifact:
     def test_other_user_artifact_returns_404(
         self, pg_conn, _patch_db_readonly, flask_app, decoded_token
     ):
-        from application.api.user.tools.routes import GetArtifact
-        from application.storage.db.repositories.notes import NotesRepository
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.api.user.tools.routes import GetArtifact
+        from docsgpt.storage.db.repositories.notes import NotesRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         tool_row = UserToolsRepository(pg_conn).create(
             user_id="other_user", name="tool1"
@@ -197,8 +197,8 @@ class TestGetArtifact:
     ):
         """Pre-cutover note artifact ids (Mongo ObjectIds) must resolve
         once the notes.legacy_mongo_id column is populated by backfill."""
-        from application.api.user.tools.routes import GetArtifact
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.api.user.tools.routes import GetArtifact
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         tool_row = UserToolsRepository(pg_conn).create(
             user_id=decoded_token["sub"], name="notes_tool"
@@ -233,9 +233,9 @@ class TestGetArtifact:
         ``TodosRepository.get_any`` — that dispatch keeps the 24-hex
         ObjectId out of the bare ``CAST(:id AS uuid)`` path that would
         otherwise poison the readonly transaction."""
-        from application.api.user.tools.routes import GetArtifact
-        from application.storage.db.repositories.todos import TodosRepository
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.api.user.tools.routes import GetArtifact
+        from docsgpt.storage.db.repositories.todos import TodosRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         tool_row = UserToolsRepository(pg_conn).create(
             user_id=decoded_token["sub"], name="todo_tool"

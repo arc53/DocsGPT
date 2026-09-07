@@ -30,7 +30,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import Engine, create_engine, text
 
-from application.core.settings import settings
+from docsgpt.core.settings import settings
 
 
 @pytest.fixture(scope="session")

@@ -1,5 +1,5 @@
 """Streaming-heartbeat liveness for reasoning models that "think" before
-answering (``complete_stream`` in ``application/api/answer/routes/base.py``).
+answering (``complete_stream`` in ``docsgpt/api/answer/routes/base.py``).
 
 Background
 ----------
@@ -42,10 +42,10 @@ from typing import Any, Dict, List, Optional
 import pytest
 from sqlalchemy import text
 
-from application.api.answer.routes.base import BaseAnswerResource
-from application.api.answer.services.conversation_service import ConversationService
-from application.storage.db.repositories.conversations import ConversationsRepository
-from application.storage.db.repositories.reconciliation import (
+from docsgpt.api.answer.routes.base import BaseAnswerResource
+from docsgpt.api.answer.services.conversation_service import ConversationService
+from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.reconciliation import (
     ReconciliationRepository,
 )
 
@@ -152,9 +152,9 @@ def _wire_db(engine, monkeypatch):
     the journal writer for a no-op. Mirrors the helper in
     ``test_v1_tool_pause_finalization.py``.
     """
-    from application.api.answer.services import conversation_service as conv_mod
-    from application.api.answer.services import continuation_service as cont_mod
-    from application.api.answer.routes import base as base_mod
+    from docsgpt.api.answer.services import conversation_service as conv_mod
+    from docsgpt.api.answer.services import continuation_service as cont_mod
+    from docsgpt.api.answer.routes import base as base_mod
 
     @contextmanager
     def _session():
@@ -237,7 +237,7 @@ class TestHeartbeatPumpsDuringReasoning:
     def test_thought_only_stream_heartbeats_while_pending(
         self, pg_engine, monkeypatch
     ):
-        from application.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes import base as base_mod
 
         user_id = f"user-{uuid.uuid4().hex[:8]}"
         with pg_engine.begin() as conn:
@@ -312,7 +312,7 @@ class TestHeartbeatPumpsDuringReasoning:
         ``last_heartbeat_at`` already stamped (seed-at-start), and a subsequent
         ``thought`` must bump it further — all before any ``answer``.
         """
-        from application.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes import base as base_mod
 
         user_id = f"user-{uuid.uuid4().hex[:8]}"
         with pg_engine.begin() as conn:
@@ -540,7 +540,7 @@ class TestNormalAnswerTurnUnchanged:
     def test_answer_turn_marks_streaming_and_finalizes_complete(
         self, pg_engine, monkeypatch
     ):
-        from application.api.answer.routes import base as base_mod
+        from docsgpt.api.answer.routes import base as base_mod
 
         user_id = f"user-{uuid.uuid4().hex[:8]}"
         with pg_engine.begin() as conn:

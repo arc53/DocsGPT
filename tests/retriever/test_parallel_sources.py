@@ -13,14 +13,14 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.retriever.classic_rag import ClassicRAG
-from application.retriever.hybrid_rag import HybridRetriever
+from docsgpt.retriever.classic_rag import ClassicRAG
+from docsgpt.retriever.hybrid_rag import HybridRetriever
 
 
 @pytest.fixture
 def _patch_llm_creator(mock_llm, monkeypatch):
     monkeypatch.setattr(
-        "application.retriever.classic_rag.LLMCreator.create_llm",
+        "docsgpt.retriever.classic_rag.LLMCreator.create_llm",
         Mock(return_value=mock_llm),
     )
     return mock_llm
@@ -68,10 +68,10 @@ def _make_rag(cls=ClassicRAG, source=None, **overrides):
 def _run(rag, stores):
     """Run ``_get_data`` with ``VectorCreator`` handing out ``stores`` by id."""
     with patch(
-        "application.retriever.classic_rag.VectorCreator.create_vectorstore",
+        "docsgpt.retriever.classic_rag.VectorCreator.create_vectorstore",
         side_effect=lambda _type, source_id, _key: stores[source_id],
     ), patch(
-        "application.retriever.classic_rag.num_tokens_from_string", return_value=10
+        "docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10
     ):
         return rag._get_data()
 
@@ -144,7 +144,7 @@ class TestQueryEmbeddedOnce:
         self, _patch_llm_creator, mock_llm
     ):
         """Per-source rephrase means two queries — one embedding each, no more."""
-        from application.storage.db.source_config import RetrievalConfig
+        from docsgpt.storage.db.source_config import RetrievalConfig
 
         mock_llm.gen = Mock(return_value="REPHRASED")
         embedder = Mock()
@@ -276,12 +276,12 @@ class TestConcurrentSourceSearch:
             }
 
         with patch(
-            "application.retriever.classic_rag._max_parallel_sources",
+            "docsgpt.retriever.classic_rag._max_parallel_sources",
             side_effect=lambda n: 1,
         ):
             serial = _run(_make_rag(), _stores())
         with patch(
-            "application.retriever.classic_rag._max_parallel_sources",
+            "docsgpt.retriever.classic_rag._max_parallel_sources",
             side_effect=lambda n: 4,
         ):
             parallel = _run(_make_rag(), _stores())
@@ -317,10 +317,10 @@ class TestConcurrentSourceSearch:
 
         rag = _make_rag()
         with patch(
-            "application.retriever.classic_rag.VectorCreator.create_vectorstore",
+            "docsgpt.retriever.classic_rag.VectorCreator.create_vectorstore",
             side_effect=_create,
         ), patch(
-            "application.retriever.classic_rag.num_tokens_from_string", return_value=10
+            "docsgpt.retriever.classic_rag.num_tokens_from_string", return_value=10
         ):
             docs = rag._get_data()
 
@@ -350,7 +350,7 @@ class TestWorkerCap:
     """``RETRIEVAL_MAX_PARALLEL_SOURCES`` bounds the fan-out."""
 
     def _cap(self, monkeypatch, n_sources, configured=None):
-        import application.retriever.classic_rag as classic_rag
+        import docsgpt.retriever.classic_rag as classic_rag
 
         stub = SimpleNamespace()
         if configured is not None:

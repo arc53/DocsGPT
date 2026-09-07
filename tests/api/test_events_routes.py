@@ -1,4 +1,4 @@
-"""Tests for application/api/events/routes.py — the SSE endpoint.
+"""Tests for docsgpt/api/events/routes.py — the SSE endpoint.
 
 The SSE generator runs in a separate thread under the WSGI test client;
 we drive it with mocked Redis (the ``pubsub.get_message`` and ``xrange``
@@ -20,11 +20,11 @@ from flask import Flask, request
 def _make_app():
     """Mount the events blueprint on a bare Flask app + JWT shim.
 
-    The shim mimics ``application/app.py`` populating
+    The shim mimics ``docsgpt/app.py`` populating
     ``request.decoded_token`` so the SSE handler's auth gate sees a
     user-id without requiring the full app stack.
     """
-    from application.api.events.routes import events
+    from docsgpt.api.events.routes import events
 
     app = Flask(__name__)
     app.register_blueprint(events)
@@ -103,7 +103,7 @@ class TestAuthGate:
         assert r.status_code == 401
 
     def test_rejects_when_decoded_token_missing_sub(self):
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
 
@@ -123,7 +123,7 @@ class TestAuthGate:
 
 class TestStreamShape:
     def test_returns_event_stream_mimetype_and_no_buffering_header(self):
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         with patch.object(events_module, "get_redis_instance", return_value=None):
@@ -138,7 +138,7 @@ class TestStreamShape:
                 assert b": connected" in body
 
     def test_emits_push_disabled_when_setting_off(self):
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         with patch.object(events_module, "get_redis_instance", return_value=None), \
@@ -155,7 +155,7 @@ class TestStreamShape:
 
 class TestConcurrencyCap:
     def test_returns_429_when_user_over_cap(self):
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         redis_client = MagicMock()
@@ -171,7 +171,7 @@ class TestConcurrencyCap:
         redis_client.decr.assert_called_once_with("user:alice:sse_count")
 
     def test_skips_cap_when_zero_disabled(self):
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         redis_client = MagicMock()
@@ -201,7 +201,7 @@ class TestConcurrencyCap:
 
 class TestReplayAndTail:
     def test_replay_yields_xrange_entries_with_injected_id(self):
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         redis_client = MagicMock()
@@ -227,7 +227,7 @@ class TestReplayAndTail:
         # Topic.subscribe yields an immediate timeout so the generator
         # keeps running long enough to flush replay; subsequent calls
         # also return None.
-        from application.api.events.routes import _SSE_LINE_SPLIT  # noqa: F401
+        from docsgpt.api.events.routes import _SSE_LINE_SPLIT  # noqa: F401
 
         # Fake the broadcast Topic to invoke on_subscribe immediately
         # then yield None ticks until close.
@@ -265,7 +265,7 @@ class TestReplayAndTail:
         must still reach the client. Prior to the fix the in-loop flush
         was the only flush, so the backlog was silently dropped.
         """
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         redis_client = MagicMock()
@@ -321,7 +321,7 @@ class TestReplayAndTail:
                 redis_client.xrange.assert_called_once()
 
     def test_invalid_last_event_id_emits_truncation_notice(self):
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         redis_client = MagicMock()
@@ -358,7 +358,7 @@ class TestReplayAndTail:
         just refuse to use the bogus id for ordering, so it ships
         without an SSE ``id:`` header and ``max_replayed_id`` stays put.
         """
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         redis_client = MagicMock()
@@ -435,17 +435,17 @@ class TestReplayRateLimit:
     """Enumeration defenses on the per-user backlog."""
 
     def test_allow_replay_returns_true_when_budget_disabled(self):
-        from application.api.events.routes import _allow_replay
+        from docsgpt.api.events.routes import _allow_replay
 
-        with patch("application.api.events.routes.settings") as mock_settings:
+        with patch("docsgpt.api.events.routes.settings") as mock_settings:
             mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 0
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
             assert _allow_replay(MagicMock(), "alice", "1735682400000-0") is True
 
     def test_allow_replay_returns_true_when_redis_unavailable(self):
-        from application.api.events.routes import _allow_replay
+        from docsgpt.api.events.routes import _allow_replay
 
-        with patch("application.api.events.routes.settings") as mock_settings:
+        with patch("docsgpt.api.events.routes.settings") as mock_settings:
             mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 5
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
             assert _allow_replay(None, "alice", "1735682400000-0") is True
@@ -455,9 +455,9 @@ class TestReplayRateLimit:
         live and must never 429 on the replay budget, no matter how many
         tabs open at once (30 fresh connects/min used to exhaust it).
         """
-        from application.api.events.routes import _allow_replay
+        from docsgpt.api.events.routes import _allow_replay
 
-        with patch("application.api.events.routes.settings") as mock_settings:
+        with patch("docsgpt.api.events.routes.settings") as mock_settings:
             mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 3
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
             redis = MagicMock()
@@ -470,9 +470,9 @@ class TestReplayRateLimit:
             redis.xlen.assert_not_called()
 
     def test_allow_replay_passes_until_budget_exhausted(self):
-        from application.api.events.routes import _allow_replay
+        from docsgpt.api.events.routes import _allow_replay
 
-        with patch("application.api.events.routes.settings") as mock_settings:
+        with patch("docsgpt.api.events.routes.settings") as mock_settings:
             mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 3
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
             redis = MagicMock()
@@ -499,9 +499,9 @@ class TestReplayRateLimit:
                 assert call.args[1] == 60
 
     def test_allow_replay_fail_open_on_redis_error(self):
-        from application.api.events.routes import _allow_replay
+        from docsgpt.api.events.routes import _allow_replay
 
-        with patch("application.api.events.routes.settings") as mock_settings:
+        with patch("docsgpt.api.events.routes.settings") as mock_settings:
             mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 5
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
             redis = MagicMock()
@@ -517,9 +517,9 @@ class TestReplayRateLimit:
         until an operator DEL'd the key. The fix calls EXPIRE on every
         successful INCR so the next call still re-seeds the TTL.
         """
-        from application.api.events.routes import _allow_replay
+        from docsgpt.api.events.routes import _allow_replay
 
-        with patch("application.api.events.routes.settings") as mock_settings:
+        with patch("docsgpt.api.events.routes.settings") as mock_settings:
             mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 5
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
             redis = MagicMock()
@@ -549,7 +549,7 @@ class TestReplayRateLimit:
                 assert call.args[1] == 60
 
     def test_replay_backlog_passes_count_to_xrange(self):
-        from application.api.events.routes import _replay_backlog
+        from docsgpt.api.events.routes import _replay_backlog
 
         redis = MagicMock()
         redis.xrange.return_value = []
@@ -567,7 +567,7 @@ class TestReplayRateLimit:
         the cursor pinned so the next reconnect (after the budget
         window slides) can replay normally.
         """
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         redis_client = MagicMock()
@@ -603,7 +603,7 @@ class TestReplayRateLimit:
 
 class TestFormatHelpers:
     def test_format_sse_two_terminating_newlines(self):
-        from application.api.events.routes import _format_sse
+        from docsgpt.api.events.routes import _format_sse
 
         out = _format_sse("hello", event_id="1-0")
         assert out.endswith("\n\n")
@@ -625,7 +625,7 @@ class TestFormatHelpers:
         ],
     )
     def test_normalize_last_event_id(self, candidate, expected):
-        from application.api.events.routes import _normalize_last_event_id
+        from docsgpt.api.events.routes import _normalize_last_event_id
 
         assert _normalize_last_event_id(candidate) == expected
 
@@ -635,43 +635,43 @@ class TestFormatHelpers:
 
 class TestReplayPolicy:
     def test_replay_floor_id_disabled_when_setting_zero(self):
-        from application.api.events.routes import _replay_floor_id
+        from docsgpt.api.events.routes import _replay_floor_id
 
-        with patch("application.api.events.routes.settings") as mock_settings:
+        with patch("docsgpt.api.events.routes.settings") as mock_settings:
             mock_settings.EVENTS_REPLAY_MAX_AGE_HOURS = 0
             assert _replay_floor_id() is None
 
     def test_replay_floor_id_is_ms_stream_id(self):
-        from application.api.events.routes import _replay_floor_id
+        from docsgpt.api.events.routes import _replay_floor_id
 
-        with patch("application.api.events.routes.settings") as mock_settings:
+        with patch("docsgpt.api.events.routes.settings") as mock_settings:
             mock_settings.EVENTS_REPLAY_MAX_AGE_HOURS = 48
             with patch(
-                "application.api.events.routes.time.time",
+                "docsgpt.api.events.routes.time.time",
                 return_value=1_800_000_000.0,
             ):
                 floor = _replay_floor_id()
         assert floor == f"{(1_800_000_000 - 48 * 3600) * 1000}-0"
 
     def test_replay_backlog_uses_cursor_when_newer_than_floor(self):
-        from application.api.events.routes import _replay_backlog
+        from docsgpt.api.events.routes import _replay_backlog
 
         redis = MagicMock()
         redis.xrange.return_value = []
         with patch(
-            "application.api.events.routes._replay_floor_id",
+            "docsgpt.api.events.routes._replay_floor_id",
             return_value="1000-0",
         ):
             list(_replay_backlog(redis, "alice", "2000-0", 200))
         assert redis.xrange.call_args.kwargs["min"] == "(2000-0"
 
     def test_replay_backlog_clamps_start_to_age_floor(self):
-        from application.api.events.routes import _replay_backlog
+        from docsgpt.api.events.routes import _replay_backlog
 
         redis = MagicMock()
         redis.xrange.return_value = []
         with patch(
-            "application.api.events.routes._replay_floor_id",
+            "docsgpt.api.events.routes._replay_floor_id",
             return_value="5000-0",
         ):
             list(_replay_backlog(redis, "alice", "2000-0", 200))
@@ -683,7 +683,7 @@ class TestReplayPolicy:
     def test_no_cursor_connect_never_replays(self):
         """A fresh session (no Last-Event-ID) starts live: no XRANGE, no
         weeks-old backlog on every tab-open."""
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         redis_client = MagicMock()
@@ -711,7 +711,7 @@ class TestReplayPolicy:
         """An age-clamped snapshot has a gap the client can't see from
         entry ids alone — it must get the truncation notice so it
         refetches full state instead of trusting a partial replay."""
-        from application.api.events import routes as events_module
+        from docsgpt.api.events import routes as events_module
 
         app = _make_app()
         redis_client = MagicMock()

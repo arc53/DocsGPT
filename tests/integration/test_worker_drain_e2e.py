@@ -31,7 +31,7 @@ _GUNICORN = Path(sys.executable).with_name("gunicorn")
 _MAX_REQUESTS = "5"
 _TIMEOUT = "6"            # gunicorn worker-timeout watchdog
 _GRACEFUL = "30"          # gunicorn --graceful-timeout (not the lever; here for parity)
-_GUNICORN_CONF = _ROOT / "application" / "gunicorn_conf.py"
+_GUNICORN_CONF = _ROOT / "docsgpt" / "gunicorn_conf.py"
 
 pytestmark.append(
     pytest.mark.skipif(not _GUNICORN.exists(), reason="gunicorn binary not found")
@@ -177,7 +177,7 @@ def test_bounded_drain_worker_exits_cleanly_with_held_sse(tmp_path):
     log = tmp_path / "fixed.log"
     base = f"http://127.0.0.1:{port}"
     proc, fh = _boot(
-        "application.gunicorn_worker.BoundedDrainUvicornWorker",
+        "docsgpt.gunicorn_worker.BoundedDrainUvicornWorker",
         port,
         log,
         {"DRAIN_HARNESS_COOPERATIVE": "1"},

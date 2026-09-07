@@ -7,8 +7,8 @@ import logging
 
 import pytest
 
-from application.sandbox import artifacts_capture as ac
-from application.sandbox.artifacts_capture import _is_scratch, _matches_outputs
+from docsgpt.sandbox import artifacts_capture as ac
+from docsgpt.sandbox.artifacts_capture import _is_scratch, _matches_outputs
 
 
 @pytest.mark.unit
@@ -153,7 +153,7 @@ class TestListingFailureLogLevel:
     """
 
     def test_pre_exec_listing_failure_logs_warning_not_error(self, caplog):
-        with caplog.at_level(logging.DEBUG, logger="application.sandbox.artifacts_capture"):
+        with caplog.at_level(logging.DEBUG, logger="docsgpt.sandbox.artifacts_capture"):
             sigs = ac.snapshot_signatures(_ListingRaisesMgr(), "sid")
         assert sigs == {}  # swallowed, best-effort
         recs = [r for r in caplog.records if "pre-exec listing failed" in r.getMessage()]
@@ -163,7 +163,7 @@ class TestListingFailureLogLevel:
         )
 
     def test_post_exec_listing_failure_logs_warning_not_error(self, caplog):
-        with caplog.at_level(logging.DEBUG, logger="application.sandbox.artifacts_capture"):
+        with caplog.at_level(logging.DEBUG, logger="docsgpt.sandbox.artifacts_capture"):
             captured = ac.capture_artifacts(_ListingRaisesMgr(), "sid", {}, user_id="u")
         assert captured == []  # swallowed, best-effort
         recs = [r for r in caplog.records if "post-exec listing failed" in r.getMessage()]

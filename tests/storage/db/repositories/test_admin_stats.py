@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from application.storage.db.repositories.admin_stats import AdminStatsRepository
-from application.storage.db.repositories.auth_events import AuthEventsRepository
-from application.storage.db.repositories.token_usage import TokenUsageRepository
-from application.storage.db.repositories.user_roles import UserRolesRepository
-from application.storage.db.repositories.users import UsersRepository
+from docsgpt.storage.db.repositories.admin_stats import AdminStatsRepository
+from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
+from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
+from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 
 
 class TestOverview:

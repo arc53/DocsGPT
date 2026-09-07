@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from application.storage.db.repositories.prompts import PromptsRepository
+from docsgpt.storage.db.repositories.prompts import PromptsRepository
 
 
 def _repo(conn) -> PromptsRepository:

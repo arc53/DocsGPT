@@ -31,9 +31,9 @@ def _patch_journal_session(conn):
         yield conn
 
     with patch(
-        "application.streaming.message_journal.db_session", _yield
+        "docsgpt.streaming.message_journal.db_session", _yield
     ), patch(
-        "application.streaming.event_replay.db_readonly", _yield
+        "docsgpt.streaming.event_replay.db_readonly", _yield
     ):
         yield
 
@@ -78,8 +78,8 @@ class TestSnapshotPlusTailRoundTrip:
         snapshot back via the same repo and formats it for the wire — the
         exact primitive the async reader replays through.
         """
-        from application.streaming.event_replay import read_snapshot_lines
-        from application.streaming.message_journal import record_event
+        from docsgpt.streaming.event_replay import read_snapshot_lines
+        from docsgpt.streaming.message_journal import record_event
 
         _, message_id = _seed_message(pg_conn)
 
@@ -99,8 +99,8 @@ class TestSnapshotPlusTailRoundTrip:
         assert terminal is True
 
     def test_snapshot_resumes_past_last_event_id(self, pg_conn):
-        from application.streaming.event_replay import read_snapshot_lines
-        from application.streaming.message_journal import record_event
+        from docsgpt.streaming.event_replay import read_snapshot_lines
+        from docsgpt.streaming.message_journal import record_event
 
         _, message_id = _seed_message(pg_conn)
 
@@ -121,7 +121,7 @@ class TestSnapshotPlusTailRoundTrip:
         """The async route's ownership gate runs real SQL against
         ``conversation_messages`` — the owner passes, everyone else 404s.
         """
-        from application.api import async_sse
+        from docsgpt.api import async_sse
 
         user_id, message_id = _seed_message(pg_conn)
 
@@ -129,7 +129,7 @@ class TestSnapshotPlusTailRoundTrip:
         def _yield():
             yield pg_conn
 
-        with patch("application.api.async_sse.db_readonly", _yield):
+        with patch("docsgpt.api.async_sse.db_readonly", _yield):
             assert async_sse._user_owns_message(message_id, user_id) is True
             assert async_sse._user_owns_message(message_id, "different-user") is False
             # A well-formed but unknown id is also not owned.
@@ -139,8 +139,8 @@ class TestSnapshotPlusTailRoundTrip:
         """``read_snapshot_lines(..., user_id=)`` re-asserts ownership at the
         data layer: the owner gets the journal rows, a non-owner gets none.
         """
-        from application.streaming.event_replay import read_snapshot_lines
-        from application.streaming.message_journal import record_event
+        from docsgpt.streaming.event_replay import read_snapshot_lines
+        from docsgpt.streaming.message_journal import record_event
 
         user_id, message_id = _seed_message(pg_conn)
 
@@ -166,7 +166,7 @@ class TestSnapshotPlusTailRoundTrip:
         own row; a non-owner reads as missing (terminal), not as the row's
         real status.
         """
-        from application.streaming.event_replay import _check_producer_liveness
+        from docsgpt.streaming.event_replay import _check_producer_liveness
 
         # Seed a row and flip it to a terminal status the watchdog reports.
         user_id, message_id = _seed_message(pg_conn)
@@ -181,7 +181,7 @@ class TestSnapshotPlusTailRoundTrip:
         def _yield():
             yield pg_conn
 
-        with patch("application.streaming.event_replay.db_readonly", _yield):
+        with patch("docsgpt.streaming.event_replay.db_readonly", _yield):
             owner = _check_producer_liveness(message_id, user_id, 90.0)
             other = _check_producer_liveness(message_id, "different-user", 90.0)
 

@@ -12,7 +12,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from application.agents.tools.memory import MemoryTool
+from docsgpt.agents.tools.memory import MemoryTool
 
 
 class _FakeMemoriesRepo:
@@ -83,13 +83,13 @@ def _noop_conn():
 def _patch(monkeypatch) -> None:
     _FakeMemoriesRepo.reset()
     monkeypatch.setattr(
-        "application.agents.tools.memory.MemoriesRepository", _FakeMemoriesRepo
+        "docsgpt.agents.tools.memory.MemoriesRepository", _FakeMemoriesRepo
     )
     monkeypatch.setattr(
-        "application.agents.tools.memory.db_session", _noop_conn
+        "docsgpt.agents.tools.memory.db_session", _noop_conn
     )
     monkeypatch.setattr(
-        "application.agents.tools.memory.db_readonly", _noop_conn
+        "docsgpt.agents.tools.memory.db_readonly", _noop_conn
     )
 
 

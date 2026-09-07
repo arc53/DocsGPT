@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.scripts import reembed
+from docsgpt.scripts import reembed
 
 
 def paginating_cursor(chunk_rows, *, graph_rows=(), graph_table=("graph_nodes",)):
@@ -323,7 +323,7 @@ class TestFaissSourceDiscovery:
             "indexes/src-b/index.faiss",
         ]
         with patch(
-            "application.storage.storage_creator.StorageCreator.get_storage",
+            "docsgpt.storage.storage_creator.StorageCreator.get_storage",
             return_value=storage,
         ):
             assert reembed.list_source_ids("faiss") == ["src-a", "src-b"]
@@ -332,7 +332,7 @@ class TestFaissSourceDiscovery:
         storage = MagicMock()
         storage.list_files.side_effect = OSError("permission denied")
         with patch(
-            "application.storage.storage_creator.StorageCreator.get_storage",
+            "docsgpt.storage.storage_creator.StorageCreator.get_storage",
             return_value=storage,
         ):
             with pytest.raises(reembed.ReembedError, match="permission denied"):
@@ -453,7 +453,7 @@ class TestEmbedsInProcess:
     """A batch job should not round-trip every chunk through the broker."""
 
     def test_delegation_is_turned_off_for_the_run(self, monkeypatch):
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", True, raising=False)
         monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector", raising=False)
@@ -469,14 +469,14 @@ class TestRecordsTheModel:
     """``sources.model`` is what the boot mismatch check reads."""
 
     def test_a_re_embedded_source_is_stamped(self, monkeypatch):
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "EMBEDDINGS_NAME", "new/model", raising=False)
         conn = MagicMock()
         session = MagicMock()
         session.__enter__ = MagicMock(return_value=conn)
         session.__exit__ = MagicMock(return_value=False)
-        with patch("application.storage.db.session.db_session", return_value=session):
+        with patch("docsgpt.storage.db.session.db_session", return_value=session):
             reembed.record_source_model("src-1")
         params = conn.execute.call_args.args[1]
         assert params == {"model": "new/model", "id": "src-1"}
@@ -506,7 +506,7 @@ class TestRecordsTheModel:
 class TestThePinIsResolved:
     """The script must embed with the model the installation is pinned to.
 
-    ``resolve_embeddings_pin`` runs in ``application.app``, which this script
+    ``resolve_embeddings_pin`` runs in ``docsgpt.app``, which this script
     never imports. An install pinned in ``app_metadata`` with no
     ``EMBEDDINGS_NAME`` in the environment -- every stock Kubernetes
     deployment, whose manifests carry no embedding config -- would otherwise
@@ -518,7 +518,7 @@ class TestThePinIsResolved:
     def test_main_resolves_the_pin_before_reading_the_store(self):
         order = []
         with patch(
-            "application.storage.db.embeddings_pin.resolve_embeddings_pin",
+            "docsgpt.storage.db.embeddings_pin.resolve_embeddings_pin",
             side_effect=lambda *a, **k: order.append("pin"),
         ), patch.object(reembed.settings, "VECTOR_STORE", "pgvector", create=True), patch.object(
             reembed, "run", side_effect=lambda *a, **k: (order.append("run"), 0)[1]
@@ -528,7 +528,7 @@ class TestThePinIsResolved:
 
     def test_an_unsupported_store_still_resolved_the_pin_first(self):
         with patch(
-            "application.storage.db.embeddings_pin.resolve_embeddings_pin"
+            "docsgpt.storage.db.embeddings_pin.resolve_embeddings_pin"
         ) as pin, patch.object(reembed.settings, "VECTOR_STORE", "qdrant", create=True):
             assert reembed.main([]) == 2
         pin.assert_called_once()

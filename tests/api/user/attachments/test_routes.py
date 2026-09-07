@@ -30,11 +30,11 @@ def _patch_agents_repo(row):
     _FakeAgentsRepo._row = row
     return (
         patch(
-            "application.api.user.attachments.routes.AgentsRepository",
+            "docsgpt.api.user.attachments.routes.AgentsRepository",
             _FakeAgentsRepo,
         ),
         patch(
-            "application.api.user.attachments.routes.db_readonly",
+            "docsgpt.api.user.attachments.routes.db_readonly",
             _fake_readonly,
         ),
     )
@@ -68,16 +68,16 @@ class FakeRedis:
 
 
 class TestStoreAttachmentEndpoint:
-    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
     def test_store_attachment_rejects_oversized_non_audio_file(
         self, mock_store_attachment, flask_app
     ):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         mock_storage = MagicMock()
-        with patch("application.api.user.base.storage", mock_storage), patch(
-            "application.upload_limits.settings.UPLOAD_MAX_FILE_BYTES", 4
+        with patch("docsgpt.api.user.base.storage", mock_storage), patch(
+            "docsgpt.upload_limits.settings.UPLOAD_MAX_FILE_BYTES", 4
         ), app.test_request_context(
             "/api/store_attachment",
             method="POST",
@@ -91,11 +91,11 @@ class TestStoreAttachmentEndpoint:
         mock_storage.save_file.assert_not_called()
         mock_store_attachment.assert_not_called()
 
-    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
     def test_store_attachment_preserves_upload_indexes_for_partial_failures(
         self, mock_store_attachment, flask_app
     ):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         mock_storage = MagicMock()
@@ -112,7 +112,7 @@ class TestStoreAttachmentEndpoint:
 
         mock_storage.save_file.side_effect = save_file
 
-        with patch("application.api.user.base.storage", mock_storage):
+        with patch("docsgpt.api.user.base.storage", mock_storage):
             with app.test_request_context(
                 "/api/store_attachment",
                 method="POST",
@@ -136,12 +136,12 @@ class TestStoreAttachmentEndpoint:
                 assert payload["errors"][0]["upload_index"] == 1
                 assert payload["errors"][0]["error"] == "Failed to process file"
 
-    @patch("application.api.user.tasks.store_attachment.delay")
-    @patch("application.stt.upload_limits.settings")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.stt.upload_limits.settings")
     def test_store_attachment_rejects_oversized_audio_files(
         self, mock_limit_settings, mock_store_attachment, flask_app
     ):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         mock_limit_settings.STT_MAX_FILE_SIZE_MB = 1
@@ -169,7 +169,7 @@ class TestStoreAttachmentEndpoint:
 
 class TestSpeechToTextEndpoint:
     def test_stt_returns_400_when_file_is_missing(self, flask_app):
-        from application.api.user.attachments.routes import SpeechToText
+        from docsgpt.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
 
@@ -185,7 +185,7 @@ class TestSpeechToTextEndpoint:
     def test_stt_returns_401_when_authentication_is_missing(
         self, flask_app
     ):
-        from application.api.user.attachments.routes import SpeechToText
+        from docsgpt.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
 
@@ -203,11 +203,11 @@ class TestSpeechToTextEndpoint:
             assert _get_response_status(response) == 401
             assert _get_response_json(response)["message"] == "Authentication required"
 
-    @patch("application.api.user.attachments.routes.STTCreator.create_stt")
+    @patch("docsgpt.api.user.attachments.routes.STTCreator.create_stt")
     def test_stt_transcribes_audio_for_authenticated_user(
         self, mock_create_stt, flask_app
     ):
-        from application.api.user.attachments.routes import SpeechToText
+        from docsgpt.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
         mock_stt = MagicMock()
@@ -247,7 +247,7 @@ class TestSpeechToTextEndpoint:
             mock_stt.transcribe.assert_called_once()
 
     def test_stt_rejects_unsupported_extension(self, flask_app):
-        from application.api.user.attachments.routes import SpeechToText
+        from docsgpt.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
 
@@ -267,11 +267,11 @@ class TestSpeechToTextEndpoint:
 
 
 class TestLiveSpeechToTextEndpoint:
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_start_creates_session(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextStart
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextStart
 
         app = Flask(__name__)
         mock_get_redis.return_value = FakeRedis()
@@ -293,12 +293,12 @@ class TestLiveSpeechToTextEndpoint:
             assert payload["session_id"]
             assert payload["transcript_text"] == ""
 
-    @patch("application.api.user.attachments.routes.STTCreator.create_stt")
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.STTCreator.create_stt")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_reconciles_transcript_progressively(
         self, mock_get_redis, mock_create_stt, flask_app
     ):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
             LiveSpeechToTextFinish,
             LiveSpeechToTextStart,
@@ -413,11 +413,11 @@ class TestLiveSpeechToTextEndpoint:
                 == "hello this is a longer test phrase for transcript stabilization today now again later"
             )
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_rejects_missing_session(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextChunk
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextChunk
 
         app = Flask(__name__)
         mock_get_redis.return_value = FakeRedis()
@@ -440,12 +440,12 @@ class TestLiveSpeechToTextEndpoint:
             assert _get_response_status(response) == 404
             assert _get_response_json(response)["message"] == "Live transcription session not found"
 
-    @patch("application.api.user.attachments.routes.STTCreator.create_stt")
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.STTCreator.create_stt")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_hides_internal_value_errors(
         self, mock_get_redis, mock_create_stt, flask_app
     ):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
             LiveSpeechToTextStart,
         )
@@ -500,7 +500,7 @@ class TestResolveAuthenticatedUser:
     """Tests for _resolve_authenticated_user helper."""
 
     def test_returns_user_from_decoded_token(self, flask_app):
-        from application.api.user.attachments.routes import _resolve_authenticated_user
+        from docsgpt.api.user.attachments.routes import _resolve_authenticated_user
 
         app = Flask(__name__)
         with app.test_request_context("/api/store_attachment", method="POST"):
@@ -514,7 +514,7 @@ class TestResolveAuthenticatedUser:
         # attachment row's user_id matches the raw sub /stream queries with.
         # Previously safe_filename stripped "@"/"." (a@b.com -> abcom), making
         # an uploaded attachment unreadable by its own owner on /stream.
-        from application.api.user.attachments.routes import _resolve_authenticated_user
+        from docsgpt.api.user.attachments.routes import _resolve_authenticated_user
 
         app = Flask(__name__)
         with app.test_request_context("/api/store_attachment", method="POST"):
@@ -522,7 +522,7 @@ class TestResolveAuthenticatedUser:
             assert _resolve_authenticated_user() == "alex@arc53.com"
 
     def test_returns_user_from_valid_api_key_form(self, flask_app):
-        from application.api.user.attachments.routes import _resolve_authenticated_user
+        from docsgpt.api.user.attachments.routes import _resolve_authenticated_user
 
         app = Flask(__name__)
         p1, p2 = _patch_agents_repo({"key": "valid_key", "user_id": "apikey_user"})
@@ -539,7 +539,7 @@ class TestResolveAuthenticatedUser:
                 assert "apikey_user" in result
 
     def test_returns_401_for_invalid_api_key(self, flask_app):
-        from application.api.user.attachments.routes import _resolve_authenticated_user
+        from docsgpt.api.user.attachments.routes import _resolve_authenticated_user
 
         app = Flask(__name__)
         p1, p2 = _patch_agents_repo(None)
@@ -556,7 +556,7 @@ class TestResolveAuthenticatedUser:
                 assert result.status_code == 401
 
     def test_returns_none_no_auth(self, flask_app):
-        from application.api.user.attachments.routes import _resolve_authenticated_user
+        from docsgpt.api.user.attachments.routes import _resolve_authenticated_user
 
         app = Flask(__name__)
         with app.test_request_context("/api/store_attachment", method="POST"):
@@ -570,7 +570,7 @@ class TestGetUploadedFileSize:
     """Tests for _get_uploaded_file_size helper."""
 
     def test_returns_file_size(self):
-        from application.api.user.attachments.routes import _get_uploaded_file_size
+        from docsgpt.api.user.attachments.routes import _get_uploaded_file_size
 
         file = MagicMock()
         file.stream.tell.side_effect = [0, 1024]
@@ -578,7 +578,7 @@ class TestGetUploadedFileSize:
         assert result == 1024
 
     def test_returns_zero_on_exception(self):
-        from application.api.user.attachments.routes import _get_uploaded_file_size
+        from docsgpt.api.user.attachments.routes import _get_uploaded_file_size
 
         file = MagicMock()
         file.stream.tell.side_effect = Exception("stream error")
@@ -591,28 +591,28 @@ class TestIsSupportedAudioMimetype:
     """Tests for _is_supported_audio_mimetype helper."""
 
     def test_empty_mimetype_returns_true(self):
-        from application.api.user.attachments.routes import _is_supported_audio_mimetype
+        from docsgpt.api.user.attachments.routes import _is_supported_audio_mimetype
 
         assert _is_supported_audio_mimetype("") is True
 
     def test_none_mimetype_returns_true(self):
-        from application.api.user.attachments.routes import _is_supported_audio_mimetype
+        from docsgpt.api.user.attachments.routes import _is_supported_audio_mimetype
 
         assert _is_supported_audio_mimetype(None) is True
 
     def test_audio_mimetype_returns_true(self):
-        from application.api.user.attachments.routes import _is_supported_audio_mimetype
+        from docsgpt.api.user.attachments.routes import _is_supported_audio_mimetype
 
         assert _is_supported_audio_mimetype("audio/wav") is True
         assert _is_supported_audio_mimetype("audio/mp3") is True
 
     def test_unsupported_mimetype_returns_false(self):
-        from application.api.user.attachments.routes import _is_supported_audio_mimetype
+        from docsgpt.api.user.attachments.routes import _is_supported_audio_mimetype
 
         assert _is_supported_audio_mimetype("text/plain") is False
 
     def test_mimetype_with_params(self):
-        from application.api.user.attachments.routes import _is_supported_audio_mimetype
+        from docsgpt.api.user.attachments.routes import _is_supported_audio_mimetype
 
         assert _is_supported_audio_mimetype("audio/wav; codecs=1") is True
 
@@ -622,7 +622,7 @@ class TestEnforceUploadedAudioSizeLimit:
     """Tests for _enforce_uploaded_audio_size_limit."""
 
     def test_non_audio_file_is_ignored(self):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             _enforce_uploaded_audio_size_limit,
         )
 
@@ -630,10 +630,10 @@ class TestEnforceUploadedAudioSizeLimit:
         # Should not raise for non-audio files
         _enforce_uploaded_audio_size_limit(file, "readme.txt")
 
-    @patch("application.api.user.attachments.routes.enforce_audio_file_size_limit")
-    @patch("application.api.user.attachments.routes._get_uploaded_file_size")
+    @patch("docsgpt.api.user.attachments.routes.enforce_audio_file_size_limit")
+    @patch("docsgpt.api.user.attachments.routes._get_uploaded_file_size")
     def test_audio_file_calls_enforce(self, mock_size, mock_enforce):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             _enforce_uploaded_audio_size_limit,
         )
 
@@ -650,7 +650,7 @@ class TestStoreAttachmentAdditional:
     def test_store_attachment_returns_401_for_invalid_api_key(
         self, flask_app
     ):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         p1, p2 = _patch_agents_repo(None)
@@ -672,7 +672,7 @@ class TestStoreAttachmentAdditional:
                 assert _get_response_status(response) == 401
 
     def test_store_attachment_missing_file(self, flask_app):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         with app.test_request_context(
@@ -688,7 +688,7 @@ class TestStoreAttachmentAdditional:
             assert _get_response_status(response) == 400
 
     def test_store_attachment_no_auth_returns_401(self, flask_app):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         with app.test_request_context(
@@ -703,18 +703,18 @@ class TestStoreAttachmentAdditional:
             response = resource.post()
             assert _get_response_status(response) == 401
 
-    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
     def test_store_attachment_single_file_response(
         self, mock_store_attachment, flask_app
     ):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         mock_storage = MagicMock()
         mock_storage.save_file.return_value = {"storage_type": "local"}
         mock_store_attachment.return_value = SimpleNamespace(id="task-single")
 
-        with patch("application.api.user.base.storage", mock_storage):
+        with patch("docsgpt.api.user.base.storage", mock_storage):
             with app.test_request_context(
                 "/api/store_attachment",
                 method="POST",
@@ -730,17 +730,17 @@ class TestStoreAttachmentAdditional:
                 assert _get_response_status(response) == 200
                 assert payload["task_id"] == "task-single"
 
-    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
     def test_store_attachment_all_files_fail_returns_400(
         self, mock_store_attachment, flask_app
     ):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         mock_storage = MagicMock()
         mock_storage.save_file.side_effect = ValueError("save error")
 
-        with patch("application.api.user.base.storage", mock_storage):
+        with patch("docsgpt.api.user.base.storage", mock_storage):
             with app.test_request_context(
                 "/api/store_attachment",
                 method="POST",
@@ -753,16 +753,16 @@ class TestStoreAttachmentAdditional:
                 response = resource.post()
                 assert _get_response_status(response) == 400
 
-    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
     def test_store_attachment_outer_exception(
         self, mock_store_attachment, flask_app
     ):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
 
         with patch(
-            "application.api.user.base.storage",
+            "docsgpt.api.user.base.storage",
             side_effect=Exception("unexpected"),
         ):
             with app.test_request_context(
@@ -778,7 +778,7 @@ class TestStoreAttachmentAdditional:
                 assert _get_response_status(response) == 400
 
     def test_store_attachment_empty_filename_files(self, flask_app):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         with app.test_request_context(
@@ -793,11 +793,11 @@ class TestStoreAttachmentAdditional:
             response = resource.post()
             assert _get_response_status(response) == 400
 
-    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
     def test_store_attachment_via_api_key_auth(
         self, mock_store_attachment, flask_app
     ):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         mock_storage = MagicMock()
@@ -807,7 +807,7 @@ class TestStoreAttachmentAdditional:
             {"key": "valid_key", "user_id": "apikey_user"}
         )
 
-        with patch("application.api.user.base.storage", mock_storage), p1, p2:
+        with patch("docsgpt.api.user.base.storage", mock_storage), p1, p2:
             with app.test_request_context(
                 "/api/store_attachment",
                 method="POST",
@@ -832,13 +832,13 @@ class TestSpeechToTextAdditional:
     """Additional tests for SpeechToText endpoint."""
 
     @patch(
-        "application.api.user.attachments.routes._is_supported_audio_mimetype",
+        "docsgpt.api.user.attachments.routes._is_supported_audio_mimetype",
         return_value=False,
     )
     def test_stt_rejects_unsupported_mimetype(
         self, mock_mimetype_check, flask_app
     ):
-        from application.api.user.attachments.routes import SpeechToText
+        from docsgpt.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
         with app.test_request_context(
@@ -854,11 +854,11 @@ class TestSpeechToTextAdditional:
             assert _get_response_status(response) == 400
             assert "MIME" in _get_response_json(response)["message"]
 
-    @patch("application.stt.upload_limits.settings")
+    @patch("docsgpt.stt.upload_limits.settings")
     def test_stt_rejects_oversized_audio(
         self, mock_limit_settings, flask_app
     ):
-        from application.api.user.attachments.routes import SpeechToText
+        from docsgpt.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
         mock_limit_settings.STT_MAX_FILE_SIZE_MB = 1
@@ -878,11 +878,11 @@ class TestSpeechToTextAdditional:
             assert _get_response_status(response) == 413
             assert "exceeds" in _get_response_json(response)["message"]
 
-    @patch("application.api.user.attachments.routes.STTCreator.create_stt")
+    @patch("docsgpt.api.user.attachments.routes.STTCreator.create_stt")
     def test_stt_transcription_error_returns_400(
         self, mock_create_stt, flask_app
     ):
-        from application.api.user.attachments.routes import SpeechToText
+        from docsgpt.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
         mock_stt = MagicMock()
@@ -905,11 +905,11 @@ class TestSpeechToTextAdditional:
                 == "Failed to transcribe audio"
             )
 
-    @patch("application.api.user.attachments.routes.STTCreator.create_stt")
+    @patch("docsgpt.api.user.attachments.routes.STTCreator.create_stt")
     def test_stt_uses_language_form_param(
         self, mock_create_stt, flask_app
     ):
-        from application.api.user.attachments.routes import SpeechToText
+        from docsgpt.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
         mock_stt = MagicMock()
@@ -941,11 +941,11 @@ class TestSpeechToTextAdditional:
 class TestLiveSpeechToTextAdditional:
     """Additional tests for live STT endpoints."""
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_start_returns_401_no_auth(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextStart
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextStart
 
         app = Flask(__name__)
         mock_get_redis.return_value = FakeRedis()
@@ -961,11 +961,11 @@ class TestLiveSpeechToTextAdditional:
             response = resource.post()
             assert _get_response_status(response) == 401
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_start_returns_503_when_redis_unavailable(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextStart
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextStart
 
         app = Flask(__name__)
         mock_get_redis.return_value = None
@@ -981,11 +981,11 @@ class TestLiveSpeechToTextAdditional:
             response = resource.post()
             assert _get_response_status(response) == 503
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_returns_401_no_auth(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextChunk
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextChunk
 
         app = Flask(__name__)
         mock_get_redis.return_value = FakeRedis()
@@ -1006,11 +1006,11 @@ class TestLiveSpeechToTextAdditional:
             response = resource.post()
             assert _get_response_status(response) == 401
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_returns_503_no_redis(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextChunk
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextChunk
 
         app = Flask(__name__)
         mock_get_redis.return_value = None
@@ -1031,11 +1031,11 @@ class TestLiveSpeechToTextAdditional:
             response = resource.post()
             assert _get_response_status(response) == 503
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_missing_session_id(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextChunk
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextChunk
 
         app = Flask(__name__)
         mock_get_redis.return_value = FakeRedis()
@@ -1057,11 +1057,11 @@ class TestLiveSpeechToTextAdditional:
             assert _get_response_status(response) == 400
             assert "session_id" in _get_response_json(response)["message"]
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_forbidden_different_user(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
             LiveSpeechToTextStart,
         )
@@ -1096,11 +1096,11 @@ class TestLiveSpeechToTextAdditional:
             response = chunk_resource.post()
             assert _get_response_status(response) == 403
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_missing_chunk_index(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
             LiveSpeechToTextStart,
         )
@@ -1136,11 +1136,11 @@ class TestLiveSpeechToTextAdditional:
             assert _get_response_status(response) == 400
             assert "chunk_index" in _get_response_json(response)["message"]
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_invalid_chunk_index(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
             LiveSpeechToTextStart,
         )
@@ -1176,11 +1176,11 @@ class TestLiveSpeechToTextAdditional:
             assert _get_response_status(response) == 400
             assert "Invalid chunk_index" in _get_response_json(response)["message"]
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_missing_file(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
             LiveSpeechToTextStart,
         )
@@ -1215,11 +1215,11 @@ class TestLiveSpeechToTextAdditional:
             assert _get_response_status(response) == 400
             assert "Missing file" in _get_response_json(response)["message"]
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_unsupported_extension(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
             LiveSpeechToTextStart,
         )
@@ -1255,12 +1255,12 @@ class TestLiveSpeechToTextAdditional:
             assert _get_response_status(response) == 400
             assert "Unsupported audio format" in _get_response_json(response)["message"]
 
-    @patch("application.api.user.attachments.routes.STTCreator.create_stt")
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.STTCreator.create_stt")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_transcription_error(
         self, mock_get_redis, mock_create_stt, flask_app
     ):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
             LiveSpeechToTextStart,
         )
@@ -1303,13 +1303,13 @@ class TestLiveSpeechToTextAdditional:
                 == "Failed to transcribe audio"
             )
 
-    @patch("application.api.user.attachments.routes.settings")
-    @patch("application.api.user.attachments.routes.STTCreator.create_stt")
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.settings")
+    @patch("docsgpt.api.user.attachments.routes.STTCreator.create_stt")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_detects_language(
         self, mock_get_redis, mock_create_stt, mock_settings, flask_app
     ):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
             LiveSpeechToTextStart,
         )
@@ -1359,11 +1359,11 @@ class TestLiveSpeechToTextAdditional:
             assert _get_response_status(response) == 200
             assert payload["language"] == "es"
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_finish_returns_401_no_auth(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextFinish
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextFinish
 
         app = Flask(__name__)
         mock_get_redis.return_value = FakeRedis()
@@ -1379,11 +1379,11 @@ class TestLiveSpeechToTextAdditional:
             response = resource.post()
             assert _get_response_status(response) == 401
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_finish_returns_503_no_redis(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextFinish
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextFinish
 
         app = Flask(__name__)
         mock_get_redis.return_value = None
@@ -1399,11 +1399,11 @@ class TestLiveSpeechToTextAdditional:
             response = resource.post()
             assert _get_response_status(response) == 503
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_finish_missing_session_id(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextFinish
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextFinish
 
         app = Flask(__name__)
         mock_get_redis.return_value = FakeRedis()
@@ -1420,11 +1420,11 @@ class TestLiveSpeechToTextAdditional:
             assert _get_response_status(response) == 400
             assert "session_id" in _get_response_json(response)["message"]
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_finish_session_not_found(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import LiveSpeechToTextFinish
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextFinish
 
         app = Flask(__name__)
         mock_get_redis.return_value = FakeRedis()
@@ -1440,11 +1440,11 @@ class TestLiveSpeechToTextAdditional:
             response = resource.post()
             assert _get_response_status(response) == 404
 
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_finish_forbidden_different_user(
         self, mock_get_redis, flask_app
     ):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextFinish,
             LiveSpeechToTextStart,
         )
@@ -1474,15 +1474,15 @@ class TestLiveSpeechToTextAdditional:
             response = finish_resource.post()
             assert _get_response_status(response) == 403
 
-    @patch("application.api.user.attachments.routes.STTCreator.create_stt")
-    @patch("application.api.user.attachments.routes.get_redis_instance")
+    @patch("docsgpt.api.user.attachments.routes.STTCreator.create_stt")
+    @patch("docsgpt.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_email_sub_owner_round_trip(
         self, mock_get_redis, mock_create_stt, flask_app
     ):
         # Regression: an email-style sub (a@b.com) is stored RAW on the session, so
         # the owner must pass the raw-vs-raw ownership gate on chunk + finish. Before
         # the fix, safe_filename(stored_user) != raw auth_user 403'd the owner.
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
             LiveSpeechToTextFinish,
             LiveSpeechToTextStart,
@@ -1548,12 +1548,12 @@ class TestServeImage:
 
     @staticmethod
     def _capability(agent_id, image_path, user_id="user123"):
-        from application.utils import generate_agent_image_capability
+        from docsgpt.utils import generate_agent_image_capability
 
         return generate_agent_image_capability(agent_id, image_path, user_id)
 
     def test_serve_image_success(self, flask_app):
-        from application.api.user.attachments.routes import ServeImage
+        from docsgpt.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
         mock_storage = MagicMock()
@@ -1568,15 +1568,15 @@ class TestServeImage:
         }
 
         with patch(
-            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+            "docsgpt.utils.settings.JWT_SECRET_KEY", "test-image-secret"
         ), patch(
-            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            "docsgpt.api.user.attachments.routes.AgentsRepository.find_image_record",
             return_value=agent,
         ), patch(
-            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+            "docsgpt.api.user.attachments.routes.db_readonly", _fake_readonly
         ), patch(
-            "application.api.user.attachments.routes.settings.STORAGE_TYPE", "local"
-        ), patch("application.api.user.base.storage", mock_storage):
+            "docsgpt.api.user.attachments.routes.settings.STORAGE_TYPE", "local"
+        ), patch("docsgpt.api.user.base.storage", mock_storage):
             capability = self._capability(self.agent_id, self.image_path)
             with app.test_request_context(
                 f"/api/images/{self.agent_id}/{capability}",
@@ -1593,7 +1593,7 @@ class TestServeImage:
                 mock_storage.get_file.assert_called_once_with(self.image_path)
 
     def test_serve_image_jpg_content_type(self, flask_app):
-        from application.api.user.attachments.routes import ServeImage
+        from docsgpt.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
         mock_storage = MagicMock()
@@ -1609,15 +1609,15 @@ class TestServeImage:
         }
 
         with patch(
-            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+            "docsgpt.utils.settings.JWT_SECRET_KEY", "test-image-secret"
         ), patch(
-            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            "docsgpt.api.user.attachments.routes.AgentsRepository.find_image_record",
             return_value=agent,
         ), patch(
-            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+            "docsgpt.api.user.attachments.routes.db_readonly", _fake_readonly
         ), patch(
-            "application.api.user.attachments.routes.settings.STORAGE_TYPE", "local"
-        ), patch("application.api.user.base.storage", mock_storage):
+            "docsgpt.api.user.attachments.routes.settings.STORAGE_TYPE", "local"
+        ), patch("docsgpt.api.user.base.storage", mock_storage):
             capability = self._capability(self.agent_id, image_path)
             with app.test_request_context(
                 f"/api/images/{self.agent_id}/{capability}",
@@ -1629,7 +1629,7 @@ class TestServeImage:
                 assert response.headers.get("Content-Type") == "image/jpeg"
 
     def test_s3_avatar_redirects_without_downloading_object(self, flask_app):
-        from application.api.user.attachments.routes import ServeImage
+        from docsgpt.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
         mock_storage = MagicMock()
@@ -1644,15 +1644,15 @@ class TestServeImage:
         }
 
         with patch(
-            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+            "docsgpt.utils.settings.JWT_SECRET_KEY", "test-image-secret"
         ), patch(
-            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            "docsgpt.api.user.attachments.routes.AgentsRepository.find_image_record",
             return_value=agent,
         ), patch(
-            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+            "docsgpt.api.user.attachments.routes.db_readonly", _fake_readonly
         ), patch(
-            "application.api.user.attachments.routes.settings.STORAGE_TYPE", "s3"
-        ), patch("application.api.user.base.storage", mock_storage):
+            "docsgpt.api.user.attachments.routes.settings.STORAGE_TYPE", "s3"
+        ), patch("docsgpt.api.user.base.storage", mock_storage):
             capability = self._capability(self.agent_id, self.image_path)
             with app.test_request_context(
                 f"/api/images/{self.agent_id}/{capability}", method="GET"
@@ -1668,7 +1668,7 @@ class TestServeImage:
         mock_storage.get_file.assert_not_called()
 
     def test_legacy_oversized_avatar_is_rejected_before_read(self, flask_app):
-        from application.api.user.attachments.routes import ServeImage
+        from docsgpt.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
         mock_storage = MagicMock()
@@ -1680,15 +1680,15 @@ class TestServeImage:
         }
 
         with patch(
-            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+            "docsgpt.utils.settings.JWT_SECRET_KEY", "test-image-secret"
         ), patch(
-            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            "docsgpt.api.user.attachments.routes.AgentsRepository.find_image_record",
             return_value=agent,
         ), patch(
-            "application.api.user.attachments.routes.db_readonly", _fake_readonly
+            "docsgpt.api.user.attachments.routes.db_readonly", _fake_readonly
         ), patch(
-            "application.api.user.attachments.routes.settings.AGENT_IMAGE_MAX_BYTES", 5000
-        ), patch("application.api.user.base.storage", mock_storage):
+            "docsgpt.api.user.attachments.routes.settings.AGENT_IMAGE_MAX_BYTES", 5000
+        ), patch("docsgpt.api.user.base.storage", mock_storage):
             capability = self._capability(self.agent_id, self.image_path)
             with app.test_request_context(
                 f"/api/images/{self.agent_id}/{capability}", method="GET"
@@ -1700,7 +1700,7 @@ class TestServeImage:
         mock_storage.generate_presigned_url.assert_not_called()
 
     def test_unknown_capability_never_reads_storage(self, flask_app):
-        from application.api.user.attachments.routes import ServeImage
+        from docsgpt.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
         mock_storage = MagicMock()
@@ -1712,13 +1712,13 @@ class TestServeImage:
         }
 
         with patch(
-            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+            "docsgpt.utils.settings.JWT_SECRET_KEY", "test-image-secret"
         ), patch(
-            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            "docsgpt.api.user.attachments.routes.AgentsRepository.find_image_record",
             return_value=agent,
         ), patch(
-            "application.api.user.attachments.routes.db_readonly", _fake_readonly
-        ), patch("application.api.user.base.storage", mock_storage):
+            "docsgpt.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch("docsgpt.api.user.base.storage", mock_storage):
             with app.test_request_context(
                 f"/api/images/{self.agent_id}/{'0' * 64}",
                 method="GET",
@@ -1729,20 +1729,20 @@ class TestServeImage:
                 mock_storage.get_file.assert_not_called()
 
     def test_poisoned_agent_path_never_reads_storage(self, flask_app):
-        from application.api.user.attachments.routes import ServeImage
+        from docsgpt.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
         mock_storage = MagicMock()
         agent = {"id": self.agent_id, "user_id": "user123", "image": ".env"}
 
         with patch(
-            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+            "docsgpt.utils.settings.JWT_SECRET_KEY", "test-image-secret"
         ), patch(
-            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            "docsgpt.api.user.attachments.routes.AgentsRepository.find_image_record",
             return_value=agent,
         ), patch(
-            "application.api.user.attachments.routes.db_readonly", _fake_readonly
-        ), patch("application.api.user.base.storage", mock_storage):
+            "docsgpt.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch("docsgpt.api.user.base.storage", mock_storage):
             capability = self._capability(self.agent_id, ".env")
             with app.test_request_context(
                 f"/api/images/{self.agent_id}/{capability}", method="GET"
@@ -1752,7 +1752,7 @@ class TestServeImage:
                 mock_storage.get_file.assert_not_called()
 
     def test_serve_image_file_not_found(self, flask_app):
-        from application.api.user.attachments.routes import ServeImage
+        from docsgpt.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
         mock_storage = MagicMock()
@@ -1764,13 +1764,13 @@ class TestServeImage:
         }
 
         with patch(
-            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+            "docsgpt.utils.settings.JWT_SECRET_KEY", "test-image-secret"
         ), patch(
-            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            "docsgpt.api.user.attachments.routes.AgentsRepository.find_image_record",
             return_value=agent,
         ), patch(
-            "application.api.user.attachments.routes.db_readonly", _fake_readonly
-        ), patch("application.api.user.base.storage", mock_storage):
+            "docsgpt.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch("docsgpt.api.user.base.storage", mock_storage):
             capability = self._capability(self.agent_id, self.image_path)
             with app.test_request_context(
                 f"/api/images/{self.agent_id}/{capability}", method="GET"
@@ -1779,7 +1779,7 @@ class TestServeImage:
                 assert _get_response_status(response) == 404
 
     def test_serve_image_generic_error(self, flask_app):
-        from application.api.user.attachments.routes import ServeImage
+        from docsgpt.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
         mock_storage = MagicMock()
@@ -1792,13 +1792,13 @@ class TestServeImage:
         }
 
         with patch(
-            "application.utils.settings.JWT_SECRET_KEY", "test-image-secret"
+            "docsgpt.utils.settings.JWT_SECRET_KEY", "test-image-secret"
         ), patch(
-            "application.api.user.attachments.routes.AgentsRepository.find_image_record",
+            "docsgpt.api.user.attachments.routes.AgentsRepository.find_image_record",
             return_value=agent,
         ), patch(
-            "application.api.user.attachments.routes.db_readonly", _fake_readonly
-        ), patch("application.api.user.base.storage", mock_storage):
+            "docsgpt.api.user.attachments.routes.db_readonly", _fake_readonly
+        ), patch("docsgpt.api.user.base.storage", mock_storage):
             capability = self._capability(self.agent_id, self.image_path)
             with app.test_request_context(
                 f"/api/images/{self.agent_id}/{capability}",
@@ -1813,9 +1813,9 @@ class TestServeImage:
 class TestTextToSpeech:
     """Tests for TextToSpeech endpoint."""
 
-    @patch("application.api.user.attachments.routes.TTSCreator.create_tts")
+    @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
     def test_tts_success(self, mock_create_tts, flask_app):
-        from application.api.user.attachments.routes import TextToSpeech
+        from docsgpt.api.user.attachments.routes import TextToSpeech
 
         app = Flask(__name__)
         mock_tts = MagicMock()
@@ -1835,9 +1835,9 @@ class TestTextToSpeech:
             assert payload["audio_base64"] == "base64audio=="
             assert payload["lang"] == "en"
 
-    @patch("application.api.user.attachments.routes.TTSCreator.create_tts")
+    @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
     def test_tts_error_returns_400(self, mock_create_tts, flask_app):
-        from application.api.user.attachments.routes import TextToSpeech
+        from docsgpt.api.user.attachments.routes import TextToSpeech
 
         app = Flask(__name__)
         mock_tts = MagicMock()
@@ -1866,7 +1866,7 @@ class TestAttachmentRoutesGaps:
 
     def test_parse_bool_form_value_true(self):
         """Cover helper function."""
-        from application.api.user.attachments.routes import _parse_bool_form_value
+        from docsgpt.api.user.attachments.routes import _parse_bool_form_value
 
         assert _parse_bool_form_value("true") is True
         assert _parse_bool_form_value("1") is True
@@ -1877,7 +1877,7 @@ class TestAttachmentRoutesGaps:
 
     def test_stt_auth_status_code_passthrough(self):
         """Cover line 256: auth_user with status_code is returned directly."""
-        from application.api.user.attachments.routes import SpeechToText
+        from docsgpt.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
         with app.test_request_context(
@@ -1890,7 +1890,7 @@ class TestAttachmentRoutesGaps:
             flask_request.decoded_token = None
 
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user"
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user"
             ) as mock_auth:
                 error_resp = MagicMock()
                 error_resp.status_code = 401
@@ -1901,7 +1901,7 @@ class TestAttachmentRoutesGaps:
 
     def test_live_start_no_auth(self):
         """Cover line 330: live/start returns 401 when no auth."""
-        from application.api.user.attachments.routes import LiveSpeechToTextStart
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextStart
 
         app = Flask(__name__)
         with app.test_request_context(
@@ -1914,7 +1914,7 @@ class TestAttachmentRoutesGaps:
             flask_request.decoded_token = None
 
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value=None,
             ):
                 resource = LiveSpeechToTextStart()
@@ -1923,7 +1923,7 @@ class TestAttachmentRoutesGaps:
 
     def test_live_start_redis_unavailable(self):
         """Cover line 337: redis_client with status_code returned."""
-        from application.api.user.attachments.routes import LiveSpeechToTextStart
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextStart
 
         app = Flask(__name__)
         with app.test_request_context(
@@ -1936,11 +1936,11 @@ class TestAttachmentRoutesGaps:
             flask_request.decoded_token = {"sub": "user1"}
 
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value="user1",
             ):
                 with patch(
-                    "application.api.user.attachments.routes._require_live_stt_redis"
+                    "docsgpt.api.user.attachments.routes._require_live_stt_redis"
                 ) as mock_redis:
                     error_resp = MagicMock()
                     error_resp.status_code = 503
@@ -1951,7 +1951,7 @@ class TestAttachmentRoutesGaps:
 
     def test_live_chunk_missing_file(self):
         """Cover line 443: missing file in chunk returns 400."""
-        from application.api.user.attachments.routes import LiveSpeechToTextChunk
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextChunk
 
         app = Flask(__name__)
         fake_redis = FakeRedis()
@@ -1970,19 +1970,19 @@ class TestAttachmentRoutesGaps:
             flask_request.decoded_token = {"sub": "user1"}
 
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value="user1",
             ):
                 with patch(
-                    "application.api.user.attachments.routes._require_live_stt_redis",
+                    "docsgpt.api.user.attachments.routes._require_live_stt_redis",
                     return_value=fake_redis,
                 ):
                     with patch(
-                        "application.api.user.attachments.routes.load_live_stt_session",
+                        "docsgpt.api.user.attachments.routes.load_live_stt_session",
                         return_value={"session_id": "sess123", "user": "user1"},
                     ):
                         with patch(
-                            "application.api.user.attachments.routes.safe_filename",
+                            "docsgpt.api.user.attachments.routes.safe_filename",
                             side_effect=lambda x: x,
                         ):
                             resource = LiveSpeechToTextChunk()
@@ -1991,7 +1991,7 @@ class TestAttachmentRoutesGaps:
 
     def test_live_chunk_unsupported_mimetype(self):
         """Cover line 457: unsupported MIME type returns 400."""
-        from application.api.user.attachments.routes import LiveSpeechToTextChunk
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextChunk
 
         app = Flask(__name__)
         fake_redis = FakeRedis()
@@ -2015,19 +2015,19 @@ class TestAttachmentRoutesGaps:
             flask_request.files.get.return_value = fake_file
 
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value="user1",
             ):
                 with patch(
-                    "application.api.user.attachments.routes._require_live_stt_redis",
+                    "docsgpt.api.user.attachments.routes._require_live_stt_redis",
                     return_value=fake_redis,
                 ):
                     with patch(
-                        "application.api.user.attachments.routes.load_live_stt_session",
+                        "docsgpt.api.user.attachments.routes.load_live_stt_session",
                         return_value={"session_id": "sess123", "user": "user1"},
                     ):
                         with patch(
-                            "application.api.user.attachments.routes.safe_filename",
+                            "docsgpt.api.user.attachments.routes.safe_filename",
                             side_effect=lambda x: x,
                         ):
                             resource = LiveSpeechToTextChunk()
@@ -2038,7 +2038,7 @@ class TestAttachmentRoutesGaps:
 
     def test_live_finish_no_auth(self):
         """Cover line 560: finish returns 401 when no auth."""
-        from application.api.user.attachments.routes import LiveSpeechToTextFinish
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextFinish
 
         app = Flask(__name__)
         with app.test_request_context(
@@ -2050,7 +2050,7 @@ class TestAttachmentRoutesGaps:
 
             flask_request.decoded_token = None
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value=None,
             ):
                 resource = LiveSpeechToTextFinish()
@@ -2059,7 +2059,7 @@ class TestAttachmentRoutesGaps:
 
     def test_live_finish_forbidden(self):
         """Cover line 590: finish returns 403 when user mismatch."""
-        from application.api.user.attachments.routes import LiveSpeechToTextFinish
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextFinish
 
         app = Flask(__name__)
         fake_redis = FakeRedis()
@@ -2073,22 +2073,22 @@ class TestAttachmentRoutesGaps:
 
             flask_request.decoded_token = {"sub": "user1"}
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value="user1",
             ):
                 with patch(
-                    "application.api.user.attachments.routes._require_live_stt_redis",
+                    "docsgpt.api.user.attachments.routes._require_live_stt_redis",
                     return_value=fake_redis,
                 ):
                     with patch(
-                        "application.api.user.attachments.routes.load_live_stt_session",
+                        "docsgpt.api.user.attachments.routes.load_live_stt_session",
                         return_value={
                             "session_id": "sess123",
                             "user": "different_user",
                         },
                     ):
                         with patch(
-                            "application.api.user.attachments.routes.safe_filename",
+                            "docsgpt.api.user.attachments.routes.safe_filename",
                             side_effect=lambda x: x,
                         ):
                             resource = LiveSpeechToTextFinish()
@@ -2106,7 +2106,7 @@ class TestAttachmentsCoverageLines:
 
     def test_store_attachment_single_file_fallback(self):
         """Cover line 136: single file fallback when getlist returns empty."""
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
 
@@ -2116,7 +2116,7 @@ class TestAttachmentsCoverageLines:
             content_type="multipart/form-data",
         ):
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value="user1",
             ):
                 resource = StoreAttachment()
@@ -2126,7 +2126,7 @@ class TestAttachmentsCoverageLines:
 
     def test_speech_to_text_auth_required(self):
         """Cover line 256: STT requires authentication."""
-        from application.api.user.attachments.routes import SpeechToText
+        from docsgpt.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
 
@@ -2135,7 +2135,7 @@ class TestAttachmentsCoverageLines:
             method="POST",
         ):
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value=None,
             ):
                 resource = SpeechToText()
@@ -2145,7 +2145,7 @@ class TestAttachmentsCoverageLines:
 
     def test_live_stt_start_auth_required(self):
         """Cover line 330: live STT start requires auth."""
-        from application.api.user.attachments.routes import LiveSpeechToTextStart
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextStart
 
         app = Flask(__name__)
 
@@ -2154,7 +2154,7 @@ class TestAttachmentsCoverageLines:
             method="POST",
         ):
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value=None,
             ):
                 resource = LiveSpeechToTextStart()
@@ -2164,7 +2164,7 @@ class TestAttachmentsCoverageLines:
 
     def test_live_stt_chunk_missing_file(self):
         """Cover line 443: missing file in chunk upload."""
-        from application.api.user.attachments.routes import LiveSpeechToTextChunk
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextChunk
 
         app = Flask(__name__)
         fake_redis = FakeRedis()
@@ -2176,19 +2176,19 @@ class TestAttachmentsCoverageLines:
             data={"session_id": "sess1", "chunk_index": "0"},
         ):
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value="user1",
             ):
                 with patch(
-                    "application.api.user.attachments.routes._require_live_stt_redis",
+                    "docsgpt.api.user.attachments.routes._require_live_stt_redis",
                     return_value=fake_redis,
                 ):
                     with patch(
-                        "application.api.user.attachments.routes.load_live_stt_session",
+                        "docsgpt.api.user.attachments.routes.load_live_stt_session",
                         return_value={"session_id": "sess1", "user": "user1"},
                     ):
                         with patch(
-                            "application.api.user.attachments.routes.safe_filename",
+                            "docsgpt.api.user.attachments.routes.safe_filename",
                             side_effect=lambda x: x,
                         ):
                             resource = LiveSpeechToTextChunk()
@@ -2198,7 +2198,7 @@ class TestAttachmentsCoverageLines:
 
     def test_live_stt_chunk_unsupported_mime(self):
         """Cover line 457: unsupported audio MIME type."""
-        from application.api.user.attachments.routes import LiveSpeechToTextChunk
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextChunk
 
         app = Flask(__name__)
         fake_redis = FakeRedis()
@@ -2220,23 +2220,23 @@ class TestAttachmentsCoverageLines:
             request.form = {"session_id": "sess1", "chunk_index": "0"}
 
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value="user1",
             ):
                 with patch(
-                    "application.api.user.attachments.routes._require_live_stt_redis",
+                    "docsgpt.api.user.attachments.routes._require_live_stt_redis",
                     return_value=fake_redis,
                 ):
                     with patch(
-                        "application.api.user.attachments.routes.load_live_stt_session",
+                        "docsgpt.api.user.attachments.routes.load_live_stt_session",
                         return_value={"session_id": "sess1", "user": "user1"},
                     ):
                         with patch(
-                            "application.api.user.attachments.routes.safe_filename",
+                            "docsgpt.api.user.attachments.routes.safe_filename",
                             side_effect=lambda x: x,
                         ):
                             with patch(
-                                "application.api.user.attachments.routes._is_supported_audio_mimetype",
+                                "docsgpt.api.user.attachments.routes._is_supported_audio_mimetype",
                                 return_value=False,
                             ):
                                 resource = LiveSpeechToTextChunk()
@@ -2246,7 +2246,7 @@ class TestAttachmentsCoverageLines:
 
     def test_live_stt_finish_auth_required(self):
         """Cover line 560: live STT finish requires auth."""
-        from application.api.user.attachments.routes import LiveSpeechToTextFinish
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextFinish
 
         app = Flask(__name__)
 
@@ -2255,7 +2255,7 @@ class TestAttachmentsCoverageLines:
             method="POST",
         ):
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value=None,
             ):
                 resource = LiveSpeechToTextFinish()
@@ -2265,7 +2265,7 @@ class TestAttachmentsCoverageLines:
 
     def test_live_stt_finish_forbidden(self):
         """Cover line 590: finish session with wrong user returns 403."""
-        from application.api.user.attachments.routes import LiveSpeechToTextFinish
+        from docsgpt.api.user.attachments.routes import LiveSpeechToTextFinish
 
         app = Flask(__name__)
         fake_redis = FakeRedis()
@@ -2276,22 +2276,22 @@ class TestAttachmentsCoverageLines:
             json={"session_id": "sess1"},
         ):
             with patch(
-                "application.api.user.attachments.routes._resolve_authenticated_user",
+                "docsgpt.api.user.attachments.routes._resolve_authenticated_user",
                 return_value="user1",
             ):
                 with patch(
-                    "application.api.user.attachments.routes._require_live_stt_redis",
+                    "docsgpt.api.user.attachments.routes._require_live_stt_redis",
                     return_value=fake_redis,
                 ):
                     with patch(
-                        "application.api.user.attachments.routes.load_live_stt_session",
+                        "docsgpt.api.user.attachments.routes.load_live_stt_session",
                         return_value={
                             "session_id": "sess1",
                             "user": "different_user",
                         },
                     ):
                         with patch(
-                            "application.api.user.attachments.routes.safe_filename",
+                            "docsgpt.api.user.attachments.routes.safe_filename",
                             side_effect=lambda x: x,
                         ):
                             resource = LiveSpeechToTextFinish()
@@ -2313,7 +2313,7 @@ class TestResolveAuthenticatedUserReturnsNone:
 
     @pytest.mark.unit
     def test_returns_none_when_no_auth(self):
-        from application.api.user.attachments.routes import _resolve_authenticated_user
+        from docsgpt.api.user.attachments.routes import _resolve_authenticated_user
 
         app = Flask(__name__)
         with app.test_request_context(
@@ -2321,7 +2321,7 @@ class TestResolveAuthenticatedUserReturnsNone:
             method="POST",
         ):
             with patch(
-                "application.api.user.attachments.routes.safe_filename",
+                "docsgpt.api.user.attachments.routes.safe_filename",
                 side_effect=lambda x: x,
             ):
                 # No decoded_token, no api_key
@@ -2337,7 +2337,7 @@ class TestGetUploadedFileSizeException:
 
     @pytest.mark.unit
     def test_returns_zero_on_exception(self):
-        from application.api.user.attachments.routes import _get_uploaded_file_size
+        from docsgpt.api.user.attachments.routes import _get_uploaded_file_size
 
         broken_file = MagicMock()
         broken_file.stream.tell.side_effect = RuntimeError("broken")
@@ -2350,10 +2350,10 @@ class TestGetStoreAttachmentUserError:
 
     @pytest.mark.unit
     def test_audio_too_large_error(self):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             _get_store_attachment_user_error,
         )
-        from application.stt.upload_limits import AudioFileTooLargeError
+        from docsgpt.stt.upload_limits import AudioFileTooLargeError
 
         err = AudioFileTooLargeError("too big")
         msg = _get_store_attachment_user_error(err)
@@ -2362,7 +2362,7 @@ class TestGetStoreAttachmentUserError:
 
     @pytest.mark.unit
     def test_generic_error(self):
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             _get_store_attachment_user_error,
         )
 
@@ -2372,10 +2372,10 @@ class TestGetStoreAttachmentUserError:
     @pytest.mark.unit
     def test_unsupported_type_message_is_rebuilt_from_the_filename(self):
         """Nothing is read off the exception, so its text cannot reach a response."""
-        from application.api.user.attachments.routes import (
+        from docsgpt.api.user.attachments.routes import (
             _get_store_attachment_user_error,
         )
-        from application.upload_limits import UnsupportedUploadTypeError
+        from docsgpt.upload_limits import UnsupportedUploadTypeError
 
         err = UnsupportedUploadTypeError("internals: /srv/app/tmp/staged-42")
         msg = _get_store_attachment_user_error(err, "clip.mp4")
@@ -2389,12 +2389,12 @@ class TestRequireLiveSttRedisUnavailable:
 
     @pytest.mark.unit
     def test_redis_unavailable(self):
-        from application.api.user.attachments.routes import _require_live_stt_redis
+        from docsgpt.api.user.attachments.routes import _require_live_stt_redis
 
         app = Flask(__name__)
         with app.app_context():
             with patch(
-                "application.api.user.attachments.routes.get_redis_instance",
+                "docsgpt.api.user.attachments.routes.get_redis_instance",
                 return_value=None,
             ):
                 result = _require_live_stt_redis()
@@ -2408,15 +2408,15 @@ MP4_BYTES = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2avc1mp41\x00\x00\x
 class TestStoreAttachmentTypeGate:
     """Unparseable uploads are refused before anything is stored or queued."""
 
-    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
     def test_rejects_unsupported_file_type_before_storage(
         self, mock_store_attachment, flask_app
     ):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         mock_storage = MagicMock()
-        with patch("application.api.user.base.storage", mock_storage), app.test_request_context(
+        with patch("docsgpt.api.user.base.storage", mock_storage), app.test_request_context(
             "/api/store_attachment",
             method="POST",
             data={"file": (io.BytesIO(MP4_BYTES), "clip.mp4")},
@@ -2435,16 +2435,16 @@ class TestStoreAttachmentTypeGate:
         mock_storage.save_file.assert_not_called()
         mock_store_attachment.assert_not_called()
 
-    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
     def test_rejects_a_binary_renamed_to_a_text_suffix(
         self, mock_store_attachment, flask_app
     ):
         """.txt has no parser, so it is judged on content like any other suffix."""
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         mock_storage = MagicMock()
-        with patch("application.api.user.base.storage", mock_storage), app.test_request_context(
+        with patch("docsgpt.api.user.base.storage", mock_storage), app.test_request_context(
             "/api/store_attachment",
             method="POST",
             data={"file": (io.BytesIO(MP4_BYTES), "notes.txt")},
@@ -2458,19 +2458,19 @@ class TestStoreAttachmentTypeGate:
         mock_storage.save_file.assert_not_called()
         mock_store_attachment.assert_not_called()
 
-    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
     def test_accepts_a_text_file_with_no_dedicated_parser(
         self, mock_store_attachment, flask_app
     ):
         """A .py or .log is read by the plain-text fallthrough and must stay allowed."""
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         mock_storage = MagicMock()
         mock_storage.save_file.return_value = {"storage_type": "local"}
         mock_store_attachment.return_value = SimpleNamespace(id="task-py")
 
-        with patch("application.api.user.base.storage", mock_storage), app.test_request_context(
+        with patch("docsgpt.api.user.base.storage", mock_storage), app.test_request_context(
             "/api/store_attachment",
             method="POST",
             data={"file": (io.BytesIO(b"def main():\n    return 1\n"), "main.py")},
@@ -2483,18 +2483,18 @@ class TestStoreAttachmentTypeGate:
         assert _get_response_json(response)["task_id"] == "task-py"
         assert mock_store_attachment.call_count == 1
 
-    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("docsgpt.api.user.tasks.store_attachment.delay")
     def test_batch_skips_unsupported_file_and_keeps_the_rest(
         self, mock_store_attachment, flask_app
     ):
-        from application.api.user.attachments.routes import StoreAttachment
+        from docsgpt.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
         mock_storage = MagicMock()
         mock_storage.save_file.return_value = {"storage_type": "local"}
         mock_store_attachment.return_value = SimpleNamespace(id="task-notes")
 
-        with patch("application.api.user.base.storage", mock_storage), app.test_request_context(
+        with patch("docsgpt.api.user.base.storage", mock_storage), app.test_request_context(
             "/api/store_attachment",
             method="POST",
             data={

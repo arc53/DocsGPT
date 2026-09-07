@@ -8,9 +8,9 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.artifacts import ArtifactsRepository
-from application.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
 
 def _repo(conn) -> ArtifactsRepository:
@@ -366,7 +366,7 @@ class TestQuotaEnforcement:
             repo.create_artifact("alice", "document", conversation_id=_conversation_id(), size=size)
 
     def test_under_quota_passes(self, pg_conn, monkeypatch):
-        from application.sandbox import artifacts_capture as ac
+        from docsgpt.sandbox import artifacts_capture as ac
 
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 10, raising=False)
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 10_000, raising=False)
@@ -376,7 +376,7 @@ class TestQuotaEnforcement:
         ac._enforce_user_quota(_repo(pg_conn), "alice", 100, new_artifact=True)
 
     def test_over_count_quota_raises(self, pg_conn, monkeypatch):
-        from application.sandbox import artifacts_capture as ac
+        from docsgpt.sandbox import artifacts_capture as ac
 
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 2, raising=False)
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 10_000_000, raising=False)
@@ -386,7 +386,7 @@ class TestQuotaEnforcement:
             ac._enforce_user_quota(_repo(pg_conn), "alice", 10, new_artifact=True)
 
     def test_count_quota_ignored_when_appending_version(self, pg_conn, monkeypatch):
-        from application.sandbox import artifacts_capture as ac
+        from docsgpt.sandbox import artifacts_capture as ac
 
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 2, raising=False)
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 10_000_000, raising=False)
@@ -396,7 +396,7 @@ class TestQuotaEnforcement:
         ac._enforce_user_quota(_repo(pg_conn), "alice", 10, new_artifact=False)
 
     def test_over_total_bytes_quota_raises(self, pg_conn, monkeypatch):
-        from application.sandbox import artifacts_capture as ac
+        from docsgpt.sandbox import artifacts_capture as ac
 
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 10_000, raising=False)
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 500, raising=False)
@@ -406,7 +406,7 @@ class TestQuotaEnforcement:
             ac._enforce_user_quota(_repo(pg_conn), "alice", 100, new_artifact=True)  # 450 + 100 > 500
 
     def test_single_artifact_too_large_raises(self, pg_conn, monkeypatch):
-        from application.sandbox import artifacts_capture as ac
+        from docsgpt.sandbox import artifacts_capture as ac
 
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 10_000, raising=False)
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 10_000_000, raising=False)
@@ -415,7 +415,7 @@ class TestQuotaEnforcement:
             ac._enforce_user_quota(_repo(pg_conn), "alice", 1001, new_artifact=True)
 
     def test_zero_settings_disable_enforcement(self, pg_conn, monkeypatch):
-        from application.sandbox import artifacts_capture as ac
+        from docsgpt.sandbox import artifacts_capture as ac
 
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 0, raising=False)
         monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 0, raising=False)
@@ -574,7 +574,7 @@ class TestStableRefSeq:
             repo.resolve_id_by_ref_seq(1)
 
     def test_resolver_resolves_a_n_by_stable_seq_after_delete(self, pg_conn):
-        from application.agents.tools.artifact_ref import resolve_artifact_id
+        from docsgpt.agents.tools.artifact_ref import resolve_artifact_id
 
         repo = _repo(pg_conn)
         conv = _conversation_id()
@@ -585,7 +585,7 @@ class TestStableRefSeq:
         assert resolve_artifact_id(repo, "A2", conversation_id=conv) == b["id"]
 
     def test_legacy_row_without_ref_seq_falls_back_to_position(self, pg_conn):
-        from application.agents.tools.artifact_ref import resolve_artifact_id
+        from docsgpt.agents.tools.artifact_ref import resolve_artifact_id
 
         repo = _repo(pg_conn)
         conv = _conversation_id()

@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import uuid
 
-from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.team_members import TeamMembersRepository
-from application.storage.db.repositories.team_resource_grants import (
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+from docsgpt.storage.db.repositories.team_resource_grants import (
     TeamResourceGrantsRepository,
 )
-from application.storage.db.repositories.team_scope import TeamScopeRepository
-from application.storage.db.repositories.teams import TeamsRepository
-from application.storage.db.repositories.users import UsersRepository
+from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
+from docsgpt.storage.db.repositories.teams import TeamsRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 
 
 def _new_team(conn, name="Acme", slug=None, owner="alice"):

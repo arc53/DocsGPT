@@ -1,7 +1,7 @@
 import types
 import pytest
 
-from application.llm.google_ai import GoogleLLM
+from docsgpt.llm.google_ai import GoogleLLM
 
 class _FakePart:
     def __init__(self, text=None, function_call=None, file_data=None, thought=False):
@@ -89,7 +89,7 @@ class FakeClient:
 @pytest.fixture(autouse=True)
 def patch_google_modules(monkeypatch):
     # Patch the types module used by GoogleLLM
-    import application.llm.google_ai as gmod
+    import docsgpt.llm.google_ai as gmod
     monkeypatch.setattr(gmod, "types", FakeTypesModule)
     monkeypatch.setattr(gmod.genai, "Client", FakeClient)
 

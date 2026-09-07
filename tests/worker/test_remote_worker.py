@@ -1,4 +1,4 @@
-"""Smoke tests for ``application.worker.remote_worker`` and ``sync_worker``.
+"""Smoke tests for ``docsgpt.worker.remote_worker`` and ``sync_worker``.
 
 ``remote_worker`` in ``sync`` mode does one PG write: it bumps
 ``sources.date`` on the referenced source row to ``now()``. That's the
@@ -19,14 +19,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.parser.schema.base import Document
-from application.storage.db.repositories.sources import SourcesRepository
+from docsgpt.parser.schema.base import Document
+from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 
 @pytest.fixture
 def _mock_remote_pipeline(monkeypatch):
     """Stub out the non-PG boundaries used by ``remote_worker``."""
-    from application import worker
+    from docsgpt import worker
 
     fake_loader = MagicMock(name="remote_loader")
     fake_loader.load_data.return_value = [
@@ -59,7 +59,7 @@ class TestRemoteWorkerSyncUpdatesDate:
         monkeypatch,
         _mock_remote_pipeline,
     ):
-        from application import worker
+        from docsgpt import worker
 
         # Seed a source with a known old ``date`` we can compare against.
         import datetime as dt
@@ -111,7 +111,7 @@ class TestSyncWorker:
         each to ``sync``. We assert the seeded row is discovered and
         forwarded with the right doc_id — the nested ``sync`` call is
         stubbed so we don't re-run the whole remote pipeline here."""
-        from application import worker
+        from docsgpt import worker
 
         src = SourcesRepository(pg_conn).create(
             "weekly-feed",
@@ -157,7 +157,7 @@ class TestSyncWorker:
     ):
         """connector:* sources have no RemoteCreator loader — sync_worker
         must skip them, not dispatch them into sync()."""
-        from application import worker
+        from docsgpt import worker
 
         SourcesRepository(pg_conn).create(
             "drive-folder",
@@ -194,7 +194,7 @@ class TestSyncWorker:
     ):
         """Regression: remote_data reads back as a dict; sync_worker must
         hand the loader the URL string, not the raw dict."""
-        from application import worker
+        from docsgpt import worker
 
         SourcesRepository(pg_conn).create(
             "docs-crawl",
@@ -249,7 +249,7 @@ class TestSyncWorker:
     ):
         """A URL source whose remote_data dict has no URL key normalizes
         to None — sync_worker must skip it, not dispatch a doomed sync()."""
-        from application import worker
+        from docsgpt import worker
 
         SourcesRepository(pg_conn).create(
             "broken-feed",
@@ -292,7 +292,7 @@ class TestRemoteWorkerPathTraversal:
         monkeypatch,
         _mock_remote_pipeline,
     ):
-        from application import worker
+        from docsgpt import worker
 
         created_paths: list[str] = []
         deleted_paths: list[str] = []
@@ -350,7 +350,7 @@ class TestRemoteWorkerDeterministicSourceId:
         monkeypatch,
         _mock_remote_pipeline,
     ):
-        from application import worker
+        from docsgpt import worker
 
         captured: list[dict] = []
         monkeypatch.setattr(
@@ -382,7 +382,7 @@ class TestRemoteWorkerDeterministicSourceId:
         monkeypatch,
         _mock_remote_pipeline,
     ):
-        from application import worker
+        from docsgpt import worker
 
         captured: list[dict] = []
         monkeypatch.setattr(

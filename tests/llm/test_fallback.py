@@ -12,11 +12,11 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from application.llm.anthropic import AnthropicLLM
-from application.llm.base import BaseLLM
-from application.llm.google_ai import GoogleLLM
-from application.llm.groq import GroqLLM
-from application.llm.openai import OpenAILLM
+from docsgpt.llm.anthropic import AnthropicLLM
+from docsgpt.llm.base import BaseLLM
+from docsgpt.llm.google_ai import GoogleLLM
+from docsgpt.llm.groq import GroqLLM
+from docsgpt.llm.openai import OpenAILLM
 
 
 # Concrete LLM stubs
@@ -119,11 +119,11 @@ def _noop_stream_decorator(func):
 def _patch_decorators(monkeypatch):
     """Replace cache & token-usage decorators with no-ops so tests focus on
     fallback logic without needing Redis or token-counting infra."""
-    monkeypatch.setattr("application.llm.base.gen_cache", _noop_decorator)
-    monkeypatch.setattr("application.llm.base.gen_token_usage", _noop_decorator)
-    monkeypatch.setattr("application.llm.base.stream_cache", _noop_stream_decorator)
+    monkeypatch.setattr("docsgpt.llm.base.gen_cache", _noop_decorator)
+    monkeypatch.setattr("docsgpt.llm.base.gen_token_usage", _noop_decorator)
+    monkeypatch.setattr("docsgpt.llm.base.stream_cache", _noop_stream_decorator)
     monkeypatch.setattr(
-        "application.llm.base.stream_token_usage", _noop_stream_decorator
+        "docsgpt.llm.base.stream_token_usage", _noop_stream_decorator
     )
 
 
@@ -134,17 +134,17 @@ def patch_model_utils(monkeypatch):
     def _apply(get_provider=None, get_api_key=None, create_llm=None):
         if get_provider:
             monkeypatch.setattr(
-                "application.core.model_utils.get_provider_from_model_id",
+                "docsgpt.core.model_utils.get_provider_from_model_id",
                 get_provider,
             )
         if get_api_key:
             monkeypatch.setattr(
-                "application.core.model_utils.get_api_key_for_provider",
+                "docsgpt.core.model_utils.get_api_key_for_provider",
                 get_api_key,
             )
         if create_llm:
             monkeypatch.setattr(
-                "application.llm.llm_creator.LLMCreator.create_llm",
+                "docsgpt.llm.llm_creator.LLMCreator.create_llm",
                 create_llm,
             )
 
@@ -186,7 +186,7 @@ class TestFallbackLLMResolution:
             create_llm=lambda type, **kw: global_fallback,
         )
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(
                 FALLBACK_LLM_PROVIDER="openai",
                 FALLBACK_LLM_NAME="gpt-4o",
@@ -226,7 +226,7 @@ class TestFallbackLLMResolution:
     def test_no_fallback_when_nothing_configured(self, monkeypatch):
         """No backup models + no global FALLBACK_* → fallback_llm is None."""
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(FALLBACK_LLM_PROVIDER=None),
         )
         primary = FakeLLM(backup_models=[])
@@ -263,7 +263,7 @@ class TestNonStreamingFallback:
     def test_no_fallback_raises(self, monkeypatch):
         """Primary fails and no fallback configured → exception propagates."""
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(FALLBACK_LLM_PROVIDER=None),
         )
         primary = FakeLLM(fail_at=0, backup_models=[])
@@ -324,7 +324,7 @@ class TestStreamingFallback:
     def test_stream_no_fallback_raises(self, monkeypatch):
         """Primary stream fails and no fallback → exception propagates."""
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(FALLBACK_LLM_PROVIDER=None),
         )
         primary = FakeLLM(stream_chunks=["x"], fail_at=0, backup_models=[])
@@ -442,7 +442,7 @@ class TestStreamingFallback:
         retryable transport blip should not require a backup to recover.
         """
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(FALLBACK_LLM_PROVIDER=None),
         )
         primary = FakeLLM(
@@ -729,7 +729,7 @@ class TestBackupModelPriority:
             create_llm=fake_create_llm,
         )
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(
                 FALLBACK_LLM_PROVIDER="openai",
                 FALLBACK_LLM_NAME="global-model",
@@ -902,7 +902,7 @@ class TestFallbackModelUserIdScope:
 
         patch_model_utils(create_llm=fake_create_llm)
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(
                 FALLBACK_LLM_PROVIDER="openai",
                 FALLBACK_LLM_NAME="some-uuid",
@@ -956,8 +956,8 @@ class TestLLMCreatorPassesModelUserId:
     resolve under the right scope."""
 
     def test_model_user_id_set_on_constructed_llm(self, monkeypatch):
-        from application.llm.llm_creator import LLMCreator
-        from application.llm.providers import PROVIDERS_BY_NAME
+        from docsgpt.llm.llm_creator import LLMCreator
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
         captured = {}
 
@@ -1068,7 +1068,7 @@ class TestFallbackPayloadSizeGate:
         backup = FakeLLM(responses=["backup ok"])
         primary = self._primary_with_backup(patch_model_utils, backup)
         monkeypatch.setattr(
-            "application.core.model_utils.get_token_limit",
+            "docsgpt.core.model_utils.get_token_limit",
             lambda mid, user_id=None: 10,
         )
         with pytest.raises(RuntimeError, match="primary model unavailable"):
@@ -1081,7 +1081,7 @@ class TestFallbackPayloadSizeGate:
         backup = FakeLLM(stream_chunks=["backup chunk"])
         primary = self._primary_with_backup(patch_model_utils, backup)
         monkeypatch.setattr(
-            "application.core.model_utils.get_token_limit",
+            "docsgpt.core.model_utils.get_token_limit",
             lambda mid, user_id=None: 10,
         )
         with pytest.raises(RuntimeError, match="mid-stream failure"):
@@ -1094,7 +1094,7 @@ class TestFallbackPayloadSizeGate:
         backup = FakeLLM(responses=["backup ok"])
         primary = self._primary_with_backup(patch_model_utils, backup)
         monkeypatch.setattr(
-            "application.core.model_utils.get_token_limit",
+            "docsgpt.core.model_utils.get_token_limit",
             lambda mid, user_id=None: 100000,
         )
         assert primary.gen(**self.BIG_ARGS) == "backup ok"
@@ -1109,7 +1109,7 @@ class TestFallbackPayloadSizeGate:
         def boom(*a, **kw):
             raise ValueError("estimator broken")
 
-        monkeypatch.setattr("application.usage._count_prompt_tokens", boom)
+        monkeypatch.setattr("docsgpt.usage._count_prompt_tokens", boom)
         assert primary.gen(**self.BIG_ARGS) == "backup ok"
         assert backup.gen_called is True
 
@@ -1451,7 +1451,7 @@ class TestAdaptStructuredOutputKwargs:
         primary = _GoogleFake()
         assert primary._structured_output_source is None
 
-        with caplog.at_level(logging.WARNING, logger="application.llm.base"):
+        with caplog.at_level(logging.WARNING, logger="docsgpt.llm.base"):
             adapted = primary._adapt_structured_output_kwargs(
                 _OpenAIWireFake(model_id="gpt-4o-mini"),
                 {"model": "m", "response_schema": _google_schema()},
@@ -1467,7 +1467,7 @@ class TestAdaptStructuredOutputKwargs:
         fallback = _GoogleFake(model_id="gemini-2.5-flash")
         fallback._supports_structured_output = lambda: False
 
-        with caplog.at_level(logging.WARNING, logger="application.llm.base"):
+        with caplog.at_level(logging.WARNING, logger="docsgpt.llm.base"):
             adapted = primary._adapt_structured_output_kwargs(
                 fallback, {"model": "m", "response_format": _openai_envelope()}
             )
@@ -1497,7 +1497,7 @@ class TestAdaptStructuredOutputKwargs:
         primary = _OpenAIWireFake()
         primary.prepare_structured_output_format(SCHEMA)
 
-        with caplog.at_level(logging.WARNING, logger="application.llm.base"):
+        with caplog.at_level(logging.WARNING, logger="docsgpt.llm.base"):
             adapted = primary._adapt_structured_output_kwargs(
                 _NullPreparer(model_id="gemini-2.5-flash"),
                 {"response_format": _openai_envelope()},
@@ -1514,7 +1514,7 @@ class TestAdaptStructuredOutputKwargs:
         primary = _OpenAIWireFake()
         primary.prepare_structured_output_format(SCHEMA)
 
-        with caplog.at_level(logging.WARNING, logger="application.llm.base"):
+        with caplog.at_level(logging.WARNING, logger="docsgpt.llm.base"):
             adapted = primary._adapt_structured_output_kwargs(
                 _ExplodingPreparer(model_id="gemini-2.5-flash"),
                 {"response_format": _openai_envelope()},

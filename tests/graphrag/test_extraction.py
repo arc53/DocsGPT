@@ -13,10 +13,10 @@ import uuid
 
 import pytest
 
-import application.graphrag.extraction as extraction_module
-from application.graphrag.store import GraphStore
-from application.storage.db.source_config import SourceConfig
-from application.vectorstore import pgconn
+import docsgpt.graphrag.extraction as extraction_module
+from docsgpt.graphrag.store import GraphStore
+from docsgpt.storage.db.source_config import SourceConfig
+from docsgpt.vectorstore import pgconn
 
 extract_graph_for_source = extraction_module.extract_graph_for_source
 
@@ -55,7 +55,7 @@ def _live_store(monkeypatch, info):
     dsn = _ephemeral_dsn(info)
     # The pipeline builds its own GraphStore() from settings, so point those at
     # the ephemeral cluster too — never at the operator's configured DB.
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     monkeypatch.setattr(
         settings_module.settings, "PGVECTOR_CONNECTION_STRING", dsn, raising=False
@@ -103,7 +103,7 @@ class _StubEmbedding:
 
 @pytest.fixture
 def stub_embedding(monkeypatch):
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     # The resolver short-circuits to the remote API when this is configured,
     # which would bypass the stub on a dev machine that sets it.
@@ -436,7 +436,7 @@ class TestEmbeddingsResolution:
         fake_store = MagicMock()
         fake_store.pending_chunks.return_value = []
         monkeypatch.setattr(
-            "application.graphrag.store.GraphStore", lambda *a, **k: fake_store
+            "docsgpt.graphrag.store.GraphStore", lambda *a, **k: fake_store
         )
         _install_stub_llm(monkeypatch, _StubLLM([]))
 

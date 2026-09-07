@@ -13,14 +13,14 @@ def _no_db(monkeypatch):
     def fake_readonly():
         yield MagicMock()
 
-    monkeypatch.setattr("application.agents.tool_executor.db_readonly", fake_readonly)
+    monkeypatch.setattr("docsgpt.agents.tool_executor.db_readonly", fake_readonly)
 
 
 class _FakeExecutorBase:
     """Stands in for BaseAgent: provides the tool_executor the mixin scopes."""
 
     def __init__(self, *args, **kwargs):
-        from application.agents.tool_executor import ToolExecutor
+        from docsgpt.agents.tool_executor import ToolExecutor
 
         self.tool_executor = ToolExecutor()
 
@@ -29,7 +29,7 @@ class _FakeExecutorBase:
 class TestWorkflowNodeAgentFactory:
 
     def test_raises_on_unsupported_type(self):
-        from application.agents.workflows.node_agent import WorkflowNodeAgentFactory
+        from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
 
         with pytest.raises(ValueError, match="Unsupported agent type"):
             WorkflowNodeAgentFactory.create(
@@ -47,7 +47,7 @@ class TestWorkflowNodeMixinInit:
     so per-node tool filtering must live there (the old agent-method mixin was dead code)."""
 
     def _mixed(self, **kwargs):
-        from application.agents.workflows.node_agent import _WorkflowNodeMixin
+        from docsgpt.agents.workflows.node_agent import _WorkflowNodeMixin
 
         class TestMixin(_WorkflowNodeMixin, _FakeExecutorBase):
             pass
@@ -76,7 +76,7 @@ class TestWorkflowNodeMixinInit:
     def test_scoped_executor_resolves_builtin_synthetic_ids(self, _no_db):
         """A node whose Tools picker selected a builtin (Artifact / Read Document)
         must get that tool at runtime — the P0 this design replaced."""
-        from application.agents.default_tools import default_tool_id
+        from docsgpt.agents.default_tools import default_tool_id
 
         obj = self._mixed(
             tool_ids=[

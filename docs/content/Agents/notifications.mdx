@@ -70,7 +70,7 @@ GET /api/messages/<message_id>/events
 This replays the message's events past your last-seen sequence number and tails the rest live. It is backed by the Postgres `message_events` journal (retained for `MESSAGE_EVENTS_RETENTION_DAYS`, default 14).
 
 <Callout type="warning" emoji="⚠️">
-The chat reconnect endpoint is a native-async route served by the ASGI entrypoint. Under a plain `flask run` dev server it returns `404`; run the backend via the ASGI app (`uvicorn application.asgi:asgi_app`) or the production gunicorn uvicorn worker to use it. See the [Development Environment](/Deploying/Development-Environment) guide.
+The chat reconnect endpoint is a native-async route served by the ASGI entrypoint. Under a plain `flask run` dev server it returns `404`; run the backend via the ASGI app (`uvicorn docsgpt.asgi:asgi_app`) or the production gunicorn uvicorn worker to use it. See the [Development Environment](/Deploying/Development-Environment) guide.
 </Callout>
 
 ## Settings

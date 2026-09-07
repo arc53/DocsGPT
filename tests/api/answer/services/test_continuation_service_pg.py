@@ -1,4 +1,4 @@
-"""Tests for application/api/answer/services/continuation_service.py using pg_conn."""
+"""Tests for docsgpt/api/answer/services/continuation_service.py using pg_conn."""
 
 from contextlib import contextmanager
 from unittest.mock import patch
@@ -15,10 +15,10 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.answer.services.continuation_service.db_readonly",
+        "docsgpt.api.answer.services.continuation_service.db_readonly",
         _yield,
     ), patch(
-        "application.api.answer.services.continuation_service.db_session",
+        "docsgpt.api.answer.services.continuation_service.db_session",
         _yield,
     ):
         yield
@@ -26,21 +26,21 @@ def _patch_db(conn):
 
 class TestMakeSerializable:
     def test_uuid_becomes_string(self):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             _make_serializable,
         )
         u = uuid4()
         assert _make_serializable(u) == str(u)
 
     def test_dict_keys_stringified(self):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             _make_serializable,
         )
         got = _make_serializable({42: "a", "b": 2})
         assert got == {"42": "a", "b": 2}
 
     def test_list_elements_recursively_serialized(self):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             _make_serializable,
         )
         u = uuid4()
@@ -52,7 +52,7 @@ class TestMakeSerializable:
         # the shared serialization module — base64 is lossless and round-
         # trippable (UTF-8-replace silently corrupted binary payloads).
         import base64
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             _make_serializable,
         )
         got = _make_serializable(b"hello")
@@ -60,7 +60,7 @@ class TestMakeSerializable:
 
     def test_bytes_arbitrary_binary_roundtrips(self):
         import base64
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             _make_serializable,
         )
         raw = b"\xff\xfe\x00\x10"
@@ -69,7 +69,7 @@ class TestMakeSerializable:
         assert base64.b64decode(got) == raw
 
     def test_passes_through_primitives(self):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             _make_serializable,
         )
         assert _make_serializable("hello") == "hello"
@@ -83,7 +83,7 @@ class TestMakeSerializable:
         # rows, which would otherwise blow up json.dumps in pending_tool_state.
         import json
         from datetime import datetime, timezone
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             _make_serializable,
         )
 
@@ -97,7 +97,7 @@ class TestMakeSerializable:
         # where each tool row has timestamp fields buried under string keys.
         import json
         from datetime import datetime, timezone
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             _make_serializable,
         )
 
@@ -116,7 +116,7 @@ class TestMakeSerializable:
 
     def test_date_becomes_iso_string(self):
         from datetime import date
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             _make_serializable,
         )
         assert _make_serializable(date(2026, 5, 2)) == "2026-05-02"
@@ -124,10 +124,10 @@ class TestMakeSerializable:
 
 class TestContinuationServiceSaveLoad:
     def test_save_and_load_state(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -152,7 +152,7 @@ class TestContinuationServiceSaveLoad:
         assert loaded["messages"] == [{"role": "user", "content": "hi"}]
 
     def test_load_state_returns_none_when_not_found(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
 
@@ -164,11 +164,11 @@ class TestContinuationServiceSaveLoad:
         assert got is None
 
     def test_claim_state_is_atomic_and_duplicate_is_conflict(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
             ResumeInProgressError,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -193,10 +193,10 @@ class TestContinuationServiceSaveLoad:
                 service.claim_state(conv_id, user)
 
     def test_expired_state_is_neither_loaded_nor_claimed(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -226,10 +226,10 @@ class TestContinuationServiceSaveLoad:
             assert service.claim_state(conv_id, user) is None
 
     def test_save_state_no_client_tools(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -253,10 +253,10 @@ class TestContinuationServiceSaveLoad:
         assert loaded is not None
 
     def test_delete_state_returns_true_when_deleted(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -279,7 +279,7 @@ class TestContinuationServiceSaveLoad:
         assert got is True
 
     def test_delete_state_returns_false_when_missing(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
 
@@ -301,7 +301,7 @@ class TestContinuationServiceLegacyIdHandling:
     LEGACY_OBJECTID = "507f1f77bcf86cd799439011"
 
     def test_load_state_unresolvable_legacy_id_returns_none(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
 
@@ -311,7 +311,7 @@ class TestContinuationServiceLegacyIdHandling:
         assert got is None
 
     def test_delete_state_unresolvable_legacy_id_returns_false(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
 
@@ -323,7 +323,7 @@ class TestContinuationServiceLegacyIdHandling:
     def test_save_state_unresolvable_legacy_id_raises(self, pg_conn):
         import pytest
 
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
 
@@ -341,10 +341,10 @@ class TestContinuationServiceLegacyIdHandling:
                 )
 
     def test_load_state_resolves_backfilled_legacy_id(self, pg_conn):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 

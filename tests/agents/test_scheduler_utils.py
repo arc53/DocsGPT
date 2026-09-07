@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from application.agents.scheduler_utils import (
+from docsgpt.agents.scheduler_utils import (
     ScheduleValidationError,
     clamp_once_horizon,
     cron_interval_seconds,
@@ -120,7 +120,7 @@ class TestCronIntervalSeconds:
         assert cron_interval_seconds("* 9 * * *", None) == 60
 
     def test_bursty_cron_rejected_when_floor_above_burst(self):
-        from application.core.settings import settings as app_settings
+        from docsgpt.core.settings import settings as app_settings
         burst = "* 9 * * *"
         cadence = cron_interval_seconds(burst, None)
         floor = max(0, int(app_settings.SCHEDULE_MIN_INTERVAL))

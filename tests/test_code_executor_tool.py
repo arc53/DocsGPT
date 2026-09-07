@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import uuid
 
-from application.agents.tools.code_executor import (
+from docsgpt.agents.tools.code_executor import (
     CodeExecutorTool,
     _infer_mime,
     _kind_for_mime,
     _tail,
     _OUTPUT_TAIL_BYTES,
 )
-from application.sandbox.base import ExecResult
+from docsgpt.sandbox.base import ExecResult
 
 
 class _FakeManager:
@@ -151,7 +151,7 @@ def test_resolve_session_id_sanitizes_disallowed_chars():
 
 
 def test_exec_timeout_is_a_fixed_uncapped_value(monkeypatch):
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     # The per-run wall-clock cap is fixed from settings; callers cannot pass one.
     monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", 60, raising=False)
@@ -171,7 +171,7 @@ def test_is_timeout_detects_any_backend_naming():
 
 
 def test_timeout_result_guides_backgrounding(monkeypatch):
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", 60, raising=False)
     tool = _tool()
@@ -252,8 +252,8 @@ def test_tool_manager_injects_user_and_conversation():
     """code_executor must be in the per-user allowlist so it receives user_id/conversation_id."""
     # Importing the app first resolves the mcp_tool<->api.user import cycle that
     # ToolManager's eager tool discovery would otherwise trip in a bare process.
-    import application.app  # noqa: F401
-    from application.agents.tools.tool_manager import ToolManager
+    import docsgpt.app  # noqa: F401
+    from docsgpt.agents.tools.tool_manager import ToolManager
 
     tm = ToolManager(config={})
     tool = tm.load_tool(
@@ -272,7 +272,7 @@ def test_tool_manager_injects_user_and_conversation():
 # Keep-alive vs. close behavior
 # ---------------------------------------------------------------------------
 def _run_with_fake_manager(monkeypatch, manager, **run_kwargs):
-    from application.agents.tools import code_executor as ce
+    from docsgpt.agents.tools import code_executor as ce
 
     monkeypatch.setattr(ce.SandboxCreator, "get_manager", lambda: manager)
     return _tool().execute_action("run_code", **run_kwargs)
@@ -341,7 +341,7 @@ class _InputManager:
 
 def _patch_input_repo(monkeypatch, *, found_position: bool, conv: str):
     """Patch db_readonly + ArtifactsRepository so a ref/uuid resolves only within ``conv``."""
-    from application.agents.tools import code_executor as ce
+    from docsgpt.agents.tools import code_executor as ce
 
     class _Repo:
         def __init__(self, conn):
@@ -406,8 +406,8 @@ def test_materialize_inputs_out_of_range_ref_is_clean_error(monkeypatch):
 
 def test_materialize_inputs_rejects_oversize_by_declared_size(monkeypatch):
     """An input whose declared version ``size`` exceeds SANDBOX_MAX_INPUT_BYTES is rejected pre-read."""
-    from application.agents.tools import code_executor as ce
-    from application.core import settings as settings_module
+    from docsgpt.agents.tools import code_executor as ce
+    from docsgpt.core import settings as settings_module
 
     monkeypatch.setattr(settings_module.settings, "SANDBOX_MAX_INPUT_BYTES", 100, raising=False)
 
@@ -453,7 +453,7 @@ def test_materialize_inputs_rejects_oversize_by_declared_size(monkeypatch):
 
 def test_materialize_inputs_dedupes_same_filename(monkeypatch):
     """Two inputs whose current versions share a filename stage to DISTINCT inputs/ paths."""
-    from application.agents.tools import code_executor as ce
+    from docsgpt.agents.tools import code_executor as ce
 
     id_a = str(uuid.uuid4())
     id_b = str(uuid.uuid4())
@@ -514,7 +514,7 @@ def test_inputs_metadata_names_the_staging_path():
 
 
 def test_description_lists_jupyter_preinstalled_packages(monkeypatch):
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "jupyter", raising=False)
     desc = _tool().get_actions_metadata()[0]["description"]
@@ -523,7 +523,7 @@ def test_description_lists_jupyter_preinstalled_packages(monkeypatch):
 
 
 def test_description_warns_bare_daytona_image(monkeypatch):
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "daytona", raising=False)
     monkeypatch.setattr(settings_module.settings, "DAYTONA_SNAPSHOT", None, raising=False)
@@ -532,7 +532,7 @@ def test_description_warns_bare_daytona_image(monkeypatch):
 
 
 def test_description_lists_daytona_snapshot_packages(monkeypatch):
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     monkeypatch.setattr(settings_module.settings, "SANDBOX_BACKEND", "daytona", raising=False)
     monkeypatch.setattr(

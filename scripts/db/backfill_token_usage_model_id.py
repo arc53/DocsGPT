@@ -1,7 +1,7 @@
 """Backfill ``token_usage.model_id`` for rows written before the column.
 
 New rows get ``model_id`` stamped at write time (see
-``application.llm.llm_creator`` / ``application.usage``). This script
+``docsgpt.llm.llm_creator`` / ``docsgpt.usage``). This script
 fills the historical NULLs by deriving the model from data we already
 trust, in priority order. A row is only ever filled by the
 highest-priority tier that matches it; tiers run in one transaction so
@@ -60,7 +60,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from sqlalchemy import text  # noqa: E402
 
-from application.storage.db.engine import get_engine  # noqa: E402
+from docsgpt.storage.db.engine import get_engine  # noqa: E402
 
 
 # Tier 1: same request -> same model, primary (agent_stream) rows only.

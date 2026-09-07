@@ -4,7 +4,7 @@ import pytest
 
 
 def test_configured_secret_is_used_without_touching_the_filesystem(tmp_path):
-    from application.core.secret_key import resolve_jwt_secret_key
+    from docsgpt.core.secret_key import resolve_jwt_secret_key
 
     key_file = tmp_path / "missing" / "jwt-secret"
 
@@ -16,14 +16,14 @@ def test_configured_secret_is_used_without_touching_the_filesystem(tmp_path):
 
 
 def test_cloud_deployment_requires_an_explicit_shared_secret(tmp_path):
-    from application.core.secret_key import resolve_jwt_secret_key
+    from docsgpt.core.secret_key import resolve_jwt_secret_key
 
     with pytest.raises(RuntimeError, match="JWT_SECRET_KEY must be set"):
         resolve_jwt_secret_key("", "cloud", tmp_path / "jwt-secret")
 
 
 def test_local_secret_is_created_once_with_owner_only_permissions(tmp_path):
-    from application.core.secret_key import resolve_jwt_secret_key
+    from docsgpt.core.secret_key import resolve_jwt_secret_key
 
     key_file = tmp_path / "jwt-secret"
 

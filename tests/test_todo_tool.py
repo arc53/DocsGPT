@@ -19,7 +19,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from application.agents.tools.todo_list import TodoListTool
+from docsgpt.agents.tools.todo_list import TodoListTool
 
 
 class _FakeTodosRepo:
@@ -105,13 +105,13 @@ def todo_tool(monkeypatch):
     """Return a ``TodoListTool`` wired to the in-memory fake repo."""
     _FakeTodosRepo.reset()
     monkeypatch.setattr(
-        "application.agents.tools.todo_list.TodosRepository", _FakeTodosRepo
+        "docsgpt.agents.tools.todo_list.TodosRepository", _FakeTodosRepo
     )
     monkeypatch.setattr(
-        "application.agents.tools.todo_list.db_session", _noop_conn
+        "docsgpt.agents.tools.todo_list.db_session", _noop_conn
     )
     monkeypatch.setattr(
-        "application.agents.tools.todo_list.db_readonly", _noop_conn
+        "docsgpt.agents.tools.todo_list.db_readonly", _noop_conn
     )
     # Real UUID so ``_pg_enabled()`` returns True.
     return TodoListTool({"tool_id": str(uuid.uuid4())}, user_id="test_user")
@@ -178,13 +178,13 @@ def test_isolation_per_tool_id(monkeypatch):
     """Todos created under one tool_id are not visible to another tool_id."""
     _FakeTodosRepo.reset()
     monkeypatch.setattr(
-        "application.agents.tools.todo_list.TodosRepository", _FakeTodosRepo
+        "docsgpt.agents.tools.todo_list.TodosRepository", _FakeTodosRepo
     )
     monkeypatch.setattr(
-        "application.agents.tools.todo_list.db_session", _noop_conn
+        "docsgpt.agents.tools.todo_list.db_session", _noop_conn
     )
     monkeypatch.setattr(
-        "application.agents.tools.todo_list.db_readonly", _noop_conn
+        "docsgpt.agents.tools.todo_list.db_readonly", _noop_conn
     )
 
     tool1 = TodoListTool({"tool_id": str(uuid.uuid4())}, user_id="u1")

@@ -4,12 +4,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.parser.schema.base import Document
+from docsgpt.parser.schema.base import Document
 
 
 def _make_loader(service=None):
     """Create a GoogleDriveLoader with mocked dependencies."""
-    with patch("application.parser.connectors.google_drive.loader.GoogleDriveAuth") as MockAuth:
+    with patch("docsgpt.parser.connectors.google_drive.loader.GoogleDriveAuth") as MockAuth:
         mock_auth = MagicMock()
         mock_auth.get_token_info_from_session.return_value = {
             "access_token": "at",
@@ -23,7 +23,7 @@ def _make_loader(service=None):
         mock_auth.build_drive_service.return_value = service or MagicMock()
         MockAuth.return_value = mock_auth
 
-        from application.parser.connectors.google_drive.loader import GoogleDriveLoader
+        from docsgpt.parser.connectors.google_drive.loader import GoogleDriveLoader
         loader = GoogleDriveLoader("session_tok")
     return loader
 
@@ -49,7 +49,7 @@ class TestGoogleDriveLoaderInit:
 
     @pytest.mark.unit
     def test_init_service_failure_sets_none(self):
-        with patch("application.parser.connectors.google_drive.loader.GoogleDriveAuth") as MockAuth:
+        with patch("docsgpt.parser.connectors.google_drive.loader.GoogleDriveAuth") as MockAuth:
             mock_auth = MagicMock()
             mock_auth.get_token_info_from_session.return_value = {
                 "access_token": "at", "refresh_token": "rt"
@@ -60,7 +60,7 @@ class TestGoogleDriveLoaderInit:
             mock_auth.build_drive_service.side_effect = Exception("service fail")
             MockAuth.return_value = mock_auth
 
-            from application.parser.connectors.google_drive.loader import GoogleDriveLoader
+            from docsgpt.parser.connectors.google_drive.loader import GoogleDriveLoader
             loader = GoogleDriveLoader("st")
             assert loader.service is None
 
@@ -386,7 +386,7 @@ class TestDownloadFileContent:
         mock_request = MagicMock()
         mock_service.files.return_value.get_media.return_value = mock_request
 
-        with patch("application.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
+        with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
             mock_dl = MagicMock()
             mock_dl.next_chunk.side_effect = [(None, False), (None, True)]
             MockDownload.return_value = mock_dl
@@ -405,7 +405,7 @@ class TestDownloadFileContent:
         mock_request = MagicMock()
         mock_service.files.return_value.export_media.return_value = mock_request
 
-        with patch("application.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
+        with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
             mock_dl = MagicMock()
             mock_dl.next_chunk.return_value = (None, True)
             MockDownload.return_value = mock_dl
@@ -425,7 +425,7 @@ class TestDownloadFileContent:
         mock_request = MagicMock()
         mock_service.files.return_value.get_media.return_value = mock_request
 
-        with patch("application.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
+        with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
             mock_dl = MagicMock()
             mock_dl.next_chunk.return_value = (None, True)
             MockDownload.return_value = mock_dl
@@ -454,7 +454,7 @@ class TestDownloadFileContent:
             loader._ensure_service = MagicMock()
             loader.service.files.return_value.get_media.return_value = MagicMock()
 
-            with patch("application.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
+            with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
                 mock_dl = MagicMock()
                 mock_dl.next_chunk.return_value = (None, True)
                 MockDownload.return_value = mock_dl
@@ -496,7 +496,7 @@ class TestDownloadFileContent:
             loader._ensure_service = MagicMock()
             loader.service.files.return_value.get_media.return_value = MagicMock()
 
-            with patch("application.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
+            with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
                 mock_dl = MagicMock()
                 mock_dl.next_chunk.return_value = (None, True)
                 MockDownload.return_value = mock_dl
@@ -535,7 +535,7 @@ class TestDownloadFileContent:
         resp = MagicMock()
         resp.status = 500
 
-        with patch("application.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
+        with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
             mock_dl = MagicMock()
             mock_dl.next_chunk.side_effect = HttpError(resp, b"server error")
             MockDownload.return_value = mock_dl
@@ -549,7 +549,7 @@ class TestDownloadFileContent:
         mock_request = MagicMock()
         mock_service.files.return_value.get_media.return_value = mock_request
 
-        with patch("application.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
+        with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDownload:
             mock_dl = MagicMock()
             mock_dl.next_chunk.side_effect = RuntimeError("chunk fail")
             MockDownload.return_value = mock_dl
@@ -674,7 +674,7 @@ class TestDownloadSingleFile:
         mock_request = MagicMock()
         mock_service.files.return_value.get_media.return_value = mock_request
 
-        with patch("application.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDl:
+        with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDl:
             mock_dl = MagicMock()
             mock_dl.next_chunk.return_value = (None, True)
             MockDl.return_value = mock_dl
@@ -698,7 +698,7 @@ class TestDownloadSingleFile:
         mock_request = MagicMock()
         mock_service.files.return_value.export_media.return_value = mock_request
 
-        with patch("application.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDl:
+        with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDl:
             mock_dl = MagicMock()
             mock_dl.next_chunk.return_value = (None, True)
             MockDl.return_value = mock_dl

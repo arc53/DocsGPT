@@ -19,8 +19,8 @@ actually responded (tracked via ``BaseLLM._responding_provider``).
 
 from types import SimpleNamespace
 
-from application.llm.handlers.google import GoogleLLMHandler
-from application.llm.handlers.openai import OpenAILLMHandler
+from docsgpt.llm.handlers.google import GoogleLLMHandler
+from docsgpt.llm.handlers.openai import OpenAILLMHandler
 
 
 def _openai_tool_chunk(name, arguments, call_id="call_1", finish_reason="tool_calls"):

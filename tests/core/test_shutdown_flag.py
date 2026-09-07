@@ -2,7 +2,7 @@
 
 import pytest
 
-from application.core import shutdown
+from docsgpt.core import shutdown
 
 
 @pytest.fixture(autouse=True)

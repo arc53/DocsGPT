@@ -1,5 +1,5 @@
 """Tests for the GraphRAG graph-view routes in
-application/api/user/sources/routes.py.
+docsgpt/api/user/sources/routes.py.
 
 The endpoints are read-access gated (owner or team grant). The ``GraphStore`` is
 mocked so no live vector store, embeddings, or LLM calls run; the ``sources`` row
@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
-from application.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 
 @pytest.fixture
@@ -30,21 +30,21 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.sources.routes.db_session", _yield
+        "docsgpt.api.user.sources.routes.db_session", _yield
     ), patch(
-        "application.api.user.sources.routes.db_readonly", _yield
+        "docsgpt.api.user.sources.routes.db_readonly", _yield
     ):
         yield
 
 
 def _grant_team_access(pg_conn, owner, member, source_id, access_level):
-    from application.storage.db.repositories.team_members import (
+    from docsgpt.storage.db.repositories.team_members import (
         TeamMembersRepository,
     )
-    from application.storage.db.repositories.team_resource_grants import (
+    from docsgpt.storage.db.repositories.team_resource_grants import (
         TeamResourceGrantsRepository,
     )
-    from application.storage.db.repositories.teams import TeamsRepository
+    from docsgpt.storage.db.repositories.teams import TeamsRepository
 
     team = TeamsRepository(pg_conn).create(
         "Acme", f"acme-{uuid.uuid4().hex[:8]}", owner
@@ -73,7 +73,7 @@ def _graphrag_source(pg_conn, user):
 @pytest.mark.unit
 class TestSourceGraph:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import SourceGraph
+        from docsgpt.api.user.sources.routes import SourceGraph
 
         with app.test_request_context("/api/sources/x/graph"):
             from flask import request
@@ -82,7 +82,7 @@ class TestSourceGraph:
         assert response.status_code == 401
 
     def test_owner_gets_bounded_overview(self, app, pg_conn):
-        from application.api.user.sources.routes import SourceGraph
+        from docsgpt.api.user.sources.routes import SourceGraph
 
         user = "u-graph-view-owner"
         sid = _graphrag_source(pg_conn, user)
@@ -102,7 +102,7 @@ class TestSourceGraph:
         }
 
         with _patch_db(pg_conn), patch(
-            "application.graphrag.store.GraphStore", return_value=store
+            "docsgpt.graphrag.store.GraphStore", return_value=store
         ), app.test_request_context(
             f"/api/sources/{sid}/graph?limit=9999"
         ):
@@ -122,7 +122,7 @@ class TestSourceGraph:
         assert args[1] == 9999
 
     def test_empty_graph_returns_empty_lists(self, app, pg_conn):
-        from application.api.user.sources.routes import SourceGraph
+        from docsgpt.api.user.sources.routes import SourceGraph
 
         user = "u-graph-view-empty"
         sid = _graphrag_source(pg_conn, user)
@@ -131,7 +131,7 @@ class TestSourceGraph:
         store.count_nodes.return_value = 0
 
         with _patch_db(pg_conn), patch(
-            "application.graphrag.store.GraphStore", return_value=store
+            "docsgpt.graphrag.store.GraphStore", return_value=store
         ), app.test_request_context(f"/api/sources/{sid}/graph"):
             from flask import request
             request.decoded_token = {"sub": user}
@@ -144,14 +144,14 @@ class TestSourceGraph:
         store.get_graph_overview.assert_not_called()
 
     def test_non_owner_without_grant_404(self, app, pg_conn):
-        from application.api.user.sources.routes import SourceGraph
+        from docsgpt.api.user.sources.routes import SourceGraph
 
         owner = "u-graph-view-owner2"
         stranger = "u-graph-view-stranger"
         sid = _graphrag_source(pg_conn, owner)
 
         with _patch_db(pg_conn), patch(
-            "application.graphrag.store.GraphStore"
+            "docsgpt.graphrag.store.GraphStore"
         ) as mock_store, app.test_request_context(
             f"/api/sources/{sid}/graph"
         ):
@@ -163,7 +163,7 @@ class TestSourceGraph:
         mock_store.assert_not_called()
 
     def test_team_viewer_can_read(self, app, pg_conn):
-        from application.api.user.sources.routes import SourceGraph
+        from docsgpt.api.user.sources.routes import SourceGraph
 
         owner = "alice-graph-view"
         viewer = "bob-graph-view-viewer"
@@ -181,7 +181,7 @@ class TestSourceGraph:
         }
 
         with _patch_db(pg_conn), patch(
-            "application.graphrag.store.GraphStore", return_value=store
+            "docsgpt.graphrag.store.GraphStore", return_value=store
         ), app.test_request_context(f"/api/sources/{sid}/graph"):
             from flask import request
             request.decoded_token = {"sub": viewer}
@@ -194,7 +194,7 @@ class TestSourceGraph:
 @pytest.mark.unit
 class TestSourceGraphNode:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import SourceGraphNode
+        from docsgpt.api.user.sources.routes import SourceGraphNode
 
         with app.test_request_context("/api/sources/x/graph/node/n"):
             from flask import request
@@ -203,7 +203,7 @@ class TestSourceGraphNode:
         assert response.status_code == 401
 
     def test_owner_gets_node_detail_with_chunks(self, app, pg_conn):
-        from application.api.user.sources.routes import SourceGraphNode
+        from docsgpt.api.user.sources.routes import SourceGraphNode
 
         user = "u-graph-node-owner"
         sid = _graphrag_source(pg_conn, user)
@@ -220,7 +220,7 @@ class TestSourceGraphNode:
         }
 
         with _patch_db(pg_conn), patch(
-            "application.graphrag.store.GraphStore", return_value=store
+            "docsgpt.graphrag.store.GraphStore", return_value=store
         ), app.test_request_context(f"/api/sources/{sid}/graph/node/n1"):
             from flask import request
             request.decoded_token = {"sub": user}
@@ -232,7 +232,7 @@ class TestSourceGraphNode:
         store.get_node_detail.assert_called_once_with(sid, "n1")
 
     def test_unknown_node_404(self, app, pg_conn):
-        from application.api.user.sources.routes import SourceGraphNode
+        from docsgpt.api.user.sources.routes import SourceGraphNode
 
         user = "u-graph-node-missing"
         sid = _graphrag_source(pg_conn, user)
@@ -241,7 +241,7 @@ class TestSourceGraphNode:
         store.get_node_detail.return_value = None
 
         with _patch_db(pg_conn), patch(
-            "application.graphrag.store.GraphStore", return_value=store
+            "docsgpt.graphrag.store.GraphStore", return_value=store
         ), app.test_request_context(f"/api/sources/{sid}/graph/node/nope"):
             from flask import request
             request.decoded_token = {"sub": user}
@@ -250,14 +250,14 @@ class TestSourceGraphNode:
         assert response.status_code == 404
 
     def test_non_owner_without_grant_404(self, app, pg_conn):
-        from application.api.user.sources.routes import SourceGraphNode
+        from docsgpt.api.user.sources.routes import SourceGraphNode
 
         owner = "u-graph-node-owner2"
         stranger = "u-graph-node-stranger"
         sid = _graphrag_source(pg_conn, owner)
 
         with _patch_db(pg_conn), patch(
-            "application.graphrag.store.GraphStore"
+            "docsgpt.graphrag.store.GraphStore"
         ) as mock_store, app.test_request_context(
             f"/api/sources/{sid}/graph/node/n1"
         ):

@@ -17,7 +17,7 @@ Boundary correctness invariants worth locking down:
 
 The snapshot read and watchdog probe run via ``anyio.to_thread`` inside the
 async generator but are the same ``event_replay`` functions, so tests patch
-them at ``application.streaming.event_replay.*`` exactly as before.
+them at ``docsgpt.streaming.event_replay.*`` exactly as before.
 """
 
 from __future__ import annotations
@@ -29,19 +29,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.streaming.async_event_replay import (
+from docsgpt.streaming.async_event_replay import (
     build_message_event_stream_async,
 )
-from application.streaming.event_replay import (
+from docsgpt.streaming.event_replay import (
     _SSE_LINE_SPLIT_PATTERN,
     _decode_pubsub_message,
     encode_pubsub_message,
     format_sse_event,
 )
 
-_ASYNC_TOPIC = "application.streaming.async_event_replay.AsyncTopic.subscribe"
-_READONLY = "application.streaming.event_replay.db_readonly"
-_REPO = "application.streaming.event_replay.MessageEventsRepository"
+_ASYNC_TOPIC = "docsgpt.streaming.async_event_replay.AsyncTopic.subscribe"
+_READONLY = "docsgpt.streaming.event_replay.db_readonly"
+_REPO = "docsgpt.streaming.event_replay.MessageEventsRepository"
 
 
 # ── format_sse_event ────────────────────────────────────────────────────

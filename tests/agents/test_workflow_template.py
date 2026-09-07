@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from application.agents.workflows.schemas import Workflow, WorkflowGraph
-from application.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.agents.workflows.schemas import Workflow, WorkflowGraph
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 
 
 def create_engine() -> WorkflowEngine:

@@ -4,19 +4,19 @@
 
 class TestResolveIds:
     def test_empty_ids_returns_empty_dict(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         assert AttachmentsRepository(pg_conn).resolve_ids([]) == {}
 
     def test_filters_none_values(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         assert AttachmentsRepository(pg_conn).resolve_ids([None]) == {}
 
     def test_dedupes_ids(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
 
@@ -28,7 +28,7 @@ class TestResolveIds:
         assert got[pk] == pk
 
     def test_legacy_preferred_over_pk(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
 
@@ -47,7 +47,7 @@ class TestResolveIds:
 
 class TestGetByLegacyId:
     def test_returns_none_when_not_found(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         assert (
@@ -56,7 +56,7 @@ class TestGetByLegacyId:
         )
 
     def test_with_user_scope(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         repo = AttachmentsRepository(pg_conn)
@@ -71,7 +71,7 @@ class TestGetByLegacyId:
 
 class TestAttachmentsUpdate:
     def test_update_no_filtered_fields_returns_false(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         att = AttachmentsRepository(pg_conn).create("u", "f.txt", "/p")
@@ -81,7 +81,7 @@ class TestAttachmentsUpdate:
         assert got is False
 
     def test_update_sets_scalar_fields(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         att = AttachmentsRepository(pg_conn).create("u", "f.txt", "/p")
@@ -92,7 +92,7 @@ class TestAttachmentsUpdate:
         assert got is True
 
     def test_update_any_with_uuid(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         repo = AttachmentsRepository(pg_conn)
@@ -100,7 +100,7 @@ class TestAttachmentsUpdate:
         assert repo.update_any(str(att["id"]), "u", {"openai_file_id": "x"}) is True
 
     def test_update_any_falls_back_to_legacy(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         repo = AttachmentsRepository(pg_conn)
@@ -114,7 +114,7 @@ class TestAttachmentsUpdate:
         )
 
     def test_update_by_legacy_id_no_fields(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         repo = AttachmentsRepository(pg_conn)
@@ -123,7 +123,7 @@ class TestAttachmentsUpdate:
         assert got is False
 
     def test_update_by_legacy_id_not_found(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         got = AttachmentsRepository(pg_conn).update_by_legacy_id(
@@ -134,7 +134,7 @@ class TestAttachmentsUpdate:
     def test_update_by_legacy_id_wrong_user_leaves_row_untouched(self, pg_conn):
         """IDOR regression: a caller with user B's id must not be able to
         mutate user A's attachment by guessing/reusing its legacy id."""
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         repo = AttachmentsRepository(pg_conn)
@@ -152,7 +152,7 @@ class TestAttachmentsUpdate:
         assert row["openai_file_id"] == "original"
 
     def test_update_by_legacy_id_same_user_succeeds(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         repo = AttachmentsRepository(pg_conn)
@@ -170,7 +170,7 @@ class TestAttachmentsUpdate:
         assert row["openai_file_id"] == "updated"
 
     def test_update_by_legacy_id_rejects_none_user(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         repo = AttachmentsRepository(pg_conn)
@@ -200,7 +200,7 @@ class TestAttachmentsShapeGate:
         assert conn.execute(_text("SELECT 1")).scalar() == 1
 
     def test_get_any_legacy_shape_txn_survives(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         repo = AttachmentsRepository(pg_conn)
@@ -209,7 +209,7 @@ class TestAttachmentsShapeGate:
         self._assert_txn_alive(pg_conn)
 
     def test_update_any_unknown_legacy_id_txn_survives(self, pg_conn):
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
         repo = AttachmentsRepository(pg_conn)

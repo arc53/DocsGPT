@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import pytest
 
-from application.storage.db.repositories.users import UsersRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 
 
 @pytest.fixture

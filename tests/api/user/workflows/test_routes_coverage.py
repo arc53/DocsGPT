@@ -1,4 +1,4 @@
-"""Additional coverage tests for application.api.user.workflows.routes.
+"""Additional coverage tests for docsgpt.api.user.workflows.routes.
 
 No bson/ObjectId imports. Mongo collections are replaced by Mock objects.
 ``validate_object_id`` (which calls bson internally) is patched wherever
@@ -29,7 +29,7 @@ def _mock_validate_object_id(wf_id):
     mock_oid = Mock()
     mock_oid.__str__ = lambda self: wf_id
     return patch(
-        "application.api.user.workflows.routes.validate_object_id",
+        "docsgpt.api.user.workflows.routes.validate_object_id",
         return_value=(mock_oid, None),
     )
 
@@ -65,18 +65,18 @@ class TestGetWorkflowGraphVersionCoverage:
     pass
 
     def test_large_version_number(self):
-        from application.api.user.workflows.routes import get_workflow_graph_version
+        from docsgpt.api.user.workflows.routes import get_workflow_graph_version
 
         assert get_workflow_graph_version({"current_graph_version": 99}) == 99
 
     def test_float_string_falls_back_to_1(self):
-        from application.api.user.workflows.routes import get_workflow_graph_version
+        from docsgpt.api.user.workflows.routes import get_workflow_graph_version
 
         # int("3.5") raises ValueError → falls back to 1
         assert get_workflow_graph_version({"current_graph_version": "3.5"}) == 1
 
     def test_none_value_returns_1(self):
-        from application.api.user.workflows.routes import get_workflow_graph_version
+        from docsgpt.api.user.workflows.routes import get_workflow_graph_version
 
         assert get_workflow_graph_version({"current_graph_version": None}) == 1
 
@@ -104,7 +104,7 @@ class TestValidateWorkflowStructureCoverage:
     pass
 
     def test_valid_condition_node_with_two_outgoing_edges(self):
-        from application.api.user.workflows.routes import validate_workflow_structure
+        from docsgpt.api.user.workflows.routes import validate_workflow_structure
 
         nodes = [
             {"id": "start", "type": "start"},
@@ -127,7 +127,7 @@ class TestValidateWorkflowStructureCoverage:
         assert errors == []
 
     def test_multiple_end_nodes_allowed(self):
-        from application.api.user.workflows.routes import validate_workflow_structure
+        from docsgpt.api.user.workflows.routes import validate_workflow_structure
 
         nodes = [
             {"id": "start", "type": "start"},
@@ -151,7 +151,7 @@ class TestWorkflowListPostCoverage:
     pass
 
     def test_create_unauthorized_returns_401(self, app):
-        from application.api.user.workflows.routes import WorkflowList
+        from docsgpt.api.user.workflows.routes import WorkflowList
 
         with app.test_request_context(
             "/api/workflows", method="POST", json={"name": "WF"}
@@ -164,7 +164,7 @@ class TestWorkflowListPostCoverage:
         assert response.status_code == 401
 
     def test_create_missing_name_returns_400(self, app):
-        from application.api.user.workflows.routes import WorkflowList
+        from docsgpt.api.user.workflows.routes import WorkflowList
 
         with app.test_request_context(
             "/api/workflows", method="POST", json={"description": "no name"}
@@ -188,7 +188,7 @@ class TestWorkflowDetailGetCoverage:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         with app.test_request_context("/api/workflows/abc", method="GET"):
             from flask import request
@@ -211,7 +211,7 @@ class TestWorkflowDetailDeleteCoverage:
     pass
 
     def test_delete_unauthorized(self, app):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         with app.test_request_context("/api/workflows/abc", method="DELETE"):
             from flask import request
@@ -234,9 +234,9 @@ def _patch_wf_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.workflows.routes.db_session", _yield
+        "docsgpt.api.user.workflows.routes.db_session", _yield
     ), patch(
-        "application.api.user.workflows.routes.db_readonly", _yield
+        "docsgpt.api.user.workflows.routes.db_readonly", _yield
     ):
         yield
 
@@ -257,7 +257,7 @@ def _minimal_workflow_body(name="WF1"):
 
 class TestSerializers:
     def test_serialize_workflow_fields(self):
-        from application.api.user.workflows.routes import serialize_workflow
+        from docsgpt.api.user.workflows.routes import serialize_workflow
         import datetime
 
         wf = {
@@ -277,7 +277,7 @@ class TestSerializers:
         assert got["created_at"] == "2024-01-01T12:00:00"
 
     def test_serialize_node_shape(self):
-        from application.api.user.workflows.routes import serialize_node
+        from docsgpt.api.user.workflows.routes import serialize_node
 
         node = {
             "id": "00000000-0000-0000-0000-000000000002",
@@ -294,7 +294,7 @@ class TestSerializers:
         assert out["position"] == {"x": 0, "y": 0}
 
     def test_serialize_edge_shape(self):
-        from application.api.user.workflows.routes import serialize_edge
+        from docsgpt.api.user.workflows.routes import serialize_edge
 
         edge = {
             "id": "00000000-0000-0000-0000-000000000003",
@@ -311,7 +311,7 @@ class TestSerializers:
 
 class TestWorkflowListPost:
     def test_creates_valid_workflow(self, app, pg_conn):
-        from application.api.user.workflows.routes import WorkflowList
+        from docsgpt.api.user.workflows.routes import WorkflowList
 
         with _patch_wf_db(pg_conn), app.test_request_context(
             "/api/workflows",
@@ -329,7 +329,7 @@ class TestWorkflowListPost:
 
     def test_create_validation_failure_returns_400(self, app, pg_conn):
         """Workflow with no start node should fail validation."""
-        from application.api.user.workflows.routes import WorkflowList
+        from docsgpt.api.user.workflows.routes import WorkflowList
 
         body = {
             "name": "bad",
@@ -346,7 +346,7 @@ class TestWorkflowListPost:
         assert response.status_code == 400
 
     def test_create_db_error_returns_400(self, app):
-        from application.api.user.workflows.routes import WorkflowList
+        from docsgpt.api.user.workflows.routes import WorkflowList
 
         @contextmanager
         def _broken():
@@ -354,7 +354,7 @@ class TestWorkflowListPost:
             yield
 
         with patch(
-            "application.api.user.workflows.routes.db_session", _broken
+            "docsgpt.api.user.workflows.routes.db_session", _broken
         ), app.test_request_context(
             "/api/workflows",
             method="POST",
@@ -369,7 +369,7 @@ class TestWorkflowListPost:
 
 class TestWorkflowDetailGet:
     def test_returns_404_for_missing_workflow(self, app, pg_conn):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         with _patch_wf_db(pg_conn), app.test_request_context(
             "/api/workflows/00000000-0000-0000-0000-000000000000",
@@ -383,7 +383,7 @@ class TestWorkflowDetailGet:
         assert response.status_code == 404
 
     def test_returns_workflow_after_create(self, app, pg_conn):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             WorkflowDetail,
             WorkflowList,
         )
@@ -413,7 +413,7 @@ class TestWorkflowDetailGet:
         assert len(data["edges"]) == 1
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         @contextmanager
         def _broken():
@@ -421,7 +421,7 @@ class TestWorkflowDetailGet:
             yield
 
         with patch(
-            "application.api.user.workflows.routes.db_readonly", _broken
+            "docsgpt.api.user.workflows.routes.db_readonly", _broken
         ), app.test_request_context("/api/workflows/abc"):
             from flask import request
             request.decoded_token = {"sub": "u1"}
@@ -431,7 +431,7 @@ class TestWorkflowDetailGet:
 
 class TestWorkflowDetailPut:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         with app.test_request_context(
             "/api/workflows/abc",
@@ -444,7 +444,7 @@ class TestWorkflowDetailPut:
         assert response.status_code == 401
 
     def test_returns_400_missing_name(self, app, pg_conn):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         with _patch_wf_db(pg_conn), app.test_request_context(
             "/api/workflows/abc",
@@ -457,7 +457,7 @@ class TestWorkflowDetailPut:
         assert response.status_code == 400
 
     def test_returns_404_missing_workflow(self, app, pg_conn):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         body = _minimal_workflow_body("new")
         with _patch_wf_db(pg_conn), app.test_request_context(
@@ -473,7 +473,7 @@ class TestWorkflowDetailPut:
         assert response.status_code == 404
 
     def test_validation_failure_returns_400(self, app, pg_conn):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         body = {
             "name": "bad",
@@ -491,7 +491,7 @@ class TestWorkflowDetailPut:
         assert response.status_code == 400
 
     def test_updates_workflow(self, app, pg_conn):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             WorkflowDetail,
             WorkflowList,
         )
@@ -528,7 +528,7 @@ class TestWorkflowDetailPut:
         assert data["workflow"]["name"] == "after"
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         @contextmanager
         def _broken():
@@ -536,7 +536,7 @@ class TestWorkflowDetailPut:
             yield
 
         with patch(
-            "application.api.user.workflows.routes.db_session", _broken
+            "docsgpt.api.user.workflows.routes.db_session", _broken
         ), app.test_request_context(
             "/api/workflows/abc",
             method="PUT",
@@ -550,7 +550,7 @@ class TestWorkflowDetailPut:
 
 class TestWorkflowDetailDelete:
     def test_returns_404_missing(self, app, pg_conn):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         with _patch_wf_db(pg_conn), app.test_request_context(
             "/api/workflows/00000000-0000-0000-0000-000000000000",
@@ -564,7 +564,7 @@ class TestWorkflowDetailDelete:
         assert response.status_code == 404
 
     def test_deletes_workflow(self, app, pg_conn):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             WorkflowDetail,
             WorkflowList,
         )
@@ -588,7 +588,7 @@ class TestWorkflowDetailDelete:
         assert response.status_code == 200
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
 
         @contextmanager
         def _broken():
@@ -596,7 +596,7 @@ class TestWorkflowDetailDelete:
             yield
 
         with patch(
-            "application.api.user.workflows.routes.db_session", _broken
+            "docsgpt.api.user.workflows.routes.db_session", _broken
         ), app.test_request_context(
             "/api/workflows/abc", method="DELETE"
         ):
@@ -608,14 +608,14 @@ class TestWorkflowDetailDelete:
 
 class TestValidateWorkflowStructureExtras:
     def test_no_nodes_returns_error(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             validate_workflow_structure,
         )
         errors = validate_workflow_structure([], [])
         assert any("at least one node" in e for e in errors)
 
     def test_missing_start_node_returns_error(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             validate_workflow_structure,
         )
         errors = validate_workflow_structure(
@@ -624,7 +624,7 @@ class TestValidateWorkflowStructureExtras:
         assert any("start" in e for e in errors)
 
     def test_missing_end_node_returns_error(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             validate_workflow_structure,
         )
         errors = validate_workflow_structure(
@@ -634,7 +634,7 @@ class TestValidateWorkflowStructureExtras:
         assert any("end" in e for e in errors)
 
     def test_edge_with_missing_source_reports_error(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             validate_workflow_structure,
         )
         errors = validate_workflow_structure(
@@ -650,7 +650,7 @@ class TestValidateWorkflowStructureExtras:
         assert any("non-existent source" in err for err in errors)
 
     def test_condition_node_without_else_branch_errors(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             validate_workflow_structure,
         )
         nodes = [
@@ -672,14 +672,14 @@ class TestValidateWorkflowStructureExtras:
 
 class TestValidateJsonSchemaPayload:
     def test_none_returns_pair_of_none(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             validate_json_schema_payload,
         )
         got, err = validate_json_schema_payload(None)
         assert got is None and err is None
 
     def test_valid_schema(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             validate_json_schema_payload,
         )
         got, err = validate_json_schema_payload(
@@ -689,7 +689,7 @@ class TestValidateJsonSchemaPayload:
         assert got is not None
 
     def test_invalid_schema_returns_error(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             validate_json_schema_payload,
         )
         # Force an invalid payload by passing something that isn't dict
@@ -700,14 +700,14 @@ class TestValidateJsonSchemaPayload:
 
 class TestNormalizeAgentNodeJsonSchemas:
     def test_returns_non_dict_entries_as_is(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             normalize_agent_node_json_schemas,
         )
         got = normalize_agent_node_json_schemas(["not-a-dict"])
         assert got == ["not-a-dict"]
 
     def test_non_agent_node_passes_through(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             normalize_agent_node_json_schemas,
         )
         got = normalize_agent_node_json_schemas(
@@ -716,7 +716,7 @@ class TestNormalizeAgentNodeJsonSchemas:
         assert got[0]["type"] == "start"
 
     def test_agent_node_without_json_schema_passes_through(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             normalize_agent_node_json_schemas,
         )
         got = normalize_agent_node_json_schemas(
@@ -725,7 +725,7 @@ class TestNormalizeAgentNodeJsonSchemas:
         assert got[0]["data"]["other"] == 1
 
     def test_agent_node_with_schema_normalizes(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             normalize_agent_node_json_schemas,
         )
         got = normalize_agent_node_json_schemas([
@@ -738,7 +738,7 @@ class TestNormalizeAgentNodeJsonSchemas:
         assert got[0]["data"]["json_schema"] is not None
 
     def test_agent_node_invalid_schema_kept_original(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             normalize_agent_node_json_schemas,
         )
         got = normalize_agent_node_json_schemas([
@@ -754,10 +754,10 @@ class TestNormalizeAgentNodeJsonSchemas:
 
 class TestWriteGraphEdgesWithUnresolvedNodes:
     def test_drops_edge_with_unknown_source(self, pg_conn, app):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             _write_graph,
         )
-        from application.storage.db.repositories.workflows import (
+        from docsgpt.storage.db.repositories.workflows import (
             WorkflowsRepository,
         )
 
@@ -778,7 +778,7 @@ class TestWriteGraphEdgesWithUnresolvedNodes:
             _write_graph(pg_conn, pg_wf_id, 1, nodes_data, edges_data)
 
     def test_get_workflow_graph_version_negative_falls_back(self):
-        from application.api.user.workflows.routes import (
+        from docsgpt.api.user.workflows.routes import (
             get_workflow_graph_version,
         )
         assert get_workflow_graph_version({"current_graph_version": -5}) == 1

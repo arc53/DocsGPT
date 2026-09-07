@@ -24,7 +24,7 @@ from sqlalchemy import text
 
 
 def _create_conv(conn, user_id: str = "u-1") -> dict:
-    from application.storage.db.repositories.conversations import (
+    from docsgpt.storage.db.repositories.conversations import (
         ConversationsRepository,
     )
 
@@ -198,7 +198,7 @@ def _route_engine_to(pg_conn):
     fake_engine.begin = _fake_begin
 
     with patch(
-        "application.api.user.reconciliation.get_engine",
+        "docsgpt.api.user.reconciliation.get_engine",
         return_value=fake_engine,
     ):
         yield
@@ -212,7 +212,7 @@ def _route_engine_to(pg_conn):
 class TestStuckMessages:
     @pytest.mark.unit
     def test_first_two_attempts_increment_only(self, pg_conn):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         msg = _seed_pending_message(pg_conn)
 
@@ -235,13 +235,13 @@ class TestStuckMessages:
 
     @pytest.mark.unit
     def test_third_attempt_marks_failed_and_emits_alert(self, pg_conn, caplog):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         msg = _seed_pending_message(pg_conn)
         before_logs = _stack_logs_count(pg_conn, "reconciler_message_failed")
 
         with _route_engine_to(pg_conn), caplog.at_level(
-            logging.ERROR, logger="application.api.user.reconciliation",
+            logging.ERROR, logger="docsgpt.api.user.reconciliation",
         ):
             run_reconciliation()
             run_reconciliation()
@@ -274,7 +274,7 @@ class TestStuckMessages:
 
     @pytest.mark.unit
     def test_streaming_status_also_eligible(self, pg_conn):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         msg = _seed_pending_message(pg_conn, status="streaming")
         with _route_engine_to(pg_conn):
@@ -293,7 +293,7 @@ class TestStuckMessages:
 
     @pytest.mark.unit
     def test_skipped_when_active_resuming_state(self, pg_conn):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         msg = _seed_pending_message(pg_conn)
         # Active resume started 60 seconds ago — within 10-min grace.
@@ -316,7 +316,7 @@ class TestStuckMessages:
 
     @pytest.mark.unit
     def test_stale_resuming_does_not_skip(self, pg_conn):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         msg = _seed_pending_message(pg_conn)
         # 11 minutes ago — past the 10-minute grace window.
@@ -339,7 +339,7 @@ class TestStuckMessages:
 
     @pytest.mark.unit
     def test_fresh_message_left_alone(self, pg_conn):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         # 1 minute old — well under the 5-minute threshold.
         msg = _seed_pending_message(pg_conn, age_minutes=1)
@@ -364,7 +364,7 @@ class TestStuckMessages:
         while the user is still considering tool approval. The PT row's
         own ``expires_at`` TTL is the abandonment signal.
         """
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         msg = _seed_pending_message(pg_conn)
         _seed_pending_state(
@@ -398,7 +398,7 @@ class TestStuckMessages:
         hasn't reaped it yet, the message becomes eligible immediately
         — we don't wait an extra ~60s for janitor cadence to align.
         """
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         msg = _seed_pending_message(pg_conn)
         _seed_pending_state(
@@ -427,13 +427,13 @@ class TestStuckMessages:
 class TestStuckProposedToolCalls:
     @pytest.mark.unit
     def test_marks_proposed_failed_with_alert(self, pg_conn, caplog):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         _seed_tool_call(pg_conn, call_id="cp-1", status="proposed", age_minutes=6)
         before = _stack_logs_count(pg_conn, "reconciler_tool_call_failed_proposed")
 
         with _route_engine_to(pg_conn), caplog.at_level(
-            logging.ERROR, logger="application.api.user.reconciliation",
+            logging.ERROR, logger="docsgpt.api.user.reconciliation",
         ):
             r = run_reconciliation()
 
@@ -459,7 +459,7 @@ class TestStuckProposedToolCalls:
 
     @pytest.mark.unit
     def test_fresh_proposed_left_alone(self, pg_conn):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         _seed_tool_call(pg_conn, call_id="cp-2", status="proposed", age_minutes=2)
 
@@ -482,7 +482,7 @@ class TestStuckProposedToolCalls:
 class TestStuckExecutedToolCalls:
     @pytest.mark.unit
     def test_executed_past_ttl_marked_failed_with_alert(self, pg_conn, caplog):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         _seed_tool_call(
             pg_conn, call_id="ce-1", status="executed",
@@ -491,7 +491,7 @@ class TestStuckExecutedToolCalls:
         before = _stack_logs_count(pg_conn, "reconciler_tool_call_failed_executed")
 
         with _route_engine_to(pg_conn), caplog.at_level(
-            logging.ERROR, logger="application.api.user.reconciliation",
+            logging.ERROR, logger="docsgpt.api.user.reconciliation",
         ):
             r = run_reconciliation()
 
@@ -517,7 +517,7 @@ class TestStuckExecutedToolCalls:
 
     @pytest.mark.unit
     def test_fresh_executed_left_alone(self, pg_conn):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         _seed_tool_call(
             pg_conn, call_id="ce-2", status="executed",
@@ -615,21 +615,21 @@ def _capture_published(pg_conn):
         return "1-0"
 
     return patch(
-        "application.events.publisher.publish_user_event", _fake,
+        "docsgpt.events.publisher.publish_user_event", _fake,
     ), captured
 
 
 class TestStalledIngests:
     @pytest.mark.unit
     def test_stalled_ingest_escalated_with_alert(self, pg_conn, caplog):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         sid = "1a000000-0000-0000-0000-0000000000a1"
         _seed_ingest_progress(pg_conn, source_id=sid, embedded=9, total=907)
         before = _stack_logs_count(pg_conn, "reconciler_ingest_stalled")
 
         with _route_engine_to(pg_conn), caplog.at_level(
-            logging.ERROR, logger="application.api.user.reconciliation",
+            logging.ERROR, logger="docsgpt.api.user.reconciliation",
         ):
             r = run_reconciliation()
 
@@ -652,7 +652,7 @@ class TestStalledIngests:
         """The escalate-to-'stalled' write ends the re-alert loop: a
         second tick neither re-counts nor re-logs the same dead ingest.
         """
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         sid = "1a000000-0000-0000-0000-0000000000a2"
         _seed_ingest_progress(pg_conn, source_id=sid, embedded=1, total=95)
@@ -672,7 +672,7 @@ class TestStalledIngests:
 
     @pytest.mark.unit
     def test_fresh_ingest_left_alone(self, pg_conn):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         sid = "1a000000-0000-0000-0000-0000000000a3"
         # 2 minutes old — well under the 30-minute staleness threshold.
@@ -691,7 +691,7 @@ class TestStalledIngests:
         """A stale checkpoint that finished embedding (embedded == total)
         is not a stall and must not be flagged.
         """
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         sid = "1a000000-0000-0000-0000-0000000000a4"
         _seed_ingest_progress(pg_conn, source_id=sid, embedded=50, total=50)
@@ -747,7 +747,7 @@ class TestStuckIdempotencyPending:
         already hit the poison-loop threshold gets escalated to failed
         so a same-key retry can re-claim instead of waiting 24 h.
         """
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         _seed_stuck_idempotency_row(
             pg_conn, key="abandoned", attempt_count=5, lease_secs_ago=120,
@@ -757,7 +757,7 @@ class TestStuckIdempotencyPending:
         )
 
         with _route_engine_to(pg_conn), caplog.at_level(
-            logging.ERROR, logger="application.api.user.reconciliation",
+            logging.ERROR, logger="docsgpt.api.user.reconciliation",
         ):
             r = run_reconciliation()
 
@@ -789,7 +789,7 @@ class TestStuckIdempotencyPending:
         """Attempt count below the threshold means the wrapper might
         still re-claim cleanly — leave the row alone.
         """
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         _seed_stuck_idempotency_row(
             pg_conn, key="recoverable", attempt_count=2, lease_secs_ago=120,
@@ -810,7 +810,7 @@ class TestStuckIdempotencyPending:
         """A lease that just expired (10 s ago) might be in the
         heartbeat-tick window; the 60 s grace keeps the sweep quiet.
         """
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         _seed_stuck_idempotency_row(
             pg_conn, key="just-expired", attempt_count=5, lease_secs_ago=10,
@@ -834,7 +834,7 @@ class TestApprovalClearedEvents:
         publishes ``tool.approval.cleared`` so the approval toast doesn't
         linger after reconnect.
         """
-        from application.api.user import reconciliation as recon
+        from docsgpt.api.user import reconciliation as recon
 
         msg = _seed_pending_message(pg_conn)
         # Expired PT row: doesn't shield the message (past TTL) but is the
@@ -883,7 +883,7 @@ class TestApprovalClearedEvents:
         """A plain stuck message (no resumable state) must not emit a
         spurious clearing event.
         """
-        from application.api.user import reconciliation as recon
+        from docsgpt.api.user import reconciliation as recon
 
         _seed_pending_message(pg_conn)
 
@@ -899,7 +899,7 @@ class TestApprovalClearedEvents:
 class TestStalledIngestEvent:
     @pytest.mark.unit
     def test_stalled_ingest_emits_source_failed_event(self, pg_conn):
-        from application.api.user import reconciliation as recon
+        from docsgpt.api.user import reconciliation as recon
 
         sid = "1a000000-0000-0000-0000-0000000000b1"
         _seed_source(pg_conn, source_id=sid, user_id="u-ingest", name="report.pdf")
@@ -923,7 +923,7 @@ class TestStalledIngestEvent:
         """An ingest row with no matching ``sources`` row (deleted source)
         still escalates to 'stalled' but emits no user event.
         """
-        from application.api.user import reconciliation as recon
+        from docsgpt.api.user import reconciliation as recon
 
         sid = "1a000000-0000-0000-0000-0000000000b2"
         _seed_ingest_progress(pg_conn, source_id=sid, embedded=1, total=20)
@@ -945,11 +945,11 @@ class TestStalledIngestEvent:
 class TestPostgresUriMissing:
     @pytest.mark.unit
     def test_returns_skip_dict(self, monkeypatch):
-        from application.api.user.reconciliation import (
+        from docsgpt.api.user.reconciliation import (
             run_reconciliation,
             zero_summary,
         )
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
 
@@ -977,7 +977,7 @@ class TestEventsSurviveAFailedSweep:
     """
 
     def test_queued_events_are_published_when_a_later_sweep_raises(self, pg_conn):
-        from application.api.user.reconciliation import run_reconciliation
+        from docsgpt.api.user.reconciliation import run_reconciliation
 
         # A stalled ingest: escalated (and its event queued) by the sweep that
         # runs before the one we blow up.
@@ -1005,10 +1005,10 @@ class TestEventsSurviveAFailedSweep:
         fake_engine.begin = _fake_begin
 
         with patch(
-            "application.api.user.reconciliation.get_engine",
+            "docsgpt.api.user.reconciliation.get_engine",
             return_value=fake_engine,
         ), patch(
-            "application.events.publisher.publish_user_event", _capture
+            "docsgpt.events.publisher.publish_user_event", _capture
         ):
             with pytest.raises(RuntimeError):
                 run_reconciliation()
@@ -1053,7 +1053,7 @@ class TestPublishAfterCommit:
         the user's upload toast to a terminal failure and leaving the next tick
         to re-find the same rows and emit a duplicate.
         """
-        from application.api.user import reconciliation as rec
+        from docsgpt.api.user import reconciliation as rec
 
         # ``get_engine`` caches a process-wide global, so pin it to this
         # test's ephemeral DB rather than whichever one was created first.
@@ -1101,7 +1101,7 @@ class TestPublishAfterCommit:
         """The property the ``finally`` buys: an earlier sweep's events still
         publish when a LATER sweep raises, because that sweep already committed.
         """
-        from application.api.user import reconciliation as rec
+        from docsgpt.api.user import reconciliation as rec
 
         # ``get_engine`` caches a process-wide global, so pin it to this
         # test's ephemeral DB rather than whichever one was created first.

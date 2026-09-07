@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
 import pytest
-from application.agents.tools.tool_action_parser import ToolActionParser
+from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 
 
 @pytest.mark.unit

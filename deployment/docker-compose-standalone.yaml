@@ -82,7 +82,7 @@ services:
     user: root
     # Consumes the default queue plus `parsing` (read_document) and `embeddings`
     # (query embedding); without the latter every search times out.
-    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
     env_file:
       - path: .env
         required: false

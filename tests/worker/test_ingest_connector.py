@@ -1,4 +1,4 @@
-"""Smoke test for ``application.worker.ingest_connector`` in sync mode.
+"""Smoke test for ``docsgpt.worker.ingest_connector`` in sync mode.
 
 Sync mode (``operation_mode="sync"``) bumps ``sources.date`` on the
 target source row, the same PG side-effect as ``remote_worker``. Upload
@@ -14,14 +14,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.parser.schema.base import Document
-from application.storage.db.repositories.sources import SourcesRepository
+from docsgpt.parser.schema.base import Document
+from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 
 @pytest.fixture
 def _mock_connector_pipeline(monkeypatch):
     """Stub the connector + pipeline so only PG writes are real."""
-    from application import worker
+    from docsgpt import worker
 
     fake_connector = MagicMock(name="connector")
     fake_connector.download_to_directory.return_value = {
@@ -75,7 +75,7 @@ class TestIngestConnectorSyncUpdatesDate:
         monkeypatch,
         _mock_connector_pipeline,
     ):
-        from application import worker
+        from docsgpt import worker
         import datetime as dt
 
         old_date = dt.datetime(2019, 6, 1, tzinfo=dt.timezone.utc)
@@ -122,7 +122,7 @@ class TestIngestConnectorDeterministicSourceId:
         monkeypatch,
         _mock_connector_pipeline,
     ):
-        from application import worker
+        from docsgpt import worker
 
         captured: list[dict] = []
         monkeypatch.setattr(
@@ -154,7 +154,7 @@ class TestIngestConnectorDeterministicSourceId:
         monkeypatch,
         _mock_connector_pipeline,
     ):
-        from application import worker
+        from docsgpt import worker
 
         captured: list[dict] = []
         monkeypatch.setattr(

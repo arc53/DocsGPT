@@ -28,7 +28,7 @@ verbatim as the conversation's prompt). See
 
 Run standalone (does NOT import anything from ``application/``). Python 3.11+.
 Flask is the only non-stdlib dependency and is already in
-``application/requirements.txt``.
+``docsgpt/requirements.txt``.
 
 Usage::
 
@@ -482,7 +482,7 @@ def _stream_chat_response(
     if tool_calls and toolcall_arg_mode:
         # Frame-split mode: the call's ``arguments`` are spread over several
         # deltas that all share one ``index``, which is what the client-side
-        # merge in application/llm/handlers/base.py reassembles.
+        # merge in docsgpt/llm/handlers/base.py reassembles.
         call = tool_calls[0]
         frames = _toolcall_arg_frames(call["function"]["arguments"], toolcall_arg_mode)
         for position, piece in enumerate(frames):

@@ -3,12 +3,12 @@ from unittest.mock import Mock, patch
 from types import SimpleNamespace
 import uuid
 
-from application.llm.handlers.google import (
+from docsgpt.llm.handlers.google import (
     GoogleLLMHandler,
     _decode_thought_signature,
     _encode_thought_signature,
 )
-from application.llm.handlers.base import ToolCall, LLMResponse
+from docsgpt.llm.handlers.base import ToolCall, LLMResponse
 
 
 class TestGoogleLLMHandler:

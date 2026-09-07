@@ -1,4 +1,4 @@
-"""Unit tests for application/services/search_service.py.
+"""Unit tests for docsgpt/services/search_service.py.
 
 Tests exercise the service function in isolation — AgentsRepository is
 stubbed via a patched ``db_readonly`` context manager, and
@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.services.search_service import (
+from docsgpt.services.search_service import (
     InvalidAPIKey,
     SearchFailed,
     _authorized_source_ids,
@@ -31,11 +31,11 @@ def _fake_db_readonly(agent_data):
         yield MagicMock()
 
     with patch(
-        "application.api.user.team_sharing.can_access", return_value=True
+        "docsgpt.api.user.team_sharing.can_access", return_value=True
     ), patch(
-        "application.services.search_service.db_readonly", _yield_conn
+        "docsgpt.services.search_service.db_readonly", _yield_conn
     ), patch(
-        "application.services.search_service.AgentsRepository",
+        "docsgpt.services.search_service.AgentsRepository",
         return_value=agents_repo,
     ):
         yield
@@ -75,9 +75,9 @@ class TestSearchInvalidAPIKey:
         agents_repo.find_by_key.side_effect = RuntimeError("db down")
 
         with patch(
-            "application.services.search_service.db_readonly", _yield_conn
+            "docsgpt.services.search_service.db_readonly", _yield_conn
         ), patch(
-            "application.services.search_service.AgentsRepository",
+            "docsgpt.services.search_service.AgentsRepository",
             return_value=agents_repo,
         ):
             with pytest.raises(SearchFailed):
@@ -93,12 +93,12 @@ class TestSearchEmptyWhenNoSources:
             assert search("k", "q", 5) == []
 
     def test_returns_empty_for_zero_chunks_without_db_lookup(self):
-        with patch("application.services.search_service.db_readonly") as mock_db:
+        with patch("docsgpt.services.search_service.db_readonly") as mock_db:
             assert search("k", "q", 0) == []
         mock_db.assert_not_called()
 
     def test_returns_empty_for_negative_chunks_without_db_lookup(self):
-        with patch("application.services.search_service.db_readonly") as mock_db:
+        with patch("docsgpt.services.search_service.db_readonly") as mock_db:
             assert search("k", "q", -1) == []
         mock_db.assert_not_called()
 
@@ -115,7 +115,7 @@ class TestSearchResults:
             }
         ]
         with _fake_db_readonly(agent), patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             return_value=fake_vs,
         ):
             results = search("k", "q", 5)
@@ -133,7 +133,7 @@ class TestSearchResults:
         fake_vs.search.return_value = [lc_doc]
 
         with _fake_db_readonly(agent), patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             return_value=fake_vs,
         ):
             results = search("k", "q", 5)
@@ -151,7 +151,7 @@ class TestSearchResults:
         fake_vs.search.return_value = docs
 
         with _fake_db_readonly(agent), patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             return_value=fake_vs,
         ):
             results = search("k", "q", 3)
@@ -169,7 +169,7 @@ class TestSearchResults:
         fake_vs.search.return_value = docs
 
         with _fake_db_readonly(agent), patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             return_value=fake_vs,
         ):
             results = search("k", "q", 5)
@@ -194,7 +194,7 @@ class TestSearchResults:
             return healthy_vs
 
         with _fake_db_readonly(agent), patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             side_effect=create_vs,
         ):
             results = search("k", "q", 5)
@@ -208,7 +208,7 @@ class TestSearchResults:
             {"text": "body", "metadata": {"filename": "document.pdf"}}
         ]
         with _fake_db_readonly(agent), patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             return_value=fake_vs,
         ):
             results = search("k", "q", 5)
@@ -221,7 +221,7 @@ class TestSearchResults:
             {"text": "Content without any title metadata at all", "metadata": {}}
         ]
         with _fake_db_readonly(agent), patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             return_value=fake_vs,
         ):
             results = search("k", "q", 5)
@@ -232,7 +232,7 @@ class TestSearchResults:
         # ``source_id=" "`` only — after strip() this leaves no real source.
         agent = {"extra_source_ids": ["  ", ""], "source_id": None}
         with _fake_db_readonly(agent), patch(
-            "application.services.search_service.VectorCreator.create_vectorstore"
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore"
         ) as mock_create:
             results = search("k", "q", 5)
         mock_create.assert_not_called()
@@ -254,14 +254,14 @@ class TestSourceAuthorization:
         return {"id": "agent-1", "user_id": "owner", "extra_source_ids": [], **kw}
 
     def test_readable_sources_pass_through(self, monkeypatch):
-        import application.api.user.team_sharing as ts
+        import docsgpt.api.user.team_sharing as ts
 
         monkeypatch.setattr(ts, "can_access", lambda *a, **k: True)
         agent = self._agent(extra_source_ids=["s1", "s2"])
         assert _authorized_source_ids(None, agent, ["s1", "s2"]) == ["s1", "s2"]
 
     def test_foreign_source_is_dropped(self, monkeypatch):
-        import application.api.user.team_sharing as ts
+        import docsgpt.api.user.team_sharing as ts
 
         monkeypatch.setattr(ts, "can_access", lambda conn, k, sid, u: sid == "mine")
         agent = self._agent()
@@ -269,7 +269,7 @@ class TestSourceAuthorization:
 
     def test_team_shared_source_is_kept(self, monkeypatch):
         """A grant is legitimate access; only unreadable ids are dropped."""
-        import application.api.user.team_sharing as ts
+        import docsgpt.api.user.team_sharing as ts
 
         monkeypatch.setattr(ts, "can_access", lambda *a, **k: True)
         agent = self._agent(user_id="grantee")
@@ -280,7 +280,7 @@ class TestSourceAuthorization:
         assert _authorized_source_ids(None, agent, ["s1"]) == []
 
     def test_check_failure_fails_closed(self, monkeypatch):
-        import application.api.user.team_sharing as ts
+        import docsgpt.api.user.team_sharing as ts
 
         def _boom(*a, **k):
             raise RuntimeError("db down")
@@ -291,7 +291,7 @@ class TestSourceAuthorization:
 
 def _serial_search_sources(query, source_ids, chunks):
     """The pre-fan-out ``_search_sources``, kept as a parity oracle."""
-    from application.services.search_service import VectorCreator, settings
+    from docsgpt.services.search_service import VectorCreator, settings
 
     if chunks <= 0 or not source_ids:
         return []
@@ -366,11 +366,11 @@ def _no_embedder_store(docs=None):
 
 def _run_search_sources(query, source_ids, chunks, stores, serial=False):
     """Run ``_search_sources`` (or its serial oracle) against ``stores``."""
-    from application.services import search_service
+    from docsgpt.services import search_service
 
     impl = _serial_search_sources if serial else search_service._search_sources
     with patch(
-        "application.services.search_service.VectorCreator.create_vectorstore",
+        "docsgpt.services.search_service.VectorCreator.create_vectorstore",
         side_effect=lambda _type, source_id, _key: stores[source_id],
     ):
         return impl(query, source_ids, chunks)
@@ -555,10 +555,10 @@ class TestSearchSourcesFanOut:
                 raise RuntimeError("connection failed")
             return stores[source_id]
 
-        from application.services import search_service
+        from docsgpt.services import search_service
 
         with patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             side_effect=_create,
         ):
             results = search_service._search_sources("q", ["a", "b", "c"], 6)
@@ -596,10 +596,10 @@ class TestSearchSourcesFanOut:
         embedder = _make_embedder()
         stores = {"a": _make_store(embedder, [{"text": "hit a", "metadata": {}}])}
 
-        from application.services import search_service
+        from docsgpt.services import search_service
 
         with patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             side_effect=lambda _t, source_id, _k: stores[source_id],
         ):
             results = search_service._search_sources("q", ["  ", "a", ""], 6)
@@ -608,19 +608,19 @@ class TestSearchSourcesFanOut:
         assert stores["a"].search.call_args.kwargs["k"] == 4
 
     def test_all_blank_source_ids_build_no_store(self):
-        from application.services import search_service
+        from docsgpt.services import search_service
 
         with patch(
-            "application.services.search_service.VectorCreator.create_vectorstore"
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore"
         ) as mock_create:
             assert search_service._search_sources("q", ["  ", ""], 5) == []
         mock_create.assert_not_called()
 
     def test_zero_chunks_short_circuits(self):
-        from application.services import search_service
+        from docsgpt.services import search_service
 
         with patch(
-            "application.services.search_service.VectorCreator.create_vectorstore"
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore"
         ) as mock_create:
             assert search_service._search_sources("q", ["a"], 0) == []
         mock_create.assert_not_called()

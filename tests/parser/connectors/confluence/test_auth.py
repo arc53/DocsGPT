@@ -1,4 +1,4 @@
-"""Tests for application/parser/connectors/confluence/auth.py"""
+"""Tests for docsgpt/parser/connectors/confluence/auth.py"""
 
 import datetime
 from unittest.mock import MagicMock, patch
@@ -24,8 +24,8 @@ def mock_settings():
 
 @pytest.fixture
 def auth(mock_settings):
-    with patch("application.parser.connectors.confluence.auth.settings", mock_settings):
-        from application.parser.connectors.confluence.auth import ConfluenceAuth
+    with patch("docsgpt.parser.connectors.confluence.auth.settings", mock_settings):
+        from docsgpt.parser.connectors.confluence.auth import ConfluenceAuth
         return ConfluenceAuth()
 
 
@@ -46,16 +46,16 @@ class TestConfluenceAuthInit:
     @pytest.mark.unit
     def test_init_missing_client_id_raises(self, mock_settings):
         mock_settings.CONFLUENCE_CLIENT_ID = None
-        with patch("application.parser.connectors.confluence.auth.settings", mock_settings):
-            from application.parser.connectors.confluence.auth import ConfluenceAuth
+        with patch("docsgpt.parser.connectors.confluence.auth.settings", mock_settings):
+            from docsgpt.parser.connectors.confluence.auth import ConfluenceAuth
             with pytest.raises(ValueError, match="CONFLUENCE_CLIENT_ID"):
                 ConfluenceAuth()
 
     @pytest.mark.unit
     def test_init_missing_client_secret_raises(self, mock_settings):
         mock_settings.CONFLUENCE_CLIENT_SECRET = None
-        with patch("application.parser.connectors.confluence.auth.settings", mock_settings):
-            from application.parser.connectors.confluence.auth import ConfluenceAuth
+        with patch("docsgpt.parser.connectors.confluence.auth.settings", mock_settings):
+            from docsgpt.parser.connectors.confluence.auth import ConfluenceAuth
             with pytest.raises(ValueError, match="CONFLUENCE_CLIENT_SECRET"):
                 ConfluenceAuth()
 
@@ -63,8 +63,8 @@ class TestConfluenceAuthInit:
     def test_init_both_missing_raises(self, mock_settings):
         mock_settings.CONFLUENCE_CLIENT_ID = None
         mock_settings.CONFLUENCE_CLIENT_SECRET = None
-        with patch("application.parser.connectors.confluence.auth.settings", mock_settings):
-            from application.parser.connectors.confluence.auth import ConfluenceAuth
+        with patch("docsgpt.parser.connectors.confluence.auth.settings", mock_settings):
+            from docsgpt.parser.connectors.confluence.auth import ConfluenceAuth
             with pytest.raises(ValueError):
                 ConfluenceAuth()
 

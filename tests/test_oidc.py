@@ -1,4 +1,4 @@
-"""Tests for the OIDC SSO module (application/api/oidc/)."""
+"""Tests for the OIDC SSO module (docsgpt/api/oidc/)."""
 
 import base64
 import hashlib
@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import jwk
 from jose import jwt as jose_jwt
 
-from application.core.settings import settings
+from docsgpt.core.settings import settings
 
 ISSUER = "https://idp.test/app/"
 CLIENT_ID = "docsgpt-test"
@@ -155,7 +155,7 @@ def oidc_settings(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_provider_cache():
-    from application.api.oidc import provider
+    from docsgpt.api.oidc import provider
 
     provider.reset_cache()
     yield
@@ -166,9 +166,9 @@ def reset_provider_cache():
 class TestProviderDiscovery:
 
     def test_discovery_fetched_once_then_cached(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             first = provider.get_discovery()
             second = provider.get_discovery()
@@ -177,9 +177,9 @@ class TestProviderDiscovery:
         assert mock_requests.get.call_count == 1
 
     def test_discovery_refetched_after_ttl(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             provider.get_discovery()
             provider._cache["discovery_at"] -= provider.DISCOVERY_TTL_SECONDS + 1
@@ -188,9 +188,9 @@ class TestProviderDiscovery:
         assert mock_requests.get.call_count == 2
 
     def test_discovery_failure_raises_oidc_error(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.return_value = Mock(status_code=502)
             mock_requests.RequestException = Exception
             with pytest.raises(provider.OIDCError):
@@ -201,9 +201,9 @@ class TestProviderDiscovery:
 class TestValidateIdToken:
 
     def _validate(self, token, nonce="test-nonce", jwks_keys=None):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get(
                 jwks_keys if jwks_keys is not None else [PUBLIC_JWK]
             )
@@ -215,25 +215,25 @@ class TestValidateIdToken:
         assert claims["email"] == "user@example.com"
 
     def test_nonce_mismatch_rejected(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         with pytest.raises(provider.OIDCError):
             self._validate(sign_id_token(id_token_claims(nonce="other")))
 
     def test_wrong_audience_rejected(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         with pytest.raises(provider.OIDCError):
             self._validate(sign_id_token(id_token_claims(aud="someone-else")))
 
     def test_wrong_issuer_rejected(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         with pytest.raises(provider.OIDCError):
             self._validate(sign_id_token(id_token_claims(iss="https://evil.test/")))
 
     def test_expired_beyond_leeway_rejected(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         expired = id_token_claims(exp=int(time.time()) - 120)
         with pytest.raises(provider.OIDCError):
@@ -245,7 +245,7 @@ class TestValidateIdToken:
         assert claims["sub"] == "oidc-user-1"
 
     def test_hs256_id_token_rejected(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         forged = jose_jwt.encode(
             id_token_claims(), JWT_SECRET, algorithm="HS256", headers={"kid": KID}
@@ -258,7 +258,7 @@ class TestValidateIdToken:
         # restarts, sloppy rotations): the cached key fails the signature,
         # one forced JWKS refetch picks up the new key and validation
         # succeeds.
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         new_pem = _generate_rsa_pem()
         new_jwk = {
@@ -268,7 +268,7 @@ class TestValidateIdToken:
         }
         token = sign_id_token(id_token_claims(), key=new_pem)
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             provider.get_jwks()  # prime the cache with the OLD key
             mock_requests.get.side_effect = make_fake_get([new_jwk])
@@ -277,7 +277,7 @@ class TestValidateIdToken:
         assert claims["sub"] == "oidc-user-1"
 
     def test_unknown_kid_triggers_single_jwks_refetch(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         rotated_pem = _generate_rsa_pem()
         rotated_jwk = {
@@ -304,7 +304,7 @@ class TestValidateIdToken:
                 resp.status_code = 404
             return resp
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = fake_get
             claims = provider.validate_id_token(token, "test-nonce")
 
@@ -316,9 +316,9 @@ class TestValidateIdToken:
 class TestExchangeCode:
 
     def test_posts_code_and_verifier(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = Mock(
                 status_code=200, json=Mock(return_value={"id_token": "x"})
@@ -337,11 +337,11 @@ class TestExchangeCode:
         assert "client_secret" not in sent
 
     def test_includes_client_secret_when_post_method_supported(self, monkeypatch):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         monkeypatch.setattr(settings, "OIDC_CLIENT_SECRET", "s3cret")
         discovery = {**DISCOVERY, "token_endpoint_auth_methods_supported": ["client_secret_post"]}
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK], discovery=discovery)
             mock_requests.post.return_value = Mock(
                 status_code=200, json=Mock(return_value={"id_token": "x"})
@@ -351,9 +351,9 @@ class TestExchangeCode:
         assert mock_requests.post.call_args.kwargs["data"]["client_secret"] == "s3cret"
 
     def test_non_200_raises_oidc_error(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = Mock(status_code=400, text="bad request")
             with pytest.raises(provider.OIDCError):
@@ -364,9 +364,9 @@ class TestExchangeCode:
 class TestTokenEndpointAuthMethod:
 
     def _exchange(self, discovery=None):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK], discovery=discovery)
             mock_requests.post.return_value = Mock(
                 status_code=200, json=Mock(return_value={"id_token": "x"})
@@ -411,9 +411,9 @@ class TestTokenEndpointAuthMethod:
 class TestFetchUserinfo:
 
     def test_sends_bearer_token_and_returns_claims(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get(
                 [PUBLIC_JWK], userinfo={"sub": "oidc-user-1", "groups": ["devs"]}
             )
@@ -429,18 +429,18 @@ class TestFetchUserinfo:
         assert userinfo_calls[0].kwargs["headers"]["Authorization"] == "Bearer at-123"
 
     def test_missing_endpoint_raises(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         discovery = {k: v for k, v in DISCOVERY.items() if k != "userinfo_endpoint"}
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK], discovery=discovery)
             with pytest.raises(provider.OIDCError):
                 provider.fetch_userinfo("at-123")
 
     def test_non_200_raises(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get(
                 [PUBLIC_JWK], userinfo={"sub": "x"}, userinfo_status=500
             )
@@ -452,9 +452,9 @@ class TestFetchUserinfo:
 class TestRefreshGrant:
 
     def test_posts_refresh_token_grant(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = Mock(
                 status_code=200, json=Mock(return_value={"access_token": "at-2"})
@@ -472,20 +472,20 @@ class TestRefreshGrant:
 class TestValidateIdTokenNonceOptional:
 
     def test_nonce_none_skips_nonce_check(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         claims = id_token_claims()
         del claims["nonce"]
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             decoded = provider.validate_id_token(sign_id_token(claims), nonce=None)
 
         assert decoded["sub"] == "oidc-user-1"
 
     def test_nonce_none_accepts_token_that_still_has_nonce(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             decoded = provider.validate_id_token(sign_id_token(id_token_claims()), nonce=None)
 
@@ -496,9 +496,9 @@ class TestValidateIdTokenNonceOptional:
 class TestValidateLogoutToken:
 
     def _validate(self, token, jwks_keys=None):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get(
                 jwks_keys if jwks_keys is not None else [PUBLIC_JWK]
             )
@@ -514,7 +514,7 @@ class TestValidateLogoutToken:
         assert self._validate(sign_id_token(claims))["sid"] == "sess-9"
 
     def test_missing_events_claim_rejected(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         claims = logout_token_claims()
         del claims["events"]
@@ -522,20 +522,20 @@ class TestValidateLogoutToken:
             self._validate(sign_id_token(claims))
 
     def test_wrong_event_uri_rejected(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         claims = logout_token_claims(events={"http://other.event/uri": {}})
         with pytest.raises(provider.OIDCError):
             self._validate(sign_id_token(claims))
 
     def test_nonce_prohibited(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         with pytest.raises(provider.OIDCError):
             self._validate(sign_id_token(logout_token_claims(nonce="n-1")))
 
     def test_missing_sub_and_sid_rejected(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         claims = logout_token_claims()
         del claims["sub"]
@@ -543,7 +543,7 @@ class TestValidateLogoutToken:
             self._validate(sign_id_token(claims))
 
     def test_wrong_audience_rejected(self):
-        from application.api.oidc import provider
+        from docsgpt.api.oidc import provider
 
         with pytest.raises(provider.OIDCError):
             self._validate(sign_id_token(logout_token_claims(aud="someone-else")))
@@ -568,7 +568,7 @@ class TestDenylistWatermark:
     """is_denied compares the token iat against the stored revocation timestamp."""
 
     def _wire(self, monkeypatch):
-        from application.api.oidc import denylist
+        from docsgpt.api.oidc import denylist
 
         redis = _WatermarkRedis()
         monkeypatch.setattr(denylist, "get_redis_instance", lambda: redis)
@@ -601,8 +601,8 @@ class TestDenylistWatermark:
 
 @pytest.fixture(scope="module")
 def app():
-    with patch("application.app.handle_auth", return_value={"sub": "test_user"}):
-        from application.app import app as flask_app
+    with patch("docsgpt.app.handle_auth", return_value={"sub": "test_user"}):
+        from docsgpt.app import app as flask_app
 
         flask_app.config["TESTING"] = True
         yield flask_app
@@ -616,7 +616,7 @@ def client(app):
 @pytest.fixture
 def fake_redis():
     redis = FakeRedis()
-    with patch("application.api.oidc.routes.get_redis_instance", return_value=redis):
+    with patch("docsgpt.api.oidc.routes.get_redis_instance", return_value=redis):
         yield redis
 
 
@@ -635,12 +635,12 @@ def db_mocks():
     def fake_session():
         yield Mock()
 
-    with patch("application.api.oidc.routes.db_session", fake_session), patch(
-        "application.api.oidc.routes.db_readonly", fake_session
+    with patch("docsgpt.api.oidc.routes.db_session", fake_session), patch(
+        "docsgpt.api.oidc.routes.db_readonly", fake_session
     ), patch(
-        "application.api.oidc.routes.UsersRepository", return_value=users_repo
+        "docsgpt.api.oidc.routes.UsersRepository", return_value=users_repo
     ), patch(
-        "application.api.oidc.routes.AuthEventsRepository", return_value=events_repo
+        "docsgpt.api.oidc.routes.AuthEventsRepository", return_value=events_repo
     ):
         yield SimpleNamespace(users=users_repo, events=events_repo)
 
@@ -675,7 +675,7 @@ def _mint_id_token_response(stored_nonce, **extra):
 class TestLoginRoute:
 
     def test_redirects_to_idp_with_pkce_and_stores_state(self, client, fake_redis):
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             response = client.get("/api/auth/oidc/login")
 
@@ -701,12 +701,12 @@ class TestLoginRoute:
         assert params["code_challenge"] == expected_challenge
 
     def test_503_when_redis_unavailable(self, client):
-        with patch("application.api.oidc.routes.get_redis_instance", return_value=None):
+        with patch("docsgpt.api.oidc.routes.get_redis_instance", return_value=None):
             response = client.get("/api/auth/oidc/login")
         assert response.status_code == 503
 
     def test_503_when_discovery_fails(self, client, fake_redis):
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.return_value = Mock(status_code=502)
             mock_requests.RequestException = Exception
             response = client.get("/api/auth/oidc/login")
@@ -740,7 +740,7 @@ class TestCallbackRoute:
 
     def test_happy_path_mints_session_and_redirects_with_handoff(self, client, fake_redis):
         state, nonce = self._seed_state(client, fake_redis)
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _mint_id_token_response(nonce)
             response = client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
@@ -762,7 +762,7 @@ class TestCallbackRoute:
 
     def test_replayed_state_rejected(self, client, fake_redis):
         state, nonce = self._seed_state(client, fake_redis)
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _mint_id_token_response(nonce)
             first = client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
@@ -803,7 +803,7 @@ class TestCallbackRoute:
 
     def test_nonce_mismatch_fails_auth(self, client, fake_redis):
         state, _ = self._seed_state(client, fake_redis, nonce="nonce-1")
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _mint_id_token_response("evil-nonce")
             response = client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
@@ -813,7 +813,7 @@ class TestCallbackRoute:
     def test_missing_user_id_claim(self, client, fake_redis, monkeypatch):
         monkeypatch.setattr(settings, "OIDC_USER_ID_CLAIM", "preferred_username")
         state, nonce = self._seed_state(client, fake_redis)
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _mint_id_token_response(nonce)
             response = client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
@@ -829,7 +829,7 @@ class TestCallbackRoute:
             status_code=200,
             json=Mock(return_value={"id_token": sign_id_token(claims)}),
         )
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = token_response
             response = client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
@@ -862,7 +862,7 @@ class TestTokenRoute:
         assert response.status_code == 401
 
     def test_503_when_redis_unavailable(self, client):
-        with patch("application.api.oidc.routes.get_redis_instance", return_value=None):
+        with patch("docsgpt.api.oidc.routes.get_redis_instance", return_value=None):
             response = client.post("/api/auth/oidc/token", json={"code": "code-1"})
         assert response.status_code == 503
 
@@ -871,7 +871,7 @@ class TestTokenRoute:
 class TestLogoutRoute:
 
     def test_redirects_to_idp_end_session(self, client):
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             response = client.get("/api/auth/oidc/logout")
 
@@ -883,7 +883,7 @@ class TestLogoutRoute:
         assert params["client_id"] == CLIENT_ID
 
     def test_falls_back_to_frontend_when_discovery_fails(self, client):
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.return_value = Mock(status_code=502)
             mock_requests.RequestException = Exception
             response = client.get("/api/auth/oidc/logout")
@@ -902,7 +902,7 @@ class TestCallbackGroups:
     def _callback(self, client, fake_redis, claims, userinfo=None, userinfo_status=200):
         state, nonce = _seed_state(client, fake_redis)
         claims = {**claims, "nonce": nonce}
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get(
                 [PUBLIC_JWK], userinfo=userinfo, userinfo_status=userinfo_status
             )
@@ -1003,13 +1003,13 @@ class TestCallbackAdminReconcile:
     def roles_repo(self):
         repo = Mock()
         repo.reconcile_oidc_admin.return_value = None
-        with patch("application.api.oidc.routes.UserRolesRepository", return_value=repo):
+        with patch("docsgpt.api.oidc.routes.UserRolesRepository", return_value=repo):
             yield repo
 
     def _callback(self, client, fake_redis, claims, userinfo=None):
         state, nonce = _seed_state(client, fake_redis)
         claims = {**claims, "nonce": nonce}
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK], userinfo=userinfo)
             mock_requests.post.return_value = _signed_token_response(claims)
             return client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
@@ -1099,7 +1099,7 @@ class TestCallbackUserGate:
 
     def _callback(self, client, fake_redis):
         state, nonce = _seed_state(client, fake_redis)
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _mint_id_token_response(nonce)
             return client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
@@ -1140,7 +1140,7 @@ class TestCallbackUserGate:
 
     def test_db_outage_does_not_block_login(self, client, fake_redis):
         with patch(
-            "application.api.oidc.routes.db_session",
+            "docsgpt.api.oidc.routes.db_session",
             side_effect=RuntimeError("db down"),
         ):
             response = self._callback(client, fake_redis)
@@ -1157,7 +1157,7 @@ class TestCallbackUserGate:
         # The denylist keys on a revocation timestamp and the minted session
         # carries a newer iat, so a fresh login is allowed without clearing any
         # entry — clearing would resurrect sessions revoked on other devices.
-        with patch("application.api.oidc.routes.denylist") as deny:
+        with patch("docsgpt.api.oidc.routes.denylist") as deny:
             response = self._callback(client, fake_redis)
 
         assert "#oidc_code=" in response.headers["Location"]
@@ -1166,7 +1166,7 @@ class TestCallbackUserGate:
 
     def test_denied_login_does_not_touch_denylist(self, client, fake_redis):
         self.db.users.get.return_value = {"user_id": "oidc-user-1", "active": False}
-        with patch("application.api.oidc.routes.denylist") as deny:
+        with patch("docsgpt.api.oidc.routes.denylist") as deny:
             response = self._callback(client, fake_redis)
 
         assert "account_disabled" in response.headers["Location"]
@@ -1184,7 +1184,7 @@ class TestSessionTokenMint:
     def _login_decoded(self, client, fake_redis, claims=None, **token_extra):
         state, nonce = _seed_state(client, fake_redis)
         claims = {**(claims or id_token_claims()), "nonce": nonce}
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _signed_token_response(claims, **token_extra)
             response = client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
@@ -1237,12 +1237,12 @@ class TestBackchannelLogoutRoute:
     @pytest.fixture(autouse=True)
     def _seams(self, db_mocks):
         self.db = db_mocks
-        with patch("application.api.oidc.routes.denylist") as deny:
+        with patch("docsgpt.api.oidc.routes.denylist") as deny:
             self.denylist = deny
             yield
 
     def _post(self, client, claims=None, **kwargs):
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             if claims is not None:
                 kwargs.setdefault("data", {"logout_token": sign_id_token(claims)})
@@ -1360,7 +1360,7 @@ class TestRefreshRoute:
     @pytest.fixture(autouse=True)
     def _seams(self, db_mocks):
         self.db = db_mocks
-        with patch("application.api.oidc.routes.denylist") as deny:
+        with patch("docsgpt.api.oidc.routes.denylist") as deny:
             deny.is_denied.return_value = False
             self.denylist = deny
             yield
@@ -1369,7 +1369,7 @@ class TestRefreshRoute:
         return {"Authorization": f"Bearer {token}"}
 
     def _refresh(self, client, token, idp_response=None, idp_status=200):
-        with patch("application.api.oidc.provider.requests") as mock_requests:
+        with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = Mock(
                 status_code=idp_status,
@@ -1438,7 +1438,7 @@ class TestRefreshRoute:
         roles_repo = Mock()
         roles_repo.reconcile_oidc_admin.return_value = "granted"
         with patch(
-            "application.api.oidc.routes.UserRolesRepository", return_value=roles_repo
+            "docsgpt.api.oidc.routes.UserRolesRepository", return_value=roles_repo
         ):
             response, _ = self._refresh(
                 client,
@@ -1464,7 +1464,7 @@ class TestRefreshRoute:
         del id_claims["nonce"]
         roles_repo = Mock()
         with patch(
-            "application.api.oidc.routes.UserRolesRepository", return_value=roles_repo
+            "docsgpt.api.oidc.routes.UserRolesRepository", return_value=roles_repo
         ):
             response, _ = self._refresh(
                 client,
@@ -1620,7 +1620,7 @@ class TestRefreshRoute:
 
     def test_503_when_redis_unavailable(self, client):
         token = make_session_token()
-        with patch("application.api.oidc.routes.get_redis_instance", return_value=None):
+        with patch("docsgpt.api.oidc.routes.get_redis_instance", return_value=None):
             response = client.post(self.URL, headers=self._auth(token))
 
         assert response.status_code == 503

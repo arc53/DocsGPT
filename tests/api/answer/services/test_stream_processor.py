@@ -1,4 +1,4 @@
-"""Tests for application/api/answer/services/stream_processor.py.
+"""Tests for docsgpt/api/answer/services/stream_processor.py.
 
 The previous suite was tightly coupled to Mongo (mock_mongo_db fixture,
 bson.ObjectId, bson.DBRef, find_one, etc.) which no longer exist after the
@@ -24,7 +24,7 @@ class TestStreamProcessorInitialization:
     pass
 
     def test_initializes_with_decoded_token(self):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         conv_id = _STATIC_OID
         request_data = {
@@ -41,7 +41,7 @@ class TestStreamProcessorInitialization:
         assert processor.conversation_id == request_data["conversation_id"]
 
     def test_initializes_without_token(self):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {"question": "Test question"}
 
@@ -52,7 +52,7 @@ class TestStreamProcessorInitialization:
         assert processor.data == request_data
 
     def test_initializes_default_attributes(self):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         processor = StreamProcessor({"question": "Test"}, {"sub": "user_123"})
 
@@ -66,7 +66,7 @@ class TestStreamProcessorInitialization:
         assert processor.shared_token is None
 
     def test_extracts_conversation_id_from_request(self):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         conv_id = _STATIC_OID
         request_data = {"question": "Test", "conversation_id": conv_id}
@@ -81,7 +81,7 @@ class TestStreamProcessorHistoryLoading:
     pass
 
     def test_uses_request_history_when_no_conversation_id(self):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {
             "question": "What is Python?",
@@ -98,7 +98,7 @@ class TestStreamProcessorAgentConfiguration:
     pass
 
     def test_uses_default_config_without_api_key(self):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {"question": "Test"}
 
@@ -110,7 +110,7 @@ class TestStreamProcessorAgentConfiguration:
 
     def test_embedded_workflow_without_saved_id(self):
         """A preview run with no saved workflow id carries no ``workflow_id``."""
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {
             "question": "Test",
@@ -126,7 +126,7 @@ class TestStreamProcessorAgentConfiguration:
     def test_embedded_workflow_with_saved_id_persists_run(self):
         """A saved workflow id alongside the embedded graph is captured so the
         run can persist a ``workflow_runs`` row for artifact listing."""
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {
             "question": "Test",
@@ -152,7 +152,7 @@ class TestStreamProcessorDocPrefetch:
     def test_prefetch_skipped_when_no_active_docs(self):
         from unittest.mock import MagicMock
 
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         processor = StreamProcessor(
             {"question": "Hi there"},
@@ -170,7 +170,7 @@ class TestStreamProcessorDocPrefetch:
     def test_prefetch_skipped_when_active_docs_is_default(self):
         from unittest.mock import MagicMock
 
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         processor = StreamProcessor(
             {"question": "Hi", "active_docs": "default"},
@@ -194,7 +194,7 @@ class TestStreamProcessorAttachments:
     pass
 
     def test_handles_empty_attachments(self):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {"question": "Simple question"}
 
@@ -225,7 +225,7 @@ class TestBuildContinuationFromMessages:
     def _make_processor():
         from unittest.mock import MagicMock
 
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         processor = StreamProcessor({"question": ""}, {"sub": "user_123"})
         fake_agent = MagicMock()

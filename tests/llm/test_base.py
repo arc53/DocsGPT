@@ -1,4 +1,4 @@
-"""Unit tests for application/llm/base.py — BaseLLM.
+"""Unit tests for docsgpt/llm/base.py — BaseLLM.
 
 Extends coverage beyond test_base_llm.py:
   - gen / gen_stream: decorator application, argument forwarding
@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from application.llm.base import BaseLLM
-from application.llm.handlers.base import (
+from docsgpt.llm.base import BaseLLM
+from docsgpt.llm.handlers.base import (
     LLMHandler,
     LLMResponse,
     ToolCall,
@@ -74,15 +74,15 @@ class FallbackLLM(BaseLLM):
 @pytest.mark.unit
 class TestGenMethods:
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_gen_returns_result(self):
         llm = StubLLM(raw_gen_return="hello")
         result = llm.gen(model="m", messages=[{"role": "user", "content": "hi"}])
         assert result == "hello"
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_gen_emits_llm_gen_start_event(self, caplog):
         # Non-streaming counterpart to the llm_stream_start event: gen() must
         # log before the model is queried so every call is observable.
@@ -112,8 +112,8 @@ class TestGenMethods:
         assert evt.has_attachments is True
         assert evt.has_tools is True
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_gen_emits_event_without_attachments_or_tools(self, caplog):
         import logging as _logging
 
@@ -128,8 +128,8 @@ class TestGenMethods:
         # BaseLLM default — concrete providers always override.
         assert evt.provider == "unknown"
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_gen_fallback_emits_gen_start_for_fallback_provider(self, caplog):
         # The fallback raw path bypasses gen(), so _execute_with_fallback must
         # emit a second llm_gen_start tagged with the backup vendor/model —
@@ -159,7 +159,7 @@ class TestGenMethods:
         assert starts[1].provider == "fallback-vendor"
         assert starts[1].model == "backup-model-id"
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
     def test_gen_emits_llm_gen_finished_on_success(self, caplog):
         # Real gen_token_usage (only gen_cache patched) so the emit-from-
         # finally path runs. user_api_key=None makes _persist_call_usage
@@ -187,7 +187,7 @@ class TestGenMethods:
         assert not hasattr(evt, "cached_tokens")
         assert not hasattr(evt, "error_class")
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
     def test_gen_emits_llm_gen_finished_on_error(self, caplog):
         import logging as _logging
 
@@ -213,7 +213,7 @@ class TestGenMethods:
         # Prompt tokens are still recorded — the request was sent and billed.
         assert evt.prompt_tokens > 0
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
     def test_gen_finished_event_paired_with_gen_start(self, caplog):
         # The two events form a pair the cost dashboards join on; verify they
         # come in order and from the same provider/model.
@@ -235,8 +235,8 @@ class TestGenMethods:
         assert records[0].model == records[1].model == "m1"
         assert records[0].provider == records[1].provider == "fake-provider"
 
-    @patch("application.llm.base.stream_cache", lambda f: f)
-    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.stream_cache", lambda f: f)
+    @patch("docsgpt.llm.base.stream_token_usage", lambda f: f)
     def test_gen_stream_yields_results(self):
         llm = StubLLM(raw_gen_stream_items=["a", "b"])
         result = list(
@@ -244,8 +244,8 @@ class TestGenMethods:
         )
         assert result == ["a", "b"]
 
-    @patch("application.llm.base.stream_cache", lambda f: f)
-    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.stream_cache", lambda f: f)
+    @patch("docsgpt.llm.base.stream_token_usage", lambda f: f)
     def test_gen_stream_emits_llm_stream_start_event(self, caplog):
         import logging as _logging
 
@@ -274,8 +274,8 @@ class TestGenMethods:
         assert evt.has_attachments is True
         assert evt.has_tools is True
 
-    @patch("application.llm.base.stream_cache", lambda f: f)
-    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.stream_cache", lambda f: f)
+    @patch("docsgpt.llm.base.stream_token_usage", lambda f: f)
     def test_gen_stream_recognises_attachments_kwarg_alias(self, caplog):
         import logging as _logging
 
@@ -289,8 +289,8 @@ class TestGenMethods:
         evt = next(r for r in caplog.records if r.message == "llm_stream_start")
         assert evt.has_attachments is True
 
-    @patch("application.llm.base.stream_cache", lambda f: f)
-    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.stream_cache", lambda f: f)
+    @patch("docsgpt.llm.base.stream_token_usage", lambda f: f)
     def test_gen_stream_emits_event_without_attachments_or_tools(self, caplog):
         import logging as _logging
 
@@ -305,7 +305,7 @@ class TestGenMethods:
         # BaseLLM default — concrete providers always override.
         assert evt.provider == "unknown"
 
-    @patch("application.llm.base.stream_cache", lambda f: f)
+    @patch("docsgpt.llm.base.stream_cache", lambda f: f)
     def test_gen_stream_emits_llm_stream_finished_on_success(self, caplog):
         # Real ``stream_token_usage`` so the emit-from-finally path runs.
         # The decorator no longer writes to the DB — billing rows are
@@ -340,7 +340,7 @@ class TestGenMethods:
         assert not hasattr(evt, "cached_tokens")
         assert not hasattr(evt, "error_class")
 
-    @patch("application.llm.base.stream_cache", lambda f: f)
+    @patch("docsgpt.llm.base.stream_cache", lambda f: f)
     def test_gen_stream_emits_llm_stream_finished_on_error(self, caplog):
         import logging as _logging
 
@@ -368,7 +368,7 @@ class TestGenMethods:
         # before the failure is in the batch).
         assert evt.completion_tokens > 0
 
-    @patch("application.llm.base.stream_cache", lambda f: f)
+    @patch("docsgpt.llm.base.stream_cache", lambda f: f)
     def test_gen_stream_finished_event_paired_with_stream_start(self, caplog):
         # The two events form a pair the cost dashboards join on; verify
         # they always come in order and from the same provider/model.
@@ -397,14 +397,14 @@ class TestProviderNameRegistry:
     ``provider="unknown"`` in telemetry. Pin the expected values here."""
 
     def test_provider_names_match_expectations(self):
-        from application.llm.anthropic import AnthropicLLM
-        from application.llm.docsgpt_provider import DocsGPTAPILLM
-        from application.llm.google_ai import GoogleLLM
-        from application.llm.groq import GroqLLM
-        from application.llm.llama_cpp import LlamaCpp
-        from application.llm.novita import NovitaLLM
-        from application.llm.open_router import OpenRouterLLM
-        from application.llm.openai import OpenAILLM
+        from docsgpt.llm.anthropic import AnthropicLLM
+        from docsgpt.llm.docsgpt_provider import DocsGPTAPILLM
+        from docsgpt.llm.google_ai import GoogleLLM
+        from docsgpt.llm.groq import GroqLLM
+        from docsgpt.llm.llama_cpp import LlamaCpp
+        from docsgpt.llm.novita import NovitaLLM
+        from docsgpt.llm.open_router import OpenRouterLLM
+        from docsgpt.llm.openai import OpenAILLM
 
         assert OpenAILLM.provider_name == "openai"
         assert GoogleLLM.provider_name == "google"
@@ -415,8 +415,8 @@ class TestProviderNameRegistry:
         assert DocsGPTAPILLM.provider_name == "docsgpt"
         assert LlamaCpp.provider_name == "llama_cpp"
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_gen_passes_tools(self):
         tools = [{"type": "function", "function": {"name": "t"}}]
 
@@ -445,15 +445,15 @@ class TestProviderNameRegistry:
 @pytest.mark.unit
 class TestExecuteWithFallbackNonStreaming:
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_no_fallback_raises(self):
         llm = FailingLLM()
         with pytest.raises(RuntimeError, match="primary_failed"):
             llm.gen(model="m", messages=[])
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_fallback_called_on_failure(self):
         fallback = FallbackLLM(model_id="fallback-model")
         llm = FailingLLM()
@@ -472,15 +472,15 @@ class TestExecuteWithFallbackNonStreaming:
 @pytest.mark.unit
 class TestStreamWithFallback:
 
-    @patch("application.llm.base.stream_cache", lambda f: f)
-    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.stream_cache", lambda f: f)
+    @patch("docsgpt.llm.base.stream_token_usage", lambda f: f)
     def test_no_fallback_raises(self):
         llm = FailingLLM()
         with pytest.raises(RuntimeError, match="primary_stream_failed"):
             list(llm.gen_stream(model="m", messages=[]))
 
-    @patch("application.llm.base.stream_cache", lambda f: f)
-    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.stream_cache", lambda f: f)
+    @patch("docsgpt.llm.base.stream_token_usage", lambda f: f)
     def test_fallback_called_on_stream_failure(self):
         fallback = FallbackLLM(model_id="fallback-model")
         llm = FailingLLM()
@@ -528,8 +528,8 @@ class TestClientErrorFallback:
 
     # 4xx that used to be force-skipped; each should now reach the fallback.
     @pytest.mark.parametrize("status_code", [400, 401, 403, 404, 413, 422, 429])
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_4xx_now_falls_back(self, status_code):
         fallback = FallbackLLM(model_id="fallback-model")
         llm = _ClientErrorLLM(status_code=status_code)
@@ -540,8 +540,8 @@ class TestClientErrorFallback:
         assert fallback.gen_called
 
     @pytest.mark.parametrize("status_code", [400, 429])
-    @patch("application.llm.base.stream_cache", lambda f: f)
-    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.stream_cache", lambda f: f)
+    @patch("docsgpt.llm.base.stream_token_usage", lambda f: f)
     def test_4xx_now_falls_back_stream(self, status_code):
         fallback = FallbackLLM(model_id="fallback-model")
         llm = _ClientErrorLLM(status_code=status_code)
@@ -551,8 +551,8 @@ class TestClientErrorFallback:
         assert "fallback_chunk" in result
         assert fallback.gen_stream_called
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_5xx_still_falls_back(self):
         fallback = FallbackLLM(model_id="fallback-model")
         llm = _ClientErrorLLM(status_code=503)
@@ -562,8 +562,8 @@ class TestClientErrorFallback:
         assert result == "fallback_result"
         assert fallback.gen_called
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_genai_client_error_now_falls_back(self):
         """A Gemini ClientError (4xx) is no longer force-skipped."""
         try:
@@ -587,8 +587,8 @@ class TestClientErrorFallback:
         assert result == "fallback_result"
         assert fallback.gen_called
 
-    @patch("application.llm.base.gen_cache", lambda f: f)
-    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    @patch("docsgpt.llm.base.gen_cache", lambda f: f)
+    @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)
     def test_fallback_failure_propagates(self):
         """When the fallback also fails, its error propagates to the caller."""
 
@@ -623,7 +623,7 @@ class TestFallbackLLMResolution:
 
     def test_none_without_config(self, monkeypatch):
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(FALLBACK_LLM_PROVIDER=None),
         )
         llm = StubLLM(backup_models=[])
@@ -632,15 +632,15 @@ class TestFallbackLLMResolution:
     def test_backup_model_resolved(self, monkeypatch):
         mock_fallback = StubLLM()
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda mid, **_kwargs: "openai",
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda p: "key",
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             Mock(return_value=mock_fallback),
         )
 
@@ -658,15 +658,15 @@ class TestFallbackLLMResolution:
             return StubLLM()
 
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda mid, **_kwargs: "openai",
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda p: "key",
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             mock_create,
         )
 
@@ -678,7 +678,7 @@ class TestFallbackLLMResolution:
     def test_global_fallback_used_when_no_backup(self, monkeypatch):
         mock_fallback = StubLLM()
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(
                 FALLBACK_LLM_PROVIDER="openai",
                 FALLBACK_LLM_NAME="gpt-4",
@@ -687,7 +687,7 @@ class TestFallbackLLMResolution:
             ),
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             Mock(return_value=mock_fallback),
         )
 
@@ -697,11 +697,11 @@ class TestFallbackLLMResolution:
 
     def test_backup_provider_not_found_skipped(self, monkeypatch):
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda mid, **_kwargs: None,
         )
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(FALLBACK_LLM_PROVIDER=None),
         )
 
@@ -711,7 +711,7 @@ class TestFallbackLLMResolution:
 
 
 # ---------------------------------------------------------------------------
-# LLMHandler tests for application/llm/handlers/base.py
+# LLMHandler tests for docsgpt/llm/handlers/base.py
 # ---------------------------------------------------------------------------
 
 
@@ -766,13 +766,13 @@ class TestConvertPdfToImages:
     def test_convert_pdf_to_images(self, monkeypatch):
         handler = ConcreteHandler()
         monkeypatch.setattr(
-            "application.utils.convert_pdf_to_images",
+            "docsgpt.utils.convert_pdf_to_images",
             lambda file_path, storage, max_pages, dpi: [
                 {"mime_type": "image/png", "data": "base64data", "page": 1}
             ],
         )
         monkeypatch.setattr(
-            "application.storage.storage_creator.StorageCreator.get_storage",
+            "docsgpt.storage.storage_creator.StorageCreator.get_storage",
             MagicMock(return_value=MagicMock()),
         )
         result = handler._convert_pdf_to_images({"path": "/tmp/test.pdf"})
@@ -838,7 +838,7 @@ class TestPerformMidExecutionCompression:
         agent.initial_user_id = "user1"
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.ConversationService.__init__",
+            "docsgpt.api.answer.services.conversation_service.ConversationService.__init__",
             MagicMock(side_effect=Exception("import error")),
         )
 
@@ -854,11 +854,11 @@ class TestPerformMidExecutionCompression:
         mock_conv_service = MagicMock()
         mock_conv_service.get_conversation.return_value = None
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             MagicMock(return_value=mock_conv_service),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             MagicMock(),
         )
 
@@ -894,11 +894,11 @@ class TestPerformInMemoryCompression:
         )
 
         monkeypatch.setattr(
-            "application.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
+            "docsgpt.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
             None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             MagicMock(side_effect=Exception("provider error")),
         )
 
@@ -1024,11 +1024,11 @@ class TestConvertPdfToImagesAdditional:
             return [{"mime_type": "image/png", "data": "b64", "page": 1}]
 
         monkeypatch.setattr(
-            "application.utils.convert_pdf_to_images",
+            "docsgpt.utils.convert_pdf_to_images",
             mock_convert,
         )
         monkeypatch.setattr(
-            "application.storage.storage_creator.StorageCreator.get_storage",
+            "docsgpt.storage.storage_creator.StorageCreator.get_storage",
             MagicMock(return_value=MagicMock()),
         )
 
@@ -1106,11 +1106,11 @@ class TestPerformMidExecutionCompressionAdditional:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             MagicMock(return_value=mock_conv_service),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             MagicMock(return_value=mock_orchestrator),
         )
 
@@ -1152,11 +1152,11 @@ class TestPerformMidExecutionCompressionAdditional:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             MagicMock(return_value=mock_conv_service),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             MagicMock(return_value=mock_orchestrator),
         )
         handler._build_conversation_from_messages = MagicMock(return_value=None)
@@ -1185,11 +1185,11 @@ class TestPerformMidExecutionCompressionAdditional:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             MagicMock(return_value=mock_conv_service),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             MagicMock(return_value=mock_orchestrator),
         )
         handler._build_conversation_from_messages = MagicMock(return_value=None)
@@ -1225,11 +1225,11 @@ class TestPerformMidExecutionCompressionAdditional:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             MagicMock(return_value=mock_conv_service),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             MagicMock(return_value=mock_orchestrator),
         )
         handler._build_conversation_from_messages = MagicMock(return_value=None)
@@ -1265,11 +1265,11 @@ class TestPerformMidExecutionCompressionAdditional:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             MagicMock(return_value=mock_conv_service),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             MagicMock(return_value=mock_orchestrator),
         )
         handler._build_conversation_from_messages = MagicMock(return_value=None)
@@ -1314,11 +1314,11 @@ class TestPerformMidExecutionCompressionAdditional:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             MagicMock(return_value=mock_conv_service),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             MagicMock(return_value=mock_orchestrator),
         )
         handler._build_conversation_from_messages = MagicMock(return_value=None)
@@ -1379,23 +1379,23 @@ class TestPerformInMemoryCompressionAdditional:
         )
 
         monkeypatch.setattr(
-            "application.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
+            "docsgpt.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
             None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             MagicMock(return_value="openai"),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             MagicMock(return_value="key"),
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             MagicMock(return_value=MagicMock()),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             MagicMock(return_value=mock_compression_service),
         )
 
@@ -1427,23 +1427,23 @@ class TestPerformInMemoryCompressionAdditional:
         )
 
         monkeypatch.setattr(
-            "application.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
+            "docsgpt.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
             None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             MagicMock(return_value="openai"),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             MagicMock(return_value="key"),
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             MagicMock(return_value=MagicMock()),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             MagicMock(),
         )
 
@@ -1469,23 +1469,23 @@ class TestPerformInMemoryCompressionAdditional:
         mock_compression_service.compress_conversation.return_value = mock_metadata
 
         monkeypatch.setattr(
-            "application.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
+            "docsgpt.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
             None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             MagicMock(return_value="openai"),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             MagicMock(return_value="key"),
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             MagicMock(return_value=MagicMock()),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             MagicMock(return_value=mock_compression_service),
         )
 
@@ -1522,23 +1522,23 @@ class TestPerformInMemoryCompressionAdditional:
         mock_compression_service.compress_conversation.return_value = mock_metadata
 
         monkeypatch.setattr(
-            "application.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
+            "docsgpt.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
             None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             MagicMock(return_value="openai"),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             MagicMock(return_value="key"),
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             MagicMock(return_value=MagicMock()),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             MagicMock(return_value=mock_compression_service),
         )
 
@@ -1572,23 +1572,23 @@ class TestPerformInMemoryCompressionAdditional:
         )
 
         monkeypatch.setattr(
-            "application.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
+            "docsgpt.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
             None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             MagicMock(return_value="openai"),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             MagicMock(return_value="key"),
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             MagicMock(return_value=MagicMock()),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             MagicMock(return_value=mock_compression_service),
         )
 
@@ -1780,13 +1780,13 @@ class TestConvertPdfDpiArg:
             return [{"page": 1, "data": "b64"}]
 
         monkeypatch.setattr(
-            "application.utils.convert_pdf_to_images",
+            "docsgpt.utils.convert_pdf_to_images",
             lambda file_path, storage, max_pages, dpi: capture_convert(
                 file_path=file_path, max_pages=max_pages, dpi=dpi
             ),
         )
         monkeypatch.setattr(
-            "application.storage.storage_creator.StorageCreator.get_storage",
+            "docsgpt.storage.storage_creator.StorageCreator.get_storage",
             MagicMock(return_value=MagicMock()),
         )
         handler._convert_pdf_to_images({"path": "/tmp/doc.pdf"})
@@ -1853,11 +1853,11 @@ class TestMidExecutionCompressionMetadata:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             MagicMock(return_value=mock_conv_service),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             MagicMock(return_value=mock_orchestrator),
         )
 
@@ -1894,7 +1894,7 @@ class TestMidExecutionCompressionExceptionPath:
 
         # Make ConversationService raise on instantiation
         monkeypatch.setattr(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             MagicMock(side_effect=ImportError("module not found")),
         )
 
@@ -1923,12 +1923,12 @@ class TestInMemoryCompressionImport:
         )
 
         monkeypatch.setattr(
-            "application.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
+            "docsgpt.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
             None,
         )
         # Make get_provider_from_model_id raise
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             MagicMock(side_effect=RuntimeError("no provider")),
         )
 
@@ -1985,23 +1985,23 @@ class TestInMemoryCompressionNoQueries:
         )
 
         monkeypatch.setattr(
-            "application.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
+            "docsgpt.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
             None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             MagicMock(return_value="openai"),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             MagicMock(return_value="key"),
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             MagicMock(return_value=MagicMock()),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             MagicMock(return_value=mock_compression_service),
         )
 
@@ -2062,23 +2062,23 @@ class TestInMemoryCompressionLogging:
         )
 
         monkeypatch.setattr(
-            "application.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
+            "docsgpt.core.settings.settings.COMPRESSION_MODEL_OVERRIDE",
             None,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             MagicMock(return_value="openai"),
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             MagicMock(return_value="key"),
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             MagicMock(return_value=MagicMock()),
         )
         monkeypatch.setattr(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             MagicMock(return_value=mock_compression_service),
         )
 
@@ -2123,7 +2123,7 @@ class TestHandleToolCallsMessagesCopy:
 
 
 # ---------------------------------------------------------------------------
-# Additional coverage for application/llm/handlers/base.py
+# Additional coverage for docsgpt/llm/handlers/base.py
 # Lines: 298 (_commit_query), 499 (append_compression_message),
 # 506 (compression_saved), 525-527 (exception in mid-exec compression),
 # 538/540 (in-memory compression imports), 586 (compress_up_to),
@@ -2168,10 +2168,10 @@ class TestPerformMidExecutionCompressionException:
 
         # Force an exception inside the try block to trigger lines 525-527
         with patch(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             side_effect=RuntimeError("compression error"),
         ), patch(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             return_value=MagicMock(),
         ):
             success, result = handler._perform_mid_execution_compression(
@@ -2221,10 +2221,10 @@ class TestPerformMidExecutionCompressionSuccess:
         )
 
         with patch(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             return_value=mock_conv_service,
         ), patch(
-            "application.api.answer.services.compression.CompressionOrchestrator"
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator"
         ) as MockOrch:
             mock_orch = MagicMock()
             mock_orch.compress_mid_execution.return_value = mock_result
@@ -2280,18 +2280,18 @@ class TestPerformInMemoryCompressionSuccess:
         handler._rebuild_messages_after_compression = MagicMock(return_value=rebuilt)
 
         with patch(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             return_value=mock_compression_service,
         ), patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             return_value="openai",
         ), patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="key",
         ), patch(
-            "application.core.settings.settings"
+            "docsgpt.core.settings.settings"
         ) as mock_s, patch(
-            "application.llm.llm_creator.LLMCreator"
+            "docsgpt.llm.llm_creator.LLMCreator"
         ) as MockCreator:
             mock_s.COMPRESSION_MODEL_OVERRIDE = None
             MockCreator.create_llm.return_value = MagicMock()
@@ -2319,15 +2319,15 @@ class TestPerformInMemoryCompressionException:
         )
 
         with patch(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
         ), patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
         ), patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
         ), patch(
-            "application.core.settings.settings",
+            "docsgpt.core.settings.settings",
         ), patch(
-            "application.llm.llm_creator.LLMCreator",
+            "docsgpt.llm.llm_creator.LLMCreator",
         ):
             success, result = handler._perform_in_memory_compression(agent, messages)
         assert success is False

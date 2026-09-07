@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from application.guardrails.base import GuardrailCheck
-from application.guardrails.config import GuardrailsConfig
-from application.guardrails.engine import GuardrailEngine
-from application.guardrails.guardrail_creator import GuardrailCreator
-from application.guardrails.runtime import merge_floor
-from application.guardrails.stream import StreamingOutputGuard
-from application.guardrails.types import Action, CheckOutcome, Span, Stage, apply_spans
+from docsgpt.guardrails.base import GuardrailCheck
+from docsgpt.guardrails.config import GuardrailsConfig
+from docsgpt.guardrails.engine import GuardrailEngine
+from docsgpt.guardrails.guardrail_creator import GuardrailCreator
+from docsgpt.guardrails.runtime import merge_floor
+from docsgpt.guardrails.stream import StreamingOutputGuard
+from docsgpt.guardrails.types import Action, CheckOutcome, Span, Stage, apply_spans
 
 
 def _cfg(**over):
@@ -295,7 +295,7 @@ class TestKeylessAgentsStillLoadConfig:
     """
 
     def test_configure_agent_loads_config_without_an_api_key(self, monkeypatch):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         processor = StreamProcessor.__new__(StreamProcessor)
         processor.data = {}

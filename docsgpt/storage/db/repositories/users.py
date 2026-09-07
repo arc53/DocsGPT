@@ -1,0 +1,439 @@
+"""Repository for the ``users`` table.
+
+Covers every operation the legacy Mongo code performs on
+``users_collection``:
+
+1. ``ensure_user_doc`` in ``docsgpt/api/user/base.py`` (upsert + get)
+2. Pin/unpin agents in ``docsgpt/api/user/agents/routes.py`` (add/remove
+   on ``agent_preferences.pinned``)
+3. Share accept/reject in ``docsgpt/api/user/agents/sharing.py`` (add/
+   bulk-remove on ``agent_preferences.shared_with_me``)
+4. Cascade delete of an agent id from both arrays at once
+
+All array mutations are implemented as single atomic UPDATE statements
+using JSONB operators (``jsonb_set``, ``jsonb_array_elements``, ``@>``)
+so there is no read-modify-write race between concurrent writers on the
+same user row.
+
+The repository takes a ``Connection`` and does not manage its own
+transactions. Callers are responsible for wrapping writes in
+``with engine.begin() as conn:`` (production) or the test fixture's
+rollback-per-test connection (tests).
+"""
+
+from __future__ import annotations
+
+from typing import Iterable, Optional
+from uuid import UUID
+
+from sqlalchemy import Connection, text
+
+from docsgpt.storage.db.base_repository import row_to_dict
+
+
+_DEFAULT_PREFERENCES = '{"pinned": [], "shared_with_me": []}'
+
+
+def _canonical_uuid(value: str) -> Optional[str]:
+    """Return the canonical UUID string for ``value``, or ``None`` when malformed."""
+    try:
+        return str(UUID(str(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+class UsersRepository:
+    """Postgres-backed replacement for Mongo ``users_collection`` writes/reads."""
+
+    def __init__(self, conn: Connection) -> None:
+        self._conn = conn
+
+    # ------------------------------------------------------------------
+    # Reads
+    # ------------------------------------------------------------------
+    def get(self, user_id: str) -> Optional[dict]:
+        """Return the user row as a dict, or ``None`` if missing.
+
+        Args:
+            user_id: Auth-provider ``sub`` (opaque string).
+        """
+        result = self._conn.execute(
+            text("SELECT * FROM users WHERE user_id = :user_id"),
+            {"user_id": user_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    # ------------------------------------------------------------------
+    # Upsert
+    # ------------------------------------------------------------------
+    def upsert(self, user_id: str, email: Optional[str] = None) -> dict:
+        """Ensure a row exists for ``user_id`` and return it.
+
+        Matches Mongo's ``find_one_and_update(..., $setOnInsert, upsert=True,
+        return_document=AFTER)`` semantics: if the row exists, preferences
+        are preserved untouched; if it doesn't, a new row is created with
+        default preferences.
+
+        ``email`` (from the OIDC claim) is set on insert and refreshed on
+        conflict, but only when provided — ``COALESCE`` preserves a previously
+        stored email when a non-OIDC caller upserts with ``email=None`` (most
+        upserts come from request paths that don't carry the email claim).
+
+        The conflict branch also updates ``user_id`` (a no-op) so ``RETURNING *``
+        fires on both the insert and conflict paths.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                INSERT INTO users (user_id, email, agent_preferences)
+                VALUES (:user_id, :email, CAST(:default_prefs AS jsonb))
+                ON CONFLICT (user_id) DO UPDATE
+                    SET user_id = EXCLUDED.user_id,
+                        email = COALESCE(EXCLUDED.email, users.email)
+                RETURNING *
+                """
+            ),
+            {"user_id": user_id, "email": email, "default_prefs": _DEFAULT_PREFERENCES},
+        )
+        return row_to_dict(result.fetchone())
+
+    def set_email(self, user_id: str, email: Optional[str]) -> None:
+        """Set a user's email when provided (targeted update, no full upsert).
+
+        Used to backfill an existing user's email from the OIDC claim on login
+        without re-running the upsert. No-op when ``email`` is falsy so a login
+        without the claim never wipes a stored value.
+        """
+        if not email:
+            return
+        self._conn.execute(
+            text("UPDATE users SET email = :email WHERE user_id = :user_id"),
+            {"user_id": user_id, "email": email},
+        )
+
+    def find_by_email(self, email: str) -> Optional[dict]:
+        """Return the user row whose email matches ``email`` (case-insensitive).
+
+        Used by the add-team-member-by-email flow to resolve an email to its
+        ``user_id`` (sub). Returns None when no user has that email.
+        """
+        if not email or not email.strip():
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM users WHERE lower(email) = lower(:email) LIMIT 1"),
+            {"email": email.strip()},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    # ------------------------------------------------------------------
+    # Pinned agents
+    # ------------------------------------------------------------------
+    def add_pinned(self, user_id: str, agent_id: str) -> None:
+        """Idempotently append ``agent_id`` to ``agent_preferences.pinned``.
+
+        Uses ``@>`` containment so a duplicate add is a no-op rather than a
+        silent double-insert. The whole update is a single atomic statement
+        so concurrent add_pinned calls on the same user cannot interleave
+        into a read-modify-write race.
+        """
+        self._append_to_jsonb_array(user_id, "pinned", agent_id)
+
+    def remove_pinned(self, user_id: str, agent_id: str) -> None:
+        """Remove ``agent_id`` from ``agent_preferences.pinned`` if present."""
+        self._remove_from_jsonb_array(user_id, "pinned", [agent_id])
+
+    def remove_pinned_bulk(self, user_id: str, agent_ids: Iterable[str]) -> None:
+        """Remove every id in ``agent_ids`` from ``agent_preferences.pinned``.
+
+        No-op if the list is empty. Unknown ids are silently ignored so
+        callers can pass the full "stale" set without pre-filtering.
+        """
+        ids = list(agent_ids)
+        if not ids:
+            return
+        self._remove_from_jsonb_array(user_id, "pinned", ids)
+
+    # ------------------------------------------------------------------
+    # Shared-with-me agents
+    # ------------------------------------------------------------------
+    def add_shared(self, user_id: str, agent_id: str) -> None:
+        """Idempotently append ``agent_id`` to ``agent_preferences.shared_with_me``."""
+        self._append_to_jsonb_array(user_id, "shared_with_me", agent_id)
+
+    def remove_shared_bulk(self, user_id: str, agent_ids: Iterable[str]) -> None:
+        """Bulk-remove from ``agent_preferences.shared_with_me``. Empty list is a no-op."""
+        ids = list(agent_ids)
+        if not ids:
+            return
+        self._remove_from_jsonb_array(user_id, "shared_with_me", ids)
+
+    # ------------------------------------------------------------------
+    # Combined removal — called when an agent is hard-deleted
+    # ------------------------------------------------------------------
+    def remove_agent_from_all(self, user_id: str, agent_id: str) -> None:
+        """Remove ``agent_id`` from BOTH pinned and shared_with_me atomically.
+
+        Mirrors the Mongo ``$pull`` that targets both nested array fields
+        in one ``update_one`` — see ``docsgpt/api/user/agents/routes.py``
+        around the agent-delete path.
+        """
+        self._conn.execute(
+            text(
+                """
+                UPDATE users
+                SET
+                    agent_preferences = jsonb_set(
+                        jsonb_set(
+                            agent_preferences,
+                            '{pinned}',
+                            COALESCE(
+                                (
+                                    SELECT jsonb_agg(elem)
+                                    FROM jsonb_array_elements(
+                                        COALESCE(agent_preferences->'pinned', '[]'::jsonb)
+                                    ) AS elem
+                                    WHERE (elem #>> '{}') != :agent_id
+                                ),
+                                '[]'::jsonb
+                            )
+                        ),
+                        '{shared_with_me}',
+                        COALESCE(
+                            (
+                                SELECT jsonb_agg(elem)
+                                FROM jsonb_array_elements(
+                                    COALESCE(agent_preferences->'shared_with_me', '[]'::jsonb)
+                                ) AS elem
+                                WHERE (elem #>> '{}') != :agent_id
+                            ),
+                            '[]'::jsonb
+                        )
+                    ),
+                    updated_at = now()
+                WHERE user_id = :user_id
+                """
+            ),
+            {"user_id": user_id, "agent_id": agent_id},
+        )
+
+    def set_default_tool_enabled(
+        self, user_id: str, tool_name: str, enabled: bool
+    ) -> None:
+        """Toggle a default chat tool in ``tool_preferences`` (idempotent)."""
+        self.upsert(user_id)
+        if enabled:
+            self._conn.execute(
+                text(
+                    """
+                    UPDATE users
+                    SET tool_preferences = jsonb_set(
+                        COALESCE(tool_preferences, '{}'::jsonb),
+                        '{disabled_default_tools}',
+                        COALESCE(
+                            (
+                                SELECT jsonb_agg(elem)
+                                FROM jsonb_array_elements(
+                                    COALESCE(
+                                        tool_preferences->'disabled_default_tools',
+                                        '[]'::jsonb
+                                    )
+                                ) AS elem
+                                WHERE (elem #>> '{}') != :tool_name
+                            ),
+                            '[]'::jsonb
+                        )
+                    ),
+                    updated_at = now()
+                    WHERE user_id = :user_id
+                    """
+                ),
+                {"user_id": user_id, "tool_name": tool_name},
+            )
+        else:
+            self._conn.execute(
+                text(
+                    """
+                    UPDATE users
+                    SET tool_preferences = jsonb_set(
+                        COALESCE(tool_preferences, '{}'::jsonb),
+                        '{disabled_default_tools}',
+                        CASE
+                            WHEN COALESCE(
+                                tool_preferences->'disabled_default_tools',
+                                '[]'::jsonb
+                            ) @> to_jsonb(CAST(:tool_name AS text))
+                                THEN tool_preferences->'disabled_default_tools'
+                            ELSE
+                                COALESCE(
+                                    tool_preferences->'disabled_default_tools',
+                                    '[]'::jsonb
+                                ) || to_jsonb(CAST(:tool_name AS text))
+                        END
+                    ),
+                    updated_at = now()
+                    WHERE user_id = :user_id
+                    """
+                ),
+                {"user_id": user_id, "tool_name": tool_name},
+            )
+
+    # ------------------------------------------------------------------
+    # SCIM provisioning
+    # ------------------------------------------------------------------
+    def create(self, user_id: str, active: bool = True) -> Optional[dict]:
+        """Insert a new user row; ``None`` means a user with that id already exists.
+
+        SCIM ``userName`` is case-insensitive (caseExact=false), so a row that
+        differs only by case counts as a duplicate. The pre-check keeps SCIM
+        from provisioning a second row for a user the OIDC login already
+        created under different casing; the ``ON CONFLICT`` clause remains an
+        exact-match backstop for the concurrent-insert race.
+        """
+        existing = self._conn.execute(
+            text("SELECT 1 FROM users WHERE lower(user_id) = lower(:user_id)"),
+            {"user_id": user_id},
+        ).first()
+        if existing is not None:
+            return None
+        result = self._conn.execute(
+            text(
+                """
+                INSERT INTO users (user_id, agent_preferences, active)
+                VALUES (:user_id, CAST(:default_prefs AS jsonb), :active)
+                ON CONFLICT (user_id) DO NOTHING
+                RETURNING *
+                """
+            ),
+            {"user_id": user_id, "default_prefs": _DEFAULT_PREFERENCES, "active": active},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_by_pk(self, pk: str) -> Optional[dict]:
+        """Return the user row by primary-key ``id``, or ``None`` (including malformed UUIDs)."""
+        canonical = _canonical_uuid(pk)
+        if canonical is None:
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM users WHERE id = CAST(:pk AS uuid)"),
+            {"pk": canonical},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def set_active(self, pk: str, active: bool) -> Optional[dict]:
+        """Set ``active`` on the row with primary-key ``id`` and return the updated row."""
+        canonical = _canonical_uuid(pk)
+        if canonical is None:
+            return None
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE users
+                SET active = :active, updated_at = now()
+                WHERE id = CAST(:pk AS uuid)
+                RETURNING *
+                """
+            ),
+            {"pk": canonical, "active": active},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def list_paginated(
+        self, user_name: Optional[str], offset: int, limit: int
+    ) -> tuple[int, list[dict]]:
+        """Return ``(total, page)`` ordered by ``created_at, id``; optional exact ``user_id`` filter."""
+        where = ""
+        filter_params: dict = {}
+        if user_name is not None:
+            # SCIM userName is case-insensitive (caseExact=false); match on
+            # lower(user_id) so the IdP finds the account regardless of casing.
+            where = "WHERE lower(user_id) = lower(:user_name)"
+            filter_params = {"user_name": user_name}
+        total = self._conn.execute(
+            text(f"SELECT count(*) FROM users {where}"), filter_params
+        ).scalar_one()
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT * FROM users
+                {where}
+                ORDER BY created_at, id
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {**filter_params, "limit": limit, "offset": offset},
+        )
+        return int(total), [row_to_dict(row) for row in result.fetchall()]
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+    def _append_to_jsonb_array(self, user_id: str, key: str, agent_id: str) -> None:
+        """Idempotent append of ``agent_id`` to ``agent_preferences.<key>``.
+
+        The ``key`` argument is NOT user input — it's hard-coded by the
+        calling method (``pinned`` / ``shared_with_me``). It goes into the
+        SQL literal because ``jsonb_set`` requires a path literal, not a
+        bind parameter. This is safe as long as callers never pass
+        untrusted strings for ``key``.
+        """
+        if key not in ("pinned", "shared_with_me"):
+            raise ValueError(f"unsupported jsonb key: {key!r}")
+        self._conn.execute(
+            text(
+                f"""
+                UPDATE users
+                SET
+                    agent_preferences = jsonb_set(
+                        agent_preferences,
+                        '{{{key}}}',
+                        CASE
+                            WHEN agent_preferences->'{key}' @> to_jsonb(CAST(:agent_id AS text))
+                                THEN agent_preferences->'{key}'
+                            ELSE
+                                COALESCE(agent_preferences->'{key}', '[]'::jsonb)
+                                || to_jsonb(CAST(:agent_id AS text))
+                        END
+                    ),
+                    updated_at = now()
+                WHERE user_id = :user_id
+                """
+            ),
+            {"user_id": user_id, "agent_id": agent_id},
+        )
+
+    def _remove_from_jsonb_array(
+        self, user_id: str, key: str, agent_ids: list[str]
+    ) -> None:
+        """Remove every id in ``agent_ids`` from ``agent_preferences.<key>``."""
+        if key not in ("pinned", "shared_with_me"):
+            raise ValueError(f"unsupported jsonb key: {key!r}")
+        self._conn.execute(
+            text(
+                f"""
+                UPDATE users
+                SET
+                    agent_preferences = jsonb_set(
+                        agent_preferences,
+                        '{{{key}}}',
+                        COALESCE(
+                            (
+                                SELECT jsonb_agg(elem)
+                                FROM jsonb_array_elements(
+                                    COALESCE(agent_preferences->'{key}', '[]'::jsonb)
+                                ) AS elem
+                                WHERE NOT ((elem #>> '{{}}') = ANY(:agent_ids))
+                            ),
+                            '[]'::jsonb
+                        )
+                    ),
+                    updated_at = now()
+                WHERE user_id = :user_id
+                """
+            ),
+            {"user_id": user_id, "agent_ids": agent_ids},
+        )

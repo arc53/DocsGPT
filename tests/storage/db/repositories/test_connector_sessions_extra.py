@@ -4,7 +4,7 @@
 
 class TestGetByUserAndProvider:
     def test_not_found_returns_none(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         assert (
@@ -15,7 +15,7 @@ class TestGetByUserAndProvider:
         )
 
     def test_with_server_url_filter(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -30,7 +30,7 @@ class TestGetByUserAndProvider:
         assert str(got["id"]) == str(row["id"])
 
     def test_with_mismatched_server_url(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -46,7 +46,7 @@ class TestGetByUserAndProvider:
 
 class TestGetByUserAndServerUrl:
     def test_returns_row(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -59,7 +59,7 @@ class TestGetByUserAndServerUrl:
         assert str(got["id"]) == str(row["id"])
 
     def test_not_found(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         got = ConnectorSessionsRepository(pg_conn).get_by_user_and_server_url(
@@ -70,14 +70,14 @@ class TestGetByUserAndServerUrl:
 
 class TestGetByLegacyId:
     def test_not_found(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         got = ConnectorSessionsRepository(pg_conn).get_by_legacy_id("x")
         assert got is None
 
     def test_with_user_scope(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -96,7 +96,7 @@ class TestMergeSessionData:
     ``get_by_user_and_server_url`` (``NULL = 'x'`` is UNKNOWN)."""
 
     def test_insert_populates_scalar_server_url(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -117,7 +117,7 @@ class TestMergeSessionData:
         """Legacy callers still embed ``server_url`` in the patch — the
         scalar column is authoritative so the key should be discarded
         rather than duplicated into the JSONB payload."""
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -133,7 +133,7 @@ class TestMergeSessionData:
         assert "server_url" not in (inserted["session_data"] or {})
 
     def test_shallow_merge_preserves_other_keys(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -156,7 +156,7 @@ class TestMergeSessionData:
         }
 
     def test_none_valued_keys_are_dropped(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -183,7 +183,7 @@ class TestMergeSessionData:
 
 class TestConnectorSessionsUpdate:
     def test_no_filtered_fields_returns_false(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -192,7 +192,7 @@ class TestConnectorSessionsUpdate:
         assert got is False
 
     def test_updates_status_and_token(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -204,7 +204,7 @@ class TestConnectorSessionsUpdate:
         assert got is True
 
     def test_updates_token_info_jsonb(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)
@@ -216,7 +216,7 @@ class TestConnectorSessionsUpdate:
         assert got is True
 
     def test_update_by_legacy_no_fields(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         got = ConnectorSessionsRepository(pg_conn).update_by_legacy_id(
@@ -225,7 +225,7 @@ class TestConnectorSessionsUpdate:
         assert got is False
 
     def test_update_by_legacy_no_match(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         got = ConnectorSessionsRepository(pg_conn).update_by_legacy_id(
@@ -235,7 +235,7 @@ class TestConnectorSessionsUpdate:
         assert got is False
 
     def test_update_by_legacy_updates_match(self, pg_conn):
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         repo = ConnectorSessionsRepository(pg_conn)

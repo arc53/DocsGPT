@@ -18,7 +18,7 @@ _0029 = "0029_agent_guardrails"
 
 
 def _alembic_ini() -> Path:
-    return Path(__file__).resolve().parents[3] / "application" / "alembic.ini"
+    return Path(__file__).resolve().parents[3] / "docsgpt" / "alembic.ini"
 
 
 def _run_alembic(url: str, *args: str) -> None:
@@ -88,7 +88,7 @@ class TestMigration0029RoundTrip:
 
     def test_existing_agents_default_to_empty_config(self, pg_engine):
         """The server default must backfill, so old agents parse as disabled."""
-        from application.guardrails.config import AgentConfig
+        from docsgpt.guardrails.config import AgentConfig
 
         with pg_engine.begin() as conn:
             conn.execute(
@@ -158,7 +158,7 @@ class TestMigration0029RoundTrip:
 
 class TestAgentConfigPersistence:
     def test_config_round_trips_through_the_repository(self, pg_engine):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         config = {
             "guardrails": {
@@ -188,8 +188,8 @@ class TestAgentConfigPersistence:
         assert reread["config"] == {"guardrails": {}}
 
     def test_config_survives_a_parse_round_trip(self, pg_engine):
-        from application.guardrails.config import AgentConfig
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.guardrails.config import AgentConfig
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         raw = AgentConfig.model_validate(
             {
@@ -211,10 +211,10 @@ class TestAgentConfigPersistence:
 
 class TestGuardrailEventsRepository:
     def test_record_and_read_back(self, pg_engine):
-        from application.storage.db.repositories.guardrail_events import (
+        from docsgpt.storage.db.repositories.guardrail_events import (
             GuardrailEventsRepository,
         )
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         with pg_engine.begin() as conn:
             agent = AgentsRepository(conn).create("u-ev", "a", "published")
@@ -256,7 +256,7 @@ class TestGuardrailEventsRepository:
         assert summary["totals"]["flagged"] == 0
 
     def test_empty_batch_is_a_noop(self, pg_engine):
-        from application.storage.db.repositories.guardrail_events import (
+        from docsgpt.storage.db.repositories.guardrail_events import (
             GuardrailEventsRepository,
         )
 
@@ -264,8 +264,8 @@ class TestGuardrailEventsRepository:
             assert GuardrailEventsRepository(conn).record_many([]) == 0
 
     def test_events_are_scoped_to_the_requesting_user(self, pg_engine):
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.guardrail_events import (
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.guardrail_events import (
             GuardrailEventsRepository,
         )
 
@@ -290,8 +290,8 @@ class TestGuardrailEventsRepository:
 
     def test_listing_never_exposes_the_key_or_scanned_text(self, pg_engine):
         """``api_key`` is the agent's raw key and ``matched_value`` is raw PII."""
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.guardrail_events import (
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.guardrail_events import (
             GuardrailEventsRepository,
         )
 
@@ -314,7 +314,7 @@ class TestGuardrailEventsRepository:
         assert "ada@example.com" not in str(rows[0])
 
     def test_purge_respects_the_window(self, pg_engine):
-        from application.storage.db.repositories.guardrail_events import (
+        from docsgpt.storage.db.repositories.guardrail_events import (
             GuardrailEventsRepository,
         )
 

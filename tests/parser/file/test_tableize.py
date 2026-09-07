@@ -1,5 +1,5 @@
 """Tests for the dot-leader/whitespace table reconstruction (``ANYDOC_TABLEIZE``)."""
-from application.parser.file.tableize import tableize
+from docsgpt.parser.file.tableize import tableize
 
 DOT_LEADER = """Revenues
 Insurance premiums ............ 83,431 77,731
@@ -76,7 +76,7 @@ def test_non_table_text_passes_through_verbatim():
 
 def test_single_trailing_number_lines_are_not_a_table():
     """Headings, footnotes and version lists look like 'word number' rows; leave them alone."""
-    from application.parser.file.tableize import tableize
+    from docsgpt.parser.file.tableize import tableize
 
     for block in (
         "Chapter 1\nChapter 2\nChapter 3",
@@ -88,7 +88,7 @@ def test_single_trailing_number_lines_are_not_a_table():
 
 
 def test_leader_rows_with_one_value_still_convert():
-    from application.parser.file.tableize import tableize
+    from docsgpt.parser.file.tableize import tableize
 
     block = "Revenue ...... 1,234\nCosts ...... 567\nProfit ...... 667"
     assert "| --- |" in tableize(block)

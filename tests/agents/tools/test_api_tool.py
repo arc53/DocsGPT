@@ -1,4 +1,4 @@
-"""Comprehensive tests for application/agents/tools/api_tool.py
+"""Comprehensive tests for docsgpt/agents/tools/api_tool.py
 
 Covers: APITool initialization, all HTTP methods, path param substitution,
 SSRF validation, error handling, response parsing, body serialization.
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from application.agents.tools.api_tool import APITool, DEFAULT_TIMEOUT
+from docsgpt.agents.tools.api_tool import APITool, DEFAULT_TIMEOUT
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ class TestAPIToolInit:
 @pytest.mark.unit
 class TestMakeApiCall:
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_successful_get(self, mock_pinned, get_tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -97,7 +97,7 @@ class TestMakeApiCall:
         assert result["message"] == "API call successful."
         assert mock_pinned.call_args[0][0] == "GET"
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_successful_post(self, mock_pinned, post_tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 201
@@ -110,7 +110,7 @@ class TestMakeApiCall:
         assert result["status_code"] == 201
         assert mock_pinned.call_args[0][0] == "POST"
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_put_method(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com/item/1", "method": "PUT"})
         mock_resp = MagicMock()
@@ -124,7 +124,7 @@ class TestMakeApiCall:
         assert result["status_code"] == 200
         assert mock_pinned.call_args[0][0] == "PUT"
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_delete_method(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com/item/1", "method": "DELETE"})
         mock_resp = MagicMock()
@@ -137,7 +137,7 @@ class TestMakeApiCall:
         assert result["status_code"] == 204
         assert mock_pinned.call_args[0][0] == "DELETE"
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_patch_method(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com/item/1", "method": "PATCH"})
         mock_resp = MagicMock()
@@ -151,7 +151,7 @@ class TestMakeApiCall:
         assert result["status_code"] == 200
         assert mock_pinned.call_args[0][0] == "PATCH"
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_head_method(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com", "method": "HEAD"})
         mock_resp = MagicMock()
@@ -164,7 +164,7 @@ class TestMakeApiCall:
         assert result["status_code"] == 200
         assert mock_pinned.call_args[0][0] == "HEAD"
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_options_method(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com", "method": "OPTIONS"})
         mock_resp = MagicMock()
@@ -192,18 +192,18 @@ class TestMakeApiCall:
 @pytest.mark.unit
 class TestSSRFValidation:
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_ssrf_blocked(self, mock_pinned, get_tool):
-        from application.security.safe_url import UnsafeUserUrlError
+        from docsgpt.security.safe_url import UnsafeUserUrlError
 
         mock_pinned.side_effect = UnsafeUserUrlError("blocked")
         result = get_tool.execute_action("any")
         assert result["status_code"] is None
         assert "URL validation error" in result["message"]
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_ssrf_blocked_with_path_params(self, mock_pinned):
-        from application.security.safe_url import UnsafeUserUrlError
+        from docsgpt.security.safe_url import UnsafeUserUrlError
 
         tool = APITool(config={
             "url": "https://api.example.com/{host}/data",
@@ -225,21 +225,21 @@ class TestSSRFValidation:
 @pytest.mark.unit
 class TestErrorHandling:
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_timeout_error(self, mock_pinned, get_tool):
         mock_pinned.side_effect = requests.exceptions.Timeout()
         result = get_tool.execute_action("any")
         assert result["status_code"] is None
         assert "timeout" in result["message"].lower()
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_connection_error(self, mock_pinned, get_tool):
         mock_pinned.side_effect = requests.exceptions.ConnectionError("refused")
         result = get_tool.execute_action("any")
         assert result["status_code"] is None
         assert "Connection error" in result["message"]
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_http_error_with_json(self, mock_pinned, get_tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 422
@@ -253,7 +253,7 @@ class TestErrorHandling:
         assert result["status_code"] == 422
         assert result["data"] == {"error": "invalid_field"}
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_http_error_non_json_body(self, mock_pinned, get_tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 404
@@ -268,19 +268,19 @@ class TestErrorHandling:
         assert result["status_code"] == 404
         assert result["data"] == "Not Found"
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_request_exception(self, mock_pinned, get_tool):
         mock_pinned.side_effect = requests.exceptions.RequestException("something")
         result = get_tool.execute_action("any")
         assert "API call failed" in result["message"]
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_unexpected_exception(self, mock_pinned, get_tool):
         mock_pinned.side_effect = RuntimeError("unexpected")
         result = get_tool.execute_action("any")
         assert "Unexpected error" in result["message"]
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_body_serialization_error(self, mock_pinned):
         tool = APITool(config={
             "url": "https://example.com",
@@ -289,7 +289,7 @@ class TestErrorHandling:
         })
 
         with patch(
-            "application.agents.tools.api_tool.RequestBodySerializer.serialize",
+            "docsgpt.agents.tools.api_tool.RequestBodySerializer.serialize",
             side_effect=ValueError("serialize fail"),
         ):
             result = tool.execute_action("any", key="val")
@@ -304,7 +304,7 @@ class TestErrorHandling:
 @pytest.mark.unit
 class TestPathParamSubstitution:
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_path_params_substituted(self, mock_pinned):
         tool = APITool(config={
             "url": "https://api.example.com/users/{user_id}/posts/{post_id}",
@@ -324,7 +324,7 @@ class TestPathParamSubstitution:
         assert "/users/42/posts/7" in called_url
         assert "{user_id}" not in called_url
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_remaining_query_params_appended(self, mock_pinned):
         tool = APITool(config={
             "url": "https://api.example.com/items",
@@ -344,7 +344,7 @@ class TestPathParamSubstitution:
         assert "page=2" in called_url
         assert "limit=10" in called_url
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_query_params_append_with_existing_query_string(self, mock_pinned):
         tool = APITool(config={
             "url": "https://api.example.com/items?existing=true",
@@ -363,7 +363,7 @@ class TestPathParamSubstitution:
         called_url = mock_pinned.call_args[0][1]
         assert "&page=1" in called_url
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_empty_body_no_serialization(self, mock_pinned):
         tool = APITool(config={"url": "https://example.com", "method": "POST"})
         mock_resp = MagicMock()
@@ -376,7 +376,7 @@ class TestPathParamSubstitution:
         result = tool.execute_action("create")
         assert result["status_code"] == 200
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_path_params_are_url_encoded(self, mock_pinned):
         tool = APITool(config={
             "url": "https://api.example.com/users/{user_id}/profile",
@@ -396,7 +396,7 @@ class TestPathParamSubstitution:
         assert "../../admin" not in called_url
         assert "%2F" in called_url or "%2f" in called_url
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_path_params_query_injection_encoded(self, mock_pinned):
         tool = APITool(config={
             "url": "https://api.example.com/items/{item_id}",
@@ -511,7 +511,7 @@ class TestAPIToolMetadata:
     def test_config_requirements_empty(self, get_tool):
         assert get_tool.get_config_requirements() == {}
 
-    @patch("application.agents.tools.api_tool.pinned_request")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_content_type_set_for_post_with_no_headers(self, mock_pinned):
         tool = APITool(config={
             "url": "https://example.com",

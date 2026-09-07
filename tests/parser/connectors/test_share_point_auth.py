@@ -21,7 +21,7 @@ def mock_settings():
 
 @pytest.fixture
 def mock_msal():
-    with patch("application.parser.connectors.share_point.auth.ConfidentialClientApplication") as MockMSAL:
+    with patch("docsgpt.parser.connectors.share_point.auth.ConfidentialClientApplication") as MockMSAL:
         mock_app = MagicMock()
         MockMSAL.return_value = mock_app
         yield mock_app
@@ -29,8 +29,8 @@ def mock_msal():
 
 @pytest.fixture
 def auth(mock_settings, mock_msal):
-    with patch("application.parser.connectors.share_point.auth.settings", mock_settings):
-        from application.parser.connectors.share_point.auth import SharePointAuth
+    with patch("docsgpt.parser.connectors.share_point.auth.settings", mock_settings):
+        from docsgpt.parser.connectors.share_point.auth import SharePointAuth
         return SharePointAuth()
 
 
@@ -46,18 +46,18 @@ class TestSharePointAuthInit:
     @pytest.mark.unit
     def test_missing_client_id_raises(self, mock_settings):
         mock_settings.MICROSOFT_CLIENT_ID = None
-        with patch("application.parser.connectors.share_point.auth.settings", mock_settings), \
-             patch("application.parser.connectors.share_point.auth.ConfidentialClientApplication"):
-            from application.parser.connectors.share_point.auth import SharePointAuth
+        with patch("docsgpt.parser.connectors.share_point.auth.settings", mock_settings), \
+             patch("docsgpt.parser.connectors.share_point.auth.ConfidentialClientApplication"):
+            from docsgpt.parser.connectors.share_point.auth import SharePointAuth
             with pytest.raises(ValueError, match="MICROSOFT_CLIENT_ID"):
                 SharePointAuth()
 
     @pytest.mark.unit
     def test_missing_client_secret_raises(self, mock_settings):
         mock_settings.MICROSOFT_CLIENT_SECRET = None
-        with patch("application.parser.connectors.share_point.auth.settings", mock_settings), \
-             patch("application.parser.connectors.share_point.auth.ConfidentialClientApplication"):
-            from application.parser.connectors.share_point.auth import SharePointAuth
+        with patch("docsgpt.parser.connectors.share_point.auth.settings", mock_settings), \
+             patch("docsgpt.parser.connectors.share_point.auth.ConfidentialClientApplication"):
+            from docsgpt.parser.connectors.share_point.auth import SharePointAuth
             with pytest.raises(ValueError, match="MICROSOFT_CLIENT_SECRET"):
                 SharePointAuth()
 
@@ -295,11 +295,11 @@ class TestGetTokenInfoFromSession:
         )
         return (
             patch(
-                "application.storage.db.repositories.connector_sessions.ConnectorSessionsRepository",
+                "docsgpt.storage.db.repositories.connector_sessions.ConnectorSessionsRepository",
                 fake_repo_cls,
             ),
             patch(
-                "application.storage.db.session.db_readonly",
+                "docsgpt.storage.db.session.db_readonly",
                 lambda: _FakeReadonlyCtx(),
             ),
         )

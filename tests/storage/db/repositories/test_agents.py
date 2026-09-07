@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from application.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import AgentsRepository
 
 
 def _repo(conn) -> AgentsRepository:
@@ -183,7 +183,7 @@ class TestPart1bFields:
         assert agent["allow_system_prompt_override"] is False
 
     def test_extra_source_ids_round_trip(self, pg_conn):
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         sources = SourcesRepository(pg_conn)
         s1 = sources.create("s1", user_id="u")
@@ -199,7 +199,7 @@ class TestPart1bFields:
         assert str(agent["source_id"]) == str(s1["id"])
 
     def test_workflow_id_fk(self, pg_conn):
-        from application.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
         wf = WorkflowsRepository(pg_conn).create("u", "wf")
         repo = _repo(pg_conn)
@@ -212,7 +212,7 @@ class TestPart1bFields:
 
     def test_workflow_id_set_null_on_workflow_delete(self, pg_conn):
         """ON DELETE SET NULL on agents.workflow_id."""
-        from application.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
         wfr = WorkflowsRepository(pg_conn)
         wf = wfr.create("u", "wf")
@@ -339,7 +339,7 @@ class TestDelete:
 
 class TestSetFolder:
     def test_assigns_folder(self, pg_conn):
-        from application.storage.db.repositories.agent_folders import AgentFoldersRepository
+        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
 
         folder_repo = AgentFoldersRepository(pg_conn)
         folder = folder_repo.create("user-1", "f")
@@ -350,7 +350,7 @@ class TestSetFolder:
         assert str(fetched["folder_id"]) == str(folder["id"])
 
     def test_clear_folder(self, pg_conn):
-        from application.storage.db.repositories.agent_folders import AgentFoldersRepository
+        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
 
         folder_repo = AgentFoldersRepository(pg_conn)
         folder = folder_repo.create("user-1", "f")
@@ -363,7 +363,7 @@ class TestSetFolder:
 
 class TestClearFolderForAll:
     def test_clears_folder_from_all_agents(self, pg_conn):
-        from application.storage.db.repositories.agent_folders import AgentFoldersRepository
+        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
 
         folder_repo = AgentFoldersRepository(pg_conn)
         folder = folder_repo.create("user-1", "f")

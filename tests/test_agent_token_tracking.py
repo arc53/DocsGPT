@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import Mock, patch
 
-from application.agents.base import BaseAgent
-from application.llm.handlers.base import LLMHandler, ToolCall
+from docsgpt.agents.base import BaseAgent
+from docsgpt.llm.handlers.base import LLMHandler, ToolCall
 
 
 class MockAgent(BaseAgent):
@@ -86,8 +86,8 @@ class TestAgentTokenTracking:
         # Should include tool call tokens
         assert tokens > 0
 
-    @patch("application.core.model_utils.get_token_limit")
-    @patch("application.core.settings.settings")
+    @patch("docsgpt.core.model_utils.get_token_limit")
+    @patch("docsgpt.core.settings.settings")
     def test_check_context_limit_below_threshold(
         self, mock_settings, mock_get_token_limit, mock_agent
     ):
@@ -108,8 +108,8 @@ class TestAgentTokenTracking:
         assert mock_agent.current_token_count > 0
         assert mock_agent.current_token_count < 128000 * 0.8
 
-    @patch("application.core.model_utils.get_token_limit")
-    @patch("application.core.settings.settings")
+    @patch("docsgpt.core.model_utils.get_token_limit")
+    @patch("docsgpt.core.settings.settings")
     def test_check_context_limit_above_threshold(
         self, mock_settings, mock_get_token_limit, mock_agent
     ):
@@ -127,12 +127,12 @@ class TestAgentTokenTracking:
         result = mock_agent._check_context_limit(messages)
         assert result is True
 
-    @patch("application.agents.base.logger")
+    @patch("docsgpt.agents.base.logger")
     def test_check_context_limit_error_handling(self, mock_logger, mock_agent):
         """Test error handling in context limit check"""
         # Force an error by making get_token_limit fail
         with patch(
-            "application.core.model_utils.get_token_limit", side_effect=Exception("Test error")
+            "docsgpt.core.model_utils.get_token_limit", side_effect=Exception("Test error")
         ):
             messages = [{"role": "user", "content": "test"}]
 
@@ -155,10 +155,10 @@ class TestAgentTokenTracking:
 class TestLLMHandlerTokenTracking:
     """Test suite for LLM handler token tracking"""
 
-    @patch("application.llm.handlers.base.logger")
+    @patch("docsgpt.llm.handlers.base.logger")
     def test_handle_tool_calls_stops_at_limit(self, mock_logger):
         """Test that tool execution stops when context limit is reached"""
-        from application.llm.handlers.base import LLMHandler
+        from docsgpt.llm.handlers.base import LLMHandler
 
         # Create a concrete handler for testing
         class TestHandler(LLMHandler):
@@ -220,7 +220,7 @@ class TestLLMHandlerTokenTracking:
 
     def test_handle_tool_calls_all_execute_when_no_limit(self):
         """Test that all tools execute when under limit"""
-        from application.llm.handlers.base import LLMHandler
+        from docsgpt.llm.handlers.base import LLMHandler
 
         class TestHandler(LLMHandler):
             def parse_response(self, response):
@@ -263,10 +263,10 @@ class TestLLMHandlerTokenTracking:
         # Should not have set the flag
         assert mock_agent.context_limit_reached is False
 
-    @patch("application.llm.handlers.base.logger")
+    @patch("docsgpt.llm.handlers.base.logger")
     def test_handle_streaming_adds_warning_message(self, mock_logger):
         """Test that streaming handler adds warning when limit reached"""
-        from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+        from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 
         class TestHandler(LLMHandler):
             def parse_response(self, response):

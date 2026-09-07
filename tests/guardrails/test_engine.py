@@ -7,11 +7,11 @@ import time
 
 import pytest
 
-from application.guardrails.base import GuardrailCheck, ScanContext
-from application.guardrails.config import AgentConfig, GuardrailsConfig
-from application.guardrails.engine import GuardrailEngine
-from application.guardrails.guardrail_creator import GuardrailCreator
-from application.guardrails.types import Action, CheckOutcome, Span, Stage
+from docsgpt.guardrails.base import GuardrailCheck, ScanContext
+from docsgpt.guardrails.config import AgentConfig, GuardrailsConfig
+from docsgpt.guardrails.engine import GuardrailEngine
+from docsgpt.guardrails.guardrail_creator import GuardrailCreator
+from docsgpt.guardrails.types import Action, CheckOutcome, Span, Stage
 
 
 class AlwaysHitCheck(GuardrailCheck):

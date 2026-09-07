@@ -14,7 +14,7 @@ only knobs operators need. This script discovers what's available from
 the :data:`BACKFILLERS` registry and runs whichever tables were asked for.
 
 This script imports ``pymongo`` directly. ``pymongo`` is not part of the
-base ``application/requirements.txt`` post-migration — install it
+base ``docsgpt/requirements.txt`` post-migration — install it
 directly before running::
 
     pip install 'pymongo>=4.6'
@@ -49,13 +49,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from sqlalchemy import Connection, text  # noqa: E402
 
-from application.core.settings import settings  # noqa: E402
-from application.storage.db.engine import get_engine  # noqa: E402
+from docsgpt.core.settings import settings  # noqa: E402
+from docsgpt.storage.db.engine import get_engine  # noqa: E402
 
 
 # The backfill tool is the one remaining consumer of MongoDB in this repo.
 # It reads from Mongo and writes to Postgres, so it keeps its own client
-# rather than going through the (now-deleted) ``application.core.mongo_db``
+# rather than going through the (now-deleted) ``docsgpt.core.mongo_db``
 # wrapper. The DB name is hard-coded to ``docsgpt`` — historically surfaced
 # as ``settings.MONGO_DB_NAME`` but that setting has been removed post-cutover.
 _MONGO_DB_NAME = "docsgpt"
@@ -889,7 +889,7 @@ def _rename_faiss_indexes(
         )
         return stats
 
-    from application.storage.storage_creator import StorageCreator
+    from docsgpt.storage.storage_creator import StorageCreator
 
     storage = StorageCreator.get_storage()
     storage_type = getattr(storage, "__class__", type(storage)).__name__
@@ -1302,14 +1302,14 @@ def _backfill_memories(
     Mongo memory docs don't carry the body inline — ``content`` lives on
     disk at ``doc["storage_path"]`` (e.g.
     ``inputs/local/memories/<oid>/memory.txt``) and is accessed through
-    :class:`application.storage.storage_creator.StorageCreator`. We read
+    :class:`docsgpt.storage.storage_creator.StorageCreator`. We read
     the file lazily here so the PG ``content`` column gets the actual
     memory text rather than an empty string. Missing/unreadable files are
     logged and fall back to an empty ``content`` so one bad row doesn't
     abort the whole batch. Import is lazy (matches ``_rename_faiss_indexes``)
     so ``storage`` / backend creds aren't required to import this module.
     """
-    from application.storage.storage_creator import StorageCreator
+    from docsgpt.storage.storage_creator import StorageCreator
 
     storage = StorageCreator.get_storage()
 

@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch, mock_open
 
-from application.parser.file.json_parser import JSONParser
+from docsgpt.parser.file.json_parser import JSONParser
 
 
 def test_json_init_parser():

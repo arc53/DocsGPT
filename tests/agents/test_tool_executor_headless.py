@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from application.agents.tool_executor import ToolExecutor
+from docsgpt.agents.tool_executor import ToolExecutor
 
 
 def _call(name: str, args: dict | None = None, call_id: str = "c1"):
@@ -97,7 +97,7 @@ class TestNormalModeUnchanged:
 # ---------------------------------------------------------------------------
 class TestHeadlessSchedulerExclusion:
     def test_synthesized_default_tools_drops_scheduler_in_headless(self):
-        from application.agents.default_tools import (
+        from docsgpt.agents.default_tools import (
             loaded_default_tools,
             synthesized_default_tools,
         )
@@ -116,8 +116,8 @@ class TestHeadlessSchedulerExclusion:
     def test_get_user_tools_filters_scheduler_when_headless(
         self, monkeypatch,
     ):
-        from application.agents import tool_executor as te_module
-        from application.agents.default_tools import (
+        from docsgpt.agents import tool_executor as te_module
+        from docsgpt.agents.default_tools import (
             default_tool_id,
             loaded_default_tools,
         )
@@ -164,8 +164,8 @@ class TestHeadlessSchedulerExclusion:
     ):
         """An agent-bound headless run (e.g. webhook) skips scheduler even if
         the author added the synthetic id to ``agents.tools``."""
-        from application.agents import tool_executor as te_module
-        from application.agents.default_tools import default_tool_id
+        from docsgpt.agents import tool_executor as te_module
+        from docsgpt.agents.default_tools import default_tool_id
 
         sched_id = default_tool_id("scheduler")
         from contextlib import contextmanager

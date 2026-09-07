@@ -1,4 +1,4 @@
-"""Comprehensive tests for application/agents/research_agent.py
+"""Comprehensive tests for docsgpt/agents/research_agent.py
 
 Covers: CitationManager, ResearchAgent (init, budget, timeout, phases:
 clarification, planning, research step, synthesis, _extract_text,
@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.agents.research_agent import (
+from docsgpt.agents.research_agent import (
     COMPLEXITY_CAPS,
     CitationManager,
     ResearchAgent,
@@ -732,7 +732,7 @@ class TestResearchAgentToolSetup:
         with patch.object(
             agent.tool_executor, "get_tools", return_value={}
         ), patch(
-            "application.agents.research_agent.add_internal_search_tool"
+            "docsgpt.agents.research_agent.add_internal_search_tool"
         ) as mock_add:
             tools = agent._setup_tools()
             mock_add.assert_called_once()
@@ -746,7 +746,7 @@ class TestResearchAgentToolSetup:
         with patch.object(
             agent.tool_executor, "get_tools", return_value={}
         ), patch(
-            "application.agents.research_agent.add_internal_search_tool"
+            "docsgpt.agents.research_agent.add_internal_search_tool"
         ) as mock_add:
             tools = agent._setup_tools()
             mock_add.assert_called_once()
@@ -1113,7 +1113,7 @@ class TestResearchStep:
         mock_response = Mock()
         mock_llm.gen = Mock(return_value=mock_response)
 
-        from application.llm.handlers.base import LLMResponse
+        from docsgpt.llm.handlers.base import LLMResponse
         parsed = LLMResponse(
             content="Direct answer to the question",
             tool_calls=[],
@@ -1142,7 +1142,7 @@ class TestResearchStep:
         mock_response2 = Mock()
         mock_llm.gen = Mock(side_effect=[mock_response1, mock_response2])
 
-        from application.llm.handlers.base import LLMResponse, ToolCall
+        from docsgpt.llm.handlers.base import LLMResponse, ToolCall
 
         tool_call = ToolCall(id="tc1", name="internal__search", arguments={"query": "python"})
         parsed_with_tool = LLMResponse(
@@ -1238,7 +1238,7 @@ class TestResearchStep:
         agent._start_time = time.monotonic()
         mock_llm.token_usage = {"prompt_tokens": 10, "generated_tokens": 5}
 
-        from application.llm.handlers.base import LLMResponse, ToolCall
+        from docsgpt.llm.handlers.base import LLMResponse, ToolCall
 
         tool_call = ToolCall(id="tc1", name="internal__search", arguments={"query": "test"})
 
@@ -1299,7 +1299,7 @@ class TestExecuteStepToolsWithRefinement:
         """Tool execution appends messages correctly."""
         agent = ResearchAgent(**agent_base_params)
 
-        from application.llm.handlers.base import ToolCall
+        from docsgpt.llm.handlers.base import ToolCall
 
         call = ToolCall(id="tc1", name="internal__search", arguments={"query": "test"})
 
@@ -1338,7 +1338,7 @@ class TestExecuteStepToolsWithRefinement:
         """When search returns empty twice, adds refinement hint."""
         agent = ResearchAgent(**agent_base_params)
 
-        from application.llm.handlers.base import ToolCall
+        from docsgpt.llm.handlers.base import ToolCall
 
         call = ToolCall(id="tc1", name="internal__search", arguments={"query": "test"})
 
@@ -1370,7 +1370,7 @@ class TestExecuteStepToolsWithRefinement:
         """Non-search tools don't trigger empty search logic."""
         agent = ResearchAgent(**agent_base_params)
 
-        from application.llm.handlers.base import ToolCall
+        from docsgpt.llm.handlers.base import ToolCall
 
         call = ToolCall(id="tc1", name="think__think", arguments={"thought": "hmm"})
 

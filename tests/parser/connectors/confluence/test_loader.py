@@ -1,4 +1,4 @@
-"""Tests for application/parser/connectors/confluence/loader.py"""
+"""Tests for docsgpt/parser/connectors/confluence/loader.py"""
 
 import os
 import tempfile
@@ -23,12 +23,12 @@ def _make_loader(token_info=None):
             "cloud_id": "test_cloud",
         }
 
-    with patch("application.parser.connectors.confluence.loader.ConfluenceAuth") as MockAuth:
+    with patch("docsgpt.parser.connectors.confluence.loader.ConfluenceAuth") as MockAuth:
         mock_auth = MagicMock()
         mock_auth.get_token_info_from_session.return_value = token_info
         MockAuth.return_value = mock_auth
 
-        from application.parser.connectors.confluence.loader import ConfluenceLoader
+        from docsgpt.parser.connectors.confluence.loader import ConfluenceLoader
         loader = ConfluenceLoader("session_tok")
 
     loader.auth = mock_auth
@@ -469,25 +469,25 @@ class TestExtractCursor:
 
     @pytest.mark.unit
     def test_extracts_cursor_from_link(self):
-        from application.parser.connectors.confluence.loader import ConfluenceLoader
+        from docsgpt.parser.connectors.confluence.loader import ConfluenceLoader
         link = "/wiki/api/v2/spaces?limit=10&cursor=abc123"
         result = ConfluenceLoader._extract_cursor(link)
         assert result == "abc123"
 
     @pytest.mark.unit
     def test_returns_none_for_no_link(self):
-        from application.parser.connectors.confluence.loader import ConfluenceLoader
+        from docsgpt.parser.connectors.confluence.loader import ConfluenceLoader
         assert ConfluenceLoader._extract_cursor(None) is None
 
     @pytest.mark.unit
     def test_returns_none_for_link_without_cursor(self):
-        from application.parser.connectors.confluence.loader import ConfluenceLoader
+        from docsgpt.parser.connectors.confluence.loader import ConfluenceLoader
         link = "/wiki/api/v2/spaces?limit=10"
         assert ConfluenceLoader._extract_cursor(link) is None
 
     @pytest.mark.unit
     def test_returns_first_cursor_value(self):
-        from application.parser.connectors.confluence.loader import ConfluenceLoader
+        from docsgpt.parser.connectors.confluence.loader import ConfluenceLoader
         link = "/wiki/api/v2/spaces?cursor=val1&cursor=val2"
         result = ConfluenceLoader._extract_cursor(link)
         assert result == "val1"

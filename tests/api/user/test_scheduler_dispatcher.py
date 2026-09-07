@@ -7,11 +7,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import text
 
-from application.api.user.scheduler_dispatcher import dispatch_due_runs
-from application.storage.db.repositories.schedule_runs import (
+from docsgpt.api.user.scheduler_dispatcher import dispatch_due_runs
+from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
-from application.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 
 def _now() -> datetime:
@@ -32,7 +32,7 @@ def _make_agent(conn, user_id: str = "u1") -> str:
 @pytest.fixture
 def patched_engine(pg_engine, monkeypatch):
     monkeypatch.setattr(
-        "application.api.user.scheduler_dispatcher.get_engine",
+        "docsgpt.api.user.scheduler_dispatcher.get_engine",
         lambda: pg_engine,
     )
     yield pg_engine
@@ -50,7 +50,7 @@ def stub_enqueue(monkeypatch):
                 enqueued.append(args[0])
 
     monkeypatch.setattr(
-        "application.api.user.tasks.execute_scheduled_run", _Task
+        "docsgpt.api.user.tasks.execute_scheduled_run", _Task
     )
     return enqueued
 
@@ -62,7 +62,7 @@ def _create_schedule(engine, **kwargs):
 
 def _set_postgres_uri(monkeypatch, pg_engine):
     monkeypatch.setattr(
-        "application.api.user.scheduler_dispatcher.settings",
+        "docsgpt.api.user.scheduler_dispatcher.settings",
         type("S", (), {
             "POSTGRES_URI": str(pg_engine.url),
             "SCHEDULE_MISFIRE_GRACE": 60,
@@ -144,7 +144,7 @@ class TestMisfireGrace:
     ):
         _set_postgres_uri(monkeypatch, pg_engine)
         monkeypatch.setattr(
-            "application.api.user.scheduler_dispatcher.settings",
+            "docsgpt.api.user.scheduler_dispatcher.settings",
             type("S", (), {
                 "POSTGRES_URI": str(pg_engine.url),
                 "SCHEDULE_MISFIRE_GRACE": 30,
@@ -264,24 +264,24 @@ class TestAgentlessRoundTrip:
     ):
         from unittest.mock import patch
 
-        from application.api.user.scheduler_worker import (
+        from docsgpt.api.user.scheduler_worker import (
             execute_scheduled_run_body,
         )
 
         _set_postgres_uri(monkeypatch, pg_engine)
         monkeypatch.setattr(
-            "application.api.user.scheduler_worker.get_engine",
+            "docsgpt.api.user.scheduler_worker.get_engine",
             lambda: pg_engine,
         )
         monkeypatch.setattr(
-            "application.api.user.scheduler_worker.settings",
+            "docsgpt.api.user.scheduler_worker.settings",
             type("S", (), {
                 "POSTGRES_URI": str(pg_engine.url),
                 "SCHEDULE_AUTOPAUSE_FAILURES": 3,
             })(),
         )
         monkeypatch.setattr(
-            "application.api.user.scheduler_worker.publish_user_event",
+            "docsgpt.api.user.scheduler_worker.publish_user_event",
             lambda *a, **k: "1-0",
         )
 
@@ -307,7 +307,7 @@ class TestAgentlessRoundTrip:
         run_id = stub_enqueue[0]
 
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "agentless e2e done",
                 "tool_calls": [], "sources": [], "thought": "",
@@ -345,24 +345,24 @@ class TestOnceRoundTrip:
     ):
         from unittest.mock import patch
 
-        from application.api.user.scheduler_worker import (
+        from docsgpt.api.user.scheduler_worker import (
             execute_scheduled_run_body,
         )
 
         _set_postgres_uri(monkeypatch, pg_engine)
         monkeypatch.setattr(
-            "application.api.user.scheduler_worker.get_engine",
+            "docsgpt.api.user.scheduler_worker.get_engine",
             lambda: pg_engine,
         )
         monkeypatch.setattr(
-            "application.api.user.scheduler_worker.settings",
+            "docsgpt.api.user.scheduler_worker.settings",
             type("S", (), {
                 "POSTGRES_URI": str(pg_engine.url),
                 "SCHEDULE_AUTOPAUSE_FAILURES": 3,
             })(),
         )
         monkeypatch.setattr(
-            "application.api.user.scheduler_worker.publish_user_event",
+            "docsgpt.api.user.scheduler_worker.publish_user_event",
             lambda *a, **k: "1-0",
         )
         with pg_engine.begin() as conn:
@@ -382,7 +382,7 @@ class TestOnceRoundTrip:
         assert sched["status"] == "active"
         assert sched["next_run_at"] is None
         with patch(
-            "application.api.user.scheduler_worker.run_agent_headless",
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
             return_value={
                 "answer": "done",
                 "tool_calls": [], "sources": [], "thought": "",

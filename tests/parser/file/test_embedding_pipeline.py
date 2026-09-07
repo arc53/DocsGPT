@@ -2,7 +2,7 @@ import pytest
 import logging
 from unittest.mock import patch, MagicMock
 
-from application.parser.embedding_pipeline import (
+from docsgpt.parser.embedding_pipeline import (
     DEFAULT_EMBEDDINGS_BATCH_SIZE,
     EmbeddingPipelineError,
     _resolve_batch_size,
@@ -45,7 +45,7 @@ def test_add_text_to_store_with_retry_success():
 def mock_settings(monkeypatch):
     mock_settings = MagicMock()
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.settings", mock_settings
+        "docsgpt.parser.embedding_pipeline.settings", mock_settings
     )
     return mock_settings
 
@@ -54,7 +54,7 @@ def mock_settings(monkeypatch):
 def mock_vector_creator(monkeypatch):
     mock_creator = MagicMock()
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.VectorCreator", mock_creator
+        "docsgpt.parser.embedding_pipeline.VectorCreator", mock_creator
     )
     return mock_creator
 
@@ -126,7 +126,7 @@ def test_embed_and_store_documents_progress_band(
     assert currents == sorted(currents)
 
 
-@patch("application.parser.embedding_pipeline.add_texts_to_store_with_retry")
+@patch("docsgpt.parser.embedding_pipeline.add_texts_to_store_with_retry")
 def test_embed_and_store_documents_partial_failure_raises(
     mock_add_retry, tmp_path, mock_settings, mock_vector_creator, caplog
 ):
@@ -170,7 +170,7 @@ def test_embed_and_store_documents_partial_failure_raises(
     mock_store.save_local.assert_called()
 
 
-@patch("application.parser.embedding_pipeline.add_texts_to_store_with_retry")
+@patch("docsgpt.parser.embedding_pipeline.add_texts_to_store_with_retry")
 def test_embed_and_store_documents_all_chunks_succeed_no_raise(
     mock_add_retry, tmp_path, mock_settings, mock_vector_creator,
 ):
@@ -200,7 +200,7 @@ def test_assert_index_complete_raises_on_partial(monkeypatch):
         "embedded_chunks": 4, "total_chunks": 10,
     }
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.IngestChunkProgressRepository",
+        "docsgpt.parser.embedding_pipeline.IngestChunkProgressRepository",
         lambda conn: fake_repo,
     )
     from contextlib import contextmanager
@@ -210,7 +210,7 @@ def test_assert_index_complete_raises_on_partial(monkeypatch):
         yield None
 
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.db_session", _fake_session,
+        "docsgpt.parser.embedding_pipeline.db_session", _fake_session,
     )
     with pytest.raises(EmbeddingPipelineError, match=r"4/10"):
         assert_index_complete("src-partial")
@@ -222,7 +222,7 @@ def test_assert_index_complete_passes_on_full(monkeypatch):
         "embedded_chunks": 10, "total_chunks": 10,
     }
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.IngestChunkProgressRepository",
+        "docsgpt.parser.embedding_pipeline.IngestChunkProgressRepository",
         lambda conn: fake_repo,
     )
     from contextlib import contextmanager
@@ -232,7 +232,7 @@ def test_assert_index_complete_passes_on_full(monkeypatch):
         yield None
 
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.db_session", _fake_session,
+        "docsgpt.parser.embedding_pipeline.db_session", _fake_session,
     )
     assert_index_complete("src-full")  # no raise
 
@@ -242,7 +242,7 @@ def test_assert_index_complete_no_op_when_no_progress_row(monkeypatch):
     fake_repo = MagicMock()
     fake_repo.get_progress.return_value = None
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.IngestChunkProgressRepository",
+        "docsgpt.parser.embedding_pipeline.IngestChunkProgressRepository",
         lambda conn: fake_repo,
     )
     from contextlib import contextmanager
@@ -252,7 +252,7 @@ def test_assert_index_complete_no_op_when_no_progress_row(monkeypatch):
         yield None
 
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.db_session", _fake_session,
+        "docsgpt.parser.embedding_pipeline.db_session", _fake_session,
     )
     assert_index_complete("src-missing")
 
@@ -270,7 +270,7 @@ def test_assert_index_complete_no_op_when_lookup_fails(monkeypatch, caplog):
         yield  # pragma: no cover
 
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.db_session", _broken_session,
+        "docsgpt.parser.embedding_pipeline.db_session", _broken_session,
     )
     with caplog.at_level(logging.WARNING, logger="root"):
         assert_index_complete("src-db-down")  # no raise
@@ -328,7 +328,7 @@ def test_add_texts_to_store_with_retry_sanitizes_and_skips_empty():
 
 def test_resolve_batch_size_falls_back_on_bad_setting(monkeypatch):
     fake = MagicMock()  # attribute access yields a MagicMock, not an int
-    monkeypatch.setattr("application.parser.embedding_pipeline.settings", fake)
+    monkeypatch.setattr("docsgpt.parser.embedding_pipeline.settings", fake)
     assert _resolve_batch_size() == DEFAULT_EMBEDDINGS_BATCH_SIZE
 
     fake.EMBEDDINGS_BATCH_SIZE = 0
@@ -346,7 +346,7 @@ def test_embed_loop_batches_chunks(tmp_path, mock_settings, mock_vector_creator)
     store = MagicMock()
     mock_vector_creator.create_vectorstore.return_value = store
 
-    with patch("application.parser.embedding_pipeline._record_progress") as rec:
+    with patch("docsgpt.parser.embedding_pipeline._record_progress") as rec:
         embed_and_store_documents(
             docs, str(tmp_path / "s"), "sid", MagicMock(),
         )
@@ -395,10 +395,10 @@ def test_poison_chunk_isolated_by_per_chunk_fallback(
             raise RuntimeError("input too large")
 
     with patch(
-        "application.parser.embedding_pipeline.add_texts_to_store_with_retry",
+        "docsgpt.parser.embedding_pipeline.add_texts_to_store_with_retry",
         side_effect=fake_add,
     ):
-        with patch("application.parser.embedding_pipeline._record_progress") as rec:
+        with patch("docsgpt.parser.embedding_pipeline._record_progress") as rec:
             with pytest.raises(EmbeddingPipelineError) as exc:
                 embed_and_store_documents(
                     docs, str(tmp_path / "s"), "sid", MagicMock(),
@@ -429,7 +429,7 @@ def test_batch_only_failure_recovers_via_fallback(
             raise RuntimeError("payload too large")
 
     with patch(
-        "application.parser.embedding_pipeline.add_texts_to_store_with_retry",
+        "docsgpt.parser.embedding_pipeline.add_texts_to_store_with_retry",
         side_effect=fake_add,
     ):
         embed_and_store_documents(docs, str(tmp_path / "s"), "sid", MagicMock())

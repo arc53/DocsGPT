@@ -190,7 +190,7 @@ Document reading no longer runs in this sandbox. The `read_document` tool and th
 workflow native-file extract branch enqueue a `parse_document` Celery task that
 parses the document **in the backend** (the `DOC_PARSER_ENGINE` parser — anydoc
 by default; Docling only when the optional
-`application/requirements-docling.txt` extra is installed) and awaits the
+`docsgpt/requirements-docling.txt` extra is installed) and awaits the
 result. The task is routed to a
 dedicated **`parsing` queue** (`settings.DOCUMENT_PARSE_QUEUE`, default
 `"parsing"`) so a parse enqueued from inside a Celery worker (headless/scheduled
@@ -199,7 +199,7 @@ agent) is served by a separate worker and never self-deadlocks the awaiting one.
 Run a dedicated parsing worker that consumes the `parsing` queue:
 
 ```bash
-celery -A application.app.celery worker -Q parsing -l INFO
+celery -A docsgpt.app.celery worker -Q parsing -l INFO
 ```
 
 It takes its own env, so parse-heavy work runs on a separate, optionally larger
@@ -214,7 +214,7 @@ and leaves this worker light.
 worker must also consume `parsing`, or the tool's await never resolves:
 
 ```bash
-celery -A application.app.celery worker -Q docsgpt,parsing,embeddings -l INFO
+celery -A docsgpt.app.celery worker -Q docsgpt,parsing,embeddings -l INFO
 ```
 
 Tuning settings: `DOCUMENT_PARSE_TIMEOUT` (seconds the tool awaits before

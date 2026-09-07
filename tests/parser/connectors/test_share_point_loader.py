@@ -6,12 +6,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests as real_requests
 
-from application.parser.schema.base import Document
+from docsgpt.parser.schema.base import Document
 
 
 def _make_loader(access_token="at", refresh_token="rt", allows_shared=False):
     """Create a SharePointLoader with mocked dependencies."""
-    with patch("application.parser.connectors.share_point.loader.SharePointAuth") as MockAuth:
+    with patch("docsgpt.parser.connectors.share_point.loader.SharePointAuth") as MockAuth:
         mock_auth = MagicMock()
         mock_auth.get_token_info_from_session.return_value = {
             "access_token": access_token,
@@ -21,7 +21,7 @@ def _make_loader(access_token="at", refresh_token="rt", allows_shared=False):
         mock_auth.is_token_expired.return_value = False
         MockAuth.return_value = mock_auth
 
-        from application.parser.connectors.share_point.loader import SharePointLoader
+        from docsgpt.parser.connectors.share_point.loader import SharePointLoader
         loader = SharePointLoader("session_tok")
     return loader
 
@@ -48,7 +48,7 @@ class TestSharePointLoaderInit:
 
     @pytest.mark.unit
     def test_no_access_token_raises(self):
-        with patch("application.parser.connectors.share_point.loader.SharePointAuth") as MockAuth:
+        with patch("docsgpt.parser.connectors.share_point.loader.SharePointAuth") as MockAuth:
             mock_auth = MagicMock()
             mock_auth.get_token_info_from_session.return_value = {
                 "access_token": None,
@@ -56,7 +56,7 @@ class TestSharePointLoaderInit:
             }
             MockAuth.return_value = mock_auth
 
-            from application.parser.connectors.share_point.loader import SharePointLoader
+            from docsgpt.parser.connectors.share_point.loader import SharePointLoader
             with pytest.raises(ValueError, match="No access token"):
                 SharePointLoader("st")
 
@@ -282,7 +282,7 @@ class TestLoadFileById:
 
         loader._process_file = MagicMock(return_value=Document(text="", doc_id="f1", extra_info={}))
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             doc = loader._load_file_by_id("f1")
         assert doc is not None
 
@@ -307,13 +307,13 @@ class TestLoadFileById:
         loader._process_file = MagicMock(return_value=Document(text="", doc_id="f1", extra_info={}))
         loader.auth.refresh_access_token.return_value = {"access_token": "new_at"}
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
             doc = loader._load_file_by_id("f1")
         assert doc is not None
 
     @pytest.mark.unit
     def test_general_exception_returns_none(self, loader):
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
             doc = loader._load_file_by_id("f1")
         assert doc is None
 
@@ -333,7 +333,7 @@ class TestListItemsInParent:
 
         loader._process_file = MagicMock(return_value=Document(text="", doc_id="file1", extra_info={}))
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             docs = loader._list_items_in_parent("root")
         assert len(docs) == 2
         assert docs[0].extra_info["is_folder"] is True
@@ -344,7 +344,7 @@ class TestListItemsInParent:
         mock_response.json.return_value = {"value": []}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response) as mock_get:
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response) as mock_get:
             loader._list_items_in_parent("root", search_query="report")
             call_url = mock_get.call_args[0][0]
             assert "search" in call_url
@@ -355,7 +355,7 @@ class TestListItemsInParent:
         mock_response.json.return_value = {"value": []}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response) as mock_get:
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response) as mock_get:
             loader._list_items_in_parent("drive1:folder1", search_query="test")
             call_url = mock_get.call_args[0][0]
             assert "drives/drive1" in call_url
@@ -372,7 +372,7 @@ class TestListItemsInParent:
         mock_response.raise_for_status = MagicMock()
         loader._process_file = MagicMock(return_value=Document(text="", doc_id="f1", extra_info={}))
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             loader._list_items_in_parent("root")
         assert loader.next_page_token == "abc123"
 
@@ -382,7 +382,7 @@ class TestListItemsInParent:
         mock_response.json.return_value = {"value": []}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             loader._list_items_in_parent("root")
         assert loader.next_page_token is None
 
@@ -397,7 +397,7 @@ class TestListItemsInParent:
         mock_response.raise_for_status = MagicMock()
         loader._process_file = MagicMock(side_effect=lambda m, **kw: Document(text="", doc_id=m["id"], extra_info={}))
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             docs = loader._list_items_in_parent("root", limit=3)
         assert len(docs) == 3
 
@@ -407,14 +407,14 @@ class TestListItemsInParent:
         mock_response.json.return_value = {"value": []}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response) as mock_get:
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response) as mock_get:
             loader._list_items_in_parent("root", page_token="tok123")
             call_kwargs = mock_get.call_args[1]
             assert call_kwargs["params"]["$skipToken"] == "tok123"
 
     @pytest.mark.unit
     def test_exception_returns_partial(self, loader):
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
             docs = loader._list_items_in_parent("root")
         assert docs == []
 
@@ -427,7 +427,7 @@ class TestListItemsInParent:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             loader._list_items_in_parent("root")
         assert loader.next_page_token is None
 
@@ -440,7 +440,7 @@ class TestDownloadFileContent:
         mock_response.content = b"file content"
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             content = loader._download_file_content("f1")
         assert content == "file content"
 
@@ -451,7 +451,7 @@ class TestDownloadFileContent:
         mock_response.content.decode.side_effect = UnicodeDecodeError("utf-8", b"", 0, 1, "bad")
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             result = loader._download_file_content("f1")
         assert result is None
 
@@ -460,7 +460,7 @@ class TestDownloadFileContent:
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
             result = loader._download_file_content("f1")
         assert result is None
 
@@ -483,7 +483,7 @@ class TestDownloadFileContent:
 
         loader.auth.refresh_access_token.return_value = {"access_token": "new_at"}
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
             content = loader._download_file_content("f1")
         assert content == "content after refresh"
 
@@ -523,7 +523,7 @@ class TestListSharedItems:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             docs = loader_shared._list_shared_items(limit=100, load_content=False)
         assert len(docs) == 2
 
@@ -545,7 +545,7 @@ class TestListSharedItems:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             docs = loader_shared._list_shared_items(limit=100, load_content=False)
         assert len(docs) == 1
 
@@ -563,7 +563,7 @@ class TestListSharedItems:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             docs = loader_shared._list_shared_items(limit=2, page_token="2", load_content=False)
         assert len(docs) == 2
         assert loader_shared.next_page_token == "4"
@@ -580,7 +580,7 @@ class TestListSharedItems:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             docs = loader_shared._list_shared_items(page_token="999")
         assert len(docs) == 0
         assert loader_shared.next_page_token is None
@@ -597,7 +597,7 @@ class TestListSharedItems:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             docs = loader_shared._list_shared_items(page_token="invalid", load_content=False)
         assert len(docs) == 1
 
@@ -613,7 +613,7 @@ class TestListSharedItems:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             docs = loader_shared._list_shared_items(page_token="-5", load_content=False)
         assert len(docs) == 1
 
@@ -625,7 +625,7 @@ class TestListSharedItems:
         mock_response.json.return_value = {"value": []}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             docs = loader_shared._list_shared_items()
         assert len(docs) == 0
 
@@ -639,7 +639,7 @@ class TestListSharedItems:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             docs = loader_shared._list_shared_items()
         assert len(docs) == 0
 
@@ -655,7 +655,7 @@ class TestListSharedItems:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             docs = loader_shared._list_shared_items(load_content=False)
         assert len(docs) == 0
 
@@ -672,7 +672,7 @@ class TestListSharedItems:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             docs = loader_shared._list_shared_items(load_content=True)
         assert len(docs) == 1
         assert docs[0].text == "content"
@@ -681,7 +681,7 @@ class TestListSharedItems:
     def test_exception_returns_empty(self, loader_shared):
         loader_shared._get_user_drive_web_url = MagicMock(return_value=None)
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", side_effect=Exception("fail")):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", side_effect=Exception("fail")):
             docs = loader_shared._list_shared_items()
         assert docs == []
 
@@ -697,7 +697,7 @@ class TestListSharedItems:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.post", return_value=mock_response):
             loader_shared._list_shared_items(limit=100, load_content=False)
         assert loader_shared.next_page_token is None
 
@@ -710,13 +710,13 @@ class TestGetUserDriveWebUrl:
         mock_response.json.return_value = {"webUrl": "https://user.sharepoint.com/drive"}
         mock_response.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             url = loader._get_user_drive_web_url()
         assert url == "https://user.sharepoint.com/drive"
 
     @pytest.mark.unit
     def test_exception_returns_none(self, loader):
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
             url = loader._get_user_drive_web_url()
         assert url is None
 
@@ -767,7 +767,7 @@ class TestDownloadToDirectory:
 
         loader._download_folder_recursive = MagicMock(return_value=3)
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["folder1"]})
         assert result["files_downloaded"] == 3
 
@@ -779,7 +779,7 @@ class TestDownloadToDirectory:
 
         loader._download_folder_recursive = MagicMock(return_value=1)
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             result = loader.download_to_directory(str(tmp_path), {"folder_ids": "single_folder"})
         assert result["files_downloaded"] == 1
 
@@ -800,7 +800,7 @@ class TestDownloadToDirectory:
 
         loader._download_file_to_directory = MagicMock(return_value=True)
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1"], "folder_ids": ["bad"]})
         assert result["files_downloaded"] == 1
 
@@ -819,7 +819,7 @@ class TestDownloadSingleFile:
         mock_dl_resp.content = b"pdf content"
         mock_dl_resp.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=[mock_meta_resp, mock_dl_resp]):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=[mock_meta_resp, mock_dl_resp]):
             result = loader._download_single_file("f1", str(tmp_path))
         assert result is True
         assert os.path.exists(os.path.join(str(tmp_path), "test.pdf"))
@@ -832,13 +832,13 @@ class TestDownloadSingleFile:
         }
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_resp):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_resp):
             result = loader._download_single_file("f1", str(tmp_path))
         assert result is False
 
     @pytest.mark.unit
     def test_exception_returns_false(self, loader, tmp_path):
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
             result = loader._download_single_file("f1", str(tmp_path))
         assert result is False
 
@@ -857,7 +857,7 @@ class TestDownloadFolderRecursive:
 
         loader._download_single_file = MagicMock(return_value=True)
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             count = loader._download_folder_recursive("folder1", str(tmp_path))
         assert count == 1
 
@@ -885,7 +885,7 @@ class TestDownloadFolderRecursive:
 
         loader._download_single_file = MagicMock(return_value=True)
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
             count = loader._download_folder_recursive("folder1", str(tmp_path), recursive=True)
         assert count == 2
 
@@ -902,7 +902,7 @@ class TestDownloadFolderRecursive:
 
         loader._download_single_file = MagicMock(return_value=True)
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             count = loader._download_folder_recursive("folder1", str(tmp_path), recursive=False)
         assert count == 1
 
@@ -919,7 +919,7 @@ class TestDownloadFolderRecursive:
 
         loader._download_single_file = MagicMock(side_effect=[False, True])
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", return_value=mock_response):
             count = loader._download_folder_recursive("folder1", str(tmp_path))
         assert count == 1
 
@@ -943,13 +943,13 @@ class TestDownloadFolderRecursive:
 
         loader._download_single_file = MagicMock(return_value=True)
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
             count = loader._download_folder_recursive("folder1", str(tmp_path))
         assert count == 2
 
     @pytest.mark.unit
     def test_exception_returns_partial(self, loader, tmp_path):
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=Exception("fail")):
             count = loader._download_folder_recursive("folder1", str(tmp_path))
         assert count == 0
 
@@ -1006,7 +1006,7 @@ class TestRetryOnAuthFailureDecorator:
 
         loader.auth.refresh_access_token.return_value = {"access_token": "new_at"}
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get_side_effect):
             content = loader._download_file_content("f1")
         assert content == "ok"
         assert loader.access_token == "new_at"
@@ -1020,7 +1020,7 @@ class TestRetryOnAuthFailureDecorator:
 
         loader.auth.refresh_access_token.side_effect = Exception("refresh fail")
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=http_error):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=http_error):
             with pytest.raises(ValueError, match="could not be refreshed"):
                 loader._download_file_content("f1")
 
@@ -1031,6 +1031,6 @@ class TestRetryOnAuthFailureDecorator:
         mock_resp_500.status_code = 500
         http_error = real_requests.exceptions.HTTPError(response=mock_resp_500)
 
-        with patch("application.parser.connectors.share_point.loader.requests.get", side_effect=http_error):
+        with patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=http_error):
             with pytest.raises(real_requests.exceptions.HTTPError):
                 loader._download_file_content("f1")

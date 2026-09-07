@@ -1,4 +1,4 @@
-"""Tests for application/agents/tools/wiki.py.
+"""Tests for docsgpt/agents/tools/wiki.py.
 
 A fake repository mirrors the WikiPagesRepository methods the tool calls;
 ``db_session`` / ``db_readonly`` are stubbed with a no-op context manager and
@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.storage.db.repositories.wiki_pages import WikiPageConflict
+from docsgpt.storage.db.repositories.wiki_pages import WikiPageConflict
 
 
 def _hash(content: str) -> str:
@@ -142,21 +142,21 @@ def rebuild_mock():
 def patched_wiki(monkeypatch, reembed_mock, rebuild_mock):
     _FakeWikiRepo.reset()
     monkeypatch.setattr(
-        "application.agents.tools.wiki.WikiPagesRepository", _FakeWikiRepo
+        "docsgpt.agents.tools.wiki.WikiPagesRepository", _FakeWikiRepo
     )
-    monkeypatch.setattr("application.agents.tools.wiki.db_session", _noop_conn)
-    monkeypatch.setattr("application.agents.tools.wiki.db_readonly", _noop_conn)
+    monkeypatch.setattr("docsgpt.agents.tools.wiki.db_session", _noop_conn)
+    monkeypatch.setattr("docsgpt.agents.tools.wiki.db_readonly", _noop_conn)
     monkeypatch.setattr(
-        "application.agents.tools.wiki.rebuild_wiki_directory_structure", rebuild_mock
+        "docsgpt.agents.tools.wiki.rebuild_wiki_directory_structure", rebuild_mock
     )
     task = MagicMock()
     task.delay = reembed_mock
-    monkeypatch.setattr("application.api.user.tasks.reembed_wiki_page", task)
+    monkeypatch.setattr("docsgpt.api.user.tasks.reembed_wiki_page", task)
 
 
 @pytest.fixture
 def wiki_tool(patched_wiki):
-    from application.agents.tools.wiki import WikiTool
+    from docsgpt.agents.tools.wiki import WikiTool
 
     return WikiTool(
         {
@@ -176,7 +176,7 @@ def wiki_tool(patched_wiki):
 @pytest.mark.unit
 class TestBasics:
     def test_requires_source_id(self, patched_wiki):
-        from application.agents.tools.wiki import WikiTool
+        from docsgpt.agents.tools.wiki import WikiTool
 
         tool = WikiTool({})
         assert "source_id" in tool.execute_action("view", path="/")
@@ -246,7 +246,7 @@ class TestCreateView:
         ).lower()
 
     def test_create_oversize_rejected(self, wiki_tool, reembed_mock):
-        from application.agents.tools.wiki import MAX_WIKI_PAGE_BYTES
+        from docsgpt.agents.tools.wiki import MAX_WIKI_PAGE_BYTES
 
         oversized = "a" * (MAX_WIKI_PAGE_BYTES + 1)
         result = wiki_tool.execute_action(
@@ -441,7 +441,7 @@ class TestOptimisticConcurrency:
 @pytest.mark.unit
 class TestInjection:
     def test_add_wiki_tool_entry_has_id(self):
-        from application.agents.tools.wiki import WIKI_TOOL_ID, add_wiki_tool
+        from docsgpt.agents.tools.wiki import WIKI_TOOL_ID, add_wiki_tool
 
         tools_dict = {}
         add_wiki_tool(
@@ -459,7 +459,7 @@ class TestInjection:
         assert tools_dict[WIKI_TOOL_ID]["config"]["source_owner_id"] == "owner"
 
     def test_add_wiki_tool_skips_without_owner(self):
-        from application.agents.tools.wiki import WIKI_TOOL_ID, add_wiki_tool
+        from docsgpt.agents.tools.wiki import WIKI_TOOL_ID, add_wiki_tool
 
         tools_dict = {}
         add_wiki_tool(
@@ -472,7 +472,7 @@ class TestInjection:
 @pytest.mark.unit
 class TestBuildAgentGating:
     def _processor(self, all_sources, caller="caller"):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         proc = StreamProcessor.__new__(StreamProcessor)
         proc.all_sources = all_sources
@@ -490,15 +490,15 @@ class TestBuildAgentGating:
                 return {"id": sid, "config": {"kind": "wiki"}}
 
         monkeypatch.setattr(
-            "application.api.answer.services.stream_processor.SourcesRepository",
+            "docsgpt.api.answer.services.stream_processor.SourcesRepository",
             _SrcRepo,
         )
         monkeypatch.setattr(
-            "application.api.answer.services.stream_processor.db_readonly",
+            "docsgpt.api.answer.services.stream_processor.db_readonly",
             _noop_conn,
         )
         monkeypatch.setattr(
-            "application.api.user.team_sharing.effective_write_owner",
+            "docsgpt.api.user.team_sharing.effective_write_owner",
             lambda conn, rt, rid, uid: "owner-x",
         )
         cfg = proc._build_wiki_config()
@@ -517,16 +517,16 @@ class TestBuildAgentGating:
                 return {"id": sid, "config": {"kind": "wiki"}}
 
         monkeypatch.setattr(
-            "application.api.answer.services.stream_processor.SourcesRepository",
+            "docsgpt.api.answer.services.stream_processor.SourcesRepository",
             _SrcRepo,
         )
         monkeypatch.setattr(
-            "application.api.answer.services.stream_processor.db_readonly",
+            "docsgpt.api.answer.services.stream_processor.db_readonly",
             _noop_conn,
         )
         # Viewer: effective_write_owner returns None.
         monkeypatch.setattr(
-            "application.api.user.team_sharing.effective_write_owner",
+            "docsgpt.api.user.team_sharing.effective_write_owner",
             lambda conn, rt, rid, uid: None,
         )
         assert proc._build_wiki_config() is None
@@ -542,15 +542,15 @@ class TestBuildAgentGating:
                 return {"id": sid, "config": {"kind": "classic"}}
 
         monkeypatch.setattr(
-            "application.api.answer.services.stream_processor.SourcesRepository",
+            "docsgpt.api.answer.services.stream_processor.SourcesRepository",
             _SrcRepo,
         )
         monkeypatch.setattr(
-            "application.api.answer.services.stream_processor.db_readonly",
+            "docsgpt.api.answer.services.stream_processor.db_readonly",
             _noop_conn,
         )
         monkeypatch.setattr(
-            "application.api.user.team_sharing.effective_write_owner",
+            "docsgpt.api.user.team_sharing.effective_write_owner",
             lambda conn, rt, rid, uid: "owner-x",
         )
         assert proc._build_wiki_config() is None
@@ -566,15 +566,15 @@ class TestBuildAgentGating:
                 return {"id": sid, "config": {"kind": "wiki"}}
 
         monkeypatch.setattr(
-            "application.api.answer.services.stream_processor.SourcesRepository",
+            "docsgpt.api.answer.services.stream_processor.SourcesRepository",
             _SrcRepo,
         )
         monkeypatch.setattr(
-            "application.api.answer.services.stream_processor.db_readonly",
+            "docsgpt.api.answer.services.stream_processor.db_readonly",
             _noop_conn,
         )
         monkeypatch.setattr(
-            "application.api.user.team_sharing.effective_write_owner",
+            "docsgpt.api.user.team_sharing.effective_write_owner",
             lambda conn, rt, rid, uid: "owner-x",
         )
         cfg = proc._build_wiki_config()

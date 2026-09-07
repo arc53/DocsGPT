@@ -1,6 +1,6 @@
 import pytest
 
-from application.parser.schema.schema import BaseDocument
+from docsgpt.parser.schema.schema import BaseDocument
 
 
 class ConcreteDoc(BaseDocument):
@@ -59,7 +59,7 @@ class TestBaseDocument:
 
 
 # =====================================================================
-# Coverage gap tests for application/parser/schema/base.py  (lines 19, 27, 34)
+# Coverage gap tests for docsgpt/parser/schema/base.py  (lines 19, 27, 34)
 # =====================================================================
 
 
@@ -68,14 +68,14 @@ class TestDocumentBase:
 
     def test_document_post_init_raises_on_none_text(self):
         """Cover line 19: Document.__post_init__ raises ValueError for None text."""
-        from application.parser.schema.base import Document
+        from docsgpt.parser.schema.base import Document
 
         with pytest.raises(ValueError, match="text field not set"):
             Document(text=None)
 
     def test_document_to_vector_format(self):
         """Cover line 27: Document.to_vector_format converts correctly."""
-        from application.parser.schema.base import Document
+        from docsgpt.parser.schema.base import Document
 
         doc = Document(text="hello world", extra_info={"source": "test"})
         lc_doc = doc.to_vector_format()
@@ -84,7 +84,7 @@ class TestDocumentBase:
 
     def test_document_to_vector_format_no_extra_info(self):
         """Cover: to_vector_format with no extra_info uses empty dict."""
-        from application.parser.schema.base import Document
+        from docsgpt.parser.schema.base import Document
 
         doc = Document(text="hello")
         lc_doc = doc.to_vector_format()
@@ -92,8 +92,8 @@ class TestDocumentBase:
 
     def test_document_from_vector_format(self):
         """Cover line 34: Document.from_vector_format creates Document."""
-        from application.parser.schema.base import Document
-        from application.vectorstore.document_class import Document as LCDocument
+        from docsgpt.parser.schema.base import Document
+        from docsgpt.vectorstore.document_class import Document as LCDocument
 
         lc_doc = LCDocument(page_content="test content", metadata={"key": "val"})
         doc = Document.from_vector_format(lc_doc)
@@ -102,6 +102,6 @@ class TestDocumentBase:
 
     def test_document_get_type(self):
         """Cover line 24: Document.get_type returns 'Document'."""
-        from application.parser.schema.base import Document
+        from docsgpt.parser.schema.base import Document
 
         assert Document.get_type() == "Document"

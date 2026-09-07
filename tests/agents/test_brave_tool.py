@@ -1,10 +1,10 @@
-"""Tests for application/agents/tools/brave.py"""
+"""Tests for docsgpt/agents/tools/brave.py"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.agents.tools.brave import BraveSearchTool
+from docsgpt.agents.tools.brave import BraveSearchTool
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ class TestBraveExecuteAction:
         with pytest.raises(ValueError, match="Unknown action"):
             tool.execute_action("invalid")
 
-    @patch("application.agents.tools.brave.requests.get")
+    @patch("docsgpt.agents.tools.brave.requests.get")
     def test_web_search_success(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -34,7 +34,7 @@ class TestBraveExecuteAction:
         call_kwargs = mock_get.call_args
         assert call_kwargs[1]["headers"]["X-Subscription-Token"] == "test_api_key"
 
-    @patch("application.agents.tools.brave.requests.get")
+    @patch("docsgpt.agents.tools.brave.requests.get")
     def test_web_search_failure(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 429
@@ -45,7 +45,7 @@ class TestBraveExecuteAction:
         assert result["status_code"] == 429
         assert "failed" in result["message"].lower()
 
-    @patch("application.agents.tools.brave.requests.get")
+    @patch("docsgpt.agents.tools.brave.requests.get")
     def test_image_search_success(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -57,7 +57,7 @@ class TestBraveExecuteAction:
         assert result["status_code"] == 200
         assert "results" in result
 
-    @patch("application.agents.tools.brave.requests.get")
+    @patch("docsgpt.agents.tools.brave.requests.get")
     def test_image_search_failure(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 500
@@ -67,7 +67,7 @@ class TestBraveExecuteAction:
 
         assert result["status_code"] == 500
 
-    @patch("application.agents.tools.brave.requests.get")
+    @patch("docsgpt.agents.tools.brave.requests.get")
     def test_count_capped_at_20(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -79,7 +79,7 @@ class TestBraveExecuteAction:
         params = mock_get.call_args[1]["params"]
         assert params["count"] == 20
 
-    @patch("application.agents.tools.brave.requests.get")
+    @patch("docsgpt.agents.tools.brave.requests.get")
     def test_image_count_capped_at_100(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -91,7 +91,7 @@ class TestBraveExecuteAction:
         params = mock_get.call_args[1]["params"]
         assert params["count"] == 100
 
-    @patch("application.agents.tools.brave.requests.get")
+    @patch("docsgpt.agents.tools.brave.requests.get")
     def test_freshness_param(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -103,7 +103,7 @@ class TestBraveExecuteAction:
         params = mock_get.call_args[1]["params"]
         assert params["freshness"] == "pd"
 
-    @patch("application.agents.tools.brave.requests.get")
+    @patch("docsgpt.agents.tools.brave.requests.get")
     def test_offset_capped(self, mock_get, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200

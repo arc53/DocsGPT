@@ -11,14 +11,14 @@ from botocore.exceptions import ClientError, NoCredentialsError
 def mock_boto3():
     """Mock boto3 module."""
     with patch.dict("sys.modules", {"boto3": MagicMock()}):
-        with patch("application.parser.remote.s3_loader.boto3") as mock:
+        with patch("docsgpt.parser.remote.s3_loader.boto3") as mock:
             yield mock
 
 
 @pytest.fixture
 def s3_loader(mock_boto3):
     """Create S3Loader instance with mocked boto3."""
-    from application.parser.remote.s3_loader import S3Loader
+    from docsgpt.parser.remote.s3_loader import S3Loader
 
     loader = S3Loader()
     return loader
@@ -29,15 +29,15 @@ class TestS3LoaderInit:
 
     def test_init_raises_import_error_when_boto3_missing(self):
         """Should raise ImportError when boto3 is not installed."""
-        with patch("application.parser.remote.s3_loader.boto3", None):
-            from application.parser.remote.s3_loader import S3Loader
+        with patch("docsgpt.parser.remote.s3_loader.boto3", None):
+            from docsgpt.parser.remote.s3_loader import S3Loader
 
             with pytest.raises(ImportError, match="boto3 is required"):
                 S3Loader()
 
     def test_init_sets_client_to_none(self, mock_boto3):
         """Should initialize with s3_client as None."""
-        from application.parser.remote.s3_loader import S3Loader
+        from docsgpt.parser.remote.s3_loader import S3Loader
 
         loader = S3Loader()
         assert loader.s3_client is None
@@ -127,7 +127,7 @@ class TestInitClient:
     def test_init_client_with_custom_endpoint(self, s3_loader, mock_boto3):
         """Should configure path-style addressing for custom endpoints."""
         with patch(
-            "application.parser.remote.s3_loader.validate_url",
+            "docsgpt.parser.remote.s3_loader.validate_url",
             side_effect=lambda u: u,
         ):
             s3_loader._init_client(
@@ -145,7 +145,7 @@ class TestInitClient:
     def test_init_client_normalizes_do_endpoint(self, s3_loader, mock_boto3):
         """Should normalize DigitalOcean Spaces bucket-prefixed URLs."""
         with patch(
-            "application.parser.remote.s3_loader.validate_url",
+            "docsgpt.parser.remote.s3_loader.validate_url",
             side_effect=lambda u: u,
         ):
             corrected_bucket = s3_loader._init_client(
@@ -564,7 +564,7 @@ class TestLoadData:
         }
 
         with patch(
-            "application.parser.remote.s3_loader.validate_url",
+            "docsgpt.parser.remote.s3_loader.validate_url",
             side_effect=lambda u: u,
         ):
             s3_loader.load_data(input_data)
@@ -644,7 +644,7 @@ class TestLoadData:
         }
 
         with patch(
-            "application.parser.remote.s3_loader.validate_url",
+            "docsgpt.parser.remote.s3_loader.validate_url",
             side_effect=lambda u: u,
         ):
             docs = s3_loader.load_data(input_data)
@@ -663,7 +663,7 @@ class TestProcessDocument:
         mock_doc.text = "Extracted document text"
 
         with patch(
-            "application.parser.file.bulk.SimpleDirectoryReader"
+            "docsgpt.parser.file.bulk.SimpleDirectoryReader"
         ) as mock_reader_class:
             mock_reader = MagicMock()
             mock_reader.load_data.return_value = [mock_doc]
@@ -687,7 +687,7 @@ class TestProcessDocument:
     def test_process_document_returns_none_on_error(self, s3_loader):
         """Should return None when document processing fails."""
         with patch(
-            "application.parser.file.bulk.SimpleDirectoryReader"
+            "docsgpt.parser.file.bulk.SimpleDirectoryReader"
         ) as mock_reader_class:
             mock_reader_class.side_effect = Exception("Parse error")
 
@@ -709,7 +709,7 @@ class TestProcessDocument:
     def test_process_document_cleans_up_temp_file(self, s3_loader):
         """Should clean up temporary file after processing."""
         with patch(
-            "application.parser.file.bulk.SimpleDirectoryReader"
+            "docsgpt.parser.file.bulk.SimpleDirectoryReader"
         ) as mock_reader_class:
             mock_reader = MagicMock()
             mock_reader.load_data.return_value = []
@@ -831,7 +831,7 @@ class TestProcessDocumentAdditional:
     def test_process_document_empty_documents_returns_none(self, s3_loader):
         """Cover line 347-348: no documents extracted returns None."""
         with patch(
-            "application.parser.file.bulk.SimpleDirectoryReader"
+            "docsgpt.parser.file.bulk.SimpleDirectoryReader"
         ) as mock_reader_class:
             mock_reader = MagicMock()
             mock_reader.load_data.return_value = []
@@ -906,8 +906,8 @@ class TestSSRFValidation:
 
 
 def test_is_supported_document_follows_the_upload_whitelist():
-    from application.parser.file.constants import SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS
-    from application.parser.remote.s3_loader import S3Loader
+    from docsgpt.parser.file.constants import SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS
+    from docsgpt.parser.remote.s3_loader import S3Loader
 
     for suffix in SUPPORTED_SOURCE_DOCUMENT_EXTENSIONS:
         key = f"bucket/file{suffix}"

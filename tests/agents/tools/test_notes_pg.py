@@ -1,4 +1,4 @@
-"""Tests for application/agents/tools/notes.py using pg_conn."""
+"""Tests for docsgpt/agents/tools/notes.py using pg_conn."""
 
 from contextlib import contextmanager
 from unittest.mock import patch
@@ -12,15 +12,15 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.storage.db.session.db_readonly", _yield
+        "docsgpt.storage.db.session.db_readonly", _yield
     ), patch(
-        "application.storage.db.session.db_session", _yield
+        "docsgpt.storage.db.session.db_session", _yield
     ):
         yield
 
 
 def _make_tool(tool_id="default_test", user_id="u"):
-    from application.agents.tools.notes import NotesTool
+    from docsgpt.agents.tools.notes import NotesTool
     tool = NotesTool.__new__(NotesTool)
     tool.tool_id = tool_id
     tool.user_id = user_id
@@ -60,7 +60,7 @@ class TestNotesToolExecuteGuards:
 
     def test_unknown_action(self, pg_conn):
         # Real tool_id requires a user_tools row
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
         UserToolsRepository(pg_conn).create("u", "notes_tool")

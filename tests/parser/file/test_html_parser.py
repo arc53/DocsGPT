@@ -1,6 +1,6 @@
 import pytest
 
-from application.parser.file.html_parser import HTMLParser
+from docsgpt.parser.file.html_parser import HTMLParser
 
 
 HTML = (
@@ -58,7 +58,7 @@ def test_html_parser_metadata_unreadable_file(tmp_path):
 
 # --- HTMLMarkdownParser: the anydoc engine's HTML path ---------------------------
 
-from application.parser.file.html_parser import HTMLMarkdownParser, html_to_markdown  # noqa: E402
+from docsgpt.parser.file.html_parser import HTMLMarkdownParser, html_to_markdown  # noqa: E402
 
 RICH_HTML = """<html><head><title>Doc Title</title>
 <style>.x { color: red }</style><script>var secret = 1;</script></head>
@@ -139,7 +139,7 @@ def test_html_to_markdown_collapses_blank_runs():
 def test_markdown_parser_head_truncates_oversized_markup(tmp_path, monkeypatch):
     """Markup past MARKUP_MAX_BYTES is not parsed: the soup+markdownify tree costs
     ~50x the input, and the upload cap is 100 MB."""
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "MARKUP_MAX_BYTES", 600)
     path = tmp_path / "big.html"
@@ -155,7 +155,7 @@ def test_markdown_parser_head_truncates_oversized_markup(tmp_path, monkeypatch):
 
 
 def test_markdown_parser_gate_disabled_reads_everything(tmp_path, monkeypatch):
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "MARKUP_MAX_BYTES", 0)
     path = tmp_path / "big.html"
@@ -187,7 +187,7 @@ def test_markdown_parser_metadata_unreadable_file(tmp_path):
 def test_markdown_parser_cut_inside_utf8_char_does_not_mojibake_the_page(tmp_path, monkeypatch):
     """A byte cut mid-character makes strict UTF-8 fail; BeautifulSoup would then
     retry as windows-1252, which *succeeds* on umlauts and garbles everything."""
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     path = tmp_path / "minified.html"
     body = "<p>Größe Übermaß schön für</p>" * 400  # no newlines: the cut is arbitrary
@@ -203,7 +203,7 @@ def test_markdown_parser_cut_inside_utf8_char_does_not_mojibake_the_page(tmp_pat
 
 
 def test_trim_torn_utf8_tail():
-    from application.parser.file.html_parser import _trim_torn_utf8_tail as trim
+    from docsgpt.parser.file.html_parser import _trim_torn_utf8_tail as trim
 
     e_acute, snowman, emoji = "é".encode(), "☃".encode(), "😀".encode()
     assert trim(b"abc") == b"abc"
@@ -218,7 +218,7 @@ def test_trim_torn_utf8_tail():
 
 def test_markdown_parser_metadata_reuses_last_parse(tmp_path, rich_html_file, monkeypatch):
     """The metadata call after parse_file must not build the soup again."""
-    from application.parser.file import html_parser as mod
+    from docsgpt.parser.file import html_parser as mod
 
     parser = HTMLMarkdownParser()
     parser.parse_file(rich_html_file)
@@ -237,7 +237,7 @@ def test_markdown_parser_metadata_reuses_last_parse(tmp_path, rich_html_file, mo
 
 
 def test_xml_prolog_does_not_leak_into_markdown(tmp_path):
-    from application.parser.file.html_parser import HTMLMarkdownParser
+    from docsgpt.parser.file.html_parser import HTMLMarkdownParser
 
     path = tmp_path / "doc.xhtml"
     path.write_bytes(
@@ -264,8 +264,8 @@ def test_data_uris_are_stripped_from_images_and_links():
 
 
 def test_utf16_head_keeps_an_even_byte_count(tmp_path, monkeypatch):
-    from application.core.settings import settings
-    from application.parser.file.html_parser import HTMLMarkdownParser, read_markup_head
+    from docsgpt.core.settings import settings
+    from docsgpt.parser.file.html_parser import HTMLMarkdownParser, read_markup_head
 
     body = "".join(f"<p>Zeile {i} Über Größe</p>\n" for i in range(200))
     path = tmp_path / "wide.html"

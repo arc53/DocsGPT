@@ -1,10 +1,10 @@
-"""Tests for application/utils.py"""
+"""Tests for docsgpt/utils.py"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.utils import (
+from docsgpt.utils import (
     calculate_compression_threshold,
     calculate_doc_token_budget,
     check_required_fields,
@@ -45,21 +45,21 @@ class TestGetGptModel:
 
     @pytest.mark.unit
     def test_returns_llm_name_when_set(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.LLM_NAME = "my-model"
             s.LLM_PROVIDER = "openai"
             assert get_gpt_model() == "my-model"
 
     @pytest.mark.unit
     def test_falls_back_to_provider_map(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.LLM_NAME = ""
             s.LLM_PROVIDER = "openai"
             assert get_gpt_model() == "gpt-4o-mini"
 
     @pytest.mark.unit
     def test_unknown_provider_returns_empty(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.LLM_NAME = ""
             s.LLM_PROVIDER = "unknown"
             assert get_gpt_model() == ""
@@ -159,7 +159,7 @@ class TestCountTokensDocs:
 
     @pytest.mark.unit
     def test_counts_doc_tokens(self):
-        from application.utils import count_tokens_docs
+        from docsgpt.utils import count_tokens_docs
         doc1 = MagicMock()
         doc1.page_content = "hello world"
         doc2 = MagicMock()
@@ -172,16 +172,16 @@ class TestCalculateDocTokenBudget:
 
     @pytest.mark.unit
     def test_returns_budget(self):
-        with patch("application.utils.get_token_limit", return_value=128000), \
-             patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.get_token_limit", return_value=128000), \
+             patch("docsgpt.utils.settings") as s:
             s.RESERVED_TOKENS = {"system": 500, "history": 500}
             result = calculate_doc_token_budget("gpt-4o")
             assert result == 127000
 
     @pytest.mark.unit
     def test_minimum_budget(self):
-        with patch("application.utils.get_token_limit", return_value=1000), \
-             patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.get_token_limit", return_value=1000), \
+             patch("docsgpt.utils.settings") as s:
             s.RESERVED_TOKENS = {"system": 500, "history": 500}
             result = calculate_doc_token_budget("small-model")
             assert result == 1000
@@ -344,7 +344,7 @@ class TestGenerateImageUrl:
 
     @pytest.mark.unit
     def test_internal_image_uses_opaque_capability(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.JWT_SECRET_KEY = "test-image-secret"
             s.UPLOAD_FOLDER = "inputs"
             s.API_URL = "https://api.example.com"
@@ -362,14 +362,14 @@ class TestGenerateImageUrl:
 
     @pytest.mark.unit
     def test_internal_image_fails_closed_without_agent_identity(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.JWT_SECRET_KEY = "test-image-secret"
             s.UPLOAD_FOLDER = "inputs"
             assert generate_image_url("inputs/user-1/attachments/avatar.png") == ""
 
     @pytest.mark.unit
     def test_internal_image_fails_closed_without_secret(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.JWT_SECRET_KEY = ""
             s.UPLOAD_FOLDER = "inputs"
             result = generate_image_url(
@@ -381,7 +381,7 @@ class TestGenerateImageUrl:
 
     @pytest.mark.unit
     def test_internal_image_rejects_path_outside_owner_uploads(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.JWT_SECRET_KEY = "test-image-secret"
             s.UPLOAD_FOLDER = "inputs"
             s.API_URL = "http://localhost:7091"
@@ -394,7 +394,7 @@ class TestGenerateImageUrl:
 
     @pytest.mark.unit
     def test_absolute_upload_folder_still_serves_owned_images(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.JWT_SECRET_KEY = "test-image-secret"
             s.UPLOAD_FOLDER = "/data/inputs"
             s.API_URL = "https://api.example.com"
@@ -413,7 +413,7 @@ class TestIsSafeAgentImagePath:
 
     @pytest.mark.unit
     def test_absolute_upload_folder_accepts_owned_path(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.UPLOAD_FOLDER = "/data/inputs"
             assert is_safe_agent_image_path(
                 "/data/inputs/user-1/attachments/avatar.png", "user-1"
@@ -421,7 +421,7 @@ class TestIsSafeAgentImagePath:
 
     @pytest.mark.unit
     def test_absolute_upload_folder_rejects_other_owner(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.UPLOAD_FOLDER = "/data/inputs"
             assert not is_safe_agent_image_path(
                 "/data/inputs/user-2/attachments/avatar.png", "user-1"
@@ -429,7 +429,7 @@ class TestIsSafeAgentImagePath:
 
     @pytest.mark.unit
     def test_absolute_upload_folder_rejects_escape(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.UPLOAD_FOLDER = "/data/inputs"
             assert not is_safe_agent_image_path(
                 "/data/inputs/user-1/attachments/../../../etc/passwd.png", "user-1"
@@ -438,7 +438,7 @@ class TestIsSafeAgentImagePath:
 
     @pytest.mark.unit
     def test_relative_upload_folder_rejects_absolute_path(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.UPLOAD_FOLDER = "inputs"
             assert not is_safe_agent_image_path(
                 "/inputs/user-1/attachments/avatar.png", "user-1"
@@ -446,7 +446,7 @@ class TestIsSafeAgentImagePath:
 
     @pytest.mark.unit
     def test_relative_upload_folder_accepts_owned_path(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.UPLOAD_FOLDER = "inputs"
             assert is_safe_agent_image_path(
                 "inputs/user-1/attachments/avatar.png", "user-1"
@@ -457,13 +457,13 @@ class TestCalculateCompressionThreshold:
 
     @pytest.mark.unit
     def test_default_threshold(self):
-        with patch("application.utils.get_token_limit", return_value=100000):
+        with patch("docsgpt.utils.get_token_limit", return_value=100000):
             result = calculate_compression_threshold("gpt-4o")
             assert result == 80000
 
     @pytest.mark.unit
     def test_custom_percentage(self):
-        with patch("application.utils.get_token_limit", return_value=100000):
+        with patch("docsgpt.utils.get_token_limit", return_value=100000):
             result = calculate_compression_threshold("gpt-4o", 0.5)
             assert result == 50000
 
@@ -681,7 +681,7 @@ class TestLimitChatHistoryEdgeCases:
     @pytest.mark.unit
     def test_max_token_limit_caps_at_model_limit(self):
         """When max_token_limit exceeds model limit, model limit is used."""
-        with patch("application.utils.get_token_limit", return_value=100):
+        with patch("docsgpt.utils.get_token_limit", return_value=100):
             history = [
                 {"prompt": "q", "response": "a"},
             ]
@@ -690,7 +690,7 @@ class TestLimitChatHistoryEdgeCases:
 
     @pytest.mark.unit
     def test_max_token_limit_none_uses_model_limit(self):
-        with patch("application.utils.get_token_limit", return_value=100000):
+        with patch("docsgpt.utils.get_token_limit", return_value=100000):
             history = [{"prompt": "q", "response": "a"}]
             result = limit_chat_history(history, max_token_limit=None)
             assert len(result) == 1
@@ -698,7 +698,7 @@ class TestLimitChatHistoryEdgeCases:
     @pytest.mark.unit
     def test_messages_without_prompt_response_keys(self):
         """Messages lacking prompt/response should still be included."""
-        with patch("application.utils.get_token_limit", return_value=100000):
+        with patch("docsgpt.utils.get_token_limit", return_value=100000):
             history = [{"custom_key": "value"}]
             result = limit_chat_history(history, max_token_limit=100000)
             assert len(result) == 1
@@ -743,7 +743,7 @@ class TestGenerateImageUrlEdgeCases:
 
     @pytest.mark.unit
     def test_email_owner_legacy_path_is_supported(self):
-        with patch("application.utils.settings") as s:
+        with patch("docsgpt.utils.settings") as s:
             s.JWT_SECRET_KEY = "test-image-secret"
             s.UPLOAD_FOLDER = "inputs"
             s.API_URL = "http://localhost:7091"

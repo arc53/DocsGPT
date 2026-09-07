@@ -1,8 +1,8 @@
-"""Tests for application/agents/workflows/cel_evaluator.py"""
+"""Tests for docsgpt/agents/workflows/cel_evaluator.py"""
 
 import pytest
 
-from application.agents.workflows.cel_evaluator import (
+from docsgpt.agents.workflows.cel_evaluator import (
     CelEvaluationError,
     _convert_value,
     build_activation,
@@ -232,7 +232,7 @@ class TestCelErrorMessages:
     @pytest.mark.unit
     def test_long_error_is_truncated(self):
         """Backstop for celpy messages that survive activation-stripping."""
-        from application.agents.workflows.cel_evaluator import _summarize_cel_error
+        from docsgpt.agents.workflows.cel_evaluator import _summarize_cel_error
 
         summary = _summarize_cel_error(Exception("word " * 200))
         assert len(summary) <= 200

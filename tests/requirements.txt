@@ -9,9 +9,9 @@ cryptography>=46.0.0
 # jupyter_client (KernelSpecManager) for the sandbox kernelspec-resolution test.
 jupyter-client>=8.0
 # Document renderers used by the artifact_generator unit-test fixtures
-# (python-pptx and openpyxl already ship in application/requirements.txt).
+# (python-pptx and openpyxl already ship in docsgpt/requirements.txt).
 python-docx>=1.1
 reportlab>=4.0,<5
 # The optional docling engine stays installed in the test env so its parser
 # paths keep CI coverage even though production installs it on demand.
--r ../application/requirements-docling.txt
+-r ../docsgpt/requirements-docling.txt

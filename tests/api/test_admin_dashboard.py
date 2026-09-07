@@ -16,7 +16,7 @@ import pytest
 
 @pytest.fixture
 def client():
-    from application.app import app as flask_app
+    from docsgpt.app import app as flask_app
 
     flask_app.config["TESTING"] = True
     return flask_app.test_client()
@@ -29,18 +29,18 @@ def _fake_conn():
 
 @contextmanager
 def _admin(**route_patches):
-    """Authenticate as admin and patch application.api.admin.routes.* members."""
+    """Authenticate as admin and patch docsgpt.api.admin.routes.* members."""
     with ExitStack() as stack:
         stack.enter_context(
-            patch("application.app.handle_auth", return_value={"sub": "admin1"})
+            patch("docsgpt.app.handle_auth", return_value={"sub": "admin1"})
         )
         stack.enter_context(
-            patch("application.app.resolve_roles", return_value=["admin", "user"])
+            patch("docsgpt.app.resolve_roles", return_value=["admin", "user"])
         )
-        stack.enter_context(patch("application.api.admin.routes.db_readonly", _fake_conn))
-        stack.enter_context(patch("application.api.admin.routes.db_session", _fake_conn))
+        stack.enter_context(patch("docsgpt.api.admin.routes.db_readonly", _fake_conn))
+        stack.enter_context(patch("docsgpt.api.admin.routes.db_session", _fake_conn))
         for name, value in route_patches.items():
-            stack.enter_context(patch(f"application.api.admin.routes.{name}", value))
+            stack.enter_context(patch(f"docsgpt.api.admin.routes.{name}", value))
         yield
 
 
@@ -51,13 +51,13 @@ def _body(resp):
 @pytest.mark.unit
 class TestGuard:
     def test_non_admin_forbidden(self, client):
-        with patch("application.app.handle_auth", return_value={"sub": "u"}), patch(
-            "application.app.resolve_roles", return_value=["user"]
+        with patch("docsgpt.app.handle_auth", return_value={"sub": "u"}), patch(
+            "docsgpt.app.resolve_roles", return_value=["user"]
         ):
             assert client.get("/api/admin/overview").status_code == 403
 
     def test_unauthenticated(self, client):
-        with patch("application.app.handle_auth", return_value=None):
+        with patch("docsgpt.app.handle_auth", return_value=None):
             assert client.get("/api/admin/overview").status_code == 401
 
 
@@ -170,7 +170,7 @@ class TestUserLifecycle:
         with _admin(
             UsersRepository=Mock(return_value=users),
             AuthEventsRepository=Mock(return_value=events),
-        ), patch("application.api.admin.routes.denylist") as dl:
+        ), patch("docsgpt.api.admin.routes.denylist") as dl:
             resp = client.patch("/api/admin/users/bob", json={"active": False})
         assert resp.status_code == 200
         dl.deny_user.assert_called_once_with("bob")
@@ -179,7 +179,7 @@ class TestUserLifecycle:
     def test_force_logout(self, client):
         events = Mock()
         with _admin(AuthEventsRepository=Mock(return_value=events)), patch(
-            "application.api.admin.routes.denylist"
+            "docsgpt.api.admin.routes.denylist"
         ) as dl:
             dl.deny_user.return_value = True
             resp = client.post("/api/admin/users/bob/revoke-sessions")

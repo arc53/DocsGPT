@@ -32,7 +32,8 @@ services:
   backend:
     user: root
     build:
-      context: ../application
+      context: ..
+      dockerfile: docsgpt/Dockerfile
       args:
         # Optional extras to bake in (comma-separated): docling, milvus. The
         # docling extra brings the layout-model parser/OCR backend and its
@@ -57,6 +58,9 @@ services:
     ports:
       - "7091:7091"
     volumes:
+      # Host data stays under application/ (the old package directory) for this
+      # release so an upgraded checkout keeps its indexes; it moves with the
+      # packaging work, together with an upgrade note.
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
@@ -69,7 +73,8 @@ services:
   worker:
     user: root
     build:
-      context: ../application
+      context: ..
+      dockerfile: docsgpt/Dockerfile
       args:
         EXTRAS: ${EXTRAS:-}
         INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
@@ -80,7 +85,7 @@ services:
     # fails after EMBEDDINGS_DELEGATE_TIMEOUT, because EMBEDDINGS_DELEGATE_TO_WORKER
     # is on by default. For heavy/OCR parsing run a separate worker with `-Q parsing`;
     # to keep query latency off the ingest pool, another with `-Q embeddings`.
-    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
     env_file:
       - ../.env
     environment:
@@ -91,6 +96,9 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     volumes:
+      # Host data stays under application/ (the old package directory) for this
+      # release so an upgraded checkout keeps its indexes; it moves with the
+      # packaging work, together with an upgrade note.
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors

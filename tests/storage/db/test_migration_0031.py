@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 
 
 def _alembic_ini() -> Path:
-    return Path(__file__).resolve().parents[3] / "application" / "alembic.ini"
+    return Path(__file__).resolve().parents[3] / "docsgpt" / "alembic.ini"
 
 
 def _run_alembic(url: str, *args: str) -> None:

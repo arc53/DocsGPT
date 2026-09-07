@@ -14,7 +14,7 @@ import uuid
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.idempotency import IdempotencyRepository
+from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 
 
 def _repo(conn) -> IdempotencyRepository:

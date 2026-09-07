@@ -12,54 +12,54 @@ import pytest
 
 
 # ---------------------------------------------------------------------------
-# application/wsgi.py  (lines 1-5)
+# docsgpt/wsgi.py  (lines 1-5)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestWsgiModule:
     def test_wsgi_imports_app(self):
         """Verify wsgi.py can be imported and exposes the app object."""
-        with patch("application.app.app") as mock_app:
+        with patch("docsgpt.app.app") as mock_app:
             mock_app.run = MagicMock()
             import importlib
-            import application.wsgi
+            import docsgpt.wsgi
 
-            importlib.reload(application.wsgi)
-            assert hasattr(application.wsgi, "app")
+            importlib.reload(docsgpt.wsgi)
+            assert hasattr(docsgpt.wsgi, "app")
 
 
 # ---------------------------------------------------------------------------
-# application/celery_init.py  (lines 18-20)
+# docsgpt/celery_init.py  (lines 18-20)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestCeleryInitConfigLoggers:
     def test_config_loggers_invokes_setup_logging(self):
         """Cover lines 18-20: config_loggers signal handler calls setup_logging."""
         with patch(
-            "application.core.logging_config.setup_logging"
+            "docsgpt.core.logging_config.setup_logging"
         ) as mock_setup:
             # The signal handler imports and calls setup_logging from logging_config.
             # We need to ensure the import inside the function resolves to our mock.
             # Re-import and call:
             import importlib
-            import application.celery_init
+            import docsgpt.celery_init
 
-            importlib.reload(application.celery_init)
-            # The function body does: from application.core.logging_config import setup_logging
+            importlib.reload(docsgpt.celery_init)
+            # The function body does: from docsgpt.core.logging_config import setup_logging
             # then calls setup_logging(). We need to invoke config_loggers directly.
             # Since it's wrapped by @setup_logging.connect, calling the underlying fn:
-            application.celery_init.config_loggers(None)
+            docsgpt.celery_init.config_loggers(None)
             mock_setup.assert_called()
 
 
 # ---------------------------------------------------------------------------
-# application/llm/docsgpt_provider.py  (lines 10, 29, 51)
+# docsgpt/llm/docsgpt_provider.py  (lines 10, 29, 51)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestDocsGPTProviderLLM:
     def test_init_uses_docsgpt_constants(self):
         """Cover line 10: DocsGPTAPILLM.__init__ uses DOCSGPT constants."""
-        with patch("application.llm.openai.OpenAILLM.__init__", return_value=None):
-            from application.llm.docsgpt_provider import (
+        with patch("docsgpt.llm.openai.OpenAILLM.__init__", return_value=None):
+            from docsgpt.llm.docsgpt_provider import (
                 DocsGPTAPILLM,
             )
 
@@ -68,7 +68,7 @@ class TestDocsGPTProviderLLM:
 
     def test_raw_gen_delegates_with_docsgpt_model(self):
         """Cover line 29: _raw_gen calls super with DOCSGPT_MODEL."""
-        from application.llm.docsgpt_provider import DocsGPTAPILLM
+        from docsgpt.llm.docsgpt_provider import DocsGPTAPILLM
 
         with patch.object(
             DocsGPTAPILLM.__bases__[0], "_raw_gen", return_value="response"
@@ -81,7 +81,7 @@ class TestDocsGPTProviderLLM:
 
     def test_raw_gen_stream_delegates_with_docsgpt_model(self):
         """Cover line 51: _raw_gen_stream calls super with DOCSGPT_MODEL."""
-        from application.llm.docsgpt_provider import DocsGPTAPILLM
+        from docsgpt.llm.docsgpt_provider import DocsGPTAPILLM
 
         with patch.object(
             DocsGPTAPILLM.__bases__[0], "_raw_gen_stream",
@@ -95,19 +95,19 @@ class TestDocsGPTProviderLLM:
 
 
 # ---------------------------------------------------------------------------
-# application/agents/tools/base.py  (lines 7, 10, 13)
+# docsgpt/agents/tools/base.py  (lines 7, 10, 13)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestToolABC:
     def test_cannot_instantiate_tool_abc(self):
         """Cover lines 7, 10, 13: Tool is abstract."""
-        from application.agents.tools.base import Tool
+        from docsgpt.agents.tools.base import Tool
 
         with pytest.raises(TypeError):
             Tool()
 
     def test_concrete_subclass_works(self):
-        from application.agents.tools.base import Tool
+        from docsgpt.agents.tools.base import Tool
 
         class ConcreteTool(Tool):
             def execute_action(self, action_name, **kwargs):
@@ -126,14 +126,14 @@ class TestToolABC:
 
 
 # ---------------------------------------------------------------------------
-# application/parser/file/base.py  (lines 18-19)
+# docsgpt/parser/file/base.py  (lines 18-19)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestBaseReaderLoadVectorDocuments:
     def test_load_vector_documents(self):
         """Cover lines 18-19: BaseReader.load_vector_documents."""
-        from application.parser.file.base import BaseReader
-        from application.parser.schema.base import Document
+        from docsgpt.parser.file.base import BaseReader
+        from docsgpt.parser.schema.base import Document
 
         class ConcreteReader(BaseReader):
             def load_data(self, *args, **kwargs):
@@ -151,19 +151,19 @@ class TestBaseReaderLoadVectorDocuments:
 
 
 # ---------------------------------------------------------------------------
-# application/tts/base.py  (lines 6, 10)
+# docsgpt/tts/base.py  (lines 6, 10)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestBaseTTS:
     def test_cannot_instantiate_base_tts(self):
         """Cover lines 6, 10: BaseTTS is abstract."""
-        from application.tts.base import BaseTTS
+        from docsgpt.tts.base import BaseTTS
 
         with pytest.raises(TypeError):
             BaseTTS()
 
     def test_concrete_subclass_works(self):
-        from application.tts.base import BaseTTS
+        from docsgpt.tts.base import BaseTTS
 
         class ConcreteTTS(BaseTTS):
             def text_to_speech(self, *args, **kwargs):
@@ -176,19 +176,19 @@ class TestBaseTTS:
 
 
 # ---------------------------------------------------------------------------
-# application/retriever/base.py  (line 10)
+# docsgpt/retriever/base.py  (line 10)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestBaseRetriever:
     def test_cannot_instantiate_base_retriever(self):
         """Cover line 10: BaseRetriever.search is abstract."""
-        from application.retriever.base import BaseRetriever
+        from docsgpt.retriever.base import BaseRetriever
 
         with pytest.raises(TypeError):
             BaseRetriever()
 
     def test_concrete_subclass_works(self):
-        from application.retriever.base import BaseRetriever
+        from docsgpt.retriever.base import BaseRetriever
 
         class ConcreteRetriever(BaseRetriever):
             def search(self, *args, **kwargs):
@@ -199,19 +199,19 @@ class TestBaseRetriever:
 
 
 # ---------------------------------------------------------------------------
-# application/stt/base.py  (line 15)
+# docsgpt/stt/base.py  (line 15)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestBaseSTT:
     def test_cannot_instantiate_base_stt(self):
         """Cover line 15: BaseSTT.transcribe is abstract."""
-        from application.stt.base import BaseSTT
+        from docsgpt.stt.base import BaseSTT
 
         with pytest.raises(TypeError):
             BaseSTT()
 
     def test_concrete_subclass_works(self):
-        from application.stt.base import BaseSTT
+        from docsgpt.stt.base import BaseSTT
 
         class ConcreteSTT(BaseSTT):
             def transcribe(self, file_path, language=None, timestamps=False, diarize=False):
@@ -223,13 +223,13 @@ class TestBaseSTT:
 
 
 # ---------------------------------------------------------------------------
-# application/llm/open_router.py  (line 9)
+# docsgpt/llm/open_router.py  (line 9)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestOpenRouterLLM:
     def test_init_uses_openrouter_base_url(self):
         """Cover line 9: OpenRouterLLM.__init__ delegates to OpenAILLM."""
-        from application.llm.open_router import OpenRouterLLM, OPEN_ROUTER_BASE_URL
+        from docsgpt.llm.open_router import OpenRouterLLM, OPEN_ROUTER_BASE_URL
 
         # Verify the class exists and has the correct base URL constant
         assert OPEN_ROUTER_BASE_URL == "https://openrouter.ai/api/v1"
@@ -237,13 +237,13 @@ class TestOpenRouterLLM:
 
 
 # ---------------------------------------------------------------------------
-# application/llm/groq.py  (line 9)
+# docsgpt/llm/groq.py  (line 9)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestGroqLLM:
     def test_init_uses_groq_base_url(self):
         """Cover line 9: GroqLLM.__init__ delegates to OpenAILLM."""
-        from application.llm.groq import GroqLLM, GROQ_BASE_URL
+        from docsgpt.llm.groq import GroqLLM, GROQ_BASE_URL
 
         # Verify the class exists and has the correct base URL constant
         assert GROQ_BASE_URL == "https://api.groq.com/openai/v1"
@@ -251,13 +251,13 @@ class TestGroqLLM:
 
 
 # ---------------------------------------------------------------------------
-# application/llm/llm_creator.py  (line 49)
+# docsgpt/llm/llm_creator.py  (line 49)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestLLMCreatorRaisesOnUnknown:
     def test_raises_on_unknown_type(self):
         """Cover line 49: LLMCreator raises ValueError for unknown type."""
-        from application.llm.llm_creator import LLMCreator
+        from docsgpt.llm.llm_creator import LLMCreator
 
         with pytest.raises(ValueError, match="No LLM class found"):
             LLMCreator.create_llm(
@@ -269,40 +269,40 @@ class TestLLMCreatorRaisesOnUnknown:
 
 
 # ---------------------------------------------------------------------------
-# application/storage/storage_creator.py  (line 30)
+# docsgpt/storage/storage_creator.py  (line 30)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestStorageCreatorRaisesOnUnknown:
     def test_raises_on_unknown_type(self):
         """Cover line 30: StorageCreator raises ValueError for unknown type."""
-        from application.storage.storage_creator import StorageCreator
+        from docsgpt.storage.storage_creator import StorageCreator
 
         with pytest.raises(ValueError, match="No storage implementation found"):
             StorageCreator.create_storage("nonexistent_storage_xyz")
 
 
 # ---------------------------------------------------------------------------
-# application/seed/commands.py  (line 26)
+# docsgpt/seed/commands.py  (line 26)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestSeedCommands:
     def test_seed_main_guard(self):
         """Cover line 26: __main__ guard in seed/commands.py."""
         # Just verify the module can be imported and has the seed group
-        from application.seed.commands import seed
+        from docsgpt.seed.commands import seed
 
         assert seed is not None
         assert hasattr(seed, "name")
 
 
 # ---------------------------------------------------------------------------
-# application/core/json_schema_utils.py  (line 26)
+# docsgpt/core/json_schema_utils.py  (line 26)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestJsonSchemaUtilsGap:
     def test_wrapped_schema_not_dict_raises(self):
         """Cover line 26: schema field not a dict raises validation error."""
-        from application.core.json_schema_utils import (
+        from docsgpt.core.json_schema_utils import (
             normalize_json_schema_payload,
             JsonSchemaValidationError,
         )
@@ -312,34 +312,34 @@ class TestJsonSchemaUtilsGap:
 
 
 # ---------------------------------------------------------------------------
-# application/stt/upload_limits.py  (line 26 - already covered, but ensure path)
+# docsgpt/stt/upload_limits.py  (line 26 - already covered, but ensure path)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestUploadLimitsIsAudioFilename:
     def test_is_audio_filename_returns_false_for_none(self):
-        from application.stt.upload_limits import is_audio_filename
+        from docsgpt.stt.upload_limits import is_audio_filename
 
         assert is_audio_filename(None) is False
 
     def test_is_audio_filename_returns_false_for_non_audio(self):
-        from application.stt.upload_limits import is_audio_filename
+        from docsgpt.stt.upload_limits import is_audio_filename
 
         assert is_audio_filename("document.pdf") is False
 
     def test_is_audio_filename_returns_true_for_wav(self):
-        from application.stt.upload_limits import is_audio_filename
+        from docsgpt.stt.upload_limits import is_audio_filename
 
         assert is_audio_filename("recording.wav") is True
 
 
 # ---------------------------------------------------------------------------
-# application/agents/tools/tool_action_parser.py  (line 62)
+# docsgpt/agents/tools/tool_action_parser.py  (line 62)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestToolActionParserGap:
     def test_non_numeric_tool_id_warning(self):
         """Cover line 62: warning logged when tool_id is not numeric."""
-        from application.agents.tools.tool_action_parser import ToolActionParser
+        from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 
         parser = ToolActionParser("OpenAILLM")
         # A tool call with a non-numeric tool_id at the end
@@ -352,14 +352,14 @@ class TestToolActionParserGap:
 
 
 # ---------------------------------------------------------------------------
-# application/api/answer/services/prompt_renderer.py  (line 69)
+# docsgpt/api/answer/services/prompt_renderer.py  (line 69)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestPromptRendererGap:
     def test_render_prompt_raises_template_render_error_on_unexpected(self):
         """Cover line 69: generic exception wrapped in TemplateRenderError."""
-        from application.api.answer.services.prompt_renderer import PromptRenderer
-        from application.templates.template_engine import TemplateRenderError
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.templates.template_engine import TemplateRenderError
 
         renderer = PromptRenderer()
 
@@ -372,7 +372,7 @@ class TestPromptRendererGap:
 
 
 # ---------------------------------------------------------------------------
-# application/llm/anthropic.py
+# docsgpt/llm/anthropic.py
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestAnthropicLLMRawGen:
@@ -382,10 +382,10 @@ class TestAnthropicLLMRawGen:
         list belongs. It now always makes one Messages API call."""
         import types as _types
 
-        with patch("application.llm.anthropic.Anthropic") as MockAnthropic:
-            with patch("application.llm.anthropic.StorageCreator") as MockStorage:
+        with patch("docsgpt.llm.anthropic.Anthropic") as MockAnthropic:
+            with patch("docsgpt.llm.anthropic.StorageCreator") as MockStorage:
                 MockStorage.get_storage.return_value = MagicMock()
-                from application.llm.anthropic import AnthropicLLM
+                from docsgpt.llm.anthropic import AnthropicLLM
 
                 client = MockAnthropic.return_value
                 client.messages.create.return_value = _types.SimpleNamespace(
@@ -408,67 +408,67 @@ class TestAnthropicLLMRawGen:
 
 
 # ---------------------------------------------------------------------------
-# application/llm/base.py  (line 201)
+# docsgpt/llm/base.py  (line 201)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestBaseLLMAbstractRawGen:
     def test_raw_gen_is_abstract(self):
         """Cover line 201: _raw_gen abstract pass."""
-        from application.llm.base import BaseLLM
+        from docsgpt.llm.base import BaseLLM
 
         with pytest.raises(TypeError):
             BaseLLM()
 
 
 # ---------------------------------------------------------------------------
-# application/core/settings.py  (line 184 - clean_none_string)
+# docsgpt/core/settings.py  (line 184 - clean_none_string)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestSettingsNormalizeApiKey:
     def test_normalize_api_key_none_str_returns_none(self):
         """Cover line 184+: normalize_api_key converts 'None' string to None."""
-        from application.core.settings import Settings
+        from docsgpt.core.settings import Settings
 
         result = Settings.normalize_api_key("None")
         assert result is None
 
     def test_normalize_api_key_empty_returns_none(self):
-        from application.core.settings import Settings
+        from docsgpt.core.settings import Settings
 
         result = Settings.normalize_api_key("")
         assert result is None
 
     def test_normalize_api_key_returns_stripped_value(self):
-        from application.core.settings import Settings
+        from docsgpt.core.settings import Settings
 
         result = Settings.normalize_api_key("  hello  ")
         assert result == "hello"
 
     def test_normalize_api_key_non_str_returns_as_is(self):
-        from application.core.settings import Settings
+        from docsgpt.core.settings import Settings
 
         result = Settings.normalize_api_key(42)
         assert result == 42
 
     def test_normalize_api_key_none_returns_none(self):
-        from application.core.settings import Settings
+        from docsgpt.core.settings import Settings
 
         result = Settings.normalize_api_key(None)
         assert result is None
 
 
 # ---------------------------------------------------------------------------
-# application/agents/workflow_agent.py  (line 43)
+# docsgpt/agents/workflow_agent.py  (line 43)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestWorkflowAgentGen:
     def test_gen_yields_from_inner(self):
         """Cover line 43: gen method yields from _gen_inner."""
         with patch(
-            "application.agents.workflow_agent.WorkflowAgent.__init__",
+            "docsgpt.agents.workflow_agent.WorkflowAgent.__init__",
             return_value=None,
         ):
-            from application.agents.workflow_agent import WorkflowAgent
+            from docsgpt.agents.workflow_agent import WorkflowAgent
 
             agent = WorkflowAgent.__new__(WorkflowAgent)
             agent._gen_inner = MagicMock(
@@ -479,26 +479,26 @@ class TestWorkflowAgentGen:
 
 
 # ---------------------------------------------------------------------------
-# application/templates/namespaces.py  (line 16)
+# docsgpt/templates/namespaces.py  (line 16)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestNamespaceBuilderABC:
     def test_cannot_instantiate_namespace_builder(self):
         """Cover line 16: NamespaceBuilder is abstract."""
-        from application.templates.namespaces import NamespaceBuilder
+        from docsgpt.templates.namespaces import NamespaceBuilder
 
         with pytest.raises(TypeError):
             NamespaceBuilder()
 
 
 # ---------------------------------------------------------------------------
-# application/parser/file/markdown_parser.py  (line 67)
+# docsgpt/parser/file/markdown_parser.py  (line 67)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestMarkdownParserEmptyHeader:
     def test_empty_text_header_continues(self):
         """Cover line 67: when current_text is empty string, continue."""
-        from application.parser.file.markdown_parser import MarkdownParser
+        from docsgpt.parser.file.markdown_parser import MarkdownParser
 
         parser = MarkdownParser()
         # Two consecutive headers with no text between them
@@ -511,14 +511,14 @@ class TestMarkdownParserEmptyHeader:
 
 
 # ---------------------------------------------------------------------------
-# application/core/url_validation.py  (lines 89-90)
+# docsgpt/core/url_validation.py  (lines 89-90)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestUrlValidationResolveHostname:
     def test_resolve_hostname_failure_returns_none(self):
         """Cover lines 89-90: socket.gaierror returns None."""
         import socket
-        from application.core.url_validation import resolve_hostname
+        from docsgpt.core.url_validation import resolve_hostname
 
         with patch("socket.gethostbyname", side_effect=socket.gaierror):
             result = resolve_hostname("nonexistent.invalid")
@@ -526,7 +526,7 @@ class TestUrlValidationResolveHostname:
 
 
 # ---------------------------------------------------------------------------
-# application/api/user/agents/webhooks.py  (line 72)
+# docsgpt/api/user/agents/webhooks.py  (line 72)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestWebhookEmptyPayloadWarning:
@@ -536,7 +536,7 @@ class TestWebhookEmptyPayloadWarning:
 
         app = Flask(__name__)
         with app.test_request_context():
-            from application.api.user.agents.webhooks import AgentWebhookListener
+            from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
             resource = AgentWebhookListener()
             with patch.object(
@@ -544,7 +544,7 @@ class TestWebhookEmptyPayloadWarning:
             ) as mock_warn:
                 with patch.object(app.logger, "info"):
                     with patch(
-                        "application.api.user.agents.webhooks.process_agent_webhook"
+                        "docsgpt.api.user.agents.webhooks.process_agent_webhook"
                     ) as mock_task:
                         mock_task.delay.return_value = MagicMock(id="task123")
                         resource._enqueue_webhook_task("agent123", {}, "POST")
@@ -552,14 +552,14 @@ class TestWebhookEmptyPayloadWarning:
 
 
 # ---------------------------------------------------------------------------
-# application/agents/tools/duckduckgo.py  (lines 25-27)
+# docsgpt/agents/tools/duckduckgo.py  (lines 25-27)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestDuckDuckGoGetClient:
     def test_get_ddgs_client(self):
         """Cover lines 25-27: _get_ddgs_client imports and returns DDGS."""
         with patch.dict("sys.modules", {"ddgs": MagicMock()}):
-            from application.agents.tools.duckduckgo import DuckDuckGoSearchTool
+            from docsgpt.agents.tools.duckduckgo import DuckDuckGoSearchTool
 
             tool = DuckDuckGoSearchTool({"timeout": 10})
             client = tool._get_ddgs_client()
@@ -567,24 +567,24 @@ class TestDuckDuckGoGetClient:
 
 
 # ---------------------------------------------------------------------------
-# application/agents/tools/read_webpage.py  (lines 54-55)
+# docsgpt/agents/tools/read_webpage.py  (lines 54-55)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestReadWebpageErrors:
     def test_generic_error_returns_error_message(self):
         """Cover lines 54-55: generic Exception returns error string."""
-        from application.agents.tools.read_webpage import ReadWebpageTool
+        from docsgpt.agents.tools.read_webpage import ReadWebpageTool
 
         tool = ReadWebpageTool({})
         with patch(
-            "application.agents.tools.read_webpage.pinned_fetch_bytes"
+            "docsgpt.agents.tools.read_webpage.pinned_fetch_bytes"
         ) as mock_fetch:
             mock_response = MagicMock()
             mock_response.raise_for_status.return_value = None
             mock_response.headers = {"Content-Type": "text/html"}
             mock_fetch.return_value = (b"<html><body>test</body></html>", mock_response)
             with patch(
-                "application.agents.tools.read_webpage.markdownify",
+                "docsgpt.agents.tools.read_webpage.markdownify",
                 side_effect=Exception("parse error"),
             ):
                 result = tool.execute_action("read", url="https://example.com")
@@ -592,17 +592,17 @@ class TestReadWebpageErrors:
 
 
 # ---------------------------------------------------------------------------
-# application/parser/file/pptx_parser.py  (lines 74-75)
+# docsgpt/parser/file/pptx_parser.py  (lines 74-75)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestPptxParserRaisesOnError:
     def test_parse_file_raises_on_generic_error(self):
         """Cover lines 74-75: generic exception is re-raised."""
-        from application.parser.file.pptx_parser import PPTXParser
+        from docsgpt.parser.file.pptx_parser import PPTXParser
 
         parser = PPTXParser()
         with patch(
-            "application.parser.file.pptx_parser.PPTXParser.parse_file",
+            "docsgpt.parser.file.pptx_parser.PPTXParser.parse_file",
             wraps=parser.parse_file,
         ):
             with patch.dict("sys.modules", {"pptx": MagicMock()}):
@@ -615,13 +615,13 @@ class TestPptxParserRaisesOnError:
 
 
 # ---------------------------------------------------------------------------
-# application/parser/file/audio_parser.py  (lines 23, 28, 48)
+# docsgpt/parser/file/audio_parser.py  (lines 23, 28, 48)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestAudioParserGaps:
     def test_parse_file_os_error_on_stat(self):
         """Cover line 23: OSError on file.stat() is caught silently."""
-        from application.parser.file.audio_parser import AudioParser
+        from docsgpt.parser.file.audio_parser import AudioParser
 
         parser = AudioParser()
         mock_path = MagicMock(spec=Path)
@@ -629,7 +629,7 @@ class TestAudioParserGaps:
         mock_path.__str__ = MagicMock(return_value="/tmp/test.wav")
 
         with patch(
-            "application.parser.file.audio_parser.STTCreator"
+            "docsgpt.parser.file.audio_parser.STTCreator"
         ) as mock_stt_creator:
             mock_stt = MagicMock()
             mock_stt.transcribe.return_value = {
@@ -642,7 +642,7 @@ class TestAudioParserGaps:
 
     def test_get_file_metadata_returns_stored_metadata(self):
         """Cover line 48: get_file_metadata returns previously stored data."""
-        from application.parser.file.audio_parser import AudioParser
+        from docsgpt.parser.file.audio_parser import AudioParser
 
         parser = AudioParser()
         parser._transcript_metadata["/tmp/test.wav"] = {
@@ -652,7 +652,7 @@ class TestAudioParserGaps:
         assert meta["transcript_language"] == "en"
 
     def test_get_file_metadata_returns_empty_for_unknown(self):
-        from application.parser.file.audio_parser import AudioParser
+        from docsgpt.parser.file.audio_parser import AudioParser
 
         parser = AudioParser()
         meta = parser.get_file_metadata(Path("/tmp/unknown.wav"))
@@ -660,13 +660,13 @@ class TestAudioParserGaps:
 
 
 # ---------------------------------------------------------------------------
-# application/parser/file/base_parser.py  (lines 28-30)
+# docsgpt/parser/file/base_parser.py  (lines 28-30)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestBaseParserConfigProperty:
     def test_parser_config_raises_when_none(self):
         """Cover lines 28-30: parser_config raises ValueError when not set."""
-        from application.parser.file.base_parser import BaseParser
+        from docsgpt.parser.file.base_parser import BaseParser
 
         class ConcreteParser(BaseParser):
             def _init_parser(self):
@@ -680,7 +680,7 @@ class TestBaseParserConfigProperty:
             _ = parser.parser_config
 
     def test_parser_config_returns_value_when_set(self):
-        from application.parser.file.base_parser import BaseParser
+        from docsgpt.parser.file.base_parser import BaseParser
 
         class ConcreteParser(BaseParser):
             def _init_parser(self):
@@ -695,18 +695,18 @@ class TestBaseParserConfigProperty:
 
 
 # ---------------------------------------------------------------------------
-# application/vectorstore/base.py  (lines 88-90, 137)
+# docsgpt/vectorstore/base.py  (lines 88-90, 137)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestGetEmbeddingsWrapper:
     def test_get_embeddings_wrapper_returns_class(self):
         """Cover lines 88-90: _get_embeddings_wrapper lazy import."""
-        from application.vectorstore.base import _get_embeddings_wrapper
+        from docsgpt.vectorstore.base import _get_embeddings_wrapper
 
         # This may fail if sentence_transformers is not installed,
         # so mock the import
         with patch(
-            "application.vectorstore.embeddings_local.EmbeddingsWrapper",
+            "docsgpt.vectorstore.embeddings_local.EmbeddingsWrapper",
             create=True,
         ):
             try:
@@ -716,14 +716,14 @@ class TestGetEmbeddingsWrapper:
 
     def test_base_vectorstore_search_abstract(self):
         """Cover line 137: BaseVectorStore.search is abstract."""
-        from application.vectorstore.base import BaseVectorStore
+        from docsgpt.vectorstore.base import BaseVectorStore
 
         with pytest.raises(TypeError):
             BaseVectorStore()
 
     def test_concrete_vectorstore_delete_index_noop(self):
         """Cover: default delete_index and save_local are no-ops."""
-        from application.vectorstore.base import BaseVectorStore
+        from docsgpt.vectorstore.base import BaseVectorStore
 
         class ConcreteVS(BaseVectorStore):
             def search(self, *args, **kwargs):
@@ -738,13 +738,13 @@ class TestGetEmbeddingsWrapper:
 
 
 # ---------------------------------------------------------------------------
-# application/vectorstore/elasticsearch.py  (lines 41-42, 196-203)
+# docsgpt/vectorstore/elasticsearch.py  (lines 41-42, 196-203)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestElasticsearchStoreGaps:
     def test_connect_raises_import_error(self):
         """Cover lines 41-42: ImportError when elasticsearch not installed."""
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         with patch.dict("sys.modules", {"elasticsearch": None}):
             with pytest.raises(ImportError, match="Could not import elasticsearch"):
@@ -753,7 +753,7 @@ class TestElasticsearchStoreGaps:
     def test_add_texts_with_data(self):
         """Cover lines 196-203: successful add_texts with data."""
         pytest.importorskip("elasticsearch")
-        from application.vectorstore.elasticsearch import ElasticsearchStore
+        from docsgpt.vectorstore.elasticsearch import ElasticsearchStore
 
         store = ElasticsearchStore.__new__(ElasticsearchStore)
         store.index_name = "test"
@@ -781,18 +781,18 @@ class TestElasticsearchStoreGaps:
 
 
 # ---------------------------------------------------------------------------
-# application/parser/remote/crawler_markdown.py  (lines 50, 53, 58-59)
+# docsgpt/parser/remote/crawler_markdown.py  (lines 50, 53, 58-59)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestCrawlerMarkdownGaps:
     def test_skip_visited_url(self):
         """Cover line 50: skip already visited URL."""
-        from application.parser.remote.crawler_markdown import CrawlerLoader
+        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
 
         loader = CrawlerLoader(limit=5)
         with patch.object(loader, "_fetch_page", return_value=None):
             with patch(
-                "application.parser.remote.crawler_markdown.validate_url",
+                "docsgpt.parser.remote.crawler_markdown.validate_url",
                 side_effect=lambda u: u,
             ):
                 result = loader.load_data("https://example.com")
@@ -801,12 +801,12 @@ class TestCrawlerMarkdownGaps:
 
     def test_fetch_page_none_skips(self):
         """Cover line 53: _fetch_page returning None causes continue."""
-        from application.parser.remote.crawler_markdown import CrawlerLoader
+        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
 
         loader = CrawlerLoader(limit=2)
         with patch.object(loader, "_fetch_page", return_value=None):
             with patch(
-                "application.parser.remote.crawler_markdown.validate_url",
+                "docsgpt.parser.remote.crawler_markdown.validate_url",
                 side_effect=lambda u: u,
             ):
                 docs = loader.load_data("https://example.com")
@@ -814,7 +814,7 @@ class TestCrawlerMarkdownGaps:
 
 
 # ---------------------------------------------------------------------------
-# application/parser/embedding_pipeline.py  (lines 43-45, 65, 69)
+# docsgpt/parser/embedding_pipeline.py  (lines 43-45, 65, 69)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestEmbeddingPipelineGaps:
@@ -830,14 +830,14 @@ class TestEmbeddingPipelineGaps:
         with pytest.raises(Exception, match="store error"):
             # Disable retry for testing
             with patch(
-                "application.parser.embedding_pipeline.add_text_to_store_with_retry",
+                "docsgpt.parser.embedding_pipeline.add_text_to_store_with_retry",
                 side_effect=Exception("store error"),
             ):
                 raise Exception("store error")
 
     def test_embed_and_store_creates_folder(self, tmp_path):
         """Cover line 65: os.makedirs when folder doesn't exist."""
-        from application.parser.embedding_pipeline import embed_and_store_documents
+        from docsgpt.parser.embedding_pipeline import embed_and_store_documents
 
         folder = str(tmp_path / "new_folder")
         mock_doc = MagicMock()
@@ -845,16 +845,16 @@ class TestEmbeddingPipelineGaps:
         mock_doc.metadata = {}
 
         with patch(
-            "application.parser.embedding_pipeline.VectorCreator"
+            "docsgpt.parser.embedding_pipeline.VectorCreator"
         ) as mock_vc:
             with patch(
-                "application.parser.embedding_pipeline.settings"
+                "docsgpt.parser.embedding_pipeline.settings"
             ) as mock_settings:
                 mock_settings.VECTOR_STORE = "faiss"
                 mock_store = MagicMock()
                 mock_vc.create_vectorstore.return_value = mock_store
                 with patch(
-                    "application.parser.embedding_pipeline.add_text_to_store_with_retry"
+                    "docsgpt.parser.embedding_pipeline.add_text_to_store_with_retry"
                 ):
                     embed_and_store_documents(
                         [mock_doc], folder, "source_id", MagicMock()
@@ -863,21 +863,21 @@ class TestEmbeddingPipelineGaps:
 
     def test_embed_and_store_raises_on_empty_docs(self):
         """Cover line 69: raises DocumentParseError when docs is empty."""
-        from application.parser.embedding_pipeline import embed_and_store_documents
-        from application.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.embedding_pipeline import embed_and_store_documents
+        from docsgpt.parser.file.base_parser import DocumentParseError
 
         with pytest.raises(DocumentParseError, match="No text could be extracted"):
             embed_and_store_documents([], "/tmp/test", "source_id", MagicMock())
 
 
 # ---------------------------------------------------------------------------
-# application/logging.py  (lines 64-65)
+# docsgpt/logging.py  (lines 64-65)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestLoggingBuildStackDataSecondExcept:
     def test_second_attribute_error_is_silenced(self):
         """Cover lines 64-65: second except AttributeError: pass."""
-        from application.logging import build_stack_data
+        from docsgpt.logging import build_stack_data
 
         # Create an object where accessing certain attrs raises AttributeError
         class Tricky:
@@ -905,7 +905,7 @@ class TestBaseStorageAbstract:
     """Cover all abstract methods in BaseStorage."""
 
     def test_concrete_subclass_must_implement_all_methods(self):
-        from application.storage.base import BaseStorage
+        from docsgpt.storage.base import BaseStorage
 
         class ConcreteStorage(BaseStorage):
             def save_file(self, file_data, path, **kwargs):
@@ -962,7 +962,7 @@ class TestBaseConnectorAbstracts:
     """Cover all abstract methods in BaseConnectorAuth and BaseConnectorLoader."""
 
     def test_connector_auth_concrete(self):
-        from application.parser.connectors.base import BaseConnectorAuth
+        from docsgpt.parser.connectors.base import BaseConnectorAuth
 
         class ConcreteAuth(BaseConnectorAuth):
             def get_authorization_url(self, state=None):
@@ -998,7 +998,7 @@ class TestBaseConnectorAbstracts:
         assert "extra" not in sanitized
 
     def test_connector_loader_concrete(self):
-        from application.parser.connectors.base import BaseConnectorLoader
+        from docsgpt.parser.connectors.base import BaseConnectorLoader
 
         class ConcreteLoader(BaseConnectorLoader):
             def __init__(self, session_token):
@@ -1030,22 +1030,22 @@ class TestEmbeddingPipelineCoverage:
 
     def test_sanitize_content_removes_nul(self):
         """Cover lines 43-45: sanitize_content."""
-        from application.parser.embedding_pipeline import sanitize_content
+        from docsgpt.parser.embedding_pipeline import sanitize_content
 
         result = sanitize_content("hello\x00world")
         assert "\x00" not in result
         assert result == "helloworld"
 
     def test_sanitize_content_empty_returns_empty(self):
-        from application.parser.embedding_pipeline import sanitize_content
+        from docsgpt.parser.embedding_pipeline import sanitize_content
 
         assert sanitize_content("") == ""
         assert sanitize_content(None) is None
 
     def test_embed_and_store_empty_docs_raises(self, tmp_path):
         """Cover line 69: empty docs raises DocumentParseError."""
-        from application.parser.embedding_pipeline import embed_and_store_documents
-        from application.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.embedding_pipeline import embed_and_store_documents
+        from docsgpt.parser.file.base_parser import DocumentParseError
 
         with pytest.raises(DocumentParseError, match="No text could be extracted"):
             embed_and_store_documents([], str(tmp_path / "test"), "src-1", None)
@@ -1060,11 +1060,11 @@ class TestEmbeddingPipelineCoverage:
         """
         import os
 
-        from application.parser.embedding_pipeline import embed_and_store_documents
+        from docsgpt.parser.embedding_pipeline import embed_and_store_documents
 
         folder = str(tmp_path / "new_dir")
         with patch(
-            "application.parser.embedding_pipeline.VectorCreator"
+            "docsgpt.parser.embedding_pipeline.VectorCreator"
         ) as mock_vc:
             mock_vc.create_vectorstore.side_effect = RuntimeError(
                 "vector store unavailable"
@@ -1091,7 +1091,7 @@ class TestBaseStorageAllAbstractMethods:
     """Cover all abstract method pass statements in BaseStorage."""
 
     def test_all_abstract_methods_callable_on_full_impl(self):
-        from application.storage.base import BaseStorage
+        from docsgpt.storage.base import BaseStorage
 
         class FullImpl(BaseStorage):
             def save_file(self, file_data, path, **kwargs):
@@ -1134,7 +1134,7 @@ class TestBaseConnectorAbstractMethods:
     """Cover all abstract method pass statements in connector base classes."""
 
     def test_connector_auth_abstract(self):
-        from application.parser.connectors.base import BaseConnectorAuth
+        from docsgpt.parser.connectors.base import BaseConnectorAuth
 
         class FullAuth(BaseConnectorAuth):
             def get_authorization_url(self, state=None):
@@ -1157,7 +1157,7 @@ class TestBaseConnectorAbstractMethods:
 
     def test_connector_auth_sanitize_token_info(self):
         """Cover line 77: sanitize_token_info."""
-        from application.parser.connectors.base import BaseConnectorAuth
+        from docsgpt.parser.connectors.base import BaseConnectorAuth
 
         class FullAuth(BaseConnectorAuth):
             def get_authorization_url(self, state=None):
@@ -1182,7 +1182,7 @@ class TestBaseConnectorAbstractMethods:
         assert "extra" not in result
 
     def test_connector_loader_abstract(self):
-        from application.parser.connectors.base import BaseConnectorLoader
+        from docsgpt.parser.connectors.base import BaseConnectorLoader
 
         class FullLoader(BaseConnectorLoader):
             def __init__(self, session_token):
@@ -1205,7 +1205,7 @@ class TestEmbeddingPipelineAddDocWithRetry:
     """Cover lines 43-45: add_text_to_store_with_retry sanitize + exception."""
 
     def test_add_text_to_store_with_retry_success(self):
-        from application.parser.embedding_pipeline import add_text_to_store_with_retry
+        from docsgpt.parser.embedding_pipeline import add_text_to_store_with_retry
 
         mock_store = MagicMock()
         doc = MagicMock()
@@ -1219,7 +1219,7 @@ class TestEmbeddingPipelineAddDocWithRetry:
 
     @patch("time.sleep", return_value=None)
     def test_add_text_to_store_with_retry_failure(self, _mock_sleep):
-        from application.parser.embedding_pipeline import add_text_to_store_with_retry
+        from docsgpt.parser.embedding_pipeline import add_text_to_store_with_retry
 
         mock_store = MagicMock()
         mock_store.add_texts.side_effect = RuntimeError("fail")
@@ -1242,8 +1242,8 @@ class TestBlankDocumentsAreRejected:
 
     @pytest.mark.parametrize("blank", ["", "   ", "\n\t  \n"])
     def test_whitespace_only_document_is_rejected(self, blank, tmp_path):
-        from application.parser.embedding_pipeline import embed_and_store_documents
-        from application.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.embedding_pipeline import embed_and_store_documents
+        from docsgpt.parser.file.base_parser import DocumentParseError
 
         class _Doc:
             def __init__(self, text):

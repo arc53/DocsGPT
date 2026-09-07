@@ -27,7 +27,7 @@ While DocsGPT offers a range of built-in tools and a versatile API Tool, there a
 Before you begin, ensure you have:
 
 * A solid understanding of Python programming.
-* Familiarity with the DocsGPT project structure, particularly the `application/agents/tools/` directory where custom tools reside.
+* Familiarity with the DocsGPT project structure, particularly the `docsgpt/agents/tools/` directory where custom tools reside.
 * Basic knowledge of how APIs work, as many tools involve interacting with external or internal APIs.
 * Your DocsGPT development environment set up. If not, please refer to the [Setting Up a Development Environment](/Deploying/Development-Environment) guide.
 
@@ -35,7 +35,7 @@ Before you begin, ensure you have:
 
 Custom tools in DocsGPT are Python classes that inherit from a base `Tool` class and implement specific methods to define their behavior, capabilities, and configuration needs.
 
-The **foundation** for all custom tools is the abstract base class, located in `application/agents/tools/base.py`. Your custom tool class **must** inherit from this class.
+The **foundation** for all custom tools is the abstract base class, located in `docsgpt/agents/tools/base.py`. Your custom tool class **must** inherit from this class.
 
 ### Essential Methods to Implement
 
@@ -150,11 +150,11 @@ Your custom tool class needs to implement the following methods:
 
 ## Tool Registration and Discovery
 
-DocsGPT's ToolManager (located in application/agents/tools/tool_manager.py) automatically discovers and loads tools.
+DocsGPT's ToolManager (located in docsgpt/agents/tools/tool_manager.py) automatically discovers and loads tools.
 
 As long as your custom tool:
 
-1. Is placed in a Python file within the `application/agents/tools/` directory (and the filename is not `base.py` or starts with `__`).
+1. Is placed in a Python file within the `docsgpt/agents/tools/` directory (and the filename is not `base.py` or starts with `__`).
 2. Correctly inherits from the `Tool` base class.
 3. Implements all the abstract methods (`execute_action`, `get_actions_metadata`, `get_config_requirements`).
 

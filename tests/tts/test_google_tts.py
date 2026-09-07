@@ -1,6 +1,6 @@
 import base64
 
-from application.tts.google_tts import GoogleTTS
+from docsgpt.tts.google_tts import GoogleTTS
 
 
 def test_google_tts_text_to_speech(monkeypatch):
@@ -13,7 +13,7 @@ def test_google_tts_text_to_speech(monkeypatch):
         def write_to_fp(self, fp):
             fp.write(b"synthetic-audio")
 
-    monkeypatch.setattr("application.tts.google_tts.gTTS", DummyGTTS)
+    monkeypatch.setattr("docsgpt.tts.google_tts.gTTS", DummyGTTS)
 
     tts = GoogleTTS()
     audio_base64, lang = tts.text_to_speech("hello world")

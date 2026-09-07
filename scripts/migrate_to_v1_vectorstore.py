@@ -52,8 +52,8 @@ def migrate_faiss_to_v1_vectorstore():
 
     vectors = list(vectors_collection.find())
     for vector in tqdm(vectors, desc="Migrating FAISS vectors"):
-        old_path = f"./application/indexes/{vector['user']}/{vector['name']}"
-        new_path = f"./application/indexes/{vector['_id']}"
+        old_path = f"./docsgpt/indexes/{vector['user']}/{vector['name']}"
+        new_path = f"./docsgpt/indexes/{vector['_id']}"
         try:
             os.makedirs(os.path.dirname(new_path), exist_ok=True)
             shutil.move(old_path, new_path)

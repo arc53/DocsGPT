@@ -6,7 +6,7 @@
 version: 2
 updates:
   - package-ecosystem: "pip" # See documentation for possible values
-    directory: "/application" # Location of package manifests
+    directory: "/docsgpt" # Location of package manifests
     schedule:
       interval: "daily"
   - package-ecosystem: "npm" # See documentation for possible values

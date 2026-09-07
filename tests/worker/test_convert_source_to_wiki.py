@@ -1,4 +1,4 @@
-"""Tests for ``application.worker.convert_source_to_wiki_worker``.
+"""Tests for ``docsgpt.worker.convert_source_to_wiki_worker``.
 
 The worker reassembles wiki pages from a source's existing vector-store
 chunks (grouped by ``metadata.source``) and enqueues a per-page re-embed.
@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.storage.db.repositories.sources import SourcesRepository
-from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.wiki_pages import WikiPagesRepository
 
 
 def _seed_source(pg_conn, config=None, file_path=""):
@@ -41,7 +41,7 @@ def _patch_store(monkeypatch, chunks):
     store = MagicMock(name="vectorstore")
     store.get_chunks.return_value = chunks
     monkeypatch.setattr(
-        "application.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+        "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore",
         lambda *a, **kw: store,
     )
     return store
@@ -49,7 +49,7 @@ def _patch_store(monkeypatch, chunks):
 
 def _patch_reembed(monkeypatch):
     delay = MagicMock(name="reembed_delay")
-    monkeypatch.setattr("application.api.user.tasks.reembed_wiki_page.delay", delay)
+    monkeypatch.setattr("docsgpt.api.user.tasks.reembed_wiki_page.delay", delay)
     return delay
 
 
@@ -58,7 +58,7 @@ class TestConvertSourceToWikiWorker:
     def test_two_pages_reassembled_from_chunks(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(
@@ -97,7 +97,7 @@ class TestConvertSourceToWikiWorker:
     def test_original_chunks_deleted_after_convert(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         store = _patch_store(
@@ -120,7 +120,7 @@ class TestConvertSourceToWikiWorker:
     def test_chunk_without_doc_id_not_deleted(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         chunk = {"text": "body", "metadata": {"source": "a.md"}}
@@ -137,7 +137,7 @@ class TestConvertSourceToWikiWorker:
     ):
         # A chunk skipped for an invalid path must still have its original
         # vector chunk purged, not left orphaned after the source flips to wiki.
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         store = _patch_store(
@@ -158,7 +158,7 @@ class TestConvertSourceToWikiWorker:
     def test_no_pages_path_deletes_nothing(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         store = _patch_store(monkeypatch, [])
@@ -172,8 +172,8 @@ class TestConvertSourceToWikiWorker:
     def test_kind_flipped_and_exposure_defaulted(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
-        from application.storage.db.source_config import SourceConfig
+        from docsgpt import worker
+        from docsgpt.storage.db.source_config import SourceConfig
 
         source_id = _seed_source(pg_conn)
         _patch_store(monkeypatch, [_chunk("body", source="a.md")])
@@ -189,8 +189,8 @@ class TestConvertSourceToWikiWorker:
     def test_preserves_non_default_exposure(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
-        from application.storage.db.source_config import SourceConfig
+        from docsgpt import worker
+        from docsgpt.storage.db.source_config import SourceConfig
 
         source_id = _seed_source(
             pg_conn, config={"retrieval": {"exposure": "agentic_tool"}}
@@ -208,7 +208,7 @@ class TestConvertSourceToWikiWorker:
     def test_chunk_order_hint_respected(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(
@@ -229,7 +229,7 @@ class TestConvertSourceToWikiWorker:
     def test_short_overlap_not_trimmed(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(
@@ -250,7 +250,7 @@ class TestConvertSourceToWikiWorker:
     def test_long_overlap_trimmed_between_chunks(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         overlap = "x" * 40
         source_id = _seed_source(pg_conn)
@@ -272,8 +272,8 @@ class TestConvertSourceToWikiWorker:
     def test_no_chunks_leaves_kind_and_structure(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
-        from application.storage.db.source_config import SourceConfig
+        from docsgpt import worker
+        from docsgpt.storage.db.source_config import SourceConfig
 
         original_structure = {"a.md": {"type": "text/markdown", "size_bytes": 1}}
         source_id = _seed_source(pg_conn)
@@ -296,7 +296,7 @@ class TestConvertSourceToWikiWorker:
     def test_missing_path_chunk_skipped(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(
@@ -318,7 +318,7 @@ class TestConvertSourceToWikiWorker:
     def test_invalid_path_chunk_skipped(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(
@@ -341,7 +341,7 @@ class TestConvertSourceToWikiWorker:
     def test_path_falls_back_to_filename_then_title(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(
@@ -362,7 +362,7 @@ class TestConvertSourceToWikiWorker:
     def test_crawler_chunk_uses_file_path_not_url(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(
@@ -387,7 +387,7 @@ class TestConvertSourceToWikiWorker:
     def test_connector_chunks_kept_separate_by_file_name(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(
@@ -408,7 +408,7 @@ class TestConvertSourceToWikiWorker:
     def test_url_only_chunk_normalized_not_skipped(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn)
         _patch_store(
@@ -427,7 +427,7 @@ class TestConvertSourceToWikiWorker:
     def test_already_wiki_returns_early(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         source_id = _seed_source(pg_conn, config={"kind": "wiki"})
         store = _patch_store(monkeypatch, [_chunk("body", source="a.md")])

@@ -1,4 +1,4 @@
-"""Happy-path tests for application/api/user/agents/routes.py.
+"""Happy-path tests for docsgpt/api/user/agents/routes.py.
 
 Exercises each endpoint with the ephemeral ``pg_conn`` fixture and real
 repository classes so the route bodies run end-to-end.
@@ -23,9 +23,9 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.agents.routes.db_session", _yield
+        "docsgpt.api.user.agents.routes.db_session", _yield
     ), patch(
-        "application.api.user.agents.routes.db_readonly", _yield
+        "docsgpt.api.user.agents.routes.db_readonly", _yield
     ):
         yield
 
@@ -34,12 +34,12 @@ def _seed_agent(
     pg_conn, user="u", *, name="A", status="published", with_source=True,
     retriever="classic", **extra,
 ):
-    from application.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
     repo = AgentsRepository(pg_conn)
     kwargs = {"description": "d", "retriever": retriever, **extra}
     if with_source:
         # Sources have a UUID FK; seed one
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
         src = SourcesRepository(pg_conn).create("src", user_id=user)
         kwargs["source_id"] = str(src["id"])
     return repo.create(user, name, status, **kwargs)
@@ -47,7 +47,7 @@ def _seed_agent(
 
 class TestGetAgent:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.routes import GetAgent
+        from docsgpt.api.user.agents.routes import GetAgent
 
         with app.test_request_context("/api/get_agent?id=x"):
             from flask import request
@@ -59,7 +59,7 @@ class TestGetAgent:
         assert status == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.agents.routes import GetAgent
+        from docsgpt.api.user.agents.routes import GetAgent
 
         with app.test_request_context("/api/get_agent"):
             from flask import request
@@ -71,7 +71,7 @@ class TestGetAgent:
         assert status == 400
 
     def test_returns_404_when_missing(self, app, pg_conn):
-        from application.api.user.agents.routes import GetAgent
+        from docsgpt.api.user.agents.routes import GetAgent
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/get_agent?id=00000000-0000-0000-0000-000000000000"
@@ -85,7 +85,7 @@ class TestGetAgent:
         assert status == 404
 
     def test_returns_agent_by_id(self, app, pg_conn):
-        from application.api.user.agents.routes import GetAgent
+        from docsgpt.api.user.agents.routes import GetAgent
 
         user = "u-getA"
         agent = _seed_agent(pg_conn, user=user, name="Al")
@@ -102,7 +102,7 @@ class TestGetAgent:
 
 class TestGetAgents:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.routes import GetAgents
+        from docsgpt.api.user.agents.routes import GetAgents
 
         with app.test_request_context("/api/get_agents"):
             from flask import request
@@ -114,7 +114,7 @@ class TestGetAgents:
         assert status == 401
 
     def test_returns_list_for_user(self, app, pg_conn):
-        from application.api.user.agents.routes import GetAgents
+        from docsgpt.api.user.agents.routes import GetAgents
 
         user = "u-list-agents"
         _seed_agent(pg_conn, user=user, name="B1")
@@ -129,7 +129,7 @@ class TestGetAgents:
         assert "B1" in names and "B2" in names
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.agents.routes import GetAgents
+        from docsgpt.api.user.agents.routes import GetAgents
 
         @contextmanager
         def _broken():
@@ -137,7 +137,7 @@ class TestGetAgents:
             yield
 
         with patch(
-            "application.api.user.agents.routes.db_session", _broken
+            "docsgpt.api.user.agents.routes.db_session", _broken
         ), app.test_request_context("/api/get_agents"):
             from flask import request
             request.decoded_token = {"sub": "u"}
@@ -147,7 +147,7 @@ class TestGetAgents:
 
 class TestDeleteAgent:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.routes import DeleteAgent
+        from docsgpt.api.user.agents.routes import DeleteAgent
 
         with app.test_request_context(
             "/api/delete_agent?id=x", method="DELETE"
@@ -158,7 +158,7 @@ class TestDeleteAgent:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.agents.routes import DeleteAgent
+        from docsgpt.api.user.agents.routes import DeleteAgent
 
         with app.test_request_context(
             "/api/delete_agent", method="DELETE"
@@ -169,7 +169,7 @@ class TestDeleteAgent:
         assert response.status_code == 400
 
     def test_returns_404_missing_agent(self, app, pg_conn):
-        from application.api.user.agents.routes import DeleteAgent
+        from docsgpt.api.user.agents.routes import DeleteAgent
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/delete_agent?id=00000000-0000-0000-0000-000000000000",
@@ -181,8 +181,8 @@ class TestDeleteAgent:
         assert response.status_code == 404
 
     def test_deletes_agent(self, app, pg_conn):
-        from application.api.user.agents.routes import DeleteAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import DeleteAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-delagent"
         agent = _seed_agent(pg_conn, user=user)
@@ -199,7 +199,7 @@ class TestDeleteAgent:
 
 class TestPinnedAgents:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.routes import PinnedAgents
+        from docsgpt.api.user.agents.routes import PinnedAgents
 
         with app.test_request_context("/api/pinned_agents"):
             from flask import request
@@ -208,7 +208,7 @@ class TestPinnedAgents:
         assert response.status_code == 401
 
     def test_returns_empty_list_for_new_user(self, app, pg_conn):
-        from application.api.user.agents.routes import PinnedAgents
+        from docsgpt.api.user.agents.routes import PinnedAgents
 
         with _patch_db(pg_conn), app.test_request_context("/api/pinned_agents"):
             from flask import request
@@ -220,7 +220,7 @@ class TestPinnedAgents:
 
 class TestPinAgent:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.routes import PinAgent
+        from docsgpt.api.user.agents.routes import PinAgent
 
         with app.test_request_context("/api/pin_agent?id=x", method="POST"):
             from flask import request
@@ -229,7 +229,7 @@ class TestPinAgent:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.agents.routes import PinAgent
+        from docsgpt.api.user.agents.routes import PinAgent
 
         with app.test_request_context("/api/pin_agent", method="POST"):
             from flask import request
@@ -238,7 +238,7 @@ class TestPinAgent:
         assert response.status_code == 400
 
     def test_pins_agent(self, app, pg_conn):
-        from application.api.user.agents.routes import PinAgent
+        from docsgpt.api.user.agents.routes import PinAgent
 
         user = "u-pin"
         agent = _seed_agent(pg_conn, user=user)
@@ -254,7 +254,7 @@ class TestPinAgent:
 
 class TestGetTemplateAgents:
     def test_returns_empty_without_templates(self, app, pg_conn):
-        from application.api.user.agents.routes import GetTemplateAgents
+        from docsgpt.api.user.agents.routes import GetTemplateAgents
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/template_agents"
@@ -266,8 +266,8 @@ class TestGetTemplateAgents:
         assert response.json == []
 
     def test_returns_templates(self, app, pg_conn):
-        from application.api.user.agents.routes import GetTemplateAgents
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import GetTemplateAgents
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         AgentsRepository(pg_conn).create(
             "__system__", "Template One", "template",
@@ -286,7 +286,7 @@ class TestGetTemplateAgents:
 
 class TestAdoptAgent:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.routes import AdoptAgent
+        from docsgpt.api.user.agents.routes import AdoptAgent
 
         with app.test_request_context(
             "/api/adopt_agent?id=x", method="POST"
@@ -297,7 +297,7 @@ class TestAdoptAgent:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.agents.routes import AdoptAgent
+        from docsgpt.api.user.agents.routes import AdoptAgent
 
         with app.test_request_context(
             "/api/adopt_agent", method="POST"
@@ -310,7 +310,7 @@ class TestAdoptAgent:
 
 class TestRemoveSharedAgent:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.routes import RemoveSharedAgent
+        from docsgpt.api.user.agents.routes import RemoveSharedAgent
 
         with app.test_request_context(
             "/api/remove_shared_agent?id=x", method="POST"
@@ -321,7 +321,7 @@ class TestRemoveSharedAgent:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.agents.routes import RemoveSharedAgent
+        from docsgpt.api.user.agents.routes import RemoveSharedAgent
 
         with app.test_request_context(
             "/api/remove_shared_agent", method="POST"
@@ -332,9 +332,9 @@ class TestRemoveSharedAgent:
         assert response.status_code == 400
 
     def test_removes_shared_agent(self, app, pg_conn):
-        from application.api.user.agents.routes import RemoveSharedAgent
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.users import UsersRepository
+        from docsgpt.api.user.agents.routes import RemoveSharedAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.users import UsersRepository
 
         owner = "owner-user"
         viewer = "u-rm-shared"
@@ -357,7 +357,7 @@ class TestRemoveSharedAgent:
 
 class TestCreateAgent:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.routes import CreateAgent
+        from docsgpt.api.user.agents.routes import CreateAgent
 
         with app.test_request_context(
             "/api/create_agent",
@@ -373,7 +373,7 @@ class TestCreateAgent:
         assert status == 401
 
     def test_returns_400_missing_required_draft(self, app):
-        from application.api.user.agents.routes import CreateAgent
+        from docsgpt.api.user.agents.routes import CreateAgent
 
         with app.test_request_context(
             "/api/create_agent",
@@ -386,8 +386,8 @@ class TestCreateAgent:
         assert response.status_code == 400
 
     def test_creates_draft_classic_agent(self, app, pg_conn):
-        from application.api.user.agents.routes import CreateAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import CreateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-create-A"
 
@@ -417,7 +417,7 @@ class TestCreateAgent:
 
 class TestUpdateAgent:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         with app.test_request_context(
             "/api/update_agent/abc", method="PUT",
@@ -429,7 +429,7 @@ class TestUpdateAgent:
         assert response.status_code == 401
 
     def test_returns_404_agent_not_found(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/update_agent/00000000-0000-0000-0000-000000000000",
@@ -444,8 +444,8 @@ class TestUpdateAgent:
         assert response.status_code == 404
 
     def test_updates_simple_fields(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-upd-simple"
         agent = _seed_agent(pg_conn, user=user, name="orig")
@@ -466,8 +466,8 @@ class TestUpdateAgent:
         assert got["name"] == "new name"
 
     def test_ignores_client_supplied_image_path(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-upd-image-path"
         agent = _seed_agent(
@@ -488,7 +488,7 @@ class TestUpdateAgent:
         assert got["image"] is None
 
     def test_invalid_status_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-upd-status"
         agent = _seed_agent(pg_conn, user=user)
@@ -503,7 +503,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_invalid_source_uuid_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-upd-src"
         agent = _seed_agent(pg_conn, user=user)
@@ -521,7 +521,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_source_default_clears(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-src-default"
         agent = _seed_agent(pg_conn, user=user)
@@ -539,7 +539,7 @@ class TestUpdateAgent:
         assert response.status_code == 200
 
     def test_invalid_sources_item_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-sources"
         agent = _seed_agent(pg_conn, user=user)
@@ -583,7 +583,7 @@ class TestUpdateAgent:
         """
         import logging
 
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = f"u-log-{field}"
         agent = _seed_agent(pg_conn, user=user)
@@ -607,7 +607,7 @@ class TestUpdateAgent:
         ), f"no WARN naming field={field!r} and user={user!r}; got {warnings!r}"
 
     def test_invalid_chunks_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-upd-chunks"
         agent = _seed_agent(pg_conn, user=user)
@@ -625,7 +625,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_negative_chunks_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-neg-chunks"
         agent = _seed_agent(pg_conn, user=user)
@@ -643,7 +643,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_tools_must_be_list(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-tools"
         agent = _seed_agent(pg_conn, user=user)
@@ -661,7 +661,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_limited_token_mode_requires_limit(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-limit"
         agent = _seed_agent(pg_conn, user=user)
@@ -679,7 +679,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_limited_request_mode_requires_limit(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-req-limit"
         agent = _seed_agent(pg_conn, user=user)
@@ -697,7 +697,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_token_limit_without_mode_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-token-mode"
         agent = _seed_agent(pg_conn, user=user)
@@ -715,7 +715,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_invalid_prompt_id_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-upd-prompt"
         agent = _seed_agent(pg_conn, user=user)
@@ -733,7 +733,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_prompt_id_default_clears(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-pid-default"
         agent = _seed_agent(pg_conn, user=user)
@@ -751,7 +751,7 @@ class TestUpdateAgent:
         assert response.status_code == 200
 
     def test_empty_name_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-empty-name"
         agent = _seed_agent(pg_conn, user=user)
@@ -766,7 +766,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_publish_classic_missing_fields_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-publish-missing"
         agent = _seed_agent(pg_conn, user=user, with_source=False)
@@ -789,9 +789,9 @@ class TestUpdateAgent:
         ``Missing or invalid required fields: Source``. The retriever
         carries the runtime identity, so the gate now accepts it.
         """
-        from application.api.user.agents.routes import UpdateAgent
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.prompts import PromptsRepository
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
 
         user = "u-publish-default"
         # Draft agent with retriever='classic', no source_id, prompt + chunks set.
@@ -832,9 +832,9 @@ class TestUpdateAgent:
     ):
         """If neither a source nor a retriever is configured, the gate
         still trips — the agent has no way to retrieve anything."""
-        from application.api.user.agents.routes import UpdateAgent
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.prompts import PromptsRepository
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
 
         user = "u-publish-no-retriever"
         agent = _seed_agent(
@@ -868,15 +868,15 @@ class TestUpdateAgent:
         assert "Source or retriever" in response.json.get("message", "")
 
     def test_publishing_generates_api_key(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-publish-key"
         agent = _seed_agent(
             pg_conn, user=user, status="draft", retriever="classic",
         )
         # Seed a prompt so published path validates
-        from application.storage.db.repositories.prompts import PromptsRepository
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
         prompt = PromptsRepository(pg_conn).create(user, "p", "c")
         AgentsRepository(pg_conn).update(
             str(agent["id"]), user,
@@ -901,7 +901,7 @@ class TestUpdateAgent:
         assert "key" in response.json
 
     def test_invalid_json_in_form_field_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-bad-json"
         agent = _seed_agent(pg_conn, user=user)
@@ -922,7 +922,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_empty_update_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-empty-upd"
         agent = _seed_agent(pg_conn, user=user)
@@ -937,7 +937,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_db_error_returns_500(self, app):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         @contextmanager
         def _broken():
@@ -945,7 +945,7 @@ class TestUpdateAgent:
             yield
 
         with patch(
-            "application.api.user.agents.routes.db_session", _broken
+            "docsgpt.api.user.agents.routes.db_session", _broken
         ), app.test_request_context(
             "/api/update_agent/abc", method="PUT",
             json={"name": "n", "description": "d", "status": "draft"},
@@ -956,7 +956,7 @@ class TestUpdateAgent:
         assert response.status_code == 500
 
     def test_allow_system_prompt_override(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-override"
         agent = _seed_agent(pg_conn, user=user)
@@ -974,7 +974,7 @@ class TestUpdateAgent:
         assert response.status_code == 200
 
     def test_folder_id_null_clears(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-folder-null"
         agent = _seed_agent(pg_conn, user=user)
@@ -992,7 +992,7 @@ class TestUpdateAgent:
         assert response.status_code == 200
 
     def test_publish_workflow_without_workflow_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-wf-publish"
         agent = _seed_agent(pg_conn, user=user, with_source=False)
@@ -1012,7 +1012,7 @@ class TestUpdateAgent:
         assert response.status_code == 400
 
     def test_invalid_json_schema_returns_400(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-bad-schema"
         agent = _seed_agent(pg_conn, user=user)
@@ -1033,7 +1033,7 @@ class TestUpdateAgent:
         assert response.status_code in (200, 400)
 
     def test_json_schema_empty_becomes_none(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
+        from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-schema-empty"
         agent = _seed_agent(pg_conn, user=user)
@@ -1061,7 +1061,7 @@ class TestUpdateAgent:
 
 class TestCreateAgentMore:
     def test_invalid_status_returns_400(self, app):
-        from application.api.user.agents.routes import CreateAgent
+        from docsgpt.api.user.agents.routes import CreateAgent
 
         with app.test_request_context(
             "/api/create_agent", method="POST",
@@ -1076,7 +1076,7 @@ class TestCreateAgentMore:
         assert status == 400
 
     def test_publish_classic_without_source_returns_400(self, app):
-        from application.api.user.agents.routes import CreateAgent
+        from docsgpt.api.user.agents.routes import CreateAgent
 
         with app.test_request_context(
             "/api/create_agent", method="POST",
@@ -1096,7 +1096,7 @@ class TestCreateAgentMore:
         assert status == 400
 
     def test_unknown_agent_type_falls_back_classic(self, app, pg_conn):
-        from application.api.user.agents.routes import CreateAgent
+        from docsgpt.api.user.agents.routes import CreateAgent
 
         user = "u-unknown-type"
         with _patch_db(pg_conn), app.test_request_context(
@@ -1117,7 +1117,7 @@ class TestCreateAgentMore:
         assert status == 201
 
     def test_create_form_invalid_json_fields(self, app, pg_conn):
-        from application.api.user.agents.routes import CreateAgent
+        from docsgpt.api.user.agents.routes import CreateAgent
 
         # Invalid JSON strings in form fields are coerced to []/None (no 400)
         user = "u-form-json"
@@ -1145,7 +1145,7 @@ class TestCreateAgentMore:
     def test_create_published_workflow_without_workflow_returns_400(
         self, app, pg_conn,
     ):
-        from application.api.user.agents.routes import CreateAgent
+        from docsgpt.api.user.agents.routes import CreateAgent
 
         user = "u-wf-no-wf"
         with _patch_db(pg_conn), app.test_request_context(
@@ -1166,8 +1166,8 @@ class TestCreateAgentMore:
         assert status == 400
 
     def test_create_with_sources_list(self, app, pg_conn):
-        from application.api.user.agents.routes import CreateAgent
-        from application.storage.db.repositories.sources import (
+        from docsgpt.api.user.agents.routes import CreateAgent
+        from docsgpt.storage.db.repositories.sources import (
             SourcesRepository,
         )
 
@@ -1194,7 +1194,7 @@ class TestCreateAgentMore:
         assert status == 201
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.agents.routes import CreateAgent
+        from docsgpt.api.user.agents.routes import CreateAgent
 
         @contextmanager
         def _broken():
@@ -1202,7 +1202,7 @@ class TestCreateAgentMore:
             yield
 
         with patch(
-            "application.api.user.agents.routes.db_session", _broken
+            "docsgpt.api.user.agents.routes.db_session", _broken
         ), app.test_request_context(
             "/api/create_agent", method="POST",
             json={
@@ -1226,8 +1226,8 @@ class TestCreateAgentMore:
 
 class TestAdoptAgentMore:
     def test_adopts_template_agent(self, app, pg_conn):
-        from application.api.user.agents.routes import AdoptAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import AdoptAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         repo = AgentsRepository(pg_conn)
         template = repo.create("__system__", "Template X", "template")
@@ -1247,10 +1247,10 @@ class TestAdoptAgentMore:
         import io
         from unittest.mock import MagicMock
 
-        from application.api.user.agents.routes import AdoptAgent
-        from application.core.settings import settings
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.utils import (
+        from docsgpt.api.user.agents.routes import AdoptAgent
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.utils import (
             is_safe_agent_image_path,
             safe_user_storage_component,
         )
@@ -1268,7 +1268,7 @@ class TestAdoptAgentMore:
         storage.save_file.side_effect = lambda data, path, **kw: {"path": path}
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.routes.storage", storage
+            "docsgpt.api.user.agents.routes.storage", storage
         ), app.test_request_context(
             f"/api/adopt_agent?id={template['id']}", method="POST"
         ):
@@ -1292,8 +1292,8 @@ class TestAdoptAgentMore:
     def test_adopt_drops_image_when_copy_fails(self, app, pg_conn):
         from unittest.mock import MagicMock
 
-        from application.api.user.agents.routes import AdoptAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import AdoptAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         repo = AgentsRepository(pg_conn)
         template = repo.create(
@@ -1307,7 +1307,7 @@ class TestAdoptAgentMore:
         storage.get_file.side_effect = FileNotFoundError("missing")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.routes.storage", storage
+            "docsgpt.api.user.agents.routes.storage", storage
         ), app.test_request_context(
             f"/api/adopt_agent?id={template['id']}", method="POST"
         ):
@@ -1326,8 +1326,8 @@ class TestAdoptAgentMore:
     def test_adopt_keeps_external_image_url(self, app, pg_conn):
         from unittest.mock import MagicMock
 
-        from application.api.user.agents.routes import AdoptAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import AdoptAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         repo = AgentsRepository(pg_conn)
         template = repo.create(
@@ -1340,7 +1340,7 @@ class TestAdoptAgentMore:
         storage = MagicMock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.agents.routes.storage", storage
+            "docsgpt.api.user.agents.routes.storage", storage
         ), app.test_request_context(
             f"/api/adopt_agent?id={template['id']}", method="POST"
         ):
@@ -1358,7 +1358,7 @@ class TestAdoptAgentMore:
         storage.get_file.assert_not_called()
 
     def test_adopt_template_missing_returns_404(self, app, pg_conn):
-        from application.api.user.agents.routes import AdoptAgent
+        from docsgpt.api.user.agents.routes import AdoptAgent
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/adopt_agent?id=00000000-0000-0000-0000-000000000000",
@@ -1370,7 +1370,7 @@ class TestAdoptAgentMore:
         assert response.status_code == 404
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.agents.routes import AdoptAgent
+        from docsgpt.api.user.agents.routes import AdoptAgent
 
         @contextmanager
         def _broken():
@@ -1378,7 +1378,7 @@ class TestAdoptAgentMore:
             yield
 
         with patch(
-            "application.api.user.agents.routes.db_session", _broken
+            "docsgpt.api.user.agents.routes.db_session", _broken
         ), app.test_request_context(
             "/api/adopt_agent?id=abc", method="POST"
         ):
@@ -1391,8 +1391,8 @@ class TestAdoptAgentMore:
 class TestPinAgentMore:
     def test_toggle_pin(self, app, pg_conn):
         """PinAgent is a toggle — second call unpins."""
-        from application.api.user.agents.routes import PinAgent
-        from application.storage.db.repositories.users import UsersRepository
+        from docsgpt.api.user.agents.routes import PinAgent
+        from docsgpt.storage.db.repositories.users import UsersRepository
 
         user = "u-pin-toggle"
         agent = _seed_agent(pg_conn, user=user)
@@ -1420,7 +1420,7 @@ class TestPinAgentMore:
         assert response.status_code == 200
 
     def test_pin_db_error_returns_500(self, app):
-        from application.api.user.agents.routes import PinAgent
+        from docsgpt.api.user.agents.routes import PinAgent
 
         @contextmanager
         def _broken():
@@ -1428,7 +1428,7 @@ class TestPinAgentMore:
             yield
 
         with patch(
-            "application.api.user.agents.routes.db_session", _broken
+            "docsgpt.api.user.agents.routes.db_session", _broken
         ), app.test_request_context(
             "/api/pin_agent?id=abc", method="POST"
         ):
@@ -1440,14 +1440,14 @@ class TestPinAgentMore:
 
 class TestRegenerateAgentKey:
     def _seed_published_with_key(self, pg_conn, user, key):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = _seed_agent(pg_conn, user=user, status="published")
         AgentsRepository(pg_conn).update(str(agent["id"]), user, {"key": key})
         return agent
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.routes import RegenerateAgentKey
+        from docsgpt.api.user.agents.routes import RegenerateAgentKey
 
         with app.test_request_context(
             "/api/regenerate_agent_key/abc", method="POST"
@@ -1461,7 +1461,7 @@ class TestRegenerateAgentKey:
         assert status == 401
 
     def test_returns_404_when_missing(self, app, pg_conn):
-        from application.api.user.agents.routes import RegenerateAgentKey
+        from docsgpt.api.user.agents.routes import RegenerateAgentKey
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/regenerate_agent_key/00000000-0000-0000-0000-000000000000",
@@ -1476,7 +1476,7 @@ class TestRegenerateAgentKey:
 
     def test_returns_404_for_non_owner(self, app, pg_conn):
         """Owner-only: another user cannot rotate someone else's key."""
-        from application.api.user.agents.routes import RegenerateAgentKey
+        from docsgpt.api.user.agents.routes import RegenerateAgentKey
 
         owner = "u-owner-key"
         agent = self._seed_published_with_key(pg_conn, owner, "owner-old-key")
@@ -1490,7 +1490,7 @@ class TestRegenerateAgentKey:
         assert response.status_code == 404
 
     def test_returns_400_for_draft_without_key(self, app, pg_conn):
-        from application.api.user.agents.routes import RegenerateAgentKey
+        from docsgpt.api.user.agents.routes import RegenerateAgentKey
 
         user = "u-draft-key"
         agent = _seed_agent(pg_conn, user=user, status="draft")
@@ -1504,8 +1504,8 @@ class TestRegenerateAgentKey:
         assert response.status_code == 400
 
     def test_regenerates_key_and_invalidates_old(self, app, pg_conn):
-        from application.api.user.agents.routes import RegenerateAgentKey
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import RegenerateAgentKey
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-regen"
         old_key = "regen-old-key"
@@ -1536,17 +1536,17 @@ class TestRegenerateAgentKey:
         not owner-scoped, and the conversation is created with api_key set but
         agent_id NULL to prove the api_key-only path is covered.
         """
-        from application.api.user.agents.routes import RegenerateAgentKey
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.user.agents.routes import RegenerateAgentKey
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
-        from application.storage.db.repositories.shared_conversations import (
+        from docsgpt.storage.db.repositories.shared_conversations import (
             SharedConversationsRepository,
         )
-        from application.storage.db.repositories.stack_logs import (
+        from docsgpt.storage.db.repositories.stack_logs import (
             StackLogsRepository,
         )
-        from application.storage.db.repositories.token_usage import (
+        from docsgpt.storage.db.repositories.token_usage import (
             TokenUsageRepository,
         )
 
@@ -1601,7 +1601,7 @@ class TestRegenerateAgentKey:
         assert _count("shared_conversations", new_key) == 1
 
     def test_db_error_returns_500(self, app):
-        from application.api.user.agents.routes import RegenerateAgentKey
+        from docsgpt.api.user.agents.routes import RegenerateAgentKey
 
         @contextmanager
         def _broken():
@@ -1609,7 +1609,7 @@ class TestRegenerateAgentKey:
             yield
 
         with patch(
-            "application.api.user.agents.routes.db_session", _broken
+            "docsgpt.api.user.agents.routes.db_session", _broken
         ), app.test_request_context(
             "/api/regenerate_agent_key/abc", method="POST"
         ):
@@ -1621,7 +1621,7 @@ class TestRegenerateAgentKey:
 
 class TestPinnedAgentsListing:
     def test_returns_pinned_after_pinning(self, app, pg_conn):
-        from application.api.user.agents.routes import PinAgent, PinnedAgents
+        from docsgpt.api.user.agents.routes import PinAgent, PinnedAgents
 
         user = "u-pinned-list"
         agent = _seed_agent(pg_conn, user=user, retriever="classic")
@@ -1646,7 +1646,7 @@ class TestPinnedAgentsListing:
         assert response.json[0]["pinned"] is True
 
     def test_pinned_db_error_returns_400(self, app):
-        from application.api.user.agents.routes import PinnedAgents
+        from docsgpt.api.user.agents.routes import PinnedAgents
 
         @contextmanager
         def _broken():
@@ -1654,7 +1654,7 @@ class TestPinnedAgentsListing:
             yield
 
         with patch(
-            "application.api.user.agents.routes.db_session", _broken
+            "docsgpt.api.user.agents.routes.db_session", _broken
         ), app.test_request_context("/api/pinned_agents"):
             from flask import request
             request.decoded_token = {"sub": "u"}

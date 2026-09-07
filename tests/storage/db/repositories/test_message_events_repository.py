@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from application.storage.db.repositories.message_events import (
+from docsgpt.storage.db.repositories.message_events import (
     MessageEventsRepository,
 )
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 
-from application.storage.db.repositories.workflows import WorkflowsRepository
-from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 
 
 def _wf(conn) -> dict:

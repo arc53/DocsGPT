@@ -1,4 +1,4 @@
-"""Unit tests for application.api.user.tools.mcp."""
+"""Unit tests for docsgpt.api.user.tools.mcp."""
 
 import json
 import uuid
@@ -41,7 +41,7 @@ def app():
 @pytest.fixture(autouse=True)
 def _bypass_url_validation():
     """Bypass SSRF URL validation so tests using localhost URLs can proceed."""
-    with patch("application.api.user.tools.mcp.validate_url"):
+    with patch("docsgpt.api.user.tools.mcp.validate_url"):
         yield
 
 
@@ -52,7 +52,7 @@ def _bypass_url_validation():
 class TestSanitizeMcpTransport:
 
     def test_defaults_to_auto(self):
-        from application.api.user.tools.mcp import _sanitize_mcp_transport
+        from docsgpt.api.user.tools.mcp import _sanitize_mcp_transport
 
         config = {}
         result = _sanitize_mcp_transport(config)
@@ -60,7 +60,7 @@ class TestSanitizeMcpTransport:
         assert config["transport_type"] == "auto"
 
     def test_accepts_sse(self):
-        from application.api.user.tools.mcp import _sanitize_mcp_transport
+        from docsgpt.api.user.tools.mcp import _sanitize_mcp_transport
 
         config = {"transport_type": "SSE"}
         result = _sanitize_mcp_transport(config)
@@ -68,21 +68,21 @@ class TestSanitizeMcpTransport:
         assert config["transport_type"] == "sse"
 
     def test_accepts_http(self):
-        from application.api.user.tools.mcp import _sanitize_mcp_transport
+        from docsgpt.api.user.tools.mcp import _sanitize_mcp_transport
 
         config = {"transport_type": "HTTP"}
         result = _sanitize_mcp_transport(config)
         assert result == "http"
 
     def test_rejects_unsupported_transport(self):
-        from application.api.user.tools.mcp import _sanitize_mcp_transport
+        from docsgpt.api.user.tools.mcp import _sanitize_mcp_transport
 
         config = {"transport_type": "stdio"}
         with pytest.raises(ValueError, match="Unsupported transport_type"):
             _sanitize_mcp_transport(config)
 
     def test_strips_command_and_args(self):
-        from application.api.user.tools.mcp import _sanitize_mcp_transport
+        from docsgpt.api.user.tools.mcp import _sanitize_mcp_transport
 
         config = {
             "transport_type": "auto",
@@ -94,7 +94,7 @@ class TestSanitizeMcpTransport:
         assert "args" not in config
 
     def test_handles_none_transport_type(self):
-        from application.api.user.tools.mcp import _sanitize_mcp_transport
+        from docsgpt.api.user.tools.mcp import _sanitize_mcp_transport
 
         config = {"transport_type": None}
         result = _sanitize_mcp_transport(config)
@@ -108,7 +108,7 @@ class TestSanitizeMcpTransport:
 class TestExtractAuthCredentials:
 
     def test_api_key_auth(self):
-        from application.api.user.tools.mcp import _extract_auth_credentials
+        from docsgpt.api.user.tools.mcp import _extract_auth_credentials
 
         config = {
             "auth_type": "api_key",
@@ -119,7 +119,7 @@ class TestExtractAuthCredentials:
         assert result == {"api_key": "my-key", "api_key_header": "X-API-Key"}
 
     def test_api_key_auth_only_key(self):
-        from application.api.user.tools.mcp import _extract_auth_credentials
+        from docsgpt.api.user.tools.mcp import _extract_auth_credentials
 
         config = {"auth_type": "api_key", "api_key": "my-key"}
         result = _extract_auth_credentials(config)
@@ -127,49 +127,49 @@ class TestExtractAuthCredentials:
         assert "api_key_header" not in result
 
     def test_bearer_auth(self):
-        from application.api.user.tools.mcp import _extract_auth_credentials
+        from docsgpt.api.user.tools.mcp import _extract_auth_credentials
 
         config = {"auth_type": "bearer", "bearer_token": "tok123"}
         result = _extract_auth_credentials(config)
         assert result == {"bearer_token": "tok123"}
 
     def test_bearer_auth_empty_token(self):
-        from application.api.user.tools.mcp import _extract_auth_credentials
+        from docsgpt.api.user.tools.mcp import _extract_auth_credentials
 
         config = {"auth_type": "bearer"}
         result = _extract_auth_credentials(config)
         assert result == {}
 
     def test_basic_auth(self):
-        from application.api.user.tools.mcp import _extract_auth_credentials
+        from docsgpt.api.user.tools.mcp import _extract_auth_credentials
 
         config = {"auth_type": "basic", "username": "user", "password": "pass"}
         result = _extract_auth_credentials(config)
         assert result == {"username": "user", "password": "pass"}
 
     def test_basic_auth_partial(self):
-        from application.api.user.tools.mcp import _extract_auth_credentials
+        from docsgpt.api.user.tools.mcp import _extract_auth_credentials
 
         config = {"auth_type": "basic", "username": "user"}
         result = _extract_auth_credentials(config)
         assert result == {"username": "user"}
 
     def test_none_auth(self):
-        from application.api.user.tools.mcp import _extract_auth_credentials
+        from docsgpt.api.user.tools.mcp import _extract_auth_credentials
 
         config = {"auth_type": "none"}
         result = _extract_auth_credentials(config)
         assert result == {}
 
     def test_default_no_auth_type(self):
-        from application.api.user.tools.mcp import _extract_auth_credentials
+        from docsgpt.api.user.tools.mcp import _extract_auth_credentials
 
         config = {}
         result = _extract_auth_credentials(config)
         assert result == {}
 
     def test_unknown_auth_type(self):
-        from application.api.user.tools.mcp import _extract_auth_credentials
+        from docsgpt.api.user.tools.mcp import _extract_auth_credentials
 
         config = {"auth_type": "oauth"}
         result = _extract_auth_credentials(config)
@@ -183,7 +183,7 @@ class TestExtractAuthCredentials:
 class TestTestMCPServerConfig:
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.mcp import TestMCPServerConfig
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         with app.test_request_context(
             "/api/mcp_server/test",
@@ -198,7 +198,7 @@ class TestTestMCPServerConfig:
         assert response.status_code == 401
 
     def test_returns_400_missing_config(self, app):
-        from application.api.user.tools.mcp import TestMCPServerConfig
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         with app.test_request_context(
             "/api/mcp_server/test",
@@ -213,7 +213,7 @@ class TestTestMCPServerConfig:
         assert response.status_code == 400
 
     def test_returns_400_unsupported_transport(self, app):
-        from application.api.user.tools.mcp import TestMCPServerConfig
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         with app.test_request_context(
             "/api/mcp_server/test",
@@ -229,7 +229,7 @@ class TestTestMCPServerConfig:
         assert "Unsupported transport_type" in response.json["error"]
 
     def test_successful_connection_test(self, app):
-        from application.api.user.tools.mcp import TestMCPServerConfig
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         mock_mcp_tool = Mock()
         mock_mcp_tool.test_connection.return_value = {
@@ -238,7 +238,7 @@ class TestTestMCPServerConfig:
         }
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ):
             with app.test_request_context(
@@ -261,7 +261,7 @@ class TestTestMCPServerConfig:
         assert response.json["success"] is True
 
     def test_returns_oauth_required(self, app):
-        from application.api.user.tools.mcp import TestMCPServerConfig
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         mock_mcp_tool = Mock()
         mock_mcp_tool.test_connection.return_value = {
@@ -270,7 +270,7 @@ class TestTestMCPServerConfig:
         }
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ):
             with app.test_request_context(
@@ -293,7 +293,7 @@ class TestTestMCPServerConfig:
         assert response.json["requires_oauth"] is True
 
     def test_redacts_failure_message(self, app):
-        from application.api.user.tools.mcp import TestMCPServerConfig
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         mock_mcp_tool = Mock()
         mock_mcp_tool.test_connection.return_value = {
@@ -302,7 +302,7 @@ class TestTestMCPServerConfig:
         }
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ):
             with app.test_request_context(
@@ -325,10 +325,10 @@ class TestTestMCPServerConfig:
         assert response.json["message"] == "Connection test failed"
 
     def test_returns_500_on_exception(self, app):
-        from application.api.user.tools.mcp import TestMCPServerConfig
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             side_effect=RuntimeError("boom"),
         ):
             with app.test_request_context(
@@ -351,13 +351,13 @@ class TestTestMCPServerConfig:
         assert "Connection test failed" in response.json["error"]
 
     def test_passes_auth_credentials_to_mcp_tool(self, app):
-        from application.api.user.tools.mcp import TestMCPServerConfig
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         mock_mcp_tool = Mock()
         mock_mcp_tool.test_connection.return_value = {"success": True}
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ) as mock_cls:
             with app.test_request_context(
@@ -390,7 +390,7 @@ class TestTestMCPServerConfig:
 class TestMCPServerSave:
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         with app.test_request_context(
             "/api/mcp_server/save",
@@ -405,7 +405,7 @@ class TestMCPServerSave:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         with app.test_request_context(
             "/api/mcp_server/save",
@@ -420,7 +420,7 @@ class TestMCPServerSave:
         assert response.status_code == 400
 
     def test_returns_400_unsupported_transport(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         with app.test_request_context(
             "/api/mcp_server/save",
@@ -439,7 +439,7 @@ class TestMCPServerSave:
         assert "Unsupported transport_type" in response.json["error"]
 
     def test_creates_new_mcp_server_no_auth(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         inserted_id = _FakeOid()
         mock_mcp_tool = Mock()
@@ -451,10 +451,10 @@ class TestMCPServerSave:
         mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ), patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ):
             with app.test_request_context(
@@ -481,7 +481,7 @@ class TestMCPServerSave:
         mock_collection.insert_one.assert_called_once()
 
     def test_creates_with_bearer_auth(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         inserted_id = _FakeOid()
         mock_mcp_tool = Mock()
@@ -491,13 +491,13 @@ class TestMCPServerSave:
         mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ), patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ), patch(
-            "application.api.user.tools.mcp.encrypt_credentials",
+            "docsgpt.api.user.tools.mcp.encrypt_credentials",
             return_value="enc-blob",
         ):
             with app.test_request_context(
@@ -524,7 +524,7 @@ class TestMCPServerSave:
         assert "bearer_token" not in call_arg["config"]
 
     def test_updates_existing_mcp_server(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         tool_id = _FakeOid()
         mock_mcp_tool = Mock()
@@ -541,10 +541,10 @@ class TestMCPServerSave:
         mock_collection.update_one.return_value = Mock(matched_count=1)
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ), patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ):
             with app.test_request_context(
@@ -571,7 +571,7 @@ class TestMCPServerSave:
         assert "updated" in response.json["message"].lower()
 
     def test_returns_404_update_not_found(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         tool_id = _FakeOid()
         mock_mcp_tool = Mock()
@@ -582,10 +582,10 @@ class TestMCPServerSave:
         mock_collection.update_one.return_value = Mock(matched_count=0)
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ), patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ):
             with app.test_request_context(
@@ -609,7 +609,7 @@ class TestMCPServerSave:
         assert response.status_code == 404
 
     def test_oauth_auth_without_task_id(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         with app.test_request_context(
             "/api/mcp_server/save",
@@ -632,16 +632,16 @@ class TestMCPServerSave:
         assert "OAuth authorization" in response.json["error"]
 
     def test_oauth_auth_not_completed(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         mock_manager = Mock()
         mock_manager.get_oauth_status.return_value = {"status": "pending"}
 
         with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
+            "docsgpt.api.user.tools.mcp.get_redis_instance",
             return_value=Mock(),
         ), patch(
-            "application.api.user.tools.mcp.MCPOAuthManager",
+            "docsgpt.api.user.tools.mcp.MCPOAuthManager",
             return_value=mock_manager,
         ):
             with app.test_request_context(
@@ -666,7 +666,7 @@ class TestMCPServerSave:
         assert "OAuth failed" in response.json["error"]
 
     def test_oauth_auth_completed_successfully(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         inserted_id = _FakeOid()
         mock_manager = Mock()
@@ -678,13 +678,13 @@ class TestMCPServerSave:
         mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
 
         with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
+            "docsgpt.api.user.tools.mcp.get_redis_instance",
             return_value=Mock(),
         ), patch(
-            "application.api.user.tools.mcp.MCPOAuthManager",
+            "docsgpt.api.user.tools.mcp.MCPOAuthManager",
             return_value=mock_manager,
         ), patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ):
             with app.test_request_context(
@@ -709,7 +709,7 @@ class TestMCPServerSave:
         assert response.json["success"] is True
 
     def test_no_credentials_for_non_none_auth_raises(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         with app.test_request_context(
             "/api/mcp_server/save",
@@ -731,10 +731,10 @@ class TestMCPServerSave:
         assert response.status_code == 500
 
     def test_returns_500_on_exception(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             side_effect=RuntimeError("boom"),
         ):
             with app.test_request_context(
@@ -758,7 +758,7 @@ class TestMCPServerSave:
         assert "Failed to save MCP server" in response.json["error"]
 
     def test_strips_sensitive_fields_from_storage(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         inserted_id = _FakeOid()
         mock_mcp_tool = Mock()
@@ -768,13 +768,13 @@ class TestMCPServerSave:
         mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ), patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ), patch(
-            "application.api.user.tools.mcp.encrypt_credentials",
+            "docsgpt.api.user.tools.mcp.encrypt_credentials",
             return_value="enc",
         ):
             with app.test_request_context(
@@ -806,7 +806,7 @@ class TestMCPServerSave:
             assert field not in stored_config
 
     def test_merges_existing_encrypted_credentials_on_update(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         tool_id = _FakeOid()
         mock_mcp_tool = Mock()
@@ -820,16 +820,16 @@ class TestMCPServerSave:
         mock_collection.update_one.return_value = Mock(matched_count=1)
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ), patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ), patch(
-            "application.api.user.tools.mcp.decrypt_credentials",
+            "docsgpt.api.user.tools.mcp.decrypt_credentials",
             return_value={"api_key": "old-key"},
         ), patch(
-            "application.api.user.tools.mcp.encrypt_credentials",
+            "docsgpt.api.user.tools.mcp.encrypt_credentials",
             return_value="merged-enc",
         ) as mock_encrypt:
             with app.test_request_context(
@@ -856,7 +856,7 @@ class TestMCPServerSave:
         assert merged_call["api_key"] == "new-key"
 
     def test_preserves_existing_encrypted_when_no_new_credentials(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         tool_id = _FakeOid()
         mock_mcp_tool = Mock()
@@ -870,10 +870,10 @@ class TestMCPServerSave:
         mock_collection.update_one.return_value = Mock(matched_count=1)
 
         with patch(
-            "application.api.user.tools.mcp.MCPTool",
+            "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=mock_mcp_tool,
         ), patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ):
             with app.test_request_context(
@@ -906,7 +906,7 @@ class TestMCPServerSave:
 class TestMCPOAuthCallback:
 
     def test_redirects_on_error_param(self, app):
-        from application.api.user.tools.mcp import MCPOAuthCallback
+        from docsgpt.api.user.tools.mcp import MCPOAuthCallback
 
         with app.test_request_context(
             "/api/mcp_server/callback?error=access_denied&code=abc&state=xyz"
@@ -918,7 +918,7 @@ class TestMCPOAuthCallback:
         assert "access_denied" in response.headers["Location"]
 
     def test_redirects_on_missing_code_or_state(self, app):
-        from application.api.user.tools.mcp import MCPOAuthCallback
+        from docsgpt.api.user.tools.mcp import MCPOAuthCallback
 
         with app.test_request_context("/api/mcp_server/callback"):
             response = MCPOAuthCallback().get()
@@ -927,7 +927,7 @@ class TestMCPOAuthCallback:
         assert "error" in response.headers["Location"]
 
     def test_redirects_on_missing_code(self, app):
-        from application.api.user.tools.mcp import MCPOAuthCallback
+        from docsgpt.api.user.tools.mcp import MCPOAuthCallback
 
         with app.test_request_context("/api/mcp_server/callback?state=xyz"):
             response = MCPOAuthCallback().get()
@@ -936,16 +936,16 @@ class TestMCPOAuthCallback:
         assert "error" in response.headers["Location"]
 
     def test_redirects_success_on_valid_callback(self, app):
-        from application.api.user.tools.mcp import MCPOAuthCallback
+        from docsgpt.api.user.tools.mcp import MCPOAuthCallback
 
         mock_manager = Mock()
         mock_manager.handle_oauth_callback.return_value = True
 
         with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
+            "docsgpt.api.user.tools.mcp.get_redis_instance",
             return_value=Mock(),
         ), patch(
-            "application.api.user.tools.mcp.MCPOAuthManager",
+            "docsgpt.api.user.tools.mcp.MCPOAuthManager",
             return_value=mock_manager,
         ):
             with app.test_request_context(
@@ -957,16 +957,16 @@ class TestMCPOAuthCallback:
         assert "success" in response.headers["Location"]
 
     def test_redirects_error_on_failed_callback(self, app):
-        from application.api.user.tools.mcp import MCPOAuthCallback
+        from docsgpt.api.user.tools.mcp import MCPOAuthCallback
 
         mock_manager = Mock()
         mock_manager.handle_oauth_callback.return_value = False
 
         with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
+            "docsgpt.api.user.tools.mcp.get_redis_instance",
             return_value=Mock(),
         ), patch(
-            "application.api.user.tools.mcp.MCPOAuthManager",
+            "docsgpt.api.user.tools.mcp.MCPOAuthManager",
             return_value=mock_manager,
         ):
             with app.test_request_context(
@@ -979,10 +979,10 @@ class TestMCPOAuthCallback:
         assert "failed" in response.headers["Location"].lower()
 
     def test_redirects_error_when_redis_unavailable(self, app):
-        from application.api.user.tools.mcp import MCPOAuthCallback
+        from docsgpt.api.user.tools.mcp import MCPOAuthCallback
 
         with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
+            "docsgpt.api.user.tools.mcp.get_redis_instance",
             return_value=None,
         ):
             with app.test_request_context(
@@ -994,10 +994,10 @@ class TestMCPOAuthCallback:
         assert "Redis" in response.headers["Location"]
 
     def test_redirects_error_on_exception(self, app):
-        from application.api.user.tools.mcp import MCPOAuthCallback
+        from docsgpt.api.user.tools.mcp import MCPOAuthCallback
 
         with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
+            "docsgpt.api.user.tools.mcp.get_redis_instance",
             side_effect=RuntimeError("redis down"),
         ):
             with app.test_request_context(
@@ -1016,13 +1016,13 @@ class TestMCPOAuthCallback:
 class TestMCPOAuthStatus:
 
     def test_returns_pending_when_no_status(self, app):
-        from application.api.user.tools.mcp import MCPOAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPOAuthStatus
 
         mock_redis = Mock()
         mock_redis.get.return_value = None
 
         with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
+            "docsgpt.api.user.tools.mcp.get_redis_instance",
             return_value=mock_redis,
         ):
             with app.test_request_context("/api/mcp_server/oauth_status/task123"):
@@ -1033,7 +1033,7 @@ class TestMCPOAuthStatus:
         assert response.json["task_id"] == "task123"
 
     def test_returns_status_with_tools(self, app):
-        from application.api.user.tools.mcp import MCPOAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPOAuthStatus
 
         status_data = {
             "status": "completed",
@@ -1046,7 +1046,7 @@ class TestMCPOAuthStatus:
         mock_redis.get.return_value = json.dumps(status_data)
 
         with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
+            "docsgpt.api.user.tools.mcp.get_redis_instance",
             return_value=mock_redis,
         ):
             with app.test_request_context("/api/mcp_server/oauth_status/task123"):
@@ -1060,14 +1060,14 @@ class TestMCPOAuthStatus:
         assert "extra" not in tools[0]
 
     def test_returns_status_without_tools(self, app):
-        from application.api.user.tools.mcp import MCPOAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPOAuthStatus
 
         status_data = {"status": "in_progress", "message": "Authorizing..."}
         mock_redis = Mock()
         mock_redis.get.return_value = json.dumps(status_data)
 
         with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
+            "docsgpt.api.user.tools.mcp.get_redis_instance",
             return_value=mock_redis,
         ):
             with app.test_request_context("/api/mcp_server/oauth_status/task123"):
@@ -1077,10 +1077,10 @@ class TestMCPOAuthStatus:
         assert response.json["status"] == "in_progress"
 
     def test_returns_500_on_exception(self, app):
-        from application.api.user.tools.mcp import MCPOAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPOAuthStatus
 
         with patch(
-            "application.api.user.tools.mcp.get_redis_instance",
+            "docsgpt.api.user.tools.mcp.get_redis_instance",
             side_effect=RuntimeError("redis down"),
         ):
             with app.test_request_context("/api/mcp_server/oauth_status/task123"):
@@ -1097,7 +1097,7 @@ class TestMCPOAuthStatus:
 class TestMCPAuthStatus:
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.mcp import MCPAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPAuthStatus
 
         with app.test_request_context("/api/mcp_server/auth_status"):
             from flask import request
@@ -1108,13 +1108,13 @@ class TestMCPAuthStatus:
         assert response.status_code == 401
 
     def test_returns_empty_statuses_when_no_mcp_tools(self, app):
-        from application.api.user.tools.mcp import MCPAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPAuthStatus
 
         mock_collection = Mock()
         mock_collection.find.return_value = []
 
         with patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ):
             with app.test_request_context("/api/mcp_server/auth_status"):
@@ -1127,7 +1127,7 @@ class TestMCPAuthStatus:
         assert response.json["statuses"] == {}
 
     def test_returns_configured_for_non_oauth_tools(self, app):
-        from application.api.user.tools.mcp import MCPAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPAuthStatus
 
         tool_id = _FakeOid()
         mock_collection = Mock()
@@ -1139,7 +1139,7 @@ class TestMCPAuthStatus:
         ]
 
         with patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ):
             with app.test_request_context("/api/mcp_server/auth_status"):
@@ -1152,7 +1152,7 @@ class TestMCPAuthStatus:
         assert response.json["statuses"][str(tool_id)] == "configured"
 
     def test_returns_connected_for_oauth_with_tokens(self, app):
-        from application.api.user.tools.mcp import MCPAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPAuthStatus
 
         tool_id = _FakeOid()
         mock_collection = Mock()
@@ -1174,10 +1174,10 @@ class TestMCPAuthStatus:
         ]
 
         with patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ), patch(
-            "application.api.user.tools.mcp._connector_sessions",
+            "docsgpt.api.user.tools.mcp._connector_sessions",
             mock_sessions,
         ):
             with app.test_request_context("/api/mcp_server/auth_status"):
@@ -1190,7 +1190,7 @@ class TestMCPAuthStatus:
         assert response.json["statuses"][str(tool_id)] == "connected"
 
     def test_returns_needs_auth_for_oauth_without_tokens(self, app):
-        from application.api.user.tools.mcp import MCPAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPAuthStatus
 
         tool_id = _FakeOid()
         mock_collection = Mock()
@@ -1207,10 +1207,10 @@ class TestMCPAuthStatus:
         mock_sessions.find.return_value = []
 
         with patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ), patch(
-            "application.api.user.tools.mcp._connector_sessions",
+            "docsgpt.api.user.tools.mcp._connector_sessions",
             mock_sessions,
         ):
             with app.test_request_context("/api/mcp_server/auth_status"):
@@ -1223,7 +1223,7 @@ class TestMCPAuthStatus:
         assert response.json["statuses"][str(tool_id)] == "needs_auth"
 
     def test_returns_needs_auth_for_oauth_without_server_url(self, app):
-        from application.api.user.tools.mcp import MCPAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPAuthStatus
 
         tool_id = _FakeOid()
         mock_collection = Mock()
@@ -1235,7 +1235,7 @@ class TestMCPAuthStatus:
         ]
 
         with patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ):
             with app.test_request_context("/api/mcp_server/auth_status"):
@@ -1248,7 +1248,7 @@ class TestMCPAuthStatus:
         assert response.json["statuses"][str(tool_id)] == "needs_auth"
 
     def test_returns_configured_for_none_auth_type(self, app):
-        from application.api.user.tools.mcp import MCPAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPAuthStatus
 
         tool_id = _FakeOid()
         mock_collection = Mock()
@@ -1257,7 +1257,7 @@ class TestMCPAuthStatus:
         ]
 
         with patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ):
             with app.test_request_context("/api/mcp_server/auth_status"):
@@ -1270,13 +1270,13 @@ class TestMCPAuthStatus:
         assert response.json["statuses"][str(tool_id)] == "configured"
 
     def test_returns_500_on_exception(self, app):
-        from application.api.user.tools.mcp import MCPAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPAuthStatus
 
         mock_collection = Mock()
         mock_collection.find.side_effect = RuntimeError("db fail")
 
         with patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ):
             with app.test_request_context("/api/mcp_server/auth_status"):
@@ -1289,7 +1289,7 @@ class TestMCPAuthStatus:
         assert "Failed to check auth status" in response.json["error"]
 
     def test_multiple_tools_mixed_auth(self, app):
-        from application.api.user.tools.mcp import MCPAuthStatus
+        from docsgpt.api.user.tools.mcp import MCPAuthStatus
 
         tool_id_1 = _FakeOid()
         tool_id_2 = _FakeOid()
@@ -1321,10 +1321,10 @@ class TestMCPAuthStatus:
         ]
 
         with patch(
-            "application.api.user.tools.mcp.user_tools_collection",
+            "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ), patch(
-            "application.api.user.tools.mcp._connector_sessions",
+            "docsgpt.api.user.tools.mcp._connector_sessions",
             mock_sessions,
         ):
             with app.test_request_context("/api/mcp_server/auth_status"):
@@ -1346,30 +1346,30 @@ class TestMCPAuthStatus:
 class TestValidateMcpServerUrl:
 
     def test_raises_when_url_is_empty(self):
-        from application.api.user.tools.mcp import _validate_mcp_server_url
+        from docsgpt.api.user.tools.mcp import _validate_mcp_server_url
 
         with pytest.raises(ValueError, match="server_url is required"):
             _validate_mcp_server_url({})
 
     def test_raises_when_url_is_none(self):
-        from application.api.user.tools.mcp import _validate_mcp_server_url
+        from docsgpt.api.user.tools.mcp import _validate_mcp_server_url
 
         with pytest.raises(ValueError, match="server_url is required"):
             _validate_mcp_server_url({"server_url": None})
 
     def test_raises_when_url_is_ssrf(self):
-        from application.api.user.tools.mcp import _validate_mcp_server_url
-        from application.core.url_validation import SSRFError
+        from docsgpt.api.user.tools.mcp import _validate_mcp_server_url
+        from docsgpt.core.url_validation import SSRFError
 
         with patch(
-            "application.api.user.tools.mcp.validate_url",
+            "docsgpt.api.user.tools.mcp.validate_url",
             side_effect=SSRFError("private address"),
         ):
             with pytest.raises(ValueError, match="Invalid server URL"):
                 _validate_mcp_server_url({"server_url": "http://169.254.169.254"})
 
     def test_passes_valid_url(self):
-        from application.api.user.tools.mcp import _validate_mcp_server_url
+        from docsgpt.api.user.tools.mcp import _validate_mcp_server_url
 
         # Should not raise
         _validate_mcp_server_url({"server_url": "https://mcp.example.com"})
@@ -1382,14 +1382,14 @@ class TestValidateMcpServerUrl:
 class TestMCPServerConfigValueError:
 
     def test_returns_400_when_url_missing(self, app):
-        from application.api.user.tools.mcp import TestMCPServerConfig
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         with patch(
-            "application.api.user.tools.mcp.validate_url",
+            "docsgpt.api.user.tools.mcp.validate_url",
             side_effect=None,  # let validate_url pass but override _validate_mcp_server_url
         ):
             with patch(
-                "application.api.user.tools.mcp._validate_mcp_server_url",
+                "docsgpt.api.user.tools.mcp._validate_mcp_server_url",
                 side_effect=ValueError("server_url is required"),
             ):
                 with app.test_request_context(
@@ -1406,11 +1406,11 @@ class TestMCPServerConfigValueError:
         assert "Invalid MCP server configuration" in response.json["error"]
 
     def test_returns_400_when_ssrf_url(self, app):
-        from application.api.user.tools.mcp import TestMCPServerConfig
-        from application.core.url_validation import SSRFError
+        from docsgpt.api.user.tools.mcp import TestMCPServerConfig
+        from docsgpt.core.url_validation import SSRFError
 
         with patch(
-            "application.api.user.tools.mcp.validate_url",
+            "docsgpt.api.user.tools.mcp.validate_url",
             side_effect=SSRFError("private range"),
         ):
             with app.test_request_context(
@@ -1437,11 +1437,11 @@ class TestMCPServerConfigValueError:
 class TestMCPServerSaveValueError:
 
     def test_returns_400_when_ssrf_url(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
-        from application.core.url_validation import SSRFError
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+        from docsgpt.core.url_validation import SSRFError
 
         with patch(
-            "application.api.user.tools.mcp.validate_url",
+            "docsgpt.api.user.tools.mcp.validate_url",
             side_effect=SSRFError("private range"),
         ):
             with app.test_request_context(
@@ -1465,10 +1465,10 @@ class TestMCPServerSaveValueError:
         assert "Invalid MCP server configuration" in response.json["error"]
 
     def test_returns_400_when_url_missing(self, app):
-        from application.api.user.tools.mcp import MCPServerSave
+        from docsgpt.api.user.tools.mcp import MCPServerSave
 
         with patch(
-            "application.api.user.tools.mcp._validate_mcp_server_url",
+            "docsgpt.api.user.tools.mcp._validate_mcp_server_url",
             side_effect=ValueError("server_url is required"),
         ):
             with app.test_request_context(

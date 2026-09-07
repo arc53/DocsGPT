@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 
 
 class _Handler(LLMHandler):
@@ -64,10 +64,10 @@ def _run(handler, agent, result):
     orchestrator = Mock()
     orchestrator.compress_mid_execution.return_value = result
     with patch(
-        "application.api.answer.services.compression.CompressionOrchestrator",
+        "docsgpt.api.answer.services.compression.CompressionOrchestrator",
         return_value=orchestrator,
     ), patch(
-        "application.api.answer.services.conversation_service.ConversationService",
+        "docsgpt.api.answer.services.conversation_service.ConversationService",
         return_value=conv_service,
     ), patch.object(
         handler, "_build_conversation_from_messages", return_value={"queries": []}
@@ -121,10 +121,10 @@ def _run_with(handler, agent, result, db_conversation, synthetic):
     orchestrator = Mock()
     orchestrator.compress_mid_execution.return_value = result
     with patch(
-        "application.api.answer.services.compression.CompressionOrchestrator",
+        "docsgpt.api.answer.services.compression.CompressionOrchestrator",
         return_value=orchestrator,
     ), patch(
-        "application.api.answer.services.conversation_service.ConversationService",
+        "docsgpt.api.answer.services.conversation_service.ConversationService",
         return_value=conv_service,
     ), patch.object(
         handler, "_build_conversation_from_messages", return_value=synthetic
@@ -202,10 +202,10 @@ def test_in_memory_path_carries_the_current_summary():
     svc.compress_conversation.return_value = metadata
     svc.get_compressed_context.return_value = ("new", [])
     handler = _Handler()
-    with patch("application.api.answer.services.compression.service.CompressionService", return_value=svc), patch(
-        "application.llm.llm_creator.LLMCreator"
-    ), patch("application.core.model_utils.get_provider_from_model_id", return_value="openai"), patch(
-        "application.core.model_utils.get_api_key_for_provider", return_value="sk"
+    with patch("docsgpt.api.answer.services.compression.service.CompressionService", return_value=svc), patch(
+        "docsgpt.llm.llm_creator.LLMCreator"
+    ), patch("docsgpt.core.model_utils.get_provider_from_model_id", return_value="openai"), patch(
+        "docsgpt.core.model_utils.get_api_key_for_provider", return_value="sk"
     ), patch.object(
         handler, "_build_conversation_from_messages",
         return_value={"queries": [{"prompt": "q", "response": "r"}, {"prompt": "q2", "response": ""}],

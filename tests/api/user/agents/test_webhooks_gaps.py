@@ -1,4 +1,4 @@
-"""Gap-coverage tests for application.api.user.agents.webhooks.
+"""Gap-coverage tests for docsgpt.api.user.agents.webhooks.
 
 These tests use only stdlib IDs (uuid / hex strings) — no bson/ObjectId.
 The agent routes still read from Mongo collections internally; we mock
@@ -47,13 +47,13 @@ class TestAgentWebhookListenerGaps:
 
     def test_post_empty_payload_still_enqueues(self, app):
         """Empty dict payload does not block task enqueue (warning only)."""
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         mock_task = Mock()
         mock_task.id = "task_empty"
 
         with patch(
-            "application.api.user.agents.webhooks.process_agent_webhook"
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook"
         ) as mock_process:
             mock_process.apply_async.return_value = mock_task
             with app.test_request_context(
@@ -69,13 +69,13 @@ class TestAgentWebhookListenerGaps:
 
     def test_get_empty_query_string(self, app):
         """GET request with no query params produces an empty payload dict."""
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         mock_task = Mock()
         mock_task.id = "task_noqs"
 
         with patch(
-            "application.api.user.agents.webhooks.process_agent_webhook"
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook"
         ) as mock_process:
             mock_process.apply_async.return_value = mock_task
             with app.test_request_context(
@@ -96,13 +96,13 @@ class TestAgentWebhookListenerGaps:
 
     def test_enqueue_returns_task_id_in_response(self, app):
         """Success response body includes task_id from the Celery task."""
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         mock_task = Mock()
         mock_task.id = "celery-task-99"
 
         with patch(
-            "application.api.user.agents.webhooks.process_agent_webhook"
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook"
         ) as mock_process:
             mock_process.apply_async.return_value = mock_task
             with app.test_request_context(
@@ -118,10 +118,10 @@ class TestAgentWebhookListenerGaps:
 
     def test_enqueue_error_returns_500_with_message(self, app):
         """Queue failure returns 500 with a human-readable message."""
-        from application.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
 
         with patch(
-            "application.api.user.agents.webhooks.process_agent_webhook"
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook"
         ) as mock_process:
             mock_process.apply_async.side_effect = RuntimeError("celery is down")
             with app.test_request_context(
@@ -149,9 +149,9 @@ def _patch_webhooks_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.agents.webhooks.db_session", _yield
+        "docsgpt.api.user.agents.webhooks.db_session", _yield
     ), patch(
-        "application.api.user.agents.webhooks.db_readonly", _yield
+        "docsgpt.api.user.agents.webhooks.db_readonly", _yield
     ):
         yield
 
@@ -163,16 +163,16 @@ def _patch_base_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.base.db_readonly", _yield
+        "docsgpt.api.user.base.db_readonly", _yield
     ), patch(
-        "application.api.user.base.db_session", _yield
+        "docsgpt.api.user.base.db_session", _yield
     ):
         yield
 
 
 class TestAgentWebhookGet:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.webhooks import AgentWebhook
+        from docsgpt.api.user.agents.webhooks import AgentWebhook
 
         with app.test_request_context("/api/agent_webhook?id=x"):
             from flask import request
@@ -181,7 +181,7 @@ class TestAgentWebhookGet:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.agents.webhooks import AgentWebhook
+        from docsgpt.api.user.agents.webhooks import AgentWebhook
 
         with app.test_request_context("/api/agent_webhook"):
             from flask import request
@@ -190,7 +190,7 @@ class TestAgentWebhookGet:
         assert response.status_code == 400
 
     def test_returns_404_missing_agent(self, app, pg_conn):
-        from application.api.user.agents.webhooks import AgentWebhook
+        from docsgpt.api.user.agents.webhooks import AgentWebhook
 
         with _patch_webhooks_db(pg_conn), app.test_request_context(
             "/api/agent_webhook?id=00000000-0000-0000-0000-000000000000"
@@ -201,14 +201,14 @@ class TestAgentWebhookGet:
         assert response.status_code == 404
 
     def test_generates_webhook_url(self, app, pg_conn):
-        from application.api.user.agents.webhooks import AgentWebhook
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.webhooks import AgentWebhook
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-wh"
         agent = AgentsRepository(pg_conn).create(user, "a", "published")
 
         with _patch_webhooks_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.settings.API_URL",
+            "docsgpt.api.user.agents.webhooks.settings.API_URL",
             "https://api.test",
         ), app.test_request_context(
             f"/api/agent_webhook?id={agent['id']}"
@@ -222,8 +222,8 @@ class TestAgentWebhookGet:
         )
 
     def test_reuses_existing_webhook_token(self, app, pg_conn):
-        from application.api.user.agents.webhooks import AgentWebhook
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.webhooks import AgentWebhook
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-wh-reuse"
         agent = AgentsRepository(pg_conn).create(
@@ -231,7 +231,7 @@ class TestAgentWebhookGet:
         )
 
         with _patch_webhooks_db(pg_conn), patch(
-            "application.api.user.agents.webhooks.settings.API_URL",
+            "docsgpt.api.user.agents.webhooks.settings.API_URL",
             "https://api.test",
         ), app.test_request_context(
             f"/api/agent_webhook?id={agent['id']}"
@@ -244,8 +244,8 @@ class TestAgentWebhookGet:
 
 class TestAgentWebhookListener:
     def test_post_valid_enqueues_task(self, app, pg_conn):
-        from application.api.user.agents.webhooks import AgentWebhookListener
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
         from unittest.mock import MagicMock
 
         user = "u-wh-enq"
@@ -255,7 +255,7 @@ class TestAgentWebhookListener:
         fake_task = MagicMock(id="task-post")
 
         with patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/webhooks/agents/tk-enq", method="POST",
@@ -272,8 +272,8 @@ class TestAgentWebhookListener:
         assert response.json["task_id"] == "task-post"
 
     def test_get_collects_query_params(self, app, pg_conn):
-        from application.api.user.agents.webhooks import AgentWebhookListener
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.webhooks import AgentWebhookListener
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
         from unittest.mock import MagicMock
 
         user = "u-wh-get"
@@ -283,7 +283,7 @@ class TestAgentWebhookListener:
         fake_task = MagicMock(id="task-get")
 
         with patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/webhooks/agents/tk-get?foo=bar&baz=42"

@@ -51,12 +51,12 @@ def _settings(mock_settings, collection="test_collection"):
 
 @pytest.fixture
 def store():
-    from application.vectorstore.qdrant import QdrantStore
+    from docsgpt.vectorstore.qdrant import QdrantStore
 
     with patch(
-        "application.vectorstore.base.BaseVectorStore._get_embeddings",
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
         return_value=_FakeEmbeddings(),
-    ), patch("application.vectorstore.qdrant.settings") as mock_settings:
+    ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
         _settings(mock_settings)
         yield QdrantStore(source_id="src-A", embeddings_key="k")
 
@@ -135,12 +135,12 @@ class TestQdrantStore:
         assert len(populated.get_chunks()) == 2
 
     def test_delete_index_removes_only_this_source(self, populated):
-        from application.vectorstore.qdrant import QdrantStore
+        from docsgpt.vectorstore.qdrant import QdrantStore
 
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=_FakeEmbeddings(),
-        ), patch("application.vectorstore.qdrant.settings") as mock_settings:
+        ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
             _settings(mock_settings)
             other = QdrantStore(source_id="src-B", embeddings_key="k")
         # Share the in-memory backend so both sources live in one collection.
@@ -159,9 +159,9 @@ class TestQdrantStore:
 @pytest.mark.unit
 class TestQdrantClientKwargs:
     def test_unset_settings_are_omitted(self):
-        from application.vectorstore.qdrant import QdrantStore
+        from docsgpt.vectorstore.qdrant import QdrantStore
 
-        with patch("application.vectorstore.qdrant.settings") as mock_settings:
+        with patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
             _settings(mock_settings)
             kwargs = QdrantStore._client_kwargs()
         # location/url/path are mutually exclusive in qdrant-client, so only
@@ -170,9 +170,9 @@ class TestQdrantClientKwargs:
         assert "url" not in kwargs and "path" not in kwargs and "host" not in kwargs
 
     def test_configured_settings_are_forwarded(self):
-        from application.vectorstore.qdrant import QdrantStore
+        from docsgpt.vectorstore.qdrant import QdrantStore
 
-        with patch("application.vectorstore.qdrant.settings") as mock_settings:
+        with patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
             _settings(mock_settings)
             mock_settings.QDRANT_LOCATION = None
             mock_settings.QDRANT_URL = "http://qdrant:6333"

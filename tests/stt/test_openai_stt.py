@@ -1,4 +1,4 @@
-"""Tests for application/stt/openai_stt.py"""
+"""Tests for docsgpt/stt/openai_stt.py"""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
@@ -9,15 +9,15 @@ import pytest
 @pytest.mark.unit
 class TestOpenAISTTInit:
 
-    @patch("application.stt.openai_stt.OpenAI")
-    @patch("application.stt.openai_stt.settings")
+    @patch("docsgpt.stt.openai_stt.OpenAI")
+    @patch("docsgpt.stt.openai_stt.settings")
     def test_init_defaults_from_settings(self, mock_settings, mock_openai_cls):
         mock_settings.OPENAI_API_KEY = "sk-from-settings"
         mock_settings.API_KEY = "sk-fallback"
         mock_settings.OPENAI_BASE_URL = "https://custom.api.com/v1"
         mock_settings.OPENAI_STT_MODEL = "whisper-1"
 
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         stt = OpenAISTT()
 
@@ -29,15 +29,15 @@ class TestOpenAISTTInit:
             base_url="https://custom.api.com/v1",
         )
 
-    @patch("application.stt.openai_stt.OpenAI")
-    @patch("application.stt.openai_stt.settings")
+    @patch("docsgpt.stt.openai_stt.OpenAI")
+    @patch("docsgpt.stt.openai_stt.settings")
     def test_init_explicit_params_override_settings(self, mock_settings, mock_openai_cls):
         mock_settings.OPENAI_API_KEY = "sk-settings"
         mock_settings.API_KEY = None
         mock_settings.OPENAI_BASE_URL = None
         mock_settings.OPENAI_STT_MODEL = "whisper-1"
 
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         stt = OpenAISTT(
             api_key="sk-explicit",
@@ -49,29 +49,29 @@ class TestOpenAISTTInit:
         assert stt.base_url == "https://explicit.api.com"
         assert stt.model == "whisper-2"
 
-    @patch("application.stt.openai_stt.OpenAI")
-    @patch("application.stt.openai_stt.settings")
+    @patch("docsgpt.stt.openai_stt.OpenAI")
+    @patch("docsgpt.stt.openai_stt.settings")
     def test_init_falls_back_to_api_key(self, mock_settings, mock_openai_cls):
         mock_settings.OPENAI_API_KEY = None
         mock_settings.API_KEY = "sk-fallback-key"
         mock_settings.OPENAI_BASE_URL = None
         mock_settings.OPENAI_STT_MODEL = "whisper-1"
 
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         stt = OpenAISTT()
 
         assert stt.api_key == "sk-fallback-key"
 
-    @patch("application.stt.openai_stt.OpenAI")
-    @patch("application.stt.openai_stt.settings")
+    @patch("docsgpt.stt.openai_stt.OpenAI")
+    @patch("docsgpt.stt.openai_stt.settings")
     def test_init_default_base_url(self, mock_settings, mock_openai_cls):
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
         mock_settings.OPENAI_BASE_URL = None
         mock_settings.OPENAI_STT_MODEL = "whisper-1"
 
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         stt = OpenAISTT()
 
@@ -81,8 +81,8 @@ class TestOpenAISTTInit:
 @pytest.mark.unit
 class TestOpenAISTTTranscribe:
 
-    @patch("application.stt.openai_stt.OpenAI")
-    @patch("application.stt.openai_stt.settings")
+    @patch("docsgpt.stt.openai_stt.OpenAI")
+    @patch("docsgpt.stt.openai_stt.settings")
     def test_transcribe_basic(self, mock_settings, mock_openai_cls):
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
@@ -101,7 +101,7 @@ class TestOpenAISTTTranscribe:
         }
         mock_client.audio.transcriptions.create.return_value = mock_response
 
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         stt = OpenAISTT()
 
@@ -115,8 +115,8 @@ class TestOpenAISTTTranscribe:
         assert result["segments"] == []
         assert result["provider"] == "openai"
 
-    @patch("application.stt.openai_stt.OpenAI")
-    @patch("application.stt.openai_stt.settings")
+    @patch("docsgpt.stt.openai_stt.OpenAI")
+    @patch("docsgpt.stt.openai_stt.settings")
     def test_transcribe_with_language(self, mock_settings, mock_openai_cls):
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
@@ -135,7 +135,7 @@ class TestOpenAISTTTranscribe:
         }
         mock_client.audio.transcriptions.create.return_value = mock_response
 
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         stt = OpenAISTT()
 
@@ -147,8 +147,8 @@ class TestOpenAISTTTranscribe:
         call_kwargs = mock_client.audio.transcriptions.create.call_args[1]
         assert call_kwargs["language"] == "fr"
 
-    @patch("application.stt.openai_stt.OpenAI")
-    @patch("application.stt.openai_stt.settings")
+    @patch("docsgpt.stt.openai_stt.OpenAI")
+    @patch("docsgpt.stt.openai_stt.settings")
     def test_transcribe_with_timestamps(self, mock_settings, mock_openai_cls):
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
@@ -174,7 +174,7 @@ class TestOpenAISTTTranscribe:
         }
         mock_client.audio.transcriptions.create.return_value = mock_response
 
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         stt = OpenAISTT()
 
@@ -186,8 +186,8 @@ class TestOpenAISTTTranscribe:
         assert call_kwargs["timestamp_granularities"] == ["segment"]
         assert len(result["segments"]) == 1
 
-    @patch("application.stt.openai_stt.OpenAI")
-    @patch("application.stt.openai_stt.settings")
+    @patch("docsgpt.stt.openai_stt.OpenAI")
+    @patch("docsgpt.stt.openai_stt.settings")
     def test_transcribe_no_segments_key(self, mock_settings, mock_openai_cls):
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
@@ -203,7 +203,7 @@ class TestOpenAISTTTranscribe:
         }
         mock_client.audio.transcriptions.create.return_value = mock_response
 
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         stt = OpenAISTT()
 
@@ -214,8 +214,8 @@ class TestOpenAISTTTranscribe:
         assert result["text"] == "Hello"
         assert result["segments"] == []
 
-    @patch("application.stt.openai_stt.OpenAI")
-    @patch("application.stt.openai_stt.settings")
+    @patch("docsgpt.stt.openai_stt.OpenAI")
+    @patch("docsgpt.stt.openai_stt.settings")
     def test_transcribe_language_fallback_to_param(self, mock_settings, mock_openai_cls):
         mock_settings.OPENAI_API_KEY = "sk-test"
         mock_settings.API_KEY = None
@@ -233,7 +233,7 @@ class TestOpenAISTTTranscribe:
         }
         mock_client.audio.transcriptions.create.return_value = mock_response
 
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         stt = OpenAISTT()
 
@@ -248,7 +248,7 @@ class TestOpenAISTTTranscribe:
 class TestOpenAISTTToDict:
 
     def test_to_dict_with_model_dump(self):
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         obj = MagicMock()
         obj.model_dump.return_value = {"key": "value"}
@@ -257,19 +257,19 @@ class TestOpenAISTTToDict:
         assert result == {"key": "value"}
 
     def test_to_dict_with_dict(self):
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         result = OpenAISTT._to_dict({"key": "value"})
         assert result == {"key": "value"}
 
     def test_to_dict_with_other_type(self):
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         result = OpenAISTT._to_dict("string_value")
         assert result == {}
 
     def test_to_dict_with_none(self):
-        from application.stt.openai_stt import OpenAISTT
+        from docsgpt.stt.openai_stt import OpenAISTT
 
         result = OpenAISTT._to_dict(None)
         assert result == {}

@@ -8,10 +8,10 @@ from contextlib import contextmanager
 import pytest
 from flask import request
 
-from application.storage.db.repositories.artifacts import ArtifactsRepository
-from application.storage.db.repositories.conversations import ConversationsRepository
-from application.storage.db.repositories.notes import NotesRepository
-from application.storage.db.repositories.user_tools import UserToolsRepository
+from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.notes import NotesRepository
+from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
 
 @pytest.fixture
@@ -22,13 +22,13 @@ def _patch_db(pg_conn, monkeypatch):
     def _use_conn():
         yield pg_conn
 
-    monkeypatch.setattr("application.api.user.tools.routes.db_readonly", _use_conn)
-    monkeypatch.setattr("application.api.user.artifacts.routes.db_readonly", _use_conn)
+    monkeypatch.setattr("docsgpt.api.user.tools.routes.db_readonly", _use_conn)
+    monkeypatch.setattr("docsgpt.api.user.artifacts.routes.db_readonly", _use_conn)
     return pg_conn
 
 
 def _get(flask_app, artifact_id, token):
-    from application.api.user.tools.routes import GetArtifact
+    from docsgpt.api.user.tools.routes import GetArtifact
 
     with flask_app.app_context():
         with flask_app.test_request_context():

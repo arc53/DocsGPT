@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from application.guardrails.base import GuardrailCheck
-from application.guardrails.config import GuardrailsConfig
-from application.guardrails.engine import GuardrailEngine
-from application.guardrails.guardrail_creator import GuardrailCreator
-from application.guardrails.stream import MAX_HOLD_CHARS, StreamingOutputGuard
-from application.guardrails.types import CheckOutcome, Stage
+from docsgpt.guardrails.base import GuardrailCheck
+from docsgpt.guardrails.config import GuardrailsConfig
+from docsgpt.guardrails.engine import GuardrailEngine
+from docsgpt.guardrails.guardrail_creator import GuardrailCreator
+from docsgpt.guardrails.stream import MAX_HOLD_CHARS, StreamingOutputGuard
+from docsgpt.guardrails.types import CheckOutcome, Stage
 
 
 class RemoteFlagCheck(GuardrailCheck):

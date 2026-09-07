@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import redis as redis_lib
 
-import application.cache as cache
-from application.streaming.broadcast_channel import Topic
+import docsgpt.cache as cache
+from docsgpt.streaming.broadcast_channel import Topic
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +32,7 @@ class TestGetPubsubRedisInstance:
 
     @pytest.mark.unit
     def test_bounds_blocking_reads_and_enables_keepalive(self):
-        with patch("application.cache.redis.Redis.from_url") as from_url:
+        with patch("docsgpt.cache.redis.Redis.from_url") as from_url:
             client = cache.get_pubsub_redis_instance()
         assert client is from_url.return_value
         kwargs = from_url.call_args.kwargs
@@ -50,7 +50,7 @@ class TestGetPubsubRedisInstance:
 
     @pytest.mark.unit
     def test_singleton(self):
-        with patch("application.cache.redis.Redis.from_url") as from_url:
+        with patch("docsgpt.cache.redis.Redis.from_url") as from_url:
             first = cache.get_pubsub_redis_instance()
             second = cache.get_pubsub_redis_instance()
         assert first is second
@@ -59,21 +59,21 @@ class TestGetPubsubRedisInstance:
     @pytest.mark.unit
     def test_invalid_url_marks_failed_and_stops_retrying(self):
         with patch(
-            "application.cache.redis.Redis.from_url", side_effect=ValueError("bad url")
+            "docsgpt.cache.redis.Redis.from_url", side_effect=ValueError("bad url")
         ):
             assert cache.get_pubsub_redis_instance() is None
-        with patch("application.cache.redis.Redis.from_url") as from_url:
+        with patch("docsgpt.cache.redis.Redis.from_url") as from_url:
             assert cache.get_pubsub_redis_instance() is None
         from_url.assert_not_called()
 
     @pytest.mark.unit
     def test_connection_error_allows_retry(self):
         with patch(
-            "application.cache.redis.Redis.from_url",
+            "docsgpt.cache.redis.Redis.from_url",
             side_effect=redis_lib.ConnectionError("down"),
         ):
             assert cache.get_pubsub_redis_instance() is None
-        with patch("application.cache.redis.Redis.from_url") as from_url:
+        with patch("docsgpt.cache.redis.Redis.from_url") as from_url:
             assert cache.get_pubsub_redis_instance() is from_url.return_value
 
 
@@ -90,7 +90,7 @@ class TestSubscribeTimeout:
         client = MagicMock()
         client.pubsub.return_value = pubsub
         with patch(
-            "application.streaming.broadcast_channel.get_pubsub_redis_instance",
+            "docsgpt.streaming.broadcast_channel.get_pubsub_redis_instance",
             return_value=client,
         ):
             events = list(Topic("user:u1").subscribe())
@@ -106,10 +106,10 @@ class TestSubscribeTimeout:
         client = MagicMock()
         client.pubsub.return_value = pubsub
         with patch(
-            "application.streaming.broadcast_channel.get_pubsub_redis_instance",
+            "docsgpt.streaming.broadcast_channel.get_pubsub_redis_instance",
             return_value=client,
         ) as get_pubsub, patch(
-            "application.streaming.broadcast_channel.get_redis_instance"
+            "docsgpt.streaming.broadcast_channel.get_redis_instance"
         ) as get_cache:
             list(Topic("user:u1").subscribe())
         get_pubsub.assert_called_once()

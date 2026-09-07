@@ -19,16 +19,16 @@ def _patch_conversations_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.conversations.routes.db_session", _yield_conn
+        "docsgpt.api.user.conversations.routes.db_session", _yield_conn
     ), patch(
-        "application.api.user.conversations.routes.db_readonly", _yield_conn
+        "docsgpt.api.user.conversations.routes.db_readonly", _yield_conn
     ):
         yield
 
 
 def _seed_conversation(pg_conn, user_id, name="Test Conv"):
     """Create a conversation and return its PG uuid id as str."""
-    from application.storage.db.repositories.conversations import (
+    from docsgpt.storage.db.repositories.conversations import (
         ConversationsRepository,
     )
     repo = ConversationsRepository(pg_conn)
@@ -41,7 +41,7 @@ class TestDeleteConversation:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.conversations.routes import DeleteConversation
+        from docsgpt.api.user.conversations.routes import DeleteConversation
 
         with app.test_request_context("/api/delete_conversation?id=abc"):
             from flask import request
@@ -52,7 +52,7 @@ class TestDeleteConversation:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.conversations.routes import DeleteConversation
+        from docsgpt.api.user.conversations.routes import DeleteConversation
 
         with app.test_request_context("/api/delete_conversation"):
             from flask import request
@@ -68,7 +68,7 @@ class TestDeleteAllConversations:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.conversations.routes import DeleteAllConversations
+        from docsgpt.api.user.conversations.routes import DeleteAllConversations
 
         with app.test_request_context("/api/delete_all_conversations"):
             from flask import request
@@ -84,7 +84,7 @@ class TestGetConversations:
     pass
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.conversations.routes import GetConversations
+        from docsgpt.api.user.conversations.routes import GetConversations
 
         with app.test_request_context("/api/get_conversations"):
             from flask import request
@@ -100,7 +100,7 @@ class TestGetSingleConversation:
     pass
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.conversations.routes import GetSingleConversation
+        from docsgpt.api.user.conversations.routes import GetSingleConversation
 
         with app.test_request_context("/api/get_single_conversation"):
             from flask import request
@@ -117,7 +117,7 @@ class TestUpdateConversationName:
     pass
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.conversations.routes import UpdateConversationName
+        from docsgpt.api.user.conversations.routes import UpdateConversationName
 
         with app.test_request_context(
             "/api/update_conversation_name",
@@ -137,7 +137,7 @@ class TestSubmitFeedback:
     pass
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.conversations.routes import SubmitFeedback
+        from docsgpt.api.user.conversations.routes import SubmitFeedback
 
         with app.test_request_context(
             "/api/feedback",
@@ -159,8 +159,8 @@ class TestSubmitFeedback:
 
 class TestDeleteConversationHappy:
     def test_deletes_existing_conversation(self, app, pg_conn):
-        from application.api.user.conversations.routes import DeleteConversation
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.user.conversations.routes import DeleteConversation
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -182,7 +182,7 @@ class TestDeleteConversationHappy:
 
     def test_delete_nonexistent_still_returns_200(self, app, pg_conn):
         """get_any returns None, so delete is a no-op but endpoint succeeds."""
-        from application.api.user.conversations.routes import DeleteConversation
+        from docsgpt.api.user.conversations.routes import DeleteConversation
 
         with _patch_conversations_db(pg_conn), app.test_request_context(
             f"/api/delete_conversation?id={uuid.uuid4()}"
@@ -195,7 +195,7 @@ class TestDeleteConversationHappy:
         assert response.status_code == 200
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.conversations.routes import DeleteConversation
+        from docsgpt.api.user.conversations.routes import DeleteConversation
 
         @contextmanager
         def _broken():
@@ -203,7 +203,7 @@ class TestDeleteConversationHappy:
             yield
 
         with patch(
-            "application.api.user.conversations.routes.db_session", _broken
+            "docsgpt.api.user.conversations.routes.db_session", _broken
         ), app.test_request_context("/api/delete_conversation?id=abc"):
             from flask import request
 
@@ -215,10 +215,10 @@ class TestDeleteConversationHappy:
 
 class TestDeleteAllConversationsHappy:
     def test_deletes_all_conversations(self, app, pg_conn):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             DeleteAllConversations,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -238,7 +238,7 @@ class TestDeleteAllConversationsHappy:
         assert ConversationsRepository(pg_conn).list_for_user(user) == []
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             DeleteAllConversations,
         )
 
@@ -248,7 +248,7 @@ class TestDeleteAllConversationsHappy:
             yield
 
         with patch(
-            "application.api.user.conversations.routes.db_session", _broken
+            "docsgpt.api.user.conversations.routes.db_session", _broken
         ), app.test_request_context("/api/delete_all_conversations"):
             from flask import request
 
@@ -260,7 +260,7 @@ class TestDeleteAllConversationsHappy:
 
 class TestGetConversationsHappy:
     def test_returns_list_of_conversations(self, app, pg_conn):
-        from application.api.user.conversations.routes import GetConversations
+        from docsgpt.api.user.conversations.routes import GetConversations
 
         user = "user-list"
         c1 = _seed_conversation(pg_conn, user, name="one")
@@ -284,7 +284,7 @@ class TestGetConversationsHappy:
             assert "shared_token" in c
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.conversations.routes import GetConversations
+        from docsgpt.api.user.conversations.routes import GetConversations
 
         @contextmanager
         def _broken():
@@ -292,7 +292,7 @@ class TestGetConversationsHappy:
             yield
 
         with patch(
-            "application.api.user.conversations.routes.db_readonly", _broken
+            "docsgpt.api.user.conversations.routes.db_readonly", _broken
         ), app.test_request_context("/api/get_conversations"):
             from flask import request
 
@@ -304,7 +304,7 @@ class TestGetConversationsHappy:
 
 class TestGetSingleConversationHappy:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             GetSingleConversation,
         )
 
@@ -317,7 +317,7 @@ class TestGetSingleConversationHappy:
         assert response.status_code == 401
 
     def test_returns_404_not_found(self, app, pg_conn):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             GetSingleConversation,
         )
 
@@ -332,10 +332,10 @@ class TestGetSingleConversationHappy:
         assert response.status_code == 404
 
     def test_returns_conversation_with_messages(self, app, pg_conn):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             GetSingleConversation,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -370,10 +370,10 @@ class TestGetSingleConversationHappy:
         assert data["queries"][0]["response"] == "hello"
 
     def test_returns_message_with_dict_feedback(self, app, pg_conn):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             GetSingleConversation,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -399,7 +399,7 @@ class TestGetSingleConversationHappy:
         assert q["feedback_timestamp"] == "2024-01-01T00:00:00Z"
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             GetSingleConversation,
         )
 
@@ -409,7 +409,7 @@ class TestGetSingleConversationHappy:
             yield
 
         with patch(
-            "application.api.user.conversations.routes.db_readonly", _broken
+            "docsgpt.api.user.conversations.routes.db_readonly", _broken
         ), app.test_request_context("/api/get_single_conversation?id=abc"):
             from flask import request
 
@@ -426,7 +426,7 @@ class TestGetMessageTail:
     """
 
     def _seed_in_flight_message(self, pg_conn, owner_user_id):
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -444,7 +444,7 @@ class TestGetMessageTail:
         return conv_id, str(msg["id"])
 
     def test_owner_can_tail(self, app, pg_conn):
-        from application.api.user.conversations.routes import GetMessageTail
+        from docsgpt.api.user.conversations.routes import GetMessageTail
 
         owner = "user-owner"
         _, msg_id = self._seed_in_flight_message(pg_conn, owner)
@@ -468,8 +468,8 @@ class TestGetMessageTail:
         the tail-poll silently 404s and the in-flight bubble never
         resolves on the shared user's side.
         """
-        from application.api.user.conversations.routes import GetMessageTail
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.user.conversations.routes import GetMessageTail
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -490,7 +490,7 @@ class TestGetMessageTail:
         assert response.json["message_id"] == msg_id
 
     def test_non_member_gets_404(self, app, pg_conn):
-        from application.api.user.conversations.routes import GetMessageTail
+        from docsgpt.api.user.conversations.routes import GetMessageTail
 
         owner = "user-owner-private"
         intruder = "user-intruder"
@@ -508,8 +508,8 @@ class TestGetMessageTail:
 
     def test_streaming_row_returns_partial_from_journal(self, app, pg_conn):
         """Mid-stream rows must rebuild from message_events, not return the placeholder."""
-        from application.api.user.conversations.routes import GetMessageTail
-        from application.storage.db.repositories.message_events import (
+        from docsgpt.api.user.conversations.routes import GetMessageTail
+        from docsgpt.storage.db.repositories.message_events import (
             MessageEventsRepository,
         )
 
@@ -543,7 +543,7 @@ class TestGetMessageTail:
         self, app, pg_conn
     ):
         """Empty journal returns empty response, not the placeholder."""
-        from application.api.user.conversations.routes import GetMessageTail
+        from docsgpt.api.user.conversations.routes import GetMessageTail
 
         owner = "user-tail-empty"
         _, msg_id = self._seed_in_flight_message(pg_conn, owner)
@@ -563,7 +563,7 @@ class TestGetMessageTail:
 
 class TestUpdateConversationNameHappy:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             UpdateConversationName,
         )
 
@@ -580,10 +580,10 @@ class TestUpdateConversationNameHappy:
         assert response.status_code == 401
 
     def test_renames_conversation(self, app, pg_conn):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             UpdateConversationName,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -605,7 +605,7 @@ class TestUpdateConversationNameHappy:
         assert got["name"] == "new"
 
     def test_rename_nonexistent_still_returns_200(self, app, pg_conn):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             UpdateConversationName,
         )
 
@@ -622,7 +622,7 @@ class TestUpdateConversationNameHappy:
         assert response.status_code == 200
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.conversations.routes import (
+        from docsgpt.api.user.conversations.routes import (
             UpdateConversationName,
         )
 
@@ -632,7 +632,7 @@ class TestUpdateConversationNameHappy:
             yield
 
         with patch(
-            "application.api.user.conversations.routes.db_session", _broken
+            "docsgpt.api.user.conversations.routes.db_session", _broken
         ), app.test_request_context(
             "/api/update_conversation_name",
             method="POST",
@@ -648,7 +648,7 @@ class TestUpdateConversationNameHappy:
 
 class TestSubmitFeedbackHappy:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.conversations.routes import SubmitFeedback
+        from docsgpt.api.user.conversations.routes import SubmitFeedback
 
         with app.test_request_context(
             "/api/feedback",
@@ -667,8 +667,8 @@ class TestSubmitFeedbackHappy:
         assert response.status_code == 401
 
     def test_submits_feedback(self, app, pg_conn):
-        from application.api.user.conversations.routes import SubmitFeedback
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.user.conversations.routes import SubmitFeedback
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -698,8 +698,8 @@ class TestSubmitFeedbackHappy:
         assert fb and fb.get("text") == "like"
 
     def test_none_feedback_allowed(self, app, pg_conn):
-        from application.api.user.conversations.routes import SubmitFeedback
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.user.conversations.routes import SubmitFeedback
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -726,7 +726,7 @@ class TestSubmitFeedbackHappy:
         assert response.status_code == 200
 
     def test_returns_404_for_missing_conversation(self, app, pg_conn):
-        from application.api.user.conversations.routes import SubmitFeedback
+        from docsgpt.api.user.conversations.routes import SubmitFeedback
 
         with _patch_conversations_db(pg_conn), app.test_request_context(
             "/api/feedback",
@@ -745,7 +745,7 @@ class TestSubmitFeedbackHappy:
         assert response.status_code == 404
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.conversations.routes import SubmitFeedback
+        from docsgpt.api.user.conversations.routes import SubmitFeedback
 
         @contextmanager
         def _broken():
@@ -753,7 +753,7 @@ class TestSubmitFeedbackHappy:
             yield
 
         with patch(
-            "application.api.user.conversations.routes.db_session", _broken
+            "docsgpt.api.user.conversations.routes.db_session", _broken
         ), app.test_request_context(
             "/api/feedback",
             method="POST",
@@ -776,12 +776,12 @@ class TestSubmitFeedbackWithApiKey:
     """api_key callers carry no JWT."""
 
     def _seed_agent_with_key(self, pg_conn, owner, key):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         return AgentsRepository(pg_conn).create(owner, "widget", "published", key=key)
 
     def _post(self, app, pg_conn, payload):
-        from application.api.user.conversations.routes import SubmitFeedback
+        from docsgpt.api.user.conversations.routes import SubmitFeedback
 
         with _patch_conversations_db(pg_conn), app.test_request_context("/api/feedback", method="POST", json=payload):
             from flask import request
@@ -790,7 +790,7 @@ class TestSubmitFeedbackWithApiKey:
             return SubmitFeedback().post()
 
     def test_valid_key_rates_its_own_conversation(self, app, pg_conn):
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -816,7 +816,7 @@ class TestSubmitFeedbackWithApiKey:
         assert fb and fb.get("text") == "like"
 
     def test_key_cannot_rate_owner_conversation_it_did_not_create(self, app, pg_conn):
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 

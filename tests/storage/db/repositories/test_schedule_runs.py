@@ -6,10 +6,10 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.schedule_runs import (
+from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
-from application.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 
 def _now() -> datetime:

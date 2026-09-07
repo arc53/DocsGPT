@@ -1,4 +1,4 @@
-"""Smoke test for ``application.worker.reingest_source_worker``.
+"""Smoke test for ``docsgpt.worker.reingest_source_worker``.
 
 The task reads a source row, diffs its stored ``directory_structure``
 against what's currently in storage, updates the vector store, then
@@ -14,8 +14,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.parser.schema.base import Document
-from application.storage.db.repositories.sources import SourcesRepository
+from docsgpt.parser.schema.base import Document
+from docsgpt.storage.db.repositories.sources import SourcesRepository
 
 
 @pytest.mark.unit
@@ -23,7 +23,7 @@ class TestReingestSourceWorker:
     def test_updates_source_directory_structure_and_tokens(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         # Seed a source we can re-ingest.
         src = SourcesRepository(pg_conn).create(
@@ -75,7 +75,7 @@ class TestReingestSourceWorker:
         fake_store = MagicMock(name="vector_store")
         fake_store.get_chunks.return_value = []
         monkeypatch.setattr(
-            "application.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+            "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore",
             lambda *a, **kw: fake_store,
         )
 
@@ -103,7 +103,7 @@ class TestReingestSourceWorker:
         then asserts ``ChunkerCreator.create_chunker`` is built with that
         config — not the 1250/150 classic defaults (D1/D8).
         """
-        from application import worker
+        from docsgpt import worker
 
         src = SourcesRepository(pg_conn).create(
             "doc-set",
@@ -152,7 +152,7 @@ class TestReingestSourceWorker:
         fake_store = MagicMock(name="vector_store")
         fake_store.get_chunks.return_value = []
         monkeypatch.setattr(
-            "application.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+            "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore",
             lambda *a, **kw: fake_store,
         )
 

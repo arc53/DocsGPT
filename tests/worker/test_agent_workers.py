@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.agents import AgentsRepository
 
 
 @pytest.mark.unit
@@ -24,8 +24,8 @@ class TestAgentWebhookWorker:
     def test_resolves_agent_by_uuid_and_runs_logic(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
-        from application.agents import headless_runner
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
 
         agent = AgentsRepository(pg_conn).create(
             user_id="alice",
@@ -79,8 +79,8 @@ class TestAgentWebhookWorker:
     def test_missing_agent_raises(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
-        from application.agents import headless_runner
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
 
         monkeypatch.setattr(
             headless_runner, "run_agent_headless", lambda *a, **k: {},
@@ -92,9 +92,9 @@ class TestAgentWebhookWorker:
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
         """Headless runner errors must raise — a returned dict reads as success."""
-        from application import worker
-        from application.agents import headless_runner
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = AgentsRepository(pg_conn).create(
             user_id="alice", name="hook-agent", status="active",
@@ -117,14 +117,14 @@ class TestAgentWebhookWorker:
         from contextlib import contextmanager
         from types import SimpleNamespace
 
-        from application import worker
-        from application.agents import headless_runner
-        from application.agents.tool_executor import ToolExecutor
-        from application.llm.handlers.base import (
+        from docsgpt import worker
+        from docsgpt.agents import headless_runner
+        from docsgpt.agents.tool_executor import ToolExecutor
+        from docsgpt.llm.handlers.base import (
             LLMHandler,
             ToolCall,
         )
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = AgentsRepository(pg_conn).create(
             user_id="alice", name="hook-agent", status="active",
@@ -138,36 +138,36 @@ class TestAgentWebhookWorker:
             yield pg_conn
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.db_session", _use_pg_conn,
+            "docsgpt.agents.tool_executor.db_session", _use_pg_conn,
         )
 
         # Stub model resolution + retriever so the call threads through.
         monkeypatch.setattr(
-            "application.core.model_utils.get_default_model_id",
+            "docsgpt.core.model_utils.get_default_model_id",
             lambda: "gpt-4",
         )
         monkeypatch.setattr(
-            "application.core.model_utils.validate_model_id",
+            "docsgpt.core.model_utils.validate_model_id",
             lambda m, **_kwargs: True,
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda m, **_kwargs: "openai",
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda p: "sk-test",
         )
         monkeypatch.setattr(
-            "application.utils.calculate_doc_token_budget",
+            "docsgpt.utils.calculate_doc_token_budget",
             lambda model_id=None, **_kwargs: 1000,
         )
         monkeypatch.setattr(
-            "application.api.answer.services.stream_processor.get_prompt",
+            "docsgpt.api.answer.services.stream_processor.get_prompt",
             lambda prompt_id: "prompt text",
         )
         monkeypatch.setattr(
-            "application.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
             lambda *a, **kw: SimpleNamespace(search=lambda q: []),
         )
 
@@ -235,7 +235,7 @@ class TestAgentWebhookWorker:
             return _FakeAgent()
 
         monkeypatch.setattr(
-            "application.agents.agent_creator.AgentCreator.create_agent",
+            "docsgpt.agents.agent_creator.AgentCreator.create_agent",
             _fake_agent_factory,
         )
         monkeypatch.setattr(headless_runner, "db_readonly", _use_pg_conn)
@@ -268,8 +268,8 @@ class TestRunAgentHeadlessFromWebhook:
         """Smoke-test that run_agent_headless reads the source row from PG."""
         from contextlib import contextmanager
 
-        from application.agents import headless_runner
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.agents import headless_runner
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         @contextmanager
         def _use_pg_conn():
@@ -286,25 +286,25 @@ class TestRunAgentHeadlessFromWebhook:
 
         # Silence model/provider resolution so we don't need a real key.
         monkeypatch.setattr(
-            "application.core.model_utils.get_default_model_id", lambda: "gpt-4"
+            "docsgpt.core.model_utils.get_default_model_id", lambda: "gpt-4"
         )
         monkeypatch.setattr(
-            "application.core.model_utils.validate_model_id", lambda m, **_kwargs: True
+            "docsgpt.core.model_utils.validate_model_id", lambda m, **_kwargs: True
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             lambda m, **_kwargs: "openai",
         )
         monkeypatch.setattr(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             lambda p: "sk-test",
         )
         monkeypatch.setattr(
-            "application.utils.calculate_doc_token_budget",
+            "docsgpt.utils.calculate_doc_token_budget",
             lambda model_id=None, **_kwargs: 1000,
         )
         monkeypatch.setattr(
-            "application.api.answer.services.stream_processor.get_prompt",
+            "docsgpt.api.answer.services.stream_processor.get_prompt",
             lambda prompt_id: "prompt text",
         )
 
@@ -320,7 +320,7 @@ class TestRunAgentHeadlessFromWebhook:
                 return []
 
         monkeypatch.setattr(
-            "application.retriever.retriever_creator.RetrieverCreator.create_retriever",
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever",
             lambda *a, **kw: _FakeRetriever(**kw),
         )
 
@@ -328,7 +328,7 @@ class TestRunAgentHeadlessFromWebhook:
         fake_agent.gen.return_value = iter([{"answer": "done"}])
         fake_agent.current_token_count = 0
         monkeypatch.setattr(
-            "application.agents.agent_creator.AgentCreator.create_agent",
+            "docsgpt.agents.agent_creator.AgentCreator.create_agent",
             lambda *a, **kw: fake_agent,
         )
 

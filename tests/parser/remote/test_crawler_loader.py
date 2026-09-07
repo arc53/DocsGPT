@@ -2,8 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.parser.remote.crawler_loader import CrawlerLoader
-from application.parser.schema.base import Document
+from docsgpt.parser.remote.crawler_loader import CrawlerLoader
+from docsgpt.parser.schema.base import Document
 
 
 class DummyResponse:
@@ -22,8 +22,8 @@ def _mock_validate_url(url):
     return url
 
 
-@patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("application.parser.remote.crawler_loader.pinned_request")
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
 def test_load_data_crawls_same_domain_links(mock_pinned_request, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
@@ -65,8 +65,8 @@ def test_load_data_crawls_same_domain_links(mock_pinned_request, mock_validate_u
     assert mock_pinned_request.call_count == 2
 
 
-@patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("application.parser.remote.crawler_loader.pinned_request")
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
 def test_load_data_accepts_list_input_and_adds_scheme(mock_pinned_request, mock_validate_url):
     mock_pinned_request.return_value = DummyResponse("<html><body>No links here</body></html>")
     crawler = CrawlerLoader()
@@ -83,8 +83,8 @@ def test_load_data_accepts_list_input_and_adds_scheme(mock_pinned_request, mock_
     }
 
 
-@patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("application.parser.remote.crawler_loader.pinned_request")
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
 def test_load_data_respects_limit(mock_pinned_request, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
@@ -110,9 +110,9 @@ def test_load_data_respects_limit(mock_pinned_request, mock_validate_url):
     assert mock_pinned_request.call_count == 1
 
 
-@patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
-@patch("application.parser.remote.crawler_loader.logging")
-@patch("application.parser.remote.crawler_loader.pinned_request")
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.logging")
+@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
 def test_load_data_logs_and_skips_on_request_error(mock_pinned_request, mock_logging, mock_validate_url):
     mock_pinned_request.side_effect = Exception("load failure")
     crawler = CrawlerLoader()
@@ -128,10 +128,10 @@ def test_load_data_logs_and_skips_on_request_error(mock_pinned_request, mock_log
     assert mock_logging.error.call_args.kwargs.get("exc_info") is True
 
 
-@patch("application.parser.remote.crawler_loader.validate_url")
+@patch("docsgpt.parser.remote.crawler_loader.validate_url")
 def test_load_data_returns_empty_on_ssrf_validation_failure(mock_validate_url):
     """Test that SSRF validation failure returns empty list."""
-    from application.core.url_validation import SSRFError
+    from docsgpt.core.url_validation import SSRFError
     mock_validate_url.side_effect = SSRFError("Access to private IP not allowed")
 
     crawler = CrawlerLoader()
@@ -165,15 +165,15 @@ def test_url_to_virtual_path_variants():
 class TestCrawlerLoaderGaps:
     def test_pinned_fetch_builds_document_without_webbase_loader(self):
         """The crawler should index the response body it already fetched."""
-        from application.parser.remote.crawler_loader import CrawlerLoader
+        from docsgpt.parser.remote.crawler_loader import CrawlerLoader
 
         loader = CrawlerLoader(limit=5)
         with patch(
-            "application.parser.remote.crawler_loader.validate_url",
+            "docsgpt.parser.remote.crawler_loader.validate_url",
             return_value="https://example.com",
         ):
             with patch(
-                "application.parser.remote.crawler_loader.pinned_request"
+                "docsgpt.parser.remote.crawler_loader.pinned_request"
             ) as mock_pinned_request:
                 mock_response = MagicMock()
                 mock_response.status_code = 200

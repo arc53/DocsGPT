@@ -2,14 +2,14 @@ from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 import pytest
-from application.agents.classic_agent import ClassicAgent
-from application.llm.anthropic import AnthropicLLM
-from application.llm.docsgpt_provider import DocsGPTAPILLM
-from application.llm.google_ai import GoogleLLM
-from application.llm.groq import GroqLLM
-from application.llm.novita import NovitaLLM
-from application.llm.open_router import OpenRouterLLM
-from application.llm.openai import OpenAILLM
+from docsgpt.agents.classic_agent import ClassicAgent
+from docsgpt.llm.anthropic import AnthropicLLM
+from docsgpt.llm.docsgpt_provider import DocsGPTAPILLM
+from docsgpt.llm.google_ai import GoogleLLM
+from docsgpt.llm.groq import GroqLLM
+from docsgpt.llm.novita import NovitaLLM
+from docsgpt.llm.open_router import OpenRouterLLM
+from docsgpt.llm.openai import OpenAILLM
 
 
 @pytest.mark.unit
@@ -229,7 +229,7 @@ class TestBaseAgentTools:
         mock_llm_creator,
         mock_llm_handler_creator,
     ):
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         repo = UserToolsRepository(pg_conn)
         repo.create(user_id="test_user", name="tool1", status=True)
@@ -240,13 +240,13 @@ class TestBaseAgentTools:
             yield pg_conn
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.db_readonly", _use_pg_conn
+            "docsgpt.agents.tool_executor.db_readonly", _use_pg_conn
         )
 
         agent = ClassicAgent(**agent_base_params)
         tools = agent._get_user_tools("test_user")
 
-        from application.agents.default_tools import loaded_default_tools
+        from docsgpt.agents.default_tools import loaded_default_tools
 
         assert len(tools) == 2 + len(loaded_default_tools())
         assert "0" in tools
@@ -263,7 +263,7 @@ class TestBaseAgentTools:
         mock_llm_creator,
         mock_llm_handler_creator,
     ):
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         repo = UserToolsRepository(pg_conn)
         repo.create(user_id="test_user", name="tool1", status=True)
@@ -274,13 +274,13 @@ class TestBaseAgentTools:
             yield pg_conn
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.db_readonly", _use_pg_conn
+            "docsgpt.agents.tool_executor.db_readonly", _use_pg_conn
         )
 
         agent = ClassicAgent(**agent_base_params)
         tools = agent._get_user_tools("test_user")
 
-        from application.agents.default_tools import loaded_default_tools
+        from docsgpt.agents.default_tools import loaded_default_tools
 
         assert len(tools) == 1 + len(loaded_default_tools())
         names = {t["name"] for t in tools.values()}
@@ -295,8 +295,8 @@ class TestBaseAgentTools:
         mock_llm_creator,
         mock_llm_handler_creator,
     ):
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         tool_row = UserToolsRepository(pg_conn).create(
             user_id="alice", name="api_tool"
@@ -316,13 +316,13 @@ class TestBaseAgentTools:
             yield pg_conn
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.db_readonly", _use_pg_conn
+            "docsgpt.agents.tool_executor.db_readonly", _use_pg_conn
         )
 
         agent = ClassicAgent(**agent_base_params)
         tools = agent._get_tools("api_key_123")
 
-        from application.agents.default_tools import loaded_default_tools
+        from docsgpt.agents.default_tools import loaded_default_tools
 
         # Agent-bound: exactly agents.tools, no defaults.
         assert set(tools) == {tool_id}
@@ -573,7 +573,7 @@ class TestBaseAgentToolExecution:
     ):
         agent = ClassicAgent(**agent_base_params)
 
-        from application.agents.tool_executor import PERSISTED_RESULT_MAX_LEN
+        from docsgpt.agents.tool_executor import PERSISTED_RESULT_MAX_LEN
 
         agent.tool_calls = [
             {
@@ -833,7 +833,7 @@ class TestCalculateContextTokens:
         messages = [{"role": "user", "content": "hello"}]
 
         with patch(
-            "application.api.answer.services.compression.token_counter.TokenCounter"
+            "docsgpt.api.answer.services.compression.token_counter.TokenCounter"
         ) as MockTC:
             MockTC.count_message_tokens.return_value = 42
             result = agent._calculate_current_context_tokens(messages)
@@ -862,7 +862,7 @@ class TestCheckContextLimit:
 
         with patch.object(agent, "_calculate_current_context_tokens", return_value=100):
             with patch(
-                "application.core.model_utils.get_token_limit", return_value=10000
+                "docsgpt.core.model_utils.get_token_limit", return_value=10000
             ):
                 result = agent._check_context_limit(messages)
                 assert result is False
@@ -879,7 +879,7 @@ class TestCheckContextLimit:
         # threshold = 10000 * 0.8 = 8000; tokens = 8001 → True
         with patch.object(agent, "_calculate_current_context_tokens", return_value=8001):
             with patch(
-                "application.core.model_utils.get_token_limit", return_value=10000
+                "docsgpt.core.model_utils.get_token_limit", return_value=10000
             ):
                 result = agent._check_context_limit(messages)
                 assert result is True
@@ -913,7 +913,7 @@ class TestValidateContextSize:
         agent = ClassicAgent(**agent_base_params)
         with patch.object(agent, "_calculate_current_context_tokens", return_value=10000):
             with patch(
-                "application.core.model_utils.get_token_limit", return_value=10000
+                "docsgpt.core.model_utils.get_token_limit", return_value=10000
             ):
                 # Should not raise
                 agent._validate_context_size([{"role": "user", "content": "x"}])
@@ -925,7 +925,7 @@ class TestValidateContextSize:
         agent = ClassicAgent(**agent_base_params)
         with patch.object(agent, "_calculate_current_context_tokens", return_value=100):
             with patch(
-                "application.core.model_utils.get_token_limit", return_value=10000
+                "docsgpt.core.model_utils.get_token_limit", return_value=10000
             ):
                 agent._validate_context_size([])
                 assert agent.current_token_count == 100
@@ -937,7 +937,7 @@ class TestValidateContextSize:
         # 8500 / 10000 = 85% → above 80% threshold but below 100%
         with patch.object(agent, "_calculate_current_context_tokens", return_value=8500):
             with patch(
-                "application.core.model_utils.get_token_limit", return_value=10000
+                "docsgpt.core.model_utils.get_token_limit", return_value=10000
             ):
                 agent._validate_context_size([])
                 assert agent.current_token_count == 8500
@@ -955,7 +955,7 @@ class TestTruncateTextMiddle:
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
         agent = ClassicAgent(**agent_base_params)
-        with patch("application.utils.num_tokens_from_string", return_value=5):
+        with patch("docsgpt.utils.num_tokens_from_string", return_value=5):
             result = agent._truncate_text_middle("short", max_tokens=100)
             assert result == "short"
 
@@ -968,7 +968,7 @@ class TestTruncateTextMiddle:
         def fake_tokens(text):
             return len(text) // 4
 
-        with patch("application.utils.num_tokens_from_string", side_effect=fake_tokens):
+        with patch("docsgpt.utils.num_tokens_from_string", side_effect=fake_tokens):
             result = agent._truncate_text_middle(long_text, max_tokens=50)
             assert "[... content truncated to fit context limit ...]" in result
             assert len(result) < len(long_text)
@@ -977,7 +977,7 @@ class TestTruncateTextMiddle:
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
         agent = ClassicAgent(**agent_base_params)
-        with patch("application.utils.num_tokens_from_string", return_value=100):
+        with patch("docsgpt.utils.num_tokens_from_string", return_value=100):
             result = agent._truncate_text_middle("some text", max_tokens=0)
             assert result == ""
 
@@ -1020,7 +1020,7 @@ class TestTruncateHistoryToFit:
             {"prompt": "q1", "response": "a1"},
             {"prompt": "q2", "response": "a2"},
         ]
-        with patch("application.utils.num_tokens_from_string", return_value=5):
+        with patch("docsgpt.utils.num_tokens_from_string", return_value=5):
             result = agent._truncate_history_to_fit(history, 10000)
             assert len(result) == 2
 
@@ -1035,7 +1035,7 @@ class TestTruncateHistoryToFit:
             {"prompt": "new", "response": "new_ans"},
         ]
         # Each message = 10 tokens (prompt + response), budget = 15 → only 1 fits
-        with patch("application.utils.num_tokens_from_string", return_value=5):
+        with patch("docsgpt.utils.num_tokens_from_string", return_value=5):
             result = agent._truncate_history_to_fit(history, 15)
             assert len(result) == 1
             assert result[0]["prompt"] == "new"
@@ -1060,7 +1060,7 @@ class TestTruncateHistoryToFit:
                 ],
             }
         ]
-        with patch("application.utils.num_tokens_from_string", return_value=3):
+        with patch("docsgpt.utils.num_tokens_from_string", return_value=3):
             result = agent._truncate_history_to_fit(history, 100)
             assert len(result) == 1
 
@@ -1080,8 +1080,8 @@ class TestBuildMessagesAdvanced:
         agent = ClassicAgent(**agent_base_params)
 
         with patch(
-            "application.core.model_utils.get_token_limit", return_value=100000
-        ), patch("application.utils.num_tokens_from_string", return_value=10):
+            "docsgpt.core.model_utils.get_token_limit", return_value=100000
+        ), patch("docsgpt.utils.num_tokens_from_string", return_value=10):
             messages = agent._build_messages("System prompt", "query")
 
         system_content = messages[0]["content"]
@@ -1099,8 +1099,8 @@ class TestBuildMessagesAdvanced:
             return len(text)
 
         with patch(
-            "application.core.model_utils.get_token_limit", return_value=200
-        ), patch("application.utils.num_tokens_from_string", side_effect=fake_tokens):
+            "docsgpt.core.model_utils.get_token_limit", return_value=200
+        ), patch("docsgpt.utils.num_tokens_from_string", side_effect=fake_tokens):
             with patch.object(agent, "_truncate_text_middle", return_value="truncated"):
                 with patch.object(agent, "_truncate_history_to_fit", return_value=[]):
                     messages = agent._build_messages("sys", "A" * 500)
@@ -1127,8 +1127,8 @@ class TestBuildMessagesAdvanced:
         agent = ClassicAgent(**agent_base_params)
 
         with patch(
-            "application.core.model_utils.get_token_limit", return_value=100000
-        ), patch("application.utils.num_tokens_from_string", return_value=5):
+            "docsgpt.core.model_utils.get_token_limit", return_value=100000
+        ), patch("docsgpt.utils.num_tokens_from_string", return_value=5):
             messages = agent._build_messages("sys", "q")
 
         tool_msgs = [m for m in messages if m["role"] == "tool"]
@@ -1391,7 +1391,7 @@ class TestBaseAgentContextBudget:
     def _agent_with_limit(params, monkeypatch, limit):
         agent = ClassicAgent(**params)
         monkeypatch.setattr(
-            "application.core.model_utils.get_token_limit",
+            "docsgpt.core.model_utils.get_token_limit",
             lambda *a, **k: limit,
         )
         return agent
@@ -1489,7 +1489,7 @@ class TestBaseAgentDocumentsInUserTurn:
         ]
         agent = ClassicAgent(**agent_base_params)
         monkeypatch.setattr(
-            "application.core.model_utils.get_token_limit", lambda *a, **k: 1500
+            "docsgpt.core.model_utils.get_token_limit", lambda *a, **k: 1500
         )
         messages = agent._build_messages("short system", "What is Python?")
         user = messages[-1]["content"]
@@ -1531,7 +1531,7 @@ class TestBaseAgentDocumentBudgetOrdering:
         ]
         agent = ClassicAgent(**agent_base_params)
         monkeypatch.setattr(
-            "application.core.model_utils.get_token_limit", lambda *a, **k: 4000
+            "docsgpt.core.model_utils.get_token_limit", lambda *a, **k: 4000
         )
         huge_question = "please explain this in detail " * 900
         user = agent._build_messages("short system", huge_question)[-1]["content"]

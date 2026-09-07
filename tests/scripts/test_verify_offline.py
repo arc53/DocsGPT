@@ -4,7 +4,7 @@ import sys
 import types
 from unittest.mock import patch
 
-from application.scripts import verify_offline
+from docsgpt.scripts import verify_offline
 
 
 def _fake_tiktoken(monkeypatch):
@@ -17,8 +17,8 @@ class TestVerify:
     def test_passes_when_every_check_passes(self, monkeypatch, capsys):
         _fake_tiktoken(monkeypatch)
         counter = types.SimpleNamespace(name="org/model", count=lambda text: 4)
-        with patch("application.parser.tokenization.get_token_counter", return_value=counter), \
-                patch("application.vectorstore.embeddings_local.EmbeddingsWrapper") as wrapper, \
+        with patch("docsgpt.parser.tokenization.get_token_counter", return_value=counter), \
+                patch("docsgpt.vectorstore.embeddings_local.EmbeddingsWrapper") as wrapper, \
                 patch.object(verify_offline, "is_available", return_value=False):
             wrapper.return_value.embed_query.return_value = [0.0] * 768
             assert verify_offline.verify(["ibm-granite/granite-embedding-311m-multilingual-r2"]) is True
@@ -30,8 +30,8 @@ class TestVerify:
         """A cache miss makes chunking silently use cl100k; that is a failed check."""
         _fake_tiktoken(monkeypatch)
         counter = types.SimpleNamespace(name="cl100k_base", count=lambda text: 4)
-        with patch("application.parser.tokenization.get_token_counter", return_value=counter), \
-                patch("application.vectorstore.embeddings_local.EmbeddingsWrapper") as wrapper, \
+        with patch("docsgpt.parser.tokenization.get_token_counter", return_value=counter), \
+                patch("docsgpt.vectorstore.embeddings_local.EmbeddingsWrapper") as wrapper, \
                 patch.object(verify_offline, "is_available", return_value=False):
             wrapper.return_value.embed_query.return_value = [0.0] * 768
             assert verify_offline.verify(["ibm-granite/granite-embedding-311m-multilingual-r2"]) is False

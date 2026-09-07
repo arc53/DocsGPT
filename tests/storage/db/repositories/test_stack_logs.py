@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.stack_logs import StackLogsRepository
+from docsgpt.storage.db.repositories.stack_logs import StackLogsRepository
 
 
 def _repo(conn) -> StackLogsRepository:

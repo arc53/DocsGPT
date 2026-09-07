@@ -14,16 +14,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.api.answer.services.compression import CompressionService
-from application.api.answer.services.compression.orchestrator import (
+from docsgpt.api.answer.services.compression import CompressionService
+from docsgpt.api.answer.services.compression.orchestrator import (
     CompressionOrchestrator,
 )
-from application.api.answer.services.compression.threshold_checker import (
+from docsgpt.api.answer.services.compression.threshold_checker import (
     CompressionThresholdChecker,
 )
-from application.api.answer.services.compression.token_counter import TokenCounter
-from application.api.answer.services.compression.types import CompressionResult
-from application.api.answer.services.conversation_service import (
+from docsgpt.api.answer.services.compression.token_counter import TokenCounter
+from docsgpt.api.answer.services.compression.types import CompressionResult
+from docsgpt.api.answer.services.conversation_service import (
     COMPRESSION_SUMMARY_PROMPT,
 )
 
@@ -106,16 +106,16 @@ class TestTurnStartReuse:
         assert result.last_compression_at is None
 
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_provider_from_model_id",
+        "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id",
         return_value="openai",
     )
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_api_key_for_provider",
+        "docsgpt.api.answer.services.compression.orchestrator.get_api_key_for_provider",
         return_value="sk",
     )
-    @patch("application.api.answer.services.compression.orchestrator.LLMCreator")
-    @patch("application.api.answer.services.compression.orchestrator.CompressionService")
-    @patch("application.api.answer.services.compression.orchestrator.settings")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.CompressionService")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.settings")
     def test_over_threshold_compresses_only_the_tail(
         self,
         mock_settings,
@@ -172,7 +172,7 @@ class TestEffectiveTokenCount:
         )
 
     @patch(
-        "application.api.answer.services.compression.threshold_checker.get_token_limit",
+        "docsgpt.api.answer.services.compression.threshold_checker.get_token_limit",
         return_value=1000,
     )
     def test_should_compress_uses_effective_count(self, _limit):
@@ -252,7 +252,7 @@ class TestSummaryRowMarker:
     who types the label text as a question keeps that turn."""
 
     def test_marked_row_is_a_summary_row(self):
-        from application.api.answer.services.compression.types import (
+        from docsgpt.api.answer.services.compression.types import (
             COMPRESSION_SUMMARY_MARKER,
             is_compression_summary_row,
         )
@@ -261,7 +261,7 @@ class TestSummaryRowMarker:
         assert is_compression_summary_row(row) is True
 
     def test_legacy_row_without_metadata_is_a_summary_row(self):
-        from application.api.answer.services.compression.types import is_compression_summary_row
+        from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 
         assert is_compression_summary_row({"prompt": COMPRESSION_SUMMARY_PROMPT, "response": "S"}) is True
         assert is_compression_summary_row(
@@ -269,7 +269,7 @@ class TestSummaryRowMarker:
         ) is True
 
     def test_user_turn_with_the_label_text_is_kept(self):
-        from application.api.answer.services.compression.types import is_compression_summary_row
+        from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 
         real_turn = {
             "prompt": COMPRESSION_SUMMARY_PROMPT,
@@ -309,16 +309,16 @@ class TestIncrementalTailExcludesSummaryRows:
             svc.compress_conversation(conv, compress_up_to_index=2, start_index=2)
 
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_provider_from_model_id",
+        "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id",
         return_value="openai",
     )
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_api_key_for_provider",
+        "docsgpt.api.answer.services.compression.orchestrator.get_api_key_for_provider",
         return_value="sk",
     )
-    @patch("application.api.answer.services.compression.orchestrator.LLMCreator")
-    @patch("application.api.answer.services.compression.orchestrator.CompressionService")
-    @patch("application.api.answer.services.compression.orchestrator.settings")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.CompressionService")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.settings")
     def test_orchestrator_reuses_summary_when_only_summary_rows_follow_the_point(
         self, mock_settings, MockCompressionService, MockLLMCreator, _key, _provider,
         orchestrator, conversation_service, threshold_checker,
@@ -355,16 +355,16 @@ class TestAbsolutePersistIndex:
         assert metadata.query_index == 19
 
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_provider_from_model_id",
+        "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id",
         return_value="openai",
     )
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_api_key_for_provider",
+        "docsgpt.api.answer.services.compression.orchestrator.get_api_key_for_provider",
         return_value="sk",
     )
-    @patch("application.api.answer.services.compression.orchestrator.LLMCreator")
-    @patch("application.api.answer.services.compression.orchestrator.CompressionService")
-    @patch("application.api.answer.services.compression.orchestrator.settings")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.CompressionService")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.settings")
     def test_mid_execution_builds_on_the_carried_summary_and_persists_the_absolute_index(
         self, mock_settings, MockCompressionService, MockLLMCreator, _key, _provider,
         orchestrator, conversation_service,
@@ -461,16 +461,16 @@ class TestUnusableSavedPoints:
         assert [q["prompt"] for q in recent] == ["q2", "q3", "q4"]
 
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_provider_from_model_id",
+        "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id",
         return_value="openai",
     )
     @patch(
-        "application.api.answer.services.compression.orchestrator.get_api_key_for_provider",
+        "docsgpt.api.answer.services.compression.orchestrator.get_api_key_for_provider",
         return_value="sk",
     )
-    @patch("application.api.answer.services.compression.orchestrator.LLMCreator")
-    @patch("application.api.answer.services.compression.orchestrator.CompressionService")
-    @patch("application.api.answer.services.compression.orchestrator.settings")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.CompressionService")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.settings")
     def test_recompression_starts_after_the_latest_usable_point(
         self, mock_settings, MockCompressionService, MockLLMCreator, _key, _provider,
         orchestrator, conversation_service, threshold_checker,

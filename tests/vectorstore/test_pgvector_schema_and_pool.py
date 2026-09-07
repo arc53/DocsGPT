@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from application.vectorstore import pgvector as pgvector_module
+from docsgpt.vectorstore import pgvector as pgvector_module
 
 CONNECTION_STRING = "postgresql://user:pass@localhost/db"
 
@@ -23,9 +23,9 @@ CONNECTION_STRING = "postgresql://user:pass@localhost/db"
 def _make_store(source_id="test-source", connection_string=CONNECTION_STRING):
     """Build a store with every external dependency mocked, no DDL patching."""
     with patch(
-        "application.vectorstore.base.BaseVectorStore._get_embeddings"
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings"
     ) as mock_get_emb, patch(
-        "application.vectorstore.pgvector.settings"
+        "docsgpt.vectorstore.pgvector.settings"
     ) as mock_settings, patch.dict(
         "sys.modules",
         {
@@ -42,7 +42,7 @@ def _make_store(source_id="test-source", connection_string=CONNECTION_STRING):
         mock_settings.EMBEDDINGS_NAME = "test_model"
         mock_settings.PGVECTOR_CONNECTION_STRING = connection_string
 
-        from application.vectorstore.pgvector import PGVectorStore
+        from docsgpt.vectorstore.pgvector import PGVectorStore
 
         store = PGVectorStore(
             source_id=source_id,
@@ -64,9 +64,9 @@ def _make_store(source_id="test-source", connection_string=CONNECTION_STRING):
 class TestConstructionTouchesNothing:
     def test_init_opens_no_connection_and_runs_no_ddl(self):
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings"
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings"
         ) as mock_get_emb, patch(
-            "application.vectorstore.pgvector.settings"
+            "docsgpt.vectorstore.pgvector.settings"
         ) as mock_settings, patch.dict(
             "sys.modules",
             {
@@ -79,7 +79,7 @@ class TestConstructionTouchesNothing:
             mock_settings.EMBEDDINGS_NAME = "test_model"
             mock_settings.PGVECTOR_CONNECTION_STRING = CONNECTION_STRING
 
-            from application.vectorstore.pgvector import PGVectorStore
+            from docsgpt.vectorstore.pgvector import PGVectorStore
 
             with patch.object(
                 PGVectorStore, "_get_connection"
@@ -112,8 +112,8 @@ class TestPoolSizingHasOneHome:
     """
 
     def test_both_stores_share_one_implementation(self):
-        from application.graphrag import store as store_module
-        from application.vectorstore import pgconn
+        from docsgpt.graphrag import store as store_module
+        from docsgpt.vectorstore import pgconn
 
         assert pgvector_module.DEFAULT_POOL_MAX_SIZE is pgconn.DEFAULT_POOL_MAX_SIZE
         assert store_module.DEFAULT_POOL_MAX_SIZE is pgconn.DEFAULT_POOL_MAX_SIZE
@@ -128,8 +128,8 @@ class TestPoolSizingHasOneHome:
         [(0, 0), (2, 2), (None, 8), ("4", 8), (True, 8), (-1, 8)],
     )
     def test_pool_size_is_resolved_defensively(self, monkeypatch, value, expected):
-        from application.core import settings as settings_module
-        from application.vectorstore import pgconn
+        from docsgpt.core import settings as settings_module
+        from docsgpt.vectorstore import pgconn
 
         monkeypatch.setattr(
             settings_module.settings, "PGVECTOR_POOL_MAX_SIZE", value, raising=False
@@ -176,7 +176,7 @@ class TestWritePathEnsuresSchemaOnce:
 @pytest.mark.unit
 class TestCreateSchema:
     def test_emits_the_ddl_and_leaves_the_commit_to_the_caller(self):
-        from application.vectorstore.pgvector import PGVectorStore
+        from docsgpt.vectorstore.pgvector import PGVectorStore
 
         conn, cursor = MagicMock(), MagicMock()
         conn.cursor.return_value = cursor
@@ -213,19 +213,19 @@ class TestTableDimension:
         return conn
 
     def test_parses_the_declared_vector_width(self):
-        from application.vectorstore.pgvector import PGVectorStore
+        from docsgpt.vectorstore.pgvector import PGVectorStore
 
         conn = self._conn([("documents",), ("vector(768)",)])
         assert PGVectorStore.table_dimension(conn) == 768
 
     def test_returns_none_when_the_table_is_absent(self):
-        from application.vectorstore.pgvector import PGVectorStore
+        from docsgpt.vectorstore.pgvector import PGVectorStore
 
         conn = self._conn([(None,)])
         assert PGVectorStore.table_dimension(conn) is None
 
     def test_returns_none_when_the_column_type_is_not_a_vector(self):
-        from application.vectorstore.pgvector import PGVectorStore
+        from docsgpt.vectorstore.pgvector import PGVectorStore
 
         conn = self._conn([("documents",), ("text",)])
         assert PGVectorStore.table_dimension(conn) is None

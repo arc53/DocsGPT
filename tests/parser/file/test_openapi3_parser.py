@@ -1,4 +1,4 @@
-"""Tests for application.parser.file.openapi3_parser covering lines 7-8, 45."""
+"""Tests for docsgpt.parser.file.openapi3_parser covering lines 7-8, 45."""
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -9,16 +9,16 @@ class TestOpenAPI3ParserImportFallback:
     def test_import_fallback_to_base_parser(self):
         """Cover lines 7-8: try/except ModuleNotFoundError import fallback."""
         # The fallback import is a module-level concern. Just verify the class works.
-        with patch("application.parser.file.openapi3_parser.parse"):
-            from application.parser.file.openapi3_parser import OpenAPI3Parser
+        with patch("docsgpt.parser.file.openapi3_parser.parse"):
+            from docsgpt.parser.file.openapi3_parser import OpenAPI3Parser
 
             parser = OpenAPI3Parser()
             assert parser is not None
 
     def test_get_base_urls(self):
         """Cover basic URL extraction."""
-        with patch("application.parser.file.openapi3_parser.parse"):
-            from application.parser.file.openapi3_parser import OpenAPI3Parser
+        with patch("docsgpt.parser.file.openapi3_parser.parse"):
+            from docsgpt.parser.file.openapi3_parser import OpenAPI3Parser
 
             parser = OpenAPI3Parser()
             urls = parser.get_base_urls([
@@ -32,8 +32,8 @@ class TestOpenAPI3ParserImportFallback:
 
     def test_get_info_from_paths_empty(self):
         """Cover path with no operations."""
-        with patch("application.parser.file.openapi3_parser.parse"):
-            from application.parser.file.openapi3_parser import OpenAPI3Parser
+        with patch("docsgpt.parser.file.openapi3_parser.parse"):
+            from docsgpt.parser.file.openapi3_parser import OpenAPI3Parser
 
             parser = OpenAPI3Parser()
             mock_path = MagicMock()
@@ -43,8 +43,8 @@ class TestOpenAPI3ParserImportFallback:
 
     def test_parse_file_writes_results(self, tmp_path):
         """Cover line 45: parse_file writes to results.txt."""
-        with patch("application.parser.file.openapi3_parser.parse") as mock_parse:
-            from application.parser.file.openapi3_parser import OpenAPI3Parser
+        with patch("docsgpt.parser.file.openapi3_parser.parse") as mock_parse:
+            from docsgpt.parser.file.openapi3_parser import OpenAPI3Parser
 
             mock_server = MagicMock()
             mock_server.url = "https://api.example.com"

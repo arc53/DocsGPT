@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.core.model_registry import ModelRegistry
+from docsgpt.core.model_registry import ModelRegistry
 
 
 def _make_settings(**overrides):
@@ -67,7 +67,7 @@ class TestOperatorAddsNewProvider:
         monkeypatch.setenv("FIREWORKS_API_KEY", "fw-key")
 
         s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
 
         m = reg.get_model("accounts/fireworks/models/llama-v3p3-70b-instruct")
@@ -99,7 +99,7 @@ class TestOperatorExtendsExistingProvider:
             ANTHROPIC_API_KEY="sk-ant",
             MODELS_CONFIG_DIR=str(tmp_path),
         )
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
 
         # Built-in models still present
@@ -137,7 +137,7 @@ class TestOperatorOverridesBuiltinCapabilities:
             MODELS_CONFIG_DIR=str(tmp_path),
         )
         with caplog.at_level(logging.WARNING):
-            with patch("application.core.settings.settings", s):
+            with patch("docsgpt.core.settings.settings", s):
                 reg = ModelRegistry()
 
         m = reg.get_model("claude-haiku-4-5")
@@ -164,7 +164,7 @@ class TestMisconfiguredOperatorDir:
         s = _make_settings(MODELS_CONFIG_DIR=str(bogus))
 
         with caplog.at_level(logging.WARNING):
-            with patch("application.core.settings.settings", s):
+            with patch("docsgpt.core.settings.settings", s):
                 reg = ModelRegistry()
 
         # Built-in catalog still loaded
@@ -178,7 +178,7 @@ class TestMisconfiguredOperatorDir:
 
         s = _make_settings(MODELS_CONFIG_DIR=str(afile))
         with caplog.at_level(logging.WARNING):
-            with patch("application.core.settings.settings", s):
+            with patch("docsgpt.core.settings.settings", s):
                 reg = ModelRegistry()
 
         assert reg.get_model("docsgpt-local") is not None
@@ -199,7 +199,7 @@ class TestOperatorValidation:
         """))
 
         s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             with pytest.raises(Exception) as exc_info:
                 ModelRegistry()
         # Could be ModelYAMLError (enum check) or ValueError (registry check);

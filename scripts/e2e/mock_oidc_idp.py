@@ -20,7 +20,7 @@ comes from ``MOCK_OIDC_GROUPS`` (comma-separated).
 
 Run standalone (does NOT import anything from ``application/``). Dependencies
 (flask, python-jose, cryptography, requests) are all in
-``application/requirements.txt``.
+``docsgpt/requirements.txt``.
 
 Usage::
 

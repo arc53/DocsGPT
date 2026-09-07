@@ -19,7 +19,7 @@ import pytest
 
 def _run(agent_config, monkeypatch, events=None):
     """Drive ``run_agent_headless`` and capture the agent-factory kwargs."""
-    from application.agents import headless_runner as hr
+    from docsgpt.agents import headless_runner as hr
 
     agent = MagicMock(name="agent")
     agent.gen.return_value = iter(events if events is not None else [{"answer": "ok"}])
@@ -48,14 +48,14 @@ def _run(agent_config, monkeypatch, events=None):
         hr.AgentCreator, "create_agent", classmethod(_create_agent),
     )
 
-    with patch("application.core.model_utils.validate_model_id", return_value=True), \
-         patch("application.core.model_utils.get_default_model_id", return_value="m"), \
+    with patch("docsgpt.core.model_utils.validate_model_id", return_value=True), \
+         patch("docsgpt.core.model_utils.get_default_model_id", return_value="m"), \
          patch(
-             "application.core.model_utils.get_provider_from_model_id",
+             "docsgpt.core.model_utils.get_provider_from_model_id",
              return_value="openai",
          ), \
-         patch("application.core.model_utils.get_api_key_for_provider", return_value="k"), \
-         patch("application.utils.calculate_doc_token_budget", return_value=1000):
+         patch("docsgpt.core.model_utils.get_api_key_for_provider", return_value="k"), \
+         patch("docsgpt.utils.calculate_doc_token_budget", return_value=1000):
         outcome = hr.run_agent_headless(agent_config, "do the thing")
     return captured, outcome
 

@@ -15,17 +15,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.core.model_settings import ModelCapabilities
+from docsgpt.core.model_settings import ModelCapabilities
 
 
 def _make_llm(monkeypatch, store_responses=True, **extra_settings):
-    monkeypatch.setattr("application.llm.openai.OpenAI", MagicMock())
+    monkeypatch.setattr("docsgpt.llm.openai.OpenAI", MagicMock())
     monkeypatch.setattr(
-        "application.llm.openai.StorageCreator",
+        "docsgpt.llm.openai.StorageCreator",
         types.SimpleNamespace(get_storage=lambda: None),
     )
     monkeypatch.setattr(
-        "application.llm.openai.settings",
+        "docsgpt.llm.openai.settings",
         types.SimpleNamespace(
             OPENAI_API_KEY="k",
             API_KEY="k",
@@ -36,7 +36,7 @@ def _make_llm(monkeypatch, store_responses=True, **extra_settings):
             **extra_settings,
         ),
     )
-    from application.llm.openai import OpenAILLM
+    from docsgpt.llm.openai import OpenAILLM
 
     llm = OpenAILLM(api_key="k")
     llm.capabilities = ModelCapabilities(
@@ -177,8 +177,8 @@ def test_build_responses_params_cache_key_needs_a_conversation(monkeypatch):
 
 
 def _agent(monkeypatch, history, last_compression_at=None, **overrides):
-    from application.agents import base as base_mod
-    from application.agents.base import BaseAgent
+    from docsgpt.agents import base as base_mod
+    from docsgpt.agents.base import BaseAgent
 
     class _Agent(BaseAgent):
         def _gen_inner(self, query, log_context):
@@ -203,7 +203,7 @@ def _agent(monkeypatch, history, last_compression_at=None, **overrides):
     for key, value in defaults.items():
         monkeypatch.setattr(base_mod.settings, key, value, raising=False)
     monkeypatch.setattr(
-        "application.core.model_utils.get_token_limit", lambda *a, **k: 1000
+        "docsgpt.core.model_utils.get_token_limit", lambda *a, **k: 1000
     )
     return agent
 
@@ -314,7 +314,7 @@ def test_emit_responses_metadata_records_compression_epoch(monkeypatch):
 
 @pytest.mark.unit
 def test_cache_key_for_user_is_opaque_and_stable():
-    from application.agents.base import _cache_key_for_user
+    from docsgpt.agents.base import _cache_key_for_user
 
     key = _cache_key_for_user("user_2Vhzgd63RSgixvvbF8Z2nhtqnE9")
     assert key and "user_2Vhzgd" not in key

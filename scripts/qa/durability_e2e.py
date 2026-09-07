@@ -54,7 +54,7 @@ from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
-# Bootstrap: import application/* and connect to the configured Postgres.
+# Bootstrap: import docsgpt/* and connect to the configured Postgres.
 # ---------------------------------------------------------------------------
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -83,12 +83,7 @@ UNIQUE = f"qa_e2e_{int(time.time())}_{uuid.uuid4().hex[:6]}"
 
 
 # Quiet noisy library loggers so the script's own output stays readable.
-for name in (
-    "application", "application.api", "application.storage",
-    "application.usage", "application.parser",
-    "application.api.user.reconciliation",
-):
-    logging.getLogger(name).setLevel(logging.ERROR)
+logging.getLogger("docsgpt").setLevel(logging.ERROR)
 
 
 # ---------------------------------------------------------------------------
@@ -260,11 +255,11 @@ def s1_wal_and_reconciler() -> None:
     a stuck pending row to ``failed`` after 3 attempts and emits a
     structured alert."""
 
-    from application.api.answer.services.conversation_service import (
+    from docsgpt.api.answer.services.conversation_service import (
         ConversationService,
         TERMINATED_RESPONSE_PLACEHOLDER,
     )
-    from application.api.user.reconciliation import run_reconciliation
+    from docsgpt.api.user.reconciliation import run_reconciliation
 
     user = f"{UNIQUE}-s1"
     with ENGINE.begin() as c:
@@ -273,7 +268,7 @@ def s1_wal_and_reconciler() -> None:
             {"u": user},
         )
 
-    with patch_db_session("application.api.answer.services.conversation_service"):
+    with patch_db_session("docsgpt.api.answer.services.conversation_service"):
         res = ConversationService().save_user_question(
             conversation_id=None,
             question=f"{UNIQUE} s1 stuck WAL",
@@ -348,8 +343,8 @@ def s2_webhook_idempotency_and_scoping() -> None:
 
     from flask import Flask
 
-    from application.api.user.agents.webhooks import AgentWebhookListener
-    from application.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.api.user.agents.webhooks import AgentWebhookListener
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
 
     user_a = f"{UNIQUE}-s2a"
     user_b = f"{UNIQUE}-s2b"
@@ -382,8 +377,8 @@ def s2_webhook_idempotency_and_scoping() -> None:
     raw_key = f"{UNIQUE}-key-1"
 
     # Sequential dedup: same key twice → same task_id, single apply_async call.
-    with patch_db_session("application.api.user.agents.webhooks"), patch(
-        "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+    with patch_db_session("docsgpt.api.user.agents.webhooks"), patch(
+        "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
         apply_mock,
     ):
         for _ in range(2):
@@ -410,8 +405,8 @@ def s2_webhook_idempotency_and_scoping() -> None:
     apply_mock.reset_mock()
     apply_calls.clear()
     cross_key = f"{UNIQUE}-cross"
-    with patch_db_session("application.api.user.agents.webhooks"), patch(
-        "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+    with patch_db_session("docsgpt.api.user.agents.webhooks"), patch(
+        "docsgpt.api.user.agents.webhooks.process_agent_webhook.apply_async",
         apply_mock,
     ):
         for ag in (agent_a, agent_b):
@@ -453,11 +448,11 @@ def s3_ingest_deterministic_and_resume() -> None:
     """Deterministic source_id is stable; chunk-progress checkpoint
     resumes from the next un-embedded chunk."""
 
-    from application.parser.embedding_pipeline import _read_resume_index
-    from application.storage.db.repositories.ingest_chunk_progress import (
+    from docsgpt.parser.embedding_pipeline import _read_resume_index
+    from docsgpt.storage.db.repositories.ingest_chunk_progress import (
         IngestChunkProgressRepository,
     )
-    from application.worker import _derive_source_id
+    from docsgpt.worker import _derive_source_id
 
     # Same scoped key → same uuid5; different scope → different uuid5.
     a = _derive_source_id("alice:UPLOAD-1")
@@ -475,7 +470,7 @@ def s3_ingest_deterministic_and_resume() -> None:
 
     # Checkpoint primitive: seed progress, observe resume index.
     src_id = uuid.uuid4()
-    with patch_db_session("application.parser.embedding_pipeline"):
+    with patch_db_session("docsgpt.parser.embedding_pipeline"):
         with ENGINE.begin() as conn:
             repo = IngestChunkProgressRepository(conn)
             repo.init_progress(str(src_id), total_chunks=10)
@@ -497,11 +492,11 @@ def s4_token_usage_atomic_rollback() -> None:
     insert; the surrounding transaction must roll back so no orphan
     token_usage row survives."""
 
-    from application.api.answer.services.conversation_service import (
+    from docsgpt.api.answer.services.conversation_service import (
         ConversationService,
     )
-    from application.storage.db.repositories import conversations as conv_mod
-    from application.storage.db.repositories.conversations import (
+    from docsgpt.storage.db.repositories import conversations as conv_mod
+    from docsgpt.storage.db.repositories.conversations import (
         ConversationsRepository,
     )
 
@@ -531,8 +526,8 @@ def s4_token_usage_atomic_rollback() -> None:
     try:
         conv_mod.ConversationsRepository.update_message_by_id = explode
         with patch_db_session(
-            "application.api.answer.services.conversation_service",
-        ), suppress_logging("application.api.answer.services.conversation_service"):
+            "docsgpt.api.answer.services.conversation_service",
+        ), suppress_logging("docsgpt.api.answer.services.conversation_service"):
             try:
                 ConversationService().finalize_message(
                     mid,
@@ -577,7 +572,7 @@ def s5_reconciler_tool_call_sweeps() -> None:
     flips proposed→failed and executed→failed (or compensated when the
     tool exposes a working compensate)."""
 
-    from application.api.user.reconciliation import run_reconciliation
+    from docsgpt.api.user.reconciliation import run_reconciliation
 
     user = f"{UNIQUE}-s5"
     with ENGINE.begin() as c:
@@ -687,7 +682,7 @@ def s6_resume_janitor() -> None:
         )
     info(f"seeded pending_tool_state in 'resuming' (resumed_at=-11m) for conv={cid}")
 
-    from application.api.user.tasks import cleanup_pending_tool_state
+    from docsgpt.api.user.tasks import cleanup_pending_tool_state
 
     res = cleanup_pending_tool_state.run()
     info(f"janitor result: {res}")
@@ -712,13 +707,13 @@ def s7_token_usage_attribution() -> None:
     ``_persist_token_usage_inline`` self-write a row; the canary fires
     when ``status='complete'`` arrives with zero counts."""
 
-    from application.api.answer.services.conversation_service import (
+    from docsgpt.api.answer.services.conversation_service import (
         ConversationService,
     )
-    from application.storage.db.repositories.conversations import (
+    from docsgpt.storage.db.repositories.conversations import (
         ConversationsRepository,
     )
-    from application.usage import _maybe_persist_inline
+    from docsgpt.usage import _maybe_persist_inline
 
     user = f"{UNIQUE}-s7"
     with ENGINE.begin() as c:
@@ -747,7 +742,7 @@ def s7_token_usage_attribution() -> None:
         mid_zero = str(msg2["id"])
 
     # 1. Real counts → row written, source='agent_stream'.
-    with patch_db_session("application.api.answer.services.conversation_service"):
+    with patch_db_session("docsgpt.api.answer.services.conversation_service"):
         ok = ConversationService().finalize_message(
             mid_real,
             "answer",
@@ -771,7 +766,7 @@ def s7_token_usage_attribution() -> None:
 
     # 2. Zero-count complete fires the canary alert.
     canary_logger = logging.getLogger(
-        "application.api.answer.services.conversation_service"
+        "docsgpt.api.answer.services.conversation_service"
     )
     seen: list[logging.LogRecord] = []
 
@@ -787,7 +782,7 @@ def s7_token_usage_attribution() -> None:
     canary_logger.setLevel(logging.WARNING)
     try:
         with patch_db_session(
-            "application.api.answer.services.conversation_service",
+            "docsgpt.api.answer.services.conversation_service",
         ):
             ConversationService().finalize_message(
                 mid_zero,
@@ -817,7 +812,7 @@ def s7_token_usage_attribution() -> None:
         _persist_token_usage_inline = True
         _token_usage_source = "compression"
 
-    with patch_db_session("application.usage"):
+    with patch_db_session("docsgpt.usage"):
         _maybe_persist_inline(
             _SideLLM(),
             {"prompt_tokens": 250, "generated_tokens": 80},
@@ -839,10 +834,10 @@ def s8_regenerate_replaces() -> None:
     position N before reserving the placeholder, so the new row lands at
     position=N (replacing the old) rather than appending at the end."""
 
-    from application.api.answer.services.conversation_service import (
+    from docsgpt.api.answer.services.conversation_service import (
         ConversationService,
     )
-    from application.storage.db.repositories.conversations import (
+    from docsgpt.storage.db.repositories.conversations import (
         ConversationsRepository,
     )
 
@@ -871,7 +866,7 @@ def s8_regenerate_replaces() -> None:
     assert before == [0, 1, 2, 3, 4], f"seed wrong: {before}"
     info(f"seeded conv={cid} positions={before}")
 
-    with patch_db_session("application.api.answer.services.conversation_service"):
+    with patch_db_session("docsgpt.api.answer.services.conversation_service"):
         result = ConversationService().save_user_question(
             conversation_id=cid,
             question=f"{UNIQUE}-regen",
@@ -899,7 +894,7 @@ def s9_idempotency_concurrent_claim() -> None:
     Confirms the ON CONFLICT DO NOTHING race semantics for the HTTP
     claim-first pattern."""
 
-    from application.storage.db.repositories.idempotency import (
+    from docsgpt.storage.db.repositories.idempotency import (
         IdempotencyRepository,
     )
 
@@ -1033,7 +1028,7 @@ def _build_openai_llm():
     """Construct an OpenAI-provider LLM pointing at the mock LLM. Skips
     the BYOM resolution path that LLMCreator usually goes through, since
     we just want a direct openai-client wrapper for the mock."""
-    from application.llm.openai import OpenAILLM
+    from docsgpt.llm.openai import OpenAILLM
 
     return OpenAILLM(
         api_key="mock-key",
@@ -1061,7 +1056,7 @@ def s11_live_llm_stream_through_wal() -> None:
       streamed response captured.
     """
 
-    from application.api.answer.services.conversation_service import (
+    from docsgpt.api.answer.services.conversation_service import (
         ConversationService,
     )
 
@@ -1072,7 +1067,7 @@ def s11_live_llm_stream_through_wal() -> None:
             {"u": user},
         )
 
-    with patch_db_session("application.api.answer.services.conversation_service"):
+    with patch_db_session("docsgpt.api.answer.services.conversation_service"):
         res = ConversationService().save_user_question(
             conversation_id=None,
             question=f"{UNIQUE} say hello",
@@ -1105,7 +1100,7 @@ def s11_live_llm_stream_through_wal() -> None:
         f"response[:40]={response_text[:40]!r}"
     )
 
-    with patch_db_session("application.api.answer.services.conversation_service"):
+    with patch_db_session("docsgpt.api.answer.services.conversation_service"):
         ok = ConversationService().finalize_message(
             mid,
             response_text,
@@ -1162,7 +1157,7 @@ def s12_full_embedding_loop() -> None:
     is just a regular Python function; ``self`` is a MagicMock with the
     minimum attrs the worker reads."""
 
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     user = f"{UNIQUE}-s12"
     with ENGINE.begin() as c:
@@ -1227,7 +1222,7 @@ def s12_full_embedding_loop() -> None:
     settings.VECTOR_STORE = "faiss"
 
     idempotency_key = f"{user}:{UNIQUE}-s12-key"
-    from application.worker import _derive_source_id
+    from docsgpt.worker import _derive_source_id
 
     expected_source_id = str(_derive_source_id(idempotency_key))
 
@@ -1250,11 +1245,11 @@ def s12_full_embedding_loop() -> None:
 
     try:
         with patch_db_session(
-            "application.parser.embedding_pipeline",
-            "application.worker",
-            "application.api.answer.services.conversation_service",
-        ), patch("application.worker.upload_index", _fake_upload_index):
-            from application.worker import ingest_worker
+            "docsgpt.parser.embedding_pipeline",
+            "docsgpt.worker",
+            "docsgpt.api.answer.services.conversation_service",
+        ), patch("docsgpt.worker.upload_index", _fake_upload_index):
+            from docsgpt.worker import ingest_worker
 
             resp = ingest_worker(
                 fake_self,
@@ -1347,7 +1342,7 @@ class CeleryWorkerService:
         self._proc = subprocess.Popen(  # noqa: S603
             [
                 sys.executable, "-m", "celery",
-                "-A", "application.app.celery", "worker",
+                "-A", "docsgpt.app.celery", "worker",
                 "-l", "INFO", "--pool=solo",
                 "-Q", self._queue,
                 "-n", f"qa-{UNIQUE}@%h",
@@ -1508,7 +1503,7 @@ def s13_sigkill_redelivers_via_acks_late() -> None:
 
     # Dispatch via celery's send_task using the same broker URL the worker
     # listens on. The DocsGPT celery instance has already loaded
-    # ``application.celeryconfig`` (broker = production .env DB 0); since
+    # ``docsgpt.celeryconfig`` (broker = production .env DB 0); since
     # Celery's conf re-reads ``CELERY_BROKER_URL`` from the env at publish
     # time, we override the env for the *whole* dispatch + wait block.
     from celery import Celery
@@ -1536,7 +1531,7 @@ def s13_sigkill_redelivers_via_acks_late() -> None:
         task_id = str(uuid.uuid4())
         info(f"dispatching task_id={task_id} key={idempotency_key}")
         chaos_app.send_task(
-            "application.api.user.tasks.process_agent_webhook",
+            "docsgpt.api.user.tasks.process_agent_webhook",
             kwargs={
                 "agent_id": agent_id,
                 "payload": {"event": f"{UNIQUE}-s13"},
@@ -1636,7 +1631,7 @@ def s10_celery_default_queue() -> None:
     """Sanity: the broker queue is project-scoped so a sibling worker on
     the same Redis can't grab DocsGPT tasks."""
 
-    from application import celeryconfig
+    from docsgpt import celeryconfig
 
     assert celeryconfig.task_default_queue == "docsgpt", (
         f"expected default queue 'docsgpt'; got {celeryconfig.task_default_queue!r}"

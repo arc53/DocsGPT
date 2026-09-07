@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.scripts import prefetch_models
-from application.vectorstore.model_registry import GRANITE_311M, MPNET, OPENAI_ADA_002
+from docsgpt.scripts import prefetch_models
+from docsgpt.vectorstore.model_registry import GRANITE_311M, MPNET, OPENAI_ADA_002
 
 
 @pytest.fixture

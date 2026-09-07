@@ -2,7 +2,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from application.usage import (
+from docsgpt.usage import (
     _count_prompt_tokens,
     _count_tokens,
     _serialize_for_token_count,
@@ -33,9 +33,9 @@ def _install_fake_token_repo(monkeypatch):
     """Replace TokenUsageRepository + db_session with in-memory stubs."""
     _FakeTokenUsageRepo.last_instance = None
     monkeypatch.setattr(
-        "application.usage.TokenUsageRepository", _FakeTokenUsageRepo
+        "docsgpt.usage.TokenUsageRepository", _FakeTokenUsageRepo
     )
-    monkeypatch.setattr("application.usage.db_session", _fake_db_session)
+    monkeypatch.setattr("docsgpt.usage.db_session", _fake_db_session)
 
 
 @pytest.mark.unit
@@ -253,7 +253,7 @@ def test_decorator_skips_when_no_attribution(monkeypatch, caplog):
         _ = (model, messages, stream, tools, kwargs)
         return "ok"
 
-    with caplog.at_level(logging.WARNING, logger="application.usage"):
+    with caplog.at_level(logging.WARNING, logger="docsgpt.usage"):
         wrapped(
             OrphanLLM(),
             "m",
@@ -634,7 +634,7 @@ class _ReportingLLM:
 
 @pytest.mark.unit
 def test_prefer_provider_usage_carries_cache_bins():
-    from application.usage import _prefer_provider_usage
+    from docsgpt.usage import _prefer_provider_usage
 
     llm = _ReportingLLM({"cached_tokens": 800, "cache_write_tokens": 100})
     usage = _prefer_provider_usage(llm, {"prompt_tokens": 1, "generated_tokens": 1})
@@ -646,7 +646,7 @@ def test_prefer_provider_usage_carries_cache_bins():
 
 @pytest.mark.unit
 def test_prefer_provider_usage_maps_anthropic_cache_creation_to_writes():
-    from application.usage import _prefer_provider_usage
+    from docsgpt.usage import _prefer_provider_usage
 
     llm = _ReportingLLM({"cached_tokens": 3, "cache_creation_tokens": 9})
     usage = _prefer_provider_usage(llm, {"prompt_tokens": 1, "generated_tokens": 1})
@@ -656,7 +656,7 @@ def test_prefer_provider_usage_maps_anthropic_cache_creation_to_writes():
 
 @pytest.mark.unit
 def test_prefer_provider_usage_without_details_has_no_cache_keys():
-    from application.usage import _prefer_provider_usage
+    from docsgpt.usage import _prefer_provider_usage
 
     llm = _ReportingLLM(None)
     usage = _prefer_provider_usage(llm, {"prompt_tokens": 1, "generated_tokens": 1})
@@ -666,7 +666,7 @@ def test_prefer_provider_usage_without_details_has_no_cache_keys():
 
 @pytest.mark.unit
 def test_prefer_provider_usage_keeps_the_rest_of_the_call_record():
-    from application.usage import _prefer_provider_usage
+    from docsgpt.usage import _prefer_provider_usage
 
     llm = _ReportingLLM(None)
     usage = _prefer_provider_usage(

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.agents.workflows.schemas import (
+from docsgpt.agents.workflows.schemas import (
     ExecutionStatus,
     NodeType,
     WorkflowEdge,
@@ -14,7 +14,7 @@ from application.agents.workflows.schemas import (
     WorkflowNode,
     Workflow,
 )
-from application.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 
 
 def _make_graph(nodes, edges):
@@ -402,8 +402,8 @@ class TestNormalizeNodeJsonSchema:
     def test_invalid_schema_raises(self):
         graph = _make_graph([], [])
         engine = WorkflowEngine(graph, _make_agent())
-        with patch("application.agents.workflows.workflow_engine.normalize_json_schema_payload") as mock_norm:
-            from application.core.json_schema_utils import JsonSchemaValidationError
+        with patch("docsgpt.agents.workflows.workflow_engine.normalize_json_schema_payload") as mock_norm:
+            from docsgpt.core.json_schema_utils import JsonSchemaValidationError
             mock_norm.side_effect = JsonSchemaValidationError("bad schema")
             with pytest.raises(ValueError, match="Invalid JSON schema"):
                 engine._normalize_node_json_schema({"bad": True}, "TestNode")
@@ -430,7 +430,7 @@ class TestValidateStructuredOutput:
     def test_no_jsonschema_module(self):
         graph = _make_graph([], [])
         engine = WorkflowEngine(graph, _make_agent())
-        with patch("application.agents.workflows.workflow_engine.jsonschema", None):
+        with patch("docsgpt.agents.workflows.workflow_engine.jsonschema", None):
             engine._validate_structured_output({"type": "object"}, {})  # Should not raise
 
 
@@ -449,7 +449,7 @@ class TestFormatTemplate:
 
     @pytest.mark.unit
     def test_render_error_returns_raw(self):
-        from application.templates.template_engine import TemplateRenderError
+        from docsgpt.templates.template_engine import TemplateRenderError
         graph = _make_graph([], [])
         engine = WorkflowEngine(graph, _make_agent())
         engine._build_template_context = MagicMock(return_value={})
@@ -631,18 +631,18 @@ class TestAgentNodeExecution:
         mock_agent.gen.return_value = [{"answer": "response"}]
 
         with patch(
-            "application.agents.workflows.workflow_engine.WorkflowNodeAgentFactory"
+            "docsgpt.agents.workflows.workflow_engine.WorkflowNodeAgentFactory"
         ) as mock_factory, \
              patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             return_value="openai",
         ), \
              patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="key",
         ), \
              patch(
-            "application.core.model_utils.get_model_capabilities",
+            "docsgpt.core.model_utils.get_model_capabilities",
             return_value=None,
         ):
             mock_factory.create.return_value = mock_agent
@@ -674,18 +674,18 @@ class TestAgentNodeExecution:
         ]
 
         with patch(
-            "application.agents.workflows.workflow_engine.WorkflowNodeAgentFactory"
+            "docsgpt.agents.workflows.workflow_engine.WorkflowNodeAgentFactory"
         ) as mock_factory, \
              patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             return_value="openai",
         ), \
              patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="key",
         ), \
              patch(
-            "application.core.model_utils.get_model_capabilities",
+            "docsgpt.core.model_utils.get_model_capabilities",
             return_value={"supports_structured_output": True},
         ):
             mock_factory.create.return_value = mock_agent
@@ -712,15 +712,15 @@ class TestAgentNodeExecution:
         engine.state = {"query": "test"}
 
         with patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             return_value="openai",
         ), \
              patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="key",
         ), \
              patch(
-            "application.core.model_utils.get_model_capabilities",
+            "docsgpt.core.model_utils.get_model_capabilities",
             return_value={"supports_structured_output": False},
         ):
             with pytest.raises(ValueError, match="does not support structured output"):
@@ -744,18 +744,18 @@ class TestAgentNodeExecution:
         mock_agent.gen.return_value = [{"answer": "output text"}]
 
         with patch(
-            "application.agents.workflows.workflow_engine.WorkflowNodeAgentFactory"
+            "docsgpt.agents.workflows.workflow_engine.WorkflowNodeAgentFactory"
         ) as mock_factory, \
              patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             return_value="openai",
         ), \
              patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="key",
         ), \
              patch(
-            "application.core.model_utils.get_model_capabilities",
+            "docsgpt.core.model_utils.get_model_capabilities",
             return_value=None,
         ):
             mock_factory.create.return_value = mock_agent
@@ -771,11 +771,11 @@ class TestAgentNodeExecution:
         import jsonschema as js
 
         with patch(
-            "application.agents.workflows.workflow_engine.normalize_json_schema_payload",
+            "docsgpt.agents.workflows.workflow_engine.normalize_json_schema_payload",
             return_value={"type": "invalid_schema_type"},
         ), \
              patch(
-            "application.agents.workflows.workflow_engine.jsonschema"
+            "docsgpt.agents.workflows.workflow_engine.jsonschema"
         ) as mock_js:
             mock_js.validate.side_effect = js.exceptions.SchemaError("bad schema")
             mock_js.exceptions = js.exceptions
@@ -1038,15 +1038,15 @@ class TestNodeDocumentManifest:
         def fake_readonly():
             yield object()
 
-        monkeypatch.setattr("application.storage.db.session.db_readonly", fake_readonly)
+        monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", fake_readonly)
         monkeypatch.setattr(
-            "application.storage.db.repositories.artifacts.ArtifactsRepository", FakeRepo
+            "docsgpt.storage.db.repositories.artifacts.ArtifactsRepository", FakeRepo
         )
         return engine
 
     @pytest.mark.unit
     def test_manifest_lists_refs_filenames_and_mimes(self, monkeypatch):
-        from application.agents.workflows.schemas import AgentNodeConfig
+        from docsgpt.agents.workflows.schemas import AgentNodeConfig
 
         engine = self._engine_with_docs(monkeypatch)
         config = AgentNodeConfig(agent_type="classic", input_documents=["*"])
@@ -1058,7 +1058,7 @@ class TestNodeDocumentManifest:
 
     @pytest.mark.unit
     def test_manifest_empty_without_selection(self, monkeypatch):
-        from application.agents.workflows.schemas import AgentNodeConfig
+        from docsgpt.agents.workflows.schemas import AgentNodeConfig
 
         engine = self._engine_with_docs(monkeypatch)
         config = AgentNodeConfig(agent_type="classic", input_documents=[])
@@ -1068,7 +1068,7 @@ class TestNodeDocumentManifest:
     def test_manifest_failure_never_breaks_the_node(self, monkeypatch):
         from contextlib import contextmanager
 
-        from application.agents.workflows.schemas import AgentNodeConfig
+        from docsgpt.agents.workflows.schemas import AgentNodeConfig
 
         engine = WorkflowEngine(_make_graph([], []), _make_agent())
         engine.state["input_documents"] = [{"artifact_id": self._ART_1}]
@@ -1078,6 +1078,6 @@ class TestNodeDocumentManifest:
             raise RuntimeError("db down")
             yield
 
-        monkeypatch.setattr("application.storage.db.session.db_readonly", broken_readonly)
+        monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", broken_readonly)
         config = AgentNodeConfig(agent_type="classic", input_documents=["*"])
         assert engine._node_document_manifest(config) == ""

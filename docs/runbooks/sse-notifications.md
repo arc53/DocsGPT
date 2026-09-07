@@ -126,7 +126,7 @@ reconnect HTTP errored. Common cases:
 - The user's JWT rotated mid-stream → 401 on the GET. Frontend
   doesn't auto-refresh; the user reloads.
 - The user is on a different host than the API and CORS is rejecting
-  the GET → check `application/asgi.py` allow-headers.
+  the GET → check `docsgpt/asgi.py` allow-headers.
 
 ### D. "The dev install never delivers any notifications at all"
 
@@ -316,7 +316,7 @@ redis-cli -n 2 DEL user:<id>:stream
 
 ## Settings reference
 
-Everything in `application/core/settings.py`:
+Everything in `docsgpt/core/settings.py`:
 
 | Setting                                       | Default | Purpose                                       |
 | --------------------------------------------- | ------- | --------------------------------------------- |
@@ -364,16 +364,16 @@ re-surface UX is too aggressive for v2.
 
 The chat-stream reconnect reader `GET /api/messages/<id>/events`
 is a native-async Starlette route mounted in
-`application/asgi.py`, not a Flask route. Plain `flask run`
+`docsgpt/asgi.py`, not a Flask route. Plain `flask run`
 serves only the WSGI Flask app, so under it that endpoint 404s
 and reconnect-after-disconnect can't resume. Run the backend via
-`uvicorn application.asgi:asgi_app --reload` (or the production
+`uvicorn docsgpt.asgi:asgi_app --reload` (or the production
 gunicorn uvicorn-worker) to exercise it.
 
 ### Werkzeug doesn't auto-reload route files
 
 The dev server (`flask run`) doesn't watch
-`application/api/events/routes.py` for changes by default.
+`docsgpt/api/events/routes.py` for changes by default.
 After editing the route, restart Flask manually — `--reload`
 isn't on. (Production gunicorn reloads via deploy.)
 

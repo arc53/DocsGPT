@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from application.agents.default_tools import default_tool_id
-from application.agents.tool_executor import ToolExecutor
+from docsgpt.agents.default_tools import default_tool_id
+from docsgpt.agents.tool_executor import ToolExecutor
 
 SYNTHESIZED_ID = default_tool_id("code_executor")
 STORED_ID = "9f1d4c2e-0000-4000-8000-000000000001"

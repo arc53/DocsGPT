@@ -1,4 +1,4 @@
-"""Tests for application.agents.default_tools — the default chat tools."""
+"""Tests for docsgpt.agents.default_tools — the default chat tools."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from application.agents import default_tools
+from docsgpt.agents import default_tools
 
 
 @pytest.fixture(autouse=True)
@@ -100,7 +100,7 @@ class TestValidation:
             "DEFAULT_CHAT_TOOLS",
             ["memory", "read_webpage", "future_tool_x"],
         )
-        with caplog.at_level("DEBUG", logger="application.agents.default_tools"):
+        with caplog.at_level("DEBUG", logger="docsgpt.agents.default_tools"):
             usable = default_tools.validate_default_chat_tools()
         assert "future_tool_x" not in usable
         assert "memory" in usable and "read_webpage" in usable
@@ -117,7 +117,7 @@ class TestValidation:
             "DEFAULT_CHAT_TOOLS",
             ["memory", "read_webpage", "future_tool_x"],
         )
-        with caplog.at_level("DEBUG", logger="application.agents.default_tools"):
+        with caplog.at_level("DEBUG", logger="docsgpt.agents.default_tools"):
             default_tools.loaded_default_tools()
         assert caplog.records == []
 
@@ -201,7 +201,7 @@ class TestSandboxToolsAreNotShippedDefaults:
         that legitimately enabled these — which is the documented way to turn
         them on when a sandbox runner exists.
         """
-        from application.core.settings import Settings
+        from docsgpt.core.settings import Settings
 
         shipped = Settings.model_fields["DEFAULT_CHAT_TOOLS"].default
         assert name not in shipped
@@ -497,14 +497,14 @@ class TestBuiltinAgentTools:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestFkBoundToolsIsInSync:
-    # Table name -> tool module name (``application/agents/tools/<name>``).
+    # Table name -> tool module name (``docsgpt/agents/tools/<name>``).
     _TABLE_TO_TOOL = {
         "notes": "notes",
         "todos": "todo_list",
     }
 
     def test_fk_bound_tools_matches_metadata(self):
-        from application.storage.db.models import metadata
+        from docsgpt.storage.db.models import metadata
 
         fk_bound_tables = set()
         for tbl in metadata.tables.values():
@@ -520,7 +520,7 @@ class TestFkBoundToolsIsInSync:
         assert not unmapped, (
             f"New FK-bound table(s) without a tool mapping: {sorted(unmapped)}. "
             "Add an entry to _TABLE_TO_TOOL here AND to "
-            "application.agents.default_tools._FK_BOUND_TOOLS."
+            "docsgpt.agents.default_tools._FK_BOUND_TOOLS."
         )
         derived_names = {
             self._TABLE_TO_TOOL[name] for name in fk_bound_tables

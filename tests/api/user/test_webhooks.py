@@ -1,4 +1,4 @@
-"""Tests for application/api/user/agents/webhooks.py.
+"""Tests for docsgpt/api/user/agents/webhooks.py.
 
 Previously coupled to bson.ObjectId + patched agents_collection. Scheduled
 for rewrite against pg_conn + AgentsRepository.

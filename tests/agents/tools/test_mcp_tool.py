@@ -1,4 +1,4 @@
-"""Comprehensive tests for application/agents/tools/mcp_tool.py
+"""Comprehensive tests for docsgpt/agents/tools/mcp_tool.py
 
 Covers: MCPTool init, cache key generation, transport creation, tool formatting,
 result formatting, execute_action, discover_tools, test_connection,
@@ -26,12 +26,12 @@ def _patch_mcp_globals(monkeypatch):
     """
     import sys
 
-    if "application.agents.tools.mcp_tool" in sys.modules:
-        mcp_mod = sys.modules["application.agents.tools.mcp_tool"]
+    if "docsgpt.agents.tools.mcp_tool" in sys.modules:
+        mcp_mod = sys.modules["docsgpt.agents.tools.mcp_tool"]
     else:
         mock_tasks = MagicMock()
-        monkeypatch.setitem(sys.modules, "application.api.user.tasks", mock_tasks)
-        import application.agents.tools.mcp_tool as mcp_mod
+        monkeypatch.setitem(sys.modules, "docsgpt.api.user.tasks", mock_tasks)
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
 
     monkeypatch.setattr(mcp_mod, "_mcp_clients_cache", {})
     # Bypass DNS-resolving URL validation for tests using fake hostnames.
@@ -60,7 +60,7 @@ def bearer_config():
 
 
 def _make_tool(config, **kwargs):
-    from application.agents.tools.mcp_tool import MCPTool
+    from docsgpt.agents.tools.mcp_tool import MCPTool
 
     with patch.object(MCPTool, "_setup_client"):
         return MCPTool(config, **kwargs)
@@ -87,14 +87,14 @@ class TestMCPToolInit:
         assert tool.auth_credentials["bearer_token"] == "tok_123"
 
     def test_no_server_url_skips_setup(self):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         with patch.object(MCPTool, "_setup_client") as mock_setup:
             MCPTool({"server_url": "", "auth_type": "none"})
             mock_setup.assert_not_called()
 
     def test_oauth_skips_setup(self):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         with patch.object(MCPTool, "_setup_client") as mock_setup:
             MCPTool({
@@ -104,10 +104,10 @@ class TestMCPToolInit:
             mock_setup.assert_not_called()
 
     def test_encrypted_credentials_decryption(self):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         with patch.object(MCPTool, "_setup_client"), \
-             patch("application.agents.tools.mcp_tool.decrypt_credentials",
+             patch("docsgpt.agents.tools.mcp_tool.decrypt_credentials",
                    return_value={"bearer_token": "decrypted_tok"}):
             tool = MCPTool(
                 {
@@ -140,27 +140,27 @@ class TestMCPToolInit:
         assert tool.custom_headers == {"X-Custom": "val"}
 
     def test_rejects_metadata_ip(self, monkeypatch):
-        from application.agents.tools.mcp_tool import MCPTool
-        from application.core.url_validation import validate_url as real_validate_url
-        import application.agents.tools.mcp_tool as mcp_mod
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+        from docsgpt.core.url_validation import validate_url as real_validate_url
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
 
         monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://169.254.169.254/latest/meta-data", "auth_type": "none"})
 
     def test_rejects_localhost(self, monkeypatch):
-        from application.agents.tools.mcp_tool import MCPTool
-        from application.core.url_validation import validate_url as real_validate_url
-        import application.agents.tools.mcp_tool as mcp_mod
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+        from docsgpt.core.url_validation import validate_url as real_validate_url
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
 
         monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://localhost:8080/mcp", "auth_type": "none"})
 
     def test_rejects_private_ip(self, monkeypatch):
-        from application.agents.tools.mcp_tool import MCPTool
-        from application.core.url_validation import validate_url as real_validate_url
-        import application.agents.tools.mcp_tool as mcp_mod
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+        from docsgpt.core.url_validation import validate_url as real_validate_url
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
 
         monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
@@ -174,7 +174,7 @@ class TestMCPToolInit:
         assert tool.server_url == "https://mcp.example.com/api"
 
     def test_empty_server_url_allowed(self):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         with patch.object(MCPTool, "_setup_client"):
             tool = MCPTool(config={"server_url": "", "auth_type": "none"})
@@ -198,7 +198,7 @@ class TestResolveRedirectUri:
         assert tool.redirect_uri == "https://my.app/callback"
 
     def test_fallback_to_settings(self, monkeypatch):
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "API_URL", "https://api.docsgpt.co")
         tool = _make_tool({
@@ -488,7 +488,7 @@ class TestExecuteAction:
         with pytest.raises(Exception, match="No MCP server configured"):
             tool.execute_action("test_action")
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_successful_execute(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -499,7 +499,7 @@ class TestExecuteAction:
         mock_run.assert_called_once_with("call_tool", "test_action", param1="val1")
         assert result == {"key": "value"}
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_empty_kwargs_cleaned(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -512,9 +512,9 @@ class TestExecuteAction:
         assert "param2" not in call_kwargs
         assert call_kwargs["param3"] == "real"
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_auth_error_retries_for_non_oauth(self, mock_run, mcp_config):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -528,7 +528,7 @@ class TestExecuteAction:
             result = tool.execute_action("act")
             assert result == {"key": "retry_ok"}
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_auth_error_raises_for_oauth(self, mock_run):
         tool = _make_tool({
             "server_url": "https://mcp.example.com",
@@ -540,7 +540,7 @@ class TestExecuteAction:
         with pytest.raises(Exception, match="OAuth session expired"):
             tool.execute_action("act")
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_non_auth_error_raises(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -549,9 +549,9 @@ class TestExecuteAction:
         with pytest.raises(Exception, match="Failed to execute action"):
             tool.execute_action("act")
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_no_client_calls_setup(self, mock_run, mcp_config):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = _make_tool(mcp_config)
         tool._client = None
@@ -570,7 +570,7 @@ class TestExecuteAction:
 @pytest.mark.unit
 class TestDiscoverTools:
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_discover_tools_success(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -584,7 +584,7 @@ class TestDiscoverTools:
         tool = _make_tool({"server_url": "", "auth_type": "none"})
         assert tool.discover_tools() == []
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_discover_tools_error(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -614,7 +614,7 @@ class TestTestConnection:
         assert result["success"] is False
         assert "Invalid URL scheme" in result["message"]
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_regular_connection_success(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -627,7 +627,7 @@ class TestTestConnection:
         assert result["success"] is True
         assert result["tools_count"] == 1
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_regular_connection_ping_fails_tools_work(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -639,7 +639,7 @@ class TestTestConnection:
         result = tool.test_connection()
         assert result["success"] is True
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_regular_connection_both_fail(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -652,7 +652,7 @@ class TestTestConnection:
         assert result["success"] is False
 
     def test_client_init_failure(self):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = _make_tool({
             "server_url": "https://good.example.com",
@@ -796,7 +796,7 @@ class TestGetActionsMetadata:
 class TestSetupClient:
 
     def test_setup_client_caches_client(self, mcp_config):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = MCPTool.__new__(MCPTool)
         tool.config = mcp_config
@@ -817,7 +817,7 @@ class TestSetupClient:
 
         mock_client = MagicMock()
         with patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
-             patch("application.agents.tools.mcp_tool.Client", return_value=mock_client):
+             patch("docsgpt.agents.tools.mcp_tool.Client", return_value=mock_client):
             tool._setup_client()
             assert tool._client is mock_client
 
@@ -831,7 +831,7 @@ class TestSetupClient:
 class TestMCPOAuthManager:
 
     def test_handle_callback_success(self):
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         mock_redis = MagicMock()
         manager = MCPOAuthManager(mock_redis)
@@ -841,14 +841,14 @@ class TestMCPOAuthManager:
         mock_redis.setex.assert_called()
 
     def test_handle_callback_no_redis(self):
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         manager = MCPOAuthManager(None)
         result = manager.handle_oauth_callback(state="abc", code="code")
         assert result is False
 
     def test_handle_callback_no_state(self):
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         mock_redis = MagicMock()
         manager = MCPOAuthManager(mock_redis)
@@ -856,7 +856,7 @@ class TestMCPOAuthManager:
         assert result is False
 
     def test_handle_callback_error(self):
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         mock_redis = MagicMock()
         manager = MCPOAuthManager(mock_redis)
@@ -867,14 +867,14 @@ class TestMCPOAuthManager:
         assert result is False
 
     def test_get_oauth_status_no_task(self):
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         manager = MCPOAuthManager(MagicMock())
         result = manager.get_oauth_status("", "alice")
         assert result["status"] == "not_started"
 
     def test_get_oauth_status_no_user(self):
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         manager = MCPOAuthManager(MagicMock())
         result = manager.get_oauth_status("task123", "")
@@ -893,7 +893,7 @@ class TestMCPOAuthManager:
         through unchanged so ``mcp.py``'s ``connect_mcp`` can use them
         without further plumbing.
         """
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         completed_envelope = json.dumps(
             {
@@ -934,7 +934,7 @@ class TestMCPOAuthManager:
         # Scan window must cover the full bounded stream so a flood of
         # concurrent source-ingest events between popup-completed and
         # Save can't push the OAuth envelope out of view.
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         assert call_args.kwargs.get("count") >= settings.EVENTS_STREAM_MAXLEN
 
@@ -942,8 +942,8 @@ class TestMCPOAuthManager:
         """Regression: count must scale with ``EVENTS_STREAM_MAXLEN``
         so the OAuth completion envelope is reachable even after
         concurrent source-ingest events flood the user stream."""
-        from application.agents.tools.mcp_tool import MCPOAuthManager
-        from application.core.settings import settings
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.core.settings import settings
 
         mock_redis = MagicMock()
         mock_redis.xrevrange.return_value = []
@@ -955,7 +955,7 @@ class TestMCPOAuthManager:
         assert call_args.kwargs.get("count") >= settings.EVENTS_STREAM_MAXLEN
 
     def test_get_oauth_status_returns_not_found_when_no_match(self):
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         mock_redis = MagicMock()
         # Stream is non-empty but has nothing matching this task.
@@ -986,7 +986,7 @@ class TestDBTokenStorage:
     """Covers the repository-backed DBTokenStorage post-PG migration.
 
     Round-trip tests use the ephemeral ``pg_conn`` fixture and patch
-    ``db_session``/``db_readonly`` in ``application.agents.tools.mcp_tool``
+    ``db_session``/``db_readonly`` in ``docsgpt.agents.tools.mcp_tool``
     so the real INSERT/SELECT SQL runs. This is the shape that caught the
     ``server_url`` NULL-column regression — ``get_tokens`` only succeeds
     if ``set_tokens`` populated the scalar column.
@@ -996,7 +996,7 @@ class TestDBTokenStorage:
     def _patch_db(monkeypatch, pg_conn):
         from contextlib import contextmanager
 
-        import application.agents.tools.mcp_tool as mcp_mod
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
 
         @contextmanager
         def _yield():
@@ -1006,13 +1006,13 @@ class TestDBTokenStorage:
         monkeypatch.setattr(mcp_mod, "db_readonly", _yield, raising=False)
         # mcp_tool imports db_session/db_readonly *inside* the helper
         # methods, so also patch the origin module they come from.
-        import application.storage.db.session as session_mod
+        import docsgpt.storage.db.session as session_mod
 
         monkeypatch.setattr(session_mod, "db_session", _yield)
         monkeypatch.setattr(session_mod, "db_readonly", _yield)
 
     def test_get_base_url(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         assert (
             DBTokenStorage.get_base_url("https://mcp.example.com/api/v1")
@@ -1020,7 +1020,7 @@ class TestDBTokenStorage:
         )
 
     def test_get_base_url_with_port(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         assert (
             DBTokenStorage.get_base_url("http://localhost:8080/path")
@@ -1028,7 +1028,7 @@ class TestDBTokenStorage:
         )
 
     def test_pg_provider_includes_base_url(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         storage = DBTokenStorage(
             server_url="https://mcp.example.com/api",
@@ -1037,7 +1037,7 @@ class TestDBTokenStorage:
         assert storage._pg_provider() == "mcp:https://mcp.example.com"
 
     def test_serialize_client_info(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         storage = DBTokenStorage(
             server_url="https://mcp.example.com",
@@ -1048,7 +1048,7 @@ class TestDBTokenStorage:
         assert result["redirect_uris"] == ["https://example.com/cb"]
 
     def test_get_tokens_none_when_no_row(self, monkeypatch, pg_conn):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         self._patch_db(monkeypatch, pg_conn)
         storage = DBTokenStorage(
@@ -1069,7 +1069,7 @@ class TestDBTokenStorage:
         ``get_by_user_and_server_url``) can resolve the row."""
         from mcp.shared.auth import OAuthToken
 
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         self._patch_db(monkeypatch, pg_conn)
         storage = DBTokenStorage(
@@ -1102,8 +1102,8 @@ class TestDBTokenStorage:
         column, not only into the JSONB blob."""
         from mcp.shared.auth import OAuthToken
 
-        from application.agents.tools.mcp_tool import DBTokenStorage
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 
@@ -1137,8 +1137,8 @@ class TestDBTokenStorage:
     def test_clear_removes_row(self, monkeypatch, pg_conn):
         from mcp.shared.auth import OAuthToken
 
-        from application.agents.tools.mcp_tool import DBTokenStorage
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 
@@ -1178,7 +1178,7 @@ class TestDBTokenStorage:
 class TestNonInteractiveOAuth:
 
     def test_redirect_handler_raises(self):
-        from application.agents.tools.mcp_tool import NonInteractiveOAuth
+        from docsgpt.agents.tools.mcp_tool import NonInteractiveOAuth
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -1204,7 +1204,7 @@ class TestNonInteractiveOAuth:
             loop.close()
 
     def test_callback_handler_raises(self):
-        from application.agents.tools.mcp_tool import NonInteractiveOAuth
+        from docsgpt.agents.tools.mcp_tool import NonInteractiveOAuth
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -1257,7 +1257,7 @@ class TestRunAsyncOperation:
 class TestResolveRedirectUriExtended:
 
     def test_mcp_oauth_redirect_uri_setting(self, monkeypatch):
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "MCP_OAUTH_REDIRECT_URI", "https://custom.redirect/callback/")
         # Ensure no configured redirect_uri in config
@@ -1268,7 +1268,7 @@ class TestResolveRedirectUriExtended:
         assert tool.redirect_uri == "https://custom.redirect/callback"
 
     def test_connector_redirect_base_uri_setting(self, monkeypatch):
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "MCP_OAUTH_REDIRECT_URI", None, raising=False)
         monkeypatch.setattr(
@@ -1282,7 +1282,7 @@ class TestResolveRedirectUriExtended:
         assert tool.redirect_uri == "https://connector.example.com/api/mcp_server/callback"
 
     def test_connector_redirect_base_uri_invalid_url(self, monkeypatch):
-        from application.core.settings import settings
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "MCP_OAUTH_REDIRECT_URI", None, raising=False)
         # Provide a base URI that has no scheme
@@ -1306,8 +1306,8 @@ class TestResolveRedirectUriExtended:
 class TestSetupClientExtended:
 
     def test_cache_hit_returns_cached_client(self):
-        import application.agents.tools.mcp_tool as mcp_mod
-        from application.agents.tools.mcp_tool import MCPTool
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = MCPTool.__new__(MCPTool)
         tool.config = {"server_url": "https://mcp.example.com", "auth_type": "none"}
@@ -1336,8 +1336,8 @@ class TestSetupClientExtended:
         assert tool._client is cached_client
 
     def test_expired_cache_creates_new_client(self):
-        import application.agents.tools.mcp_tool as mcp_mod
-        from application.agents.tools.mcp_tool import MCPTool
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = MCPTool.__new__(MCPTool)
         tool.config = {"server_url": "https://mcp.example.com", "auth_type": "none"}
@@ -1364,14 +1364,14 @@ class TestSetupClientExtended:
 
         new_client = MagicMock()
         with patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
-             patch("application.agents.tools.mcp_tool.Client", return_value=new_client):
+             patch("docsgpt.agents.tools.mcp_tool.Client", return_value=new_client):
             tool._setup_client()
             assert tool._client is new_client
             assert "expired_cache_key" not in mcp_mod._mcp_clients_cache or \
                 mcp_mod._mcp_clients_cache["expired_cache_key"]["client"] is new_client
 
     def test_setup_client_oauth_query_mode(self):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = MCPTool.__new__(MCPTool)
         tool.config = {"server_url": "https://mcp.example.com", "auth_type": "oauth"}
@@ -1393,14 +1393,14 @@ class TestSetupClientExtended:
 
         mock_client = MagicMock()
         with patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
-             patch("application.agents.tools.mcp_tool.Client", return_value=mock_client), \
-             patch("application.agents.tools.mcp_tool.get_redis_instance", return_value=MagicMock()), \
-             patch("application.agents.tools.mcp_tool.NonInteractiveOAuth"):
+             patch("docsgpt.agents.tools.mcp_tool.Client", return_value=mock_client), \
+             patch("docsgpt.agents.tools.mcp_tool.get_redis_instance", return_value=MagicMock()), \
+             patch("docsgpt.agents.tools.mcp_tool.NonInteractiveOAuth"):
             tool._setup_client()
             assert tool._client is mock_client
 
     def test_setup_client_oauth_interactive_mode(self):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = MCPTool.__new__(MCPTool)
         tool.config = {"server_url": "https://mcp.example.com", "auth_type": "oauth"}
@@ -1423,14 +1423,14 @@ class TestSetupClientExtended:
 
         mock_client = MagicMock()
         with patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
-             patch("application.agents.tools.mcp_tool.Client", return_value=mock_client), \
-             patch("application.agents.tools.mcp_tool.get_redis_instance", return_value=MagicMock()), \
-             patch("application.agents.tools.mcp_tool.DocsGPTOAuth"):
+             patch("docsgpt.agents.tools.mcp_tool.Client", return_value=mock_client), \
+             patch("docsgpt.agents.tools.mcp_tool.get_redis_instance", return_value=MagicMock()), \
+             patch("docsgpt.agents.tools.mcp_tool.DocsGPTOAuth"):
             tool._setup_client()
             assert tool._client is mock_client
 
     def test_setup_client_bearer_auth(self):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = MCPTool.__new__(MCPTool)
         tool.config = {"server_url": "https://mcp.example.com", "auth_type": "bearer"}
@@ -1451,8 +1451,8 @@ class TestSetupClientExtended:
 
         mock_client = MagicMock()
         with patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
-             patch("application.agents.tools.mcp_tool.Client", return_value=mock_client), \
-             patch("application.agents.tools.mcp_tool.BearerAuth") as mock_bearer_auth:
+             patch("docsgpt.agents.tools.mcp_tool.Client", return_value=mock_client), \
+             patch("docsgpt.agents.tools.mcp_tool.BearerAuth") as mock_bearer_auth:
             tool._setup_client()
             mock_bearer_auth.assert_called_once_with("my_token")
             assert tool._client is mock_client
@@ -1626,7 +1626,7 @@ class TestTestConnectionExtended:
         result = tool.test_connection()
         assert result["success"] is False
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_no_tools_and_no_ping_fails(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -1639,7 +1639,7 @@ class TestTestConnectionExtended:
             # ping_ok is True but tools is empty, should still succeed
             assert result["success"] is True
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_ping_fails_no_tools_fails(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -1652,7 +1652,7 @@ class TestTestConnectionExtended:
             assert "ping failed" in result["message"]
 
     def test_oauth_connection_with_valid_tokens(self):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = _make_tool({
             "server_url": "https://mcp.example.com",
@@ -1665,7 +1665,7 @@ class TestTestConnectionExtended:
         mock_token = MagicMock()
         mock_token.access_token = "valid_token"
 
-        with patch("application.agents.tools.mcp_tool.DBTokenStorage") as mock_storage_cls:
+        with patch("docsgpt.agents.tools.mcp_tool.DBTokenStorage") as mock_storage_cls:
             mock_storage = MagicMock()
 
             async def fake_get_tokens():
@@ -1689,7 +1689,7 @@ class TestTestConnectionExtended:
         tool.user_id = "user1"
         tool._client = MagicMock()
 
-        with patch("application.agents.tools.mcp_tool.DBTokenStorage") as mock_storage_cls:
+        with patch("docsgpt.agents.tools.mcp_tool.DBTokenStorage") as mock_storage_cls:
             mock_storage = MagicMock()
 
             async def fake_get_tokens():
@@ -1700,7 +1700,7 @@ class TestTestConnectionExtended:
 
             mock_task_result = MagicMock()
             mock_task_result.id = "task_abc"
-            with patch("application.agents.tools.mcp_tool.mcp_oauth_task") as mock_task:
+            with patch("docsgpt.agents.tools.mcp_tool.mcp_oauth_task") as mock_task:
                 mock_task.delay.return_value = mock_task_result
                 result = tool.test_connection()
                 assert result["success"] is False
@@ -1708,7 +1708,7 @@ class TestTestConnectionExtended:
                 assert result["task_id"] == "task_abc"
 
     def test_oauth_connection_token_validation_fails(self):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = _make_tool({
             "server_url": "https://mcp.example.com",
@@ -1721,7 +1721,7 @@ class TestTestConnectionExtended:
         mock_token = MagicMock()
         mock_token.access_token = "expired_token"
 
-        with patch("application.agents.tools.mcp_tool.DBTokenStorage") as mock_storage_cls:
+        with patch("docsgpt.agents.tools.mcp_tool.DBTokenStorage") as mock_storage_cls:
             mock_storage = MagicMock()
 
             async def fake_get_tokens():
@@ -1734,7 +1734,7 @@ class TestTestConnectionExtended:
             mock_task_result.id = "task_retry"
             with patch.object(tool, "discover_tools", side_effect=Exception("401 Unauthorized")), \
                  patch.object(MCPTool, "_setup_client"), \
-                 patch("application.agents.tools.mcp_tool.mcp_oauth_task") as mock_task:
+                 patch("docsgpt.agents.tools.mcp_tool.mcp_oauth_task") as mock_task:
                 mock_task.delay.return_value = mock_task_result
                 result = tool.test_connection()
                 assert result["success"] is False
@@ -1749,7 +1749,7 @@ class TestTestConnectionExtended:
 @pytest.mark.unit
 class TestExecuteActionExtended:
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_execute_formats_result(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -1765,9 +1765,9 @@ class TestExecuteActionExtended:
         assert result["content"][0]["type"] == "text"
         assert result["isError"] is False
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_execute_auth_retry_second_attempt_fails(self, mock_run):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = _make_tool({
             "server_url": "https://mcp.example.com",
@@ -1791,9 +1791,9 @@ class TestExecuteActionExtended:
 @pytest.mark.unit
 class TestDiscoverToolsExtended:
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_discover_tools_no_client_calls_setup(self, mock_run, mcp_config):
-        from application.agents.tools.mcp_tool import MCPTool
+        from docsgpt.agents.tools.mcp_tool import MCPTool
 
         tool = _make_tool(mcp_config)
         tool._client = None
@@ -1813,7 +1813,7 @@ class TestDiscoverToolsExtended:
 @pytest.mark.unit
 class TestRegularConnectionExtended:
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_regular_connection_message_format(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -1827,7 +1827,7 @@ class TestRegularConnectionExtended:
             # Singular form for 1 tool
             assert "tools" not in result["message"]
 
-    @patch("application.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_regular_connection_multiple_tools(self, mock_run, mcp_config):
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
@@ -1852,7 +1852,7 @@ class TestRegularConnectionExtended:
 class TestDocsGPTOAuthExtended:
 
     def test_process_auth_url_success(self):
-        from application.agents.tools.mcp_tool import DocsGPTOAuth
+        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -1876,7 +1876,7 @@ class TestDocsGPTOAuthExtended:
         assert url == "https://auth.example.com/authorize?state=abc123&client_id=xyz"
 
     def test_process_auth_url_no_state(self):
-        from application.agents.tools.mcp_tool import DocsGPTOAuth
+        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -1896,7 +1896,7 @@ class TestDocsGPTOAuthExtended:
             oauth._process_auth_url("https://auth.example.com/authorize?client_id=xyz")
 
     def test_redirect_handler_stores_in_redis(self):
-        from application.agents.tools.mcp_tool import DocsGPTOAuth
+        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -1931,7 +1931,7 @@ class TestDocsGPTOAuthExtended:
         assert mock_redis.setex.call_count >= 2
 
     def test_redirect_handler_no_redis(self):
-        from application.agents.tools.mcp_tool import DocsGPTOAuth
+        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -1960,7 +1960,7 @@ class TestDocsGPTOAuthExtended:
         assert oauth.extracted_state == "s1"
 
     def test_callback_handler_no_redis_raises(self):
-        from application.agents.tools.mcp_tool import DocsGPTOAuth
+        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -1984,7 +1984,7 @@ class TestDocsGPTOAuthExtended:
             loop.close()
 
     def test_callback_handler_receives_code(self):
-        from application.agents.tools.mcp_tool import DocsGPTOAuth
+        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2016,7 +2016,7 @@ class TestDocsGPTOAuthExtended:
             loop.close()
 
     def test_callback_handler_receives_error(self):
-        from application.agents.tools.mcp_tool import DocsGPTOAuth
+        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2046,7 +2046,7 @@ class TestDocsGPTOAuthExtended:
             loop.close()
 
     def test_init_scopes_as_string(self):
-        from application.agents.tools.mcp_tool import DocsGPTOAuth
+        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2074,7 +2074,7 @@ class TestDocsGPTOAuthExtended:
 class TestDBTokenStorageExtended:
 
     def test_get_tokens_with_valid_data(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2101,7 +2101,7 @@ class TestDBTokenStorageExtended:
             loop.close()
 
     def test_get_tokens_with_invalid_data(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2124,7 +2124,7 @@ class TestDBTokenStorageExtended:
             loop.close()
 
     def test_set_tokens(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
         from mcp.shared.auth import OAuthToken
 
         mock_db = MagicMock()
@@ -2147,7 +2147,7 @@ class TestDBTokenStorageExtended:
             loop.close()
 
     def test_get_client_info_none(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2168,7 +2168,7 @@ class TestDBTokenStorageExtended:
             loop.close()
 
     def test_get_client_info_no_client_info_key(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2189,7 +2189,7 @@ class TestDBTokenStorageExtended:
             loop.close()
 
     def test_get_client_info_with_valid_data(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2216,7 +2216,7 @@ class TestDBTokenStorageExtended:
             loop.close()
 
     def test_get_client_info_redirect_uri_mismatch(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2244,7 +2244,7 @@ class TestDBTokenStorageExtended:
             loop.close()
 
     def test_get_client_info_invalid_data(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2267,7 +2267,7 @@ class TestDBTokenStorageExtended:
             loop.close()
 
     def test_set_client_info(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
         from mcp.shared.auth import OAuthClientInformationFull
 
         mock_db = MagicMock()
@@ -2293,7 +2293,7 @@ class TestDBTokenStorageExtended:
             loop.close()
 
     def test_clear_all(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         mock_db = MagicMock()
         mock_collection = MagicMock()
@@ -2307,7 +2307,7 @@ class TestDBTokenStorageExtended:
             loop.close()
 
     def test_serialize_client_info_without_redirect_uris(self):
-        from application.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
         mock_db = MagicMock()
         storage = DBTokenStorage(
@@ -2329,7 +2329,7 @@ class TestDBTokenStorageExtended:
 class TestMCPOAuthManagerExtended:
 
     def test_handle_callback_redis_setex_for_state(self):
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         mock_redis = MagicMock()
         manager = MCPOAuthManager(mock_redis)
@@ -2340,7 +2340,7 @@ class TestMCPOAuthManagerExtended:
         assert mock_redis.setex.call_count == 2
 
     def test_handle_callback_with_error_stores_error(self):
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         mock_redis = MagicMock()
         manager = MCPOAuthManager(mock_redis)
@@ -2358,7 +2358,7 @@ class TestMCPOAuthManagerExtended:
         can present a clean "OAuth failed, try again" message rather
         than a 500.
         """
-        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
         mock_redis = MagicMock()
         mock_redis.xrevrange.side_effect = Exception("Redis went away")

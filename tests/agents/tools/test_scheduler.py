@@ -11,13 +11,13 @@ import pytest
 from sqlalchemy import text
 
 # Pre-import to stabilise the ToolManager.load_tools walk's import order
-# (avoids the mcp_tool ↔ application.api.user circular when ToolManager
+# (avoids the mcp_tool ↔ docsgpt.api.user circular when ToolManager
 # instantiation is the first reachable importer in a test process).
-import application.api.user.tools.mcp  # noqa: F401
+import docsgpt.api.user.tools.mcp  # noqa: F401
 
-from application.agents.tools.scheduler import SchedulerTool  # noqa: E402
-from application.core.settings import settings  # noqa: E402
-from application.storage.db.repositories.schedules import SchedulesRepository  # noqa: E402
+from docsgpt.agents.tools.scheduler import SchedulerTool  # noqa: E402
+from docsgpt.core.settings import settings  # noqa: E402
+from docsgpt.storage.db.repositories.schedules import SchedulesRepository  # noqa: E402
 
 
 @pytest.fixture
@@ -29,9 +29,9 @@ def patch_sessions(pg_conn):
         yield pg_conn
 
     with patch(
-        "application.agents.tools.scheduler.db_session", _ctx,
+        "docsgpt.agents.tools.scheduler.db_session", _ctx,
     ), patch(
-        "application.agents.tools.scheduler.db_readonly", _ctx,
+        "docsgpt.agents.tools.scheduler.db_readonly", _ctx,
     ):
         yield
 
@@ -309,8 +309,8 @@ class TestAgentlessInvocation:
         self, pg_conn, patch_sessions,
     ):
         """Agentless schedule captures the user's non-approval tools at fire-time."""
-        from application.agents.tools.scheduler import _safe_default_allowlist
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.agents.tools.scheduler import _safe_default_allowlist
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
 
@@ -352,8 +352,8 @@ class TestAllowlistSnapshotSemantics:
     ):
         """Schedule captures the allowlist at creation; a tool added later is
         visible at fire time (resolver re-queries) but isn't in the snapshot."""
-        from application.agents.tools.scheduler import _safe_default_allowlist
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.agents.tools.scheduler import _safe_default_allowlist
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
 
@@ -394,8 +394,8 @@ class TestAllowlistSnapshotSemantics:
     ):
         """A tool deleted between schedule creation and fire is gone for the
         LLM at fire time (the resolver lists the current state)."""
-        from application.agents.tools.scheduler import _safe_default_allowlist
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.agents.tools.scheduler import _safe_default_allowlist
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
 
@@ -424,13 +424,13 @@ class TestInternalFlag:
         assert SchedulerTool.internal is True
 
     def test_not_in_tool_manager_auto_load(self):
-        from application.agents.tools.tool_manager import ToolManager
+        from docsgpt.agents.tools.tool_manager import ToolManager
 
         tm = ToolManager(config={})
         assert "scheduler" not in tm.tools
 
     def test_load_tool_special_case_still_works(self):
-        from application.agents.tools.tool_manager import ToolManager
+        from docsgpt.agents.tools.tool_manager import ToolManager
 
         tm = ToolManager(config={})
         tool = tm.load_tool(

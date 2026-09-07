@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from application.sandbox import jupyter_gateway
-from application.sandbox.base import ExecResult
-from application.sandbox.jupyter_gateway import JupyterKernelGatewaySandbox, _Kernel
+from docsgpt.sandbox import jupyter_gateway
+from docsgpt.sandbox.base import ExecResult
+from docsgpt.sandbox.jupyter_gateway import JupyterKernelGatewaySandbox, _Kernel
 
 _SANDBOX_DIR = Path(__file__).resolve().parents[2] / "deployment" / "sandbox"
 _WRAPPER = _SANDBOX_DIR / "kernel-launch.sh"
