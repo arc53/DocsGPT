@@ -41,7 +41,11 @@ pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
 pip install "docsgpt[docling]"
 ```
 
-`uv pip install` accepts the same two commands. With `pipx`, install `docsgpt[docling]` and then run `pipx inject --index-url https://download.pytorch.org/whl/cpu docsgpt torch torchvision` to swap the CUDA build for the CPU one.
+`uv pip install` accepts the same two commands. With `pipx`, install `docsgpt[docling]` first, then replace the CUDA build inside its environment (`--no-deps` keeps pip from touching torch's dependencies, which the PyTorch index carries in older copies):
+
+```bash
+pipx runpip docsgpt install --force-reinstall --no-deps --index-url https://download.pytorch.org/whl/cpu torch torchvision
+```
 
 ## Configure
 

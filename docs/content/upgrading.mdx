@@ -111,6 +111,16 @@ alias, so nothing breaks on upgrade, but update these before the alias goes:
   than it would have (a monthly sync by up to a month). Nothing to do.
 - Data directories do not move: the compose files keep your indexes, inputs
   and vectors under `application/` in the checkout, where they already are.
+- The backend is also a package now (`pip install docsgpt`, see
+  [Install with pip](/Deploying/Pip-Install)). Runtime data lives in a data
+  home: `DOCSGPT_HOME`, else the checkout, else the directory the process
+  starts in. One consequence for a source checkout: the embedded Milvus
+  (`MILVUS_URI`) and LanceDB (`LANCEDB_PATH`) default paths now resolve under
+  the checkout instead of the start directory. If you use either store at its
+  default path and start DocsGPT from another directory, the old data is at
+  `<start directory>/milvus_local.db` or `<start directory>/data/lancedb`;
+  point the setting at it, or move it into the checkout. Faiss indexes and
+  uploads were already stored under the checkout and are unaffected.
 
 ## Check your version
 
