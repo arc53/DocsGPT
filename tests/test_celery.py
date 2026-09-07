@@ -250,6 +250,10 @@ class TestReclaimIsSkippedForEmbeds:
     def test_the_embed_task_is_skipped(self):
         assert not self._collects("docsgpt.vectorstore.embeddings_tasks.embed_texts")
 
+    def test_the_legacy_embed_name_is_skipped_too(self):
+        """Messages from the previous release carry the application.* name."""
+        assert not self._collects("application.vectorstore.embeddings_tasks.embed_texts")
+
     def test_parsing_still_reclaims(self):
         assert self._collects("docsgpt.api.user.tasks.parse_document")
 

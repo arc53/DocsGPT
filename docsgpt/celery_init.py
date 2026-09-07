@@ -121,6 +121,7 @@ def _trim_native_heap() -> None:
 # measured at ~86 ms for the collect against ~8 ms for the embed itself on a
 # worker holding the ONNX model, i.e. a 9x slowdown of the whole round trip.
 _NO_RECLAIM_TASKS = frozenset({"docsgpt.vectorstore.embeddings_tasks.embed_texts"})
+LEGACY_TASK_PREFIX = "application."
 
 
 @task_postrun.connect
@@ -132,7 +133,10 @@ def _reclaim_memory_after_task(task=None, **kwargs):
     generational collect after a task that allocated a few kilobytes just
     charges the next task for walking the whole heap.
     """
-    if getattr(task, "name", None) in _NO_RECLAIM_TASKS:
+    name = getattr(task, "name", None)
+    if isinstance(name, str) and name.startswith(LEGACY_TASK_PREFIX):
+        name = "docsgpt." + name[len(LEGACY_TASK_PREFIX):]
+    if name in _NO_RECLAIM_TASKS:
         return
     gc.collect()
     torch = sys.modules.get("torch")
@@ -169,7 +173,6 @@ celery = make_celery()
 celery.config_from_object("docsgpt.celeryconfig")
 
 #: Task-name prefix the package carried before the rename to ``docsgpt``.
-LEGACY_TASK_PREFIX = "application."
 
 
 def register_legacy_task_names(app: Celery) -> int:

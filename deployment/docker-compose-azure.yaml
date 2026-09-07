@@ -44,12 +44,14 @@ services:
     ports:
       - "7091:7091"
     volumes:
-      # Host data stays under application/ (the old package directory) for this
-      # release so an upgraded checkout keeps its indexes; it moves with the
-      # packaging work, together with an upgrade note.
-      - ../application/indexes:/app/docsgpt/indexes
-      - ../application/inputs:/app/docsgpt/inputs
-      - ../application/vectors:/app/docsgpt/vectors
+      # Host data lives under application/ (the old package directory) for this
+      # release, like the other compose files; it moves with the packaging work,
+      # together with an upgrade note. The container side is /app: the process
+      # runs there and resolves indexes/inputs/vectors relative to it (earlier
+      # versions of this file mounted /app/application/..., which nothing wrote to).
+      - ../application/indexes:/app/indexes
+      - ../application/inputs:/app/inputs
+      - ../application/vectors:/app/vectors
     depends_on:
       redis:
         condition: service_started

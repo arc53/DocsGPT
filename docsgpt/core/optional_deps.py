@@ -1,7 +1,7 @@
 """Optional dependency extras and the one place their install hints come from.
 
 Heavy or niche packages are not installed by default. Each extra maps to a
-pyproject extra and to an exported ``application/requirements-<extra>.txt``,
+pyproject extra and to an exported ``docsgpt/requirements-<extra>.txt``,
 so a missing module can always be explained with the exact command to run.
 """
 
@@ -28,7 +28,7 @@ _MODULE_TO_EXTRA: Dict[str, str] = {
 def install_hint(extra: str) -> str:
     """Install command for ``extra``, for error messages and logs."""
     return (
-        f"pip install -r application/requirements-{extra}.txt "
+        f"pip install -r docsgpt/requirements-{extra}.txt "
         f"(or: uv sync --extra {extra}; Docker: --build-arg EXTRAS={extra})"
     )
 

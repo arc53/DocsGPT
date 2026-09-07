@@ -23,7 +23,7 @@ class TestExtras:
 
     def test_install_hint_names_every_install_route(self):
         hint = optional_deps.install_hint("milvus")
-        assert "requirements-milvus.txt" in hint
+        assert "pip install -r docsgpt/requirements-milvus.txt" in hint
         assert "--extra milvus" in hint
         assert "EXTRAS=milvus" in hint
 

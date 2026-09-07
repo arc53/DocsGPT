@@ -106,7 +106,9 @@ alias, so nothing breaks on upgrade, but update these before the alias goes:
 - Celery task names changed with the package (`docsgpt.api.user.tasks.ingest`
   and so on). A worker on this release also accepts the old names, so tasks
   queued before the upgrade still run, and beat rewrites the periodic
-  schedule in Redis on start-up. Nothing to do.
+  schedule in Redis on start-up. The daily, weekly and monthly source-sync
+  timers restart from the upgrade, so the first sync after it can land later
+  than it would have (a monthly sync by up to a month). Nothing to do.
 - Data directories do not move: the compose files keep your indexes, inputs
   and vectors under `application/` in the checkout, where they already are.
 

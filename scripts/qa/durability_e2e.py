@@ -83,12 +83,7 @@ UNIQUE = f"qa_e2e_{int(time.time())}_{uuid.uuid4().hex[:6]}"
 
 
 # Quiet noisy library loggers so the script's own output stays readable.
-for name in (
-    "application", "docsgpt.api", "docsgpt.storage",
-    "docsgpt.usage", "docsgpt.parser",
-    "docsgpt.api.user.reconciliation",
-):
-    logging.getLogger(name).setLevel(logging.ERROR)
+logging.getLogger("docsgpt").setLevel(logging.ERROR)
 
 
 # ---------------------------------------------------------------------------

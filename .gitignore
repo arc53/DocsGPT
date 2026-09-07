@@ -180,6 +180,7 @@ frontend/*.sln
 frontend/*.sw?
 
 docsgpt/vectors/
+application/vectors/
 
 **/inputs
 

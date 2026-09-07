@@ -11,7 +11,7 @@ on:
       - 'docsgpt/Dockerfile'
       - '.dockerignore'
       - 'application/**'
-      - 'application/requirements*.txt'
+      - 'docsgpt/requirements*.txt'
       - 'docsgpt/scripts/prefetch_models.py'
       - 'docsgpt/scripts/verify_offline.py'
       - 'docsgpt/vectorstore/model_registry.py'
