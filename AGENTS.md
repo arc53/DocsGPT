@@ -41,8 +41,9 @@ The backend is also an installable package (`pyproject.toml`, hatchling).
 `uv sync` installs it editable and puts a `docsgpt` command on PATH:
 `docsgpt api --reload`, `docsgpt worker`, `docsgpt migrate`,
 `docsgpt prefetch-models`, `docsgpt verify-offline`. Runtime data (`.env`,
-`inputs/`, `indexes/`) lives in the checkout by default; `DOCSGPT_HOME` and
-`DOCSGPT_ENV_FILE` move it (see `docsgpt/core/paths.py`).
+`inputs/`, `indexes/`) lives in the checkout by default; `DOCSGPT_HOME` moves
+that data home, and `DOCSGPT_ENV_FILE` selects only the `.env` file (see
+`docsgpt/core/paths.py`).
 
 Dependencies are declared in `pyproject.toml` and locked in `uv.lock`; the
 `docsgpt/requirements*.txt` files are exported from the lock. To add or

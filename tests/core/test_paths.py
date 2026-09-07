@@ -36,6 +36,25 @@ class TestEnvFile:
         assert paths.env_file() == tmp_path / "custom.env"
 
 
+class TestSettingsFollowTheHome:
+    def test_embedded_vector_stores_default_under_the_home(self, monkeypatch, tmp_path):
+        from docsgpt.core.settings import Settings
+
+        monkeypatch.setenv(paths.HOME_ENV, str(tmp_path))
+        monkeypatch.delenv("MILVUS_URI", raising=False)
+        monkeypatch.delenv("LANCEDB_PATH", raising=False)
+        fresh = Settings(_env_file=None)
+        assert fresh.MILVUS_URI == str(tmp_path.resolve() / "milvus_local.db")
+        assert fresh.LANCEDB_PATH == str(tmp_path.resolve() / "data" / "lancedb")
+
+    def test_env_overrides_still_win(self, monkeypatch, tmp_path):
+        from docsgpt.core.settings import Settings
+
+        monkeypatch.setenv(paths.HOME_ENV, str(tmp_path))
+        monkeypatch.setenv("LANCEDB_PATH", "/srv/lancedb")
+        assert Settings(_env_file=None).LANCEDB_PATH == "/srv/lancedb"
+
+
 class TestPackageDir:
     def test_holds_the_shipped_data(self):
         assert paths.package_dir().name == "docsgpt"

@@ -43,7 +43,7 @@ class TestApi:
         run.assert_called_once_with()
         argv = sys.argv
         assert argv[0] == "gunicorn" and argv[-1] == "docsgpt.asgi:asgi_app"
-        assert argv[argv.index("--bind") + 1] == "0.0.0.0:8000"
+        assert argv[argv.index("--bind") + 1] == "127.0.0.1:8000"
         assert argv[argv.index("-w") + 1] == "2"
         assert argv[argv.index("-k") + 1] == "docsgpt.gunicorn_worker.BoundedDrainUvicornWorker"
         assert argv[argv.index("--config") + 1] == "python:docsgpt.gunicorn_conf"

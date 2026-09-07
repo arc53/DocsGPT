@@ -122,8 +122,9 @@ dependencies = [
 # attachment parsing, and read_document's `structured` output. Pulls torch and
 # transformers; with uv on Linux torch resolves from the CPU-only PyTorch index
 # (see [tool.uv.sources]) so the extra does not drag the CUDA stack in. pip
-# users on Linux get the same by adding
-# --extra-index-url https://download.pytorch.org/whl/cpu.
+# users on Linux install torch and torchvision from that index first
+# (--index-url https://download.pytorch.org/whl/cpu), then the extra; pip keeps
+# the torch it already has.
 docling = [
   "docling>=2.119.0,<3",
   "rapidocr>=3.9.2,<4",

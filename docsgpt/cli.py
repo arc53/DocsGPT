@@ -14,7 +14,7 @@ from typing import Optional, Sequence
 
 from docsgpt.version import __version__
 
-DEFAULT_HOST = "0.0.0.0"
+DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7091
 DEFAULT_QUEUES = "docsgpt,parsing,embeddings"
 
@@ -105,7 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", metavar="<command>")
 
     api = commands.add_parser("api", help="serve the HTTP API")
-    api.add_argument("--host", default=DEFAULT_HOST)
+    api.add_argument("--host", default=DEFAULT_HOST, help="interface to listen on (default: localhost; 0.0.0.0 for all)")
     api.add_argument("--port", type=int, default=DEFAULT_PORT)
     api.add_argument("--workers", type=int, default=1, help="gunicorn worker processes (default: 1)")
     api.add_argument("--reload", action="store_true", help="development mode: uvicorn with auto-reload")

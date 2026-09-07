@@ -34,7 +34,14 @@ pip install "docsgpt[docling]"   # DOC_PARSER_ENGINE=docling: OCR backend, struc
 pip install "docsgpt[milvus]"    # VECTOR_STORE=milvus
 ```
 
-The `docling` extra pulls in PyTorch. On Linux, PyPI's torch wheels bring the CUDA stack with them; on a CPU-only machine add `--extra-index-url https://download.pytorch.org/whl/cpu` to the install command to get the CPU build instead. `uv pip install` and `pipx install` work the same way.
+The `docling` extra pulls in PyTorch, and on Linux the PyPI torch wheels bring the CUDA stack with them. On a CPU-only machine install the CPU build first, then the extra; pip keeps the torch it already has:
+
+```bash
+pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+pip install "docsgpt[docling]"
+```
+
+`uv pip install` accepts the same two commands. With `pipx`, install `docsgpt[docling]` and then run `pipx inject --index-url https://download.pytorch.org/whl/cpu docsgpt torch torchvision` to swap the CUDA build for the CPU one.
 
 ## Configure
 
@@ -49,7 +56,7 @@ LLM_NAME=<model name>
 API_KEY=<provider API key>
 
 # User data
-POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
+POSTGRES_URI=postgresql://docsgpt:<password>@localhost:5432/docsgpt
 
 # Worker-to-API authentication (required for uploads)
 INTERNAL_KEY=<a long random string>
@@ -61,9 +68,11 @@ Redis defaults to `localhost:6379` (`CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
 
 ```bash
 docsgpt migrate    # create the database if it is missing and apply the migrations
-docsgpt api        # the API on http://localhost:7091
+docsgpt api        # the API on http://127.0.0.1:7091
 docsgpt worker     # in a second terminal: the Celery worker, with the scheduler
 ```
+
+`docsgpt api` listens on localhost only. Pass `--host 0.0.0.0` to accept connections from other machines or containers, and put a reverse proxy with TLS in front of it for anything public.
 
 The API applies pending migrations when it starts (`AUTO_MIGRATE`), so `docsgpt migrate` is the explicit step for deployments that want the schema in place before the first request or that run the API with a restricted database role.
 

@@ -326,11 +326,12 @@ class Settings(BaseSettings):
     PGVECTOR_IVFFLAT_PROBES: Optional[int] = None
     # Milvus vectorstore config
     MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
-    MILVUS_URI: Optional[str] = "./milvus_local.db"  # milvus lite version as default
+    # milvus-lite (embedded) database file, under the data home like the other local stores
+    MILVUS_URI: Optional[str] = Field(default_factory=lambda: str(home_dir() / "milvus_local.db"))
     MILVUS_TOKEN: Optional[str] = ""
 
     # LanceDB vectorstore config
-    LANCEDB_PATH: str = "./data/lancedb"  # Path where LanceDB stores its local data
+    LANCEDB_PATH: str = Field(default_factory=lambda: str(home_dir() / "data" / "lancedb"))  # LanceDB local data
     LANCEDB_TABLE_NAME: Optional[str] = "docsgpts"  # Name of the table to use for storing vectors
 
     FLASK_DEBUG_MODE: bool = False
