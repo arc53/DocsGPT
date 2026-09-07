@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import text
 
-from application.storage.db.repositories.token_usage import TokenUsageRepository
+from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 
 
 def _repo(conn) -> TokenUsageRepository:

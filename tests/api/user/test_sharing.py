@@ -1,4 +1,4 @@
-"""Tests for application/api/user/sharing/routes.py.
+"""Tests for docsgpt/api/user/sharing/routes.py.
 
 Post-PG cutover: routes use the PG repositories (ConversationsRepository,
 SharedConversationsRepository, AgentsRepository, AttachmentsRepository) and
@@ -25,15 +25,15 @@ def _patch_sharing_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.sharing.routes.db_session", _yield_conn
+        "docsgpt.api.user.sharing.routes.db_session", _yield_conn
     ), patch(
-        "application.api.user.sharing.routes.db_readonly", _yield_conn
+        "docsgpt.api.user.sharing.routes.db_readonly", _yield_conn
     ):
         yield
 
 
 def _seed_conversation(pg_conn, user_id, name="Test Conv", message_count=0):
-    from application.storage.db.repositories.conversations import (
+    from docsgpt.storage.db.repositories.conversations import (
         ConversationsRepository,
     )
     repo = ConversationsRepository(pg_conn)
@@ -52,7 +52,7 @@ def _seed_conversation(pg_conn, user_id, name="Test Conv", message_count=0):
 @pytest.mark.unit
 class TestShareConversation:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sharing.routes import ShareConversation
+        from docsgpt.api.user.sharing.routes import ShareConversation
 
         with app.test_request_context(
             "/api/share?isPromptable=false",
@@ -67,7 +67,7 @@ class TestShareConversation:
         assert response.status_code == 401
 
     def test_returns_400_missing_conversation_id(self, app):
-        from application.api.user.sharing.routes import ShareConversation
+        from docsgpt.api.user.sharing.routes import ShareConversation
 
         with app.test_request_context(
             "/api/share?isPromptable=false",
@@ -82,7 +82,7 @@ class TestShareConversation:
         assert response.status_code == 400
 
     def test_returns_400_missing_isPromptable(self, app):
-        from application.api.user.sharing.routes import ShareConversation
+        from docsgpt.api.user.sharing.routes import ShareConversation
 
         with app.test_request_context(
             "/api/share",
@@ -97,7 +97,7 @@ class TestShareConversation:
         assert response.status_code == 400
 
     def test_returns_404_for_missing_conversation(self, app, pg_conn):
-        from application.api.user.sharing.routes import ShareConversation
+        from docsgpt.api.user.sharing.routes import ShareConversation
 
         with _patch_sharing_db(pg_conn), app.test_request_context(
             "/api/share?isPromptable=false",
@@ -112,7 +112,7 @@ class TestShareConversation:
         assert response.status_code == 404
 
     def test_creates_non_promptable_share(self, app, pg_conn):
-        from application.api.user.sharing.routes import ShareConversation
+        from docsgpt.api.user.sharing.routes import ShareConversation
 
         user = "user-npshare"
         conv_id = _seed_conversation(pg_conn, user, message_count=3)
@@ -134,7 +134,7 @@ class TestShareConversation:
     def test_reuse_non_promptable_share_returns_same_identifier(
         self, app, pg_conn,
     ):
-        from application.api.user.sharing.routes import ShareConversation
+        from docsgpt.api.user.sharing.routes import ShareConversation
 
         user = "user-reuse-np"
         conv_id = _seed_conversation(pg_conn, user, message_count=1)
@@ -154,7 +154,7 @@ class TestShareConversation:
         assert ids[0] == ids[1]
 
     def test_creates_promptable_share(self, app, pg_conn):
-        from application.api.user.sharing.routes import ShareConversation
+        from docsgpt.api.user.sharing.routes import ShareConversation
 
         user = "user-pshare"
         conv_id = _seed_conversation(pg_conn, user, message_count=2)
@@ -173,7 +173,7 @@ class TestShareConversation:
         assert response.json["success"] is True
 
     def test_reuse_promptable_share_returns_200(self, app, pg_conn):
-        from application.api.user.sharing.routes import ShareConversation
+        from docsgpt.api.user.sharing.routes import ShareConversation
 
         user = "user-reuse-p"
         conv_id = _seed_conversation(pg_conn, user, message_count=1)
@@ -202,7 +202,7 @@ class TestShareConversation:
         assert second.status_code == 200
 
     def test_promptable_with_invalid_chunks_coerces_none(self, app, pg_conn):
-        from application.api.user.sharing.routes import ShareConversation
+        from docsgpt.api.user.sharing.routes import ShareConversation
 
         user = "user-bad-chunks"
         conv_id = _seed_conversation(pg_conn, user, message_count=1)
@@ -220,7 +220,7 @@ class TestShareConversation:
         assert response.status_code == 201
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.sharing.routes import ShareConversation
+        from docsgpt.api.user.sharing.routes import ShareConversation
 
         @contextmanager
         def _broken():
@@ -228,7 +228,7 @@ class TestShareConversation:
             yield
 
         with patch(
-            "application.api.user.sharing.routes.db_session", _broken
+            "docsgpt.api.user.sharing.routes.db_session", _broken
         ), app.test_request_context(
             "/api/share?isPromptable=false",
             method="POST",
@@ -250,7 +250,7 @@ class TestShareConversation:
 @pytest.mark.unit
 class TestGetPubliclySharedConversations:
     def test_returns_404_for_missing_identifier(self, app, pg_conn):
-        from application.api.user.sharing.routes import (
+        from docsgpt.api.user.sharing.routes import (
             GetPubliclySharedConversations,
         )
 
@@ -264,7 +264,7 @@ class TestGetPubliclySharedConversations:
         assert response.status_code == 404
 
     def test_returns_shared_conversation(self, app, pg_conn):
-        from application.api.user.sharing.routes import (
+        from docsgpt.api.user.sharing.routes import (
             GetPubliclySharedConversations,
             ShareConversation,
         )
@@ -298,7 +298,7 @@ class TestGetPubliclySharedConversations:
         assert "api_key" not in data
 
     def test_returns_api_key_for_promptable_share(self, app, pg_conn):
-        from application.api.user.sharing.routes import (
+        from docsgpt.api.user.sharing.routes import (
             GetPubliclySharedConversations,
             ShareConversation,
         )
@@ -327,7 +327,7 @@ class TestGetPubliclySharedConversations:
         assert response.json["api_key"]
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.sharing.routes import (
+        from docsgpt.api.user.sharing.routes import (
             GetPubliclySharedConversations,
         )
 
@@ -337,7 +337,7 @@ class TestGetPubliclySharedConversations:
             yield
 
         with patch(
-            "application.api.user.sharing.routes.db_readonly", _broken
+            "docsgpt.api.user.sharing.routes.db_readonly", _broken
         ), app.test_request_context("/api/shared_conversation/abc"):
             response = GetPubliclySharedConversations().get("abc")
 
@@ -352,15 +352,15 @@ class TestGetPubliclySharedConversations:
 @pytest.mark.unit
 class TestResolvePromptPgId:
     def test_returns_none_for_default(self, pg_conn):
-        from application.api.user.sharing.routes import _resolve_prompt_pg_id
+        from docsgpt.api.user.sharing.routes import _resolve_prompt_pg_id
 
         assert _resolve_prompt_pg_id(pg_conn, "default", "u") is None
         assert _resolve_prompt_pg_id(pg_conn, "", "u") is None
         assert _resolve_prompt_pg_id(pg_conn, None, "u") is None
 
     def test_resolves_uuid_by_ownership(self, pg_conn):
-        from application.api.user.sharing.routes import _resolve_prompt_pg_id
-        from application.storage.db.repositories.prompts import PromptsRepository
+        from docsgpt.api.user.sharing.routes import _resolve_prompt_pg_id
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
 
         prompt = PromptsRepository(pg_conn).create("owner", "p", "c")
         pid = str(prompt["id"])
@@ -369,7 +369,7 @@ class TestResolvePromptPgId:
         assert _resolve_prompt_pg_id(pg_conn, pid, "someone-else") is None
 
     def test_returns_none_for_unknown_legacy(self, pg_conn):
-        from application.api.user.sharing.routes import _resolve_prompt_pg_id
+        from docsgpt.api.user.sharing.routes import _resolve_prompt_pg_id
 
         assert _resolve_prompt_pg_id(pg_conn, "507f1f77bcf86cd799439011", "u") is None
 
@@ -377,13 +377,13 @@ class TestResolvePromptPgId:
 @pytest.mark.unit
 class TestResolveSourcePgId:
     def test_returns_none_for_falsy(self, pg_conn):
-        from application.api.user.sharing.routes import _resolve_source_pg_id
+        from docsgpt.api.user.sharing.routes import _resolve_source_pg_id
 
         assert _resolve_source_pg_id(pg_conn, None, "u") is None
         assert _resolve_source_pg_id(pg_conn, "", "u") is None
 
     def test_returns_none_for_unknown_uuid(self, pg_conn):
-        from application.api.user.sharing.routes import _resolve_source_pg_id
+        from docsgpt.api.user.sharing.routes import _resolve_source_pg_id
 
         assert (
             _resolve_source_pg_id(
@@ -393,7 +393,7 @@ class TestResolveSourcePgId:
         )
 
     def test_returns_none_for_unknown_legacy(self, pg_conn):
-        from application.api.user.sharing.routes import _resolve_source_pg_id
+        from docsgpt.api.user.sharing.routes import _resolve_source_pg_id
 
         assert _resolve_source_pg_id(pg_conn, "507f1f77bcf86cd799439011", "u") is None
 
@@ -409,9 +409,9 @@ class TestShareSourceAuthorization:
 
     def test_unauthorized_source_is_refused(self, monkeypatch, pg_conn):
         """A resolvable id the caller cannot read must not reach the agent."""
-        import application.api.user.team_sharing as ts
+        import docsgpt.api.user.team_sharing as ts
 
-        from application.api.user.sharing.routes import _resolve_source_pg_id
+        from docsgpt.api.user.sharing.routes import _resolve_source_pg_id
 
         monkeypatch.setattr(ts, "can_access", lambda *a, **k: False)
         assert (
@@ -422,20 +422,20 @@ class TestShareSourceAuthorization:
         )
 
     def test_missing_principal_resolves_nothing(self, pg_conn):
-        from application.api.user.sharing.routes import _resolve_source_pg_id
+        from docsgpt.api.user.sharing.routes import _resolve_source_pg_id
 
         assert _resolve_source_pg_id(pg_conn, "any-id", None) is None
 
     def test_authorized_source_passes_through(self, monkeypatch):
-        import application.api.user.team_sharing as ts
-        from application.api.user.sharing.routes import _authorized_source
+        import docsgpt.api.user.team_sharing as ts
+        from docsgpt.api.user.sharing.routes import _authorized_source
 
         monkeypatch.setattr(ts, "can_access", lambda *a, **k: True)
         assert _authorized_source(None, ("src-1",), "owner") == "src-1"
 
     def test_denied_source_returns_none(self, monkeypatch):
-        import application.api.user.team_sharing as ts
-        from application.api.user.sharing.routes import _authorized_source
+        import docsgpt.api.user.team_sharing as ts
+        from docsgpt.api.user.sharing.routes import _authorized_source
 
         monkeypatch.setattr(ts, "can_access", lambda *a, **k: False)
         assert _authorized_source(None, ("src-1",), "stranger") is None

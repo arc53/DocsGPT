@@ -9,8 +9,8 @@ from unittest.mock import Mock, MagicMock
 
 import pytest
 
-from application.agents.tool_executor import ToolExecutor
-from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 
 
 # ---------------------------------------------------------------------------
@@ -86,18 +86,18 @@ def mock_mongo_continuation(monkeypatch):
         return mock_client
 
     monkeypatch.setattr(
-        "application.api.answer.services.continuation_service.MongoDB.get_client",
+        "docsgpt.api.answer.services.continuation_service.MongoDB.get_client",
         _get_client,
     )
     monkeypatch.setattr(
-        "application.storage.db.dual_write.dual_write",
+        "docsgpt.storage.db.dual_write.dual_write",
         lambda repo_cls, fn: None,
     )
     return db
 
 
 def _get_mongo_db_name():
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
     return settings.MONGO_DB_NAME
 
 
@@ -111,7 +111,7 @@ def _get_mongo_db_name():
 class TestContinuationService:
 
     def test_save_and_load(self, mock_mongo_continuation):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
 
@@ -135,7 +135,7 @@ class TestContinuationService:
         assert state["agent_config"]["model_id"] == "gpt-4"
 
     def test_load_returns_none_when_missing(self, mock_mongo_continuation):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
 
@@ -143,7 +143,7 @@ class TestContinuationService:
         assert svc.load_state("nonexistent", "alice") is None
 
     def test_delete_state(self, mock_mongo_continuation):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
 
@@ -161,7 +161,7 @@ class TestContinuationService:
         assert svc.load_state("conv-2", "bob") is None
 
     def test_delete_nonexistent(self, mock_mongo_continuation):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
 
@@ -169,7 +169,7 @@ class TestContinuationService:
         assert svc.delete_state("nope", "nope") is False
 
     def test_upsert_replaces_existing(self, mock_mongo_continuation):
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
         )
 
@@ -598,7 +598,7 @@ class TestGenContinuation:
 
     def test_approved_tool_executes(self):
         """When a tool action is approved, the tool is executed."""
-        from application.agents.classic_agent import ClassicAgent
+        from docsgpt.agents.classic_agent import ClassicAgent
 
         mock_llm = Mock()
         mock_llm._supports_tools = True
@@ -658,7 +658,7 @@ class TestGenContinuation:
 
     def test_denied_tool_sends_denial(self):
         """When a tool action is denied, a denial message is added."""
-        from application.agents.classic_agent import ClassicAgent
+        from docsgpt.agents.classic_agent import ClassicAgent
 
         mock_llm = Mock()
         mock_llm._supports_tools = True
@@ -724,7 +724,7 @@ class TestGenContinuation:
 
     def test_client_result_appended(self):
         """Client-provided tool result is added to messages."""
-        from application.agents.classic_agent import ClassicAgent
+        from docsgpt.agents.classic_agent import ClassicAgent
 
         mock_llm = Mock()
         mock_llm._supports_tools = True
@@ -802,7 +802,7 @@ class TestValidateRequest:
             yield
 
     def test_continuation_request_without_question(self):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         base = BaseAnswerResource()
         data = {
@@ -813,7 +813,7 @@ class TestValidateRequest:
         assert result is None  # Valid
 
     def test_continuation_request_missing_conversation_id(self):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         base = BaseAnswerResource()
         data = {
@@ -823,7 +823,7 @@ class TestValidateRequest:
         assert result is not None  # Error — missing conversation_id
 
     def test_normal_request_still_requires_question(self):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         base = BaseAnswerResource()
         data = {"conversation_id": "conv-1"}
@@ -842,12 +842,12 @@ class TestResumeMarkResuming:
 
     def test_resume_claims_state_once_and_does_not_delete(self, monkeypatch):
         """``resume_from_tool_actions`` consumes one atomic claim."""
-        from application.api.answer.services import (
+        from docsgpt.api.answer.services import (
             continuation_service as cont_mod,
         )
-        from application.api.answer.services import stream_processor as sp_mod
-        from application.llm import llm_creator as llm_creator_mod
-        from application.llm.handlers import handler_creator as handler_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
+        from docsgpt.llm import llm_creator as llm_creator_mod
+        from docsgpt.llm.handlers import handler_creator as handler_mod
 
         cont_service = MagicMock()
         cont_service.claim_state.return_value = {
@@ -882,8 +882,8 @@ class TestResumeMarkResuming:
             "create_handler",
             lambda *a, **kw: MagicMock(),
         )
-        from application.agents import agent_creator as ac_mod
-        from application.agents import tool_executor as te_mod
+        from docsgpt.agents import agent_creator as ac_mod
+        from docsgpt.agents import tool_executor as te_mod
 
         monkeypatch.setattr(
             te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None)
@@ -915,12 +915,12 @@ class TestResumeMarkResuming:
         """The WAL placeholder id stashed in ``agent_config`` at pause time
         must be hoisted onto the processor so the resumed ``complete_stream``
         finalises the same row instead of stranding it."""
-        from application.api.answer.services import (
+        from docsgpt.api.answer.services import (
             continuation_service as cont_mod,
         )
-        from application.api.answer.services import stream_processor as sp_mod
-        from application.llm import llm_creator as llm_creator_mod
-        from application.llm.handlers import handler_creator as handler_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
+        from docsgpt.llm import llm_creator as llm_creator_mod
+        from docsgpt.llm.handlers import handler_creator as handler_mod
 
         reserved_id = "22222222-2222-2222-2222-222222222222"
 
@@ -953,8 +953,8 @@ class TestResumeMarkResuming:
             handler_mod.LLMHandlerCreator, "create_handler",
             lambda *a, **kw: MagicMock(),
         )
-        from application.agents import agent_creator as ac_mod
-        from application.agents import tool_executor as te_mod
+        from docsgpt.agents import agent_creator as ac_mod
+        from docsgpt.agents import tool_executor as te_mod
 
         monkeypatch.setattr(
             te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None)
@@ -991,12 +991,12 @@ class TestResumeMarkResuming:
         """
         from contextlib import contextmanager
 
-        from application.api.answer.services import (
+        from docsgpt.api.answer.services import (
             continuation_service as cont_mod,
         )
-        from application.api.answer.services import stream_processor as sp_mod
-        from application.llm import llm_creator as llm_creator_mod
-        from application.llm.handlers import handler_creator as handler_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
+        from docsgpt.llm import llm_creator as llm_creator_mod
+        from docsgpt.llm.handlers import handler_creator as handler_mod
 
         cont_service = MagicMock()
         cont_service.claim_state.return_value = {
@@ -1026,8 +1026,8 @@ class TestResumeMarkResuming:
             handler_mod.LLMHandlerCreator, "create_handler",
             lambda *a, **kw: MagicMock(),
         )
-        from application.agents import agent_creator as ac_mod
-        from application.agents import tool_executor as te_mod
+        from docsgpt.agents import agent_creator as ac_mod
+        from docsgpt.agents import tool_executor as te_mod
 
         monkeypatch.setattr(
             te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None)
@@ -1073,13 +1073,13 @@ class TestContinuationServiceMarkResuming:
     def test_mark_resuming_flips_pending_row(self, pg_engine, monkeypatch):
         from contextlib import contextmanager
 
-        from application.api.answer.services import (
+        from docsgpt.api.answer.services import (
             continuation_service as cont_mod,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
-        from application.storage.db.repositories.pending_tool_state import (
+        from docsgpt.storage.db.repositories.pending_tool_state import (
             PendingToolStateRepository,
         )
 
@@ -1124,7 +1124,7 @@ class TestContinuationServiceMarkResuming:
     ):
         from contextlib import contextmanager
 
-        from application.api.answer.services import (
+        from docsgpt.api.answer.services import (
             continuation_service as cont_mod,
         )
 
@@ -1188,7 +1188,7 @@ class TestReconstructPartialToolCallReplay:
         return str(msg_id)
 
     def test_paused_tool_call_event_lands_in_tool_calls(self, pg_conn):
-        from application.storage.db.repositories.message_events import (
+        from docsgpt.storage.db.repositories.message_events import (
             MessageEventsRepository,
         )
 
@@ -1219,7 +1219,7 @@ class TestReconstructPartialToolCallReplay:
         assert tc["call_id"] == "call_remote_test_1"
 
     def test_completed_event_replaces_paused_event(self, pg_conn):
-        from application.storage.db.repositories.message_events import (
+        from docsgpt.storage.db.repositories.message_events import (
             MessageEventsRepository,
         )
 

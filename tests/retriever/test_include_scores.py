@@ -10,14 +10,14 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.retriever.classic_rag import ClassicRAG
-from application.retriever.hybrid_rag import HybridRetriever
+from docsgpt.retriever.classic_rag import ClassicRAG
+from docsgpt.retriever.hybrid_rag import HybridRetriever
 
 
 @pytest.fixture
 def _patch_llm_creator(mock_llm, monkeypatch):
     monkeypatch.setattr(
-        "application.retriever.classic_rag.LLMCreator.create_llm",
+        "docsgpt.retriever.classic_rag.LLMCreator.create_llm",
         Mock(return_value=mock_llm),
     )
     return mock_llm
@@ -57,7 +57,7 @@ def _retrieve(retriever_cls, store, **overrides):
     kwargs.update(overrides)
     retriever = retriever_cls(**kwargs)
     with patch(
-        "application.retriever.classic_rag.VectorCreator.create_vectorstore",
+        "docsgpt.retriever.classic_rag.VectorCreator.create_vectorstore",
         return_value=store,
     ):
         return retriever.search("q")
@@ -187,7 +187,7 @@ class TestCandidateKDoesNotLeakAcrossSources:
         retriever.base_chunks = 2
 
         with patch(
-            "application.retriever.classic_rag.VectorCreator.create_vectorstore",
+            "docsgpt.retriever.classic_rag.VectorCreator.create_vectorstore",
             return_value=store,
         ):
             docs = retriever.search("q")
@@ -215,7 +215,7 @@ class TestChunksCeiling:
     """
 
     def _rag(self, n_sources, chunks):
-        from application.retriever.classic_rag import ClassicRAG
+        from docsgpt.retriever.classic_rag import ClassicRAG
 
         rag = ClassicRAG.__new__(ClassicRAG)
         rag.vectorstores = [f"src-{i}" for i in range(n_sources)]

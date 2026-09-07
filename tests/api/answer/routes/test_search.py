@@ -1,6 +1,6 @@
-"""Tests for /api/search route (application/api/answer/routes/search.py).
+"""Tests for /api/search route (docsgpt/api/answer/routes/search.py).
 
-Retrieval logic lives in ``application/services/search_service.py`` and
+Retrieval logic lives in ``docsgpt/services/search_service.py`` and
 has its own unit tests in ``tests/services/test_search_service.py``. The
 tests below focus on what the route specifically owns:
 
@@ -21,7 +21,7 @@ import pytest
 @pytest.mark.unit
 class TestSearchResourceValidation:
     def test_returns_400_when_question_missing(self, flask_app):
-        from application.api.answer.routes.search import SearchResource
+        from docsgpt.api.answer.routes.search import SearchResource
 
         with flask_app.app_context():
             with flask_app.test_request_context(json={"api_key": "test_key"}):
@@ -30,7 +30,7 @@ class TestSearchResourceValidation:
                 assert "question" in result.json["error"]
 
     def test_returns_400_when_api_key_missing(self, flask_app):
-        from application.api.answer.routes.search import SearchResource
+        from docsgpt.api.answer.routes.search import SearchResource
 
         with flask_app.app_context():
             with flask_app.test_request_context(json={"question": "test query"}):
@@ -49,13 +49,13 @@ class TestSearchResourceExceptionMapping:
     """
 
     def test_invalid_api_key_returns_401(self, flask_app):
-        from application.api.answer.routes.search import SearchResource
-        from application.services.search_service import InvalidAPIKey
+        from docsgpt.api.answer.routes.search import SearchResource
+        from docsgpt.services.search_service import InvalidAPIKey
 
         with flask_app.app_context(), flask_app.test_request_context(
             json={"question": "q", "api_key": "bad"}
         ), patch(
-            "application.api.answer.routes.search.search",
+            "docsgpt.api.answer.routes.search.search",
             side_effect=InvalidAPIKey(),
         ):
             result = SearchResource().post()
@@ -63,13 +63,13 @@ class TestSearchResourceExceptionMapping:
         assert result.json == {"error": "Invalid API key"}
 
     def test_search_failed_returns_500(self, flask_app):
-        from application.api.answer.routes.search import SearchResource
-        from application.services.search_service import SearchFailed
+        from docsgpt.api.answer.routes.search import SearchResource
+        from docsgpt.services.search_service import SearchFailed
 
         with flask_app.app_context(), flask_app.test_request_context(
             json={"question": "q", "api_key": "k"}
         ), patch(
-            "application.api.answer.routes.search.search",
+            "docsgpt.api.answer.routes.search.search",
             side_effect=SearchFailed("boom"),
         ):
             result = SearchResource().post()
@@ -77,13 +77,13 @@ class TestSearchResourceExceptionMapping:
         assert result.json == {"error": "Search failed"}
 
     def test_happy_path_passes_service_result_through(self, flask_app):
-        from application.api.answer.routes.search import SearchResource
+        from docsgpt.api.answer.routes.search import SearchResource
 
         hits = [{"text": "t", "title": "T", "source": "s"}]
         with flask_app.app_context(), flask_app.test_request_context(
             json={"question": "q", "api_key": "k", "chunks": 7}
         ), patch(
-            "application.api.answer.routes.search.search",
+            "docsgpt.api.answer.routes.search.search",
             return_value=hits,
         ) as mock_search:
             result = SearchResource().post()
@@ -92,12 +92,12 @@ class TestSearchResourceExceptionMapping:
         mock_search.assert_called_once_with("k", "q", 7)
 
     def test_default_chunks_is_5(self, flask_app):
-        from application.api.answer.routes.search import SearchResource
+        from docsgpt.api.answer.routes.search import SearchResource
 
         with flask_app.app_context(), flask_app.test_request_context(
             json={"question": "q", "api_key": "k"}  # no chunks field
         ), patch(
-            "application.api.answer.routes.search.search",
+            "docsgpt.api.answer.routes.search.search",
             return_value=[],
         ) as mock_search:
             SearchResource().post()
@@ -121,14 +121,14 @@ def _patch_search_db(conn):
         yield conn
 
     with patch(
-        "application.services.search_service.db_readonly", _yield
+        "docsgpt.services.search_service.db_readonly", _yield
     ):
         yield
 
 
 class TestSearchResourcePgConn:
     def test_invalid_api_key_returns_401(self, pg_conn, flask_app):
-        from application.api.answer.routes.search import SearchResource
+        from docsgpt.api.answer.routes.search import SearchResource
 
         with _patch_search_db(pg_conn), flask_app.app_context():
             with flask_app.test_request_context(
@@ -138,8 +138,8 @@ class TestSearchResourcePgConn:
         assert result.status_code == 401
 
     def test_no_sources_returns_empty(self, pg_conn, flask_app):
-        from application.api.answer.routes.search import SearchResource
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.answer.routes.search import SearchResource
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         AgentsRepository(pg_conn).create(
             "u", "a", "published", key="no-src-key",
@@ -153,9 +153,9 @@ class TestSearchResourcePgConn:
         assert result.json == []
 
     def test_search_returns_results(self, pg_conn, flask_app):
-        from application.api.answer.routes.search import SearchResource
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.answer.routes.search import SearchResource
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         src = SourcesRepository(pg_conn).create("src", user_id="u")
         AgentsRepository(pg_conn).create(
@@ -170,7 +170,7 @@ class TestSearchResourcePgConn:
         ]
 
         with _patch_search_db(pg_conn), patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             return_value=fake_vs,
         ), flask_app.app_context():
             with flask_app.test_request_context(
@@ -181,9 +181,9 @@ class TestSearchResourcePgConn:
         assert len(result.json) == 1
 
     def test_search_uses_extra_source_ids(self, pg_conn, flask_app):
-        from application.api.answer.routes.search import SearchResource
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.answer.routes.search import SearchResource
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         src1 = SourcesRepository(pg_conn).create("s1", user_id="u")
         src2 = SourcesRepository(pg_conn).create("s2", user_id="u")
@@ -198,7 +198,7 @@ class TestSearchResourcePgConn:
             {"text": "one", "metadata": {"title": "A"}},
         ]
         with _patch_search_db(pg_conn), patch(
-            "application.services.search_service.VectorCreator.create_vectorstore",
+            "docsgpt.services.search_service.VectorCreator.create_vectorstore",
             return_value=fake_vs,
         ), flask_app.app_context():
             with flask_app.test_request_context(

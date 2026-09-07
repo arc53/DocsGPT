@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.scripts import prefetch_models
-from application.vectorstore.model_registry import GRANITE_311M, MPNET, OPENAI_ADA_002
+from docsgpt.scripts import prefetch_models
+from docsgpt.vectorstore.model_registry import GRANITE_311M, MPNET, OPENAI_ADA_002
 
 
 @pytest.fixture
@@ -94,3 +94,18 @@ class TestMain:
         with patch.object(prefetch_models, "prefetch", return_value=[]) as spy:
             prefetch_models.main(["granite-97m"])
         assert spy.call_args.args[1] == "/app/models"
+
+
+class TestPrefetchTiktoken:
+    def test_warms_every_listed_encoding(self):
+        """The image sets TIKTOKEN_CACHE_DIR; warming fills it at build time."""
+        fake = MagicMock()
+        module = types.ModuleType("tiktoken")
+        module.get_encoding = fake
+        with patch.dict(sys.modules, {"tiktoken": module}):
+            fetched = prefetch_models.prefetch_tiktoken()
+        assert fetched == list(prefetch_models.TIKTOKEN_ENCODINGS)
+        assert [c.args[0] for c in fake.call_args_list] == list(prefetch_models.TIKTOKEN_ENCODINGS)
+
+    def test_cl100k_is_the_encoding_token_counting_uses(self):
+        assert "cl100k_base" in prefetch_models.TIKTOKEN_ENCODINGS

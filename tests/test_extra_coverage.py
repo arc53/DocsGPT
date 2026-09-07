@@ -1,11 +1,11 @@
 """Grab-bag of tests targeting remaining coverage gaps.
 
 Covers edge cases in:
-  - application/api/user/tools/routes.py
-  - application/api/user/sources/upload.py (remaining)
-  - application/api/connector/routes.py (exception paths)
-  - application/seed/seeder.py (remaining)
-  - application/api/user/agents/routes.py (remaining)
+  - docsgpt/api/user/tools/routes.py
+  - docsgpt/api/user/sources/upload.py (remaining)
+  - docsgpt/api/connector/routes.py (exception paths)
+  - docsgpt/seed/seeder.py (remaining)
+  - docsgpt/api/user/agents/routes.py (remaining)
 """
 
 from contextlib import contextmanager
@@ -27,9 +27,9 @@ def _patch_tools_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.tools.routes.db_session", _yield
+        "docsgpt.api.user.tools.routes.db_session", _yield
     ), patch(
-        "application.api.user.tools.routes.db_readonly", _yield
+        "docsgpt.api.user.tools.routes.db_readonly", _yield
     ):
         yield
 
@@ -41,9 +41,9 @@ def _patch_upload_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.sources.upload.db_session", _yield
+        "docsgpt.api.user.sources.upload.db_session", _yield
     ), patch(
-        "application.api.user.sources.upload.db_readonly", _yield
+        "docsgpt.api.user.sources.upload.db_readonly", _yield
     ):
         yield
 
@@ -55,9 +55,9 @@ def _patch_conn_db(conn):
         yield conn
 
     with patch(
-        "application.api.connector.routes.db_session", _yield
+        "docsgpt.api.connector.routes.db_session", _yield
     ), patch(
-        "application.api.connector.routes.db_readonly", _yield
+        "docsgpt.api.connector.routes.db_readonly", _yield
     ):
         yield
 
@@ -69,7 +69,7 @@ def _patch_conn_db(conn):
 
 class TestToolsRoutesExtra:
     def test_create_tool_unknown_name_returns_404(self, app, pg_conn):
-        from application.api.user.tools.routes import CreateTool
+        from docsgpt.api.user.tools.routes import CreateTool
 
         with _patch_tools_db(pg_conn), app.test_request_context(
             "/api/create_tool", method="POST",
@@ -87,7 +87,7 @@ class TestToolsRoutesExtra:
         assert response.status_code in (400, 404)
 
     def test_delete_tool_missing_id_returns_400(self, app):
-        from application.api.user.tools.routes import DeleteTool
+        from docsgpt.api.user.tools.routes import DeleteTool
 
         with app.test_request_context(
             "/api/delete_tool", method="POST", json={},
@@ -98,7 +98,7 @@ class TestToolsRoutesExtra:
         assert response.status_code == 400
 
     def test_update_tool_missing_id(self, app):
-        from application.api.user.tools.routes import UpdateTool
+        from docsgpt.api.user.tools.routes import UpdateTool
 
         with app.test_request_context(
             "/api/update_tool", method="POST", json={"displayName": "n"},
@@ -116,12 +116,12 @@ class TestToolsRoutesExtra:
 
 class TestSourcesUploadExtra:
     def test_remote_github_missing_repo_url(self, app):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
         import json as _json
 
         fake_task = MagicMock(id="t")
         with patch(
-            "application.api.user.sources.upload.ingest_remote.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -138,11 +138,11 @@ class TestSourcesUploadExtra:
         assert response.status_code == 200
 
     def test_remote_connector_missing_session_token(self, app):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
         import json as _json
 
         with patch(
-            "application.parser.connectors.connector_creator.ConnectorCreator"
+            "docsgpt.parser.connectors.connector_creator.ConnectorCreator"
             ".get_supported_connectors",
             return_value={"google_drive"},
         ), app.test_request_context(
@@ -159,16 +159,16 @@ class TestSourcesUploadExtra:
         assert response.status_code == 400
 
     def test_remote_connector_triggers_task(self, app):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
         import json as _json
 
         fake_task = MagicMock(id="conn-t")
         with patch(
-            "application.parser.connectors.connector_creator.ConnectorCreator"
+            "docsgpt.parser.connectors.connector_creator.ConnectorCreator"
             ".get_supported_connectors",
             return_value={"google_drive"},
         ), patch(
-            "application.api.user.sources.upload.ingest_connector_task.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_connector_task.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -197,7 +197,7 @@ class TestSourcesUploadExtra:
 
 class TestConnectorExtra:
     def test_disconnect_exception_returns_500(self, app):
-        from application.api.connector.routes import ConnectorDisconnect
+        from docsgpt.api.connector.routes import ConnectorDisconnect
 
         @contextmanager
         def _broken():
@@ -205,7 +205,7 @@ class TestConnectorExtra:
             yield
 
         with patch(
-            "application.api.connector.routes.db_session", _broken
+            "docsgpt.api.connector.routes.db_session", _broken
         ), app.test_request_context(
             "/api/connectors/disconnect", method="POST",
             json={"provider": "x", "session_token": "y"},
@@ -214,12 +214,12 @@ class TestConnectorExtra:
         assert response.status_code == 500
 
     def test_callback_status_exception_returns_500(self, app):
-        from application.api.connector.routes import ConnectorCallbackStatus
+        from docsgpt.api.connector.routes import ConnectorCallbackStatus
 
         # An exception inside is hard to trigger naturally; use a patched
         # ``html.escape`` raising to exercise the except branch.
         with patch(
-            "application.api.connector.routes.html.escape",
+            "docsgpt.api.connector.routes.html.escape",
             side_effect=RuntimeError("boom"),
         ), app.test_request_context(
             "/api/connectors/callback-status?status=success"
@@ -228,8 +228,8 @@ class TestConnectorExtra:
         assert response.status_code == 500
 
     def test_validate_session_token_refresh_failure(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorValidateSession
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.api.connector.routes import ConnectorValidateSession
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 
@@ -249,7 +249,7 @@ class TestConnectorExtra:
         fake_auth.refresh_access_token.side_effect = RuntimeError("fail")
 
         with _patch_conn_db(pg_conn), patch(
-            "application.api.connector.routes.ConnectorCreator.create_auth",
+            "docsgpt.api.connector.routes.ConnectorCreator.create_auth",
             return_value=fake_auth,
         ), app.test_request_context(
             "/api/connectors/validate-session", method="POST",
@@ -261,7 +261,7 @@ class TestConnectorExtra:
         assert response.status_code == 401  # expired, refresh failed
 
     def test_sync_exception_returns_400(self, app):
-        from application.api.connector.routes import ConnectorSync
+        from docsgpt.api.connector.routes import ConnectorSync
 
         @contextmanager
         def _broken():
@@ -269,7 +269,7 @@ class TestConnectorExtra:
             yield
 
         with patch(
-            "application.api.connector.routes.db_readonly", _broken
+            "docsgpt.api.connector.routes.db_readonly", _broken
         ), app.test_request_context(
             "/api/connectors/sync", method="POST",
             json={"source_id": "x", "session_token": "y"},
@@ -287,7 +287,7 @@ class TestConnectorExtra:
 
 class TestSeederExtra:
     def test_seed_initial_data_loads_and_seeds(self, pg_conn, tmp_path):
-        from application.seed.seeder import DatabaseSeeder
+        from docsgpt.seed.seeder import DatabaseSeeder
 
         # Write a valid YAML config file
         config_file = tmp_path / "premade.yaml"
@@ -304,16 +304,16 @@ class TestSeederExtra:
 
         seeder = DatabaseSeeder()
         with patch(
-            "application.seed.seeder.db_session", _yield
+            "docsgpt.seed.seeder.db_session", _yield
         ), patch(
-            "application.seed.seeder.db_readonly", _yield
+            "docsgpt.seed.seeder.db_readonly", _yield
         ):
             seeder.seed_initial_data(
                 config_path=str(config_file), force=True,
             )
 
     def test_handle_tools_empty_success(self, pg_conn):
-        from application.seed.seeder import DatabaseSeeder
+        from docsgpt.seed.seeder import DatabaseSeeder
 
         @contextmanager
         def _yield():
@@ -321,9 +321,9 @@ class TestSeederExtra:
 
         seeder = DatabaseSeeder()
         with patch(
-            "application.seed.seeder.db_session", _yield
+            "docsgpt.seed.seeder.db_session", _yield
         ), patch(
-            "application.seed.seeder.db_readonly", _yield
+            "docsgpt.seed.seeder.db_readonly", _yield
         ):
             # Agent config with tools list, but tool name is bogus
             got = seeder._handle_tools({
@@ -343,8 +343,8 @@ class TestSeederExtra:
 class TestAgentsRoutesRemainingGaps:
     def test_get_agents_filters_out_incomplete(self, app, pg_conn):
         """Agents missing both source and retriever are filtered from the list."""
-        from application.api.user.agents.routes import GetAgents
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import GetAgents
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         @contextmanager
         def _yield():
@@ -359,9 +359,9 @@ class TestAgentsRoutesRemainingGaps:
         AgentsRepository(pg_conn).create(user, "bad", "published")
 
         with patch(
-            "application.api.user.agents.routes.db_session", _yield
+            "docsgpt.api.user.agents.routes.db_session", _yield
         ), patch(
-            "application.api.user.agents.routes.db_readonly", _yield
+            "docsgpt.api.user.agents.routes.db_readonly", _yield
         ), app.test_request_context("/api/get_agents"):
             from flask import request
             request.decoded_token = {"sub": user}

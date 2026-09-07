@@ -3,7 +3,7 @@ from unittest.mock import Mock, MagicMock, patch
 
 import pytest
 
-from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 
 
 class TestToolCall:
@@ -135,7 +135,7 @@ class TestLLMHandler:
         )
         assert result == messages
 
-    @patch("application.llm.handlers.base.logger")
+    @patch("docsgpt.llm.handlers.base.logger")
     def test_prepare_messages_with_unsupported_attachments(self, mock_logger):
         handler = ConcreteHandler()
         messages = [{"role": "user", "content": "Hello"}]
@@ -755,7 +755,7 @@ class TestRebuildMessagesAfterCompression:
         messages = [{"role": "system", "content": "sys"}]
 
         with patch(
-            "application.api.answer.services.compression.message_builder.MessageBuilder.rebuild_messages_after_compression",
+            "docsgpt.api.answer.services.compression.message_builder.MessageBuilder.rebuild_messages_after_compression",
             return_value=[{"role": "system", "content": "rebuilt"}],
         ) as mock_rebuild:
             result = handler._rebuild_messages_after_compression(
@@ -783,10 +783,10 @@ class TestConvertPdfToImages:
         expected = [{"data": "img1", "mime_type": "image/png", "page": 1}]
 
         with patch(
-            "application.storage.storage_creator.StorageCreator.get_storage",
+            "docsgpt.storage.storage_creator.StorageCreator.get_storage",
             return_value=mock_storage,
         ), patch(
-            "application.utils.convert_pdf_to_images",
+            "docsgpt.utils.convert_pdf_to_images",
             return_value=expected,
         ) as mock_convert:
             result = handler._convert_pdf_to_images(
@@ -902,7 +902,7 @@ class TestHandleToolCalls:
         agent = self._make_agent()
         agent._check_context_limit = Mock(return_value=True)
 
-        with patch("application.core.settings.settings") as mock_settings:
+        with patch("docsgpt.core.settings.settings") as mock_settings:
             mock_settings.ENABLE_CONVERSATION_COMPRESSION = False
 
             calls = [
@@ -1429,7 +1429,7 @@ class TestHandleStreaming:
             ]
         )
 
-        with caplog.at_level(_logging.WARNING, logger="application.llm.handlers.base"):
+        with caplog.at_level(_logging.WARNING, logger="docsgpt.llm.handlers.base"):
             list(
                 handler.handle_streaming(agent, [chunk1, chunk2], {"1": {"name": "t"}}, [])
             )
@@ -1520,7 +1520,7 @@ class TestHandleStreaming:
 
         handler._iterate_stream = fake_iterate
 
-        with patch("application.core.settings.settings") as mock_settings:
+        with patch("docsgpt.core.settings.settings") as mock_settings:
             mock_settings.ENABLE_CONVERSATION_COMPRESSION = False
 
             # handle_tool_calls yields skip events and sets context_limit_reached
@@ -1585,10 +1585,10 @@ class TestPerformMidExecutionCompression:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         with patch(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             return_value=mock_orchestrator,
         ), patch(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             return_value=mock_conv_service,
         ), patch.object(
             handler, "_build_conversation_from_messages", return_value={"queries": []}
@@ -1626,10 +1626,10 @@ class TestPerformMidExecutionCompression:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         with patch(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             return_value=mock_orchestrator,
         ), patch(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             return_value=mock_conv_service,
         ), patch.object(
             handler, "_build_conversation_from_messages", return_value={"queries": []}
@@ -1654,10 +1654,10 @@ class TestPerformMidExecutionCompression:
         agent.decoded_token = {}
 
         with patch(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             side_effect=RuntimeError("import error"),
         ), patch(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             return_value=Mock(),
         ):
             success, messages = handler._perform_mid_execution_compression(agent, [])
@@ -1707,23 +1707,23 @@ class TestPerformInMemoryCompression:
             "_build_conversation_from_messages",
             return_value={"queries": [{"prompt": "q", "response": "a"}]},
         ), patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             return_value="openai",
         ), patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="key",
         ), patch(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             return_value=Mock(),
         ), patch(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             return_value=mock_service,
         ), patch.object(
             handler,
             "_prune_messages_minimal",
             return_value=[{"role": "system", "content": "pruned"}],
         ), patch(
-            "application.core.settings.settings",
+            "docsgpt.core.settings.settings",
             MagicMock(COMPRESSION_MODEL_OVERRIDE=None),
         ):
             success, messages = handler._perform_in_memory_compression(
@@ -1759,19 +1759,19 @@ class TestPerformInMemoryCompression:
             "_build_conversation_from_messages",
             return_value={"queries": []},
         ), patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             return_value="openai",
         ), patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="key",
         ), patch(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             return_value=Mock(),
         ), patch(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             return_value=Mock(),
         ), patch(
-            "application.core.settings.settings",
+            "docsgpt.core.settings.settings",
             MagicMock(COMPRESSION_MODEL_OVERRIDE=None),
         ):
             success, messages = handler._perform_in_memory_compression(
@@ -1806,23 +1806,23 @@ class TestPerformInMemoryCompression:
             "_build_conversation_from_messages",
             return_value={"queries": [{"prompt": "q", "response": "a"}]},
         ), patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             return_value="openai",
         ), patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="key",
         ), patch(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             return_value=Mock(),
         ), patch(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             return_value=mock_service,
         ), patch.object(
             handler,
             "_rebuild_messages_after_compression",
             return_value=[{"role": "system", "content": "rebuilt"}],
         ), patch(
-            "application.core.settings.settings",
+            "docsgpt.core.settings.settings",
             MagicMock(COMPRESSION_MODEL_OVERRIDE=None),
         ):
             success, messages = handler._perform_in_memory_compression(
@@ -1870,23 +1870,23 @@ class TestPerformInMemoryCompression:
             "_build_conversation_from_messages",
             return_value={"queries": [{"prompt": "q", "response": "a"}]},
         ), patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             provider_lookup,
         ), patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="key",
         ), patch(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             create_llm_spy,
         ), patch(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             return_value=mock_service,
         ), patch.object(
             handler,
             "_rebuild_messages_after_compression",
             return_value=[{"role": "system", "content": "rebuilt"}],
         ), patch(
-            "application.core.settings.settings",
+            "docsgpt.core.settings.settings",
             MagicMock(COMPRESSION_MODEL_OVERRIDE=None),
         ):
             success, _ = handler._perform_in_memory_compression(
@@ -1932,23 +1932,23 @@ class TestPerformInMemoryCompression:
             "_build_conversation_from_messages",
             return_value={"queries": [{"prompt": "q", "response": "a"}]},
         ), patch(
-            "application.core.model_utils.get_provider_from_model_id",
+            "docsgpt.core.model_utils.get_provider_from_model_id",
             provider_lookup,
         ), patch(
-            "application.core.model_utils.get_api_key_for_provider",
+            "docsgpt.core.model_utils.get_api_key_for_provider",
             return_value="key",
         ), patch(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             create_llm_spy,
         ), patch(
-            "application.api.answer.services.compression.service.CompressionService",
+            "docsgpt.api.answer.services.compression.service.CompressionService",
             return_value=mock_service,
         ), patch.object(
             handler,
             "_rebuild_messages_after_compression",
             return_value=[],
         ), patch(
-            "application.core.settings.settings",
+            "docsgpt.core.settings.settings",
             MagicMock(COMPRESSION_MODEL_OVERRIDE=None),
         ):
             handler._perform_in_memory_compression(
@@ -1978,10 +1978,10 @@ class TestPerformMidExecutionCompressionEdgeCases:
         mock_conv_service.get_conversation.return_value = None
 
         with patch(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             return_value=Mock(),
         ), patch(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             return_value=mock_conv_service,
         ), patch.object(
             handler,
@@ -2014,10 +2014,10 @@ class TestPerformMidExecutionCompressionEdgeCases:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         with patch(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             return_value=mock_orchestrator,
         ), patch(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             return_value=mock_conv_service,
         ), patch.object(
             handler, "_build_conversation_from_messages", return_value={"queries": []}
@@ -2055,10 +2055,10 @@ class TestPerformMidExecutionCompressionEdgeCases:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         with patch(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             return_value=mock_orchestrator,
         ), patch(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             return_value=mock_conv_service,
         ), patch.object(
             handler, "_build_conversation_from_messages", return_value={"queries": []}
@@ -2103,10 +2103,10 @@ class TestPerformMidExecutionCompressionEdgeCases:
         mock_orchestrator.compress_mid_execution.return_value = mock_result
 
         with patch(
-            "application.api.answer.services.compression.CompressionOrchestrator",
+            "docsgpt.api.answer.services.compression.CompressionOrchestrator",
             return_value=mock_orchestrator,
         ), patch(
-            "application.api.answer.services.conversation_service.ConversationService",
+            "docsgpt.api.answer.services.conversation_service.ConversationService",
             return_value=mock_conv_service,
         ), patch.object(
             handler, "_build_conversation_from_messages", return_value={"queries": []}
@@ -2235,7 +2235,7 @@ class TestHandleToolCallsCompressionSuccess:
         agent._execute_tool_action = Mock(side_effect=fake_execute)
 
         with patch(
-            "application.core.settings.settings"
+            "docsgpt.core.settings.settings"
         ) as mock_settings:
             mock_settings.ENABLE_CONVERSATION_COMPRESSION = True
 
@@ -2281,7 +2281,7 @@ class TestHandleToolCallsCompressionSuccess:
         agent._execute_tool_action = Mock(side_effect=fake_execute)
 
         with patch(
-            "application.core.settings.settings"
+            "docsgpt.core.settings.settings"
         ) as mock_settings:
             mock_settings.ENABLE_CONVERSATION_COMPRESSION = True
 

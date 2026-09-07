@@ -40,12 +40,12 @@ class _FakeEmbeddings:
 
 @pytest.fixture
 def store(tmp_path):
-    from application.vectorstore.milvus import MilvusStore
+    from docsgpt.vectorstore.milvus import MilvusStore
 
     with patch(
-        "application.vectorstore.base.BaseVectorStore._get_embeddings",
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
         return_value=_FakeEmbeddings(),
-    ), patch("application.vectorstore.milvus.settings") as mock_settings:
+    ), patch("docsgpt.vectorstore.milvus.settings") as mock_settings:
         mock_settings.EMBEDDINGS_NAME = "test_model"
         mock_settings.MILVUS_COLLECTION_NAME = "test_collection"
         mock_settings.MILVUS_URI = str(tmp_path / "milvus.db")
@@ -114,12 +114,12 @@ class TestMilvusStore:
         assert len(populated.get_chunks()) == 2
 
     def test_delete_index_removes_only_this_source(self, populated):
-        from application.vectorstore.milvus import MilvusStore
+        from docsgpt.vectorstore.milvus import MilvusStore
 
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings",
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=_FakeEmbeddings(),
-        ), patch("application.vectorstore.milvus.settings") as mock_settings:
+        ), patch("docsgpt.vectorstore.milvus.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = "test_model"
             mock_settings.MILVUS_COLLECTION_NAME = "test_collection"
             mock_settings.MILVUS_URI = ":memory:"
@@ -156,7 +156,7 @@ class TestMilvusUriEnvGuard:
     """
 
     def test_env_var_hidden_during_import_and_restored(self):
-        from application.vectorstore.milvus import _without_milvus_uri_env
+        from docsgpt.vectorstore.milvus import _without_milvus_uri_env
 
         with patch.dict(os.environ, {"MILVUS_URI": "./milvus_local.db"}):
             with _without_milvus_uri_env():
@@ -164,7 +164,7 @@ class TestMilvusUriEnvGuard:
             assert os.environ["MILVUS_URI"] == "./milvus_local.db"
 
     def test_absent_env_var_stays_absent(self):
-        from application.vectorstore.milvus import _without_milvus_uri_env
+        from docsgpt.vectorstore.milvus import _without_milvus_uri_env
 
         env = {k: v for k, v in os.environ.items() if k != "MILVUS_URI"}
         with patch.dict(os.environ, env, clear=True):

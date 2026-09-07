@@ -8,7 +8,7 @@ repos together.
 
 from __future__ import annotations
 
-from application.api.devices.auth import _canonical_payload
+from docsgpt.api.devices.auth import _canonical_payload
 
 
 def test_canonical_payload_empty_body():

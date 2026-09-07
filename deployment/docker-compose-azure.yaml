@@ -1,9 +1,24 @@
 services:
   frontend:
-    build: ../frontend
+    build:
+      context: ../frontend
+      target: dev
     environment:
+      # Every VITE_* the app reads. A bare name is passed through only when it is
+      # set in the shell or the --env-file, so an unset one does not reach the
+      # container as an empty string and override the image's own default.
       - VITE_API_HOST=http://localhost:7091
-      - VITE_API_STREAMING=$VITE_API_STREAMING
+      - VITE_API_STREAMING=${VITE_API_STREAMING:-true}
+      - VITE_BASE_URL
+      - VITE_GOOGLE_CLIENT_ID
+      - VITE_GOOGLE_PICKER_API_KEY
+      - VITE_SHARE_POINT_CLIENT_ID
+      - VITE_CONFLUENCE_CLIENT_ID
+      - VITE_NOTIFICATION_TEXT
+      - VITE_NOTIFICATION_LINK
+      - VITE_ENABLE_VOICE_INPUT
+      - VITE_DISABLE_SOURCE_FE
+      - VITE_USE_V
     ports:
       - "5173:5173"
     depends_on:
@@ -11,8 +26,10 @@ services:
 
   backend:
     build:
-      context: ../application
+      context: ..
+      dockerfile: docsgpt/Dockerfile
       args:
+        EXTRAS: ${EXTRAS:-}
         INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
         # Off by default; deployments running OCR_ENABLED=true with tesseract
         # must set INSTALL_TESSERACT=true before rebuilding (see docker-compose.yaml).
@@ -27,9 +44,14 @@ services:
     ports:
       - "7091:7091"
     volumes:
-      - ../application/indexes:/app/application/indexes
-      - ../application/inputs:/app/application/inputs
-      - ../application/vectors:/app/application/vectors
+      # Host data lives under application/ (the old package directory) for this
+      # release, like the other compose files; it moves with the packaging work,
+      # together with an upgrade note. The container side is /app: the process
+      # runs there and resolves indexes/inputs/vectors relative to it (earlier
+      # versions of this file mounted /app/application/..., which nothing wrote to).
+      - ../application/indexes:/app/indexes
+      - ../application/inputs:/app/inputs
+      - ../application/vectors:/app/vectors
     depends_on:
       redis:
         condition: service_started
@@ -38,14 +60,16 @@ services:
 
   worker:
     build:
-      context: ../application
+      context: ..
+      dockerfile: docsgpt/Dockerfile
       args:
+        EXTRAS: ${EXTRAS:-}
         INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
         # Off by default; deployments running OCR_ENABLED=true with tesseract
         # must set INSTALL_TESSERACT=true before rebuilding (see docker-compose.yaml).
         INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
     # `parsing` queue carries read_document/parse_document; required for its await to resolve.
-    command: celery -A application.app.celery worker -l INFO -Q docsgpt,parsing,embeddings
+    command: celery -A docsgpt.app.celery worker -l INFO -Q docsgpt,parsing,embeddings
     env_file:
       - ../.env
     environment:

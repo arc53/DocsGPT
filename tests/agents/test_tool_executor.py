@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
-from application.agents.tool_executor import ToolExecutor
+from docsgpt.agents.tool_executor import ToolExecutor
 
 
 @pytest.mark.unit
@@ -42,12 +42,12 @@ class TestToolExecutorGetTools:
             yield pg_conn
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.db_readonly", _use_pg_conn
+            "docsgpt.agents.tool_executor.db_readonly", _use_pg_conn
         )
 
     def test_get_tools_uses_api_key_when_present(self, pg_conn, monkeypatch):
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         tool = UserToolsRepository(pg_conn).create(user_id="alice", name="tool1")
         AgentsRepository(pg_conn).create(
@@ -69,8 +69,8 @@ class TestToolExecutorGetTools:
     def test_api_key_agent_never_resolves_workflow_only_builtins(self, pg_conn, monkeypatch):
         """read_document is workflow-only: a chat/scheduled agent carrying its
         builtin id must not get it; workflow nodes get it via allowed_tool_ids."""
-        from application.agents.default_tools import default_tool_id
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         read_doc_id = default_tool_id("read_document")
         artifact_id = default_tool_id("artifact_generator")
@@ -94,8 +94,8 @@ class TestToolExecutorGetTools:
         assert node_names == {"read_document"}
 
     def test_agentless_chat_synthesizes_defaults(self, pg_conn, monkeypatch):
-        from application.agents.default_tools import loaded_default_tools
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.agents.default_tools import loaded_default_tools
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         UserToolsRepository(pg_conn).create(
             user_id="alice", name="tool1", status=True
@@ -114,8 +114,8 @@ class TestToolExecutorGetTools:
         self, pg_conn, monkeypatch
     ):
         """``agent_id`` forces ``agents.tools``-only; no defaults synthesized."""
-        from application.agents.default_tools import loaded_default_tools
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.agents.default_tools import loaded_default_tools
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         UserToolsRepository(pg_conn).create(
             user_id="alice", name="tool1", status=True
@@ -129,7 +129,7 @@ class TestToolExecutorGetTools:
         assert not (set(loaded_default_tools()) & names)
 
     def test_get_tools_defaults_to_local(self, pg_conn, monkeypatch):
-        from application.agents.default_tools import loaded_default_tools
+        from docsgpt.agents.default_tools import loaded_default_tools
 
         self._patch_conn(monkeypatch, pg_conn)
 
@@ -141,9 +141,9 @@ class TestToolExecutorGetTools:
 
     def test_api_key_path_excludes_defaults(self, pg_conn, monkeypatch):
         """Agent-bound resolution returns exactly ``agents.tools``."""
-        from application.agents.default_tools import loaded_default_tools
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.agents.default_tools import loaded_default_tools
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         tool = UserToolsRepository(pg_conn).create(user_id="alice", name="tool1")
         AgentsRepository(pg_conn).create(
@@ -165,7 +165,7 @@ class TestToolExecutorGetTools:
         self, pg_conn, monkeypatch
     ):
         """Empty ``agents.tools`` invoked via API key yields no tools."""
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         AgentsRepository(pg_conn).create(
             user_id="bob",
@@ -183,8 +183,8 @@ class TestToolExecutorGetTools:
         self, pg_conn, monkeypatch
     ):
         """Only ``read_webpage`` in ``agents.tools`` -> exactly that; no other defaults bolted on."""
-        from application.agents.default_tools import default_tool_id
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         read_webpage_id = default_tool_id("read_webpage")
         memory_id = default_tool_id("memory")
@@ -210,8 +210,8 @@ class TestToolExecutorGetTools:
         self, pg_conn, monkeypatch
     ):
         """A default tool added explicitly to ``agents.tools`` resolves for every caller."""
-        from application.agents.default_tools import default_tool_id
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         memory_id = default_tool_id("memory")
         AgentsRepository(pg_conn).create(
@@ -233,7 +233,7 @@ class TestToolExecutorGetTools:
     def test_no_dedup_between_explicit_and_default_memory(
         self, pg_conn, monkeypatch
     ):
-        from application.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         # Explicit ``memory`` row and the default ``memory`` coexist (separate stores).
         UserToolsRepository(pg_conn).create(
@@ -603,7 +603,7 @@ class TestCheckPauseRemoteDevice:
 
     def _patch_device(self, monkeypatch, device):
         """Stub ``RemoteDeviceTool._load_device`` to return ``device``."""
-        from application.agents.tools import remote_device
+        from docsgpt.agents.tools import remote_device
 
         monkeypatch.setattr(
             remote_device.RemoteDeviceTool,
@@ -613,7 +613,7 @@ class TestCheckPauseRemoteDevice:
 
     def _patch_sticky(self, monkeypatch, patterns):
         """Stub the sticky lookup to match any normalized pattern in ``patterns``."""
-        from application.agents.tools import remote_device
+        from docsgpt.agents.tools import remote_device
 
         monkeypatch.setattr(
             remote_device,
@@ -789,7 +789,7 @@ class TestCheckPauseRemoteDeviceHeadless:
         }
 
     def _patch_device(self, monkeypatch, device):
-        from application.agents.tools import remote_device
+        from docsgpt.agents.tools import remote_device
 
         monkeypatch.setattr(
             remote_device.RemoteDeviceTool,
@@ -798,7 +798,7 @@ class TestCheckPauseRemoteDeviceHeadless:
         )
 
     def _patch_sticky(self, monkeypatch, patterns):
-        from application.agents.tools import remote_device
+        from docsgpt.agents.tools import remote_device
 
         monkeypatch.setattr(
             remote_device,
@@ -910,7 +910,7 @@ class TestToolExecutorExecute:
         executor = ToolExecutor()
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(parse_args=Mock(return_value=(None, None, {}))),
         )
 
@@ -937,7 +937,7 @@ class TestToolExecutorExecute:
         executor = ToolExecutor()
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(parse_args=Mock(return_value=("missing_id", "action", {}))),
         )
 
@@ -963,7 +963,7 @@ class TestToolExecutorExecute:
         executor = ToolExecutor(user="test_user")
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(parse_args=Mock(return_value=("t1", "test_action", {"param1": "val"}))),
         )
 
@@ -998,7 +998,7 @@ class TestToolExecutorExecute:
         assert "completed" in statuses
 
     def test_get_truncated_tool_calls(self):
-        from application.agents.tool_executor import PERSISTED_RESULT_MAX_LEN
+        from docsgpt.agents.tool_executor import PERSISTED_RESULT_MAX_LEN
 
         executor = ToolExecutor()
         executor.tool_calls = [
@@ -1044,7 +1044,7 @@ class TestToolExecutorExecute:
         assert truncated[0]["status"] == "error"
 
     def test_result_status_reflects_in_band_tool_errors(self):
-        from application.agents.tool_executor import result_status
+        from docsgpt.agents.tool_executor import result_status
 
         assert result_status({"status": "error", "error": "invalid spec"}) == "error"
         assert result_status({"error": "input artifact A9 not found"}) == "error"
@@ -1056,7 +1056,7 @@ class TestToolExecutorExecute:
         executor = ToolExecutor(user="test_user")
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(parse_args=Mock(return_value=("t1", "test_action", {}))),
         )
 
@@ -1097,7 +1097,7 @@ class TestToolExecutorExecute:
         executor = ToolExecutor(user="test_user")
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(
                 parse_args=Mock(return_value=("t1", "get_users", {"body_param": "val"}))
             ),
@@ -1144,7 +1144,7 @@ class TestToolExecutorExecute:
         executor = ToolExecutor(user="test_user")
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(
                 parse_args=Mock(return_value=("t1", "act", {}))
             ),
@@ -1190,7 +1190,7 @@ class TestToolExecutorExecute:
         executor = ToolExecutor(user="test_user")
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
+            "docsgpt.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(
                 parse_args=Mock(return_value=("t1", "act", {"q": "v"}))
             ),
@@ -1239,10 +1239,10 @@ class TestToolExecutorExecute:
         mock_tool = Mock()
         mock_tm.load_tool.return_value = mock_tool
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolManager", lambda config: mock_tm
+            "docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm
         )
         monkeypatch.setattr(
-            "application.agents.tool_executor.decrypt_credentials",
+            "docsgpt.agents.tool_executor.decrypt_credentials",
             lambda creds, user: {"api_key": "decrypted_key"},
         )
 
@@ -1267,7 +1267,7 @@ class TestToolExecutorExecute:
         mock_tm = Mock()
         mock_tm.load_tool.return_value = Mock()
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolManager", lambda config: mock_tm
+            "docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm
         )
         captured = {}
 
@@ -1276,7 +1276,7 @@ class TestToolExecutorExecute:
             return {"api_key": "owner_secret"}
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.decrypt_credentials", _fake_decrypt
+            "docsgpt.agents.tool_executor.decrypt_credentials", _fake_decrypt
         )
 
         tool_data = {
@@ -1298,7 +1298,7 @@ class TestToolExecutorExecute:
         mock_tool = Mock()
         mock_tm.load_tool.return_value = mock_tool
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolManager", lambda config: mock_tm
+            "docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm
         )
 
         tool_data = {
@@ -1334,7 +1334,7 @@ class TestToolExecutorAdditionalCoverage:
         mock_tool.get_artifact_id.side_effect = RuntimeError("artifact error")
 
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolManager",
+            "docsgpt.agents.tool_executor.ToolManager",
             lambda config: Mock(load_tool=Mock(return_value=mock_tool)),
         )
 
@@ -1375,7 +1375,7 @@ class TestToolExecutorAdditionalCoverage:
         mock_tool = Mock()
         mock_tm.load_tool.return_value = mock_tool
         monkeypatch.setattr(
-            "application.agents.tool_executor.ToolManager", lambda config: mock_tm
+            "docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm
         )
 
         tool_data = {

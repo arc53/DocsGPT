@@ -6,12 +6,12 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from application.retriever.stages.prescreen import (
+from docsgpt.retriever.stages.prescreen import (
     PreScreenStage,
     build_prescreen_stages,
     max_candidate_k,
 )
-from application.storage.db.source_config import PreScreenConfig, RetrievalConfig
+from docsgpt.storage.db.source_config import PreScreenConfig, RetrievalConfig
 
 
 @pytest.mark.unit
@@ -23,7 +23,7 @@ class TestKeepDrop:
         llm = Mock(gen=gen, model_id="m")
         docs = [{"text": "keep0"}, {"text": "drop1"}, {"text": "keep2"}, {"text": "drop3"}]
         with patch(
-            "application.retriever.stages.prescreen.LLMCreator.create_llm",
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
             return_value=llm,
         ):
             stage = PreScreenStage(config, llm_name="openai", api_key="k", model_id="m")
@@ -38,7 +38,7 @@ class TestKeepDrop:
         llm = Mock(gen=gen, model_id="m")
         docs = [{"text": f"d{i}"} for i in range(6)]
         with patch(
-            "application.retriever.stages.prescreen.LLMCreator.create_llm",
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
             return_value=llm,
         ):
             stage = PreScreenStage(config, llm_name="openai", api_key="k", model_id="m")
@@ -51,7 +51,7 @@ class TestKeepDrop:
         llm = Mock(gen=gen, model_id="m")
         docs = [{"text": "a"}, {"text": "b"}]
         with patch(
-            "application.retriever.stages.prescreen.LLMCreator.create_llm",
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
             return_value=llm,
         ):
             stage = PreScreenStage(config, llm_name="openai", api_key="k", model_id="m")
@@ -84,7 +84,7 @@ class TestInjectionSafety:
             }
         ]
         with patch(
-            "application.retriever.stages.prescreen.LLMCreator.create_llm",
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
             return_value=llm,
         ):
             stage = PreScreenStage(config, llm_name="openai", api_key="k", model_id="m")
@@ -100,7 +100,7 @@ class TestInjectionSafety:
         llm = Mock(gen=gen, model_id="m")
         docs = [{"text": "a"}, {"text": "b"}]
         with patch(
-            "application.retriever.stages.prescreen.LLMCreator.create_llm",
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
             return_value=llm,
         ):
             stage = PreScreenStage(config, llm_name="openai", api_key="k", model_id="m")
@@ -121,7 +121,7 @@ class TestModelResolution:
             return Mock(gen=Mock(return_value='{"keep": [0]}'), model_id="resolved")
 
         with patch(
-            "application.retriever.stages.prescreen.LLMCreator.create_llm",
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
             side_effect=fake_create_llm,
         ):
             stage = PreScreenStage(
@@ -139,7 +139,7 @@ class TestModelResolution:
             return Mock(gen=Mock(return_value='{"keep": [0]}'), model_id="cheap")
 
         with patch(
-            "application.retriever.stages.prescreen.LLMCreator.create_llm",
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
             side_effect=fake_create_llm,
         ):
             stage = PreScreenStage(
@@ -158,7 +158,7 @@ class TestModelResolution:
             return llm
 
         with patch(
-            "application.retriever.stages.prescreen.LLMCreator.create_llm",
+            "docsgpt.retriever.stages.prescreen.LLMCreator.create_llm",
             side_effect=fake_create_llm,
         ):
             stage = PreScreenStage(

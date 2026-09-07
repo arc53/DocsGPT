@@ -1,4 +1,4 @@
-"""Tests for application/api/connector/routes.py.
+"""Tests for docsgpt/api/connector/routes.py.
 
 Directly instantiates Resource classes via ``test_request_context`` instead
 of registering the blueprint (the flask_restx ``api`` is a module-level
@@ -27,9 +27,9 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.connector.routes.db_session", _yield
+        "docsgpt.api.connector.routes.db_session", _yield
     ), patch(
-        "application.api.connector.routes.db_readonly", _yield
+        "docsgpt.api.connector.routes.db_readonly", _yield
     ):
         yield
 
@@ -40,7 +40,7 @@ def _encode_state(payload):
 
 class TestBuildCallbackRedirect:
     def test_builds_safe_url_with_params(self):
-        from application.api.connector.routes import build_callback_redirect
+        from docsgpt.api.connector.routes import build_callback_redirect
 
         got = build_callback_redirect({"status": "success", "provider": "x"})
         assert got.startswith("/api/connectors/callback-status?")
@@ -50,7 +50,7 @@ class TestBuildCallbackRedirect:
 
 class TestConnectorAuth:
     def test_returns_400_missing_provider(self, app):
-        from application.api.connector.routes import ConnectorAuth
+        from docsgpt.api.connector.routes import ConnectorAuth
 
         with app.test_request_context("/api/connectors/auth"):
             from flask import request
@@ -59,10 +59,10 @@ class TestConnectorAuth:
         assert r.status_code == 400
 
     def test_returns_400_unsupported_provider(self, app):
-        from application.api.connector.routes import ConnectorAuth
+        from docsgpt.api.connector.routes import ConnectorAuth
 
         with patch(
-            "application.api.connector.routes.ConnectorCreator.is_supported",
+            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
             return_value=False,
         ), app.test_request_context("/api/connectors/auth?provider=nope"):
             from flask import request
@@ -71,10 +71,10 @@ class TestConnectorAuth:
         assert r.status_code == 400
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.connector.routes import ConnectorAuth
+        from docsgpt.api.connector.routes import ConnectorAuth
 
         with patch(
-            "application.api.connector.routes.ConnectorCreator.is_supported",
+            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
             return_value=True,
         ), app.test_request_context(
             "/api/connectors/auth?provider=google_drive"
@@ -85,16 +85,16 @@ class TestConnectorAuth:
         assert r.status_code == 401
 
     def test_generates_authorization_url(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorAuth
+        from docsgpt.api.connector.routes import ConnectorAuth
 
         fake_auth = MagicMock()
         fake_auth.get_authorization_url.return_value = "https://ex/auth?state=x"
 
         with _patch_db(pg_conn), patch(
-            "application.api.connector.routes.ConnectorCreator.is_supported",
+            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
             return_value=True,
         ), patch(
-            "application.api.connector.routes.ConnectorCreator.create_auth",
+            "docsgpt.api.connector.routes.ConnectorCreator.create_auth",
             return_value=fake_auth,
         ), app.test_request_context(
             "/api/connectors/auth?provider=google_drive"
@@ -109,11 +109,11 @@ class TestConnectorAuth:
 
 class TestConnectorsCallback:
     def test_invalid_provider_redirects_to_error(self, app):
-        from application.api.connector.routes import ConnectorsCallback
+        from docsgpt.api.connector.routes import ConnectorsCallback
 
         state = _encode_state({"provider": "bogus", "object_id": "x"})
         with patch(
-            "application.api.connector.routes.ConnectorCreator.is_supported",
+            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
             return_value=False,
         ), app.test_request_context(f"/api/connectors/callback?state={state}"):
             r = ConnectorsCallback().get()
@@ -121,11 +121,11 @@ class TestConnectorsCallback:
         assert "callback-status" in r.location
 
     def test_access_denied_redirects_cancelled(self, app):
-        from application.api.connector.routes import ConnectorsCallback
+        from docsgpt.api.connector.routes import ConnectorsCallback
 
         state = _encode_state({"provider": "google_drive", "object_id": "x"})
         with patch(
-            "application.api.connector.routes.ConnectorCreator.is_supported",
+            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
             return_value=True,
         ), app.test_request_context(
             f"/api/connectors/callback?state={state}&error=access_denied"
@@ -135,11 +135,11 @@ class TestConnectorsCallback:
         assert "cancelled" in r.location
 
     def test_error_redirects_error(self, app):
-        from application.api.connector.routes import ConnectorsCallback
+        from docsgpt.api.connector.routes import ConnectorsCallback
 
         state = _encode_state({"provider": "google_drive", "object_id": "x"})
         with patch(
-            "application.api.connector.routes.ConnectorCreator.is_supported",
+            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
             return_value=True,
         ), app.test_request_context(
             f"/api/connectors/callback?state={state}&error=other"
@@ -149,11 +149,11 @@ class TestConnectorsCallback:
         assert "status=error" in r.location
 
     def test_missing_code_redirects_error(self, app):
-        from application.api.connector.routes import ConnectorsCallback
+        from docsgpt.api.connector.routes import ConnectorsCallback
 
         state = _encode_state({"provider": "google_drive", "object_id": "x"})
         with patch(
-            "application.api.connector.routes.ConnectorCreator.is_supported",
+            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
             return_value=True,
         ), app.test_request_context(
             f"/api/connectors/callback?state={state}"
@@ -163,8 +163,8 @@ class TestConnectorsCallback:
         assert "status=error" in r.location
 
     def test_successful_callback_updates_session(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorsCallback
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.api.connector.routes import ConnectorsCallback
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 
@@ -190,10 +190,10 @@ class TestConnectorsCallback:
         )
 
         with _patch_db(pg_conn), patch(
-            "application.api.connector.routes.ConnectorCreator.is_supported",
+            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
             return_value=True,
         ), patch(
-            "application.api.connector.routes.ConnectorCreator.create_auth",
+            "docsgpt.api.connector.routes.ConnectorCreator.create_auth",
             return_value=fake_auth,
         ), app.test_request_context(
             f"/api/connectors/callback?state={state}&code=auth-code"
@@ -203,17 +203,17 @@ class TestConnectorsCallback:
         assert "status=success" in r.location
 
     def test_token_exchange_failure_redirects_error(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorsCallback
+        from docsgpt.api.connector.routes import ConnectorsCallback
 
         state = _encode_state({"provider": "google_drive", "object_id": ""})
         fake_auth = MagicMock()
         fake_auth.exchange_code_for_tokens.side_effect = RuntimeError("fail")
 
         with _patch_db(pg_conn), patch(
-            "application.api.connector.routes.ConnectorCreator.is_supported",
+            "docsgpt.api.connector.routes.ConnectorCreator.is_supported",
             return_value=True,
         ), patch(
-            "application.api.connector.routes.ConnectorCreator.create_auth",
+            "docsgpt.api.connector.routes.ConnectorCreator.create_auth",
             return_value=fake_auth,
         ), app.test_request_context(
             f"/api/connectors/callback?state={state}&code=auth-code"
@@ -224,7 +224,7 @@ class TestConnectorsCallback:
 
 class TestConnectorFiles:
     def test_returns_400_missing_fields(self, app):
-        from application.api.connector.routes import ConnectorFiles
+        from docsgpt.api.connector.routes import ConnectorFiles
 
         with app.test_request_context(
             "/api/connectors/files",
@@ -237,7 +237,7 @@ class TestConnectorFiles:
         assert r.status_code == 400
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.connector.routes import ConnectorFiles
+        from docsgpt.api.connector.routes import ConnectorFiles
 
         with app.test_request_context(
             "/api/connectors/files",
@@ -250,7 +250,7 @@ class TestConnectorFiles:
         assert r.status_code == 401
 
     def test_returns_401_invalid_session(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorFiles
+        from docsgpt.api.connector.routes import ConnectorFiles
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/connectors/files",
@@ -263,8 +263,8 @@ class TestConnectorFiles:
         assert r.status_code == 401
 
     def test_lists_files_successfully(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorFiles
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.api.connector.routes import ConnectorFiles
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 
@@ -292,7 +292,7 @@ class TestConnectorFiles:
         fake_loader.next_page_token = None
 
         with _patch_db(pg_conn), patch(
-            "application.api.connector.routes.ConnectorCreator.create_connector",
+            "docsgpt.api.connector.routes.ConnectorCreator.create_connector",
             return_value=fake_loader,
         ), app.test_request_context(
             "/api/connectors/files",
@@ -308,7 +308,7 @@ class TestConnectorFiles:
 
 class TestConnectorValidateSession:
     def test_returns_400_missing_fields(self, app):
-        from application.api.connector.routes import ConnectorValidateSession
+        from docsgpt.api.connector.routes import ConnectorValidateSession
 
         with app.test_request_context(
             "/api/connectors/validate-session",
@@ -321,7 +321,7 @@ class TestConnectorValidateSession:
         assert r.status_code == 400
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.connector.routes import ConnectorValidateSession
+        from docsgpt.api.connector.routes import ConnectorValidateSession
 
         with app.test_request_context(
             "/api/connectors/validate-session",
@@ -334,7 +334,7 @@ class TestConnectorValidateSession:
         assert r.status_code == 401
 
     def test_returns_401_invalid_session(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorValidateSession
+        from docsgpt.api.connector.routes import ConnectorValidateSession
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/connectors/validate-session",
@@ -347,8 +347,8 @@ class TestConnectorValidateSession:
         assert r.status_code == 401
 
     def test_valid_session_returns_tokens(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorValidateSession
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.api.connector.routes import ConnectorValidateSession
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 
@@ -368,7 +368,7 @@ class TestConnectorValidateSession:
         fake_auth.is_token_expired.return_value = False
 
         with _patch_db(pg_conn), patch(
-            "application.api.connector.routes.ConnectorCreator.create_auth",
+            "docsgpt.api.connector.routes.ConnectorCreator.create_auth",
             return_value=fake_auth,
         ), app.test_request_context(
             "/api/connectors/validate-session",
@@ -382,8 +382,8 @@ class TestConnectorValidateSession:
         assert r.json["access_token"] == "at"
 
     def test_expired_token_refreshes(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorValidateSession
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.api.connector.routes import ConnectorValidateSession
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 
@@ -404,7 +404,7 @@ class TestConnectorValidateSession:
         fake_auth.sanitize_token_info.return_value = {"access_token": "new-at"}
 
         with _patch_db(pg_conn), patch(
-            "application.api.connector.routes.ConnectorCreator.create_auth",
+            "docsgpt.api.connector.routes.ConnectorCreator.create_auth",
             return_value=fake_auth,
         ), app.test_request_context(
             "/api/connectors/validate-session",
@@ -420,7 +420,7 @@ class TestConnectorValidateSession:
 
 class TestConnectorDisconnect:
     def test_returns_400_missing_provider(self, app):
-        from application.api.connector.routes import ConnectorDisconnect
+        from docsgpt.api.connector.routes import ConnectorDisconnect
 
         with app.test_request_context(
             "/api/connectors/disconnect", method="POST", json={}
@@ -429,8 +429,8 @@ class TestConnectorDisconnect:
         assert r.status_code == 400
 
     def test_disconnects_session(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorDisconnect
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.api.connector.routes import ConnectorDisconnect
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 
@@ -449,7 +449,7 @@ class TestConnectorDisconnect:
         assert r.json["success"] is True
 
     def test_disconnect_without_session_token_succeeds(self, app):
-        from application.api.connector.routes import ConnectorDisconnect
+        from docsgpt.api.connector.routes import ConnectorDisconnect
 
         with app.test_request_context(
             "/api/connectors/disconnect",
@@ -462,7 +462,7 @@ class TestConnectorDisconnect:
 
 class TestConnectorSync:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.connector.routes import ConnectorSync
+        from docsgpt.api.connector.routes import ConnectorSync
 
         with app.test_request_context(
             "/api/connectors/sync",
@@ -475,7 +475,7 @@ class TestConnectorSync:
         assert r.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.connector.routes import ConnectorSync
+        from docsgpt.api.connector.routes import ConnectorSync
 
         with app.test_request_context(
             "/api/connectors/sync", method="POST", json={"source_id": "x"}
@@ -486,7 +486,7 @@ class TestConnectorSync:
         assert r.status_code == 400
 
     def test_returns_404_source_not_found(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorSync
+        from docsgpt.api.connector.routes import ConnectorSync
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/connectors/sync",
@@ -502,8 +502,8 @@ class TestConnectorSync:
         assert r.status_code == 404
 
     def test_returns_400_missing_provider(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorSync
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.connector.routes import ConnectorSync
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-noprov"
         src = SourcesRepository(pg_conn).create(
@@ -521,8 +521,8 @@ class TestConnectorSync:
         assert r.status_code == 400
 
     def test_triggers_sync_task(self, app, pg_conn):
-        from application.api.connector.routes import ConnectorSync
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.connector.routes import ConnectorSync
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-sync-trigger"
         src = SourcesRepository(pg_conn).create(
@@ -532,7 +532,7 @@ class TestConnectorSync:
 
         fake_task = MagicMock(id="task-abc")
         with _patch_db(pg_conn), patch(
-            "application.api.connector.routes.ingest_connector_task.delay",
+            "docsgpt.api.connector.routes.ingest_connector_task.delay",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/connectors/sync",
@@ -548,7 +548,7 @@ class TestConnectorSync:
 
 class TestConnectorCallbackStatus:
     def test_returns_html_for_success(self, app):
-        from application.api.connector.routes import ConnectorCallbackStatus
+        from docsgpt.api.connector.routes import ConnectorCallbackStatus
 
         with app.test_request_context(
             "/api/connectors/callback-status?"
@@ -561,7 +561,7 @@ class TestConnectorCallbackStatus:
         assert b"hello" in r.data
 
     def test_returns_html_for_error(self, app):
-        from application.api.connector.routes import ConnectorCallbackStatus
+        from docsgpt.api.connector.routes import ConnectorCallbackStatus
 
         with app.test_request_context(
             "/api/connectors/callback-status?status=error&message=oops"
@@ -571,7 +571,7 @@ class TestConnectorCallbackStatus:
         assert b"oops" in r.data
 
     def test_unknown_status_coerces_to_error(self, app):
-        from application.api.connector.routes import ConnectorCallbackStatus
+        from docsgpt.api.connector.routes import ConnectorCallbackStatus
 
         with app.test_request_context(
             "/api/connectors/callback-status?status=weird"

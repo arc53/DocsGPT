@@ -1,9 +1,9 @@
-"""Tests for application/core/model_settings.py.
+"""Tests for docsgpt/core/model_settings.py.
 
 The provider-specific load logic that used to live in private
 ``_add_<X>_models`` methods now lives in plugin classes under
-``application/llm/providers/`` and YAML catalogs under
-``application/core/models/``. End-to-end coverage of the registry +
+``docsgpt/llm/providers/`` and YAML catalogs under
+``docsgpt/core/models/``. End-to-end coverage of the registry +
 plugin pipeline is in ``tests/core/test_model_registry_yaml.py``.
 
 This file covers the data classes (``AvailableModel``,
@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from application.core.model_settings import (
+from docsgpt.core.model_settings import (
     AvailableModel,
     ModelCapabilities,
     ModelProvider,

@@ -1,10 +1,13 @@
 """Chunk sizes must be counted in the embedding model's units, and splitting
 must never rewrite the text it splits."""
 
+import sys
+import types
+
 import pytest
 
-from application.parser import tokenization
-from application.parser.tokenization import (
+from docsgpt.parser import tokenization
+from docsgpt.parser.tokenization import (
     HuggingFaceCounter,
     TiktokenCounter,
     get_token_counter,
@@ -298,3 +301,35 @@ class TestUnknownTokenCollapse:
         assert "".join(pieces) == text, "split must not lose or alter text"
         assert len(pieces) > 1, "a collapsed run must still be cut into pieces"
         assert all(counter.count(p) <= 20 for p in pieces)
+
+
+class TestTokenizerFile:
+    """The chunker's tokenizer must come from the hub cache without a network round trip."""
+
+    def test_cache_hit_makes_no_online_call(self, monkeypatch):
+        calls = []
+
+        def fake_download(repo, filename, local_files_only=False):
+            calls.append(local_files_only)
+            return "/cache/tokenizer.json"
+
+        fake_hub = types.ModuleType("huggingface_hub")
+        fake_hub.hf_hub_download = fake_download
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+        assert tokenization._tokenizer_file("org/model") == "/cache/tokenizer.json"
+        assert calls == [True]
+
+    def test_cache_miss_falls_back_to_online(self, monkeypatch):
+        calls = []
+
+        def fake_download(repo, filename, local_files_only=False):
+            calls.append(local_files_only)
+            if local_files_only:
+                raise FileNotFoundError("not cached")
+            return "/downloaded/tokenizer.json"
+
+        fake_hub = types.ModuleType("huggingface_hub")
+        fake_hub.hf_hub_download = fake_download
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+        assert tokenization._tokenizer_file("org/model") == "/downloaded/tokenizer.json"
+        assert calls == [True, False]

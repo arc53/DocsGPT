@@ -1,8 +1,8 @@
 from unittest.mock import Mock, patch
 
 import pytest
-from application.agents.tools.base import Tool
-from application.agents.tools.tool_manager import ToolManager
+from docsgpt.agents.tools.base import Tool
+from docsgpt.agents.tools.tool_manager import ToolManager
 
 
 class MockTool(Tool):
@@ -22,7 +22,7 @@ class MockTool(Tool):
 @pytest.mark.unit
 class TestToolManager:
 
-    @patch("application.agents.tools.tool_manager.pkgutil.iter_modules")
+    @patch("docsgpt.agents.tools.tool_manager.pkgutil.iter_modules")
     def test_tool_manager_initialization(self, mock_iter):
         mock_iter.return_value = []
 
@@ -32,8 +32,8 @@ class TestToolManager:
         assert manager.config == config
         assert isinstance(manager.tools, dict)
 
-    @patch("application.agents.tools.tool_manager.pkgutil.iter_modules")
-    @patch("application.agents.tools.tool_manager.importlib.import_module")
+    @patch("docsgpt.agents.tools.tool_manager.pkgutil.iter_modules")
+    @patch("docsgpt.agents.tools.tool_manager.importlib.import_module")
     def test_load_tools_skips_base_and_private(self, mock_import, mock_iter):
         mock_iter.return_value = [
             (None, "base", False),
@@ -51,7 +51,7 @@ class TestToolManager:
         assert "base" not in manager.tools
         assert "__init__" not in manager.tools
 
-    @patch("application.agents.tools.tool_manager.pkgutil.iter_modules")
+    @patch("docsgpt.agents.tools.tool_manager.pkgutil.iter_modules")
     def test_load_tools_creates_tool_instances(self, mock_iter):
         mock_iter.return_value = []
 
@@ -66,7 +66,7 @@ class TestToolManager:
 
     def test_load_tool_with_user_id(self):
         with patch(
-            "application.agents.tools.tool_manager.pkgutil.iter_modules",
+            "docsgpt.agents.tools.tool_manager.pkgutil.iter_modules",
             return_value=[],
         ):
             manager = ToolManager({})
@@ -85,7 +85,7 @@ class TestToolManager:
         assert hasattr(tool, "execute_action")
         assert hasattr(tool, "get_actions_metadata")
 
-    @patch("application.agents.tools.tool_manager.pkgutil.iter_modules")
+    @patch("docsgpt.agents.tools.tool_manager.pkgutil.iter_modules")
     def test_load_tool_updates_config(self, mock_iter):
         mock_iter.return_value = []
 
@@ -97,8 +97,8 @@ class TestToolManager:
         assert manager.config["test_tool"] == new_config
         assert "test_tool" in manager.config
 
-    @patch("application.agents.tools.tool_manager.pkgutil.iter_modules")
-    @patch("application.agents.tools.tool_manager.importlib.import_module")
+    @patch("docsgpt.agents.tools.tool_manager.pkgutil.iter_modules")
+    @patch("docsgpt.agents.tools.tool_manager.importlib.import_module")
     def test_execute_action_on_loaded_tool(self, mock_import, mock_iter):
         mock_iter.return_value = [(None, "mock_tool", False)]
 
@@ -118,14 +118,14 @@ class TestToolManager:
 
     def test_execute_action_tool_not_loaded(self):
         with patch(
-            "application.agents.tools.tool_manager.pkgutil.iter_modules",
+            "docsgpt.agents.tools.tool_manager.pkgutil.iter_modules",
             return_value=[],
         ):
             manager = ToolManager({})
         with pytest.raises(ValueError, match="Tool 'nonexistent' not loaded"):
             manager.execute_action("nonexistent", "action")
 
-    @patch("application.agents.tools.tool_manager.importlib.import_module")
+    @patch("docsgpt.agents.tools.tool_manager.importlib.import_module")
     def test_execute_action_with_user_id_for_mcp_tool(self, mock_import):
         mock_tool = MockTool({})
 
@@ -141,7 +141,7 @@ class TestToolManager:
 
                     mock_load.assert_called_once_with("mcp_tool", {}, "user123")
 
-    @patch("application.agents.tools.tool_manager.importlib.import_module")
+    @patch("docsgpt.agents.tools.tool_manager.importlib.import_module")
     def test_execute_action_with_user_id_for_memory_tool(self, mock_import):
         mock_tool = MockTool({})
 
@@ -157,8 +157,8 @@ class TestToolManager:
 
                     mock_load.assert_called_once_with("memory", {}, "user456")
 
-    @patch("application.agents.tools.tool_manager.pkgutil.iter_modules")
-    @patch("application.agents.tools.tool_manager.importlib.import_module")
+    @patch("docsgpt.agents.tools.tool_manager.pkgutil.iter_modules")
+    @patch("docsgpt.agents.tools.tool_manager.importlib.import_module")
     def test_get_all_actions_metadata(self, mock_import, mock_iter):
         mock_iter.return_value = [(None, "tool1", False), (None, "tool2", False)]
 
@@ -177,7 +177,7 @@ class TestToolManager:
         assert {"name": "action1"} in metadata
         assert {"name": "action2"} in metadata
 
-    @patch("application.agents.tools.tool_manager.pkgutil.iter_modules")
+    @patch("docsgpt.agents.tools.tool_manager.pkgutil.iter_modules")
     def test_get_all_actions_metadata_empty(self, mock_iter):
         mock_iter.return_value = []
 

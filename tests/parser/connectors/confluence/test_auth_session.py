@@ -13,14 +13,14 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.storage.db.session.db_readonly", _yield
+        "docsgpt.storage.db.session.db_readonly", _yield
     ):
         yield
 
 
 class TestGetTokenInfoFromSession:
     def test_invalid_session_token_raises(self, pg_conn):
-        from application.parser.connectors.confluence.auth import (
+        from docsgpt.parser.connectors.confluence.auth import (
             ConfluenceAuth,
         )
 
@@ -29,10 +29,10 @@ class TestGetTokenInfoFromSession:
             auth.get_token_info_from_session("no-such-token")
 
     def test_missing_token_info_raises(self, pg_conn):
-        from application.parser.connectors.confluence.auth import (
+        from docsgpt.parser.connectors.confluence.auth import (
             ConfluenceAuth,
         )
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 
@@ -47,10 +47,10 @@ class TestGetTokenInfoFromSession:
             auth.get_token_info_from_session("tok-no-info")
 
     def test_missing_required_fields_raises(self, pg_conn):
-        from application.parser.connectors.confluence.auth import (
+        from docsgpt.parser.connectors.confluence.auth import (
             ConfluenceAuth,
         )
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 
@@ -70,10 +70,10 @@ class TestGetTokenInfoFromSession:
             auth.get_token_info_from_session("tok-partial")
 
     def test_complete_token_info_returned(self, pg_conn):
-        from application.parser.connectors.confluence.auth import (
+        from docsgpt.parser.connectors.confluence.auth import (
             ConfluenceAuth,
         )
-        from application.storage.db.repositories.connector_sessions import (
+        from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
 

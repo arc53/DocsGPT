@@ -26,22 +26,22 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.agents.routes.db_session", _yield
+        "docsgpt.api.user.agents.routes.db_session", _yield
     ), patch(
-        "application.api.user.agents.routes.db_readonly", _yield
+        "docsgpt.api.user.agents.routes.db_readonly", _yield
     ):
         yield
 
 
 def _seed_workflow(pg_conn, user, *, name="WF"):
     """Create a start → agent → end workflow; returns (workflow, nodes, edges)."""
-    from application.storage.db.repositories.workflow_edges import (
+    from docsgpt.storage.db.repositories.workflow_edges import (
         WorkflowEdgesRepository,
     )
-    from application.storage.db.repositories.workflow_nodes import (
+    from docsgpt.storage.db.repositories.workflow_nodes import (
         WorkflowNodesRepository,
     )
-    from application.storage.db.repositories.workflows import WorkflowsRepository
+    from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
     wf = WorkflowsRepository(pg_conn).create(user, name, description="d")
     wf_id = str(wf["id"])
@@ -80,10 +80,10 @@ def _seed_workflow(pg_conn, user, *, name="WF"):
 
 
 def _graph(pg_conn, workflow_id, version=1):
-    from application.storage.db.repositories.workflow_edges import (
+    from docsgpt.storage.db.repositories.workflow_edges import (
         WorkflowEdgesRepository,
     )
-    from application.storage.db.repositories.workflow_nodes import (
+    from docsgpt.storage.db.repositories.workflow_nodes import (
         WorkflowNodesRepository,
     )
 
@@ -94,7 +94,7 @@ def _graph(pg_conn, workflow_id, version=1):
 
 class TestCloneToUser:
     def test_clones_graph_for_new_owner(self, pg_conn):
-        from application.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
         wf, _, _ = _seed_workflow(pg_conn, "owner-a", name="Source WF")
         clone = WorkflowsRepository(pg_conn).clone_to_user(
@@ -122,7 +122,7 @@ class TestCloneToUser:
         assert len(src_nodes) == 3 and len(src_edges) == 2
 
     def test_wrong_owner_returns_none(self, pg_conn):
-        from application.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
         wf, _, _ = _seed_workflow(pg_conn, "owner-a")
         assert (
@@ -133,7 +133,7 @@ class TestCloneToUser:
         )
 
     def test_missing_workflow_returns_none(self, pg_conn):
-        from application.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
         assert (
             WorkflowsRepository(pg_conn).clone_to_user(
@@ -145,9 +145,9 @@ class TestCloneToUser:
 
 class TestAdoptWorkflowAgent:
     def test_adopt_clones_the_graph(self, app, pg_conn):
-        from application.api.user.agents.routes import AdoptAgent
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.api.user.agents.routes import AdoptAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
         wf, _, _ = _seed_workflow(pg_conn, "__system__", name="Template WF")
         repo = AgentsRepository(pg_conn)
@@ -187,8 +187,8 @@ class TestAdoptWorkflowAgent:
         Publishing the agent anyway would hand the adopter a workflow agent
         with no graph — permanently unrunnable — so the adopt fails instead.
         """
-        from application.api.user.agents.routes import AdoptAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import AdoptAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         wf, _, _ = _seed_workflow(pg_conn, "someone-else")
         repo = AgentsRepository(pg_conn)
@@ -219,16 +219,16 @@ class TestAdoptWorkflowAgent:
 
     def test_adopt_strips_foreign_node_refs(self, app, pg_conn):
         """Cloned agent nodes keep builtin tool ids but shed the owner's refs."""
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.agents.routes import AdoptAgent
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.agents.routes import AdoptAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
-        from application.storage.db.repositories.workflow_nodes import (
+        from docsgpt.storage.db.repositories.workflow_nodes import (
             WorkflowNodesRepository,
         )
-        from application.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
         owner_tool = UserToolsRepository(pg_conn).create(
             "__system__", "brave", config={}, display_name="Brave"
@@ -291,9 +291,9 @@ class TestAdoptWorkflowAgent:
 
 class TestDeleteWorkflowAgent:
     def test_delete_removes_owned_workflow(self, app, pg_conn):
-        from application.api.user.agents.routes import DeleteAgent
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.api.user.agents.routes import DeleteAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
         user = "u-wf-del"
         wf, _, _ = _seed_workflow(pg_conn, user)
@@ -319,9 +319,9 @@ class TestDeleteWorkflowAgent:
         """Regression: deleting an agent whose ``workflow_id`` points at another
         user's workflow (the pre-clone adopted shape) must not touch that graph.
         The old explicit node/edge cleanup was not owner-scoped and gutted it."""
-        from application.api.user.agents.routes import DeleteAgent
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.api.user.agents.routes import DeleteAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
         wf, _, _ = _seed_workflow(pg_conn, "__system__", name="Shared Template WF")
         repo = AgentsRepository(pg_conn)
@@ -350,8 +350,8 @@ class TestDeleteWorkflowAgent:
 
 class TestCreateWorkflowAgent:
     def test_create_published_with_owned_workflow(self, app, pg_conn):
-        from application.api.user.agents.routes import CreateAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import CreateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-wf-create"
         wf, _, _ = _seed_workflow(pg_conn, user)
@@ -381,7 +381,7 @@ class TestCreateWorkflowAgent:
         assert agent["status"] == "published"
 
     def test_create_published_with_unowned_workflow_returns_404(self, app, pg_conn):
-        from application.api.user.agents.routes import CreateAgent
+        from docsgpt.api.user.agents.routes import CreateAgent
 
         wf, _, _ = _seed_workflow(pg_conn, "someone-else")
 
@@ -405,8 +405,8 @@ class TestCreateWorkflowAgent:
 
 class TestUpdateWorkflowAgent:
     def test_update_sets_and_clears_workflow(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-wf-update"
         wf, _, _ = _seed_workflow(pg_conn, user)
@@ -440,8 +440,8 @@ class TestUpdateWorkflowAgent:
         assert repo.get(agent_id, user)["workflow_id"] is None
 
     def test_publish_without_workflow_is_rejected(self, app, pg_conn):
-        from application.api.user.agents.routes import UpdateAgent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-wf-update2"
         agent = AgentsRepository(pg_conn).create(

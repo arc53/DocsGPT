@@ -1,0 +1,357 @@
+from typing import Any, Dict, List, Optional
+import uuid
+
+from .base import Tool
+from docsgpt.storage.db.repositories.todos import TodosRepository
+from docsgpt.storage.db.session import db_readonly, db_session
+
+
+def _status_from_completed(completed: Any) -> str:
+    """Translate the PG ``completed`` boolean to the legacy status string.
+
+    The frontend (and prior LLM-facing tool output) expects
+    ``"open"`` / ``"completed"``. Keeping that contract at the tool
+    boundary insulates callers from the schema change.
+    """
+    return "completed" if bool(completed) else "open"
+
+
+class TodoListTool(Tool):
+    """Todo List
+
+    Manages todo items for users. Supports creating, viewing, updating, and deleting todos.
+    """
+
+    def __init__(self, tool_config: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> None:
+        """Initialize the tool.
+
+        Args:
+            tool_config: Optional tool configuration. Should include:
+                - tool_id: Unique identifier for this todo list tool instance (from user_tools._id)
+                           This ensures each user's tool configuration has isolated todos
+            user_id: The authenticated user's id (should come from decoded_token["sub"]).
+        """
+        self.user_id: Optional[str] = user_id
+
+        # Get tool_id from configuration (passed from user_tools._id in production)
+        if tool_config and "tool_id" in tool_config:
+            self.tool_id = tool_config["tool_id"]
+        elif user_id:
+            # Fallback for backward compatibility or testing
+            self.tool_id = f"default_{user_id}"
+        else:
+            # Last resort fallback (shouldn't happen in normal use)
+            self.tool_id = str(uuid.uuid4())
+
+        self._last_artifact_id: Optional[str] = None
+
+    def _pg_enabled(self) -> bool:
+        """Return True only when ``tool_id`` is a real ``user_tools.id`` UUID.
+
+        The ``todos`` PG table has a UUID foreign key to ``user_tools`` and
+        the repo queries ``CAST(:tool_id AS uuid)``. The sentinel
+        ``default_{uid}`` fallback is neither a UUID nor a row in
+        ``user_tools`` — binding it would crash ``invalid input syntax for
+        type uuid`` and even if it didn't the FK would reject it. Mirror
+        the MemoryTool guard and no-op in that case.
+        """
+        tool_id = getattr(self, "tool_id", None)
+        if not tool_id or not isinstance(tool_id, str):
+            return False
+        if tool_id.startswith("default_"):
+            return False
+        from docsgpt.storage.db.base_repository import looks_like_uuid
+
+        return looks_like_uuid(tool_id)
+
+    # -----------------------------
+    # Action implementations
+    # -----------------------------
+    def execute_action(self, action_name: str, **kwargs: Any) -> str:
+        """Execute an action by name.
+
+        Args:
+            action_name: One of todo_list, todo_create, todo_get, todo_update,
+                todo_complete, todo_delete (legacy unprefixed names are
+                accepted too).
+            **kwargs: Parameters for the action.
+
+        Returns:
+            A human-readable string result.
+        """
+        # Stripping the namespace prefix accepts both the published names
+        # (todo_create) and legacy unprefixed names from saved user_tools rows.
+        action_name = action_name.removeprefix("todo_")
+
+        if not self.user_id:
+            return "Error: TodoListTool requires a valid user_id."
+
+        if not self._pg_enabled():
+            return (
+                "Error: TodoListTool is not configured with a persistent "
+                "tool_id; todo storage is unavailable for this session."
+            )
+
+        self._last_artifact_id = None
+
+        if action_name == "list":
+            return self._list()
+
+        if action_name == "create":
+            return self._create(kwargs.get("title", ""))
+
+        if action_name == "get":
+            return self._get(kwargs.get("todo_id"))
+
+        if action_name == "update":
+            return self._update(
+                kwargs.get("todo_id"),
+                kwargs.get("title", "")
+            )
+
+        if action_name == "complete":
+            return self._complete(kwargs.get("todo_id"))
+
+        if action_name == "delete":
+            return self._delete(kwargs.get("todo_id"))
+
+        return f"Unknown action: {action_name}"
+
+    def get_actions_metadata(self) -> List[Dict[str, Any]]:
+        """Return JSON metadata describing supported actions for tool schemas."""
+        return [
+            {
+                "name": "todo_list",
+                "description": "List all of the user's todo items with their IDs and status.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "todo_create",
+                "description": "Create a new todo item with the given title.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Title of the todo item."
+                        }
+                    },
+                    "required": ["title"],
+                },
+            },
+            {
+                "name": "todo_get",
+                "description": "Get a single todo item by its ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the todo to retrieve."
+                        }
+                    },
+                    "required": ["todo_id"],
+                },
+            },
+            {
+                "name": "todo_update",
+                "description": "Update a todo's title by its ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the todo to update."
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "The new title for the todo."
+                        }
+                    },
+                    "required": ["todo_id", "title"],
+                },
+            },
+            {
+                "name": "todo_complete",
+                "description": "Mark a todo as completed by its ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the todo to mark as completed."
+                        }
+                    },
+                    "required": ["todo_id"],
+                },
+            },
+            {
+                "name": "todo_delete",
+                "description": "Delete a todo by its ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {
+                            "type": "integer",
+                            "description": "The ID of the todo to delete."
+                        }
+                    },
+                    "required": ["todo_id"],
+                },
+            },
+        ]
+
+    def get_config_requirements(self) -> Dict[str, Any]:
+        """Return configuration requirements."""
+        return {}
+
+    def get_artifact_id(self, action_name: str, **kwargs: Any) -> Optional[str]:
+        return self._last_artifact_id
+
+    # -----------------------------
+    # Internal helpers
+    # -----------------------------
+    def _coerce_todo_id(self, value: Optional[Any]) -> Optional[int]:
+        """Convert todo identifiers to sequential integers."""
+        if value is None:
+            return None
+
+        if isinstance(value, int):
+            return value if value > 0 else None
+
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.isdigit():
+                numeric_value = int(stripped)
+                return numeric_value if numeric_value > 0 else None
+
+        return None
+
+    def _list(self) -> str:
+        """List all todos for the user."""
+        with db_readonly() as conn:
+            todos = TodosRepository(conn).list_for_tool(self.user_id, self.tool_id)
+
+        if not todos:
+            return "No todos found."
+
+        result_lines = ["Todos:"]
+        for doc in todos:
+            todo_id = doc.get("todo_id")
+            title = doc.get("title", "Untitled")
+            status = _status_from_completed(doc.get("completed"))
+
+            line = f"[{todo_id}] {title} ({status})"
+            result_lines.append(line)
+
+        return "\n".join(result_lines)
+
+    def _create(self, title: str) -> str:
+        """Create a new todo item.
+
+        ``TodosRepository.create`` allocates the per-tool monotonic
+        ``todo_id`` inside the same transaction (``COALESCE(MAX(todo_id),0)+1``
+        scoped to ``tool_id``), so we no longer need a separate read-then-
+        write step here.
+        """
+        title = (title or "").strip()
+        if not title:
+            return "Error: Title is required."
+
+        with db_session() as conn:
+            row = TodosRepository(conn).create(self.user_id, self.tool_id, title)
+
+        todo_id = row.get("todo_id")
+        if row.get("id") is not None:
+            self._last_artifact_id = str(row.get("id"))
+        return f"Todo created with ID {todo_id}: {title}"
+
+    def _get(self, todo_id: Optional[Any]) -> str:
+        """Get a specific todo by ID."""
+        parsed_todo_id = self._coerce_todo_id(todo_id)
+        if parsed_todo_id is None:
+            return "Error: todo_id must be a positive integer."
+
+        with db_readonly() as conn:
+            doc = TodosRepository(conn).get_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            )
+
+        if not doc:
+            return f"Error: Todo with ID {parsed_todo_id} not found."
+
+        if doc.get("id") is not None:
+            self._last_artifact_id = str(doc.get("id"))
+
+        title = doc.get("title", "Untitled")
+        status = _status_from_completed(doc.get("completed"))
+
+        return f"Todo [{parsed_todo_id}]:\nTitle: {title}\nStatus: {status}"
+
+    def _update(self, todo_id: Optional[Any], title: str) -> str:
+        """Update a todo's title by ID."""
+        parsed_todo_id = self._coerce_todo_id(todo_id)
+        if parsed_todo_id is None:
+            return "Error: todo_id must be a positive integer."
+
+        title = (title or "").strip()
+        if not title:
+            return "Error: Title is required."
+
+        with db_session() as conn:
+            repo = TodosRepository(conn)
+            existing = repo.get_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            )
+            if not existing:
+                return f"Error: Todo with ID {parsed_todo_id} not found."
+            repo.update_title_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id, title
+            )
+
+        if existing.get("id") is not None:
+            self._last_artifact_id = str(existing.get("id"))
+
+        return f"Todo {parsed_todo_id} updated to: {title}"
+
+    def _complete(self, todo_id: Optional[Any]) -> str:
+        """Mark a todo as completed."""
+        parsed_todo_id = self._coerce_todo_id(todo_id)
+        if parsed_todo_id is None:
+            return "Error: todo_id must be a positive integer."
+
+        with db_session() as conn:
+            repo = TodosRepository(conn)
+            existing = repo.get_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            )
+            if not existing:
+                return f"Error: Todo with ID {parsed_todo_id} not found."
+            repo.set_completed(self.user_id, self.tool_id, parsed_todo_id, True)
+
+        if existing.get("id") is not None:
+            self._last_artifact_id = str(existing.get("id"))
+
+        return f"Todo {parsed_todo_id} marked as completed."
+
+    def _delete(self, todo_id: Optional[Any]) -> str:
+        """Delete a specific todo by ID."""
+        parsed_todo_id = self._coerce_todo_id(todo_id)
+        if parsed_todo_id is None:
+            return "Error: todo_id must be a positive integer."
+
+        with db_session() as conn:
+            repo = TodosRepository(conn)
+            existing = repo.get_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            )
+            if not existing:
+                return f"Error: Todo with ID {parsed_todo_id} not found."
+            repo.delete_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            )
+
+        if existing.get("id") is not None:
+            self._last_artifact_id = str(existing.get("id"))
+
+        return f"Todo {parsed_todo_id} deleted."

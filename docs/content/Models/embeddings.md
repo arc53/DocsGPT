@@ -46,7 +46,7 @@ Models with a Dense projection layer (for example `sentence-transformers/LaBSE`)
 For an offline or air-gapped install, pre-fetch the model at build or setup time:
 
 ```bash
-python -m application.scripts.prefetch_models
+python -m docsgpt.scripts.prefetch_models
 ```
 
 ## Using OpenAI Embeddings
@@ -100,7 +100,7 @@ Retrieval then depends on a worker consuming `EMBEDDINGS_QUEUE` (`embeddings` by
 Sharing one worker also shares its concurrency with ingest, so a query can queue behind a long parse. Run a dedicated worker to isolate query latency:
 
 ```bash
-celery -A application.app.celery worker -Q embeddings
+celery -A docsgpt.app.celery worker -Q embeddings
 ```
 
 Set `EMBEDDINGS_DELEGATE_TO_WORKER=false` if you run the API without a worker; it will load the model in-process instead.
@@ -139,7 +139,7 @@ The dimension check is a guard against a corrupt index, not a guarantee that a s
 Switching between same-width models therefore still requires re-embedding:
 
 ```bash
-python -m application.scripts.reembed
+python -m docsgpt.scripts.reembed
 ```
 
 Run it after changing `EMBEDDINGS_NAME` and before serving queries. See [Upgrading](/upgrading) for the granite migration specifically.
@@ -150,6 +150,6 @@ With `GRAPHRAG_ENABLED`, the script also rewrites `graph_nodes.name_embedding` o
 
 ## Adding Support for Other Embedding Models
 
-To teach DocsGPT about a new model — so it carries a known pooling, width and context window rather than being inferred — add an `EmbeddingModel` entry to `MODELS` in `application/vectorstore/model_registry.py`. That registry is the single source of truth the local runner, the remote client, the schema bootstrap and the chunker all read.
+To teach DocsGPT about a new model — so it carries a known pooling, width and context window rather than being inferred — add an `EmbeddingModel` entry to `MODELS` in `docsgpt/vectorstore/model_registry.py`. That registry is the single source of truth the local runner, the remote client, the schema bootstrap and the chunker all read.
 
 Specifically, pay attention to the `EmbeddingsWrapper` and `EmbeddingsSingleton` classes. `EmbeddingsWrapper` provides a way to wrap different embedding model libraries into a consistent interface for DocsGPT. `EmbeddingsSingleton` manages the instantiation and retrieval of embedding model instances. By understanding these classes and the existing embedding model implementations, you can create your own custom integration for virtually any embedding model library you desire.

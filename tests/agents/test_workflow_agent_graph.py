@@ -1,4 +1,4 @@
-"""Tests for application/agents/workflow_agent.py graph loading and saving.
+"""Tests for docsgpt/agents/workflow_agent.py graph loading and saving.
 
 Tests _parse_embedded_workflow, _load_from_database, and _finalize_workflow_run
 against the ephemeral ``pg_conn`` fixture. Agent construction is bypassed via
@@ -17,7 +17,7 @@ import pytest
 def _make_agent(*, workflow_id=None, workflow=None, workflow_owner=None,
                 decoded_token=None):
     """Construct a WorkflowAgent bypassing BaseAgent.__init__."""
-    from application.agents.workflow_agent import WorkflowAgent
+    from docsgpt.agents.workflow_agent import WorkflowAgent
     agent = WorkflowAgent.__new__(WorkflowAgent)
     agent.workflow_id = workflow_id
     agent.workflow_owner = workflow_owner
@@ -36,9 +36,9 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.agents.workflow_agent.db_readonly", _yield
+        "docsgpt.agents.workflow_agent.db_readonly", _yield
     ), patch(
-        "application.agents.workflow_agent.db_session", _yield
+        "docsgpt.agents.workflow_agent.db_session", _yield
     ):
         yield
 
@@ -111,7 +111,7 @@ class TestLoadWorkflowGraph:
         assert got is not None
 
     def test_uses_database_when_id_set(self, pg_conn):
-        from application.storage.db.repositories.workflows import (
+        from docsgpt.storage.db.repositories.workflows import (
             WorkflowsRepository,
         )
         user = "u-loadwf"
@@ -135,7 +135,7 @@ class TestLoadFromDatabase:
         assert agent._load_from_database() is None
 
     def test_owner_from_decoded_token(self, pg_conn):
-        from application.storage.db.repositories.workflows import (
+        from docsgpt.storage.db.repositories.workflows import (
             WorkflowsRepository,
         )
         user = "u-token-owner"
@@ -159,7 +159,7 @@ class TestLoadFromDatabase:
 
     def test_invalid_version_falls_back_to_1(self, pg_conn):
         """When current_graph_version is invalid it falls back to 1."""
-        from application.storage.db.repositories.workflows import (
+        from docsgpt.storage.db.repositories.workflows import (
             WorkflowsRepository,
         )
         user = "u-bad-version"
@@ -179,7 +179,7 @@ class TestLoadFromDatabase:
 
         agent = _make_agent(workflow_id="x", workflow_owner="u")
         with patch(
-            "application.agents.workflow_agent.db_readonly", _broken
+            "docsgpt.agents.workflow_agent.db_readonly", _broken
         ):
             got = agent._load_from_database()
         assert got is None
@@ -214,10 +214,10 @@ class TestSaveWorkflowRun:
             agent._finalize_workflow_run(agent.workflow_owner, agent.workflow_owner, None, "q")
 
     def test_creates_run_row(self, pg_conn):
-        from application.storage.db.repositories.workflows import (
+        from docsgpt.storage.db.repositories.workflows import (
             WorkflowsRepository,
         )
-        from application.storage.db.repositories.workflow_runs import (
+        from docsgpt.storage.db.repositories.workflow_runs import (
             WorkflowRunsRepository,
         )
 
@@ -259,7 +259,7 @@ class TestSaveWorkflowRun:
             yield
 
         with patch(
-            "application.agents.workflow_agent.db_session", _broken
+            "docsgpt.agents.workflow_agent.db_session", _broken
         ):
             # Should not raise
             agent._finalize_workflow_run(agent.workflow_owner, agent.workflow_owner, None, "q")
@@ -267,13 +267,13 @@ class TestSaveWorkflowRun:
 
 class TestDetermineRunStatus:
     def test_completed_when_no_engine(self):
-        from application.agents.workflows.schemas import ExecutionStatus
+        from docsgpt.agents.workflows.schemas import ExecutionStatus
 
         agent = _make_agent()
         assert agent._determine_run_status() == ExecutionStatus.COMPLETED
 
     def test_completed_when_log_empty(self):
-        from application.agents.workflows.schemas import ExecutionStatus
+        from docsgpt.agents.workflows.schemas import ExecutionStatus
 
         agent = _make_agent()
         agent._engine = MagicMock()
@@ -281,7 +281,7 @@ class TestDetermineRunStatus:
         assert agent._determine_run_status() == ExecutionStatus.COMPLETED
 
     def test_failed_if_any_log_failed(self):
-        from application.agents.workflows.schemas import ExecutionStatus
+        from docsgpt.agents.workflows.schemas import ExecutionStatus
 
         agent = _make_agent()
         agent._engine = MagicMock()
@@ -343,14 +343,14 @@ class TestAgentNodeApprovalPause:
     """A node agent whose tool pauses for approval must fail the node visibly, not emit empty output."""
 
     def test_tool_calls_pending_raises_clear_error(self, monkeypatch):
-        from application.agents.workflows import workflow_engine as we
-        from application.agents.workflows.schemas import (
+        from docsgpt.agents.workflows import workflow_engine as we
+        from docsgpt.agents.workflows.schemas import (
             NodeType,
             Workflow,
             WorkflowGraph,
             WorkflowNode,
         )
-        from application.agents.workflows.workflow_engine import WorkflowEngine
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 
         # An ephemeral node agent whose LLM handler yields the pause signal and ends,
         # emitting no "answer". Previously the engine dropped it and the node completed

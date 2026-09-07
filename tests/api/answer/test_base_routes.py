@@ -1,4 +1,4 @@
-"""Unit tests for application/api/answer/routes/base.py — BaseAnswerResource.
+"""Unit tests for docsgpt/api/answer/routes/base.py — BaseAnswerResource.
 
 Additional coverage beyond tests/api/answer/routes/test_base.py:
   - _prepare_tool_calls_for_logging: truncation, non-dict items
@@ -22,21 +22,21 @@ class TestPrepareToolCallsForLogging:
     pass
 
     def test_empty_list(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
             assert resource._prepare_tool_calls_for_logging([]) == []
 
     def test_none_returns_empty(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
             assert resource._prepare_tool_calls_for_logging(None) == []
 
     def test_truncates_long_result(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -45,7 +45,7 @@ class TestPrepareToolCallsForLogging:
             assert len(prepared[0]["result"]) == 100
 
     def test_truncates_result_full(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -54,7 +54,7 @@ class TestPrepareToolCallsForLogging:
             assert len(prepared[0]["result_full"]) == 50
 
     def test_non_dict_items_wrapped(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -64,7 +64,7 @@ class TestPrepareToolCallsForLogging:
             assert prepared[1] == {"result": "42"}
 
     def test_preserves_short_results(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -79,7 +79,7 @@ class TestCompleteStreamToolCalls:
     pass
 
     def test_streams_tool_calls(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -105,7 +105,7 @@ class TestCompleteStreamToolCalls:
             assert len(tool_chunks) == 1
 
     def test_streams_thought_events(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -137,7 +137,7 @@ class TestCompleteStreamStructuredOutput:
     pass
 
     def test_streams_structured_answer(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -173,7 +173,7 @@ class TestCompleteStreamMetadata:
     pass
 
     def test_metadata_collected(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -205,7 +205,7 @@ class TestCompleteStreamIsNoneDoc:
     pass
 
     def test_isNoneDoc_sets_source_to_none(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -238,7 +238,7 @@ class TestCompleteStreamErrorType:
     pass
 
     def test_error_type_event_sanitized(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -263,7 +263,7 @@ class TestCompleteStreamErrorType:
             assert len(error_chunks) == 1
 
     def test_non_error_type_event_passed_through(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -293,7 +293,7 @@ class TestProcessResponseStreamExtended:
     pass
 
     def test_handles_structured_answer(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -307,7 +307,7 @@ class TestProcessResponseStreamExtended:
             assert result.get("extra", {}).get("structured") is True
 
     def test_handles_tool_calls_event(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -321,7 +321,7 @@ class TestProcessResponseStreamExtended:
             assert result["tool_calls"] == [{"name": "t1"}]
 
     def test_incomplete_stream(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -332,7 +332,7 @@ class TestProcessResponseStreamExtended:
             assert result["error"] == "Stream ended unexpectedly"
 
     def test_handles_thought_event(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -350,7 +350,7 @@ class TestProcessResponseStreamExtended:
         informational ``message_id`` event) without breaking JSON
         decoding.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -372,7 +372,7 @@ class TestProcessResponseStreamExtended:
             assert result["conversation_id"] == "conv-1"
 
     def test_skips_keepalive_comment_lines(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -397,7 +397,7 @@ class TestCompleteStreamCompressionMetadata:
     """Cover lines 307-319 (compression metadata persistence in complete_stream)."""
 
     def test_compression_metadata_persisted(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -442,7 +442,7 @@ class TestCompleteStreamCompressionMetadata:
 
     def test_compression_metadata_error_handled(self, mock_mongo_db, flask_app):
         """Cover lines 318-322: compression metadata persistence error."""
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -485,7 +485,7 @@ class TestCompleteStreamLogTruncation:
     """Cover line 354: log data truncation for long values."""
 
     def test_long_response_truncated_in_log(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -514,7 +514,7 @@ class TestCompleteStreamGeneratorExit:
     """Cover lines 360-416 (GeneratorExit handling in complete_stream)."""
 
     def test_generator_exit_saves_partial_response(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -558,7 +558,7 @@ class TestCompleteStreamGeneratorExit:
 
     def test_generator_exit_with_compression_metadata(self, mock_mongo_db, flask_app):
         """Cover lines 393-411: GeneratorExit with compression metadata."""
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -598,7 +598,7 @@ class TestCompleteStreamGeneratorExit:
 
     def test_generator_exit_save_error_handled(self, mock_mongo_db, flask_app):
         """Cover lines 412-415: exception during partial save."""
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -647,7 +647,7 @@ class TestCompleteStreamGeneratorExit:
         ``end`` for a row whose DB status is still non-terminal and the
         UI parks on a blank successful answer.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -679,7 +679,7 @@ class TestCompleteStreamGeneratorExit:
                 return True
 
             with patch(
-                "application.api.answer.routes.base.record_event",
+                "docsgpt.api.answer.routes.base.record_event",
                 side_effect=_capture_record,
             ):
                 gen = resource.complete_stream(
@@ -727,8 +727,8 @@ class TestCompleteStreamGeneratorExit:
         ``end`` (the row matches ``complete``). Only the empty-response
         branch flips to ``error``.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.conversations import (
             MessageUpdateOutcome,
         )
 
@@ -761,7 +761,7 @@ class TestCompleteStreamGeneratorExit:
                 return True
 
             with patch(
-                "application.api.answer.routes.base.record_event",
+                "docsgpt.api.answer.routes.base.record_event",
                 side_effect=_capture_record,
             ):
                 gen = resource.complete_stream(
@@ -804,8 +804,8 @@ class TestCompleteStreamGeneratorExit:
         as a failure and journaled ``error`` — a reconnect would then
         replay a successful completion as a failed answer.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.conversations import (
             MessageUpdateOutcome,
         )
 
@@ -841,7 +841,7 @@ class TestCompleteStreamGeneratorExit:
                 return True
 
             with patch(
-                "application.api.answer.routes.base.record_event",
+                "docsgpt.api.answer.routes.base.record_event",
                 side_effect=_capture_record,
             ):
                 gen = resource.complete_stream(
@@ -890,24 +890,24 @@ def _patch_db_session(conn):
         yield conn
 
     with patch(
-        "application.api.answer.services.conversation_service.db_session",
+        "docsgpt.api.answer.services.conversation_service.db_session",
         _yield,
     ), patch(
-        "application.api.answer.services.conversation_service.db_readonly",
+        "docsgpt.api.answer.services.conversation_service.db_readonly",
         _yield,
     ), patch(
         # ``record_event`` opens its own short-lived ``db_session`` for
         # cross-connection visibility. In tests we route it back to the
         # same ``pg_conn`` so the journal write can see the message row
         # the conversation_service just wrote in this transaction.
-        "application.streaming.message_journal.db_session",
+        "docsgpt.streaming.message_journal.db_session",
         _yield,
     ), patch(
         # ``complete_stream`` reads ``latest_sequence_no`` via
         # ``db_readonly`` to seed continuation runs. Same patch reason
         # as the journal — keep the read on the same pg_conn so it sees
         # uncommitted writes from this transaction.
-        "application.api.answer.routes.base.db_readonly",
+        "docsgpt.api.answer.routes.base.db_readonly",
         _yield,
     ), patch(
         # The terminal ``stream_answer`` user_logs write opens its own
@@ -916,7 +916,7 @@ def _patch_db_session(conn):
         # inserted (via the ``ensure_user_exists`` trigger) until the
         # statement timeout fires — ~30s per test, swallowed by the
         # caller's except, so it only ever showed up as slowness.
-        "application.api.answer.routes.base.db_session",
+        "docsgpt.api.answer.routes.base.db_session",
         _yield,
     ):
         yield
@@ -941,8 +941,8 @@ class TestCompleteStreamWalAcceptance:
     def test_failed_llm_persists_question_with_failed_status(
         self, pg_conn, flask_app,
     ):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -993,8 +993,8 @@ class TestCompleteStreamWalAcceptance:
         answer with no error and no retry affordance — the user saw a blank
         message and re-sent the prompt. Reproduces the 2026-08-01 report.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -1044,8 +1044,8 @@ class TestCompleteStreamWalAcceptance:
         then a downstream node failed, the row stays ``complete`` so the
         partial answer still renders; the error was already surfaced live.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -1095,8 +1095,8 @@ class TestCompleteStreamWalAcceptance:
         column default ``complete`` — leaving exactly the blank bubble this
         changeset removes on the other branch.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -1143,7 +1143,7 @@ class TestCompleteStreamWalAcceptance:
         ``pending_tool_state`` row would deep-link the user to a 404.
         Gate the publish on save_state actually committing.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -1173,10 +1173,10 @@ class TestCompleteStreamWalAcceptance:
                 published.append(args)
 
             with _patch_db_session(pg_conn), patch(
-                "application.api.answer.routes.base.publish_user_event",
+                "docsgpt.api.answer.routes.base.publish_user_event",
                 side_effect=_capture,
             ), patch(
-                "application.api.answer.services.continuation_service."
+                "docsgpt.api.answer.services.continuation_service."
                 "ContinuationService.save_state",
                 side_effect=RuntimeError("PG outage"),
             ):
@@ -1213,8 +1213,8 @@ class TestCompleteStreamWalAcceptance:
 
         from sqlalchemy import text as sql_text
 
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.message_events import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.message_events import (
             MessageEventsRepository,
         )
 
@@ -1296,8 +1296,8 @@ class TestCompleteStreamWalAcceptance:
         row, so client-side correlation, ``token_usage`` joins, and
         ``count_in_range``'s DISTINCT all line up.
         """
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -1357,7 +1357,7 @@ class TestStreamingHeartbeatSeed:
     def test_heartbeat_seeded_at_generation_start_and_on_first_chunk(
         self, mock_mongo_db, flask_app,
     ):
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -1417,7 +1417,7 @@ class TestStreamingHeartbeatSeed:
         self, mock_mongo_db, flask_app,
     ):
         """No DB-backed message row → no heartbeat call (and no error)."""
-        from application.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
@@ -1471,11 +1471,11 @@ class TestCompleteStreamSupersededLookupIsGuarded:
     ):
         import logging
 
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             MessageUpdateOutcome,
         )
 

@@ -6,13 +6,13 @@ import pytest
 def _make_lancedb_store(source_id="test-source"):
     """Helper to create a LanceDBVectorStore with mocked deps."""
     with patch(
-        "application.vectorstore.lancedb.settings"
+        "docsgpt.vectorstore.lancedb.settings"
     ) as mock_settings:
         mock_settings.LANCEDB_PATH = "/tmp/lancedb"
         mock_settings.LANCEDB_TABLE_NAME = "docs"
         mock_settings.EMBEDDINGS_NAME = "test_model"
 
-        from application.vectorstore.lancedb import LanceDBVectorStore
+        from docsgpt.vectorstore.lancedb import LanceDBVectorStore
 
         store = LanceDBVectorStore(
             path="/tmp/lancedb",
@@ -31,11 +31,11 @@ class TestLanceDBVectorStoreInit:
         assert store.table_name == "docs_src1"
 
     def test_table_name_without_source_id(self):
-        with patch("application.vectorstore.lancedb.settings") as mock_settings:
+        with patch("docsgpt.vectorstore.lancedb.settings") as mock_settings:
             mock_settings.LANCEDB_PATH = "/tmp"
             mock_settings.LANCEDB_TABLE_NAME = "docs"
 
-            from application.vectorstore.lancedb import LanceDBVectorStore
+            from docsgpt.vectorstore.lancedb import LanceDBVectorStore
 
             store = LanceDBVectorStore(
                 path="/tmp", table_name_prefix="docs", source_id=None

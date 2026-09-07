@@ -10,14 +10,14 @@ import pytest
 from flask import request
 from sqlalchemy import text
 
-from application.api.user.artifacts import authz
-from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.artifacts import ArtifactsRepository
-from application.storage.db.repositories.conversations import ConversationsRepository
-from application.storage.db.repositories.shared_conversations import (
+from docsgpt.api.user.artifacts import authz
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.shared_conversations import (
     SharedConversationsRepository,
 )
-from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 
 
 OWNER = "artifact_owner"
@@ -33,8 +33,8 @@ def _patch_db(pg_conn, monkeypatch):
     def _use_conn():
         yield pg_conn
 
-    monkeypatch.setattr("application.api.user.artifacts.routes.db_readonly", _use_conn)
-    monkeypatch.setattr("application.api.user.artifacts.routes.db_session", _use_conn)
+    monkeypatch.setattr("docsgpt.api.user.artifacts.routes.db_readonly", _use_conn)
+    monkeypatch.setattr("docsgpt.api.user.artifacts.routes.db_session", _use_conn)
     return pg_conn
 
 
@@ -110,7 +110,7 @@ class TestListArtifacts:
     def test_owner_lists_conversation_artifacts(
         self, _patch_db, flask_app, token_owner
     ):
-        from application.api.user.artifacts.routes import ListArtifacts
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
 
         conv = _make_conversation(_patch_db)
         conv_id = str(conv["id"])
@@ -127,7 +127,7 @@ class TestListArtifacts:
     def test_stranger_denied_conversation_list(
         self, _patch_db, flask_app
     ):
-        from application.api.user.artifacts.routes import ListArtifacts
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
 
         conv = _make_conversation(_patch_db)
         _make_artifact(_patch_db, conversation_id=str(conv["id"]))
@@ -140,7 +140,7 @@ class TestListArtifacts:
         assert resp.status_code == 403
 
     def test_no_filter_scopes_to_user(self, _patch_db, flask_app, token_owner):
-        from application.api.user.artifacts.routes import ListArtifacts
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
 
         owner_conv = _make_conversation(_patch_db)
         owned = _make_artifact(
@@ -160,13 +160,13 @@ class TestListArtifacts:
         assert str(stranger["id"]) not in returned_ids
 
     def test_unauthenticated_401(self, _patch_db, flask_app):
-        from application.api.user.artifacts.routes import ListArtifacts
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
 
         resp = _call(flask_app, ListArtifacts, token=None)
         assert resp.status_code == 401
 
     def test_non_uuid_conversation_id_400(self, _patch_db, flask_app, token_owner):
-        from application.api.user.artifacts.routes import ListArtifacts
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
 
         # A malformed id must be rejected before reaching CAST(:id AS uuid),
         # which would otherwise raise a DataError and poison the transaction.
@@ -177,7 +177,7 @@ class TestListArtifacts:
         assert resp.status_code == 400
 
     def test_non_uuid_workflow_run_id_400(self, _patch_db, flask_app, token_owner):
-        from application.api.user.artifacts.routes import ListArtifacts
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
 
         resp = _call(
             flask_app, ListArtifacts, token=token_owner,
@@ -194,7 +194,7 @@ class TestGetArtifact:
     def test_owner_gets_artifact_with_versions(
         self, _patch_db, flask_app, token_owner
     ):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         conv = _make_conversation(_patch_db)
         art = _make_artifact(
@@ -209,7 +209,7 @@ class TestGetArtifact:
         assert resp.json["artifact"]["spec"] == {"body": "v2"}
 
     def test_stranger_denied_403(self, _patch_db, flask_app):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         conv = _make_conversation(_patch_db)
         art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
@@ -218,7 +218,7 @@ class TestGetArtifact:
         assert resp.status_code == 403
 
     def test_missing_parent_fails_closed(self, _patch_db, flask_app, token_owner):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
         from sqlalchemy import text
 
         conv = _make_conversation(_patch_db)
@@ -233,13 +233,13 @@ class TestGetArtifact:
         assert resp.status_code == 403
 
     def test_unknown_artifact_404(self, _patch_db, flask_app, token_owner):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         resp = _call(flask_app, GetArtifact, str(uuid.uuid4()), token=token_owner)
         assert resp.status_code == 404
 
     def test_workflow_run_owner_access(self, _patch_db, flask_app, token_owner):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         wf_id = _make_workflow(_patch_db, OWNER)
         run = WorkflowRunsRepository(_patch_db).create(wf_id, OWNER, "completed")
@@ -257,7 +257,7 @@ class TestGetArtifact:
 @pytest.mark.unit
 class TestGetArtifactVersion:
     def test_version_returns_spec(self, _patch_db, flask_app, token_owner):
-        from application.api.user.artifacts.routes import GetArtifactVersion
+        from docsgpt.api.user.artifacts.routes import GetArtifactVersion
 
         conv = _make_conversation(_patch_db)
         art = _make_artifact(
@@ -268,7 +268,7 @@ class TestGetArtifactVersion:
         assert resp.json["version"]["spec"] == {"body": "one"}
 
     def test_missing_version_404(self, _patch_db, flask_app, token_owner):
-        from application.api.user.artifacts.routes import GetArtifactVersion
+        from docsgpt.api.user.artifacts.routes import GetArtifactVersion
 
         conv = _make_conversation(_patch_db)
         art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
@@ -282,7 +282,7 @@ class TestGetArtifactVersion:
 @pytest.mark.unit
 class TestSharedAccess:
     def test_shared_with_user_can_get(self, _patch_db, flask_app):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         conv = _make_conversation(_patch_db)
         ConversationsRepository(_patch_db).add_shared_user(str(conv["id"]), SHARED_USER)
@@ -292,7 +292,7 @@ class TestSharedAccess:
         assert resp.status_code == 200
 
     def test_share_token_holder_can_download(self, _patch_db, flask_app, monkeypatch):
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         conv = _make_conversation(_patch_db)
         # Attach to the first message so it falls inside the first_n_queries snapshot.
@@ -311,11 +311,11 @@ class TestSharedAccess:
 
         storage = _FakeStorage(b"PDFDATA")
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
             lambda: storage,
         )
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.settings.URL_STRATEGY",
+            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
             "backend",
             raising=False,
         )
@@ -365,17 +365,17 @@ class TestShareTokenSnapshotScope:
     def _mock_storage(monkeypatch, data=b"BYTES"):
         storage = _FakeStorage(data)
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
             lambda: storage,
         )
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.settings.URL_STRATEGY",
+            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
             "backend", raising=False,
         )
         return storage
 
     def test_share_token_list_only_snapshot(self, _patch_db, flask_app):
-        from application.api.user.artifacts.routes import ListArtifacts
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
 
         conv_id, in_art, out_art, null_art, token = self._seed(_patch_db)
         resp = _call(
@@ -389,7 +389,7 @@ class TestShareTokenSnapshotScope:
         assert str(null_art["id"]) not in ids  # NULL message_id -> not in snapshot
 
     def test_share_token_get_in_snapshot_200(self, _patch_db, flask_app):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         _, in_art, _out, _null, token = self._seed(_patch_db)
         resp = _call(
@@ -399,7 +399,7 @@ class TestShareTokenSnapshotScope:
         assert resp.status_code == 200
 
     def test_share_token_get_out_of_snapshot_403(self, _patch_db, flask_app):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         _, _in, out_art, _null, token = self._seed(_patch_db)
         resp = _call(
@@ -409,7 +409,7 @@ class TestShareTokenSnapshotScope:
         assert resp.status_code == 403
 
     def test_share_token_null_message_id_denied(self, _patch_db, flask_app):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         _, _in, _out, null_art, token = self._seed(_patch_db)
         resp = _call(
@@ -421,7 +421,7 @@ class TestShareTokenSnapshotScope:
     def test_share_token_download_in_snapshot_200(
         self, _patch_db, flask_app, monkeypatch
     ):
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         _, in_art, _out, _null, token = self._seed(_patch_db)
         self._mock_storage(monkeypatch, b"INDATA")
@@ -435,7 +435,7 @@ class TestShareTokenSnapshotScope:
     def test_share_token_download_out_of_snapshot_403(
         self, _patch_db, flask_app, monkeypatch
     ):
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         _, _in, out_art, _null, token = self._seed(_patch_db)
         self._mock_storage(monkeypatch, b"OUTDATA")
@@ -448,7 +448,7 @@ class TestShareTokenSnapshotScope:
     def test_owner_sees_all_artifacts(self, _patch_db, flask_app, token_owner):
         # Snapshot scoping is share-token-only: the owner lists every artifact and
         # can fetch one attached to a message outside the first_n_queries snapshot.
-        from application.api.user.artifacts.routes import GetArtifact, ListArtifacts
+        from docsgpt.api.user.artifacts.routes import GetArtifact, ListArtifacts
 
         conv_id, in_art, out_art, null_art, _token = self._seed(_patch_db)
         listed = _call(
@@ -464,7 +464,7 @@ class TestShareTokenSnapshotScope:
 
     def test_shared_with_collaborator_sees_all_artifacts(self, _patch_db, flask_app):
         # A read-only shared_with collaborator (JWT) is not snapshot-scoped either.
-        from application.api.user.artifacts.routes import GetArtifact, ListArtifacts
+        from docsgpt.api.user.artifacts.routes import GetArtifact, ListArtifacts
 
         conv_id, in_art, out_art, null_art, _token = self._seed(_patch_db)
         ConversationsRepository(_patch_db).add_shared_user(conv_id, SHARED_USER)
@@ -518,16 +518,16 @@ class TestDownloadArtifact:
     def test_local_streams_bytes_with_content_disposition(
         self, _patch_db, flask_app, token_owner, monkeypatch
     ):
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         art = self._seed(_patch_db)
         storage = _FakeStorage(b"BINARY")
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
             lambda: storage,
         )
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.settings.URL_STRATEGY",
+            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
             "backend",
             raising=False,
         )
@@ -543,16 +543,16 @@ class TestDownloadArtifact:
     ):
         # The response body must be a stream (generator), not the whole object
         # buffered into memory via make_response(file_obj.read()).
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         art = self._seed(_patch_db)
         storage = _FakeStorage(b"Z" * 200_000)
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
             lambda: storage,
         )
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.settings.URL_STRATEGY",
+            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
             "backend", raising=False,
         )
         resp = _call(flask_app, DownloadArtifact, art["id"], token=token_owner)
@@ -562,16 +562,16 @@ class TestDownloadArtifact:
     def test_s3_strategy_redirects_to_presigned(
         self, _patch_db, flask_app, token_owner, monkeypatch
     ):
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         art = self._seed(_patch_db)
         storage = _FakeStorage(b"unused")
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
             lambda: storage,
         )
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.settings.URL_STRATEGY",
+            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
             "s3",
             raising=False,
         )
@@ -585,16 +585,16 @@ class TestDownloadArtifact:
     ):
         # ?disposition=url opts into a JSON envelope (for a top-level browser
         # navigation) instead of the CORS-blocked cross-origin 302.
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         art = self._seed(_patch_db)
         storage = _FakeStorage(b"unused")
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
             lambda: storage,
         )
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.settings.URL_STRATEGY",
+            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
             "s3",
             raising=False,
         )
@@ -614,7 +614,7 @@ class TestDownloadArtifact:
         assert resp.mimetype == "application/vnd.docsgpt.artifact-url+json"
 
     def test_stranger_denied(self, _patch_db, flask_app, monkeypatch):
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         art = self._seed(_patch_db)
         resp = _call(flask_app, DownloadArtifact, art["id"], token={"sub": STRANGER})
@@ -623,7 +623,7 @@ class TestDownloadArtifact:
     def test_s3_strategy_misconfigured_backend_500(
         self, _patch_db, flask_app, token_owner, monkeypatch
     ):
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         art = self._seed(_patch_db)
 
@@ -635,11 +635,11 @@ class TestDownloadArtifact:
                 raise NotImplementedError("backend cannot mint presigned URLs")
 
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
             lambda: _NoPresignStorage(),
         )
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.settings.URL_STRATEGY",
+            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
             "s3",
             raising=False,
         )
@@ -650,16 +650,16 @@ class TestDownloadArtifact:
     def test_crlf_filename_sanitized_in_header(
         self, _patch_db, flask_app, token_owner, monkeypatch
     ):
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         art = self._seed(_patch_db, filename='a"\r\nInjected: x.txt')
         storage = _FakeStorage(b"X")
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
             lambda: storage,
         )
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.settings.URL_STRATEGY",
+            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
             "backend",
             raising=False,
         )
@@ -675,7 +675,7 @@ class TestDownloadArtifact:
 @pytest.mark.unit
 class TestRestoreArtifact:
     def test_restore_appends_new_version(self, _patch_db, flask_app, token_owner):
-        from application.api.user.artifacts.routes import RestoreArtifact
+        from docsgpt.api.user.artifacts.routes import RestoreArtifact
 
         conv = _make_conversation(_patch_db)
         art = _make_artifact(
@@ -695,7 +695,7 @@ class TestRestoreArtifact:
     def test_restore_missing_version_field_400(
         self, _patch_db, flask_app, token_owner
     ):
-        from application.api.user.artifacts.routes import RestoreArtifact
+        from docsgpt.api.user.artifacts.routes import RestoreArtifact
 
         conv = _make_conversation(_patch_db)
         art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
@@ -706,7 +706,7 @@ class TestRestoreArtifact:
         assert resp.status_code == 400
 
     def test_restore_stranger_denied(self, _patch_db, flask_app):
-        from application.api.user.artifacts.routes import RestoreArtifact
+        from docsgpt.api.user.artifacts.routes import RestoreArtifact
 
         conv = _make_conversation(_patch_db)
         art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
@@ -721,7 +721,7 @@ class TestRestoreArtifact:
     ):
         # A share link inherits read/download access only; restore is a WRITE and
         # an anonymous link holder must NOT be able to mutate the artifact.
-        from application.api.user.artifacts.routes import RestoreArtifact
+        from docsgpt.api.user.artifacts.routes import RestoreArtifact
 
         conv = _make_conversation(_patch_db)
         art = _make_artifact(
@@ -741,7 +741,7 @@ class TestRestoreArtifact:
 
     def test_restore_shared_with_collaborator_denied(self, _patch_db, flask_app):
         # A read-only ``shared_with`` collaborator can GET but not restore.
-        from application.api.user.artifacts.routes import RestoreArtifact
+        from docsgpt.api.user.artifacts.routes import RestoreArtifact
 
         conv = _make_conversation(_patch_db)
         ConversationsRepository(_patch_db).add_shared_user(str(conv["id"]), SHARED_USER)
@@ -770,12 +770,12 @@ class TestDeleteArtifact:
     def test_owner_deletes_and_reaps_bytes(
         self, _patch_db, flask_app, token_owner, monkeypatch
     ):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         art = self._seed(_patch_db)
         storage = _FakeStorage()
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
             lambda: storage,
         )
         resp = _call(flask_app, GetArtifact, art["id"], token=token_owner, method="delete")
@@ -784,7 +784,7 @@ class TestDeleteArtifact:
         assert "inputs/owner/artifacts/x/v1/f.bin" in storage.deleted
 
     def test_stranger_denied(self, _patch_db, flask_app):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         art = self._seed(_patch_db)
         resp = _call(
@@ -794,7 +794,7 @@ class TestDeleteArtifact:
         assert ArtifactsRepository(_patch_db).get_artifact(art["id"]) is not None
 
     def test_share_token_holder_denied(self, _patch_db, flask_app):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         conv = _make_conversation(_patch_db)
         art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
@@ -807,7 +807,7 @@ class TestDeleteArtifact:
         assert ArtifactsRepository(_patch_db).get_artifact(art["id"]) is not None
 
     def test_unknown_artifact_404(self, _patch_db, flask_app, token_owner):
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         resp = _call(
             flask_app, GetArtifact, str(uuid.uuid4()), token=token_owner, method="delete"
@@ -827,7 +827,7 @@ class TestConversationDeleteReapsArtifacts:
         )
         storage = _FakeStorage()
         monkeypatch.setattr(
-            "application.storage.storage_creator.StorageCreator.get_storage",
+            "docsgpt.storage.storage_creator.StorageCreator.get_storage",
             lambda: storage,
         )
 
@@ -858,7 +858,7 @@ class TestMalformedArtifactId:
         self, _patch_db, flask_app, token_owner, resource_name,
         extra_args, method, json_body,
     ):
-        from application.api.user.artifacts import routes as routes_mod
+        from docsgpt.api.user.artifacts import routes as routes_mod
 
         resource_cls = getattr(routes_mod, resource_name)
         resp = _call(
@@ -878,7 +878,7 @@ class TestApiKeyPrincipal:
     ):
         # The public widget key reads an artifact ONLY when the request also
         # carries the parent conversation_id (the per-visitor bearer capability).
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         agent = _make_agent(_patch_db)
         conv = _make_agent_conversation(_patch_db, agent["id"])
@@ -897,7 +897,7 @@ class TestApiKeyPrincipal:
     ):
         # Regression (critical IDOR): the public widget key alone -- without the
         # unguessable per-visitor conversation_id -- cannot fetch a known artifact.
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         agent = _make_agent(_patch_db)
         conv = _make_agent_conversation(_patch_db, agent["id"])
@@ -917,7 +917,7 @@ class TestApiKeyPrincipal:
         # but must NOT reach an artifact from the owner's OTHER (non-agent)
         # conversation -- even when it supplies that conversation_id, the agent
         # scope gate still blocks it.
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         _make_agent(_patch_db)  # the widget agent (key=secret-key)
         other_conv = _make_conversation(_patch_db, user_id=OWNER)  # no agent_id
@@ -935,7 +935,7 @@ class TestApiKeyPrincipal:
     ):
         # Download follows the same bearer-capability rule as get: the key alone is
         # denied; the key + matching conversation_id is served.
-        from application.api.user.artifacts.routes import DownloadArtifact
+        from docsgpt.api.user.artifacts.routes import DownloadArtifact
 
         agent = _make_agent(_patch_db)
         conv = _make_agent_conversation(_patch_db, agent["id"])
@@ -946,11 +946,11 @@ class TestApiKeyPrincipal:
         _wire_api_key(monkeypatch, _patch_db)
         storage = _FakeStorage(b"BYTES")
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
             lambda: storage,
         )
         monkeypatch.setattr(
-            "application.api.user.artifacts.routes.settings.URL_STRATEGY",
+            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
             "backend", raising=False,
         )
 
@@ -972,7 +972,7 @@ class TestApiKeyPrincipal:
     ):
         # Regression (critical IDOR): the public widget key cannot enumerate the
         # agent's artifacts -- a list with no conversation_id is refused outright.
-        from application.api.user.artifacts.routes import ListArtifacts
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
 
         agent = _make_agent(_patch_db)
         conv = _make_agent_conversation(_patch_db, agent["id"])
@@ -987,7 +987,7 @@ class TestApiKeyPrincipal:
     ):
         # With the per-visitor conversation_id the list returns only that
         # conversation's artifacts -- not the agent's other conversations.
-        from application.api.user.artifacts.routes import ListArtifacts
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
 
         agent = _make_agent(_patch_db)
         conv_a = _make_agent_conversation(_patch_db, agent["id"])
@@ -1010,7 +1010,7 @@ class TestApiKeyPrincipal:
     ):
         # A conversation_id belonging to a DIFFERENT agent leaks nothing: the JOIN
         # filters it out, yielding an empty 200 rather than a cross-visitor leak.
-        from application.api.user.artifacts.routes import ListArtifacts
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
 
         agent = _make_agent(_patch_db)
         agent_conv = _make_agent_conversation(_patch_db, agent["id"])
@@ -1032,7 +1032,7 @@ class TestApiKeyPrincipal:
     ):
         # Mutations require a JWT owner; a low-trust agent key may never delete,
         # even an artifact inside its own agent scope.
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         agent = _make_agent(_patch_db)
         conv = _make_agent_conversation(_patch_db, agent["id"])
@@ -1050,7 +1050,7 @@ class TestApiKeyPrincipal:
         self, _patch_db, flask_app, monkeypatch
     ):
         # A key owned by a different user cannot reach this owner's artifact.
-        from application.api.user.artifacts.routes import GetArtifact
+        from docsgpt.api.user.artifacts.routes import GetArtifact
 
         owner_conv = _make_conversation(_patch_db, user_id=OWNER)
         art = _make_artifact(_patch_db, conversation_id=str(owner_conv["id"]))

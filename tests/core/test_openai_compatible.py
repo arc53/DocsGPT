@@ -14,9 +14,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.core.model_registry import ModelRegistry
-from application.core.model_settings import ModelProvider
-from application.core.model_yaml import BUILTIN_MODELS_DIR, load_model_yamls
+from docsgpt.core.model_registry import ModelRegistry
+from docsgpt.core.model_settings import ModelProvider
+from docsgpt.core.model_yaml import BUILTIN_MODELS_DIR, load_model_yamls
 
 
 def _make_settings(**overrides):
@@ -102,7 +102,7 @@ class TestYAMLCompatibleProvider:
         monkeypatch.setenv("MISTRAL_API_KEY", "sk-mistral-test")
 
         s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
 
         m = reg.get_model("mistral-large-latest")
@@ -121,7 +121,7 @@ class TestYAMLCompatibleProvider:
         monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
 
         s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
 
         # Catalog skipped when no key — no Mistral models in the registry
@@ -136,7 +136,7 @@ class TestYAMLCompatibleProvider:
         monkeypatch.setenv("TOGETHER_API_KEY", "sk-together")
 
         s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
 
         mistral = reg.get_model("mistral-large-latest")
@@ -159,7 +159,7 @@ class TestYAMLCompatibleProvider:
         monkeypatch.delenv("TOGETHER_API_KEY", raising=False)
 
         s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
 
         assert reg.get_model("mistral-large-latest") is not None
@@ -177,7 +177,7 @@ class TestYAMLCompatibleProvider:
         monkeypatch.setenv("SOME_KEY", "k")
 
         s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             with pytest.raises(ValueError, match="must set 'base_url'"):
                 ModelRegistry()
 
@@ -192,7 +192,7 @@ class TestYAMLCompatibleProvider:
         """))
 
         s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             with pytest.raises(ValueError, match="must set 'api_key_env'"):
                 ModelRegistry()
 
@@ -203,7 +203,7 @@ class TestYAMLCompatibleProvider:
         monkeypatch.setenv("MISTRAL_API_KEY", "sk")
 
         s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
 
         d = reg.get_model("mistral-large-latest").to_dict()
@@ -233,7 +233,7 @@ class TestYAMLCompatibleProvider:
         monkeypatch.setenv("MISTRAL_API_KEY", "sk")
 
         s = _make_settings(MODELS_CONFIG_DIR=str(tmp_path))
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
 
         assert (
@@ -254,7 +254,7 @@ class TestLegacyOpenAIBaseURLPath:
             LLM_PROVIDER="openai",
             LLM_NAME="llama3,gemma",
         )
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
 
         ids = {m.id for m in reg.get_all_models()}
@@ -276,7 +276,7 @@ class TestLegacyOpenAIBaseURLPath:
             LLM_PROVIDER="openai",
             LLM_NAME="llama3",
         )
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             reg = ModelRegistry()
         assert reg.get_model("llama3").api_key == "sk-generic"
 
@@ -307,20 +307,20 @@ class TestLLMCreatorDispatch:
                 captured["base_url"] = kwargs.get("base_url")
                 captured["model_id"] = kwargs.get("model_id")
 
-        with patch("application.core.settings.settings", s):
+        with patch("docsgpt.core.settings.settings", s):
             ModelRegistry.reset()
             ModelRegistry()  # warm up the registry under patched settings
 
             # Now patch the OpenAI plugin's class so we can capture the
             # constructor args without spinning up the real OpenAILLM.
-            from application.llm.providers import PROVIDERS_BY_NAME
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
 
             with patch.object(
                 PROVIDERS_BY_NAME["openai_compatible"],
                 "llm_class",
                 _FakeLLM,
             ):
-                from application.llm.llm_creator import LLMCreator
+                from docsgpt.llm.llm_creator import LLMCreator
 
                 LLMCreator.create_llm(
                     type="openai_compatible",

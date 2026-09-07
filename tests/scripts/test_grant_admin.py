@@ -20,13 +20,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts import grant_admin  # noqa: E402
-from application.storage.db.repositories.auth_events import (  # noqa: E402
+from docsgpt.storage.db.repositories.auth_events import (  # noqa: E402
     AuthEventsRepository,
 )
-from application.storage.db.repositories.user_roles import (  # noqa: E402
+from docsgpt.storage.db.repositories.user_roles import (  # noqa: E402
     UserRolesRepository,
 )
-from application.storage.db.repositories.users import UsersRepository  # noqa: E402
+from docsgpt.storage.db.repositories.users import UsersRepository  # noqa: E402
 
 
 @pytest.fixture

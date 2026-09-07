@@ -1,4 +1,4 @@
-"""Comprehensive tests for application/parser/remote/sitemap_loader.py
+"""Comprehensive tests for docsgpt/parser/remote/sitemap_loader.py
 
 Covers: SitemapLoader (init, load_data, _extract_urls, _is_sitemap,
 _parse_sitemap, URL validation, error handling).
@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from application.parser.remote.sitemap_loader import SitemapLoader
-from application.parser.schema.base import Document
+from docsgpt.parser.remote.sitemap_loader import SitemapLoader
+from docsgpt.parser.schema.base import Document
 
 
 # =====================================================================
@@ -159,7 +159,7 @@ class TestParseSitemap:
 @pytest.mark.unit
 class TestExtractUrls:
 
-    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_extract_urls_from_sitemap(self, mock_pinned_request):
         loader = SitemapLoader()
 
@@ -177,7 +177,7 @@ class TestExtractUrls:
         urls = loader._extract_urls("https://example.com/sitemap.xml")
         assert "https://example.com/p" in urls
 
-    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_extract_urls_not_sitemap(self, mock_pinned_request):
         loader = SitemapLoader()
 
@@ -191,7 +191,7 @@ class TestExtractUrls:
         urls = loader._extract_urls("https://example.com/page")
         assert urls == ["https://example.com/page"]
 
-    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_extract_urls_http_error(self, mock_pinned_request):
         loader = SitemapLoader()
         mock_pinned_request.side_effect = requests.exceptions.HTTPError("404")
@@ -199,7 +199,7 @@ class TestExtractUrls:
         urls = loader._extract_urls("https://example.com/missing")
         assert urls == []
 
-    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_extract_urls_connection_error(self, mock_pinned_request):
         loader = SitemapLoader()
         mock_pinned_request.side_effect = requests.exceptions.ConnectionError()
@@ -208,12 +208,12 @@ class TestExtractUrls:
         assert urls == []
 
     def test_extract_urls_ssrf_blocked(self):
-        from application.security.safe_url import UnsafeUserUrlError
+        from docsgpt.security.safe_url import UnsafeUserUrlError
 
         loader = SitemapLoader()
 
         with patch(
-            "application.parser.remote.sitemap_loader.pinned_request",
+            "docsgpt.parser.remote.sitemap_loader.pinned_request",
             side_effect=UnsafeUserUrlError("blocked"),
         ):
             urls = loader._extract_urls("http://169.254.169.254/")
@@ -228,8 +228,8 @@ class TestExtractUrls:
 @pytest.mark.unit
 class TestSitemapLoaderLoadData:
 
-    @patch("application.parser.remote.sitemap_loader.validate_url")
-    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_load_data_success(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader(limit=10)
         mock_validate.side_effect = lambda url: url
@@ -248,7 +248,7 @@ class TestSitemapLoaderLoadData:
             assert docs[0].text == "Page body"
             assert docs[0].extra_info == {"source": "https://example.com/page1"}
 
-    @patch("application.parser.remote.sitemap_loader.validate_url")
+    @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
     def test_load_data_no_urls(self, mock_validate):
         loader = SitemapLoader()
 
@@ -256,8 +256,8 @@ class TestSitemapLoaderLoadData:
             docs = loader.load_data("https://example.com/empty-sitemap.xml")
             assert docs == []
 
-    @patch("application.parser.remote.sitemap_loader.validate_url")
-    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_load_data_list_input(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader()
         mock_validate.side_effect = lambda url: url
@@ -274,8 +274,8 @@ class TestSitemapLoaderLoadData:
             assert len(docs) == 1
             assert docs[0].text == "List body"
 
-    @patch("application.parser.remote.sitemap_loader.validate_url")
-    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_load_data_respects_limit(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader(limit=2)
         mock_validate.side_effect = lambda url: url
@@ -290,8 +290,8 @@ class TestSitemapLoaderLoadData:
             assert len(docs) == 2
             assert mock_pinned_request.call_count == 2
 
-    @patch("application.parser.remote.sitemap_loader.validate_url")
-    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_load_data_handles_url_error(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader()
         mock_validate.side_effect = lambda url: url
@@ -305,19 +305,19 @@ class TestSitemapLoaderLoadData:
             assert docs == []
 
     def test_load_data_ssrf_blocked(self):
-        from application.core.url_validation import SSRFError
+        from docsgpt.core.url_validation import SSRFError
 
         loader = SitemapLoader()
 
         with patch(
-            "application.parser.remote.sitemap_loader.validate_url",
+            "docsgpt.parser.remote.sitemap_loader.validate_url",
             side_effect=SSRFError("blocked"),
         ):
             docs = loader.load_data("http://169.254.169.254/")
             assert docs == []
 
-    @patch("application.parser.remote.sitemap_loader.validate_url")
-    @patch("application.parser.remote.sitemap_loader.pinned_request")
+    @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
     def test_load_data_no_limit(self, mock_pinned_request, mock_validate):
         loader = SitemapLoader(limit=None)
         mock_validate.side_effect = lambda url: url

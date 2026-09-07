@@ -17,9 +17,62 @@ Docker is the recommended method for deploying DocsGPT, providing a consistent a
 
 **Important Note for Windows Users:** Docker Desktop on Windows generally requires the WSL 2 backend to function correctly, especially when using features like host networking which are utilized in DocsGPT's Docker Compose setup. Ensure WSL 2 is enabled and configured in Docker Desktop settings.
 
-## Quickest Setup: Using DocsGPT Public API
+## Quickest Setup: Pre-built Images, No Checkout
 
-The fastest way to try out DocsGPT is by using the public API endpoint. This requires minimal configuration and no local LLM setup.
+Every release publishes ready-to-run images to Docker Hub (`arc53/docsgpt`,
+`arc53/docsgpt-fe`) and GitHub Container Registry (`ghcr.io/arc53/docsgpt`,
+`ghcr.io/arc53/docsgpt-fe`) for `linux/amd64` and `linux/arm64`. The images
+contain everything the default configuration needs (embedding models,
+tokenizers, tiktoken's encoding), so a fresh container makes no downloads on
+first use. You do not need the source tree to run them:
+
+1.  **Download the standalone Compose file** (also attached to every
+    [release](https://github.com/arc53/DocsGPT/releases)):
+
+    ```bash
+    mkdir docsgpt && cd docsgpt
+    curl -fsSLO https://raw.githubusercontent.com/arc53/DocsGPT/main/deployment/docker-compose-standalone.yaml
+    ```
+
+2.  **Create a `.env` next to it** with your settings, for example the public API:
+
+    ```bash
+    printf 'LLM_PROVIDER=docsgpt\nVITE_API_STREAMING=true\nINTERNAL_KEY=%s\n' "$(openssl rand -hex 16)" > .env
+    ```
+
+    `INTERNAL_KEY` is the secret the worker uses to hand finished indexes to
+    the API; without it every upload fails with a 401. `setup.sh` generates
+    one for you, a hand-written `.env` has to include it. This stack runs the
+    granite embedding model unless `.env` sets `EMBEDDINGS_NAME`; both granite
+    and mpnet are baked into the image.
+
+3.  **Start it:**
+
+    ```bash
+    docker compose -f docker-compose-standalone.yaml up -d
+    ```
+
+    Then open [http://localhost:5173/](http://localhost:5173/). Data lives in
+    named Docker volumes; `docker compose -f docker-compose-standalone.yaml down`
+    keeps it and `down -v` removes it.
+
+**Tags and variants.** `DOCSGPT_IMAGE_TAG` picks the version: a release such
+as `0.20.0`, `latest` (the newest release, the default) or `develop` (follows
+the `main` branch). `DOCSGPT_IMAGE_VARIANT` picks the flavour: empty for the
+slim default image, or `-docling` for the image with the docling parser
+engine, its models and tesseract baked in (needed for OCR of scanned
+documents, see the [OCR guide](/Guides/ocr)). Both are read from `.env` or
+the shell, e.g. `DOCSGPT_IMAGE_TAG=0.20.0 DOCSGPT_IMAGE_VARIANT=-docling`.
+The same two variables drive `deployment/docker-compose-hub.yaml` in a
+checkout.
+
+## Using the Source Checkout
+
+With a clone of the repository, `deployment/docker-compose-hub.yaml` runs the
+same pre-built images while keeping your data in `application/indexes`,
+`application/inputs` and `application/vectors`, and `deployment/docker-compose.yaml`
+builds the images from your working tree (for local changes, or a build with
+extra packages: `EXTRAS=docling` in `.env`).
 
 1.  **Clone the DocsGPT Repository (if you haven't already):**
 
@@ -39,19 +92,26 @@ The fastest way to try out DocsGPT is by using the public API endpoint. This req
     ```
     LLM_PROVIDER=docsgpt
     VITE_API_STREAMING=true
+    INTERNAL_KEY=<any random string, e.g. openssl rand -hex 16>
+    EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2
     ```
 
-    This minimal configuration tells DocsGPT to use the public API. For more advanced settings and other LLM options, refer to the [DocsGPT Settings Guide](/Deploying/DocsGPT-Settings).
+    This minimal configuration tells DocsGPT to use the public API. The
+    `EMBEDDINGS_NAME` line is what `setup.sh` writes for a new install; without
+    it the code falls back to mpnet, the model earlier releases indexed with,
+    so that an upgraded deployment keeps its existing index working. For more advanced settings and other LLM options, refer to the [DocsGPT Settings Guide](/Deploying/DocsGPT-Settings).
 
 4.  **Launch DocsGPT with Docker Compose:**
 
     Navigate to the root directory of the DocsGPT repository in your terminal and run:
 
     ```bash
-    docker compose --env-file .env -f deployment/docker-compose.yaml up -d
+    docker compose --env-file .env -f deployment/docker-compose-hub.yaml up -d
     ```
 
     The `-d` flag runs Docker Compose in detached mode (in the background).
+    To build the images from your working tree instead of pulling them, use
+    `deployment/docker-compose.yaml` with `up --build -d`.
 
 5.  **Access DocsGPT in your browser:**
 
@@ -62,7 +122,7 @@ The fastest way to try out DocsGPT is by using the public API endpoint. This req
     To stop the application, navigate to the same directory in your terminal and run:
 
     ```bash
-    docker compose -f deployment/docker-compose.yaml down
+    docker compose -f deployment/docker-compose-hub.yaml down
     ```
 
 ## Optional Ollama Setup (Local Models)
@@ -84,11 +144,11 @@ There are two Ollama optional files:
 
     **CPU:**
     ```bash
-    docker compose --env-file .env -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml up -d
+    docker compose --env-file .env -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml up -d
     ```
     **GPU:**
     ```bash
-    docker compose --env-file .env -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml up -d
+    docker compose --env-file .env -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml up -d
     ```
 
 3.  **Pull the Ollama Model:**
@@ -96,11 +156,11 @@ There are two Ollama optional files:
     **Crucially, after launching with Ollama, you need to pull the desired model into the Ollama container.**  Find the `LLM_NAME` you configured in your `.env` file (e.g., `llama3.2:1b`). Then execute the following command to pull the model *inside* the running Ollama container:
 
     ```bash
-    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml exec -it ollama ollama pull <LLM_NAME>
+    docker compose -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml exec -it ollama ollama pull <LLM_NAME>
     ```
     or (for GPU):
      ```bash
-    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml exec -it ollama ollama pull <LLM_NAME>
+    docker compose -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml exec -it ollama ollama pull <LLM_NAME>
     ```
     Replace `<LLM_NAME>` with the actual model name from your `.env` file.
 
@@ -113,12 +173,12 @@ There are two Ollama optional files:
     To stop a DocsGPT setup launched with Ollama optional files, use `docker compose down` and include all the compose files used during the `up` command:
 
     ```bash
-    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml down
+    docker compose -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml down
     ```
     or
 
     ```bash
-    docker compose -f deployment/docker-compose.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml down
+    docker compose -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml down
     ```
 
 **Important for GPU Usage:**

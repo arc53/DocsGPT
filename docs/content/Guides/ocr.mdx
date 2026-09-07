@@ -57,18 +57,24 @@ apt-get install tesseract-ocr tesseract-ocr-eng    brew install tesseract
 Docker images build without it by default; opt in with the build argument:
 
 ```bash
-docker build --build-arg INSTALL_TESSERACT=true ./application
+docker build -f docsgpt/Dockerfile --build-arg INSTALL_TESSERACT=true .
 ```
 
 `deployment/docker-compose.yaml` forwards the same switch, so setting
 `INSTALL_TESSERACT=true` in `.env` (or the shell) bakes tesseract plus the
 English pack into locally built backend and worker images; `setup.sh` writes
 it when you answer yes to the OCR question after choosing to build images
-locally. Pre-built Docker Hub images (`docker-compose-hub.yaml`) do not
-include it, so `setup.sh` leaves OCR at its default (off) for them; to OCR
-there, point `OCR_ENGINE=deepseek` at a DeepSeek-OCR endpoint or install
-`tesseract-ocr` in a derived image. With `OCR_ENABLED=true` and no binary on
-`PATH`, scanned pages fail with an install hint (text-layer documents are
+locally.
+
+With pre-built images the switch is the image variant: every tag is
+published twice, slim (`arc53/docsgpt:<tag>`) and `-docling`
+(`arc53/docsgpt:<tag>-docling`), and the latter bakes tesseract, the docling
+engine and its models in. Set `DOCSGPT_IMAGE_VARIANT=-docling` in `.env` for
+`docker-compose-hub.yaml` or `docker-compose-standalone.yaml`; `setup.sh`
+writes it when you answer yes to the OCR question with Docker Hub images.
+Alternatively point `OCR_ENGINE=deepseek` at a DeepSeek-OCR endpoint, which
+needs no system package. With `OCR_ENABLED=true` and no binary on `PATH`,
+scanned pages fail with an install hint (text-layer documents are
 unaffected).
 
 <Callout type="warning" emoji="⚠️">
@@ -88,23 +94,31 @@ docling is not part of the base install, and OCR does not need it (see
 output:
 
 ```bash
-pip install -r application/requirements-docling.txt
+pip install -r docsgpt/requirements-docling.txt   # or: uv sync --extra docling
 ```
 
-Docker images build without it by default; opt in with the build argument:
+That file is the core set plus the `docling` extra, exported from the same
+lock. On Linux it takes torch from the CPU-only PyTorch index, so the extra
+costs about 1.5 GB rather than the 2.7 GB the CUDA build of torch would; a
+GPU deployment can reinstall torch from PyPI on top.
+
+Pre-built images: use the `-docling` variant (`arc53/docsgpt:<tag>-docling`,
+`DOCSGPT_IMAGE_VARIANT=-docling` in `.env`), which also bakes docling's
+layout, table-structure and RapidOCR models in so the first parse does not
+download them. Local builds opt in with the build argument:
 
 ```bash
-docker build --build-arg INSTALL_DOCLING=true ./application
+docker build -f docsgpt/Dockerfile --build-arg EXTRAS=docling .
 ```
 
 `deployment/docker-compose.yaml` forwards the same switch, so setting
-`INSTALL_DOCLING=true` in `.env` (or the shell) bakes docling into locally
-built backend and worker images; `setup.sh` offers it as a follow-up to the
-OCR question. Compose reads build arguments from the shell or from the
+`EXTRAS=docling` (or the older `INSTALL_DOCLING=true`) in `.env` (or the
+shell) bakes docling into locally built backend and worker images; `setup.sh`
+offers it as a follow-up to the OCR question. Compose reads build arguments from the shell or from the
 `.env` you pass with `--env-file .env` (not from the containers' `env_file`),
 so build with `docker compose --env-file .env -f deployment/docker-compose.yaml build`
-as `setup.sh` does. Pre-built Docker Hub images (`docker-compose-hub.yaml`)
-never include docling; install it in a derived image instead. Either way no
+as `setup.sh` does. Of the pre-built Docker Hub images only the slim default
+excludes docling; the `-docling` variant ships it with its models. Either way no
 code changes are needed — docling is picked up as
 the fallback engine (and, under `OCR_BACKEND=auto`, as the OCR backend) as
 soon as it is importable, and `DOC_PARSER_ENGINE=docling` makes it the

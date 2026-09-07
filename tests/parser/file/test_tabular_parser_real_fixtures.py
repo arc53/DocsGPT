@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from application.parser.file.tabular_parser import (
+from docsgpt.parser.file.tabular_parser import (
     ExcelParser,
     PandasCSVParser,
     cell_to_text,

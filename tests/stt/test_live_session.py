@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.stt.live_session import (
+from docsgpt.stt.live_session import (
     apply_live_stt_hypothesis,
     create_live_stt_session,
     delete_live_stt_session,

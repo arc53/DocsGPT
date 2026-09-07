@@ -1,0 +1,67 @@
+name: Verify the Docker image works offline
+
+# Builds the backend image and runs its offline check with networking off, so
+# a change that reintroduces a first-request download (a tokenizer, tiktoken's
+# encoding, an embedding model) fails here instead of in an air-gapped install.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'docsgpt/Dockerfile'
+      - '.dockerignore'
+      - 'application/**'
+      - 'docsgpt/requirements*.txt'
+      - 'docsgpt/scripts/prefetch_models.py'
+      - 'docsgpt/scripts/verify_offline.py'
+      - 'docsgpt/vectorstore/model_registry.py'
+      - 'docsgpt/parser/tokenization.py'
+      - 'docsgpt/vectorstore/embeddings_local.py'
+      - '.github/workflows/docker-image-verify.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      matrix:
+        # "" is the slim default; "-docling" bakes docling, its models and
+        # tesseract in, so the conversion check in verify_offline runs too.
+        variant: ["", "-docling"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build the image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          file: ./docsgpt/Dockerfile
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: docsgpt:verify${{ matrix.variant }}
+          build-args: |
+            EXTRAS=${{ matrix.variant == '-docling' && 'docling' || '' }}
+            INSTALL_TESSERACT=${{ matrix.variant == '-docling' && 'true' || 'false' }}
+          cache-from: type=gha,scope=verify${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=verify${{ matrix.variant }}
+
+      - name: Image size
+        env:
+          IMAGE: docsgpt:verify${{ matrix.variant }}
+        run: |
+          docker image inspect "$IMAGE" --format '{{.Size}}' | awk '{printf "uncompressed: %.2f GB\n", $1/1e9}'
+          docker history "$IMAGE" --format '{{.Size}}\t{{.CreatedBy}}' | head -20
+
+      - name: Offline verification (no network)
+        env:
+          IMAGE: docsgpt:verify${{ matrix.variant }}
+        run: |
+          docker run --rm --network none "$IMAGE" \
+            python -m docsgpt.scripts.verify_offline

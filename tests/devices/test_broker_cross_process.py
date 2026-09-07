@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import time
 
-from application.devices.broker import DeviceBroker
+from docsgpt.devices.broker import DeviceBroker
 
 
 def test_dispatch_in_worker_reaches_session_in_web(monkeypatch, fake_redis):
     monkeypatch.setattr(
-        "application.devices.broker.get_redis_instance", lambda: fake_redis
+        "docsgpt.devices.broker.get_redis_instance", lambda: fake_redis
     )
     worker_broker = DeviceBroker()  # e.g. Celery scheduled run
     web_broker = DeviceBroker()  # e.g. gunicorn web tier holding the SSE socket
@@ -65,7 +65,7 @@ def test_dispatch_in_worker_reaches_session_in_web(monkeypatch, fake_redis):
 def test_denied_ack_unblocks_drain(monkeypatch, fake_redis):
     # A denial on the web side must promptly stop a worker-side drain.
     monkeypatch.setattr(
-        "application.devices.broker.get_redis_instance", lambda: fake_redis
+        "docsgpt.devices.broker.get_redis_instance", lambda: fake_redis
     )
     worker_broker = DeviceBroker()
     web_broker = DeviceBroker()

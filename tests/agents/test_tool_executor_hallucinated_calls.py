@@ -14,7 +14,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from application.agents.tool_executor import ToolExecutor
+from docsgpt.agents.tool_executor import ToolExecutor
 
 
 def _action(name):

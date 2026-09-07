@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
 
-from application.parser.file.tabular_parser import CSVParser, PandasCSVParser, ExcelParser
+from docsgpt.parser.file.tabular_parser import CSVParser, PandasCSVParser, ExcelParser
 
 
 @pytest.fixture
@@ -220,7 +220,7 @@ def test_excel_numeric_headers_do_not_crash(tmp_path):
     to this parser, so it must handle numeric headers."""
     from openpyxl import Workbook
 
-    from application.parser.file.tabular_parser import ExcelParser
+    from docsgpt.parser.file.tabular_parser import ExcelParser
 
     wb = Workbook()
     ws = wb.active

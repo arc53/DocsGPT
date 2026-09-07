@@ -10,7 +10,7 @@ its whole Chinese column in anydoc with no error.
 import zlib
 from pathlib import Path
 
-from application.parser.file.pdf_trust import (
+from docsgpt.parser.file.pdf_trust import (
     check_pdf_fonts,
     verify_extraction,
     verify_pdf_file,
@@ -134,7 +134,7 @@ class TestRealFixture:
 def test_flate_bomb_streams_are_capped():
     """Flate reaches ~1000:1, so per-stream inflation must be capped — an
     uncapped decompress of a crafted PDF would OOM the ingest worker."""
-    from application.parser.file.pdf_trust import _decompressed_streams, _STREAM_INFLATE_CAP
+    from docsgpt.parser.file.pdf_trust import _decompressed_streams, _STREAM_INFLATE_CAP
 
     bomb = _stream(b"\0" * (_STREAM_INFLATE_CAP * 4))
     chunks = list(_decompressed_streams(bomb))
@@ -187,7 +187,7 @@ class TestObjectWalk:
         """The forward walk yields exactly what ``\\d+\\s+\\d+\\s+obj(.*?)endobj`` did."""
         import re
 
-        from application.parser.file.pdf_trust import _object_bodies
+        from docsgpt.parser.file.pdf_trust import _object_bodies
 
         reference = re.compile(rb"\d+\s+\d+\s+obj(.*?)endobj", re.DOTALL)
         data = (

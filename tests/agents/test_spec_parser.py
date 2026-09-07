@@ -1,10 +1,10 @@
-"""Tests for application/agents/tools/spec_parser.py"""
+"""Tests for docsgpt/agents/tools/spec_parser.py"""
 
 import json
 
 import pytest
 
-from application.agents.tools.spec_parser import (
+from docsgpt.agents.tools.spec_parser import (
     _extract_metadata,
     _generate_action_name,
     _get_base_url,
@@ -473,14 +473,14 @@ paths:
 
     def test_traverse_path_key_error(self):
         """Cover lines 173-176: _traverse_path returns None on KeyError."""
-        from application.agents.tools.spec_parser import _traverse_path
+        from docsgpt.agents.tools.spec_parser import _traverse_path
 
         result = _traverse_path({"a": {"b": 1}}, ["a", "c"])
         assert result is None
 
     def test_traverse_path_non_dict_result(self):
         """Cover line 175-176: _traverse_path returns None for non-dict result."""
-        from application.agents.tools.spec_parser import _traverse_path
+        from docsgpt.agents.tools.spec_parser import _traverse_path
 
         result = _traverse_path({"a": "string_value"}, ["a"])
         assert result is None
@@ -529,7 +529,7 @@ class TestSpecParserAdditionalCoverage:
 
     def test_categorize_params_query_and_header(self):
         """Cover lines 205, 209, 213: parameters categorized into query and header."""
-        from application.agents.tools.spec_parser import _categorize_parameters
+        from docsgpt.agents.tools.spec_parser import _categorize_parameters
 
         parameters = [
             {"name": "q", "in": "query", "required": True, "description": "Query param"},
@@ -543,7 +543,7 @@ class TestSpecParserAdditionalCoverage:
 
     def test_categorize_params_skips_no_name(self):
         """Cover line 205: parameters without name are skipped."""
-        from application.agents.tools.spec_parser import _categorize_parameters
+        from docsgpt.agents.tools.spec_parser import _categorize_parameters
 
         parameters = [
             {"in": "query"},  # no name
@@ -554,7 +554,7 @@ class TestSpecParserAdditionalCoverage:
 
     def test_param_to_property_integer_type(self):
         """Cover lines 216-217, 222, 228: _param_to_property with integer type."""
-        from application.agents.tools.spec_parser import _param_to_property
+        from docsgpt.agents.tools.spec_parser import _param_to_property
 
         param = {
             "name": "count",
@@ -569,7 +569,7 @@ class TestSpecParserAdditionalCoverage:
 
     def test_param_to_property_number_type(self):
         """Cover line 222: number type mapped to integer."""
-        from application.agents.tools.spec_parser import _param_to_property
+        from docsgpt.agents.tools.spec_parser import _param_to_property
 
         param = {
             "schema": {"type": "number"},
@@ -581,7 +581,7 @@ class TestSpecParserAdditionalCoverage:
 
     def test_param_to_property_string_default(self):
         """Cover line 222: unknown type defaults to string."""
-        from application.agents.tools.spec_parser import _param_to_property
+        from docsgpt.agents.tools.spec_parser import _param_to_property
 
         param = {"description": "Desc", "required": False}
         prop = _param_to_property(param)
@@ -589,7 +589,7 @@ class TestSpecParserAdditionalCoverage:
 
     def test_param_to_property_description_truncated(self):
         """Cover line 228: description truncated to 200 chars."""
-        from application.agents.tools.spec_parser import _param_to_property
+        from docsgpt.agents.tools.spec_parser import _param_to_property
 
         param = {"description": "x" * 300, "required": False}
         prop = _param_to_property(param)
@@ -603,7 +603,7 @@ class TestSpecParserAdditionalCoverage:
 # 184-190 (generate_action_name from path), 99 (swagger base URL)
 # ---------------------------------------------------------------------------
 
-from application.agents.tools.spec_parser import _extract_actions  # noqa: E402
+from docsgpt.agents.tools.spec_parser import _extract_actions  # noqa: E402
 
 
 @pytest.mark.unit

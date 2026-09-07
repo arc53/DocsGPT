@@ -11,9 +11,9 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
-from application.agents.tools.remote_device import RemoteDeviceTool, _MAX_TIMEOUT_MS
-from application.core.settings import settings
-from application.devices.broker import DeviceBroker, Invocation
+from docsgpt.agents.tools.remote_device import RemoteDeviceTool, _MAX_TIMEOUT_MS
+from docsgpt.core.settings import settings
+from docsgpt.devices.broker import DeviceBroker, Invocation
 
 from .conftest import FakeRedis
 
@@ -68,7 +68,7 @@ def _tool():
 def test_drain_flushes_chunks_posted_after_first_empty_read(monkeypatch):
     fake = RacyFakeRedis()
     monkeypatch.setattr(
-        "application.devices.broker.get_redis_instance", lambda: fake
+        "docsgpt.devices.broker.get_redis_instance", lambda: fake
     )
     worker = DeviceBroker()  # Celery side: dispatch + drain
     web = DeviceBroker()  # web side: posts output
@@ -115,7 +115,7 @@ def test_collect_result_times_out_when_snapshot_incomplete():
 
 
 def test_collect_result_captures_control_chunk_past_deadline(monkeypatch):
-    from application.agents.tools import remote_device as rd
+    from docsgpt.agents.tools import remote_device as rd
 
     # First time.time() seeds the deadline; later calls are far past it, so the
     # post-capture break fires — the control chunk must still be captured.
@@ -145,7 +145,7 @@ def test_dispatch_failure_cleans_inv_hash(monkeypatch):
 
     fake = RpushFailRedis()
     monkeypatch.setattr(
-        "application.devices.broker.get_redis_instance", lambda: fake
+        "docsgpt.devices.broker.get_redis_instance", lambda: fake
     )
     broker = DeviceBroker()
     inv = broker.dispatch_invocation(

@@ -1,6 +1,6 @@
-"""Tests for application.devices.denylist."""
+"""Tests for docsgpt.devices.denylist."""
 
-from application.devices.denylist import check_denylist
+from docsgpt.devices.denylist import check_denylist
 
 
 def test_rm_rf_slash():

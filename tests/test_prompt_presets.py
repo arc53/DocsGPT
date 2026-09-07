@@ -11,12 +11,12 @@ import pytest
 
 from pathlib import Path
 
-from application.prompts.composer import (
+from docsgpt.prompts.composer import (
     compose_preset,
     is_composed_preset,
 )
 
-from application.api.answer.services.prompt_renderer import (
+from docsgpt.api.answer.services.prompt_renderer import (
     PromptRenderer,
     format_docs_for_prompt,
 )
@@ -34,7 +34,7 @@ def _read(preset: str) -> str:
     """Chat presets compose from fragments; research prompts are still files."""
     if is_composed_preset(preset):
         return compose_preset(preset)
-    prompts_dir = Path(__file__).resolve().parents[1] / "application" / "prompts"
+    prompts_dir = Path(__file__).resolve().parents[1] / "docsgpt" / "prompts"
     return (prompts_dir / preset).read_text(encoding="utf-8")
 
 

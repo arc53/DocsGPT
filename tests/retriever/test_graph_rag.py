@@ -9,14 +9,14 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from application.retriever.graph_rag import GraphRAGRetriever
-from application.retriever.retriever_creator import RetrieverCreator
+from docsgpt.retriever.graph_rag import GraphRAGRetriever
+from docsgpt.retriever.retriever_creator import RetrieverCreator
 
 
 @pytest.fixture
 def _patch_llm_creator(mock_llm, monkeypatch):
     monkeypatch.setattr(
-        "application.retriever.classic_rag.LLMCreator.create_llm",
+        "docsgpt.retriever.classic_rag.LLMCreator.create_llm",
         Mock(return_value=mock_llm),
     )
     return mock_llm
@@ -50,8 +50,8 @@ def _patch_embed(monkeypatch):
 
 @pytest.mark.unit
 class TestGraphRAGFallback:
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_no_graph_delegates_to_classic(
         self, _avail, mock_store_cls, _patch_llm_creator
     ):
@@ -72,8 +72,8 @@ class TestGraphRAGFallback:
         # pool) and again in _get_data's finally; close() is idempotent.
         assert store.close.called
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=False)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=False)
     def test_graphrag_unavailable_delegates_to_classic(
         self, _avail, mock_store_cls, _patch_llm_creator
     ):
@@ -124,8 +124,8 @@ class TestGraphRAGPoolDiscipline:
     slot and then block on their own inner fan-outs until PoolTimeout.
     """
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_connection_is_released_before_the_classic_fallback(
         self, _avail, mock_store_cls, _patch_llm_creator
     ):
@@ -145,8 +145,8 @@ class TestGraphRAGPoolDiscipline:
 
         assert order[:2] == ["close", "classic"]
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_a_graph_only_retrieval_keeps_its_connection(
         self, _avail, mock_store_cls, _patch_llm_creator, _patch_embed
     ):
@@ -168,9 +168,9 @@ class TestGraphRAGPoolDiscipline:
 
 @pytest.mark.unit
 class TestGraphRAGHappyPath:
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_ppr_ranks_near_seed_higher(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -200,9 +200,9 @@ class TestGraphRAGHappyPath:
         assert texts.index("near") < texts.index("far")
         assert docs[0].keys() == {"title", "text", "source", "filename"}
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_seed_distance_over_one_is_clamped(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -228,9 +228,9 @@ class TestGraphRAGHappyPath:
 
         assert len(docs) >= 1
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_topk_respected(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -251,8 +251,8 @@ class TestGraphRAGHappyPath:
 
         assert len(docs) == 2
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_token_budget_honored(
         self, _avail, mock_store_cls, _patch_llm_creator, _patch_embed
     ):
@@ -270,15 +270,15 @@ class TestGraphRAGHappyPath:
         # Tiny budget: 0.9 * 100 = 90; each chunk costs 50 tokens → only one fits.
         rag = _make_retriever(chunks=3, doc_token_limit=100)
         with patch(
-            "application.retriever.graph_rag.num_tokens_from_string", return_value=50
+            "docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=50
         ):
             docs = rag._get_data()
 
         assert len(docs) == 1
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_labels_derived_from_metadata_not_source_id(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -303,9 +303,9 @@ class TestGraphRAGHappyPath:
         assert doc["source"] == "/docs/report.pdf"
         assert "src1" not in (doc["title"], doc["filename"])
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_overfetch_fills_when_some_text_missing(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -329,9 +329,9 @@ class TestGraphRAGHappyPath:
         assert len(docs) == 2
         assert texts == ["first", "third"]
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_no_seeds_returns_empty(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -348,9 +348,9 @@ class TestGraphRAGHappyPath:
 
 @pytest.mark.unit
 class TestGraphRAGIdf:
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_hub_downweighted_below_specific_node(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -380,7 +380,7 @@ class TestGraphRAGIdf:
 
     @pytest.mark.unit
     def test_idf_helper_monotonic(self):
-        from application.retriever.graph_rag import _idf
+        from docsgpt.retriever.graph_rag import _idf
 
         assert _idf(1) > _idf(10) > _idf(1000)
 
@@ -413,7 +413,7 @@ class TestGraphRAGRegistration:
 @pytest.mark.unit
 class TestGetChunkTexts:
     def _store_with_mock_conn(self):
-        from application.graphrag.store import GraphStore
+        from docsgpt.graphrag.store import GraphStore
 
         store = GraphStore.__new__(GraphStore)
         cursor = MagicMock()
@@ -442,7 +442,7 @@ class TestGetChunkTexts:
     def test_uses_configured_identifiers_and_binds_params(self):
         import uuid
 
-        from application.graphrag.store import _pgvector_identifiers
+        from docsgpt.graphrag.store import _pgvector_identifiers
 
         table, text_col, metadata_col, source_col = _pgvector_identifiers()
         store, cursor = self._store_with_mock_conn()
@@ -459,8 +459,8 @@ class TestGetChunkTexts:
         assert params == (sid, ["1", "2"])
 
     def test_identifiers_match_pgvector_defaults(self):
-        from application.graphrag.store import _pgvector_identifiers
-        from application.vectorstore.pgvector import PGVectorStore
+        from docsgpt.graphrag.store import _pgvector_identifiers
+        from docsgpt.vectorstore.pgvector import PGVectorStore
         import inspect
 
         params = inspect.signature(PGVectorStore.__init__).parameters
@@ -480,9 +480,9 @@ class TestGraphRAGTopK:
     """A prescreen source elsewhere in the group inflates ``chunks``; a graph
     source must still contribute only its own top-k."""
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_inflated_chunks_do_not_raise_a_graph_source_top_k(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -525,7 +525,7 @@ class TestEmbedQueryResolution:
         fake.embed_query.return_value = [0.1, 0.2, 0.3]
 
         with patch(
-            "application.retriever.graph_rag.get_embeddings", return_value=fake
+            "docsgpt.retriever.graph_rag.get_embeddings", return_value=fake
         ) as mock_resolver:
             result = GraphRAGRetriever._embed_query(object(), "a question")
 
@@ -585,8 +585,8 @@ class _SourceConfig:
 class TestGraphRAGBatching:
     """N attached sources cost one count query and one classic run, not N of each."""
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_node_counts_fetched_in_one_query(
         self, _avail, mock_store_cls, _patch_llm_creator
     ):
@@ -602,9 +602,9 @@ class TestGraphRAGBatching:
         store.count_nodes_many.assert_called_once_with(["a", "b", "c"])
         store.count_nodes.assert_not_called()
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_graphless_sources_share_one_classic_call(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -622,9 +622,9 @@ class TestGraphRAGBatching:
         # the graph source's docs still follow it in attachment order.
         assert [doc["text"] for doc in docs] == ["classic", "graph text"]
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_only_the_batched_sources_keep_their_overrides(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -648,9 +648,9 @@ class TestGraphRAGBatching:
         # Restored afterwards, exactly as the per-source path did.
         assert rag._classic.per_source_retrieval == {}
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_query_is_embedded_once_for_several_graph_sources(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator
     ):
@@ -669,9 +669,9 @@ class TestGraphRAGBatching:
             assert call.args[1] == [0.1, 0.2, 0.3]
         assert [doc["text"] for doc in docs] == ["graph text", "graph text"]
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_failed_graph_sources_land_in_one_batched_fallback(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -695,8 +695,8 @@ class TestGraphRAGBatching:
         # The retried batch is appended after the graph results.
         assert [doc["text"] for doc in docs] == ["graph text", "classic"]
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_embedding_failure_falls_back_for_every_graph_source(
         self, _avail, mock_store_cls, _patch_llm_creator
     ):
@@ -713,8 +713,8 @@ class TestGraphRAGBatching:
         assert [doc["text"] for doc in docs] == ["classic"]
         store.search_nodes_by_embedding.assert_not_called()
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_count_failure_falls_back_in_one_call(
         self, _avail, mock_store_cls, _patch_llm_creator
     ):
@@ -730,8 +730,8 @@ class TestGraphRAGBatching:
         assert seen == [["a", "b"]]
         assert [doc["text"] for doc in docs] == ["classic"]
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_unbuildable_store_falls_back_in_one_call(
         self, _avail, mock_store_cls, _patch_llm_creator
     ):
@@ -744,8 +744,8 @@ class TestGraphRAGBatching:
 
         assert seen == [["a", "b"]]
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=False)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=False)
     def test_unavailable_graphrag_makes_one_batched_classic_call(
         self, _avail, mock_store_cls, _patch_llm_creator
     ):
@@ -758,9 +758,9 @@ class TestGraphRAGBatching:
         assert seen == [["a", "b", "c"]]
         mock_store_cls.assert_not_called()
 
-    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_store_is_closed_on_the_success_path(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
@@ -772,8 +772,8 @@ class TestGraphRAGBatching:
 
         store.close.assert_called_once()
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_store_is_closed_when_retrieval_raises(
         self, _avail, mock_store_cls, _patch_llm_creator
     ):
@@ -789,8 +789,8 @@ class TestGraphRAGBatching:
 
         assert store.close.called
 
-    @patch("application.retriever.graph_rag.GraphStore")
-    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
     def test_empty_source_list_never_builds_a_store(
         self, _avail, mock_store_cls, _patch_llm_creator
     ):

@@ -13,7 +13,7 @@ import threading
 
 import pytest
 
-from application.streaming.sse_keepalive import with_sse_keepalive
+from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 
 
 @pytest.mark.unit

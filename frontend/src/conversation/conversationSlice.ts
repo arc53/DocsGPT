@@ -1,3 +1,4 @@
+import { envVar } from '@/env';
 import {
   createAsyncThunk,
   createListenerMiddleware,
@@ -90,8 +91,8 @@ const initialState: ConversationState = {
   conversationId: null,
 };
 
-const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
-const USE_V1_API = import.meta.env.VITE_USE_V1_API === 'true';
+const API_STREAMING = envVar('VITE_API_STREAMING') === 'true';
+const USE_V1_API = envVar('VITE_USE_V1_API') === 'true';
 
 let abortController: AbortController | null = null;
 export function handleAbort() {

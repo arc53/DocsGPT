@@ -1,4 +1,4 @@
-"""Tests for application/api/answer/routes/answer.py"""
+"""Tests for docsgpt/api/answer/routes/answer.py"""
 
 import json
 import uuid
@@ -15,7 +15,7 @@ _AGENT_ID = "507f1f77bcf86cd799439012"
 def mock_stream_processor():
     """Create a mock StreamProcessor."""
     with patch(
-        "application.api.answer.routes.answer.StreamProcessor"
+        "docsgpt.api.answer.routes.answer.StreamProcessor"
     ) as MockProcessor:
         processor = MagicMock()
         processor.decoded_token = {"sub": "test_user"}
@@ -35,7 +35,7 @@ def answer_client(mock_mongo_db, flask_app):
     """Create a test client with the answer route registered."""
     from flask_restx import Api
 
-    from application.api.answer.routes.answer import answer_ns
+    from docsgpt.api.answer.routes.answer import answer_ns
 
     api = Api(flask_app)
     api.add_namespace(answer_ns)
@@ -61,13 +61,13 @@ class TestAnswerResourcePost:
             return_value=iter([]),
         ):
             with patch(
-                "application.api.answer.routes.answer.AnswerResource.validate_request",
+                "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
                 return_value=None,
             ), patch(
-                "application.api.answer.routes.answer.AnswerResource.check_usage",
+                "docsgpt.api.answer.routes.answer.AnswerResource.check_usage",
                 return_value=None,
             ), patch(
-                "application.api.answer.routes.answer.AnswerResource.complete_stream",
+                "docsgpt.api.answer.routes.answer.AnswerResource.complete_stream",
                 return_value=iter(
                     [
                         f'data: {json.dumps({"type": "answer", "answer": "Hello"})}\n\n',
@@ -76,7 +76,7 @@ class TestAnswerResourcePost:
                     ]
                 ),
             ), patch(
-                "application.api.answer.routes.answer.AnswerResource.process_response_stream",
+                "docsgpt.api.answer.routes.answer.AnswerResource.process_response_stream",
                 return_value={"conversation_id": conv_id, "answer": "Hello", "sources": [], "tool_calls": [], "thought": "", "error": None},
             ):
                 resp = answer_client.post(
@@ -92,7 +92,7 @@ class TestAnswerResourcePost:
     def test_unauthorized_returns_401(self, answer_client, mock_stream_processor):
         mock_stream_processor.decoded_token = None
         with patch(
-            "application.api.answer.routes.answer.AnswerResource.validate_request",
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,
         ):
             resp = answer_client.post(
@@ -106,10 +106,10 @@ class TestAnswerResourcePost:
     def test_usage_exceeded_returns_error(self, answer_client, mock_stream_processor):
 
         with patch(
-            "application.api.answer.routes.answer.AnswerResource.validate_request",
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.check_usage",
+            "docsgpt.api.answer.routes.answer.AnswerResource.check_usage",
         ) as mock_check:
             with flask_app_context(answer_client):
                 mock_check.return_value = ({"error": "Usage limit exceeded"}, 429)
@@ -123,16 +123,16 @@ class TestAnswerResourcePost:
 
     def test_stream_error_returns_400(self, answer_client, mock_stream_processor):
         with patch(
-            "application.api.answer.routes.answer.AnswerResource.validate_request",
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.check_usage",
+            "docsgpt.api.answer.routes.answer.AnswerResource.check_usage",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.complete_stream",
+            "docsgpt.api.answer.routes.answer.AnswerResource.complete_stream",
             return_value=iter([]),
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.process_response_stream",
+            "docsgpt.api.answer.routes.answer.AnswerResource.process_response_stream",
             return_value={"conversation_id": None, "answer": None, "sources": None, "tool_calls": None, "thought": None, "error": "Stream error"},
         ):
             resp = answer_client.post(
@@ -154,7 +154,7 @@ class TestAnswerResourcePost:
         traceback on the ERROR channel. ``/stream`` and
         ``/v1/chat/completions`` both answer 409 for the identical condition.
         """
-        from application.api.answer.services.continuation_service import (
+        from docsgpt.api.answer.services.continuation_service import (
             ResumeInProgressError,
         )
 
@@ -163,7 +163,7 @@ class TestAnswerResourcePost:
         )
 
         with patch(
-            "application.api.answer.routes.answer.AnswerResource.validate_request",
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,
         ):
             resp = answer_client.post(
@@ -186,13 +186,13 @@ class TestAnswerResourcePost:
 
     def test_exception_returns_500(self, answer_client, mock_stream_processor):
         with patch(
-            "application.api.answer.routes.answer.AnswerResource.validate_request",
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.check_usage",
+            "docsgpt.api.answer.routes.answer.AnswerResource.check_usage",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.complete_stream",
+            "docsgpt.api.answer.routes.answer.AnswerResource.complete_stream",
             side_effect=RuntimeError("unexpected"),
         ):
             resp = answer_client.post(
@@ -208,16 +208,16 @@ class TestAnswerResourcePost:
     ):
         conv_id = str(uuid.uuid4())
         with patch(
-            "application.api.answer.routes.answer.AnswerResource.validate_request",
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.check_usage",
+            "docsgpt.api.answer.routes.answer.AnswerResource.check_usage",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.complete_stream",
+            "docsgpt.api.answer.routes.answer.AnswerResource.complete_stream",
             return_value=iter([]),
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.process_response_stream",
+            "docsgpt.api.answer.routes.answer.AnswerResource.process_response_stream",
             return_value={"conversation_id": conv_id, "answer": '{"key": "val"}', "sources": [], "tool_calls": [], "thought": "", "error": None, "extra": {"structured": True, "schema": {"type": "object"}}},
         ):
             resp = answer_client.post(
@@ -235,16 +235,16 @@ class TestAnswerResourcePost:
     ):
         conv_id = str(uuid.uuid4())
         with patch(
-            "application.api.answer.routes.answer.AnswerResource.validate_request",
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.check_usage",
+            "docsgpt.api.answer.routes.answer.AnswerResource.check_usage",
             return_value=None,
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.complete_stream",
+            "docsgpt.api.answer.routes.answer.AnswerResource.complete_stream",
             return_value=iter([]),
         ), patch(
-            "application.api.answer.routes.answer.AnswerResource.process_response_stream",
+            "docsgpt.api.answer.routes.answer.AnswerResource.process_response_stream",
             return_value={"conversation_id": conv_id, "answer": "answer text", "sources": [{"title": "src"}], "tool_calls": [{"tool": "t"}], "thought": "thinking...", "error": None},
         ):
             resp = answer_client.post(

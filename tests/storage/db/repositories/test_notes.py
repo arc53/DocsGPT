@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.notes import NotesRepository
+from docsgpt.storage.db.repositories.notes import NotesRepository
 
 
 def _repo(conn) -> NotesRepository:

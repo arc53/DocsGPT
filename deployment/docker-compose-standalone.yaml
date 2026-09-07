@@ -1,0 +1,130 @@
+# DocsGPT from pre-built images, with no git checkout.
+#
+#   curl -fsSLO https://raw.githubusercontent.com/arc53/DocsGPT/main/deployment/docker-compose-standalone.yaml
+#   printf 'LLM_PROVIDER=docsgpt\nVITE_API_STREAMING=true\nINTERNAL_KEY=%s\n' "$(openssl rand -hex 16)" > .env
+#   docker compose -f docker-compose-standalone.yaml up -d
+#
+# INTERNAL_KEY is the shared secret the worker uses to hand finished indexes to
+# the API; without it every ingest fails with a 401 (setup.sh generates one).
+#   open http://localhost:5173
+#
+# Every release also attaches this file as an asset. Settings come from .env
+# next to this file (any DocsGPT setting; the compose-internal service URLs
+# below take precedence). Data lives in named volumes, so `docker compose
+# down` keeps it and `docker compose down -v` removes it.
+#
+#   DOCSGPT_IMAGE_TAG      release to run, e.g. 0.20.0 (default: latest release);
+#                          develop follows the main branch
+#   DOCSGPT_IMAGE_VARIANT  empty (slim, default) or -docling: docling parser
+#                          engine, its models, and tesseract baked in (OCR-ready)
+#   EMBEDDINGS_NAME        defaults to granite here (this stack always starts on
+#                          fresh volumes, so there is no older index to keep
+#                          compatible); the code default stays mpnet for upgrades.
+name: docsgpt
+
+services:
+  frontend:
+    image: arc53/docsgpt-fe:${DOCSGPT_IMAGE_TAG:-latest}
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Every VITE_* the app reads. A bare name is passed through only when it is
+      # set in the shell or the --env-file, so an unset one does not reach the
+      # container as an empty string and override the image's own default.
+      - VITE_API_HOST=${VITE_API_HOST:-http://localhost:7091}
+      - VITE_API_STREAMING=${VITE_API_STREAMING:-true}
+      - VITE_BASE_URL
+      - VITE_GOOGLE_CLIENT_ID
+      - VITE_GOOGLE_PICKER_API_KEY
+      - VITE_SHARE_POINT_CLIENT_ID
+      - VITE_CONFLUENCE_CLIENT_ID
+      - VITE_NOTIFICATION_TEXT
+      - VITE_NOTIFICATION_LINK
+      - VITE_ENABLE_VOICE_INPUT
+      - VITE_DISABLE_SOURCE_FE
+      - VITE_USE_V
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+  backend:
+    image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-latest}${DOCSGPT_IMAGE_VARIANT:-}
+    # Same as docker-compose-hub.yaml: the data volumes are written by root so
+    # any image tag works, including releases that predate the appuser-owned
+    # /app/inputs, /app/indexes and /app/vectors directories.
+    user: root
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - CACHE_REDIS_URL=redis://redis:6379/2
+      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+      - EMBEDDINGS_NAME=${EMBEDDINGS_NAME:-ibm-granite/granite-embedding-311m-multilingual-r2}
+    ports:
+      - "7091:7091"
+    volumes:
+      - indexes:/app/indexes
+      - inputs:/app/inputs
+      - vectors:/app/vectors
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-latest}${DOCSGPT_IMAGE_VARIANT:-}
+    user: root
+    # Consumes the default queue plus `parsing` (read_document) and `embeddings`
+    # (query embedding); without the latter every search times out.
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - CACHE_REDIS_URL=redis://redis:6379/2
+      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+      - API_URL=http://backend:7091
+      - EMBEDDINGS_NAME=${EMBEDDINGS_NAME:-ibm-granite/granite-embedding-311m-multilingual-r2}
+    volumes:
+      - indexes:/app/indexes
+      - inputs:/app/inputs
+      - vectors:/app/vectors
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:6-alpine
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=docsgpt
+      - POSTGRES_PASSWORD=docsgpt
+      - POSTGRES_DB=docsgpt
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docsgpt -d docsgpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  indexes:
+  inputs:
+  vectors:
+  postgres_data:

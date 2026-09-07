@@ -1,9 +1,9 @@
-"""Tests for application/api/answer/services/compression/message_builder.py"""
+"""Tests for docsgpt/api/answer/services/compression/message_builder.py"""
 
 
 import pytest
 
-from application.api.answer.services.compression.message_builder import MessageBuilder
+from docsgpt.api.answer.services.compression.message_builder import MessageBuilder
 
 
 @pytest.mark.unit

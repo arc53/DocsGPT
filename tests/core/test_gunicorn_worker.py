@@ -4,9 +4,9 @@ from unittest import mock
 
 import pytest
 
-from application.core import shutdown
-from application.core.settings import settings
-from application.gunicorn_worker import (
+from docsgpt.core import shutdown
+from docsgpt.core.settings import settings
+from docsgpt.gunicorn_worker import (
     BoundedDrainUvicornWorker,
     _ShutdownAwareServer,
 )

@@ -15,16 +15,16 @@ from typing import Any, Dict
 
 import pytest
 
-from application.agents.workflows.node_agent import WorkflowNodeAgentFactory
-from application.agents.workflows.schemas import (
+from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
+from docsgpt.agents.workflows.schemas import (
     NodeType,
     Workflow,
     WorkflowGraph,
     WorkflowNode,
 )
-from application.agents.workflows.workflow_engine import WorkflowEngine
-from application.core.settings import settings
-from application.storage.db.repositories.artifacts import ArtifactsRepository
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.core.settings import settings
+from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 
 RUN_ID = "11111111-1111-1111-1111-111111111111"
 
@@ -63,7 +63,7 @@ def _patch_repo(monkeypatch, artifacts: Dict[str, Dict[str, Any]], run_id: str =
     def _fake_db_readonly():
         yield object()
 
-    monkeypatch.setattr("application.storage.db.session.db_readonly", _fake_db_readonly)
+    monkeypatch.setattr("docsgpt.storage.db.session.db_readonly", _fake_db_readonly)
     monkeypatch.setattr(ArtifactsRepository, "__init__", lambda self, conn=None: None)
     monkeypatch.setattr(ArtifactsRepository, "artifact_id_at_position", _at_position)
     monkeypatch.setattr(ArtifactsRepository, "get_artifact_in_parent", _in_parent)
@@ -147,7 +147,7 @@ def test_raw_id_and_short_ref_pass_through(monkeypatch):
 
 
 def _node_config(**kwargs):
-    from application.agents.workflows.schemas import AgentNodeConfig
+    from docsgpt.agents.workflows.schemas import AgentNodeConfig
 
     return AgentNodeConfig(**kwargs)
 
@@ -186,7 +186,7 @@ def test_auto_text_only_model_extracts_to_content(monkeypatch):
     _patch_repo(monkeypatch, {aid: rec})
     eng = _engine(monkeypatch)
     monkeypatch.setattr(
-        "application.storage.storage_creator.StorageCreator.get_storage",
+        "docsgpt.storage.storage_creator.StorageCreator.get_storage",
         staticmethod(lambda: _FakeStorage(b"hello world")),
     )
     cfg = _node_config(input_documents=[aid], file_passing="auto")
@@ -203,7 +203,7 @@ def test_extract_always_inlines_text_even_for_vision_model(monkeypatch):
     _patch_repo(monkeypatch, {aid: rec})
     eng = _engine(monkeypatch)
     monkeypatch.setattr(
-        "application.storage.storage_creator.StorageCreator.get_storage",
+        "docsgpt.storage.storage_creator.StorageCreator.get_storage",
         staticmethod(lambda: _FakeStorage(b"# Title")),
     )
     cfg = _node_config(input_documents=[aid], file_passing="extract")
@@ -280,7 +280,7 @@ def test_forged_uuid_is_rejected(monkeypatch):
 def test_native_file_cap_bounds_native_then_extracts(monkeypatch):
     """More than the native cap: the first N go native, the rest are extracted."""
     monkeypatch.setattr(
-        "application.core.settings.settings.WORKFLOW_NODE_NATIVE_MAX_FILES", 2, raising=False
+        "docsgpt.core.settings.settings.WORKFLOW_NODE_NATIVE_MAX_FILES", 2, raising=False
     )
     artifacts = {}
     ids = []
@@ -291,7 +291,7 @@ def test_native_file_cap_bounds_native_then_extracts(monkeypatch):
     _patch_repo(monkeypatch, artifacts)
     eng = _engine(monkeypatch)
     monkeypatch.setattr(
-        "application.storage.storage_creator.StorageCreator.get_storage",
+        "docsgpt.storage.storage_creator.StorageCreator.get_storage",
         staticmethod(lambda: _FakeStorage(b"img-bytes")),
     )
     # extract of a non-text image routes through the parsing worker; stub it so it returns text.
@@ -312,7 +312,7 @@ def test_native_file_cap_bounds_native_then_extracts(monkeypatch):
 def test_oversize_file_is_skipped(monkeypatch):
     """A file past the per-file byte ceiling is dropped, not attached."""
     monkeypatch.setattr(
-        "application.core.settings.settings.SANDBOX_MAX_INPUT_BYTES", 5, raising=False
+        "docsgpt.core.settings.settings.SANDBOX_MAX_INPUT_BYTES", 5, raising=False
     )
     aid, rec = _artifact(RUN_ID, "image/png", size=999)
     _patch_repo(monkeypatch, {aid: rec})
@@ -328,7 +328,7 @@ def test_oversize_file_is_skipped(monkeypatch):
 def test_oversize_text_skipped_by_post_read_guard_when_size_missing(monkeypatch):
     """A NULL/missing version size skips the pre-read cap; the post-read byte guard still drops it."""
     monkeypatch.setattr(
-        "application.core.settings.settings.SANDBOX_MAX_INPUT_BYTES", 5, raising=False
+        "docsgpt.core.settings.settings.SANDBOX_MAX_INPUT_BYTES", 5, raising=False
     )
     # size=None bypasses the ``isinstance(size, int)`` pre-read check; the actual
     # bytes (longer than the 5-byte cap) must be rejected after reading.
@@ -336,7 +336,7 @@ def test_oversize_text_skipped_by_post_read_guard_when_size_missing(monkeypatch)
     _patch_repo(monkeypatch, {aid: rec})
     eng = _engine(monkeypatch)
     monkeypatch.setattr(
-        "application.storage.storage_creator.StorageCreator.get_storage",
+        "docsgpt.storage.storage_creator.StorageCreator.get_storage",
         staticmethod(lambda: _FakeStorage(b"way over the cap")),
     )
     cfg = _node_config(input_documents=[aid], file_passing="auto")
@@ -349,14 +349,14 @@ def test_oversize_text_skipped_by_post_read_guard_when_size_missing(monkeypatch)
 @pytest.mark.unit
 def test_large_under_cap_text_is_windowed_not_inlined_whole(monkeypatch):
     """A large-but-under-cap text file is bounded to a head+tail window, not inlined whole."""
-    from application.parser.document_reader import _TEXT_MAX_BYTES as _MARKDOWN_MAX_BYTES
+    from docsgpt.parser.document_reader import _TEXT_MAX_BYTES as _MARKDOWN_MAX_BYTES
 
     big_text = ("A" * (_MARKDOWN_MAX_BYTES * 3)).encode("utf-8")
     aid, rec = _artifact(RUN_ID, "text/plain", filename="notes.txt", size=len(big_text))
     _patch_repo(monkeypatch, {aid: rec})
     eng = _engine(monkeypatch)
     monkeypatch.setattr(
-        "application.storage.storage_creator.StorageCreator.get_storage",
+        "docsgpt.storage.storage_creator.StorageCreator.get_storage",
         staticmethod(lambda: _FakeStorage(big_text)),
     )
     cfg = _node_config(input_documents=[aid], file_passing="auto")
@@ -391,7 +391,7 @@ def test_duplicate_refs_attach_once(monkeypatch):
 
 def _capture_parse(monkeypatch) -> dict:
     """Patch parse_document.apply_async so nothing touches a broker; capture the call."""
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     captured: Dict[str, Any] = {}
 
@@ -411,7 +411,7 @@ def _capture_parse(monkeypatch) -> dict:
 @pytest.mark.unit
 def test_parse_window_scales_with_the_document_size(monkeypatch):
     """The version's ``size`` reaches the parse: a longer await AND matching Celery limits."""
-    from application.api.user.tasks import parse_task_time_limits, parse_timeout_for_size
+    from docsgpt.api.user.tasks import parse_task_time_limits, parse_timeout_for_size
 
     size = 8 * 1024 * 1024
     aid, rec = _artifact(RUN_ID, "application/pdf", filename="scan.pdf", size=size)
@@ -456,7 +456,7 @@ def test_preextracted_text_skips_the_parse_worker(monkeypatch):
     eng = _engine(monkeypatch)
     eng.preextracted_text[aid] = "ALREADY OCRED"
 
-    import application.api.user.tasks as tasks
+    import docsgpt.api.user.tasks as tasks
 
     monkeypatch.setattr(
         tasks.parse_document,
@@ -523,15 +523,15 @@ def _agent_node(input_documents=None, file_passing="auto", node_id="agent_1") ->
 def _patch_capabilities(monkeypatch):
     """Stub provider/api-key resolution (capabilities are only fetched for json_schema nodes)."""
     monkeypatch.setattr(
-        "application.core.model_utils.get_model_capabilities",
+        "docsgpt.core.model_utils.get_model_capabilities",
         lambda model_id, user_id=None: None,
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_provider_from_model_id",
+        "docsgpt.core.model_utils.get_provider_from_model_id",
         lambda model_id, user_id=None: "openai",
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_api_key_for_provider", lambda _p: "k"
+        "docsgpt.core.model_utils.get_api_key_for_provider", lambda _p: "k"
     )
 
 

@@ -1,4 +1,4 @@
-"""Tests for application/api/user/sources/routes.py."""
+"""Tests for docsgpt/api/user/sources/routes.py."""
 
 import json
 from contextlib import contextmanager
@@ -21,15 +21,15 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.sources.routes.db_session", _yield
+        "docsgpt.api.user.sources.routes.db_session", _yield
     ), patch(
-        "application.api.user.sources.routes.db_readonly", _yield
+        "docsgpt.api.user.sources.routes.db_readonly", _yield
     ):
         yield
 
 
 def _seed_source(pg_conn, user, **kwargs):
-    from application.storage.db.repositories.sources import SourcesRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
     return SourcesRepository(pg_conn).create(
         kwargs.pop("name", "src"),
         user_id=user,
@@ -39,14 +39,14 @@ def _seed_source(pg_conn, user, **kwargs):
 
 class TestGetProviderFromRemoteData:
     def test_returns_none_for_empty(self):
-        from application.api.user.sources.routes import (
+        from docsgpt.api.user.sources.routes import (
             _get_provider_from_remote_data,
         )
         assert _get_provider_from_remote_data(None) is None
         assert _get_provider_from_remote_data("") is None
 
     def test_returns_from_dict(self):
-        from application.api.user.sources.routes import (
+        from docsgpt.api.user.sources.routes import (
             _get_provider_from_remote_data,
         )
         assert (
@@ -55,7 +55,7 @@ class TestGetProviderFromRemoteData:
         )
 
     def test_returns_from_json_string(self):
-        from application.api.user.sources.routes import (
+        from docsgpt.api.user.sources.routes import (
             _get_provider_from_remote_data,
         )
         assert (
@@ -64,7 +64,7 @@ class TestGetProviderFromRemoteData:
         )
 
     def test_returns_none_for_malformed_json(self):
-        from application.api.user.sources.routes import (
+        from docsgpt.api.user.sources.routes import (
             _get_provider_from_remote_data,
         )
         assert _get_provider_from_remote_data("not-json") is None
@@ -72,7 +72,7 @@ class TestGetProviderFromRemoteData:
 
 class TestCombinedJson:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import CombinedJson
+        from docsgpt.api.user.sources.routes import CombinedJson
 
         with app.test_request_context("/api/sources"):
             from flask import request
@@ -81,7 +81,7 @@ class TestCombinedJson:
         assert response.status_code == 401
 
     def test_returns_default_plus_user_sources(self, app, pg_conn):
-        from application.api.user.sources.routes import CombinedJson
+        from docsgpt.api.user.sources.routes import CombinedJson
 
         user = "u-list-sources"
         _seed_source(pg_conn, user, name="doc1", tokens="100")
@@ -97,7 +97,7 @@ class TestCombinedJson:
         assert "doc1" in names
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.sources.routes import CombinedJson
+        from docsgpt.api.user.sources.routes import CombinedJson
 
         @contextmanager
         def _broken():
@@ -105,7 +105,7 @@ class TestCombinedJson:
             yield
 
         with patch(
-            "application.api.user.sources.routes.db_readonly", _broken
+            "docsgpt.api.user.sources.routes.db_readonly", _broken
         ), app.test_request_context("/api/sources"):
             from flask import request
             request.decoded_token = {"sub": "u"}
@@ -115,7 +115,7 @@ class TestCombinedJson:
 
 class TestPaginatedSources:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import PaginatedSources
+        from docsgpt.api.user.sources.routes import PaginatedSources
 
         with app.test_request_context("/api/sources/paginated"):
             from flask import request
@@ -124,7 +124,7 @@ class TestPaginatedSources:
         assert response.status_code == 401
 
     def test_returns_pagination_shape(self, app, pg_conn):
-        from application.api.user.sources.routes import PaginatedSources
+        from docsgpt.api.user.sources.routes import PaginatedSources
 
         user = "u-pag"
         for i in range(5):
@@ -144,7 +144,7 @@ class TestPaginatedSources:
         assert len(data["paginated"]) == 2
 
     def test_search_filter(self, app, pg_conn):
-        from application.api.user.sources.routes import PaginatedSources
+        from docsgpt.api.user.sources.routes import PaginatedSources
 
         user = "u-search"
         _seed_source(pg_conn, user, name="Alpha doc")
@@ -163,7 +163,7 @@ class TestPaginatedSources:
 
     def test_pagination_across_multiple_pages(self, app, pg_conn):
         """Every seeded doc surfaces exactly once across paginated windows."""
-        from application.api.user.sources.routes import PaginatedSources
+        from docsgpt.api.user.sources.routes import PaginatedSources
 
         user = "u-multi-page"
         expected = {f"doc-{i}" for i in range(7)}
@@ -184,7 +184,7 @@ class TestPaginatedSources:
         assert seen == expected
 
     def test_out_of_range_page_returns_empty_window(self, app, pg_conn):
-        from application.api.user.sources.routes import PaginatedSources
+        from docsgpt.api.user.sources.routes import PaginatedSources
 
         user = "u-oor"
         _seed_source(pg_conn, user, name="only-one")
@@ -202,7 +202,7 @@ class TestPaginatedSources:
         assert len(data["paginated"]) == 1
 
     def test_empty_result_set_shape(self, app, pg_conn):
-        from application.api.user.sources.routes import PaginatedSources
+        from docsgpt.api.user.sources.routes import PaginatedSources
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/sources/paginated?page=1&rows=10"
@@ -219,7 +219,7 @@ class TestPaginatedSources:
 
     def test_search_hits_sql_not_post_filter(self, app, pg_conn):
         """Search must narrow ``total`` at the DB level, not in Python."""
-        from application.api.user.sources.routes import PaginatedSources
+        from docsgpt.api.user.sources.routes import PaginatedSources
 
         user = "u-sql-search"
         _seed_source(pg_conn, user, name="needle in a haystack")
@@ -239,7 +239,7 @@ class TestPaginatedSources:
         assert data["paginated"][0]["name"] == "needle in a haystack"
 
     def test_response_shape_preserved(self, app, pg_conn):
-        from application.api.user.sources.routes import PaginatedSources
+        from docsgpt.api.user.sources.routes import PaginatedSources
 
         user = "u-shape"
         _seed_source(pg_conn, user, name="shape-doc")
@@ -265,7 +265,7 @@ class TestPaginatedSources:
         """A source whose ingest the reconciler escalated to 'stalled'
         surfaces ingestStatus='failed' so the UI can badge it.
         """
-        from application.api.user.sources.routes import PaginatedSources
+        from docsgpt.api.user.sources.routes import PaginatedSources
 
         user = "u-ingest-status"
         src = _seed_source(pg_conn, user, name="stalled-doc", type="file")
@@ -293,7 +293,7 @@ class TestPaginatedSources:
 
 class TestDeleteOldIndexes:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import DeleteOldIndexes
+        from docsgpt.api.user.sources.routes import DeleteOldIndexes
 
         with app.test_request_context("/api/delete_old?source_id=x"):
             from flask import request
@@ -302,7 +302,7 @@ class TestDeleteOldIndexes:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.sources.routes import DeleteOldIndexes
+        from docsgpt.api.user.sources.routes import DeleteOldIndexes
 
         with app.test_request_context("/api/delete_old"):
             from flask import request
@@ -311,7 +311,7 @@ class TestDeleteOldIndexes:
         assert response.status_code == 400
 
     def test_returns_404_missing_source(self, app, pg_conn):
-        from application.api.user.sources.routes import DeleteOldIndexes
+        from docsgpt.api.user.sources.routes import DeleteOldIndexes
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/delete_old?source_id=00000000-0000-0000-0000-000000000000"
@@ -322,7 +322,7 @@ class TestDeleteOldIndexes:
         assert response.status_code == 404
 
     def test_deletes_non_faiss_source(self, app, pg_conn):
-        from application.api.user.sources.routes import DeleteOldIndexes
+        from docsgpt.api.user.sources.routes import DeleteOldIndexes
 
         user = "u-del-src"
         src = _seed_source(pg_conn, user, name="remove-me")
@@ -332,13 +332,13 @@ class TestDeleteOldIndexes:
         fake_vs = MagicMock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.settings.VECTOR_STORE",
+            "docsgpt.api.user.sources.routes.settings.VECTOR_STORE",
             "milvus",
         ), patch(
-            "application.api.user.sources.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.routes.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.routes.VectorCreator.create_vectorstore",
+            "docsgpt.api.user.sources.routes.VectorCreator.create_vectorstore",
             return_value=fake_vs,
         ), app.test_request_context(
             f"/api/delete_old?source_id={src['id']}"
@@ -350,7 +350,7 @@ class TestDeleteOldIndexes:
         fake_vs.delete_index.assert_called_once()
 
     def test_deletes_faiss_source(self, app, pg_conn):
-        from application.api.user.sources.routes import DeleteOldIndexes
+        from docsgpt.api.user.sources.routes import DeleteOldIndexes
 
         user = "u-faiss-del"
         src = _seed_source(
@@ -362,10 +362,10 @@ class TestDeleteOldIndexes:
         fake_storage.is_directory.return_value = False
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.settings.VECTOR_STORE",
+            "docsgpt.api.user.sources.routes.settings.VECTOR_STORE",
             "faiss",
         ), patch(
-            "application.api.user.sources.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.routes.StorageCreator.get_storage",
             return_value=fake_storage,
         ), app.test_request_context(
             f"/api/delete_old?source_id={src['id']}"
@@ -377,7 +377,7 @@ class TestDeleteOldIndexes:
         assert fake_storage.delete_file.call_count >= 2
 
     def test_delete_ignores_missing_file_error(self, app, pg_conn):
-        from application.api.user.sources.routes import DeleteOldIndexes
+        from docsgpt.api.user.sources.routes import DeleteOldIndexes
 
         user = "u-nofile"
         src = _seed_source(
@@ -390,13 +390,13 @@ class TestDeleteOldIndexes:
         fake_storage.delete_file.side_effect = FileNotFoundError("gone")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.settings.VECTOR_STORE",
+            "docsgpt.api.user.sources.routes.settings.VECTOR_STORE",
             "milvus",
         ), patch(
-            "application.api.user.sources.routes.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.routes.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.routes.VectorCreator.create_vectorstore",
+            "docsgpt.api.user.sources.routes.VectorCreator.create_vectorstore",
             return_value=MagicMock(),
         ), app.test_request_context(
             f"/api/delete_old?source_id={src['id']}"
@@ -409,7 +409,7 @@ class TestDeleteOldIndexes:
 
 class TestRedirectToSources:
     def test_redirects(self, app):
-        from application.api.user.sources.routes import RedirectToSources
+        from docsgpt.api.user.sources.routes import RedirectToSources
 
         with app.test_request_context("/api/combine"):
             response = RedirectToSources().get()
@@ -418,7 +418,7 @@ class TestRedirectToSources:
 
 class TestManageSync:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import ManageSync
+        from docsgpt.api.user.sources.routes import ManageSync
 
         with app.test_request_context(
             "/api/manage_sync", method="POST",
@@ -430,7 +430,7 @@ class TestManageSync:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.sources.routes import ManageSync
+        from docsgpt.api.user.sources.routes import ManageSync
 
         with app.test_request_context(
             "/api/manage_sync", method="POST", json={"source_id": "x"}
@@ -441,7 +441,7 @@ class TestManageSync:
         assert response.status_code == 400
 
     def test_returns_400_invalid_frequency(self, app):
-        from application.api.user.sources.routes import ManageSync
+        from docsgpt.api.user.sources.routes import ManageSync
 
         with app.test_request_context(
             "/api/manage_sync",
@@ -454,7 +454,7 @@ class TestManageSync:
         assert response.status_code == 400
 
     def test_returns_404_missing_source(self, app, pg_conn):
-        from application.api.user.sources.routes import ManageSync
+        from docsgpt.api.user.sources.routes import ManageSync
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/manage_sync",
@@ -470,8 +470,8 @@ class TestManageSync:
         assert response.status_code == 404
 
     def test_updates_sync_frequency(self, app, pg_conn):
-        from application.api.user.sources.routes import ManageSync
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import ManageSync
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-sync"
         src = _seed_source(pg_conn, user, name="sync-src")
@@ -491,7 +491,7 @@ class TestManageSync:
 
 class TestSyncSource:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import SyncSource
+        from docsgpt.api.user.sources.routes import SyncSource
 
         with app.test_request_context(
             "/api/sync_source", method="POST", json={"source_id": "x"}
@@ -502,7 +502,7 @@ class TestSyncSource:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.sources.routes import SyncSource
+        from docsgpt.api.user.sources.routes import SyncSource
 
         with app.test_request_context(
             "/api/sync_source", method="POST", json={}
@@ -515,7 +515,7 @@ class TestSyncSource:
     def test_returns_403_inaccessible_source(self, app, pg_conn):
         # No ownership and no team editor grant resolves to None, which the
         # owner-or-editor gate answers as 403 "Source not accessible".
-        from application.api.user.sources.routes import SyncSource
+        from docsgpt.api.user.sources.routes import SyncSource
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/sync_source",
@@ -528,7 +528,7 @@ class TestSyncSource:
         assert response.status_code == 403
 
     def test_returns_400_for_connector_type(self, app, pg_conn):
-        from application.api.user.sources.routes import SyncSource
+        from docsgpt.api.user.sources.routes import SyncSource
 
         user = "u-conn"
         src = _seed_source(
@@ -547,7 +547,7 @@ class TestSyncSource:
         assert response.status_code == 400
 
     def test_returns_400_for_non_syncable(self, app, pg_conn):
-        from application.api.user.sources.routes import SyncSource
+        from docsgpt.api.user.sources.routes import SyncSource
 
         user = "u-nosync"
         src = _seed_source(pg_conn, user, name="nosync", type="file")
@@ -563,7 +563,7 @@ class TestSyncSource:
         assert response.status_code == 400
 
     def test_triggers_sync_task(self, app, pg_conn):
-        from application.api.user.sources.routes import SyncSource
+        from docsgpt.api.user.sources.routes import SyncSource
 
         user = "u-trigger"
         src = _seed_source(
@@ -573,7 +573,7 @@ class TestSyncSource:
 
         fake_task = MagicMock(id="task-123")
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.sync_source.delay",
+            "docsgpt.api.user.sources.routes.sync_source.delay",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/sync_source",
@@ -588,7 +588,7 @@ class TestSyncSource:
 
     def test_normalizes_dict_remote_data_before_dispatch(self, app, pg_conn):
         """The route must hand the sync task the normalized URL string."""
-        from application.api.user.sources.routes import SyncSource
+        from docsgpt.api.user.sources.routes import SyncSource
 
         user = "u-normalize"
         src = _seed_source(
@@ -600,7 +600,7 @@ class TestSyncSource:
 
         fake_task = MagicMock(id="task-norm")
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.sync_source.delay",
+            "docsgpt.api.user.sources.routes.sync_source.delay",
             return_value=fake_task,
         ) as mock_delay, app.test_request_context(
             "/api/sync_source",
@@ -616,7 +616,7 @@ class TestSyncSource:
         assert mock_delay.call_args.kwargs["loader"] == "crawler"
 
     def test_sync_task_raises_returns_400(self, app, pg_conn):
-        from application.api.user.sources.routes import SyncSource
+        from docsgpt.api.user.sources.routes import SyncSource
 
         user = "u-fail"
         src = _seed_source(
@@ -625,7 +625,7 @@ class TestSyncSource:
         )
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.sync_source.delay",
+            "docsgpt.api.user.sources.routes.sync_source.delay",
             side_effect=RuntimeError("boom"),
         ), app.test_request_context(
             "/api/sync_source",
@@ -640,7 +640,7 @@ class TestSyncSource:
 
 class TestReingestSource:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import ReingestSource
+        from docsgpt.api.user.sources.routes import ReingestSource
 
         with app.test_request_context(
             "/api/sources/reingest", method="POST", json={"source_id": "x"}
@@ -651,7 +651,7 @@ class TestReingestSource:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.sources.routes import ReingestSource
+        from docsgpt.api.user.sources.routes import ReingestSource
 
         with app.test_request_context(
             "/api/sources/reingest", method="POST", json={}
@@ -664,7 +664,7 @@ class TestReingestSource:
     def test_returns_403_inaccessible_source(self, app, pg_conn):
         # No ownership and no team editor grant resolves to None, which the
         # owner-or-editor gate answers as 403 "Source not accessible".
-        from application.api.user.sources.routes import ReingestSource
+        from docsgpt.api.user.sources.routes import ReingestSource
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/sources/reingest",
@@ -677,14 +677,14 @@ class TestReingestSource:
         assert response.status_code == 403
 
     def test_triggers_reingest_task(self, app, pg_conn):
-        from application.api.user.sources.routes import ReingestSource
+        from docsgpt.api.user.sources.routes import ReingestSource
 
         user = "u-reingest"
         src = _seed_source(pg_conn, user, name="stalled-src", type="file")
 
         fake_task = MagicMock(id="reingest-task-1")
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reingest_source_task.delay",
+            "docsgpt.api.user.sources.routes.reingest_source_task.delay",
             return_value=fake_task,
         ) as mock_delay, app.test_request_context(
             "/api/sources/reingest",
@@ -712,14 +712,14 @@ class TestReingestSource:
         """
         import uuid
 
-        from application.api.user.sources.routes import ReingestSource
-        from application.storage.db.repositories.team_members import (
+        from docsgpt.api.user.sources.routes import ReingestSource
+        from docsgpt.storage.db.repositories.team_members import (
             TeamMembersRepository,
         )
-        from application.storage.db.repositories.team_resource_grants import (
+        from docsgpt.storage.db.repositories.team_resource_grants import (
             TeamResourceGrantsRepository,
         )
-        from application.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
 
         owner = "alice-reingest"
         editor = "bob-reingest"
@@ -738,7 +738,7 @@ class TestReingestSource:
 
         fake_task = MagicMock(id="reingest-task-editor")
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reingest_source_task.delay",
+            "docsgpt.api.user.sources.routes.reingest_source_task.delay",
             return_value=fake_task,
         ) as mock_delay, app.test_request_context(
             "/api/sources/reingest",
@@ -761,7 +761,7 @@ class TestReingestSource:
         """Reingest drops the stale chunk-progress row so the sources
         list stops deriving a 'failed' ingest status for the source.
         """
-        from application.api.user.sources.routes import ReingestSource
+        from docsgpt.api.user.sources.routes import ReingestSource
 
         user = "u-reingest-clear"
         src = _seed_source(pg_conn, user, name="stalled-doc", type="file")
@@ -780,7 +780,7 @@ class TestReingestSource:
 
         fake_task = MagicMock(id="reingest-task-2")
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reingest_source_task.delay",
+            "docsgpt.api.user.sources.routes.reingest_source_task.delay",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/sources/reingest",
@@ -802,13 +802,13 @@ class TestReingestSource:
         assert remaining == 0
 
     def test_reingest_task_raises_returns_400(self, app, pg_conn):
-        from application.api.user.sources.routes import ReingestSource
+        from docsgpt.api.user.sources.routes import ReingestSource
 
         user = "u-reingest-fail"
         src = _seed_source(pg_conn, user, name="fail-src", type="file")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.routes.reingest_source_task.delay",
+            "docsgpt.api.user.sources.routes.reingest_source_task.delay",
             side_effect=RuntimeError("boom"),
         ), app.test_request_context(
             "/api/sources/reingest",
@@ -823,7 +823,7 @@ class TestReingestSource:
 
 class TestDirectoryStructure:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import DirectoryStructure
+        from docsgpt.api.user.sources.routes import DirectoryStructure
 
         with app.test_request_context("/api/directory_structure?id=x"):
             from flask import request
@@ -832,7 +832,7 @@ class TestDirectoryStructure:
         assert response.status_code == 401
 
     def test_returns_400_missing_id(self, app):
-        from application.api.user.sources.routes import DirectoryStructure
+        from docsgpt.api.user.sources.routes import DirectoryStructure
 
         with app.test_request_context("/api/directory_structure"):
             from flask import request
@@ -841,7 +841,7 @@ class TestDirectoryStructure:
         assert response.status_code == 400
 
     def test_returns_404_missing_doc(self, app, pg_conn):
-        from application.api.user.sources.routes import DirectoryStructure
+        from docsgpt.api.user.sources.routes import DirectoryStructure
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/directory_structure?id=00000000-0000-0000-0000-000000000000"
@@ -852,7 +852,7 @@ class TestDirectoryStructure:
         assert response.status_code == 404
 
     def test_returns_structure(self, app, pg_conn):
-        from application.api.user.sources.routes import DirectoryStructure
+        from docsgpt.api.user.sources.routes import DirectoryStructure
 
         user = "u-dir"
         src = _seed_source(
@@ -876,7 +876,7 @@ class TestDirectoryStructure:
 
 class TestSourceConfigResource:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.routes import SourceConfigResource
+        from docsgpt.api.user.sources.routes import SourceConfigResource
 
         with app.test_request_context(
             "/api/sources/x/config", method="PATCH", json={}
@@ -888,7 +888,7 @@ class TestSourceConfigResource:
 
     def test_invalid_config_rejected(self, app, pg_conn):
         # Strict-on-write: an unknown field fails validation → 400.
-        from application.api.user.sources.routes import SourceConfigResource
+        from docsgpt.api.user.sources.routes import SourceConfigResource
 
         user = "u-cfg-bad"
         src = _seed_source(pg_conn, user, name="cfg-src", type="file")
@@ -904,8 +904,8 @@ class TestSourceConfigResource:
         assert response.status_code == 400
 
     def test_owner_updates_retrieval_no_reingest(self, app, pg_conn):
-        from application.api.user.sources.routes import SourceConfigResource
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-cfg-owner"
         src = _seed_source(pg_conn, user, name="cfg-live", type="file")
@@ -927,7 +927,7 @@ class TestSourceConfigResource:
         assert got["config"]["retrieval"]["rephrase_query"] is False
 
     def test_chunking_change_requires_reingest(self, app, pg_conn):
-        from application.api.user.sources.routes import SourceConfigResource
+        from docsgpt.api.user.sources.routes import SourceConfigResource
 
         user = "u-cfg-chunk"
         src = _seed_source(pg_conn, user, name="cfg-chunk", type="file")
@@ -948,15 +948,15 @@ class TestSourceConfigResource:
         # A team VIEWER (not editor) cannot edit config → 403.
         import uuid
 
-        from application.api.user.sources.routes import SourceConfigResource
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.repositories.team_members import (
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.team_members import (
             TeamMembersRepository,
         )
-        from application.storage.db.repositories.team_resource_grants import (
+        from docsgpt.storage.db.repositories.team_resource_grants import (
             TeamResourceGrantsRepository,
         )
-        from application.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
 
         owner = "alice-cfg"
         viewer = "bob-cfg-viewer"
@@ -990,15 +990,15 @@ class TestSourceConfigResource:
         # A team EDITOR can edit; the write lands under the OWNER's id.
         import uuid
 
-        from application.api.user.sources.routes import SourceConfigResource
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.repositories.team_members import (
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.team_members import (
             TeamMembersRepository,
         )
-        from application.storage.db.repositories.team_resource_grants import (
+        from docsgpt.storage.db.repositories.team_resource_grants import (
             TeamResourceGrantsRepository,
         )
-        from application.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
 
         owner = "alice-cfg-edit"
         editor = "bob-cfg-editor"
@@ -1032,8 +1032,8 @@ class TestSourceConfigResource:
 
     def test_kind_flip_to_wiki_rejected(self, app, pg_conn):
         # Flipping kind to wiki must route through /wiki/convert, not config.
-        from application.api.user.sources.routes import SourceConfigResource
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-cfg-wiki-flip"
         src = _seed_source(pg_conn, user, name="cfg-wiki", type="file")
@@ -1050,15 +1050,15 @@ class TestSourceConfigResource:
 
         assert response.status_code == 400
         # The kind must NOT have silently flipped.
-        from application.storage.db.source_config import SourceConfig
+        from docsgpt.storage.db.source_config import SourceConfig
 
         got = SourcesRepository(pg_conn).get_any(sid, user)
         assert SourceConfig.parse(got.get("config")).kind != "wiki"
 
     def test_other_edits_work_on_wiki_source(self, app, pg_conn):
         # A wiki source can still edit retrieval (kind stays wiki, no reject).
-        from application.api.user.sources.routes import SourceConfigResource
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-cfg-wiki-edit"
         src = _seed_source(
@@ -1083,9 +1083,9 @@ class TestSourceConfigResource:
     def test_partial_edit_preserves_wiki_kind(self, app, pg_conn):
         # A partial edit that OMITS kind must not demote a wiki to classic
         # (SourceConfig.kind defaults to "classic" on a full-replace write).
-        from application.api.user.sources.routes import SourceConfigResource
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.source_config import SourceConfig
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.source_config import SourceConfig
 
         user = "u-cfg-wiki-partial"
         src = _seed_source(
@@ -1111,9 +1111,9 @@ class TestSourceConfigResource:
 
     def test_explicit_kind_demotion_from_wiki_rejected(self, app, pg_conn):
         # Demoting wiki -> classic via config is rejected; use /wiki/convert.
-        from application.api.user.sources.routes import SourceConfigResource
-        from application.storage.db.repositories.sources import SourcesRepository
-        from application.storage.db.source_config import SourceConfig
+        from docsgpt.api.user.sources.routes import SourceConfigResource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.source_config import SourceConfig
 
         user = "u-cfg-wiki-demote"
         src = _seed_source(

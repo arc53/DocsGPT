@@ -13,19 +13,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.api.events.routes import (
+from docsgpt.api.events.routes import (
     _SSE_LINE_SPLIT,
     _format_sse,
     _normalize_last_event_id,
 )
-from application.events.keys import (
+from docsgpt.events.keys import (
     connection_counter_key,
     stream_id_compare,
     stream_key,
     topic_name,
 )
-from application.events.publisher import publish_user_event
-from application.streaming.broadcast_channel import Topic
+from docsgpt.events.publisher import publish_user_event
+from docsgpt.streaming.broadcast_channel import Topic
 
 
 # ── keys ────────────────────────────────────────────────────────────────
@@ -152,13 +152,13 @@ class TestNormalizeLastEventId:
 class TestPublishUserEvent:
     def setup_method(self):
         # Reset the cache singleton so the patched mock gets used.
-        import application.cache as cache_mod
+        import docsgpt.cache as cache_mod
 
         cache_mod._redis_instance = None
         cache_mod._redis_creation_failed = False
 
     def teardown_method(self):
-        import application.cache as cache_mod
+        import docsgpt.cache as cache_mod
 
         cache_mod._redis_instance = None
         cache_mod._redis_creation_failed = False
@@ -169,8 +169,8 @@ class TestPublishUserEvent:
     def test_returns_none_on_missing_event_type(self):
         assert publish_user_event("alice", "", {}) is None
 
-    @patch("application.events.publisher.get_redis_instance")
-    @patch("application.events.publisher.settings")
+    @patch("docsgpt.events.publisher.get_redis_instance")
+    @patch("docsgpt.events.publisher.settings")
     def test_returns_none_when_push_disabled(self, mock_settings, mock_redis):
         mock_settings.ENABLE_SSE_PUSH = False
         mock_settings.EVENTS_STREAM_MAXLEN = 1000
@@ -179,16 +179,16 @@ class TestPublishUserEvent:
         # Must not even reach Redis when the master switch is off.
         mock_redis.assert_not_called()
 
-    @patch("application.events.publisher.get_redis_instance")
-    @patch("application.events.publisher.settings")
+    @patch("docsgpt.events.publisher.get_redis_instance")
+    @patch("docsgpt.events.publisher.settings")
     def test_returns_none_when_redis_unavailable(self, mock_settings, mock_redis):
         mock_settings.ENABLE_SSE_PUSH = True
         mock_settings.EVENTS_STREAM_MAXLEN = 1000
         mock_redis.return_value = None
         assert publish_user_event("alice", "x.y", {}) is None
 
-    @patch("application.events.publisher.get_redis_instance")
-    @patch("application.events.publisher.settings")
+    @patch("docsgpt.events.publisher.get_redis_instance")
+    @patch("docsgpt.events.publisher.settings")
     def test_returns_none_on_unserializable_payload(
         self, mock_settings, mock_redis
     ):
@@ -202,9 +202,9 @@ class TestPublishUserEvent:
         assert result is None
         mock_redis.assert_not_called()
 
-    @patch("application.events.publisher.Topic")
-    @patch("application.events.publisher.get_redis_instance")
-    @patch("application.events.publisher.settings")
+    @patch("docsgpt.events.publisher.Topic")
+    @patch("docsgpt.events.publisher.get_redis_instance")
+    @patch("docsgpt.events.publisher.settings")
     def test_xadd_and_publish_both_invoked_on_happy_path(
         self, mock_settings, mock_redis, mock_topic_cls
     ):
@@ -249,9 +249,9 @@ class TestPublishUserEvent:
         assert published["id"] == "1735682400000-0"
         assert published["type"] == "source.ingest.progress"
 
-    @patch("application.events.publisher.Topic")
-    @patch("application.events.publisher.get_redis_instance")
-    @patch("application.events.publisher.settings")
+    @patch("docsgpt.events.publisher.Topic")
+    @patch("docsgpt.events.publisher.get_redis_instance")
+    @patch("docsgpt.events.publisher.settings")
     def test_xadd_failure_skips_live_publish(
         self, mock_settings, mock_redis, mock_topic_cls
     ):
@@ -283,12 +283,12 @@ class TestPublishUserEvent:
 
 @pytest.mark.unit
 class TestTopic:
-    @patch("application.streaming.broadcast_channel.get_redis_instance")
+    @patch("docsgpt.streaming.broadcast_channel.get_redis_instance")
     def test_publish_returns_zero_when_redis_unavailable(self, mock_redis):
         mock_redis.return_value = None
         assert Topic("user:alice").publish("hi") == 0
 
-    @patch("application.streaming.broadcast_channel.get_redis_instance")
+    @patch("docsgpt.streaming.broadcast_channel.get_redis_instance")
     def test_publish_calls_redis_publish(self, mock_redis):
         client = MagicMock()
         client.publish.return_value = 3
@@ -297,7 +297,7 @@ class TestTopic:
         assert result == 3
         client.publish.assert_called_once_with("user:alice", "hi")
 
-    @patch("application.streaming.broadcast_channel.get_redis_instance")
+    @patch("docsgpt.streaming.broadcast_channel.get_redis_instance")
     def test_publish_swallows_exceptions(self, mock_redis):
         client = MagicMock()
         client.publish.side_effect = Exception("boom")
@@ -305,7 +305,7 @@ class TestTopic:
         # Must not raise.
         assert Topic("user:alice").publish("hi") == 0
 
-    @patch("application.streaming.broadcast_channel.get_pubsub_redis_instance")
+    @patch("docsgpt.streaming.broadcast_channel.get_pubsub_redis_instance")
     def test_subscribe_returns_immediately_when_redis_unavailable(
         self, mock_redis
     ):
@@ -313,7 +313,7 @@ class TestTopic:
         # Generator should produce nothing, not raise.
         assert list(Topic("user:alice").subscribe(poll_timeout=0.01)) == []
 
-    @patch("application.streaming.broadcast_channel.get_pubsub_redis_instance")
+    @patch("docsgpt.streaming.broadcast_channel.get_pubsub_redis_instance")
     def test_subscribe_yields_none_on_poll_timeout(self, mock_redis):
         client = MagicMock()
         pubsub = MagicMock()
@@ -331,7 +331,7 @@ class TestTopic:
         assert third == b"x"
         gen.close()
 
-    @patch("application.streaming.broadcast_channel.get_pubsub_redis_instance")
+    @patch("docsgpt.streaming.broadcast_channel.get_pubsub_redis_instance")
     def test_subscribe_fires_on_subscribe_after_ack(self, mock_redis):
         client = MagicMock()
         pubsub = MagicMock()
@@ -355,7 +355,7 @@ class TestTopic:
         assert callback_calls == [1]
         gen.close()
 
-    @patch("application.streaming.broadcast_channel.get_pubsub_redis_instance")
+    @patch("docsgpt.streaming.broadcast_channel.get_pubsub_redis_instance")
     def test_subscribe_cleans_up_on_generator_close(self, mock_redis):
         client = MagicMock()
         pubsub = MagicMock()
@@ -373,7 +373,7 @@ class TestTopic:
         pubsub.unsubscribe.assert_called_once_with("user:alice")
         pubsub.close.assert_called_once()
 
-    @patch("application.streaming.broadcast_channel.get_pubsub_redis_instance")
+    @patch("docsgpt.streaming.broadcast_channel.get_pubsub_redis_instance")
     def test_subscribe_skips_unsubscribe_if_subscribe_never_acked(
         self, mock_redis
     ):

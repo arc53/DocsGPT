@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.conversations import (
+from docsgpt.storage.db.repositories.conversations import (
     ConversationsRepository,
     MessageUpdateOutcome,
 )

@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from application.retriever.graph_rag import GraphRAGRetriever
-from application.vectorstore import pgconn
+from docsgpt.retriever.graph_rag import GraphRAGRetriever
+from docsgpt.vectorstore import pgconn
 
 pytestmark = pytest.mark.integration
 
@@ -64,12 +64,12 @@ def _close_pools():
 def stub_embeddings():
     stub = _StubEmbeddings()
     with patch(
-        "application.vectorstore.base.get_embeddings", return_value=stub
+        "docsgpt.vectorstore.base.get_embeddings", return_value=stub
     ), patch(
-        "application.vectorstore.base.BaseVectorStore._get_embeddings",
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
         return_value=stub,
     ), patch(
-        "application.retriever.graph_rag.get_embeddings", return_value=stub
+        "docsgpt.retriever.graph_rag.get_embeddings", return_value=stub
     ):
         yield stub
 
@@ -86,7 +86,7 @@ def live_dsn(postgresql, monkeypatch):
         pytest.skip(f"pgvector extension unavailable: {exc}")
 
     dsn = _dsn(postgresql.info)
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     settings = settings_module.settings
     monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector", raising=False)
@@ -99,8 +99,8 @@ def live_dsn(postgresql, monkeypatch):
 
 def _seed(dsn, graph_source_id):
     """Ingest one chunk and one graph node for ``graph_source_id``."""
-    from application.graphrag.store import GraphStore
-    from application.vectorstore.pgvector import PGVectorStore
+    from docsgpt.graphrag.store import GraphStore
+    from docsgpt.vectorstore.pgvector import PGVectorStore
 
     vector_store = PGVectorStore(
         source_id=graph_source_id, connection_string=dsn
@@ -132,7 +132,7 @@ def _seed(dsn, graph_source_id):
 
 def _retriever(sources):
     with patch(
-        "application.retriever.classic_rag.LLMCreator.create_llm",
+        "docsgpt.retriever.classic_rag.LLMCreator.create_llm",
         Mock(return_value=MagicMock()),
     ):
         return GraphRAGRetriever(
@@ -194,7 +194,7 @@ class TestGraphRAGRetrieverLive:
     def test_all_graphless_sources_take_one_classic_call(
         self, live_dsn, stub_embeddings
     ):
-        from application.graphrag.store import GraphStore
+        from docsgpt.graphrag.store import GraphStore
 
         store = GraphStore(connection_string=live_dsn)
         store._ensure_tables()  # tables exist, but no source has a graph

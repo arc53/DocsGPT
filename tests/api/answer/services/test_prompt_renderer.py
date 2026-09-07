@@ -5,7 +5,7 @@ import pytest
 class TestTemplateEngine:
 
     def test_render_simple_template(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         result = engine.render("Hello {{ name }}", {"name": "World"})
@@ -13,7 +13,7 @@ class TestTemplateEngine:
         assert result == "Hello World"
 
     def test_render_with_namespace(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         context = {
@@ -27,7 +27,7 @@ class TestTemplateEngine:
         assert result == "Alice is a admin on 2025-10-22"
 
     def test_render_empty_template(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         result = engine.render("", {"key": "value"})
@@ -35,7 +35,7 @@ class TestTemplateEngine:
         assert result == ""
 
     def test_render_template_without_variables(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         result = engine.render("Just plain text", {})
@@ -43,7 +43,7 @@ class TestTemplateEngine:
         assert result == "Just plain text"
 
     def test_render_undefined_variable_returns_empty_string(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
 
@@ -51,7 +51,7 @@ class TestTemplateEngine:
         assert result == "Hello "
 
     def test_render_syntax_error_raises_error(self):
-        from application.templates.template_engine import (
+        from docsgpt.templates.template_engine import (
             TemplateEngine,
             TemplateRenderError,
         )
@@ -62,7 +62,7 @@ class TestTemplateEngine:
             engine.render("Hello {{ name", {"name": "World"})
 
     def test_render_blocks_unsafe_attribute_access(self):
-        from application.templates.template_engine import (
+        from docsgpt.templates.template_engine import (
             TemplateEngine,
             TemplateRenderError,
         )
@@ -74,25 +74,25 @@ class TestTemplateEngine:
             engine.render(payload, {})
 
     def test_validate_template_valid(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         assert engine.validate_template("Valid {{ variable }}") is True
 
     def test_validate_template_invalid(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         assert engine.validate_template("Invalid {{ variable") is False
 
     def test_validate_empty_template(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         assert engine.validate_template("") is True
 
     def test_extract_variables(self):
-        from application.templates.template_engine import TemplateEngine
+        from docsgpt.templates.template_engine import TemplateEngine
 
         engine = TemplateEngine()
         template = "{{ user.name }} and {{ user.email }}"
@@ -106,7 +106,7 @@ class TestTemplateEngine:
 class TestSystemNamespace:
 
     def test_system_namespace_build(self):
-        from application.templates.namespaces import SystemNamespace
+        from docsgpt.templates.namespaces import SystemNamespace
 
         builder = SystemNamespace()
         context = builder.build(
@@ -120,7 +120,7 @@ class TestSystemNamespace:
         assert "timestamp" in context
 
     def test_system_namespace_generates_request_id(self):
-        from application.templates.namespaces import SystemNamespace
+        from docsgpt.templates.namespaces import SystemNamespace
 
         builder = SystemNamespace()
         context = builder.build(user_id="user_123")
@@ -129,13 +129,13 @@ class TestSystemNamespace:
         assert len(context["request_id"]) > 0
 
     def test_system_namespace_name(self):
-        from application.templates.namespaces import SystemNamespace
+        from docsgpt.templates.namespaces import SystemNamespace
 
         builder = SystemNamespace()
         assert builder.namespace_name == "system"
 
     def test_system_namespace_date_format(self):
-        from application.templates.namespaces import SystemNamespace
+        from docsgpt.templates.namespaces import SystemNamespace
 
         builder = SystemNamespace()
         context = builder.build()
@@ -150,7 +150,7 @@ class TestSystemNamespace:
 class TestPassthroughNamespace:
 
     def test_passthrough_namespace_build(self):
-        from application.templates.namespaces import PassthroughNamespace
+        from docsgpt.templates.namespaces import PassthroughNamespace
 
         builder = PassthroughNamespace()
         passthrough_data = {"company": "Acme", "user_name": "John", "count": 42}
@@ -162,7 +162,7 @@ class TestPassthroughNamespace:
         assert context["count"] == 42
 
     def test_passthrough_namespace_empty(self):
-        from application.templates.namespaces import PassthroughNamespace
+        from docsgpt.templates.namespaces import PassthroughNamespace
 
         builder = PassthroughNamespace()
         context = builder.build(passthrough_data=None)
@@ -170,7 +170,7 @@ class TestPassthroughNamespace:
         assert context == {}
 
     def test_passthrough_namespace_filters_unsafe_values(self):
-        from application.templates.namespaces import PassthroughNamespace
+        from docsgpt.templates.namespaces import PassthroughNamespace
 
         builder = PassthroughNamespace()
         passthrough_data = {
@@ -190,7 +190,7 @@ class TestPassthroughNamespace:
         assert "unsafe_list" not in context
 
     def test_passthrough_namespace_allows_none_values(self):
-        from application.templates.namespaces import PassthroughNamespace
+        from docsgpt.templates.namespaces import PassthroughNamespace
 
         builder = PassthroughNamespace()
         passthrough_data = {"nullable_field": None}
@@ -200,7 +200,7 @@ class TestPassthroughNamespace:
         assert context["nullable_field"] is None
 
     def test_passthrough_namespace_name(self):
-        from application.templates.namespaces import PassthroughNamespace
+        from docsgpt.templates.namespaces import PassthroughNamespace
 
         builder = PassthroughNamespace()
         assert builder.namespace_name == "passthrough"
@@ -210,7 +210,7 @@ class TestPassthroughNamespace:
 class TestSourceNamespace:
 
     def test_source_namespace_build_with_docs(self):
-        from application.templates.namespaces import SourceNamespace
+        from docsgpt.templates.namespaces import SourceNamespace
 
         builder = SourceNamespace()
         docs = [
@@ -227,7 +227,7 @@ class TestSourceNamespace:
         assert context["summaries"] == docs_together
 
     def test_source_namespace_build_empty(self):
-        from application.templates.namespaces import SourceNamespace
+        from docsgpt.templates.namespaces import SourceNamespace
 
         builder = SourceNamespace()
         context = builder.build(docs=None, docs_together=None)
@@ -235,7 +235,7 @@ class TestSourceNamespace:
         assert context == {}
 
     def test_source_namespace_build_docs_only(self):
-        from application.templates.namespaces import SourceNamespace
+        from docsgpt.templates.namespaces import SourceNamespace
 
         builder = SourceNamespace()
         docs = [{"text": "Doc 1"}]
@@ -247,7 +247,7 @@ class TestSourceNamespace:
         assert "content" not in context
 
     def test_source_namespace_build_docs_together_only(self):
-        from application.templates.namespaces import SourceNamespace
+        from docsgpt.templates.namespaces import SourceNamespace
 
         builder = SourceNamespace()
         docs_together = "Content here"
@@ -259,7 +259,7 @@ class TestSourceNamespace:
         assert "documents" not in context
 
     def test_source_namespace_name(self):
-        from application.templates.namespaces import SourceNamespace
+        from docsgpt.templates.namespaces import SourceNamespace
 
         builder = SourceNamespace()
         assert builder.namespace_name == "source"
@@ -269,7 +269,7 @@ class TestSourceNamespace:
 class TestToolsNamespace:
 
     def test_tools_namespace_build_with_memory_data(self):
-        from application.templates.namespaces import ToolsNamespace
+        from docsgpt.templates.namespaces import ToolsNamespace
 
         builder = ToolsNamespace()
         tools_data = {
@@ -282,7 +282,7 @@ class TestToolsNamespace:
         assert context["memory"]["available"] is True
 
     def test_tools_namespace_build_empty(self):
-        from application.templates.namespaces import ToolsNamespace
+        from docsgpt.templates.namespaces import ToolsNamespace
 
         builder = ToolsNamespace()
         context = builder.build(tools_data=None)
@@ -290,7 +290,7 @@ class TestToolsNamespace:
         assert context == {}
 
     def test_tools_namespace_build_multiple_tools(self):
-        from application.templates.namespaces import ToolsNamespace
+        from docsgpt.templates.namespaces import ToolsNamespace
 
         builder = ToolsNamespace()
         tools_data = {
@@ -309,7 +309,7 @@ class TestToolsNamespace:
         assert context["api"]["status"] == "success"
 
     def test_tools_namespace_filters_unsafe_values(self):
-        from application.templates.namespaces import ToolsNamespace
+        from docsgpt.templates.namespaces import ToolsNamespace
 
         builder = ToolsNamespace()
 
@@ -324,13 +324,13 @@ class TestToolsNamespace:
         assert "unsafe_tool" not in context
 
     def test_tools_namespace_name(self):
-        from application.templates.namespaces import ToolsNamespace
+        from docsgpt.templates.namespaces import ToolsNamespace
 
         builder = ToolsNamespace()
         assert builder.namespace_name == "tools"
 
     def test_tools_namespace_with_empty_dict(self):
-        from application.templates.namespaces import ToolsNamespace
+        from docsgpt.templates.namespaces import ToolsNamespace
 
         builder = ToolsNamespace()
         context = builder.build(tools_data={})
@@ -342,7 +342,7 @@ class TestToolsNamespace:
 class TestNamespaceManagerWithTools:
 
     def test_namespace_manager_includes_tools_in_context(self):
-        from application.templates.namespaces import NamespaceManager
+        from docsgpt.templates.namespaces import NamespaceManager
 
         manager = NamespaceManager()
         tools_data = {"memory": {"root": "content", "available": True}}
@@ -353,7 +353,7 @@ class TestNamespaceManagerWithTools:
         assert context["tools"]["memory"]["root"] == "content"
 
     def test_namespace_manager_build_context_all_namespaces(self):
-        from application.templates.namespaces import NamespaceManager
+        from docsgpt.templates.namespaces import NamespaceManager
 
         manager = NamespaceManager()
         context = manager.build_context(
@@ -371,7 +371,7 @@ class TestNamespaceManagerWithTools:
         assert context["tools"]["memory"]["root"] == "notes"
 
     def test_namespace_manager_build_context_partial_data(self):
-        from application.templates.namespaces import NamespaceManager
+        from docsgpt.templates.namespaces import NamespaceManager
 
         manager = NamespaceManager()
         context = manager.build_context(request_id="req_123")
@@ -386,13 +386,13 @@ class TestPromptRendererArtifactParent:
     def test_render_resolves_artifact_by_id_with_conversation_parent(self):
         from unittest.mock import patch
 
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         row = {"id": "art-1", "current_version": 1, "kind": "document", "title": "Report"}
         version = {"mime_type": "text/html", "filename": "report.html", "size": 12}
         with patch(
-            "application.storage.db.repositories.artifacts.ArtifactsRepository"
-        ) as repo_cls, patch("application.storage.db.session.db_readonly"):
+            "docsgpt.storage.db.repositories.artifacts.ArtifactsRepository"
+        ) as repo_cls, patch("docsgpt.storage.db.session.db_readonly"):
             repo = repo_cls.return_value
             repo.get_artifact_in_parent.return_value = row
             repo.get_version.return_value = version
@@ -407,7 +407,7 @@ class TestPromptRendererArtifactParent:
         assert kwargs.get("conversation_id") == "conv-1"
 
     def test_render_without_parent_yields_empty_lookup(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         # No artifact_parent (e.g. a first-turn conversation_id is None) must not error;
         # the lookup returns an empty mapping and the attribute renders blank.
@@ -418,7 +418,7 @@ class TestPromptRendererArtifactParent:
         assert rendered == "[]"
 
     def test_namespace_manager_get_builder(self):
-        from application.templates.namespaces import NamespaceManager, SystemNamespace
+        from docsgpt.templates.namespaces import NamespaceManager, SystemNamespace
 
         manager = NamespaceManager()
         builder = manager.get_builder("system")
@@ -426,7 +426,7 @@ class TestPromptRendererArtifactParent:
         assert isinstance(builder, SystemNamespace)
 
     def test_namespace_manager_get_builder_nonexistent(self):
-        from application.templates.namespaces import NamespaceManager
+        from docsgpt.templates.namespaces import NamespaceManager
 
         manager = NamespaceManager()
         builder = manager.get_builder("nonexistent")
@@ -436,7 +436,7 @@ class TestPromptRendererArtifactParent:
     def test_namespace_manager_handles_builder_exceptions(self):
         from unittest.mock import patch
 
-        from application.templates.namespaces import NamespaceManager
+        from docsgpt.templates.namespaces import NamespaceManager
 
         manager = NamespaceManager()
 
@@ -456,7 +456,7 @@ class TestPromptRendererArtifactParent:
 class TestPromptRenderer:
 
     def test_render_prompt_with_template_syntax(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "Hello {{ system.user_id }}, today is {{ system.date }}"
@@ -467,7 +467,7 @@ class TestPromptRenderer:
         assert "202" in result
 
     def test_render_prompt_with_passthrough_data(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "Company: {{ passthrough.company }}\nUser: {{ passthrough.user_name }}"
@@ -479,7 +479,7 @@ class TestPromptRenderer:
         assert "User: John" in result
 
     def test_render_prompt_with_source_docs(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "Use this information:\n{{ source.content }}"
@@ -491,7 +491,7 @@ class TestPromptRenderer:
         assert "Important document content" in result
 
     def test_render_prompt_empty_content(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         result = renderer.render_prompt("")
@@ -499,7 +499,7 @@ class TestPromptRenderer:
         assert result == ""
 
     def test_render_prompt_legacy_format_with_summaries(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "Context: {summaries}\nQuestion: What is this?"
@@ -510,7 +510,7 @@ class TestPromptRenderer:
         assert "Context: This is the document content" in result
 
     def test_render_prompt_legacy_format_without_docs(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "Context: {summaries}\nQuestion: What is this?"
@@ -522,7 +522,7 @@ class TestPromptRenderer:
         assert "Question: What is this?" in result
 
     def test_render_prompt_combined_namespace_variables(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "User: {{ passthrough.user }}, Date: {{ system.date }}, Docs: {{ source.content }}"
@@ -540,7 +540,7 @@ class TestPromptRenderer:
         assert "Doc content" in result
 
     def test_render_prompt_with_tools_data(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "Memory contents:\n{{ tools.memory.root }}\n\nStatus: {{ tools.memory.available }}"
@@ -557,7 +557,7 @@ class TestPromptRenderer:
         assert "Status: True" in result
 
     def test_render_prompt_with_all_namespaces(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = """
@@ -583,7 +583,7 @@ Memory: {{ tools.memory.root }}
         assert "Notes content" in result
 
     def test_render_prompt_undefined_variable_returns_empty_string(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "Hello {{ undefined_var }}"
@@ -592,7 +592,7 @@ Memory: {{ tools.memory.root }}
         assert result == "Hello "
 
     def test_render_prompt_with_undefined_variable_in_template(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "Hello {{ undefined_name }}"
@@ -601,19 +601,19 @@ Memory: {{ tools.memory.root }}
         assert result == "Hello "
 
     def test_validate_template_valid(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         assert renderer.validate_template("Valid {{ variable }}") is True
 
     def test_validate_template_invalid(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         assert renderer.validate_template("Invalid {{ variable") is False
 
     def test_extract_variables(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         template = "{{ var1 }} and {{ var2 }}"
@@ -623,7 +623,7 @@ Memory: {{ tools.memory.root }}
         assert isinstance(result, set)
 
     def test_uses_template_syntax_detection(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
 
@@ -632,7 +632,7 @@ Memory: {{ tools.memory.root }}
         assert renderer._uses_template_syntax("Plain text") is False
 
     def test_apply_legacy_substitutions(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "Use {summaries} to answer"
@@ -643,7 +643,7 @@ Memory: {{ tools.memory.root }}
         assert "Use Important info to answer" in result
 
     def test_apply_legacy_substitutions_without_docs(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "Use {summaries} to answer"
@@ -658,7 +658,7 @@ Memory: {{ tools.memory.root }}
 class TestPromptRendererIntegration:
 
     def test_render_prompt_real_world_scenario(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = "You are helping {{ passthrough.company }}.\n\nUser: {{ passthrough.user_name }}\n\nRequest ID: {{ system.request_id }}\n\nDate: {{ system.date }}\n\nReference Documents:\n\n{{ source.content }}\n\nPlease answer the question professionally."
@@ -681,7 +681,7 @@ class TestPromptRendererIntegration:
         assert "professionally" in result
 
     def test_render_prompt_multiple_doc_references(self):
-        from application.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
 
         renderer = PromptRenderer()
         prompt = """Documents: {{ source.content }} \n\nAlso summaries: {{ source.summaries }}"""
@@ -700,7 +700,7 @@ class TestPromptRendererIntegration:
 class TestStreamProcessorPromptRendering:
 
     def test_stream_processor_pre_fetch_docs_none_doc_mode(self):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {"question": "Test question", "isNoneDoc": True}
         processor = StreamProcessor(request_data, None)
@@ -711,8 +711,8 @@ class TestStreamProcessorPromptRendering:
         assert docs_list is None
 
     def test_pre_fetch_tools_disabled_globally(self, monkeypatch):
-        from application.api.answer.services.stream_processor import StreamProcessor
-        from application.core.settings import settings
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "ENABLE_TOOL_PREFETCH", False)
 
@@ -724,7 +724,7 @@ class TestStreamProcessorPromptRendering:
         assert result is None
 
     def test_pre_fetch_tools_disabled_per_request(self):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {"question": "test", "disable_tool_prefetch": True}
         processor = StreamProcessor(request_data, {"sub": "user1"})
@@ -736,8 +736,8 @@ class TestStreamProcessorPromptRendering:
     def test_pre_fetch_tools_skips_tool_with_no_actions(self, mock_mongo_db):
         from unittest.mock import MagicMock, patch
 
-        from application.api.answer.services.stream_processor import StreamProcessor
-        from application.core.settings import settings
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.core.settings import settings
 
         db = mock_mongo_db[settings.MONGO_DB_NAME]
         db["user_tools"].insert_one(
@@ -753,7 +753,7 @@ class TestStreamProcessorPromptRendering:
         processor = StreamProcessor(request_data, {"sub": "user1"})
 
         with patch(
-            "application.agents.tools.tool_manager.ToolManager"
+            "docsgpt.agents.tools.tool_manager.ToolManager"
         ) as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager
@@ -773,8 +773,8 @@ class TestStreamProcessorPromptRendering:
     def test_pre_fetch_tools_enabled_by_default(self, mock_mongo_db, monkeypatch):
         from unittest.mock import MagicMock, patch
 
-        from application.api.answer.services.stream_processor import StreamProcessor
-        from application.core.settings import settings
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.core.settings import settings
 
         db = mock_mongo_db[settings.MONGO_DB_NAME]
         db["user_tools"].insert_one(
@@ -790,7 +790,7 @@ class TestStreamProcessorPromptRendering:
         processor = StreamProcessor(request_data, {"sub": "user1"})
 
         with patch(
-            "application.agents.tools.tool_manager.ToolManager"
+            "docsgpt.agents.tools.tool_manager.ToolManager"
         ) as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager
@@ -812,7 +812,7 @@ class TestStreamProcessorPromptRendering:
             assert "memory_ls" in result["memory"]
 
     def test_pre_fetch_tools_no_tools_configured(self):
-        from application.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {"question": "test"}
         processor = StreamProcessor(request_data, {"sub": "user1"})
@@ -824,8 +824,8 @@ class TestStreamProcessorPromptRendering:
     def test_pre_fetch_tools_memory_returns_error(self, mock_mongo_db):
         from unittest.mock import MagicMock, patch
 
-        from application.api.answer.services.stream_processor import StreamProcessor
-        from application.core.settings import settings
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.core.settings import settings
 
         db = mock_mongo_db[settings.MONGO_DB_NAME]
         db["user_tools"].insert_one(
@@ -841,7 +841,7 @@ class TestStreamProcessorPromptRendering:
         processor = StreamProcessor(request_data, {"sub": "user1"})
 
         with patch(
-            "application.agents.tools.tool_manager.ToolManager"
+            "docsgpt.agents.tools.tool_manager.ToolManager"
         ) as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager
@@ -864,8 +864,8 @@ class TestStreamProcessorPromptRendering:
     def test_pre_fetch_tools_memory_returns_empty(self, mock_mongo_db):
         from unittest.mock import MagicMock, patch
 
-        from application.api.answer.services.stream_processor import StreamProcessor
-        from application.core.settings import settings
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.core.settings import settings
 
         db = mock_mongo_db[settings.MONGO_DB_NAME]
         db["user_tools"].insert_one(
@@ -881,7 +881,7 @@ class TestStreamProcessorPromptRendering:
         processor = StreamProcessor(request_data, {"sub": "user1"})
 
         with patch(
-            "application.agents.tools.tool_manager.ToolManager"
+            "docsgpt.agents.tools.tool_manager.ToolManager"
         ) as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager

@@ -35,14 +35,14 @@ def patch_pipeline_db(pg_conn, monkeypatch):
         yield pg_conn
 
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.db_session", _use_pg_conn
+        "docsgpt.parser.embedding_pipeline.db_session", _use_pg_conn
     )
 
 
 @pytest.fixture
 def faiss_settings(monkeypatch):
     """Force the embed pipeline down the faiss branch with a stub vector store."""
-    from application.parser import embedding_pipeline as ep
+    from docsgpt.parser import embedding_pipeline as ep
 
     monkeypatch.setattr(ep.settings, "VECTOR_STORE", "faiss", raising=False)
 
@@ -95,7 +95,7 @@ class TestEmbedCheckpoint:
         # The retry decorator wraps the real fn. Patch the module-level name
         # so our loop calls the spy directly. The loop embeds a batch at a
         # time, so the spy receives a list and flattens it back out.
-        import application.parser.embedding_pipeline as ep_mod
+        import docsgpt.parser.embedding_pipeline as ep_mod
 
         original = ep_mod.add_texts_to_store_with_retry
         ep_mod.add_texts_to_store_with_retry = _fake_add
@@ -127,7 +127,7 @@ class TestEmbedCheckpoint:
         self, pg_conn, patch_pipeline_db, faiss_settings, tmp_path
     ):
         """Pre-seed progress at ``last_index=2`` and assert chunks 0..2 are not re-embedded."""
-        import application.parser.embedding_pipeline as ep_mod
+        import docsgpt.parser.embedding_pipeline as ep_mod
 
         source_id = str(uuid.uuid4())
         docs = _make_docs(6)
@@ -170,7 +170,7 @@ class TestEmbedCheckpoint:
         """Resuming a FAISS run must NOT pass ``docs_init`` (which would
         overwrite the previously-saved index with a partial reset).
         """
-        import application.parser.embedding_pipeline as ep_mod
+        import docsgpt.parser.embedding_pipeline as ep_mod
 
         monkeypatch.setattr(ep_mod.settings, "VECTOR_STORE", "faiss", raising=False)
 
@@ -207,7 +207,7 @@ class TestEmbedCheckpoint:
         self, pg_conn, patch_pipeline_db, monkeypatch, tmp_path
     ):
         """Non-faiss stores must NOT have ``delete_index`` called on resume."""
-        import application.parser.embedding_pipeline as ep_mod
+        import docsgpt.parser.embedding_pipeline as ep_mod
 
         monkeypatch.setattr(ep_mod.settings, "VECTOR_STORE", "qdrant", raising=False)
 
@@ -237,7 +237,7 @@ class TestEmbedCheckpoint:
         """A Celery autoretry passes the same ``self.request.id`` and
         must resume from the persisted ``last_index``.
         """
-        import application.parser.embedding_pipeline as ep_mod
+        import docsgpt.parser.embedding_pipeline as ep_mod
 
         source_id = str(uuid.uuid4())
         docs = _make_docs(6)
@@ -269,7 +269,7 @@ class TestEmbedCheckpoint:
         """A fresh sync/reingest passes a new ``attempt_id`` and must
         reset the checkpoint so the index is rebuilt from chunk 0.
         """
-        import application.parser.embedding_pipeline as ep_mod
+        import docsgpt.parser.embedding_pipeline as ep_mod
 
         source_id = str(uuid.uuid4())
         # Prior run completed: last_index=4 (chunks 0..4 embedded over a
@@ -320,7 +320,7 @@ class TestEmbedCheckpoint:
         loop saw ``loop_start >= total_docs`` and embedded zero chunks,
         leaving stale vectors in place.
         """
-        import application.parser.embedding_pipeline as ep_mod
+        import docsgpt.parser.embedding_pipeline as ep_mod
 
         source_id = str(uuid.uuid4())
         # Upload finished cleanly with 5 chunks; checkpoint reflects done.
@@ -356,7 +356,7 @@ class TestEmbedCheckpoint:
         (or tests) that pass no ``attempt_id`` must still resume against
         them — IS NOT DISTINCT FROM treats NULL/NULL as equal.
         """
-        import application.parser.embedding_pipeline as ep_mod
+        import docsgpt.parser.embedding_pipeline as ep_mod
 
         source_id = str(uuid.uuid4())
         _seed_progress_row(
@@ -391,7 +391,7 @@ class TestEmbedCheckpoint:
         poison-loop guard finalised the row. Post-fix, the seed is
         recorded immediately so ``embedded == total == 1``.
         """
-        import application.parser.embedding_pipeline as ep_mod
+        import docsgpt.parser.embedding_pipeline as ep_mod
 
         source_id = str(uuid.uuid4())
         docs = _make_docs(1)
@@ -430,7 +430,7 @@ class TestEmbedCheckpoint:
         the loop's per-iteration record overshoots correctly (counts
         seed + iterations) and the final state is ``embedded=total``.
         """
-        import application.parser.embedding_pipeline as ep_mod
+        import docsgpt.parser.embedding_pipeline as ep_mod
 
         source_id = str(uuid.uuid4())
         docs = _make_docs(4)
@@ -464,7 +464,7 @@ class TestIngestHeartbeat:
         self, pg_conn, patch_worker_db, monkeypatch
     ):
         """One tick of the heartbeat must move ``last_updated`` forward."""
-        from application import worker
+        from docsgpt import worker
 
         source_id = str(uuid.uuid4())
         # Seed a row with ``last_updated`` deliberately in the past so we
@@ -506,7 +506,7 @@ class TestIngestHeartbeat:
 
     def test_loop_swallows_db_errors(self, monkeypatch):
         """A failing DB call must not crash the daemon — it should keep ticking."""
-        from application import worker
+        from docsgpt import worker
 
         @contextmanager
         def _broken_session():
@@ -524,7 +524,7 @@ class TestIngestHeartbeat:
 
     def test_start_and_stop_helpers_join_quickly(self, monkeypatch):
         """``_start_ingest_heartbeat`` + ``_stop_ingest_heartbeat`` must not hang."""
-        from application import worker
+        from docsgpt import worker
 
         @contextmanager
         def _noop_session():

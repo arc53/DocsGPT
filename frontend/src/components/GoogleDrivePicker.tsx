@@ -1,3 +1,4 @@
+import { envVar } from '@/env';
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import drivePickerImport from 'react-google-drive-picker';
@@ -121,9 +122,9 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     }
 
     try {
-      const clientId: string = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      const clientId: string = envVar('VITE_GOOGLE_CLIENT_ID');
       const developerKey: string =
-        import.meta.env.VITE_GOOGLE_PICKER_API_KEY ?? '';
+        envVar('VITE_GOOGLE_PICKER_API_KEY') ?? '';
 
       // Derive appId from clientId (extract numeric part before first dash)
       const appId = clientId ? clientId.split('-')[0] : null;

@@ -14,18 +14,18 @@ def _patch_decorator_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.idempotency.db_session", _yield
+        "docsgpt.api.user.idempotency.db_session", _yield
     ), patch(
-        "application.api.user.idempotency.db_readonly", _yield
+        "docsgpt.api.user.idempotency.db_readonly", _yield
     ):
         yield
 
 
 class TestIngestTask:
     @pytest.mark.unit
-    @patch("application.api.user.tasks.ingest_worker")
+    @patch("docsgpt.api.user.tasks.ingest_worker")
     def test_calls_ingest_worker(self, mock_worker):
-        from application.api.user.tasks import ingest
+        from docsgpt.api.user.tasks import ingest
 
         mock_worker.return_value = {"status": "ok"}
 
@@ -38,9 +38,9 @@ class TestIngestTask:
         assert result == {"status": "ok"}
 
     @pytest.mark.unit
-    @patch("application.api.user.tasks.ingest_worker")
+    @patch("docsgpt.api.user.tasks.ingest_worker")
     def test_passes_file_name_map(self, mock_worker):
-        from application.api.user.tasks import ingest
+        from docsgpt.api.user.tasks import ingest
 
         mock_worker.return_value = {"status": "ok"}
         name_map = {"a.pdf": "b.pdf"}
@@ -57,9 +57,9 @@ class TestIngestTask:
 
 class TestIngestRemoteTask:
     @pytest.mark.unit
-    @patch("application.api.user.tasks.remote_worker")
+    @patch("docsgpt.api.user.tasks.remote_worker")
     def test_calls_remote_worker(self, mock_worker):
-        from application.api.user.tasks import ingest_remote
+        from docsgpt.api.user.tasks import ingest_remote
 
         mock_worker.return_value = {"status": "ok"}
 
@@ -74,9 +74,9 @@ class TestIngestRemoteTask:
 
 class TestReingestSourceTask:
     @pytest.mark.unit
-    @patch("application.worker.reingest_source_worker")
+    @patch("docsgpt.worker.reingest_source_worker")
     def test_calls_reingest_worker(self, mock_worker):
-        from application.api.user.tasks import reingest_source_task
+        from docsgpt.api.user.tasks import reingest_source_task
 
         mock_worker.return_value = {"status": "ok"}
 
@@ -88,9 +88,9 @@ class TestReingestSourceTask:
 
 class TestConvertSourceToWikiTask:
     @pytest.mark.unit
-    @patch("application.worker.convert_source_to_wiki_worker")
+    @patch("docsgpt.worker.convert_source_to_wiki_worker")
     def test_calls_convert_worker(self, mock_worker):
-        from application.api.user.tasks import convert_source_to_wiki
+        from docsgpt.api.user.tasks import convert_source_to_wiki
 
         mock_worker.return_value = {"status": "converted"}
 
@@ -102,9 +102,9 @@ class TestConvertSourceToWikiTask:
 
 class TestExtractGraphTask:
     @pytest.mark.unit
-    @patch("application.worker.extract_graph_worker")
+    @patch("docsgpt.worker.extract_graph_worker")
     def test_calls_extract_graph_worker(self, mock_worker):
-        from application.api.user.tasks import extract_graph
+        from docsgpt.api.user.tasks import extract_graph
 
         mock_worker.return_value = {"nodes": 2, "edges": 1}
 
@@ -115,7 +115,7 @@ class TestExtractGraphTask:
 
     @pytest.mark.unit
     def test_repeat_with_same_key_short_circuits(self, pg_conn):
-        from application.api.user import tasks
+        from docsgpt.api.user import tasks
 
         calls: list[str] = []
 
@@ -124,7 +124,7 @@ class TestExtractGraphTask:
             return {"nodes": 1, "edges": 0}
 
         with _patch_decorator_db(pg_conn), patch(
-            "application.worker.extract_graph_worker", _fake_worker
+            "docsgpt.worker.extract_graph_worker", _fake_worker
         ):
             first = tasks.extract_graph(
                 "src-g", "user1", idempotency_key="extract-graph:src-g",
@@ -139,9 +139,9 @@ class TestExtractGraphTask:
 
 class TestScheduleSyncsTask:
     @pytest.mark.unit
-    @patch("application.api.user.tasks.sync_worker")
+    @patch("docsgpt.api.user.tasks.sync_worker")
     def test_calls_sync_worker(self, mock_worker):
-        from application.api.user.tasks import schedule_syncs
+        from docsgpt.api.user.tasks import schedule_syncs
 
         mock_worker.return_value = {"status": "ok"}
 
@@ -153,9 +153,9 @@ class TestScheduleSyncsTask:
 
 class TestSyncSourceTask:
     @pytest.mark.unit
-    @patch("application.api.user.tasks.sync")
+    @patch("docsgpt.api.user.tasks.sync")
     def test_calls_sync(self, mock_sync):
-        from application.api.user.tasks import sync_source
+        from docsgpt.api.user.tasks import sync_source
 
         mock_sync.return_value = {"status": "ok"}
 
@@ -171,9 +171,9 @@ class TestSyncSourceTask:
 
 class TestStoreAttachmentTask:
     @pytest.mark.unit
-    @patch("application.api.user.tasks.attachment_worker")
+    @patch("docsgpt.api.user.tasks.attachment_worker")
     def test_calls_attachment_worker(self, mock_worker):
-        from application.api.user.tasks import store_attachment
+        from docsgpt.api.user.tasks import store_attachment
 
         mock_worker.return_value = {"status": "ok"}
 
@@ -188,16 +188,16 @@ class TestStoreAttachmentTask:
         # times just multiplies log noise for the same terminal failure.
         from sqlalchemy.exc import DataError
 
-        from application.api.user.tasks import store_attachment
+        from docsgpt.api.user.tasks import store_attachment
 
         assert DataError in getattr(store_attachment, "dont_autoretry_for", ())
 
 
 class TestProcessAgentWebhookTask:
     @pytest.mark.unit
-    @patch("application.api.user.tasks.agent_webhook_worker")
+    @patch("docsgpt.api.user.tasks.agent_webhook_worker")
     def test_calls_agent_webhook_worker(self, mock_worker):
-        from application.api.user.tasks import process_agent_webhook
+        from docsgpt.api.user.tasks import process_agent_webhook
 
         mock_worker.return_value = {"status": "ok"}
 
@@ -209,9 +209,9 @@ class TestProcessAgentWebhookTask:
 
 class TestIngestConnectorTask:
     @pytest.mark.unit
-    @patch("application.worker.ingest_connector")
+    @patch("docsgpt.worker.ingest_connector")
     def test_calls_ingest_connector_defaults(self, mock_worker):
-        from application.api.user.tasks import ingest_connector_task
+        from docsgpt.api.user.tasks import ingest_connector_task
 
         mock_worker.return_value = {"status": "ok"}
 
@@ -237,9 +237,9 @@ class TestIngestConnectorTask:
         assert result == {"status": "ok"}
 
     @pytest.mark.unit
-    @patch("application.worker.ingest_connector")
+    @patch("docsgpt.worker.ingest_connector")
     def test_calls_ingest_connector_custom(self, mock_worker):
-        from application.api.user.tasks import ingest_connector_task
+        from docsgpt.api.user.tasks import ingest_connector_task
 
         mock_worker.return_value = {"status": "ok"}
 
@@ -279,8 +279,21 @@ class TestIngestConnectorTask:
 
 class TestSetupPeriodicTasks:
     @pytest.mark.unit
+    def test_every_entry_has_a_stable_name(self):
+        """Unnamed entries get keyed by the task path, which redbeat cannot update in place when it changes."""
+        from docsgpt.api.user.tasks import setup_periodic_tasks
+
+        sender = MagicMock()
+        setup_periodic_tasks(sender)
+
+        names = [call.kwargs.get("name") for call in sender.add_periodic_task.call_args_list]
+        assert all(names), names
+        assert len(set(names)) == len(names), names
+        assert names[:3] == ["schedule-syncs-daily", "schedule-syncs-weekly", "schedule-syncs-monthly"]
+
+    @pytest.mark.unit
     def test_registers_periodic_tasks(self):
-        from application.api.user.tasks import setup_periodic_tasks
+        from docsgpt.api.user.tasks import setup_periodic_tasks
 
         sender = MagicMock()
 
@@ -331,9 +344,9 @@ class TestSetupPeriodicTasks:
 
 class TestMcpOauthTask:
     @pytest.mark.unit
-    @patch("application.api.user.tasks.mcp_oauth")
+    @patch("docsgpt.api.user.tasks.mcp_oauth")
     def test_calls_mcp_oauth(self, mock_worker):
-        from application.api.user.tasks import mcp_oauth_task
+        from docsgpt.api.user.tasks import mcp_oauth_task
 
         mock_worker.return_value = {"url": "http://auth"}
 
@@ -347,9 +360,9 @@ class TestParseDocumentTask:
     """parse_document runs on the parsing queue under a bounded time limit."""
 
     @pytest.mark.unit
-    @patch("application.api.user.tasks.parse_document_worker")
+    @patch("docsgpt.api.user.tasks.parse_document_worker")
     def test_calls_parse_document_worker(self, mock_worker):
-        from application.api.user.tasks import parse_document
+        from docsgpt.api.user.tasks import parse_document
 
         mock_worker.return_value = {"status": "ok", "content": "hi"}
 
@@ -364,11 +377,11 @@ class TestParseDocumentTask:
         assert result == {"status": "ok", "content": "hi"}
 
     @pytest.mark.unit
-    @patch("application.api.user.tasks.parse_document_worker")
+    @patch("docsgpt.api.user.tasks.parse_document_worker")
     def test_soft_time_limit_returns_clean_error(self, mock_worker):
         from celery.exceptions import SoftTimeLimitExceeded
 
-        from application.api.user.tasks import parse_document
+        from docsgpt.api.user.tasks import parse_document
 
         mock_worker.side_effect = SoftTimeLimitExceeded("parse")
 
@@ -381,8 +394,8 @@ class TestParseDocumentTask:
 
     @pytest.mark.unit
     def test_time_limits_derived_from_document_parse_timeout(self):
-        from application.api.user.tasks import parse_document
-        from application.core.settings import settings
+        from docsgpt.api.user.tasks import parse_document
+        from docsgpt.core.settings import settings
 
         assert parse_document.soft_time_limit == settings.DOCUMENT_PARSE_TIMEOUT
         assert parse_document.time_limit == settings.DOCUMENT_PARSE_TIMEOUT + 30
@@ -409,7 +422,7 @@ class TestDurableTaskRetryPolicy:
         ],
     )
     def test_task_has_retry_config(self, task_name):
-        import application.api.user.tasks as tasks_module
+        import docsgpt.api.user.tasks as tasks_module
 
         task = getattr(tasks_module, task_name)
         assert task.acks_late is True
@@ -418,7 +431,7 @@ class TestDurableTaskRetryPolicy:
         assert task.max_retries == 3
         # ``retry_kwargs`` is deliberately unset: celery mutates that dict in
         # place on every retry, so sharing one across the decorators would
-        # race. See the DURABLE_TASK comment in application/api/user/tasks.py.
+        # race. See the DURABLE_TASK comment in docsgpt/api/user/tasks.py.
         assert not getattr(task, "retry_kwargs", None)
 
     @pytest.mark.unit
@@ -435,7 +448,7 @@ class TestDurableTaskRetryPolicy:
         ],
     )
     def test_short_periodic_tasks_have_no_retry_config(self, task_name):
-        import application.api.user.tasks as tasks_module
+        import docsgpt.api.user.tasks as tasks_module
 
         task = getattr(tasks_module, task_name)
         assert not getattr(task, "autoretry_for", None)
@@ -446,7 +459,7 @@ class TestProcessAgentWebhookIdempotency:
 
     @pytest.mark.unit
     def test_repeat_with_same_key_short_circuits(self, pg_conn):
-        from application.api.user.tasks import process_agent_webhook
+        from docsgpt.api.user.tasks import process_agent_webhook
 
         worker_calls = []
 
@@ -455,7 +468,7 @@ class TestProcessAgentWebhookIdempotency:
             return {"status": "success", "result": {"answer": "ok"}}
 
         with _patch_decorator_db(pg_conn), patch(
-            "application.api.user.tasks.agent_webhook_worker",
+            "docsgpt.api.user.tasks.agent_webhook_worker",
             side_effect=_fake_worker,
         ):
             first = process_agent_webhook(
@@ -477,11 +490,11 @@ class TestCleanupPendingToolState:
     def test_reverts_stale_and_deletes_expired(self, pg_conn):
         from sqlalchemy import text as _text
 
-        from application.api.user.tasks import cleanup_pending_tool_state
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.api.user.tasks import cleanup_pending_tool_state
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
-        from application.storage.db.repositories.pending_tool_state import (
+        from docsgpt.storage.db.repositories.pending_tool_state import (
             PendingToolStateRepository,
         )
 
@@ -537,10 +550,10 @@ class TestCleanupPendingToolState:
         fake_engine.begin = _fake_begin
 
         with patch(
-            "application.storage.db.engine.get_engine",
+            "docsgpt.storage.db.engine.get_engine",
             return_value=fake_engine,
         ), patch(
-            "application.api.answer.services.conversation_service."
+            "docsgpt.api.answer.services.conversation_service."
             "ConversationService.finalize_message",
         ) as finalize_expired:
             result = cleanup_pending_tool_state.run()
@@ -564,8 +577,8 @@ class TestCleanupPendingToolState:
 
     @pytest.mark.unit
     def test_skips_when_postgres_uri_missing(self, monkeypatch):
-        from application.api.user.tasks import cleanup_pending_tool_state
-        from application.core.settings import settings
+        from docsgpt.api.user.tasks import cleanup_pending_tool_state
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
 
@@ -582,8 +595,8 @@ class TestCleanupMessageEventsTask:
 
     @pytest.mark.unit
     def test_skips_when_postgres_uri_missing(self, monkeypatch):
-        from application.api.user.tasks import cleanup_message_events
-        from application.core.settings import settings
+        from docsgpt.api.user.tasks import cleanup_message_events
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
 
@@ -596,9 +609,9 @@ class TestCleanupMessageEventsTask:
 
         from sqlalchemy import text as _text
 
-        from application.api.user.tasks import cleanup_message_events
-        from application.core.settings import settings
-        from application.storage.db.repositories.message_events import (
+        from docsgpt.api.user.tasks import cleanup_message_events
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.message_events import (
             MessageEventsRepository,
         )
 
@@ -650,7 +663,7 @@ class TestCleanupMessageEventsTask:
         fake_engine.begin = _fake_begin
 
         with patch(
-            "application.storage.db.engine.get_engine",
+            "docsgpt.storage.db.engine.get_engine",
             return_value=fake_engine,
         ):
             result = cleanup_message_events.run()
@@ -671,8 +684,8 @@ class TestCleanupOrphanMemoriesTask:
 
     @pytest.mark.unit
     def test_skips_when_postgres_uri_missing(self, monkeypatch):
-        from application.api.user.tasks import cleanup_orphan_memories
-        from application.core.settings import settings
+        from docsgpt.api.user.tasks import cleanup_orphan_memories
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
 
@@ -687,10 +700,10 @@ class TestCleanupOrphanMemoriesTask:
 
         from sqlalchemy import text as _text
 
-        from application.agents.default_tools import default_tool_id
-        from application.api.user.tasks import cleanup_orphan_memories
-        from application.core.settings import settings
-        from application.storage.db.repositories.memories import (
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.tasks import cleanup_orphan_memories
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.memories import (
             MemoriesRepository,
         )
 
@@ -721,7 +734,7 @@ class TestCleanupOrphanMemoriesTask:
         fake_engine.begin = _fake_begin
 
         with patch(
-            "application.storage.db.engine.get_engine",
+            "docsgpt.storage.db.engine.get_engine",
             return_value=fake_engine,
         ):
             result = cleanup_orphan_memories.run()
@@ -737,7 +750,7 @@ class TestIngestIdempotency:
 
     @pytest.mark.unit
     def test_repeat_with_same_key_short_circuits(self, pg_conn):
-        from application.api.user.tasks import ingest
+        from docsgpt.api.user.tasks import ingest
 
         worker_calls = []
 
@@ -748,7 +761,7 @@ class TestIngestIdempotency:
             return {"status": "ok", "directory": directory}
 
         with _patch_decorator_db(pg_conn), patch(
-            "application.api.user.tasks.ingest_worker",
+            "docsgpt.api.user.tasks.ingest_worker",
             side_effect=_fake_worker,
         ):
             first = ingest(
@@ -772,7 +785,7 @@ class TestIngestPoisonEvent:
 
     @pytest.mark.unit
     def test_publishes_failed_event(self):
-        from application.api.user.tasks import _emit_ingest_poison_event
+        from docsgpt.api.user.tasks import _emit_ingest_poison_event
 
         published = []
 
@@ -780,7 +793,7 @@ class TestIngestPoisonEvent:
             published.append((user, event_type, payload, scope))
 
         with patch(
-            "application.events.publisher.publish_user_event",
+            "docsgpt.events.publisher.publish_user_event",
             side_effect=_fake_publish,
         ):
             _emit_ingest_poison_event(
@@ -799,10 +812,10 @@ class TestIngestPoisonEvent:
 
     @pytest.mark.unit
     def test_skips_when_source_id_missing(self):
-        from application.api.user.tasks import _emit_ingest_poison_event
+        from docsgpt.api.user.tasks import _emit_ingest_poison_event
 
         with patch(
-            "application.events.publisher.publish_user_event",
+            "docsgpt.events.publisher.publish_user_event",
         ) as mock_publish:
             _emit_ingest_poison_event("ingest", {"user": "u1"})
 
@@ -810,11 +823,11 @@ class TestIngestPoisonEvent:
 
     @pytest.mark.unit
     def test_reingest_uses_reingest_operation(self):
-        from application.api.user.tasks import _emit_ingest_poison_event
+        from docsgpt.api.user.tasks import _emit_ingest_poison_event
 
         published = []
         with patch(
-            "application.events.publisher.publish_user_event",
+            "docsgpt.events.publisher.publish_user_event",
             side_effect=lambda *a, **k: published.append((a, k)),
         ):
             _emit_ingest_poison_event(
@@ -830,8 +843,8 @@ def test_bare_worker_consumes_app_and_parsing_queues():
     """task_queues declares every queue, so a worker started without -Q serves
     both app tasks and document parsing — a -Q-less dev worker must never
     silently strand attachment uploads or parse_document tasks."""
-    import application.celeryconfig as celeryconfig
-    from application.core.settings import settings
+    import docsgpt.celeryconfig as celeryconfig
+    from docsgpt.core.settings import settings
 
     names = {queue.name for queue in celeryconfig.task_queues}
     assert "docsgpt" in names
@@ -843,8 +856,8 @@ class TestParseTimeoutForSize:
 
     @pytest.mark.unit
     def test_unknown_size_uses_the_base_timeout(self):
-        from application.api.user.tasks import parse_timeout_for_size
-        from application.core.settings import settings
+        from docsgpt.api.user.tasks import parse_timeout_for_size
+        from docsgpt.core.settings import settings
 
         base = float(settings.DOCUMENT_PARSE_TIMEOUT)
         assert parse_timeout_for_size(None) == base
@@ -855,8 +868,8 @@ class TestParseTimeoutForSize:
 
     @pytest.mark.unit
     def test_window_grows_with_the_document_size(self, monkeypatch):
-        from application.api.user import tasks
-        from application.core.settings import settings
+        from docsgpt.api.user import tasks
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120, raising=False)
         monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 60, raising=False)
@@ -869,8 +882,8 @@ class TestParseTimeoutForSize:
 
     @pytest.mark.unit
     def test_window_is_capped(self, monkeypatch):
-        from application.api.user import tasks
-        from application.core.settings import settings
+        from docsgpt.api.user import tasks
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120, raising=False)
         monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 60, raising=False)
@@ -881,8 +894,8 @@ class TestParseTimeoutForSize:
 
     @pytest.mark.unit
     def test_scaling_disabled_by_zero_per_mb(self, monkeypatch):
-        from application.api.user import tasks
-        from application.core.settings import settings
+        from docsgpt.api.user import tasks
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120, raising=False)
         monkeypatch.setattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 0, raising=False)
@@ -891,7 +904,7 @@ class TestParseTimeoutForSize:
 
     @pytest.mark.unit
     def test_task_time_limits_track_the_awaited_window(self):
-        from application.api.user.tasks import parse_document, parse_task_time_limits
+        from docsgpt.api.user.tasks import parse_document, parse_task_time_limits
 
         limits = parse_task_time_limits(420.0)
         assert limits == {"soft_time_limit": 420, "time_limit": 450}
@@ -907,8 +920,8 @@ class TestReconciliationTaskShape:
 
     @pytest.mark.unit
     def test_error_fallback_matches_the_real_summary_keys(self):
-        from application.api.user import reconciliation
-        from application.api.user.tasks import reconciliation_task
+        from docsgpt.api.user import reconciliation
+        from docsgpt.api.user.tasks import reconciliation_task
 
         with patch.object(
             reconciliation, "run_reconciliation", side_effect=RuntimeError("db down")
@@ -926,7 +939,7 @@ class TestReconciliationTaskShape:
 
     @pytest.mark.unit
     def test_skipped_tick_reports_the_same_counters(self, monkeypatch):
-        from application.api.user import reconciliation
+        from docsgpt.api.user import reconciliation
 
         monkeypatch.setattr(reconciliation.settings, "POSTGRES_URI", "", raising=False)
         result = reconciliation.run_reconciliation()

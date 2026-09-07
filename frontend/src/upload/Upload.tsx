@@ -1,3 +1,4 @@
+import { envVar } from '@/env';
 import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useDropzone } from 'react-dropzone';
@@ -575,7 +576,7 @@ function Upload({
       JSON.stringify(optionsToConfig(retrievalOptions)),
     );
 
-    const apiHost = import.meta.env.VITE_API_HOST;
+    const apiHost = envVar('VITE_API_HOST');
     const xhr = new XMLHttpRequest();
 
     dispatch(
@@ -706,7 +707,7 @@ function Upload({
 
     formData.append('data', JSON.stringify(configData));
 
-    const apiHost: string = import.meta.env.VITE_API_HOST;
+    const apiHost: string = envVar('VITE_API_HOST');
     const endpoint =
       ingestor.type === 'local_file'
         ? `${apiHost}/api/upload`

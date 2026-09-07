@@ -1,4 +1,4 @@
-"""Smoke test for ``application.worker.attachment_worker``.
+"""Smoke test for ``docsgpt.worker.attachment_worker``.
 
 The happy path parses an uploaded file and inserts a row into
 ``attachments``. We mock the parser boundary (``StorageCreator.get_storage``
@@ -14,8 +14,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.parser.schema.base import Document
-from application.storage.db.repositories.attachments import AttachmentsRepository
+from docsgpt.parser.schema.base import Document
+from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 
 
 @pytest.mark.unit
@@ -23,7 +23,7 @@ class TestAttachmentWorker:
     def test_inserts_row_in_attachments(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        from application import worker
+        from docsgpt import worker
 
         fake_doc = Document(
             text="hello world",
@@ -80,8 +80,8 @@ class TestAttachmentWorker:
         records the error; ``content`` stays NULL so the model can never
         read a traceback as the document.
         """
-        from application import worker
-        from application.parser.file.base_parser import DocumentParseError
+        from docsgpt import worker
+        from docsgpt.parser.file.base_parser import DocumentParseError
 
         published: list[tuple[str, dict]] = []
         monkeypatch.setattr(
@@ -137,8 +137,8 @@ class TestAttachmentWorker:
         returning its traceback as content, an unguarded task would turn one
         unreadable upload into a retry loop of identical failures.
         """
-        from application.api.user import tasks as user_tasks
-        from application.parser.file.base_parser import DocumentParseError
+        from docsgpt.api.user import tasks as user_tasks
+        from docsgpt.parser.file.base_parser import DocumentParseError
 
         task = getattr(user_tasks, task_name)
         assert DocumentParseError in task.dont_autoretry_for
@@ -161,8 +161,8 @@ class TestBoundedAttachmentCopy:
         return path
 
     def test_oversized_csv_is_copied_and_truncated(self, tmp_path, monkeypatch):
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "ATTACHMENT_TEXT_MAX_BYTES", 1024)
         original = self._write(
@@ -183,8 +183,8 @@ class TestBoundedAttachmentCopy:
         Path(parse_path).unlink()
 
     def test_small_file_returned_as_is(self, tmp_path, monkeypatch):
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "ATTACHMENT_TEXT_MAX_BYTES", 1024)
         original = self._write(tmp_path, "small.csv", b"a,b\n1,2\n")
@@ -195,8 +195,8 @@ class TestBoundedAttachmentCopy:
         assert is_temp is False
 
     def test_non_text_suffix_is_never_truncated(self, tmp_path, monkeypatch):
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "ATTACHMENT_TEXT_MAX_BYTES", 64)
         original = self._write(tmp_path, "doc.pdf", b"%PDF-1.7 " + b"x" * 500)
@@ -207,8 +207,8 @@ class TestBoundedAttachmentCopy:
         assert is_temp is False
 
     def test_cap_zero_disables_truncation(self, tmp_path, monkeypatch):
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "ATTACHMENT_TEXT_MAX_BYTES", 0)
         original = self._write(tmp_path, "big.csv", b"1,2\n" * 1000)
@@ -221,8 +221,8 @@ class TestBoundedAttachmentCopy:
     def test_single_line_without_newline_falls_back_to_hard_cut(
         self, tmp_path, monkeypatch
     ):
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "ATTACHMENT_TEXT_MAX_BYTES", 256)
         original = self._write(tmp_path, "oneline.txt", b"x" * 5000)
@@ -241,8 +241,8 @@ class TestBoundedAttachmentCopy:
         write a one-byte copy and throw the attachment away — the partial
         final line is the better trade.
         """
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "ATTACHMENT_TEXT_MAX_BYTES", 256)
         original = self._write(tmp_path, "leading.log", b"\n" + b"x" * 5000)
@@ -272,8 +272,8 @@ class TestAttachmentZipBombGuard:
         wb.save(str(path))
 
     def test_rejects_when_inner_size_exceeds_cap(self, tmp_path, monkeypatch):
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         path = tmp_path / "book.xlsx"
         self._make_xlsx(path)
@@ -283,8 +283,8 @@ class TestAttachmentZipBombGuard:
             worker._reject_attachment_zip_bomb(str(path))
 
     def test_rejects_when_too_many_entries(self, tmp_path, monkeypatch):
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         path = tmp_path / "book.xlsx"
         self._make_xlsx(path)
@@ -294,8 +294,8 @@ class TestAttachmentZipBombGuard:
             worker._reject_attachment_zip_bomb(str(path))
 
     def test_allows_reasonable_archive(self, tmp_path, monkeypatch):
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         path = tmp_path / "book.xlsx"
         self._make_xlsx(path)
@@ -306,8 +306,8 @@ class TestAttachmentZipBombGuard:
         worker._reject_attachment_zip_bomb(str(path))
 
     def test_non_container_suffix_is_ignored(self, tmp_path, monkeypatch):
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         path = tmp_path / "notes.txt"
         path.write_bytes(b"x" * 5000)
@@ -317,8 +317,8 @@ class TestAttachmentZipBombGuard:
         worker._reject_attachment_zip_bomb(str(path))
 
     def test_corrupt_zip_is_left_to_the_parser(self, tmp_path, monkeypatch):
-        from application import worker
-        from application.core.settings import settings
+        from docsgpt import worker
+        from docsgpt.core.settings import settings
 
         path = tmp_path / "broken.xlsx"
         path.write_bytes(b"not a real zip")
@@ -342,7 +342,7 @@ class TestAttachmentTypeGuard:
     def test_binary_without_a_parser_fails_instead_of_being_read_as_text(
         self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path
     ):
-        from application import worker
+        from docsgpt import worker
 
         local_path = tmp_path / "clip.mp4"
         local_path.write_bytes(b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomavc1")
@@ -388,7 +388,7 @@ class TestAttachmentTypeGuard:
         .webp the route admitted on its name would otherwise be opened as
         plain text here.
         """
-        from application import worker
+        from docsgpt import worker
 
         local_path = tmp_path / "scan.webp"
         local_path.write_bytes(b"RIFF\x00\x00\x00\x00WEBPVP8 " + bytes(range(256)))
@@ -429,7 +429,7 @@ class TestAttachmentTypeGuard:
     def test_text_without_a_parser_is_parsed(
         self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path
     ):
-        from application import worker
+        from docsgpt import worker
 
         local_path = tmp_path / "server.log"
         local_path.write_text("2026-09-02 ERROR boom\n", encoding="utf-8")

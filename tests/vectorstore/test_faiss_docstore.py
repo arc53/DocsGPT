@@ -14,7 +14,7 @@ import pickletools
 
 import pytest
 
-from application.vectorstore.faiss_docstore import (
+from docsgpt.vectorstore.faiss_docstore import (
     CompatUnpickler,
     LegacyDocstore,
     LegacyDocument,
@@ -61,8 +61,8 @@ class TestPickleSidecar:
 
         dump_pickle_sidecar(DOCUMENTS, MAPPING)
         assert not [m for m in sys.modules if m.startswith("langchain")]
-        assert LegacyDocument.__module__.startswith("application.")
-        assert LegacyDocstore.__module__.startswith("application.")
+        assert LegacyDocument.__module__.startswith("docsgpt.")
+        assert LegacyDocstore.__module__.startswith("docsgpt.")
 
     def test_reads_pydantic_state_shape(self):
         """langchain's Document is a pydantic model; that is the state we get."""
@@ -174,7 +174,7 @@ class TestRealLegacyFixture:
     """The index.pkl checked into the repo was written by langchain in 2025."""
 
     def test_reads_committed_legacy_index(self):
-        with open("application/index.pkl", "rb") as f:
+        with open("docsgpt/index.pkl", "rb") as f:
             documents, mapping = load_pickle_sidecar(f.read())
         assert len(documents) == 3
         assert len(mapping) == 3
@@ -182,7 +182,7 @@ class TestRealLegacyFixture:
         assert all(d["metadata"].get("title") for d in documents.values())
 
     def test_legacy_survives_conversion_to_json(self):
-        with open("application/index.pkl", "rb") as f:
+        with open("docsgpt/index.pkl", "rb") as f:
             documents, mapping = load_pickle_sidecar(f.read())
         restored, restored_mapping = load_json_sidecar(
             dump_json_sidecar(documents, mapping)

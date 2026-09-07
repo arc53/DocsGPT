@@ -13,8 +13,8 @@ from unittest.mock import patch
 import pytest
 from flask import Flask
 
-from application.api.devices import auth as auth_module
-from application.api.devices import session as session_module
+from docsgpt.api.devices import auth as auth_module
+from docsgpt.api.devices import session as session_module
 
 
 @pytest.fixture

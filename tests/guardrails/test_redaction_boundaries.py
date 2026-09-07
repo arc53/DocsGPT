@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import pytest
 
-from application.core.settings import settings
-from application.guardrails.config import GuardrailsConfig
-from application.guardrails.engine import GuardrailEngine
-from application.guardrails.runtime import GuardrailRecorder
-from application.guardrails.stream import StreamingOutputGuard
-from application.guardrails.types import Stage
+from docsgpt.core.settings import settings
+from docsgpt.guardrails.config import GuardrailsConfig
+from docsgpt.guardrails.engine import GuardrailEngine
+from docsgpt.guardrails.runtime import GuardrailRecorder
+from docsgpt.guardrails.stream import StreamingOutputGuard
+from docsgpt.guardrails.types import Stage
 
 # Long enough that the guard splits mid-stream instead of scanning once at
 # flush; below the window the bug is invisible, which is why it shipped.

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from application.storage.db.repositories.sources import SourcesRepository
-from application.storage.db.repositories.wiki_pages import (
+from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.wiki_pages import (
     WikiPageConflict,
     WikiPagesRepository,
     build_wiki_directory_structure,

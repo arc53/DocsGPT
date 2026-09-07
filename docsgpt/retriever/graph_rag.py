@@ -1,0 +1,359 @@
+"""GraphRAG local retriever — Personalized PageRank over a per-source graph.
+
+Rephrased query -> entity-name NN seeds -> bounded 1-2-hop fetch -> networkx
+Personalized PageRank (IDF-down-weighted hubs) -> chunks ranked by landed PPR
+mass -> shared token budget. No LLM call at query time beyond the (optional,
+reused) rephrase.
+
+Composes :class:`ClassicRAG` rather than subclassing: PPR doesn't fit the
+``_fetch_candidates`` hook, but the composed instance supplies the rephrase, the
+token-budget loop, and the fallback for sources that have no graph.
+
+Per request the whole source group costs one node-count query, one query
+embedding, and one ClassicRAG run for all the graphless sources together — all
+over a single pooled connection shared with the vector store.
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from typing import Any, Dict, List
+
+import networkx as nx
+
+from docsgpt.core.settings import settings
+from docsgpt.graphrag import graphrag_available
+from docsgpt.graphrag.store import GraphStore
+from docsgpt.retriever.base import BaseRetriever
+from docsgpt.retriever.classic_rag import ClassicRAG
+from docsgpt.retriever.labels import labels_from_metadata
+from docsgpt.utils import num_tokens_from_string
+from docsgpt.vectorstore.base import get_embeddings
+
+SEED_NODES = 10
+SUBGRAPH_HOPS = 1
+
+
+def _idf(doc_freq: Any) -> float:
+    """Node-specificity weight: rarer entities (low ``doc_freq``) score higher."""
+    return 1.0 / math.log(1.0 + max(int(doc_freq or 0), 0) + 1.0)
+
+
+class GraphRAGRetriever(BaseRetriever):
+    """Per-source PPR retriever; falls back to ClassicRAG when a source has no graph."""
+
+    # Set by the Dispatcher (see ClassicRAG.base_chunks); forwarded to the inner
+    # ClassicRAG on the fallback path.
+    base_chunks = None
+
+    def __init__(
+        self,
+        source,
+        chat_history=None,
+        prompt="",
+        chunks=2,
+        doc_token_limit=50000,
+        model_id="docsgpt-local",
+        user_api_key=None,
+        agent_id=None,
+        llm_name=settings.LLM_PROVIDER,
+        api_key=settings.API_KEY,
+        decoded_token=None,
+        model_user_id=None,
+        defer_rephrase=False,
+        request_id=None,
+        include_scores=False,
+    ):
+        # Graph docs are ranked by PPR, which yields no per-chunk similarity, so
+        # they stay unscored; the flag only matters to the classic fallback,
+        # which retrieves the sources that have no graph.
+        self._classic = ClassicRAG(
+            source=source,
+            chat_history=chat_history,
+            prompt=prompt,
+            chunks=chunks,
+            doc_token_limit=doc_token_limit,
+            model_id=model_id,
+            user_api_key=user_api_key,
+            agent_id=agent_id,
+            llm_name=llm_name,
+            api_key=api_key,
+            decoded_token=decoded_token,
+            model_user_id=model_user_id,
+            defer_rephrase=defer_rephrase,
+            request_id=request_id,
+            include_scores=include_scores,
+        )
+        self.original_question = self._classic.original_question
+        self.chunks = self._classic.chunks
+        self.doc_token_limit = doc_token_limit
+        self.vectorstores = self._classic.vectorstores
+        self.per_source_retrieval = {}
+
+    def _embed_query(self, question: str) -> List[float]:
+        embedding = get_embeddings()
+        return embedding.embed_query(question)
+
+    def _ppr_scores(self, subgraph, seeds) -> Dict[str, float]:
+        """Run Personalized PageRank, then down-weight hub nodes by IDF.
+
+        ``seeds`` maps seed node id -> personalization weight (seed similarity).
+        After PPR, each node's mass is scaled by ``1/log(2 + doc_freq)`` so a
+        high-degree hub contributes less than a specific entity at equal mass.
+        """
+        graph = nx.Graph()
+        for node in subgraph.get("nodes", []):
+            graph.add_node(node["id"], doc_freq=node.get("doc_freq", 0))
+        for edge in subgraph.get("edges", []):
+            src, dst = edge["src_node_id"], edge["dst_node_id"]
+            if src in graph and dst in graph:
+                weight = float(edge.get("weight") or 1.0)
+                graph.add_edge(src, dst, weight=weight)
+        if graph.number_of_nodes() == 0:
+            return {}
+
+        personalization = {n: seeds.get(n, 0.0) for n in graph.nodes}
+        if not any(personalization.values()):
+            personalization = None
+
+        ranks = nx.pagerank(graph, personalization=personalization, weight="weight")
+        return {
+            node: rank * _idf(graph.nodes[node].get("doc_freq", 0))
+            for node, rank in ranks.items()
+        }
+
+    def _rank_chunks(self, store, source_id, node_scores) -> List[str]:
+        """Score chunks by summed (PPR mass x IDF) of their linked nodes; top candidates.
+
+        Over-fetches beyond ``self.chunks`` so chunks with missing text don't drop
+        the final count below the budget; the budget loop caps the real total.
+        """
+        node_ids = list(node_scores.keys())
+        chunk_links = store.get_chunk_ids_for_nodes(source_id, node_ids)
+        chunk_scores: Dict[str, float] = {}
+        for node_id, chunk_ids in chunk_links.items():
+            node_score = node_scores.get(node_id, 0.0)
+            for chunk_id in chunk_ids:
+                chunk_scores[chunk_id] = chunk_scores.get(chunk_id, 0.0) + node_score
+        ranked = sorted(chunk_scores, key=lambda c: chunk_scores[c], reverse=True)
+        candidates = max(self.chunks * 2, self.chunks + 5)
+        return ranked[: max(1, candidates)]
+
+    def _source_top_k(self, source_id) -> int:
+        """How many chunks this source may contribute — its own top-k.
+
+        Mirrors ClassicRAG's resolution: a per-source override wins (raised to
+        candidate_k when it prescreens, so the stage has candidates to filter);
+        otherwise the group's real top-k is split across the sources. Without
+        this, a prescreen source elsewhere in the group inflates ``chunks`` and
+        this source would return that inflated count.
+        """
+        cfg = self.per_source_retrieval.get(source_id)
+        if cfg is not None:
+            top_k = max(1, int(cfg.chunks))
+            ps = cfg.prescreen_config() if hasattr(cfg, "prescreen_config") else None
+            if ps is not None:
+                top_k = max(top_k, int(ps.candidate_k))
+            return top_k
+        base = self.base_chunks if self.base_chunks is not None else self.chunks
+        return max(1, base // max(1, len(self.vectorstores)))
+
+    def _graph_docs_for_source(
+        self, store, source_id, query_embedding: List[float]
+    ) -> List[Dict[str, Any]]:
+        """Local PPR retrieval for one source (caller guarantees it has a graph).
+
+        Args:
+            store: Open :class:`GraphStore` shared by every source of this run.
+            source_id: Source to retrieve from.
+            query_embedding: Embedding of the rephrased question, computed once
+                by the caller for the whole retrieval.
+        """
+        seed_rows = store.search_nodes_by_embedding(
+            source_id, query_embedding, k=SEED_NODES
+        )
+        if not seed_rows:
+            return []
+
+        seed_ids = [row["id"] for row in seed_rows]
+        # Clamp to >= 0: cosine distance can exceed 1 (negative similarity) for
+        # some embedding backends, and networkx pagerank produces garbage on
+        # negative personalization (and ZeroDivisionError when the weights sum
+        # to ~0). All-zero collapses to uniform PPR via the None guard below.
+        seeds = {
+            row["id"]: max(0.0, 1.0 - float(row.get("distance") or 0.0))
+            for row in seed_rows
+        }
+
+        subgraph = store.get_subgraph(source_id, seed_ids, hops=SUBGRAPH_HOPS)
+        node_scores = self._ppr_scores(subgraph, seeds)
+        if not node_scores:
+            return []
+
+        chunk_ids = self._rank_chunks(store, source_id, node_scores)
+        chunk_data = store.get_chunk_texts(source_id, chunk_ids)
+
+        docs: List[Dict[str, Any]] = []
+        token_budget = max(int(self.doc_token_limit * 0.9), 100)
+        cumulative_tokens = 0
+        source_top_k = self._source_top_k(source_id)
+        for chunk_id in chunk_ids:
+            if len(docs) >= source_top_k:
+                break
+            chunk = chunk_data.get(chunk_id)
+            text = chunk.get("text") if chunk else None
+            if not text:
+                continue
+            labels = labels_from_metadata(chunk.get("metadata"), text, source_id)
+            doc_tokens = num_tokens_from_string(f"{labels['filename']}\n{text}")
+            if cumulative_tokens + doc_tokens >= token_budget:
+                break
+            docs.append({"text": text, **labels})
+            cumulative_tokens += doc_tokens
+        return docs
+
+    def _classic_for_sources(self, source_ids) -> List[Dict[str, Any]]:
+        """Reuse the composed ClassicRAG to retrieve a whole batch of sources.
+
+        One inner run for every graphless source instead of one run per source:
+        ClassicRAG then embeds the query once and fans the sources out itself.
+        The trade is that the per-source chunk split and the shared doc-token
+        budget apply across the batch — i.e. exactly plain ClassicRAG semantics
+        over those sources, rather than each source getting its own full budget.
+        """
+        source_ids = [source_id for source_id in source_ids if source_id]
+        if not source_ids:
+            return []
+        wanted = set(source_ids)
+        original = self._classic.vectorstores
+        original_overrides = self._classic.per_source_retrieval
+        original_base = self._classic.base_chunks
+        try:
+            self._classic.vectorstores = list(source_ids)
+            self._classic.per_source_retrieval = {
+                k: v for k, v in self.per_source_retrieval.items() if k in wanted
+            }
+            # The Dispatcher sets these on *this* object; the inner retriever is
+            # the one that reads them.
+            self._classic.base_chunks = self.base_chunks
+            return self._classic._get_data()
+        finally:
+            self._classic.vectorstores = original
+            self._classic.per_source_retrieval = original_overrides
+            self._classic.base_chunks = original_base
+
+    def _classic_for_source(self, source_id) -> List[Dict[str, Any]]:
+        """Retrieve one source through the batched classic path."""
+        return self._classic_for_sources([source_id])
+
+    def _retrieve_with_store(self, store, sources) -> List[Dict[str, Any]]:
+        """Split ``sources`` by graph presence, then batch each half.
+
+        Graph sources keep their own slot in source order; every graphless
+        source collapses into a single ClassicRAG run that occupies the slot of
+        the first graphless source. Sources whose PPR retrieval raises are
+        collected and retried as one more classic batch, appended at the end.
+        """
+        try:
+            counts = store.count_nodes_many(sources)
+        except Exception as e:
+            logging.error(f"GraphRAG count_nodes failed for {sources}: {e}")
+            counts = {}
+
+        segments: List[List[Dict[str, Any]]] = []
+        graph_slots: Dict[str, int] = {}
+        graphed: List[str] = []
+        graphless: List[str] = []
+        classic_slot = None
+        for source_id in sources:
+            if counts.get(source_id, 0) > 0:
+                if source_id in graph_slots:
+                    continue
+                graph_slots[source_id] = len(segments)
+                segments.append([])
+                graphed.append(source_id)
+            else:
+                if classic_slot is None:
+                    classic_slot = len(segments)
+                    segments.append([])
+                graphless.append(source_id)
+
+        failed: List[str] = []
+        query_embedding = None
+        if graphed:
+            # Embedded once for the whole retrieval, not once per graph source.
+            try:
+                query_embedding = self._embed_query(
+                    self._classic._get_rephrased_question()
+                )
+            except Exception as e:
+                logging.error(
+                    f"GraphRAG query embedding failed, falling back: {e}",
+                    exc_info=True,
+                )
+                failed, graphed = list(graphed), []
+
+        for source_id in graphed:
+            try:
+                segments[graph_slots[source_id]] = self._graph_docs_for_source(
+                    store, source_id, query_embedding
+                )
+            except Exception as e:
+                logging.error(
+                    f"GraphRAG retrieval failed for {source_id}, falling back: {e}",
+                    exc_info=True,
+                )
+                failed.append(source_id)
+
+        # Every remaining segment is a ClassicRAG fan-out, and each of its legs
+        # checks out of the *same* per-DSN pool this store is holding. Hand the
+        # graph connection back first, or concurrent GraphRAG retrievals occupy
+        # every slot and then block on their own fallbacks until PoolTimeout.
+        # ``close()`` nulls the connection, so ``_get_data``'s finally stays correct.
+        if graphless or failed:
+            try:
+                store.close()
+            except Exception as e:
+                logging.debug("Error releasing GraphRAG store before fallback: %s", e)
+
+        if graphless:
+            segments[classic_slot] = self._classic_for_sources(graphless)
+        if failed:
+            segments.append(self._classic_for_sources(failed))
+
+        return [doc for segment in segments for doc in segment]
+
+    def _get_data(self) -> List[Dict[str, Any]]:
+        sources = [source_id for source_id in self.vectorstores if source_id]
+        if not sources:
+            return []
+
+        store = None
+        if graphrag_available():
+            try:
+                store = GraphStore()
+            except Exception as e:
+                logging.error(f"GraphRAG store unavailable, falling back: {e}")
+                store = None
+
+        if store is None:
+            return self._classic_for_sources(sources)
+
+        try:
+            return self._retrieve_with_store(store, sources)
+        finally:
+            # Hand the pooled connection back; the store is per-request.
+            try:
+                store.close()
+            except Exception as e:
+                logging.debug("Error closing GraphRAG store: %s", e)
+
+    def search(self, query: str = "") -> List[Dict[str, Any]]:
+        if query:
+            self.original_question = query
+            self._classic.original_question = query
+            self._classic._rephrased_question = None
+            self._classic.question = self._classic._rephrase_query()
+            self._classic._rephrased_question = self._classic.question
+        return self._get_data()

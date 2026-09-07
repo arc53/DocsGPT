@@ -1,11 +1,11 @@
-"""Tests for application/seed/seeder.py."""
+"""Tests for docsgpt/seed/seeder.py."""
 
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.seed.seeder import DatabaseSeeder, SYSTEM_USER_ID
+from docsgpt.seed.seeder import DatabaseSeeder, SYSTEM_USER_ID
 
 
 @contextmanager
@@ -15,9 +15,9 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.seed.seeder.db_session", _yield
+        "docsgpt.seed.seeder.db_session", _yield
     ), patch(
-        "application.seed.seeder.db_readonly", _yield
+        "docsgpt.seed.seeder.db_readonly", _yield
     ):
         yield
 
@@ -83,7 +83,7 @@ class TestIsAlreadySeeded:
             assert seeder._is_already_seeded() is False
 
     def test_true_when_system_agents_exist(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         AgentsRepository(pg_conn).create(
             SYSTEM_USER_ID, "TemplateAgent", "template",
@@ -95,7 +95,7 @@ class TestIsAlreadySeeded:
 
 class TestFindSystemAgentByName:
     def test_returns_none_when_not_found(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         got = DatabaseSeeder._find_system_agent_by_name(
             AgentsRepository(pg_conn), "missing"
@@ -103,7 +103,7 @@ class TestFindSystemAgentByName:
         assert got is None
 
     def test_returns_agent_when_name_matches(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         repo = AgentsRepository(pg_conn)
         repo.create(SYSTEM_USER_ID, "Match", "template")
@@ -122,7 +122,7 @@ class TestFindSystemSourceByRemoteUrl:
         )
 
     def test_returns_none_when_no_match(self, pg_conn):
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         got = DatabaseSeeder._find_system_source_by_remote_url(
             SourcesRepository(pg_conn), "https://no-match"
@@ -130,7 +130,7 @@ class TestFindSystemSourceByRemoteUrl:
         assert got is None
 
     def test_matches_dict_remote_data_url(self, pg_conn):
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         repo = SourcesRepository(pg_conn)
         repo.create(
@@ -168,7 +168,7 @@ class TestHandlePrompt:
         with _patch_db(pg_conn):
             pid = seeder._handle_prompt(agent_cfg)
         assert pid is not None
-        from application.storage.db.repositories.prompts import PromptsRepository
+        from docsgpt.storage.db.repositories.prompts import PromptsRepository
         prompts = PromptsRepository(pg_conn).list_for_user(SYSTEM_USER_ID)
         assert any(p["name"] == "test-prompt" for p in prompts)
 
@@ -181,7 +181,7 @@ class TestHandlePrompt:
             yield
 
         with patch(
-            "application.seed.seeder.db_session", _broken
+            "docsgpt.seed.seeder.db_session", _broken
         ):
             result = seeder._handle_prompt(
                 {
@@ -207,7 +207,7 @@ class TestHandleSource:
 
     def test_returns_existing_source_id(self, pg_conn):
         seeder = DatabaseSeeder()
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         src = SourcesRepository(pg_conn).create(
             "existing",
@@ -229,7 +229,7 @@ class TestHandleSource:
         fake_task.get.side_effect = RuntimeError("ingestion failed")
 
         with _patch_db(pg_conn), patch(
-            "application.seed.seeder.ingest_remote.delay",
+            "docsgpt.seed.seeder.ingest_remote.delay",
             return_value=fake_task,
         ):
             got = seeder._handle_source(
@@ -251,7 +251,7 @@ class TestHandleSource:
         fake_task.successful.return_value = True
 
         with _patch_db(pg_conn), patch(
-            "application.seed.seeder.ingest_remote.delay",
+            "docsgpt.seed.seeder.ingest_remote.delay",
             return_value=fake_task,
         ):
             got = seeder._handle_source(
@@ -273,7 +273,7 @@ class TestHandleSource:
         fake_task.successful.return_value = True
 
         with _patch_db(pg_conn), patch(
-            "application.seed.seeder.ingest_remote.delay",
+            "docsgpt.seed.seeder.ingest_remote.delay",
             return_value=fake_task,
         ):
             got = seeder._handle_source(
@@ -302,7 +302,7 @@ class TestUpsertAgent:
         with _patch_db(pg_conn):
             seeder._upsert_agent(agent_cfg, None, [], None)
 
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         rows = AgentsRepository(pg_conn).list_for_user(SYSTEM_USER_ID)
         assert any(r["name"] == "TemplateA" for r in rows)
@@ -320,7 +320,7 @@ class TestUpsertAgent:
             agent_cfg["description"] = "updated"
             seeder._upsert_agent(agent_cfg, None, [], None)
 
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         rows = AgentsRepository(pg_conn).list_for_user(SYSTEM_USER_ID)
         matching = [r for r in rows if r["name"] == "TemplateB"]
@@ -352,7 +352,7 @@ class TestSeedFromConfig:
         }
         with _patch_db(pg_conn):
             seeder._seed_from_config(cfg)
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
         rows = AgentsRepository(pg_conn).list_for_user(SYSTEM_USER_ID)
         names = [r["name"] for r in rows]
         assert "FromConfigA" in names and "FromConfigB" in names
@@ -360,7 +360,7 @@ class TestSeedFromConfig:
 
 class TestSeedInitialData:
     def test_skips_when_already_seeded(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         # Seed one template so _is_already_seeded returns True
         AgentsRepository(pg_conn).create(SYSTEM_USER_ID, "existing", "template")

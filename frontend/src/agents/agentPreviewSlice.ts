@@ -1,3 +1,4 @@
+import { envVar } from '@/env';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 import {
@@ -26,7 +27,7 @@ const initialState: ConversationState = {
   conversationId: null,
 };
 
-const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
+const API_STREAMING = envVar('VITE_API_STREAMING') === 'true';
 
 let abortController: AbortController | null = null;
 export function handlePreviewAbort() {

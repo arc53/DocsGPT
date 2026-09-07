@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-import application.api.answer.services.stream_processor as sp_mod
+import docsgpt.api.answer.services.stream_processor as sp_mod
 
 StreamProcessor = sp_mod.StreamProcessor
 

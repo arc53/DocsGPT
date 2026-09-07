@@ -1,4 +1,4 @@
-"""Tests for application/api/user/analytics/routes.py.
+"""Tests for docsgpt/api/user/analytics/routes.py.
 
 Uses the ephemeral ``pg_conn`` fixture so analytics SQL runs against a real
 (in-memory) Postgres schema.
@@ -24,7 +24,7 @@ def _patch_analytics_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.analytics.routes.db_readonly", _yield_conn
+        "docsgpt.api.user.analytics.routes.db_readonly", _yield_conn
     ):
         yield
 
@@ -33,7 +33,7 @@ def _seed_conversation_with_messages(
     pg_conn, user_id, *, count=3, api_key=None, feedback_text=None,
     agent_id=None,
 ):
-    from application.storage.db.repositories.conversations import (
+    from docsgpt.storage.db.repositories.conversations import (
         ConversationsRepository,
     )
     repo = ConversationsRepository(pg_conn)
@@ -57,7 +57,7 @@ def _seed_conversation_with_messages(
 
 class TestRangeForFilter:
     def test_returns_none_for_invalid_filter(self):
-        from application.api.user.analytics.routes import _range_for_filter
+        from docsgpt.api.user.analytics.routes import _range_for_filter
 
         assert _range_for_filter("bogus") is None
 
@@ -66,7 +66,7 @@ class TestRangeForFilter:
         ["last_hour", "last_24_hour", "last_7_days", "last_15_days", "last_30_days"],
     )
     def test_returns_start_end_for_supported(self, option):
-        from application.api.user.analytics.routes import _range_for_filter
+        from docsgpt.api.user.analytics.routes import _range_for_filter
 
         got = _range_for_filter(option)
         assert got is not None
@@ -77,14 +77,14 @@ class TestRangeForFilter:
 
 class TestResolveAgent:
     def test_no_agent_when_no_id(self, pg_conn):
-        from application.api.user.analytics.routes import _resolve_agent
+        from docsgpt.api.user.analytics.routes import _resolve_agent
 
         assert _resolve_agent(pg_conn, None, "u") == (None, None, None)
         assert _resolve_agent(pg_conn, "", "u") == (None, None, None)
 
     def test_returns_key_and_id_for_owned_agent(self, pg_conn):
-        from application.api.user.analytics.routes import _resolve_agent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.analytics.routes import _resolve_agent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = AgentsRepository(pg_conn).create(
             "owner", "test-agent", "published", key="secret-api-key",
@@ -97,8 +97,8 @@ class TestResolveAgent:
         assert agent_pg_id == str(agent["id"])
 
     def test_keyless_agent_yields_none_key(self, pg_conn):
-        from application.api.user.analytics.routes import _resolve_agent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.analytics.routes import _resolve_agent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = AgentsRepository(pg_conn).create(
             "owner", "test-agent", "draft", key="",
@@ -114,8 +114,8 @@ class TestResolveAgent:
         assert agent_pg_id == str(agent["id"])
 
     def test_no_match_for_other_users_agent(self, pg_conn):
-        from application.api.user.analytics.routes import _resolve_agent
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.analytics.routes import _resolve_agent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = AgentsRepository(pg_conn).create(
             "owner", "test-agent", "published", key="secret"
@@ -129,7 +129,7 @@ class TestResolveAgent:
 
 class TestGetMessageAnalytics:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.analytics.routes import GetMessageAnalytics
+        from docsgpt.api.user.analytics.routes import GetMessageAnalytics
 
         with app.test_request_context(
             "/api/get_message_analytics", method="POST", json={}
@@ -140,7 +140,7 @@ class TestGetMessageAnalytics:
         assert response.status_code == 401
 
     def test_invalid_filter_returns_400(self, app):
-        from application.api.user.analytics.routes import GetMessageAnalytics
+        from docsgpt.api.user.analytics.routes import GetMessageAnalytics
 
         with app.test_request_context(
             "/api/get_message_analytics",
@@ -153,7 +153,7 @@ class TestGetMessageAnalytics:
         assert response.status_code == 400
 
     def test_returns_bucketed_counts(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetMessageAnalytics
+        from docsgpt.api.user.analytics.routes import GetMessageAnalytics
 
         user = "u-msg"
         _seed_conversation_with_messages(pg_conn, user, count=3)
@@ -173,8 +173,8 @@ class TestGetMessageAnalytics:
         assert sum(messages.values()) == 3
 
     def test_filters_by_api_key(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetMessageAnalytics
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.analytics.routes import GetMessageAnalytics
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         user = "u-msg-key"
         agent = AgentsRepository(pg_conn).create(
@@ -195,7 +195,7 @@ class TestGetMessageAnalytics:
         assert sum(response.json["messages"].values()) == 4
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetMessageAnalytics
+        from docsgpt.api.user.analytics.routes import GetMessageAnalytics
 
         @contextmanager
         def _broken():
@@ -203,7 +203,7 @@ class TestGetMessageAnalytics:
             yield
 
         with patch(
-            "application.api.user.analytics.routes.db_readonly", _broken
+            "docsgpt.api.user.analytics.routes.db_readonly", _broken
         ), app.test_request_context(
             "/api/get_message_analytics", method="POST", json={}
         ):
@@ -215,7 +215,7 @@ class TestGetMessageAnalytics:
 
 class TestGetTokenAnalytics:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
+        from docsgpt.api.user.analytics.routes import GetTokenAnalytics
 
         with app.test_request_context(
             "/api/get_token_analytics", method="POST", json={}
@@ -226,7 +226,7 @@ class TestGetTokenAnalytics:
         assert response.status_code == 401
 
     def test_invalid_filter_returns_400(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
+        from docsgpt.api.user.analytics.routes import GetTokenAnalytics
 
         with app.test_request_context(
             "/api/get_token_analytics",
@@ -239,7 +239,7 @@ class TestGetTokenAnalytics:
         assert response.status_code == 400
 
     def test_returns_token_usage_shape(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetTokenAnalytics
+        from docsgpt.api.user.analytics.routes import GetTokenAnalytics
 
         with _patch_analytics_db(pg_conn), app.test_request_context(
             "/api/get_token_analytics",
@@ -254,7 +254,7 @@ class TestGetTokenAnalytics:
         assert isinstance(response.json["token_usage"], dict)
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
+        from docsgpt.api.user.analytics.routes import GetTokenAnalytics
 
         @contextmanager
         def _broken():
@@ -262,7 +262,7 @@ class TestGetTokenAnalytics:
             yield
 
         with patch(
-            "application.api.user.analytics.routes.db_readonly", _broken
+            "docsgpt.api.user.analytics.routes.db_readonly", _broken
         ), app.test_request_context(
             "/api/get_token_analytics", method="POST", json={}
         ):
@@ -274,7 +274,7 @@ class TestGetTokenAnalytics:
 
 class TestGetFeedbackAnalytics:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
+        from docsgpt.api.user.analytics.routes import GetFeedbackAnalytics
 
         with app.test_request_context(
             "/api/get_feedback_analytics", method="POST", json={}
@@ -285,7 +285,7 @@ class TestGetFeedbackAnalytics:
         assert response.status_code == 401
 
     def test_invalid_filter_returns_400(self, app):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
+        from docsgpt.api.user.analytics.routes import GetFeedbackAnalytics
 
         with app.test_request_context(
             "/api/get_feedback_analytics",
@@ -298,7 +298,7 @@ class TestGetFeedbackAnalytics:
         assert response.status_code == 400
 
     def test_returns_positive_and_negative_counts(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
+        from docsgpt.api.user.analytics.routes import GetFeedbackAnalytics
 
         user = "u-fb"
         _seed_conversation_with_messages(
@@ -321,7 +321,7 @@ class TestGetFeedbackAnalytics:
         assert total_neg == 2
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
+        from docsgpt.api.user.analytics.routes import GetFeedbackAnalytics
 
         @contextmanager
         def _broken():
@@ -329,7 +329,7 @@ class TestGetFeedbackAnalytics:
             yield
 
         with patch(
-            "application.api.user.analytics.routes.db_readonly", _broken
+            "docsgpt.api.user.analytics.routes.db_readonly", _broken
         ), app.test_request_context(
             "/api/get_feedback_analytics", method="POST", json={}
         ):
@@ -341,7 +341,7 @@ class TestGetFeedbackAnalytics:
 
 class TestGetUserLogs:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.analytics.routes import GetUserLogs
+        from docsgpt.api.user.analytics.routes import GetUserLogs
 
         with app.test_request_context(
             "/api/get_user_logs", method="POST", json={}
@@ -352,8 +352,8 @@ class TestGetUserLogs:
         assert response.status_code == 401
 
     def test_returns_logs_list_paginated(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetUserLogs
-        from application.storage.db.repositories.user_logs import (
+        from docsgpt.api.user.analytics.routes import GetUserLogs
+        from docsgpt.storage.db.repositories.user_logs import (
             UserLogsRepository,
         )
 
@@ -382,9 +382,9 @@ class TestGetUserLogs:
         assert data["page_size"] == 10
 
     def test_filters_logs_by_api_key(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetUserLogs
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.user_logs import (
+        from docsgpt.api.user.analytics.routes import GetUserLogs
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_logs import (
             UserLogsRepository,
         )
 
@@ -419,9 +419,9 @@ class TestGetUserLogs:
         """A webhook activity-log row stamped with the agent's id but an
         *old* api_key (the state after a key rotation) must still surface on
         the agent's timeline via the stable agent_id join."""
-        from application.api.user.analytics.routes import GetUserLogs
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.stack_logs import (
+        from docsgpt.api.user.analytics.routes import GetUserLogs
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.stack_logs import (
             StackLogsRepository,
         )
 
@@ -463,7 +463,7 @@ class TestGetUserLogs:
         assert logs[0]["id"]  # the rotated-away row surfaced via agent_id
 
     def test_db_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetUserLogs
+        from docsgpt.api.user.analytics.routes import GetUserLogs
 
         @contextmanager
         def _broken():
@@ -471,7 +471,7 @@ class TestGetUserLogs:
             yield
 
         with patch(
-            "application.api.user.analytics.routes.db_readonly", _broken
+            "docsgpt.api.user.analytics.routes.db_readonly", _broken
         ), app.test_request_context(
             "/api/get_user_logs", method="POST", json={}
         ):
@@ -487,7 +487,7 @@ def _seed_stack_log(
 ):
     import uuid as _uuid
 
-    from application.storage.db.repositories.stack_logs import (
+    from docsgpt.storage.db.repositories.stack_logs import (
         StackLogsRepository,
     )
 
@@ -503,7 +503,7 @@ def _seed_stack_log(
 
 
 def _post_logs(app, pg_conn, user, body):
-    from application.api.user.analytics.routes import GetUserLogs
+    from docsgpt.api.user.analytics.routes import GetUserLogs
 
     with _patch_analytics_db(pg_conn), app.test_request_context(
         "/api/get_user_logs", method="POST", json=body
@@ -538,7 +538,7 @@ class TestCrossTenantIsolation:
         assert response.json["has_more"] is False
 
     def test_own_draft_agent_leaks_nothing(self, app, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         _seed_stack_log(pg_conn, user_id="victim", api_key="")
         # Draft agents legitimately store key='' — filtering by one must
@@ -557,9 +557,9 @@ class TestCrossTenantIsolation:
         assert response.json["logs"] == []
 
     def test_other_users_agent_id_returns_empty_tokens(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.token_usage import (
+        from docsgpt.api.user.analytics.routes import GetTokenAnalytics
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.token_usage import (
             TokenUsageRepository,
         )
 
@@ -589,7 +589,7 @@ class TestCrossTenantIsolation:
 
 class TestGetToolAnalytics:
     def _post(self, app, pg_conn, user, body):
-        from application.api.user.analytics.routes import GetToolAnalytics
+        from docsgpt.api.user.analytics.routes import GetToolAnalytics
 
         with _patch_analytics_db(pg_conn), app.test_request_context(
             "/api/get_tool_analytics", method="POST", json=body
@@ -599,7 +599,7 @@ class TestGetToolAnalytics:
             return GetToolAnalytics().post()
 
     def test_counts_terminal_attempts_only(self, app, pg_conn):
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -631,8 +631,8 @@ class TestGetToolAnalytics:
         assert response.json["tools"] == []
 
     def test_filters_by_agent_stamp(self, app, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.tool_call_attempts import (
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.tool_call_attempts import (
             ToolCallAttemptsRepository,
         )
 
@@ -660,10 +660,10 @@ class TestGetScheduleAnalytics:
     def _seed_run(self, pg_conn, user, status, *, agent_id=None):
         import datetime as _dt
 
-        from application.storage.db.repositories.schedule_runs import (
+        from docsgpt.storage.db.repositories.schedule_runs import (
             ScheduleRunsRepository,
         )
-        from application.storage.db.repositories.schedules import (
+        from docsgpt.storage.db.repositories.schedules import (
             SchedulesRepository,
         )
 
@@ -683,7 +683,7 @@ class TestGetScheduleAnalytics:
         return schedule
 
     def _post(self, app, pg_conn, user, body):
-        from application.api.user.analytics.routes import GetScheduleAnalytics
+        from docsgpt.api.user.analytics.routes import GetScheduleAnalytics
 
         with _patch_analytics_db(pg_conn), app.test_request_context(
             "/api/get_schedule_analytics", method="POST", json=body
@@ -765,7 +765,7 @@ class TestUnifiedLogsBranches:
         assert response.json["logs"][0]["level"] == "info"
 
     def test_level_filter_applies_per_branch(self, app, pg_conn):
-        from application.storage.db.repositories.user_logs import (
+        from docsgpt.storage.db.repositories.user_logs import (
             UserLogsRepository,
         )
 
@@ -830,8 +830,8 @@ class TestUnifiedLogsBranches:
 
 class TestTokenAnalyticsParamCoercion:
     def test_string_false_disables_side_channel(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-        from application.storage.db.repositories.token_usage import (
+        from docsgpt.api.user.analytics.routes import GetTokenAnalytics
+        from docsgpt.storage.db.repositories.token_usage import (
             TokenUsageRepository,
         )
 
@@ -874,7 +874,7 @@ class TestUnknownAgentShortCircuits:
     def test_message_analytics_returns_zeroes(self, app, pg_conn):
         import uuid as _uuid
 
-        from application.api.user.analytics.routes import GetMessageAnalytics
+        from docsgpt.api.user.analytics.routes import GetMessageAnalytics
 
         _seed_conversation_with_messages(pg_conn, "u-msg", count=2)
         response = _post_resource(
@@ -887,7 +887,7 @@ class TestUnknownAgentShortCircuits:
     def test_feedback_analytics_returns_zeroes(self, app, pg_conn):
         import uuid as _uuid
 
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
+        from docsgpt.api.user.analytics.routes import GetFeedbackAnalytics
 
         _seed_conversation_with_messages(
             pg_conn, "u-fb0", count=2, feedback_text="like"
@@ -906,7 +906,7 @@ class TestUnknownAgentShortCircuits:
 class TestMessageAnalyticsBuckets:
     @pytest.mark.parametrize("option", ["last_hour", "last_24_hour"])
     def test_minute_and_hour_buckets(self, app, pg_conn, option):
-        from application.api.user.analytics.routes import GetMessageAnalytics
+        from docsgpt.api.user.analytics.routes import GetMessageAnalytics
 
         _seed_conversation_with_messages(pg_conn, "u-bkt", count=2)
         response = _post_resource(
@@ -919,8 +919,8 @@ class TestMessageAnalyticsBuckets:
 
 class TestFeedbackAnalyticsAgentFilter:
     def test_filters_by_agent_key_or_id(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.api.user.analytics.routes import GetFeedbackAnalytics
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = AgentsRepository(pg_conn).create(
             "u-fb", "fb-agent", "published", key="fb-key",
@@ -948,8 +948,8 @@ class TestFeedbackAnalyticsAgentFilter:
 
 class TestTokenAnalyticsGrouping:
     def test_group_by_model_returns_series(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-        from application.storage.db.repositories.token_usage import (
+        from docsgpt.api.user.analytics.routes import GetTokenAnalytics
+        from docsgpt.storage.db.repositories.token_usage import (
             TokenUsageRepository,
         )
 
@@ -974,9 +974,9 @@ class TestTokenAnalyticsGrouping:
         assert sum(series["unknown"].values()) == 3
 
     def test_filters_by_owned_agent_key_or_id(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.token_usage import (
+        from docsgpt.api.user.analytics.routes import GetTokenAnalytics
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.token_usage import (
             TokenUsageRepository,
         )
 
@@ -1007,7 +1007,7 @@ class TestTokenAnalyticsGrouping:
 
 class TestScheduleAnalyticsAgentFilter:
     def test_filters_by_owned_agent(self, app, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         helper = TestGetScheduleAnalytics()
         agent = AgentsRepository(pg_conn).create(
@@ -1029,7 +1029,7 @@ class TestScheduleAnalyticsAgentFilter:
 
 class TestUnifiedLogsFilters:
     def test_search_matches_summary(self, app, pg_conn):
-        from application.storage.db.repositories.user_logs import (
+        from docsgpt.storage.db.repositories.user_logs import (
             UserLogsRepository,
         )
 
@@ -1050,7 +1050,7 @@ class TestUnifiedLogsFilters:
         assert "whales" in logs[0]["question"]
 
     def test_search_escapes_like_wildcards(self, app, pg_conn):
-        from application.storage.db.repositories.user_logs import (
+        from docsgpt.storage.db.repositories.user_logs import (
             UserLogsRepository,
         )
 
@@ -1080,7 +1080,7 @@ class TestNewEndpointGuards:
         ],
     )
     def test_returns_401_unauthenticated(self, app, resource_name, path):
-        import application.api.user.analytics.routes as routes
+        import docsgpt.api.user.analytics.routes as routes
 
         resource_cls = getattr(routes, resource_name)
         with app.test_request_context(path, method="POST", json={}):
@@ -1097,7 +1097,7 @@ class TestNewEndpointGuards:
         ],
     )
     def test_invalid_filter_returns_400(self, app, resource_name, path):
-        import application.api.user.analytics.routes as routes
+        import docsgpt.api.user.analytics.routes as routes
 
         resource_cls = getattr(routes, resource_name)
         with app.test_request_context(
@@ -1111,9 +1111,9 @@ class TestNewEndpointGuards:
 
 class TestTokenAnalyticsGroupByAgent:
     def test_group_by_agent_resolves_names(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.token_usage import (
+        from docsgpt.api.user.analytics.routes import GetTokenAnalytics
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.token_usage import (
             TokenUsageRepository,
         )
 
@@ -1146,7 +1146,7 @@ class TestNewEndpointDbErrors:
         ],
     )
     def test_db_error_returns_400(self, app, resource_name, path):
-        import application.api.user.analytics.routes as routes
+        import docsgpt.api.user.analytics.routes as routes
 
         resource_cls = getattr(routes, resource_name)
 
@@ -1156,7 +1156,7 @@ class TestNewEndpointDbErrors:
             yield
 
         with patch(
-            "application.api.user.analytics.routes.db_readonly", _broken
+            "docsgpt.api.user.analytics.routes.db_readonly", _broken
         ), app.test_request_context(path, method="POST", json={}):
             from flask import request
             request.decoded_token = {"sub": "u"}
@@ -1168,10 +1168,10 @@ class TestUnifiedLogsWorkflowBranch:
     def test_workflow_runs_appear_with_payload(self, app, pg_conn):
         import datetime as _dt
 
-        from application.storage.db.repositories.workflow_runs import (
+        from docsgpt.storage.db.repositories.workflow_runs import (
             WorkflowRunsRepository,
         )
-        from application.storage.db.repositories.workflows import (
+        from docsgpt.storage.db.repositories.workflows import (
             WorkflowsRepository,
         )
 
@@ -1208,14 +1208,14 @@ class TestSharedAgentVisibility:
     populations)."""
 
     def _owned_agent(self, pg_conn, owner):
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         return AgentsRepository(pg_conn).create(
             owner, "shared-agent", "published", key="shared-key",
         )
 
     def test_message_analytics_includes_shared_caller(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetMessageAnalytics
+        from docsgpt.api.user.analytics.routes import GetMessageAnalytics
 
         agent = self._owned_agent(pg_conn, "owner-a")
         # Caller B chats with A's shared agent: conversation.user_id = B,
@@ -1231,7 +1231,7 @@ class TestSharedAgentVisibility:
         assert sum(response.json["messages"].values()) == 3
 
     def test_feedback_analytics_includes_shared_caller(self, app, pg_conn):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
+        from docsgpt.api.user.analytics.routes import GetFeedbackAnalytics
 
         agent = self._owned_agent(pg_conn, "owner-a")
         _seed_conversation_with_messages(

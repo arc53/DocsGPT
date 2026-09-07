@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.parser.remote.reddit_loader import RedditPostsLoaderRemote
+from docsgpt.parser.remote.reddit_loader import RedditPostsLoaderRemote
 
 
 def _post(post_id, title, body):

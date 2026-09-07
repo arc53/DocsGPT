@@ -29,11 +29,11 @@ LLM_NAME=gpt-4o
 
 ### 2. Configuration via `settings.py` file (Advanced)
 
-For more advanced configurations or if you prefer to manage settings directly in code, you can modify the `settings.py` file. This file is located in the `application/core` directory of your DocsGPT project.
+For more advanced configurations or if you prefer to manage settings directly in code, you can modify the `settings.py` file. This file is located in the `docsgpt/core` directory of your DocsGPT project.
 
 While modifying `settings.py` offers more flexibility, it's generally recommended to use the `.env` file for basic settings and reserve `settings.py` for more complex adjustments or when you need to configure settings programmatically.
 
-**Location of `settings.py`:** `application/core/settings.py`
+**Location of `settings.py`:** `docsgpt/core/settings.py`
 
 ## Basic Settings Explained
 
@@ -61,7 +61,7 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
   - **Default value:** leave it unset and DocsGPT picks for you at first boot, recording the choice so it never changes underneath you: a fresh install is pinned to `ibm-granite/granite-embedding-311m-multilingual-r2` (multilingual, 32k context, same 768 dimensions), and an install that already has sources is pinned to `huggingface_sentence-transformers/all-mpnet-base-v2` so its index stays readable. Setting it here overrides that pin.
   - **Other options:** Any FastEmbed built-in model, or any Hugging Face repository shipping an ONNX export. See [Embeddings](/Models/embeddings).
-  - **Changing it on an existing index requires re-embedding** — same-width models swap without any error and silently degrade retrieval. Run `python -m application.scripts.reembed`.
+  - **Changing it on an existing index requires re-embedding** — same-width models swap without any error and silently degrade retrieval. Run `python -m docsgpt.scripts.reembed`.
 
 - **`API_KEY`**: Required for most cloud-based LLM providers. This is your authentication key to access the LLM provider's API. You'll need to obtain this key from your chosen provider's platform.
 
@@ -133,7 +133,7 @@ models:
 
 After restart, those models appear in `/api/models` and are selectable
 in the UI. A working template lives at
-`application/core/models/examples/mistral.yaml.example`.
+`docsgpt/core/models/examples/mistral.yaml.example`.
 
 **What you can do:**
 
@@ -148,8 +148,8 @@ in the UI. A working template lives at
 
 **What you cannot do via `MODELS_CONFIG_DIR`:** add a brand-new
 non-OpenAI provider. That requires a Python plugin under
-`application/llm/providers/`. See
-`application/core/models/README.md` for the full schema reference.
+`docsgpt/llm/providers/`. See
+`docsgpt/core/models/README.md` for the full schema reference.
 
 ### Docker
 
@@ -207,7 +207,7 @@ for the engines and flows.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `DOC_PARSER_ENGINE` | `anydoc` | Parser engine: `anydoc` (fast Rust converter, no ML models) or `docling` (layout/table models, structured output). Files anydoc cannot read fall back to Docling when installed. Docling is an optional extra: `pip install -r application/requirements-docling.txt`, or Docker builds with `--build-arg INSTALL_DOCLING=true`. |
+| `DOC_PARSER_ENGINE` | `anydoc` | Parser engine: `anydoc` (fast Rust converter, no ML models) or `docling` (layout/table models, structured output). Files anydoc cannot read fall back to Docling when installed. Docling is an optional extra: `pip install -r docsgpt/requirements-docling.txt`, or Docker builds with `--build-arg INSTALL_DOCLING=true`. |
 | `OCR_ENABLED` | `false` | OCR for source ingestion. Alias: `DOCLING_OCR_ENABLED`. |
 | `OCR_ATTACHMENTS_ENABLED` | `false` | OCR for chat attachments. Alias: `DOCLING_OCR_ATTACHMENTS_ENABLED`. |
 | `OCR_BACKEND` | `auto` | Who performs OCR: `auto` (Docling when installed, else native), `native` (pypdfium2 + Pillow rendering into tesseract or DeepSeek-OCR; no docling needed), or `docling` (layout-model hybrid OCR). See the [OCR guide](/Guides/ocr#ocr-backends). |
@@ -469,8 +469,9 @@ See [Embeddings](/Models/embeddings) for full guidance.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `EMBEDDINGS_NAME` | `huggingface_sentence-transformers/all-mpnet-base-v2` | The embedding model. New installs use `ibm-granite/granite-embedding-311m-multilingual-r2`. Changing it on a populated index requires `application.scripts.reembed`. |
+| `EMBEDDINGS_NAME` | `huggingface_sentence-transformers/all-mpnet-base-v2` | The embedding model. New installs use `ibm-granite/granite-embedding-311m-multilingual-r2`. Changing it on a populated index requires `docsgpt.scripts.reembed`. |
 | `EMBEDDINGS_BASE_URL` | unset | Base URL of a remote OpenAI-compatible embeddings server. Setting it routes all embedding calls there. |
+| `EMBEDDINGS_THREADS` | unset (Docker image: `4`) | Threads one local FastEmbed/onnxruntime session may use. onnxruntime otherwise sizes its pool to the host's core count, which a CPU-limited container still reports, so the image pins it like `OMP_NUM_THREADS`. Raise it on a large dedicated worker. |
 | `EMBEDDINGS_KEY` | unset | Optional bearer token for the remote embeddings server. |
 | `EMBEDDINGS_MAX_INPUT_TOKENS` | unset | Truncate each remote embedding input to N tokens (guards servers that reject oversized inputs). |
 | `EMBEDDINGS_DELEGATE_TO_WORKER` | `true` | Embed queries on the Celery worker instead of loading a model in the API. Requires a worker consuming `EMBEDDINGS_QUEUE`; set `false` to run the API standalone. Ignored when `EMBEDDINGS_BASE_URL` is set. |
@@ -549,4 +550,4 @@ These are just the basic settings to get you started. The `settings.py` file con
 - Cache settings (`CACHE_REDIS_URL`)
 - And many more!
 
-For a complete list of available settings and their descriptions, refer to the `settings.py` file in `application/core`. Remember to restart your Docker containers after making changes to your `.env` file or `settings.py` for the changes to take effect.
+For a complete list of available settings and their descriptions, refer to the `settings.py` file in `docsgpt/core`. Remember to restart your Docker containers after making changes to your `.env` file or `settings.py` for the changes to take effect.

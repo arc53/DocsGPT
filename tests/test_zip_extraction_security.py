@@ -7,14 +7,14 @@ import zipfile
 
 import pytest
 
-from application.worker import (
+from docsgpt.worker import (
     ZipExtractionError,
     _is_path_safe,
     _validate_zip_safety,
     extract_zip_recursive,
     MAX_FILE_COUNT,
 )
-from application.security.zip_archive import (
+from docsgpt.security.zip_archive import (
     extract_zip_safely,
     ZipExtractionLimits,
 )
@@ -34,8 +34,8 @@ def _test_limits(**overrides):
 
 class TestTransactionalZipExtraction:
     def test_default_file_budget_accepts_large_source_archives(self, tmp_path):
-        from application.api.user.sources.upload import _source_archive_limits
-        from application.security.zip_archive import validate_zip_archive
+        from docsgpt.api.user.sources.upload import _source_archive_limits
+        from docsgpt.security.zip_archive import validate_zip_archive
 
         zip_path = tmp_path / "repository.zip"
         with zipfile.ZipFile(zip_path, "w") as archive:

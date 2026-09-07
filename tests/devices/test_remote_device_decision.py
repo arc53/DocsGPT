@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from application.agents.tools.remote_device import RemoteDeviceTool
+from docsgpt.agents.tools.remote_device import RemoteDeviceTool
 
 
 def _tool(monkeypatch, *, sticky=False):
@@ -42,7 +42,7 @@ class TestDecideApproval:
         # denylisted command (e.g. sticky ``rm *`` -> ``rm -rf /``, or sticky
         # ``git push *`` -> ``git push --force --mirror``) auto-run. The
         # denylist forces a prompt on every path, including the sticky one.
-        from application.devices.denylist import check_denylist
+        from docsgpt.devices.denylist import check_denylist
 
         assert check_denylist("rm -rf /") is not None
         assert check_denylist("git push --force --mirror") is not None

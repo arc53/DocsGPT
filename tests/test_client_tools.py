@@ -8,8 +8,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from application.agents.tool_executor import ToolExecutor
-from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +205,7 @@ class TestGetToolsAutoMerge:
         mock_db = MagicMock()
         mock_db.__getitem__.return_value.find.return_value = iter([])
         monkeypatch.setattr(
-            "application.agents.tool_executor.MongoDB.get_client",
+            "docsgpt.agents.tool_executor.MongoDB.get_client",
             lambda: mock_db,
         )
         executor = ToolExecutor(user="alice")
@@ -227,7 +227,7 @@ class TestGetToolsAutoMerge:
         mock_db = MagicMock()
         mock_db.__getitem__.return_value.find.return_value = iter([])
         monkeypatch.setattr(
-            "application.agents.tool_executor.MongoDB.get_client",
+            "docsgpt.agents.tool_executor.MongoDB.get_client",
             lambda: mock_db,
         )
         executor = ToolExecutor(user="alice")

@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.api.answer.services.stream_processor import StreamProcessor
-from application.storage.db.source_config import RetrievalConfig
+from docsgpt.api.answer.services.stream_processor import StreamProcessor
+from docsgpt.storage.db.source_config import RetrievalConfig
 
 
 def _processor() -> StreamProcessor:
@@ -164,12 +164,12 @@ class TestNonAgentSourceConfig:
             "config": {"retrieval": {"exposure": "agentic_tool", "chunks": 7}}
         }
         with patch(
-            "application.api.answer.services.stream_processor.db_readonly"
+            "docsgpt.api.answer.services.stream_processor.db_readonly"
         ), patch(
-            "application.api.answer.services.stream_processor.can_access",
+            "docsgpt.api.answer.services.stream_processor.can_access",
             return_value=True,
         ), patch(
-            "application.api.answer.services.stream_processor.SourcesRepository"
+            "docsgpt.api.answer.services.stream_processor.SourcesRepository"
         ) as repo:
             # Read unscoped after the access check, so a team grantee gets the
             # source's real config instead of silently falling back to defaults.

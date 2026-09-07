@@ -1,0 +1,25 @@
+# Build context for docsgpt/Dockerfile is the repository root, so the image can
+# carry the `application` import alias next to the `docsgpt` package. Allow only
+# what the image needs; everything else (frontend, docs, tests, venvs) stays out.
+*
+!docsgpt/
+# Only the alias file: an upgraded checkout may still hold gitignored
+# application/{inputs,indexes,vectors,.env} from the old layout.
+!application/__init__.py
+
+# Inside the package: caches, local runtime data and secrets never ship.
+**/__pycache__/
+**/*.py[cod]
+docsgpt/.pytest_cache/
+docsgpt/.ruff_cache/
+docsgpt/.coverage
+docsgpt/htmlcov/
+docsgpt/*.log
+docsgpt/indexes/
+docsgpt/inputs/
+docsgpt/vectors/
+docsgpt/*.faiss
+docsgpt/*.pkl
+docsgpt/.env
+docsgpt/.env.*
+docsgpt/Dockerfile

@@ -81,17 +81,17 @@ def patch_anthropic():
         sys.modules.pop(key, None)
     sys.modules["anthropic"] = fake
 
-    if "application.llm.anthropic" in sys.modules:
-        del sys.modules["application.llm.anthropic"]
+    if "docsgpt.llm.anthropic" in sys.modules:
+        del sys.modules["docsgpt.llm.anthropic"]
     yield
 
     sys.modules.pop("anthropic", None)
-    if "application.llm.anthropic" in sys.modules:
-        del sys.modules["application.llm.anthropic"]
+    if "docsgpt.llm.anthropic" in sys.modules:
+        del sys.modules["docsgpt.llm.anthropic"]
 
 
 def test_anthropic_raw_gen_uses_messages_api_and_returns_text():
-    from application.llm.anthropic import AnthropicLLM
+    from docsgpt.llm.anthropic import AnthropicLLM
 
     llm = AnthropicLLM(api_key="k")
     msgs = [
@@ -114,7 +114,7 @@ def test_anthropic_raw_gen_uses_messages_api_and_returns_text():
 
 
 def test_anthropic_raw_gen_stream_yields_text_chunks():
-    from application.llm.anthropic import AnthropicLLM
+    from docsgpt.llm.anthropic import AnthropicLLM
 
     llm = AnthropicLLM(api_key="k")
     msgs = [

@@ -1,13 +1,29 @@
 name: docsgpt-oss
 services:
   frontend:
-    build: ../frontend
+    build:
+      context: ../frontend
+      # Vite dev server with hot reload over the bind mount below. The default
+      # target (what Docker Hub publishes) is a static build behind nginx.
+      target: dev
     volumes:
       - ../frontend/src:/app/src
     environment:
+      # Every VITE_* the app reads. A bare name is passed through only when it is
+      # set in the shell or the --env-file, so an unset one does not reach the
+      # container as an empty string and override the image's own default.
       - VITE_API_HOST=http://localhost:7091
-      - VITE_API_STREAMING=$VITE_API_STREAMING
-      - VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+      - VITE_API_STREAMING=${VITE_API_STREAMING:-true}
+      - VITE_BASE_URL
+      - VITE_GOOGLE_CLIENT_ID
+      - VITE_GOOGLE_PICKER_API_KEY
+      - VITE_SHARE_POINT_CLIENT_ID
+      - VITE_CONFLUENCE_CLIENT_ID
+      - VITE_NOTIFICATION_TEXT
+      - VITE_NOTIFICATION_LINK
+      - VITE_ENABLE_VOICE_INPUT
+      - VITE_DISABLE_SOURCE_FE
+      - VITE_USE_V
     ports:
       - "5173:5173"
     depends_on:
@@ -16,10 +32,13 @@ services:
   backend:
     user: root
     build:
-      context: ../application
+      context: ..
+      dockerfile: docsgpt/Dockerfile
       args:
-        # Bake the optional docling engine (layout-model OCR backend, structured
-        # output) into the image: set INSTALL_DOCLING=true in ../.env or the shell.
+        # Optional extras to bake in (comma-separated): docling, milvus. The
+        # docling extra brings the layout-model parser/OCR backend and its
+        # models. INSTALL_DOCLING=true is the older spelling of EXTRAS=docling.
+        EXTRAS: ${EXTRAS:-}
         INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
         # Bake the tesseract binary behind OCR_ENABLED=true (~35 MB): set
         # INSTALL_TESSERACT=true in ../.env or the shell (setup.sh does this
@@ -39,6 +58,9 @@ services:
     ports:
       - "7091:7091"
     volumes:
+      # Host data stays under application/ (the old package directory) for this
+      # release so an upgraded checkout keeps its indexes; it moves with the
+      # packaging work, together with an upgrade note.
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
@@ -51,8 +73,10 @@ services:
   worker:
     user: root
     build:
-      context: ../application
+      context: ..
+      dockerfile: docsgpt/Dockerfile
       args:
+        EXTRAS: ${EXTRAS:-}
         INSTALL_DOCLING: ${INSTALL_DOCLING:-false}
         INSTALL_TESSERACT: ${INSTALL_TESSERACT:-false}
     # Consumes the default queue AND the dedicated `parsing` (read_document /
@@ -61,7 +85,7 @@ services:
     # fails after EMBEDDINGS_DELEGATE_TIMEOUT, because EMBEDDINGS_DELEGATE_TO_WORKER
     # is on by default. For heavy/OCR parsing run a separate worker with `-Q parsing`;
     # to keep query latency off the ingest pool, another with `-Q embeddings`.
-    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
     env_file:
       - ../.env
     environment:
@@ -72,6 +96,9 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     volumes:
+      # Host data stays under application/ (the old package directory) for this
+      # release so an upgraded checkout keeps its indexes; it moves with the
+      # packaging work, together with an upgrade note.
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors

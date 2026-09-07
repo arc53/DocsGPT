@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from flask import Flask
 
-from application.api.devices import routes as routes_module
+from docsgpt.api.devices import routes as routes_module
 
 
 @pytest.fixture

@@ -37,7 +37,7 @@ schema on first boot.
 
 ```bash
 export POSTGRES_URI="postgresql://user:pass@host/docsgpt?sslmode=require"
-uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091
+uvicorn docsgpt.asgi:asgi_app --host 0.0.0.0 --port 7091
 ```
 
 ### Bare-metal Postgres
@@ -47,7 +47,7 @@ First boot creates both the database and the schema.
 
 ```bash
 export POSTGRES_URI="postgresql://postgres@localhost/docsgpt"
-uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091
+uvicorn docsgpt.asgi:asgi_app --host 0.0.0.0 --port 7091
 ```
 
 Prefer a dedicated non-superuser role? Create it once as superuser — the
@@ -93,7 +93,7 @@ init-container ahead of the app rollout:
 ```bash
 python scripts/db/init_postgres.py
 # equivalently:
-alembic -c application/alembic.ini upgrade head
+alembic -c docsgpt/alembic.ini upgrade head
 ```
 
 The reasoning: the app's runtime role shouldn't carry DDL privileges,
@@ -112,7 +112,7 @@ One-shot, offline, app stopped. The app itself will create the
 Postgres schema when it boots — you only need to run the data copy.
 
 ```bash
-pip install -r application/requirements.txt
+pip install -r docsgpt/requirements.txt
 pip install 'pymongo>=4.6'
 
 export POSTGRES_URI="postgresql://docsgpt:docsgpt@localhost:5432/docsgpt"

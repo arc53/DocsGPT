@@ -12,12 +12,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.agents.classic_agent import ClassicAgent
+from docsgpt.agents.classic_agent import ClassicAgent
 
 
 def _agent(**kwargs):
-    with patch("application.llm.llm_creator.LLMCreator.create_llm"), patch(
-        "application.llm.handlers.handler_creator.LLMHandlerCreator.create_handler"
+    with patch("docsgpt.llm.llm_creator.LLMCreator.create_llm"), patch(
+        "docsgpt.llm.handlers.handler_creator.LLMHandlerCreator.create_handler"
     ):
         return ClassicAgent(
             endpoint="stream",

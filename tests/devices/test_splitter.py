@@ -1,6 +1,6 @@
-"""Tests for application.devices.splitter."""
+"""Tests for docsgpt.devices.splitter."""
 
-from application.devices.splitter import head_token, head_tokens, split_command
+from docsgpt.devices.splitter import head_token, head_tokens, split_command
 
 
 def test_single_segment():

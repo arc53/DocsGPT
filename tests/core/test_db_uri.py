@@ -1,4 +1,4 @@
-"""Tests for ``application.core.db_uri``.
+"""Tests for ``docsgpt.core.db_uri``.
 
 DocsGPT has two Postgres connection strings — ``POSTGRES_URI`` (consumed
 by SQLAlchemy) and ``PGVECTOR_CONNECTION_STRING`` (consumed by
@@ -8,7 +8,7 @@ and libpq rejects it. Each field has its own normalizer so operators
 can write whichever form feels natural and cross-pollination between
 the two fields is forgiven.
 
-The normalizers live in ``application.core.db_uri`` as plain functions
+The normalizers live in ``docsgpt.core.db_uri`` as plain functions
 so these tests can exercise them directly without having to instantiate
 ``Settings`` (which would pull in ``.env`` file side effects).
 """
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from application.core.db_uri import (
+from docsgpt.core.db_uri import (
     normalize_pgvector_connection_string,
     normalize_postgres_uri,
 )

@@ -28,22 +28,32 @@ Use these commands once the dev prerequisites above are satisfied.
 
 ```bash
 source .venv/bin/activate  # macOS/Linux
-uv pip install -r application/requirements.txt  # or: pip install -r application/requirements.txt
-# Optional docling parser engine (OCR / read_document structured output):
-# uv pip install -r application/requirements-docling.txt
+uv pip install -r docsgpt/requirements.txt  # or: pip install -r docsgpt/requirements.txt
+# Optional extras (not installed by default; each file = core + the extra):
+# uv pip install -r docsgpt/requirements-docling.txt   # docling parser engine (OCR backend, structured output)
+# uv pip install -r docsgpt/requirements-milvus.txt    # VECTOR_STORE=milvus
+# With uv alone: `uv sync --extra docling` (pyproject.toml + uv.lock are the source of truth).
+# `uv pip install -r docsgpt/requirements-docling.txt` needs UV_INDEX_STRATEGY=unsafe-best-match
+# (the file adds the PyTorch CPU index; prefer `uv sync --extra docling`).
 ```
+
+Dependencies are declared in `pyproject.toml` and locked in `uv.lock`; the
+`docsgpt/requirements*.txt` files are exported from the lock. To add or
+bump a package: edit `pyproject.toml`, run `uv lock`, then
+`bash scripts/export_requirements.sh` (CI fails if the exports are stale).
+Never edit the requirements files by hand.
 
 Run the API. For local dev, prefer the ASGI entrypoint under uvicorn — it
 serves the **whole** app, matches production, and hot-reloads:
 
 ```bash
-uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
+uvicorn docsgpt.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
 ```
 
-`flask --app application/app.py run --host=0.0.0.0 --port=7091` is a faster
+`flask --app docsgpt/app.py run --host=0.0.0.0 --port=7091` is a faster
 inner loop (quick startup, the Werkzeug interactive debugger), but it serves
 **only** the WSGI Flask app and omits the routes mounted on the ASGI shell
-in `application/asgi.py`:
+in `docsgpt/asgi.py`:
 
 - the `/mcp` FastMCP endpoint, and
 - the native-async SSE reconnect reader `GET /api/messages/<id>/events`.
@@ -53,13 +63,13 @@ Flask route), but a stream interrupted by a disconnect won't auto-resume on
 reconnect. Use `flask run` only when you don't need those routes.
 
 Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same
-`application.asgi:asgi_app` target; see `application/Dockerfile` for the
+`docsgpt.asgi:asgi_app` target; see `docsgpt/Dockerfile` for the
 full flag set.
 
 Run the Celery worker in a separate terminal:
 
 ```bash
-celery -A application.app.celery worker -l INFO
+celery -A docsgpt.app.celery worker -l INFO
 ```
 
 **The worker is required for retrieval, not optional.** `EMBEDDINGS_DELEGATE_TO_WORKER`
@@ -73,7 +83,7 @@ loading a model of its own — which keeps the API process around 285 MB instead
 On macOS, prefer the solo pool for Celery:
 
 ```bash
-python -m celery -A application.app.celery worker -l INFO --pool=solo
+python -m celery -A docsgpt.app.celery worker -l INFO --pool=solo
 ```
 
 Note that `--pool=solo` costs roughly 350 ms per query embed against ~55 ms on the
@@ -147,7 +157,7 @@ vale .
 
 ## Repository map
 
-- `application/`: Flask backend, API routes, agent logic, retrieval, parsing, security, storage, Celery worker, and WSGI entrypoints.
+- `docsgpt/`: Flask backend, API routes, agent logic, retrieval, parsing, security, storage, Celery worker, and WSGI entrypoints.
 - `tests/`: backend unit/integration tests and test-only Python dependencies.
 - `frontend/`: Vite + React + TypeScript application.
 - `frontend/src/`: main UI code, including `components`, `conversation`, `hooks`, `locale`, `settings`, `upload`, and Redux store wiring in `store.ts`.
@@ -167,12 +177,12 @@ vale .
 
 ### Backend Abstractions
 
-- LLM providers implement a common interface in `application/llm/` (add new providers by extending the base class).
-- Vector stores are abstracted in `application/vectorstore/`.
-- Parsers live in `application/parser/` and handle different document formats in the ingestion stage.
-- Agents and tools are in `application/agents/` and `application/agents/tools/`.
-- Celery setup/config lives in `application/celery_init.py` and `application/celeryconfig.py`.
-- Settings and env vars are managed via Pydantic in `application/core/settings.py`.
+- LLM providers implement a common interface in `docsgpt/llm/` (add new providers by extending the base class).
+- Vector stores are abstracted in `docsgpt/vectorstore/`.
+- Parsers live in `docsgpt/parser/` and handle different document formats in the ingestion stage.
+- Agents and tools are in `docsgpt/agents/` and `docsgpt/agents/tools/`.
+- Celery setup/config lives in `docsgpt/celery_init.py` and `docsgpt/celeryconfig.py`.
+- Settings and env vars are managed via Pydantic in `docsgpt/core/settings.py`.
 
 ### Frontend
 

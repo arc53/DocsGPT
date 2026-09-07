@@ -1,4 +1,4 @@
-"""Unit tests for application/api/answer/services/conversation_service.py.
+"""Unit tests for docsgpt/api/answer/services/conversation_service.py.
 
 Additional coverage beyond tests/api/answer/services/test_conversation_service.py:
   - save_conversation: index-based update, metadata persistence, agent key tracking
@@ -18,7 +18,7 @@ class TestConversationServiceGetExtended:
     pass
 
     def test_handles_exception_gracefully(self, mock_mongo_db):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -33,7 +33,7 @@ class TestSaveConversationExtended:
     pass
 
     def test_raises_for_none_token(self, mock_mongo_db):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -71,7 +71,7 @@ class TestGetCompressionMetadata:
     pass
 
     def test_returns_none_for_missing_conversation(self, mock_mongo_db):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -80,7 +80,7 @@ class TestGetCompressionMetadata:
         assert result is None
 
     def test_handles_invalid_id(self, mock_mongo_db):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -100,7 +100,7 @@ class TestConversationServiceGaps:
 
     def test_append_compression_message_empty_summary_skips(self, mock_mongo_db):
         """Cover: empty summary does not insert."""
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 

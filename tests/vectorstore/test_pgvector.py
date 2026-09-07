@@ -10,9 +10,9 @@ def _make_store(
 ):
     """Helper to create a PGVectorStore with all external deps mocked."""
     with patch(
-        "application.vectorstore.base.BaseVectorStore._get_embeddings"
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings"
     ) as mock_get_emb, patch(
-        "application.vectorstore.pgvector.settings"
+        "docsgpt.vectorstore.pgvector.settings"
     ) as mock_settings, patch.dict(
         "sys.modules",
         {
@@ -29,7 +29,7 @@ def _make_store(
         mock_settings.EMBEDDINGS_NAME = "test_model"
         mock_settings.PGVECTOR_CONNECTION_STRING = connection_string
 
-        from application.vectorstore.pgvector import PGVectorStore
+        from docsgpt.vectorstore.pgvector import PGVectorStore
 
         store = PGVectorStore(
             source_id=source_id,
@@ -55,14 +55,14 @@ def _make_store(
 @pytest.mark.unit
 class TestPGVectorStoreInit:
     def test_source_id_cleaned(self):
-        store, _, _, _ = _make_store(source_id="application/indexes/abc123/")
+        store, _, _, _ = _make_store(source_id="docsgpt/indexes/abc123/")
         assert store._source_id == "abc123"
 
     def test_missing_connection_string_raises(self):
         with patch(
-            "application.vectorstore.base.BaseVectorStore._get_embeddings"
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings"
         ) as mock_get_emb, patch(
-            "application.vectorstore.pgvector.settings"
+            "docsgpt.vectorstore.pgvector.settings"
         ) as mock_settings, patch.dict(
             "sys.modules",
             {
@@ -76,7 +76,7 @@ class TestPGVectorStoreInit:
             mock_settings.PGVECTOR_CONNECTION_STRING = None
             mock_settings.POSTGRES_URI = None
 
-            from application.vectorstore.pgvector import PGVectorStore
+            from docsgpt.vectorstore.pgvector import PGVectorStore
 
             with pytest.raises(ValueError, match="connection string is required"):
                 PGVectorStore(

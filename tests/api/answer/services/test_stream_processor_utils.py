@@ -1,4 +1,4 @@
-"""Targeted tests for application/api/answer/services/stream_processor.py.
+"""Targeted tests for docsgpt/api/answer/services/stream_processor.py.
 
 Tests the ``get_prompt`` helper and simpler StreamProcessor methods against
 real ephemeral Postgres.
@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-import application.api.answer.services.stream_processor as sp_mod
+import docsgpt.api.answer.services.stream_processor as sp_mod
 
 
 @contextmanager
@@ -19,46 +19,46 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.answer.services.stream_processor.db_readonly", _yield
+        "docsgpt.api.answer.services.stream_processor.db_readonly", _yield
     ), patch(
-        "application.api.answer.services.stream_processor.db_session", _yield
+        "docsgpt.api.answer.services.stream_processor.db_session", _yield
     ):
         yield
 
 
 class TestGetPrompt:
     def test_default_preset(self):
-        from application.api.answer.services.stream_processor import get_prompt
+        from docsgpt.api.answer.services.stream_processor import get_prompt
         got = get_prompt("default")
         assert isinstance(got, str)
         assert len(got) > 0
 
     def test_creative_preset(self):
-        from application.api.answer.services.stream_processor import get_prompt
+        from docsgpt.api.answer.services.stream_processor import get_prompt
         got = get_prompt("creative")
         assert isinstance(got, str) and len(got) > 0
 
     def test_strict_preset(self):
-        from application.api.answer.services.stream_processor import get_prompt
+        from docsgpt.api.answer.services.stream_processor import get_prompt
         got = get_prompt("strict")
         assert isinstance(got, str) and len(got) > 0
 
     def test_agentic_default_preset(self):
-        from application.api.answer.services.stream_processor import get_prompt
+        from docsgpt.api.answer.services.stream_processor import get_prompt
         got = get_prompt("agentic_default")
         assert isinstance(got, str) and len(got) > 0
 
     def test_none_defaults_to_default(self):
-        from application.api.answer.services.stream_processor import get_prompt
+        from docsgpt.api.answer.services.stream_processor import get_prompt
         got = get_prompt(None)
         assert isinstance(got, str) and len(got) > 0
 
     def test_empty_string_defaults_to_default(self):
-        from application.api.answer.services.stream_processor import get_prompt
+        from docsgpt.api.answer.services.stream_processor import get_prompt
         assert get_prompt("") == get_prompt("default")
 
     def test_non_string_id_converted(self):
-        from application.api.answer.services.stream_processor import get_prompt
+        from docsgpt.api.answer.services.stream_processor import get_prompt
         # A UUID object would be stringified; use an int to test the branch
         with pytest.raises(ValueError):
             # Int converts to str "42" which isn't a preset, and will
@@ -66,18 +66,18 @@ class TestGetPrompt:
             get_prompt(42)
 
     def test_unknown_prompt_id_raises(self, pg_conn):
-        from application.api.answer.services.stream_processor import get_prompt
+        from docsgpt.api.answer.services.stream_processor import get_prompt
         with _patch_db(pg_conn), pytest.raises(ValueError):
             get_prompt("00000000-0000-0000-0000-000000000000")
 
     def test_legacy_id_unknown_raises(self, pg_conn):
-        from application.api.answer.services.stream_processor import get_prompt
+        from docsgpt.api.answer.services.stream_processor import get_prompt
         with _patch_db(pg_conn), pytest.raises(ValueError):
             get_prompt("507f1f77bcf86cd799439011")
 
     def test_uuid_lookup_returns_content(self, pg_conn):
-        from application.api.answer.services.stream_processor import get_prompt
-        from application.storage.db.repositories.prompts import (
+        from docsgpt.api.answer.services.stream_processor import get_prompt
+        from docsgpt.storage.db.repositories.prompts import (
             PromptsRepository,
         )
 
@@ -91,7 +91,7 @@ class TestGetPrompt:
 
 class TestStreamProcessorInit:
     def test_basic_init(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         data = {"question": "hi", "conversation_id": "conv-1"}
@@ -103,7 +103,7 @@ class TestStreamProcessorInit:
         assert sp.conversation_id == "conv-1"
 
     def test_init_no_token(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"question": "hi"}, None)
@@ -112,7 +112,7 @@ class TestStreamProcessorInit:
         assert sp.conversation_id is None
 
     def test_init_sets_agent_id_from_data(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         data = {"question": "hi", "agent_id": "agent-xyz"}
@@ -122,7 +122,7 @@ class TestStreamProcessorInit:
 
 class TestLoadConversationHistory:
     def test_no_conversation_id_uses_request_history(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         import json as _json
@@ -136,10 +136,10 @@ class TestLoadConversationHistory:
         assert len(sp.history) == 1
 
     def test_loads_existing_conversation_history(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -162,7 +162,7 @@ class TestLoadConversationHistory:
         )
         # Also patch conversation_service.get_conversation's DB accessor
         with _patch_db(pg_conn), patch(
-            "application.api.answer.services.conversation_service.db_readonly",
+            "docsgpt.api.answer.services.conversation_service.db_readonly",
         ) as mock_readonly:
             @contextmanager
             def _yield():
@@ -172,10 +172,10 @@ class TestLoadConversationHistory:
         assert len(sp.history) == 2
 
     def test_unauthorized_conversation_raises(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -186,7 +186,7 @@ class TestLoadConversationHistory:
             {"sub": "hacker"},
         )
         with _patch_db(pg_conn), patch(
-            "application.api.answer.services.conversation_service.db_readonly"
+            "docsgpt.api.answer.services.conversation_service.db_readonly"
         ) as mock_readonly:
             @contextmanager
             def _yield():
@@ -198,7 +198,7 @@ class TestLoadConversationHistory:
 
 class TestHasActiveDocs:
     def test_false_when_no_active_docs(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"question": "q"}, {"sub": "u"})
@@ -207,7 +207,7 @@ class TestHasActiveDocs:
         assert sp._has_active_docs() is False
 
     def test_true_when_source_active(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"question": "q"}, {"sub": "u"})
@@ -215,7 +215,7 @@ class TestHasActiveDocs:
         assert sp._has_active_docs() is True
 
     def test_false_when_source_empty(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"question": "q"}, {"sub": "u"})
@@ -223,7 +223,7 @@ class TestHasActiveDocs:
         assert sp._has_active_docs() is False
 
     def test_default_returns_false(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"question": "q"}, {"sub": "u"})
@@ -234,7 +234,7 @@ class TestHasActiveDocs:
 
 class TestProcessAttachments:
     def test_no_attachments(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"question": "q"}, {"sub": "u"})
@@ -244,10 +244,10 @@ class TestProcessAttachments:
         assert sp.attachments == []
 
     def test_retrieves_attachments_by_id(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.attachments import (
+        from docsgpt.storage.db.repositories.attachments import (
             AttachmentsRepository,
         )
 
@@ -269,7 +269,7 @@ class TestProcessAttachments:
 
 class TestGetAttachmentsContent:
     def test_empty_list(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"question": "q"}, {"sub": "u"})
@@ -278,7 +278,7 @@ class TestGetAttachmentsContent:
         assert got == []
 
     def test_skips_missing_attachments(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"question": "q"}, {"sub": "u"})
@@ -291,14 +291,14 @@ class TestGetAttachmentsContent:
 
 class TestResolveAgentId:
     def test_returns_agent_id_from_request(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"agent_id": "req-agent"}, {"sub": "u"})
         assert sp._resolve_agent_id() == "req-agent"
 
     def test_returns_none_if_not_set(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -307,7 +307,7 @@ class TestResolveAgentId:
 
 class TestGetAgentKey:
     def test_returns_tuple_for_none_agent_id(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -315,7 +315,7 @@ class TestGetAgentKey:
         assert key is None and is_shared is False and tok is None
 
     def test_raises_for_missing_agent(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -325,10 +325,10 @@ class TestGetAgentKey:
             )
 
     def test_returns_key_for_owned_agent(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = AgentsRepository(pg_conn).create(
             "owner", "a", "published", key="the-key",
@@ -340,10 +340,10 @@ class TestGetAgentKey:
         assert shared is False
 
     def test_raises_on_unauthorized_access(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
         agent = AgentsRepository(pg_conn).create(
             "owner", "a", "published", key="k", shared=False,
@@ -372,7 +372,7 @@ def _stub_db_readonly(monkeypatch, sp_mod):
 
 class TestConfigureSource:
     def test_agent_data_with_sources_list(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -386,7 +386,7 @@ class TestConfigureSource:
         assert sp.source == {"active_docs": ["s1"]}
 
     def test_agent_data_with_single_source(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -395,7 +395,7 @@ class TestConfigureSource:
         assert sp.source == {"active_docs": "src-1"}
 
     def test_agent_data_default_source(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -449,7 +449,7 @@ class TestConfigureSource:
         assert sp.source == {}
 
     def test_request_active_docs_default(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"active_docs": "default"}, {"sub": "u"})
@@ -457,7 +457,7 @@ class TestConfigureSource:
         assert sp.source == {}
 
     def test_no_data_empty_source(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -467,7 +467,7 @@ class TestConfigureSource:
 
 class TestConfigureRetriever:
     def test_defaults(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -476,7 +476,7 @@ class TestConfigureRetriever:
         assert sp.retriever_config["chunks"] == 2
 
     def test_agent_overrides(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -486,7 +486,7 @@ class TestConfigureRetriever:
         assert sp.retriever_config["chunks"] == 5
 
     def test_agent_wins_over_request_on_agent_bound(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor(
@@ -498,7 +498,7 @@ class TestConfigureRetriever:
         assert sp.retriever_config["chunks"] == 5
 
     def test_body_wins_on_agentless(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor(
@@ -510,7 +510,7 @@ class TestConfigureRetriever:
 
     def test_agent_bound_drops_body_chunks_and_retriever(self):
         # Missing agent values fall back to system defaults, not body's.
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor(
@@ -522,7 +522,7 @@ class TestConfigureRetriever:
         assert sp.retriever_config["chunks"] == 2
 
     def test_invalid_agent_chunks_falls_back(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -531,7 +531,7 @@ class TestConfigureRetriever:
         assert sp.retriever_config["chunks"] == 2
 
     def test_invalid_request_chunks_falls_back(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"chunks": "abc"}, {"sub": "u"})
@@ -539,7 +539,7 @@ class TestConfigureRetriever:
         assert sp.retriever_config["chunks"] == 2
 
     def test_isnonedoc_without_api_key_sets_chunks_to_0(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"isNoneDoc": True}, {"sub": "u"})
@@ -550,10 +550,10 @@ class TestConfigureRetriever:
 
 class TestGetPromptContent:
     def test_gets_from_agent_config(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.prompts import (
+        from docsgpt.storage.db.repositories.prompts import (
             PromptsRepository,
         )
 
@@ -573,10 +573,10 @@ class TestGetPromptContent:
         assert "{{ system.persona }}" in content
 
     def test_templated_custom_prompt_is_left_alone(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.prompts import (
+        from docsgpt.storage.db.repositories.prompts import (
             PromptsRepository,
         )
 
@@ -592,7 +592,7 @@ class TestGetPromptContent:
         assert sp._persona is None
 
     def test_returns_none_on_missing(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
 
@@ -605,7 +605,7 @@ class TestGetPromptContent:
         assert content is None
 
     def test_caches_prompt_content(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -614,7 +614,7 @@ class TestGetPromptContent:
         assert sp._get_prompt_content() == "cached"
 
     def test_agentic_agent_gets_agentic_preset(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -624,7 +624,7 @@ class TestGetPromptContent:
         assert "source.summaries" not in content
 
     def test_research_agent_gets_agentic_preset(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -633,7 +633,7 @@ class TestGetPromptContent:
         assert "`search` tool" in content
 
     def test_classic_agent_gets_classic_preset(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -644,7 +644,7 @@ class TestGetPromptContent:
         assert "documents are provided with the question" in content
 
     def test_null_prompt_id_agentic_agent_gets_agentic_preset(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         # PG ``agents.prompt_id`` is NULL for agents that never chose a
@@ -657,7 +657,7 @@ class TestGetPromptContent:
         assert "source.summaries" not in content
 
     def test_null_prompt_id_classic_agent_gets_default_preset(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -671,7 +671,7 @@ class TestGetPromptContent:
 
 class TestPreFetchDocs:
     def test_skips_when_no_active_docs(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
@@ -680,7 +680,7 @@ class TestPreFetchDocs:
         assert docs is None and raw is None
 
     def test_skips_when_isnonedoc_no_agent(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"isNoneDoc": True}, {"sub": "u"})
@@ -690,13 +690,13 @@ class TestPreFetchDocs:
         assert docs is None and raw is None
 
     def test_handles_retriever_exception(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
         sp.source = {"active_docs": "src"}
         with patch(
-            "application.api.answer.services.stream_processor.StreamProcessor.create_retriever",
+            "docsgpt.api.answer.services.stream_processor.StreamProcessor.create_retriever",
             side_effect=RuntimeError("boom"),
         ):
             docs, raw = sp.pre_fetch_docs("q")
@@ -705,48 +705,48 @@ class TestPreFetchDocs:
 
 class TestPreFetchTools:
     def test_disabled_globally_returns_none(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({}, {"sub": "u"})
         with patch(
-            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            "docsgpt.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             False,
         ):
             got = sp.pre_fetch_tools()
         assert got is None
 
     def test_disabled_per_request(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"disable_tool_prefetch": True}, {"sub": "u"})
         with patch(
-            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            "docsgpt.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             True,
         ):
             got = sp.pre_fetch_tools()
         assert got is None
 
     def test_no_template_skips_default_tool_prefetch(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
 
         sp = StreamProcessor({}, {"sub": "no-tools-user"})
         sp._prompt_content = "No template syntax here"
         with _patch_db(pg_conn), patch(
-            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            "docsgpt.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             True,
         ):
             got = sp.pre_fetch_tools()
         assert got is None
 
     def test_unresolvable_prompt_prefetches_only_explicit_rows(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
 
@@ -766,7 +766,7 @@ class TestPreFetchTools:
             return {"ok": True}
 
         with _patch_db(pg_conn), patch(
-            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            "docsgpt.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             True,
         ), patch.object(sp, "_fetch_tool_data", _fake_fetch):
             got = sp.pre_fetch_tools()
@@ -778,8 +778,8 @@ class TestPreFetchTools:
     def test_default_tool_prefetched_when_template_references_it(
         self, pg_conn
     ):
-        from application.agents.default_tools import default_tool_id
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
 
@@ -792,7 +792,7 @@ class TestPreFetchTools:
             return {"ok": True}
 
         with _patch_db(pg_conn), patch(
-            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            "docsgpt.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             True,
         ), patch.object(sp, "_fetch_tool_data", _fake_fetch):
             got = sp.pre_fetch_tools()
@@ -807,11 +807,11 @@ class TestPreFetchTools:
         assert got.get("read_webpage") == {"ok": True}
 
     def test_explicit_row_keeps_name_key_over_default(self, pg_conn):
-        from application.agents.default_tools import default_tool_id
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
 
@@ -825,7 +825,7 @@ class TestPreFetchTools:
             return {"is_default": bool(tool_doc.get("default"))}
 
         with _patch_db(pg_conn), patch(
-            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            "docsgpt.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             True,
         ), patch.object(sp, "_fetch_tool_data", _fake_fetch):
             got = sp.pre_fetch_tools()
@@ -838,8 +838,8 @@ class TestPreFetchTools:
     def test_fetch_tool_data_executes_referenced_memory_view(self, pg_conn):
         from unittest.mock import MagicMock
 
-        from application.agents.default_tools import synthesize_default_tool
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.agents.default_tools import synthesize_default_tool
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
 
@@ -853,7 +853,7 @@ class TestPreFetchTools:
         mock_manager.load_tool.return_value = mock_tool
 
         with patch(
-            "application.agents.tools.tool_manager.ToolManager",
+            "docsgpt.agents.tools.tool_manager.ToolManager",
             return_value=mock_manager,
         ):
             got = sp._fetch_tool_data(tool_doc, {"memory_view"})
@@ -864,14 +864,14 @@ class TestPreFetchTools:
         mock_tool.execute_action.assert_called_once_with("memory_view")
 
     def test_agent_bound_invocation_omits_default_tool_prefetch(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
 
         sp = StreamProcessor({"agent_id": "agent-xyz"}, {"sub": "u-ag"})
         sp._required_tool_actions = {"read_webpage": {None}}
         with _patch_db(pg_conn), patch(
-            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            "docsgpt.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             True,
         ):
             got = sp.pre_fetch_tools()
@@ -881,11 +881,11 @@ class TestPreFetchTools:
         """An explicit row and the synthesized default of the same name
         coexist: name key stays on the explicit, default reachable by
         synthetic id only."""
-        from application.agents.default_tools import default_tool_id
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.user_tools import (
+        from docsgpt.storage.db.repositories.user_tools import (
             UserToolsRepository,
         )
 
@@ -906,7 +906,7 @@ class TestPreFetchTools:
             }
 
         with _patch_db(pg_conn), patch(
-            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            "docsgpt.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             True,
         ), patch.object(sp, "_fetch_tool_data", _fake_fetch):
             got = sp.pre_fetch_tools()
@@ -921,7 +921,7 @@ class TestValidateAndSetModelAgentAuthority:
     """Agent-bound chats: agent's ``default_model_id`` is authoritative."""
 
     def test_agent_bound_ignores_body_model_id(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"model_id": "body-model"}, {"sub": "caller"})
@@ -937,10 +937,10 @@ class TestValidateAndSetModelAgentAuthority:
             return True
 
         with patch(
-            "application.api.answer.services.stream_processor.validate_model_id",
+            "docsgpt.api.answer.services.stream_processor.validate_model_id",
             side_effect=_fake_validate,
         ), patch(
-            "application.api.answer.services.stream_processor.get_default_model_id",
+            "docsgpt.api.answer.services.stream_processor.get_default_model_id",
             return_value="global-default",
         ):
             sp._validate_and_set_model()
@@ -950,17 +950,17 @@ class TestValidateAndSetModelAgentAuthority:
         assert ("agent-model", "owner") in captured
 
     def test_agent_bound_no_default_falls_back_to_system(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"model_id": "body-model"}, {"sub": "u"})
         sp._agent_data = {"user": "u"}
         sp.agent_config = {"default_model_id": "", "user_id": "u"}
         with patch(
-            "application.api.answer.services.stream_processor.validate_model_id",
+            "docsgpt.api.answer.services.stream_processor.validate_model_id",
             return_value=False,
         ), patch(
-            "application.api.answer.services.stream_processor.get_default_model_id",
+            "docsgpt.api.answer.services.stream_processor.get_default_model_id",
             return_value="global-default",
         ):
             sp._validate_and_set_model()
@@ -968,13 +968,13 @@ class TestValidateAndSetModelAgentAuthority:
         assert sp.model_user_id is None
 
     def test_agentless_body_model_still_wins(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         sp = StreamProcessor({"model_id": "body-model"}, {"sub": "u"})
         sp._agent_data = None
         with patch(
-            "application.api.answer.services.stream_processor.validate_model_id",
+            "docsgpt.api.answer.services.stream_processor.validate_model_id",
             return_value=True,
         ):
             sp._validate_and_set_model()
@@ -986,14 +986,14 @@ class TestGetDataFromApiKeySourceUnion:
     """`_get_data_from_api_key`: primary ∪ extras, deduplicated, primary first."""
 
     def _make_sp(self):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
         return StreamProcessor({}, {"sub": "u"})
 
     def test_union_primary_and_extras(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         owner = "u-merge-both"
         sources_repo = SourcesRepository(pg_conn)
@@ -1023,8 +1023,8 @@ class TestGetDataFromApiKeySourceUnion:
         assert data["source"] == str(primary["id"])
 
     def test_only_primary(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         owner = "u-merge-primary-only"
         primary = SourcesRepository(pg_conn).create(
@@ -1045,8 +1045,8 @@ class TestGetDataFromApiKeySourceUnion:
         assert data["source"] == str(primary["id"])
 
     def test_only_extras(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         owner = "u-merge-extras-only"
         e1 = SourcesRepository(pg_conn).create(name="e1", user_id=owner)
@@ -1067,8 +1067,8 @@ class TestGetDataFromApiKeySourceUnion:
         assert data["source"] is None
 
     def test_dedupe_primary_repeated_in_extras(self, pg_conn):
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         owner = "u-merge-dedupe"
         primary = SourcesRepository(pg_conn).create(
@@ -1096,11 +1096,11 @@ class TestAgentBoundFieldsAuthoritative:
     """End-to-end regression: agent's source/model/chunks/retriever win."""
 
     def test_agent_values_win_over_body(self, pg_conn):
-        from application.api.answer.services.stream_processor import (
+        from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,
         )
-        from application.storage.db.repositories.agents import AgentsRepository
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         owner = "u-regr-agent-authority"
         primary = SourcesRepository(pg_conn).create(
@@ -1130,10 +1130,10 @@ class TestAgentBoundFieldsAuthoritative:
         sp = StreamProcessor(body, {"sub": owner})
 
         with _patch_db(pg_conn), patch(
-            "application.api.answer.services.stream_processor.validate_model_id",
+            "docsgpt.api.answer.services.stream_processor.validate_model_id",
             return_value=True,
         ), patch(
-            "application.api.answer.services.stream_processor.get_default_model_id",
+            "docsgpt.api.answer.services.stream_processor.get_default_model_id",
             return_value="system-default",
         ):
             sp._configure_agent()

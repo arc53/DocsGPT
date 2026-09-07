@@ -1,3 +1,4 @@
+import { envVar } from '@/env';
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import store from '../store';
@@ -12,7 +13,7 @@ import {
   clearAttachments,
 } from '../upload/uploadSlice';
 
-const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
+const API_STREAMING = envVar('VITE_API_STREAMING') === 'true';
 interface SharedConversationsType {
   queries: Query[];
   apiKey?: string;

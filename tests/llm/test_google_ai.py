@@ -1,4 +1,4 @@
-"""Unit tests for application/llm/google_ai.py — GoogleLLM.
+"""Unit tests for docsgpt/llm/google_ai.py — GoogleLLM.
 
 Extends coverage beyond test_google_llm.py:
   - _clean_messages_google: system instructions, function responses, errors
@@ -19,7 +19,7 @@ import types
 
 import pytest
 
-from application.llm.google_ai import GoogleLLM
+from docsgpt.llm.google_ai import GoogleLLM
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ class FakeClient:
 
 @pytest.fixture(autouse=True)
 def patch_google(monkeypatch):
-    import application.llm.google_ai as gmod
+    import docsgpt.llm.google_ai as gmod
 
     monkeypatch.setattr(gmod, "types", FakeTypesModule)
     monkeypatch.setattr(gmod.genai, "Client", FakeClient)
@@ -850,7 +850,7 @@ class TestUploadFileToGoogle:
         # Poisoned-cache repro: an empty-string google_file_uri must be
         # treated as a miss and re-upload, not returned as-is.
         monkeypatch.setattr(
-            "application.llm.google_ai.settings",
+            "docsgpt.llm.google_ai.settings",
             types.SimpleNamespace(GOOGLE_API_KEY="k", API_KEY="k"),
         )
         result = llm._upload_file_to_google(
@@ -880,7 +880,7 @@ class TestUploadFileToGoogle:
         # now; failures there are swallowed with a logged warning, so the
         # test just verifies the upload URI is returned end-to-end.
         monkeypatch.setattr(
-            "application.llm.google_ai.settings",
+            "docsgpt.llm.google_ai.settings",
             types.SimpleNamespace(GOOGLE_API_KEY="k", API_KEY="k"),
         )
         result = llm._upload_file_to_google({"path": "/tmp/file.pdf", "_id": "abc"})

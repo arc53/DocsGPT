@@ -8,7 +8,7 @@ honors a client-supplied ``Idempotency-Key`` header: a retry returns the
 
 These tests pin both layers against an ephemeral Postgres (``pg_engine``):
 
-- the ``application.api.v1.idempotency`` helper contract directly
+- the ``docsgpt.api.v1.idempotency`` helper contract directly
   (completed → cached, fresh-pending → 409, stale-pending → re-claim,
   non-2xx → not cached); and
 - the real ``/v1/chat/completions`` route end-to-end: the same key twice
@@ -28,8 +28,8 @@ import pytest
 from flask import Flask
 from sqlalchemy import text
 
-from application.api.v1 import idempotency as v1_idem
-from application.api.v1.idempotency import (
+from docsgpt.api.v1 import idempotency as v1_idem
+from docsgpt.api.v1.idempotency import (
     STALE_PENDING_SECONDS,
     TASK_NAME,
     claim_or_replay,
@@ -37,7 +37,7 @@ from application.api.v1.idempotency import (
     release,
     scoped_key,
 )
-from application.api.v1.routes import v1_bp
+from docsgpt.api.v1.routes import v1_bp
 
 # Reuse the route-level DB wiring + fake answering agent from the tool-pause
 # suite so a real two-POST round-trip runs against the ephemeral Postgres.
@@ -294,7 +294,7 @@ class TestV1IdempotencyRoute:
         _CountingAnswerAgent.gen_calls = 0
 
         with _wire_v1_route_db(pg_engine, monkeypatch), patch(
-            "application.api.answer.services.stream_processor.StreamProcessor"
+            "docsgpt.api.answer.services.stream_processor.StreamProcessor"
             ".build_agent",
             self._fake_build_agent,
         ):
@@ -332,7 +332,7 @@ class TestV1IdempotencyRoute:
         _CountingAnswerAgent.gen_calls = 0
 
         with _wire_v1_route_db(pg_engine, monkeypatch), patch(
-            "application.api.answer.services.stream_processor.StreamProcessor"
+            "docsgpt.api.answer.services.stream_processor.StreamProcessor"
             ".build_agent",
             self._fake_build_agent,
         ):
@@ -359,7 +359,7 @@ class TestV1IdempotencyRoute:
         _CountingAnswerAgent.gen_calls = 0
 
         with _wire_v1_route_db(pg_engine, monkeypatch), patch(
-            "application.api.answer.services.stream_processor.StreamProcessor"
+            "docsgpt.api.answer.services.stream_processor.StreamProcessor"
             ".build_agent",
             self._fake_build_agent,
         ):
@@ -399,7 +399,7 @@ class TestV1IdempotencyRoute:
         _CountingAnswerAgent.gen_calls = 0
 
         with _wire_v1_route_db(pg_engine, monkeypatch), patch(
-            "application.api.answer.services.stream_processor.StreamProcessor"
+            "docsgpt.api.answer.services.stream_processor.StreamProcessor"
             ".build_agent",
             _build,
         ):

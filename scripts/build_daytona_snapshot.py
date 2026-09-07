@@ -18,7 +18,7 @@ Then set in .env::
     DAYTONA_SNAPSHOT=docsgpt-artifacts-py312
 
 Keep the pins in sync with the backend venv (python-pptx / openpyxl / lxml /
-pillow are in application/requirements.txt; python-docx and reportlab arrive
+pillow are in docsgpt/requirements.txt; python-docx and reportlab arrive
 transitively) so the Daytona render output matches the Jupyter-backend output.
 """
 
@@ -57,7 +57,7 @@ def main(argv: list[str]) -> int:
     """Build (or skip) the snapshot and print the value to set as DAYTONA_SNAPSHOT."""
     args = _parse_args(argv)
 
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     if not settings.DAYTONA_API_KEY:
         print("DAYTONA_API_KEY is not set (check .env).", file=sys.stderr)

@@ -1,3 +1,4 @@
+import { envVar } from '@/env';
 import {
   useCallback,
   useEffect,
@@ -63,7 +64,7 @@ const LIVE_TRANSCRIPTION_TIMESLICE_MS = 1000;
 const LIVE_CAPTURE_SAMPLE_RATE = 16000;
 const LIVE_CAPTURE_MAX_BUFFER_SECONDS = 20;
 const LIVE_SILENCE_RMS_THRESHOLD = 0.015;
-const ENABLE_VOICE_INPUT = import.meta.env.VITE_ENABLE_VOICE_INPUT === 'true';
+const ENABLE_VOICE_INPUT = envVar('VITE_ENABLE_VOICE_INPUT') === 'true';
 
 type AudioContextWindow = Window &
   typeof globalThis & {
@@ -526,7 +527,7 @@ export default function MessageInput({
       if (supported.length === 0) return;
       const files = supported;
 
-      const apiHost = import.meta.env.VITE_API_HOST;
+      const apiHost = envVar('VITE_API_HOST');
 
       if (files.length > 1) {
         const formData = new FormData();

@@ -1,6 +1,6 @@
 """Fixtures for Celery worker smoke tests.
 
-These tests exercise the task *bodies* in ``application.worker`` against a
+These tests exercise the task *bodies* in ``docsgpt.worker`` against a
 real Postgres schema (via the ephemeral ``pg_conn`` fixture from the root
 ``tests/conftest.py``). External I/O — storage, the embedding pipeline,
 the retriever, the LLM, the backend HTTP callback — is mocked, but every
@@ -20,7 +20,7 @@ from sqlalchemy import Connection
 
 @pytest.fixture
 def patch_worker_db(pg_conn, monkeypatch):
-    """Redirect ``db_session`` / ``db_readonly`` in ``application.worker``.
+    """Redirect ``db_session`` / ``db_readonly`` in ``docsgpt.worker``.
 
     Both helpers yield the per-test transactional ``pg_conn``, so any
     writes a task performs are visible to the test and roll back on
@@ -32,8 +32,8 @@ def patch_worker_db(pg_conn, monkeypatch):
     def _use_pg_conn() -> Iterator[Connection]:
         yield pg_conn
 
-    monkeypatch.setattr("application.worker.db_session", _use_pg_conn)
-    monkeypatch.setattr("application.worker.db_readonly", _use_pg_conn)
+    monkeypatch.setattr("docsgpt.worker.db_session", _use_pg_conn)
+    monkeypatch.setattr("docsgpt.worker.db_readonly", _use_pg_conn)
 
 
 @pytest.fixture

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from application.parser.file.bulk import get_default_file_extractor
-from application.parser.file.constants import (
+from docsgpt.parser.file.bulk import get_default_file_extractor
+from docsgpt.parser.file.constants import (
     ATTACHMENT_PARSER_EXTENSIONS,
     attachment_extension,
     has_attachment_parser,

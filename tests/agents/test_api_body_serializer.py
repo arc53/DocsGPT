@@ -1,10 +1,10 @@
-"""Tests for application/agents/tools/api_body_serializer.py"""
+"""Tests for docsgpt/agents/tools/api_body_serializer.py"""
 
 import json
 
 import pytest
 
-from application.agents.tools.api_body_serializer import (
+from docsgpt.agents.tools.api_body_serializer import (
     ContentType,
     RequestBodySerializer,
 )

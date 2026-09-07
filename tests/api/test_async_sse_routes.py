@@ -1,4 +1,4 @@
-"""Tests for ``application/api/async_sse.py``.
+"""Tests for ``docsgpt/api/async_sse.py``.
 
 Native-async reconnect endpoint: GET /api/messages/<id>/events. Auth gate,
 ownership gate, malformed-id rejection, Last-Event-ID normalisation, and the
@@ -15,19 +15,19 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from application.api.async_sse import (
+from docsgpt.api.async_sse import (
     _MESSAGE_ID_RE,
     _normalise_last_event_id,
     async_sse_routes,
 )
-from application.core.settings import settings
+from docsgpt.core.settings import settings
 
 VALID_UUID = "67d65e8f-e7fb-4df1-9e6e-99ea6c830206"
 
-_AUTH = "application.api.async_sse.handle_auth"
-_OWNS = "application.api.async_sse._user_owns_message"
-_STREAM = "application.api.async_sse.build_message_event_stream_async"
-_AREDIS = "application.api.async_sse.get_async_redis_instance"
+_AUTH = "docsgpt.api.async_sse.handle_auth"
+_OWNS = "docsgpt.api.async_sse._user_owns_message"
+_STREAM = "docsgpt.api.async_sse.build_message_event_stream_async"
+_AREDIS = "docsgpt.api.async_sse.get_async_redis_instance"
 
 
 def _client() -> TestClient:

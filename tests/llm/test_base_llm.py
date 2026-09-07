@@ -1,4 +1,4 @@
-"""Unit tests for application/llm/base.py — BaseLLM.
+"""Unit tests for docsgpt/llm/base.py — BaseLLM.
 
 Covers initialisation, static helpers, supports_* introspection,
 structured-output defaults, and attachment-type defaults.
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from application.llm.base import BaseLLM
+from docsgpt.llm.base import BaseLLM
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ class TestFallbackLLMCaching:
 
     def test_none_when_no_backup_and_no_global(self, monkeypatch):
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(FALLBACK_LLM_PROVIDER=None),
         )
         llm = StubLLM(backup_models=[])
@@ -188,7 +188,7 @@ class TestFallbackLLMCaching:
 
     def test_global_fallback_init_failure_returns_none(self, monkeypatch):
         monkeypatch.setattr(
-            "application.llm.base.settings",
+            "docsgpt.llm.base.settings",
             MagicMock(
                 FALLBACK_LLM_PROVIDER="openai",
                 FALLBACK_LLM_NAME="gpt-4",
@@ -197,7 +197,7 @@ class TestFallbackLLMCaching:
             ),
         )
         monkeypatch.setattr(
-            "application.llm.llm_creator.LLMCreator.create_llm",
+            "docsgpt.llm.llm_creator.LLMCreator.create_llm",
             Mock(side_effect=RuntimeError("boom")),
         )
         llm = StubLLM(backup_models=[])

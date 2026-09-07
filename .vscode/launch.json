@@ -14,7 +14,7 @@
         "request": "launch",
         "module": "flask",
         "env": {
-            "FLASK_APP": "application/app.py",
+            "FLASK_APP": "docsgpt/app.py",
             "PYTHONPATH": "${workspaceFolder}",
             "FLASK_ENV": "development",
             "FLASK_DEBUG": "1",
@@ -38,7 +38,7 @@
       },
       "args": [
         "-A",
-        "application.app.celery",
+        "docsgpt.app.celery",
         "worker",
         "-l",
         "INFO",

@@ -1,10 +1,10 @@
-"""Tests for application/agents/tools/postgres.py"""
+"""Tests for docsgpt/agents/tools/postgres.py"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.agents.tools.postgres import PostgresTool
+from docsgpt.agents.tools.postgres import PostgresTool
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ class TestPostgresExecuteAction:
         with pytest.raises(ValueError, match="Unknown action"):
             tool.execute_action("invalid")
 
-    @patch("application.agents.tools.postgres.psycopg.connect")
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
     def test_select_query(self, mock_connect, tool):
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -37,7 +37,7 @@ class TestPostgresExecuteAction:
         assert result["response_data"]["data"][0] == {"id": 1, "name": "Alice"}
         mock_conn.close.assert_called_once()
 
-    @patch("application.agents.tools.postgres.psycopg.connect")
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
     def test_insert_query(self, mock_connect, tool):
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -55,7 +55,7 @@ class TestPostgresExecuteAction:
         mock_conn.commit.assert_called_once()
         mock_conn.close.assert_called_once()
 
-    @patch("application.agents.tools.postgres.psycopg.connect")
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
     def test_db_error(self, mock_connect, tool):
         import psycopg
 
@@ -68,7 +68,7 @@ class TestPostgresExecuteAction:
         assert result["status_code"] == 500
         assert "Database error" in result["error"]
 
-    @patch("application.agents.tools.postgres.psycopg.connect")
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
     def test_get_schema(self, mock_connect, tool):
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -89,7 +89,7 @@ class TestPostgresExecuteAction:
         assert result["schema"]["users"][0]["column_name"] == "id"
         mock_conn.close.assert_called_once()
 
-    @patch("application.agents.tools.postgres.psycopg.connect")
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
     def test_get_schema_db_error(self, mock_connect, tool):
         import psycopg
 
@@ -100,7 +100,7 @@ class TestPostgresExecuteAction:
         assert result["status_code"] == 500
         assert "Database error" in result["error"]
 
-    @patch("application.agents.tools.postgres.psycopg.connect")
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
     def test_connection_closed_on_error(self, mock_connect, tool):
         import psycopg
 
@@ -114,7 +114,7 @@ class TestPostgresExecuteAction:
 
         mock_conn.close.assert_called_once()
 
-    @patch("application.agents.tools.postgres.psycopg.connect")
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
     def test_select_with_no_description(self, mock_connect, tool):
         mock_conn = MagicMock()
         mock_cur = MagicMock()

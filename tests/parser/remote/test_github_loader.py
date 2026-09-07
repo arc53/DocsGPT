@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 import requests
 
-from application.parser.remote.github_loader import GitHubLoader
+from docsgpt.parser.remote.github_loader import GitHubLoader
 
 
 def make_response(json_data=None, status_code=200, raise_error=None):
@@ -18,7 +18,7 @@ def make_response(json_data=None, status_code=200, raise_error=None):
 
 
 class TestGitHubLoaderFetchFileContent:
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_text_file_base64_decoded(self, mock_get):
         loader = GitHubLoader()
         content_str = "Hello from README"
@@ -34,7 +34,7 @@ class TestGitHubLoaderFetchFileContent:
             timeout=100,
         )
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_binary_file_skipped(self, mock_get):
         loader = GitHubLoader()
         mock_get.return_value = make_response({"encoding": "base64", "content": "AAAA"})
@@ -43,7 +43,7 @@ class TestGitHubLoaderFetchFileContent:
 
         assert result is None
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_non_base64_plain_content(self, mock_get):
         loader = GitHubLoader()
         mock_get.return_value = make_response({"encoding": "", "content": "Plain text"})
@@ -52,7 +52,7 @@ class TestGitHubLoaderFetchFileContent:
 
         assert result == "Plain text"
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_http_error_raises(self, mock_get):
         loader = GitHubLoader()
         http_err = requests.HTTPError("Not found")
@@ -63,7 +63,7 @@ class TestGitHubLoaderFetchFileContent:
 
 
 class TestGitHubLoaderFetchRepoFiles:
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_recurses_directories(self, mock_get):
         loader = GitHubLoader()
 
@@ -133,7 +133,7 @@ class TestGitHubLoaderIsTextFile:
         loader = GitHubLoader()
         assert loader.is_text_file("image.png") is False
 
-    @patch("application.parser.remote.github_loader.mimetypes.guess_type")
+    @patch("docsgpt.parser.remote.github_loader.mimetypes.guess_type")
     def test_mime_fallback_text(self, mock_mime):
         mock_mime.return_value = ("text/plain", None)
         loader = GitHubLoader()
@@ -141,15 +141,15 @@ class TestGitHubLoaderIsTextFile:
 
 
 class TestGitHubLoaderMakeRequest:
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_success(self, mock_get):
         loader = GitHubLoader()
         mock_get.return_value = make_response({"ok": True}, 200)
         resp = loader._make_request("http://example.com")
         assert resp.status_code == 200
 
-    @patch("application.parser.remote.github_loader.time.sleep")
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.time.sleep")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_rate_limit_retry(self, mock_get, mock_sleep):
         loader = GitHubLoader()
         rate_resp = MagicMock()
@@ -166,7 +166,7 @@ class TestGitHubLoaderMakeRequest:
         assert resp.status_code == 200
         mock_sleep.assert_called_once()
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_rate_limit_exhausted(self, mock_get):
         loader = GitHubLoader()
         rate_resp = MagicMock()
@@ -181,7 +181,7 @@ class TestGitHubLoaderMakeRequest:
         with pytest.raises(Exception, match="rate limit exceeded"):
             loader._make_request("http://example.com", max_retries=1)
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_403_non_rate_limit(self, mock_get):
         loader = GitHubLoader()
         resp = MagicMock()
@@ -193,7 +193,7 @@ class TestGitHubLoaderMakeRequest:
         with pytest.raises(Exception, match="GitHub API error"):
             loader._make_request("http://example.com", max_retries=1)
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_other_error_raises(self, mock_get):
         loader = GitHubLoader()
         resp = make_response(
@@ -207,7 +207,7 @@ class TestGitHubLoaderMakeRequest:
 
 
 class TestGitHubLoaderFetchRepoFilesErrors:
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_api_error_message_in_dict(self, mock_get):
         loader = GitHubLoader()
         mock_get.return_value = make_response(
@@ -217,7 +217,7 @@ class TestGitHubLoaderFetchRepoFilesErrors:
         with pytest.raises(Exception, match="GitHub API error"):
             loader.fetch_repo_files("owner/repo")
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_non_list_response(self, mock_get):
         loader = GitHubLoader()
         mock_get.return_value = make_response("not a list", 200)
@@ -227,7 +227,7 @@ class TestGitHubLoaderFetchRepoFilesErrors:
 
 
 class TestGitHubLoaderFetchFileContentEdgeCases:
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_empty_base64_text_returns_none(self, mock_get):
         loader = GitHubLoader()
         b64 = base64.b64encode(b"").decode("utf-8")
@@ -237,7 +237,7 @@ class TestGitHubLoaderFetchFileContentEdgeCases:
         result = loader.fetch_file_content("owner/repo", "empty.py")
         assert result is None
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_empty_non_base64_returns_none(self, mock_get):
         loader = GitHubLoader()
         mock_get.return_value = make_response(
@@ -246,7 +246,7 @@ class TestGitHubLoaderFetchFileContentEdgeCases:
         result = loader.fetch_file_content("owner/repo", "empty.txt")
         assert result is None
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_decode_failure_returns_none(self, mock_get):
         loader = GitHubLoader()
         mock_get.return_value = make_response(
@@ -275,7 +275,7 @@ class TestGitHubLoaderLoadDataSkipsNone:
 
 
 class TestGitHubLoaderRobustness:
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_fetch_repo_files_non_json_raises(self, mock_get):
         resp = MagicMock()
         resp.json.side_effect = ValueError("No JSON")
@@ -283,14 +283,14 @@ class TestGitHubLoaderRobustness:
         with pytest.raises(ValueError):
             GitHubLoader().fetch_repo_files("owner/repo")
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_fetch_repo_files_unexpected_shape_missing_type_raises(self, mock_get):
         # Missing 'type' in items should raise KeyError when accessed
         mock_get.return_value = make_response([{"path": "README.md"}])
         with pytest.raises(KeyError):
             GitHubLoader().fetch_repo_files("owner/repo")
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_fetch_file_content_non_json_raises(self, mock_get):
         resp = MagicMock()
         resp.status_code = 200
@@ -299,7 +299,7 @@ class TestGitHubLoaderRobustness:
         with pytest.raises(ValueError):
             GitHubLoader().fetch_file_content("owner/repo", "README.md")
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_fetch_file_content_unexpected_shape_missing_content_returns_none(self, mock_get):
         # encoding indicates base64 text, but 'content' key is missing
         # With the new code, the exception is caught and returns None (treated as binary/skipped)
@@ -308,8 +308,8 @@ class TestGitHubLoaderRobustness:
         result = GitHubLoader().fetch_file_content("owner/repo", "file.txt")
         assert result is None
 
-    @patch("application.parser.remote.github_loader.base64.b64decode")
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.base64.b64decode")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_large_binary_skip_does_not_decode(self, mock_get, mock_b64decode):
         # Ensure we don't attempt to decode large binary content for non-text files
         mock_b64decode.side_effect = AssertionError("b64decode should not be called for binary files")
@@ -384,7 +384,7 @@ class TestGitHubLoaderSelectFiles:
     def test_applies_size_cap(self, monkeypatch):
         loader = GitHubLoader()
         monkeypatch.setattr(
-            "application.parser.remote.github_loader.settings.GITHUB_INGEST_MAX_FILE_BYTES",
+            "docsgpt.parser.remote.github_loader.settings.GITHUB_INGEST_MAX_FILE_BYTES",
             100, raising=False,
         )
         entries = [("small.py", 50), ("huge.py", 5000), ("ok.md", 99)]
@@ -393,7 +393,7 @@ class TestGitHubLoaderSelectFiles:
     def test_zero_cap_disables_limit(self, monkeypatch):
         loader = GitHubLoader()
         monkeypatch.setattr(
-            "application.parser.remote.github_loader.settings.GITHUB_INGEST_MAX_FILE_BYTES",
+            "docsgpt.parser.remote.github_loader.settings.GITHUB_INGEST_MAX_FILE_BYTES",
             0, raising=False,
         )
         assert loader.select_files([("huge.py", 10**9)]) == ["huge.py"]
@@ -407,7 +407,7 @@ class TestGitHubLoaderSelectFiles:
 
 
 class TestGitHubLoaderTree:
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_single_request_lists_all_blobs(self, mock_get):
         mock_get.return_value = make_response({
             "tree": [
@@ -424,7 +424,7 @@ class TestGitHubLoaderTree:
         # One call for the whole repo, versus one per directory before.
         assert mock_get.call_count == 1
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_truncated_tree_falls_back_to_walk(self, mock_get, monkeypatch):
         loader = GitHubLoader()
         mock_get.return_value = make_response({"tree": [], "truncated": True})
@@ -435,12 +435,12 @@ class TestGitHubLoaderTree:
 
 
 class TestGitHubLoaderDefaultBranch:
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_uses_repo_default_branch(self, mock_get):
         mock_get.return_value = make_response({"default_branch": "master"})
         assert GitHubLoader().get_default_branch("owner/repo") == "master"
 
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_falls_back_to_main(self, mock_get):
         mock_get.side_effect = requests.ConnectionError("boom")
         assert GitHubLoader().get_default_branch("owner/repo") == "main"
@@ -496,7 +496,7 @@ class TestGitHubLoaderParallelFetch:
 
 
 class TestGitHubLoaderStaleTokenFallback:
-    @patch("application.parser.remote.github_loader.requests.get")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
     def test_401_retries_unauthenticated(self, mock_get):
         """An expired PAT 401s even public repos; fall back to anonymous
         rather than failing the ingest outright."""

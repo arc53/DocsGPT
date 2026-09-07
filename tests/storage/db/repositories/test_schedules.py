@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 
 def _insert_agent(conn, user_id: str = "u1") -> str:

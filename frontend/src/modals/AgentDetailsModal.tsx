@@ -1,3 +1,4 @@
+import { envVar } from '@/env';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -13,7 +14,7 @@ import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ConfirmationModal from './ConfirmationModal';
 
-const baseURL = import.meta.env.VITE_BASE_URL;
+const baseURL = envVar('VITE_BASE_URL');
 
 type AgentDetailsModalProps = {
   agent: Agent;

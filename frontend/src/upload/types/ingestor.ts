@@ -1,3 +1,4 @@
+import { envVar } from '@/env';
 import CrawlerIcon from '../../assets/crawler.svg';
 import FileUploadIcon from '../../assets/file_upload.svg';
 import UrlIcon from '../../assets/url.svg';
@@ -146,7 +147,7 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     icon: DriveIcon,
     heading: 'Upload from Google Drive',
     validate: () => {
-      const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      const googleClientId = envVar('VITE_GOOGLE_CLIENT_ID');
       return !!googleClientId;
     },
     fields: [
@@ -208,7 +209,7 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     icon: SharePoint,
     heading: 'Upload from Share Point',
     validate: () => {
-      const sharePointClientId = import.meta.env.VITE_SHARE_POINT_CLIENT_ID;
+      const sharePointClientId = envVar('VITE_SHARE_POINT_CLIENT_ID');
       return !!sharePointClientId;
     },
     fields: [
@@ -226,7 +227,7 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     icon: ConfluenceIcon,
     heading: 'Upload from Confluence',
     validate: () => {
-      const confluenceClientId = import.meta.env.VITE_CONFLUENCE_CLIENT_ID;
+      const confluenceClientId = envVar('VITE_CONFLUENCE_CLIENT_ID');
       return !!confluenceClientId;
     },
     fields: [

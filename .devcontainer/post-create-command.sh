@@ -22,8 +22,8 @@ fi
 
 
 # The embedding model is fetched on first use and cached, so nothing to download
-# here. For an offline container, run `python -m application.scripts.prefetch_models`
+# here. For an offline container, run `python -m docsgpt.scripts.prefetch_models`
 # after the install below.
-pip install -r application/requirements.txt
+pip install -r docsgpt/requirements.txt
 cd frontend
 npm install --include=dev

@@ -1,7 +1,7 @@
 """Rewrite stored model IDs across active config tables.
 
 Run this when a provider renames or deprecates a model ID. The catalog
-in ``application/core/models/<provider>.yaml`` is updated to the new ID,
+in ``docsgpt/core/models/<provider>.yaml`` is updated to the new ID,
 but existing agents and schedules still reference the old one and will
 fail on the next call. This script rewrites every active config row
 in-place inside a single transaction.
@@ -51,7 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from sqlalchemy import text  # noqa: E402
 
-from application.storage.db.session import db_session  # noqa: E402
+from docsgpt.storage.db.session import db_session  # noqa: E402
 
 
 # Built-in mapping reflects the 2026-05-25 Google preview -> GA swap.

@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from application.templates.template_engine import TemplateEngine, TemplateRenderError
+from docsgpt.templates.template_engine import TemplateEngine, TemplateRenderError
 
 
 @pytest.fixture

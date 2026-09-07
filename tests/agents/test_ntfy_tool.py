@@ -1,10 +1,10 @@
-"""Tests for application/agents/tools/ntfy.py"""
+"""Tests for docsgpt/agents/tools/ntfy.py"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.agents.tools.ntfy import NtfyTool
+from docsgpt.agents.tools.ntfy import NtfyTool
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ class TestNtfyExecuteAction:
         with pytest.raises(ValueError, match="Unknown action"):
             tool.execute_action("bad_action")
 
-    @patch("application.agents.tools.ntfy.pinned_request")
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
     def test_send_message_basic(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -44,7 +44,7 @@ class TestNtfyExecuteAction:
         assert args[1] == "https://ntfy.sh/test"
         assert kwargs["data"] == b"Hello"
 
-    @patch("application.agents.tools.ntfy.pinned_request")
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
     def test_send_with_title_and_priority(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -63,7 +63,7 @@ class TestNtfyExecuteAction:
         assert headers["X-Title"] == "Warning"
         assert headers["X-Priority"] == "5"
 
-    @patch("application.agents.tools.ntfy.pinned_request")
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
     def test_auth_header_with_token(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -79,7 +79,7 @@ class TestNtfyExecuteAction:
         headers = mock_pinned_request.call_args[1]["headers"]
         assert headers["Authorization"] == "Basic test_token"
 
-    @patch("application.agents.tools.ntfy.pinned_request")
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
     def test_no_auth_without_token(self, mock_pinned_request, tool_no_token):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -115,7 +115,7 @@ class TestNtfyExecuteAction:
                 priority="abc",
             )
 
-    @patch("application.agents.tools.ntfy.pinned_request")
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
     def test_trailing_slash_stripped(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200

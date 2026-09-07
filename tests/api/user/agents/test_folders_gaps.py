@@ -1,4 +1,4 @@
-"""Tests for application/api/user/agents/folders.py.
+"""Tests for docsgpt/api/user/agents/folders.py.
 
 Uses the ephemeral ``pg_conn`` fixture to exercise real PG repository code.
 """
@@ -22,22 +22,22 @@ def _patch_folders_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.agents.folders.db_session", _yield
+        "docsgpt.api.user.agents.folders.db_session", _yield
     ), patch(
-        "application.api.user.agents.folders.db_readonly", _yield
+        "docsgpt.api.user.agents.folders.db_readonly", _yield
     ):
         yield
 
 
 def _seed_folder(pg_conn, user, name="F", parent_id=None):
-    from application.storage.db.repositories.agent_folders import (
+    from docsgpt.storage.db.repositories.agent_folders import (
         AgentFoldersRepository,
     )
     return AgentFoldersRepository(pg_conn).create(user, name, parent_id=parent_id)
 
 
 def _seed_agent(pg_conn, user, folder_id=None):
-    from application.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
     repo = AgentsRepository(pg_conn)
     agent = repo.create(user, "test-agent", "published", description="x")
     if folder_id:
@@ -47,7 +47,7 @@ def _seed_agent(pg_conn, user, folder_id=None):
 
 class TestAgentFoldersGet:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         with app.test_request_context("/api/agents/folders/"):
             from flask import request
@@ -56,7 +56,7 @@ class TestAgentFoldersGet:
         assert response.status_code == 401
 
     def test_returns_folders_list(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         user = "u-folders-list"
         _seed_folder(pg_conn, user, name="A")
@@ -75,7 +75,7 @@ class TestAgentFoldersGet:
 
 class TestAgentFoldersPost:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         with app.test_request_context(
             "/api/agents/folders/", method="POST", json={"name": "F"}
@@ -86,7 +86,7 @@ class TestAgentFoldersPost:
         assert response.status_code == 401
 
     def test_returns_400_missing_name(self, app):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         with app.test_request_context(
             "/api/agents/folders/", method="POST", json={}
@@ -97,7 +97,7 @@ class TestAgentFoldersPost:
         assert response.status_code == 400
 
     def test_creates_folder_at_root(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         with _patch_folders_db(pg_conn), app.test_request_context(
             "/api/agents/folders/", method="POST",
@@ -111,7 +111,7 @@ class TestAgentFoldersPost:
         assert response.json["parent_id"] is None
 
     def test_creates_nested_folder(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         user = "u-nested"
         parent = _seed_folder(pg_conn, user, name="parent")
@@ -127,7 +127,7 @@ class TestAgentFoldersPost:
         assert response.json["parent_id"] == str(parent["id"])
 
     def test_returns_404_for_missing_parent(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         with _patch_folders_db(pg_conn), app.test_request_context(
             "/api/agents/folders/", method="POST",
@@ -144,7 +144,7 @@ class TestAgentFoldersPost:
 
 class TestAgentFolderGet:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         with app.test_request_context("/api/agents/folders/abc"):
             from flask import request
@@ -153,7 +153,7 @@ class TestAgentFolderGet:
         assert response.status_code == 401
 
     def test_returns_404_missing_folder(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         with _patch_folders_db(pg_conn), app.test_request_context(
             "/api/agents/folders/00000000-0000-0000-0000-000000000000"
@@ -166,7 +166,7 @@ class TestAgentFolderGet:
         assert response.status_code == 404
 
     def test_returns_folder_with_agents_and_subfolders(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         user = "u-folder-detail"
         parent = _seed_folder(pg_conn, user, name="parent")
@@ -188,7 +188,7 @@ class TestAgentFolderGet:
 
 class TestAgentFolderPut:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         with app.test_request_context(
             "/api/agents/folders/abc", method="PUT", json={"name": "new"}
@@ -199,7 +199,7 @@ class TestAgentFolderPut:
         assert response.status_code == 401
 
     def test_returns_404_missing_folder(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         with _patch_folders_db(pg_conn), app.test_request_context(
             "/api/agents/folders/00000000-0000-0000-0000-000000000000",
@@ -214,7 +214,7 @@ class TestAgentFolderPut:
         assert response.status_code == 404
 
     def test_renames_folder(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         user = "u-rename"
         folder = _seed_folder(pg_conn, user, name="old")
@@ -230,7 +230,7 @@ class TestAgentFolderPut:
         assert response.status_code == 200
 
     def test_prevents_setting_self_as_parent(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         user = "u-self-parent"
         folder = _seed_folder(pg_conn, user, name="f1")
@@ -246,7 +246,7 @@ class TestAgentFolderPut:
         assert response.status_code == 400
 
     def test_sets_parent_to_other_folder(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         user = "u-moveparent"
         f1 = _seed_folder(pg_conn, user, name="f1")
@@ -263,7 +263,7 @@ class TestAgentFolderPut:
         assert response.status_code == 200
 
     def test_returns_404_for_missing_parent(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         user = "u-missingparent"
         folder = _seed_folder(pg_conn, user, name="f")
@@ -279,7 +279,7 @@ class TestAgentFolderPut:
         assert response.status_code == 404
 
     def test_clears_parent_id_when_null(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         user = "u-clear"
         parent = _seed_folder(pg_conn, user, name="p")
@@ -300,7 +300,7 @@ class TestAgentFolderPut:
 
 class TestAgentFolderDelete:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         with app.test_request_context(
             "/api/agents/folders/abc", method="DELETE"
@@ -311,7 +311,7 @@ class TestAgentFolderDelete:
         assert response.status_code == 401
 
     def test_returns_404_missing_folder(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         with _patch_folders_db(pg_conn), app.test_request_context(
             "/api/agents/folders/00000000-0000-0000-0000-000000000000",
@@ -325,7 +325,7 @@ class TestAgentFolderDelete:
         assert response.status_code == 404
 
     def test_deletes_folder(self, app, pg_conn):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         user = "u-del"
         folder = _seed_folder(pg_conn, user, name="tbd")
@@ -341,7 +341,7 @@ class TestAgentFolderDelete:
 
 class TestMoveAgentToFolder:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.folders import MoveAgentToFolder
+        from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         with app.test_request_context(
             "/api/agents/folders/move_agent",
@@ -354,7 +354,7 @@ class TestMoveAgentToFolder:
         assert response.status_code == 401
 
     def test_returns_400_missing_agent_id(self, app):
-        from application.api.user.agents.folders import MoveAgentToFolder
+        from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         with app.test_request_context(
             "/api/agents/folders/move_agent",
@@ -367,7 +367,7 @@ class TestMoveAgentToFolder:
         assert response.status_code == 400
 
     def test_returns_404_agent_not_found(self, app, pg_conn):
-        from application.api.user.agents.folders import MoveAgentToFolder
+        from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         with _patch_folders_db(pg_conn), app.test_request_context(
             "/api/agents/folders/move_agent",
@@ -380,7 +380,7 @@ class TestMoveAgentToFolder:
         assert response.status_code == 404
 
     def test_moves_agent_into_folder(self, app, pg_conn):
-        from application.api.user.agents.folders import MoveAgentToFolder
+        from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         user = "u-move"
         folder = _seed_folder(pg_conn, user, name="target")
@@ -400,7 +400,7 @@ class TestMoveAgentToFolder:
         assert response.status_code == 200
 
     def test_returns_404_folder_not_found(self, app, pg_conn):
-        from application.api.user.agents.folders import MoveAgentToFolder
+        from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         user = "u-move-nofolder"
         agent = _seed_agent(pg_conn, user)
@@ -419,7 +419,7 @@ class TestMoveAgentToFolder:
         assert response.status_code == 404
 
     def test_removes_agent_from_folder(self, app, pg_conn):
-        from application.api.user.agents.folders import MoveAgentToFolder
+        from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         user = "u-remove"
         folder = _seed_folder(pg_conn, user, name="target")
@@ -438,7 +438,7 @@ class TestMoveAgentToFolder:
 
 class TestBulkMoveAgents:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.folders import BulkMoveAgents
+        from docsgpt.api.user.agents.folders import BulkMoveAgents
 
         with app.test_request_context(
             "/api/agents/folders/bulk_move",
@@ -451,7 +451,7 @@ class TestBulkMoveAgents:
         assert response.status_code == 401
 
     def test_returns_400_missing_agent_ids(self, app):
-        from application.api.user.agents.folders import BulkMoveAgents
+        from docsgpt.api.user.agents.folders import BulkMoveAgents
 
         with app.test_request_context(
             "/api/agents/folders/bulk_move",
@@ -464,7 +464,7 @@ class TestBulkMoveAgents:
         assert response.status_code == 400
 
     def test_bulk_moves_agents(self, app, pg_conn):
-        from application.api.user.agents.folders import BulkMoveAgents
+        from docsgpt.api.user.agents.folders import BulkMoveAgents
 
         user = "u-bulk"
         folder = _seed_folder(pg_conn, user, name="dest")
@@ -485,7 +485,7 @@ class TestBulkMoveAgents:
         assert response.status_code == 200
 
     def test_returns_404_when_folder_not_found(self, app, pg_conn):
-        from application.api.user.agents.folders import BulkMoveAgents
+        from docsgpt.api.user.agents.folders import BulkMoveAgents
 
         with _patch_folders_db(pg_conn), app.test_request_context(
             "/api/agents/folders/bulk_move",
@@ -501,7 +501,7 @@ class TestBulkMoveAgents:
         assert response.status_code == 404
 
     def test_bulk_move_tolerates_missing_agents(self, app, pg_conn):
-        from application.api.user.agents.folders import BulkMoveAgents
+        from docsgpt.api.user.agents.folders import BulkMoveAgents
 
         user = "u-bulk-partial"
         folder = _seed_folder(pg_conn, user, name="f")

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from application.agents.tools.artifact_generator import ArtifactGeneratorTool
-from application.agents.tools.code_executor import CodeExecutorTool
+from docsgpt.agents.tools.artifact_generator import ArtifactGeneratorTool
+from docsgpt.agents.tools.code_executor import CodeExecutorTool
 
 
 @pytest.mark.unit

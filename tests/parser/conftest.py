@@ -18,6 +18,6 @@ def _mpnet_tokenizer():
 
 @pytest.fixture
 def hf_counter(_mpnet_tokenizer):
-    from application.parser.tokenization import HuggingFaceCounter
+    from docsgpt.parser.tokenization import HuggingFaceCounter
 
     return HuggingFaceCounter(_mpnet_tokenizer, "sentence-transformers/all-mpnet-base-v2")

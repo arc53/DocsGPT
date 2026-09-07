@@ -18,8 +18,8 @@ pytest.importorskip("pypdfium2")
 PIL = pytest.importorskip("PIL")
 from PIL import Image, ImageDraw  # noqa: E402
 
-from application.parser.file.base_parser import DocumentParseError  # noqa: E402
-from application.parser.file import ocr_parser as op  # noqa: E402
+from docsgpt.parser.file.base_parser import DocumentParseError  # noqa: E402
+from docsgpt.parser.file import ocr_parser as op  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ def _pdf_page_count(path: Path) -> int:
 
 @pytest.fixture
 def settings():
-    from application.core.settings import settings
+    from docsgpt.core.settings import settings
 
     return settings
 
@@ -96,7 +96,7 @@ def settings():
 @pytest.mark.unit
 class TestSettingsAliases:
     def test_legacy_docling_names_still_configure_ocr(self, monkeypatch):
-        from application.core.settings import Settings
+        from docsgpt.core.settings import Settings
 
         monkeypatch.setenv("DOCLING_OCR_ENABLED", "true")
         monkeypatch.setenv("DOCLING_OCR_ATTACHMENTS_ENABLED", "true")
@@ -107,7 +107,7 @@ class TestSettingsAliases:
         assert loaded.OCR_MIN_CHARS_PER_PAGE == 7
 
     def test_new_names_and_defaults(self, monkeypatch):
-        from application.core.settings import Settings
+        from docsgpt.core.settings import Settings
 
         for name in (
             "OCR_ENABLED",
@@ -537,7 +537,7 @@ class TestNativeOcrImageParser:
 @pytest.mark.unit
 class TestExtractorWiring:
     def test_legacy_map_without_ocr_is_unchanged(self):
-        from application.parser.file.bulk import _legacy_file_extractor
+        from docsgpt.parser.file.bulk import _legacy_file_extractor
 
         extractor = _legacy_file_extractor()
         assert type(extractor[".pdf"]).__name__ == "PDFParser"
@@ -545,7 +545,7 @@ class TestExtractorWiring:
         assert ".tiff" not in extractor
 
     def test_legacy_map_with_ocr_uses_native_parsers(self):
-        from application.parser.file.bulk import _legacy_file_extractor
+        from docsgpt.parser.file.bulk import _legacy_file_extractor
 
         extractor = _legacy_file_extractor(ocr_enabled=True)
         assert isinstance(extractor[".pdf"], op.NativeOcrPdfParser)
@@ -555,8 +555,8 @@ class TestExtractorWiring:
 
     def test_ocr_without_docling_reaches_native_under_anydoc(self, monkeypatch):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import AnydocParser
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.anydoc_parser import AnydocParser
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         monkeypatch.setitem(sys.modules, "docling", None)
         extractor = get_default_file_extractor(engine="anydoc", ocr_enabled=True)
@@ -566,7 +566,7 @@ class TestExtractorWiring:
         assert isinstance(extractor[".png"], op.NativeOcrImageParser)
 
     def test_ocr_without_docling_reaches_native_under_docling_engine(self, monkeypatch):
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         monkeypatch.setitem(sys.modules, "docling", None)
         extractor = get_default_file_extractor(engine="docling", ocr_enabled=True)
@@ -574,7 +574,7 @@ class TestExtractorWiring:
         assert isinstance(extractor[".jpg"], op.NativeOcrImageParser)
 
     def test_ocr_off_without_docling_keeps_legacy(self, monkeypatch):
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         monkeypatch.setitem(sys.modules, "docling", None)
         extractor = get_default_file_extractor(engine="docling", ocr_enabled=False)
@@ -583,8 +583,8 @@ class TestExtractorWiring:
 
     def test_native_backend_with_docling_installed_wraps_docling_for_text_pdfs(self, monkeypatch, settings):
         pytest.importorskip("docling")
-        from application.parser.file.bulk import get_default_file_extractor
-        from application.parser.file.docling_parser import DoclingPDFParser
+        from docsgpt.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.docling_parser import DoclingPDFParser
 
         monkeypatch.setattr(settings, "OCR_BACKEND", "native")
         extractor = get_default_file_extractor(engine="docling", ocr_enabled=True)
@@ -600,8 +600,8 @@ class TestExtractorWiring:
     def test_native_backend_under_anydoc_keeps_docling_reroute_for_trust_check(self, monkeypatch, settings):
         pytest.importorskip("anydoc")
         pytest.importorskip("docling")
-        from application.parser.file.anydoc_parser import _is_docling_backed
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.anydoc_parser import _is_docling_backed
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         monkeypatch.setattr(settings, "OCR_BACKEND", "native")
         extractor = get_default_file_extractor(engine="anydoc", ocr_enabled=True)
@@ -612,7 +612,7 @@ class TestExtractorWiring:
 
     def test_auto_backend_with_docling_installed_is_unchanged(self, monkeypatch, settings):
         pytest.importorskip("docling")
-        from application.parser.file.bulk import get_default_file_extractor
+        from docsgpt.parser.file.bulk import get_default_file_extractor
 
         monkeypatch.setattr(settings, "OCR_BACKEND", "auto")
         extractor = get_default_file_extractor(engine="docling", ocr_enabled=True)
@@ -622,7 +622,7 @@ class TestExtractorWiring:
 
     def test_anydoc_scan_hint_names_new_setting(self, tmp_path):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import AnydocParser
+        from docsgpt.parser.file.anydoc_parser import AnydocParser
 
         fallback = MagicMock()
         fallback.parser_config_set = True
@@ -700,7 +700,7 @@ class TestAnydocMixedDocuments:
 
     def test_scanned_page_is_ocrd_and_appended(self, mixed_pdf, monkeypatch, settings):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import AnydocParser
+        from docsgpt.parser.file.anydoc_parser import AnydocParser
 
         monkeypatch.setattr(settings, "OCR_RENDER_DPI", 72)
         engine = FakeEngine(["SCANNED PAGE WORDS"])
@@ -717,8 +717,8 @@ class TestAnydocMixedDocuments:
 
     def test_no_ocr_fallback_keeps_text_pages_only(self, mixed_pdf):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import AnydocParser
-        from application.parser.file.docs_parser import PDFParser
+        from docsgpt.parser.file.anydoc_parser import AnydocParser
+        from docsgpt.parser.file.docs_parser import PDFParser
 
         parser = AnydocParser(fallback_parser=PDFParser())
         content = parser.parse_file(mixed_pdf)
@@ -728,7 +728,7 @@ class TestAnydocMixedDocuments:
 
     def test_fallback_with_ocr_off_is_not_used(self, mixed_pdf):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import AnydocParser
+        from docsgpt.parser.file.anydoc_parser import AnydocParser
 
         fallback = MagicMock()
         fallback.ocr_enabled = False
@@ -738,7 +738,7 @@ class TestAnydocMixedDocuments:
 
     def test_ocr_failure_keeps_text_pages(self, mixed_pdf, caplog):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import AnydocParser
+        from docsgpt.parser.file.anydoc_parser import AnydocParser
 
         fallback = MagicMock()
         fallback.ocr_enabled = True
@@ -755,7 +755,7 @@ class TestAnydocMixedDocuments:
 
     def test_all_text_document_never_probes_ocr(self, tmp_path):
         pytest.importorskip("anydoc")
-        from application.parser.file.anydoc_parser import AnydocParser
+        from docsgpt.parser.file.anydoc_parser import AnydocParser
 
         pdf = _text_pdf(tmp_path / "t.pdf", pages=2, text="Digital text page with enough characters", lines=25)
         fallback = MagicMock()
@@ -797,7 +797,7 @@ class TestRenderBudget:
         try:
             page = pdf[0]
             try:
-                with caplog.at_level(logging.WARNING, logger="application.parser.file.ocr_parser"):
+                with caplog.at_level(logging.WARNING, logger="docsgpt.parser.file.ocr_parser"):
                     image = op._render_page(page, 200)
             finally:
                 page.close()
@@ -906,7 +906,7 @@ class TestImageNormalisation:
 
     def test_oversized_image_is_downscaled_to_the_budget(self, caplog):
         big = Image.new("L", (9000, 9000), 255)
-        with caplog.at_level(logging.WARNING, logger="application.parser.file.ocr_parser"):
+        with caplog.at_level(logging.WARNING, logger="docsgpt.parser.file.ocr_parser"):
             small = op.fit_to_pixel_budget(big)
         assert small.width * small.height <= op._MAX_RENDER_PIXELS
         assert "downscaling" in caplog.text
@@ -953,7 +953,7 @@ class TestDeepseekErrorShapes:
 @pytest.mark.unit
 def test_delegate_parse_lets_setup_errors_through():
     """A fallback whose dependency is missing is a deployment problem, not a bad file."""
-    from application.parser.file.base_parser import BaseParser, delegate_parse
+    from docsgpt.parser.file.base_parser import BaseParser, delegate_parse
 
     class _NeedsLib(BaseParser):
         def _init_parser(self):

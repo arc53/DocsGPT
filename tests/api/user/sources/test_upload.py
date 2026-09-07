@@ -1,4 +1,4 @@
-"""Tests for application/api/user/sources/upload.py."""
+"""Tests for docsgpt/api/user/sources/upload.py."""
 
 import io
 import json
@@ -21,21 +21,21 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.sources.upload.db_session", _yield
+        "docsgpt.api.user.sources.upload.db_session", _yield
     ), patch(
-        "application.api.user.sources.upload.db_readonly", _yield
+        "docsgpt.api.user.sources.upload.db_readonly", _yield
     ):
         yield
 
 
 def _seed_source(pg_conn, user="u", name="src", **kw):
-    from application.storage.db.repositories.sources import SourcesRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
     return SourcesRepository(pg_conn).create(name, user_id=user, **kw)
 
 
 class TestEnforceAudioPathSizeLimit:
     def test_noop_for_non_audio(self, tmp_path):
-        from application.api.user.sources.upload import (
+        from docsgpt.api.user.sources.upload import (
             _enforce_audio_path_size_limit,
         )
         p = tmp_path / "doc.txt"
@@ -43,15 +43,15 @@ class TestEnforceAudioPathSizeLimit:
         _enforce_audio_path_size_limit(str(p), "doc.txt")
 
     def test_raises_for_large_audio(self, tmp_path):
-        from application.api.user.sources.upload import (
+        from docsgpt.api.user.sources.upload import (
             _enforce_audio_path_size_limit,
         )
-        from application.stt.upload_limits import AudioFileTooLargeError
+        from docsgpt.stt.upload_limits import AudioFileTooLargeError
 
         p = tmp_path / "audio.mp3"
         p.write_bytes(b"x" * 100)
         with patch(
-            "application.api.user.sources.upload.enforce_audio_file_size_limit",
+            "docsgpt.api.user.sources.upload.enforce_audio_file_size_limit",
             side_effect=AudioFileTooLargeError("too large"),
         ):
             with pytest.raises(AudioFileTooLargeError):
@@ -60,7 +60,7 @@ class TestEnforceAudioPathSizeLimit:
 
 class TestUploadFile:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         with app.test_request_context("/api/upload", method="POST"):
             from flask import request
@@ -69,7 +69,7 @@ class TestUploadFile:
         assert response.status_code == 401
 
     def test_returns_400_missing_fields(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         with app.test_request_context(
             "/api/upload", method="POST",
@@ -82,7 +82,7 @@ class TestUploadFile:
         assert response.status_code == 400
 
     def test_returns_400_empty_filenames(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         with app.test_request_context(
             "/api/upload", method="POST",
@@ -98,16 +98,16 @@ class TestUploadFile:
         assert response.status_code == 400
 
     def test_uploads_single_file_successfully(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         fake_task = MagicMock(id="task-1")
 
         with patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -125,17 +125,17 @@ class TestUploadFile:
         assert response.json["task_id"] == "task-1"
 
     def test_rejects_file_over_configured_upload_limit(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         with patch(
-            "application.api.user.sources.upload.settings.UPLOAD_MAX_FILE_BYTES",
+            "docsgpt.api.user.sources.upload.settings.UPLOAD_MAX_FILE_BYTES",
             4,
         ), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
         ) as apply_async, app.test_request_context(
             "/api/upload", method="POST",
             data={
@@ -153,13 +153,13 @@ class TestUploadFile:
         apply_async.assert_not_called()
 
     def test_storage_error_returns_400(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         fake_storage.save_file.side_effect = RuntimeError("boom")
 
         with patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -175,7 +175,7 @@ class TestUploadFile:
         assert response.status_code == 400
 
     def test_uploads_zip_extracts_files(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
         import zipfile
 
         # Build an in-memory zip containing 2 files
@@ -189,10 +189,10 @@ class TestUploadFile:
         fake_task = MagicMock(id="task-zip")
 
         with patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -210,7 +210,7 @@ class TestUploadFile:
         assert fake_storage.save_file.call_count >= 2
 
     def test_rejects_zip_with_excessive_expansion_ratio(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
         import zipfile
 
         zip_buffer = io.BytesIO()
@@ -220,10 +220,10 @@ class TestUploadFile:
 
         fake_storage = MagicMock()
         with patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
         ) as apply_async, app.test_request_context(
             "/api/upload", method="POST",
             data={
@@ -241,7 +241,7 @@ class TestUploadFile:
         apply_async.assert_not_called()
 
     def test_accepts_highly_compressible_csv(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
         import zipfile
 
         zip_buffer = io.BytesIO()
@@ -251,10 +251,10 @@ class TestUploadFile:
 
         fake_storage = MagicMock()
         with patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             return_value=MagicMock(id="csv-task"),
         ), app.test_request_context(
             "/api/upload",
@@ -274,7 +274,7 @@ class TestUploadFile:
         assert fake_storage.save_file.call_count == 1
 
     def test_archive_error_names_file_and_escapes_log_controls(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
         import zipfile
 
         zip_buffer = io.BytesIO()
@@ -283,7 +283,7 @@ class TestUploadFile:
         zip_buffer.seek(0)
 
         with patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), patch.object(app.logger, "warning") as warning, app.test_request_context(
             "/api/upload",
@@ -310,7 +310,7 @@ class TestUploadFile:
         assert "\n" not in logged_values
 
     def test_expands_nested_zip_before_storage(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
         import zipfile
 
         inner = io.BytesIO()
@@ -323,10 +323,10 @@ class TestUploadFile:
 
         fake_storage = MagicMock()
         with patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             return_value=MagicMock(id="nested-task"),
         ), app.test_request_context(
             "/api/upload",
@@ -348,7 +348,7 @@ class TestUploadFile:
         assert not any(path.endswith(".zip") for path in saved_paths)
 
     def test_office_format_zip_saved_as_is(self, app):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
         import zipfile
 
         # .docx is technically a zip but should be saved as-is
@@ -360,10 +360,10 @@ class TestUploadFile:
         fake_storage = MagicMock()
 
         with patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             return_value=MagicMock(id="t"),
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -381,16 +381,16 @@ class TestUploadFile:
         assert fake_storage.save_file.call_count == 1
 
     def test_audio_too_large_returns_413(self, app):
-        from application.api.user.sources.upload import UploadFile
-        from application.stt.upload_limits import AudioFileTooLargeError
+        from docsgpt.api.user.sources.upload import UploadFile
+        from docsgpt.stt.upload_limits import AudioFileTooLargeError
 
         fake_storage = MagicMock()
 
         with patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload._enforce_audio_path_size_limit",
+            "docsgpt.api.user.sources.upload._enforce_audio_path_size_limit",
             side_effect=AudioFileTooLargeError("too large"),
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -408,7 +408,7 @@ class TestUploadFile:
 
 class TestUploadRemote:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         with app.test_request_context(
             "/api/remote", method="POST",
@@ -421,7 +421,7 @@ class TestUploadRemote:
         assert response.status_code == 401
 
     def test_returns_missing_fields(self, app):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         with app.test_request_context(
             "/api/remote", method="POST",
@@ -436,11 +436,11 @@ class TestUploadRemote:
         assert response.status_code == 400
 
     def test_uploads_github_remote_success(self, app):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         fake_task = MagicMock(id="remote-task-1")
         with patch(
-            "application.api.user.sources.upload.ingest_remote.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -457,11 +457,11 @@ class TestUploadRemote:
         assert response.json["task_id"] == "remote-task-1"
 
     def test_uploads_url_source(self, app):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         fake_task = MagicMock(id="url-task")
         with patch(
-            "application.api.user.sources.upload.ingest_remote.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -477,11 +477,11 @@ class TestUploadRemote:
         assert response.status_code == 200
 
     def test_uploads_reddit_source(self, app):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         fake_task = MagicMock(id="reddit-task")
         with patch(
-            "application.api.user.sources.upload.ingest_remote.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -497,10 +497,10 @@ class TestUploadRemote:
         assert response.status_code == 200
 
     def test_upload_exception_returns_400(self, app):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         with patch(
-            "application.api.user.sources.upload.ingest_remote.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
             side_effect=RuntimeError("boom"),
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -518,7 +518,7 @@ class TestUploadRemote:
 
 class TestManageSourceFiles:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         with app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -531,7 +531,7 @@ class TestManageSourceFiles:
         assert response.status_code == 401
 
     def test_returns_400_missing_required(self, app):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         with app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -544,7 +544,7 @@ class TestManageSourceFiles:
         assert response.status_code == 400
 
     def test_returns_400_invalid_operation(self, app):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         with app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -557,7 +557,7 @@ class TestManageSourceFiles:
         assert response.status_code == 400
 
     def test_returns_404_source_not_found(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         with _patch_db(pg_conn), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -573,13 +573,13 @@ class TestManageSourceFiles:
         assert response.status_code == 404
 
     def test_rejects_bad_parent_dir(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-bad-parent"
         src = _seed_source(pg_conn, user=user, file_path="/data")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -596,13 +596,13 @@ class TestManageSourceFiles:
         assert response.status_code == 400
 
     def test_add_no_files_returns_400(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-add-nofile"
         src = _seed_source(pg_conn, user=user, file_path="/data")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -615,18 +615,18 @@ class TestManageSourceFiles:
         assert response.status_code == 400
 
     def test_add_rejects_file_over_upload_limit(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-add-large"
         src = _seed_source(pg_conn, user=user, file_path="/data/src")
         fake_storage = MagicMock()
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.upload_limits.settings.UPLOAD_MAX_FILE_BYTES", 4
+            "docsgpt.upload_limits.settings.UPLOAD_MAX_FILE_BYTES", 4
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async"
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async"
         ) as apply_async, app.test_request_context(
             "/api/manage_source_files", method="POST",
             data={
@@ -645,7 +645,7 @@ class TestManageSourceFiles:
         apply_async.assert_not_called()
 
     def test_add_files_success(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-add-ok"
         src = _seed_source(pg_conn, user=user, file_path="/data/src")
@@ -653,10 +653,10 @@ class TestManageSourceFiles:
         fake_storage = MagicMock()
         fake_task = MagicMock(id="reingest-1")
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -675,13 +675,13 @@ class TestManageSourceFiles:
         assert "new.txt" in response.json["added_files"]
 
     def test_remove_missing_file_paths_returns_400(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-rm-nolist"
         src = _seed_source(pg_conn, user=user, file_path="/data")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -694,13 +694,13 @@ class TestManageSourceFiles:
         assert response.status_code == 400
 
     def test_remove_invalid_json_file_paths(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-rm-bad"
         src = _seed_source(pg_conn, user=user, file_path="/data")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -717,13 +717,13 @@ class TestManageSourceFiles:
         assert response.status_code == 400
 
     def test_remove_rejects_path_traversal(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-rm-trav"
         src = _seed_source(pg_conn, user=user, file_path="/data")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -740,7 +740,7 @@ class TestManageSourceFiles:
         assert response.status_code == 400
 
     def test_remove_files_success(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-rm-ok"
         src = _seed_source(
@@ -753,10 +753,10 @@ class TestManageSourceFiles:
         fake_storage.file_exists.return_value = True
         fake_task = MagicMock(id="reingest-rm")
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -774,13 +774,13 @@ class TestManageSourceFiles:
         assert "a.txt" in response.json["removed_files"]
 
     def test_remove_directory_missing_path(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-rmdir-missing"
         src = _seed_source(pg_conn, user=user, file_path="/data")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -796,13 +796,13 @@ class TestManageSourceFiles:
         assert response.status_code == 400
 
     def test_remove_directory_rejects_bad_path(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-rmdir-bad"
         src = _seed_source(pg_conn, user=user, file_path="/data")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=MagicMock(),
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -819,7 +819,7 @@ class TestManageSourceFiles:
         assert response.status_code == 400
 
     def test_remove_directory_404_when_not_directory(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-rmdir-notdir"
         src = _seed_source(pg_conn, user=user, file_path="/data")
@@ -828,7 +828,7 @@ class TestManageSourceFiles:
         fake_storage.is_directory.return_value = False
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -845,7 +845,7 @@ class TestManageSourceFiles:
         assert response.status_code == 404
 
     def test_remove_directory_success(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-rmdir-ok"
         src = _seed_source(
@@ -859,10 +859,10 @@ class TestManageSourceFiles:
         fake_task = MagicMock(id="reingest-dir")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -880,7 +880,7 @@ class TestManageSourceFiles:
         assert response.json["removed_directory"] == "sub"
 
     def test_remove_directory_storage_failure_returns_500(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "u-rmdir-fail"
         src = _seed_source(pg_conn, user=user, file_path="/data")
@@ -890,7 +890,7 @@ class TestManageSourceFiles:
         fake_storage.remove_directory.return_value = False
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -909,14 +909,14 @@ class TestManageSourceFiles:
 
 class TestTaskStatus:
     def test_returns_400_missing_task_id(self, app):
-        from application.api.user.sources.upload import TaskStatus
+        from docsgpt.api.user.sources.upload import TaskStatus
 
         with app.test_request_context("/api/task_status"):
             response = TaskStatus().get()
         assert response.status_code == 400
 
     def test_returns_task_status(self, app):
-        from application.api.user.sources.upload import TaskStatus
+        from docsgpt.api.user.sources.upload import TaskStatus
 
         fake_task = MagicMock()
         fake_task.status = "SUCCESS"
@@ -926,14 +926,14 @@ class TestTaskStatus:
         fake_celery.AsyncResult.return_value = fake_task
 
         with patch(
-            "application.celery_init.celery", fake_celery
+            "docsgpt.celery_init.celery", fake_celery
         ), app.test_request_context("/api/task_status?task_id=t-123"):
             response = TaskStatus().get()
         assert response.status_code == 200
         assert response.json["status"] == "SUCCESS"
 
     def test_pending_without_workers_returns_503(self, app):
-        from application.api.user.sources.upload import TaskStatus
+        from docsgpt.api.user.sources.upload import TaskStatus
 
         fake_task = MagicMock()
         fake_task.status = "PENDING"
@@ -947,25 +947,25 @@ class TestTaskStatus:
         fake_celery.control.inspect.return_value = fake_inspect
 
         with patch(
-            "application.celery_init.celery", fake_celery
+            "docsgpt.celery_init.celery", fake_celery
         ), app.test_request_context("/api/task_status?task_id=t-999"):
             response = TaskStatus().get()
         assert response.status_code == 503
 
     def test_exception_returns_400(self, app):
-        from application.api.user.sources.upload import TaskStatus
+        from docsgpt.api.user.sources.upload import TaskStatus
 
         fake_celery = MagicMock()
         fake_celery.AsyncResult.side_effect = RuntimeError("boom")
 
         with patch(
-            "application.celery_init.celery", fake_celery
+            "docsgpt.celery_init.celery", fake_celery
         ), app.test_request_context("/api/task_status?task_id=t-err"):
             response = TaskStatus().get()
         assert response.status_code == 400
 
     def test_non_serializable_info_gets_stringified(self, app):
-        from application.api.user.sources.upload import TaskStatus
+        from docsgpt.api.user.sources.upload import TaskStatus
 
         class WeirdObj:
             def __str__(self):
@@ -979,7 +979,7 @@ class TestTaskStatus:
         fake_celery.AsyncResult.return_value = fake_task
 
         with patch(
-            "application.celery_init.celery", fake_celery
+            "docsgpt.celery_init.celery", fake_celery
         ), app.test_request_context("/api/task_status?task_id=t-weird"):
             response = TaskStatus().get()
         assert response.status_code == 200

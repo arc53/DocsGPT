@@ -5,9 +5,9 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from application.vectorstore import embeddings_local
-from application.vectorstore.embeddings_local import EmbeddingsWrapper
-from application.vectorstore.model_registry import GRANITE_97M, MPNET
+from docsgpt.vectorstore import embeddings_local
+from docsgpt.vectorstore.embeddings_local import EmbeddingsWrapper
+from docsgpt.vectorstore.model_registry import GRANITE_97M, MPNET
 
 
 @pytest.fixture(autouse=True)

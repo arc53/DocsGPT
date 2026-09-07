@@ -1,4 +1,4 @@
-"""Unit tests for the SCIM 2.0 provisioning endpoints (application/api/scim/)."""
+"""Unit tests for the SCIM 2.0 provisioning endpoints (docsgpt/api/scim/)."""
 
 import json
 from types import SimpleNamespace
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.core.settings import settings
+from docsgpt.core.settings import settings
 
 TOKEN = "test-scim-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -33,8 +33,8 @@ def _user_row(pk=USER_PK, user_id="alice@example.com", active=True):
 @pytest.fixture(scope="module")
 def app():
     """Import the Flask app with auth mocked to avoid JWT setup issues."""
-    with patch("application.app.handle_auth", return_value={"sub": "test_user"}):
-        from application.app import app as flask_app
+    with patch("docsgpt.app.handle_auth", return_value={"sub": "test_user"}):
+        from docsgpt.app import app as flask_app
 
         flask_app.config["TESTING"] = True
         yield flask_app
@@ -55,14 +55,14 @@ def scim_settings(monkeypatch):
 @pytest.fixture
 def scim_mocks():
     """Patch DB plumbing, repositories, and denylist functions used by the routes."""
-    with patch("application.api.scim.routes.db_session") as db_session_mock, patch(
-        "application.api.scim.routes.db_readonly"
+    with patch("docsgpt.api.scim.routes.db_session") as db_session_mock, patch(
+        "docsgpt.api.scim.routes.db_readonly"
     ) as db_readonly_mock, patch(
-        "application.api.scim.routes.UsersRepository"
+        "docsgpt.api.scim.routes.UsersRepository"
     ) as users_cls, patch(
-        "application.api.scim.routes.AuthEventsRepository"
+        "docsgpt.api.scim.routes.AuthEventsRepository"
     ) as audit_cls, patch(
-        "application.api.scim.routes.deny_user"
+        "docsgpt.api.scim.routes.deny_user"
     ) as deny_user_mock:
         conn = MagicMock(name="conn")
         db_session_mock.return_value.__enter__.return_value = conn

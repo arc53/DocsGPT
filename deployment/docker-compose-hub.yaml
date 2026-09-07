@@ -1,12 +1,30 @@
+# Pre-built images from Docker Hub (mirrored at ghcr.io/arc53).
+#   DOCSGPT_IMAGE_TAG      develop (default, follows main) or a release, e.g. 0.20.0
+#   DOCSGPT_IMAGE_VARIANT  empty (default, slim) or -docling: docling parser engine,
+#                          its models, and tesseract baked in (OCR-ready)
+# Set them in ../.env or the shell. deployment/docker-compose-standalone.yaml is
+# the same stack without a git checkout.
 name: docsgpt-oss
 services:
 
   frontend:
-    image: arc53/docsgpt-fe:develop
+    image: arc53/docsgpt-fe:${DOCSGPT_IMAGE_TAG:-develop}
     environment:
+      # Every VITE_* the app reads. A bare name is passed through only when it is
+      # set in the shell or the --env-file, so an unset one does not reach the
+      # container as an empty string and override the image's own default.
       - VITE_API_HOST=http://localhost:7091
       - VITE_API_STREAMING=${VITE_API_STREAMING:-true}
-      - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID:-}
+      - VITE_BASE_URL
+      - VITE_GOOGLE_CLIENT_ID
+      - VITE_GOOGLE_PICKER_API_KEY
+      - VITE_SHARE_POINT_CLIENT_ID
+      - VITE_CONFLUENCE_CLIENT_ID
+      - VITE_NOTIFICATION_TEXT
+      - VITE_NOTIFICATION_LINK
+      - VITE_ENABLE_VOICE_INPUT
+      - VITE_DISABLE_SOURCE_FE
+      - VITE_USE_V
     ports:
       - "5173:5173"
     depends_on:
@@ -15,7 +33,7 @@ services:
 
   backend:
     user: root
-    image: arc53/docsgpt:develop
+    image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-develop}${DOCSGPT_IMAGE_VARIANT:-}
     env_file:
       - ../.env
     environment:
@@ -26,6 +44,9 @@ services:
     ports:
       - "7091:7091"
     volumes:
+      # Host data stays under application/ (the old package directory) for this
+      # release so an upgraded checkout keeps its indexes; it moves with the
+      # packaging work, together with an upgrade note.
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
@@ -38,9 +59,9 @@ services:
 
   worker:
     user: root
-    image: arc53/docsgpt:develop
+    image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-develop}${DOCSGPT_IMAGE_VARIANT:-}
     # `parsing` queue carries read_document/parse_document; required for its await to resolve.
-    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
     env_file:
       - ../.env
     environment:
@@ -50,6 +71,9 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     volumes:
+      # Host data stays under application/ (the old package directory) for this
+      # release so an upgraded checkout keeps its indexes; it moves with the
+      # packaging work, together with an upgrade note.
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors

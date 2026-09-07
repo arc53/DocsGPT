@@ -1,4 +1,4 @@
-"""Tests for application/api/answer/services/conversation_service.py."""
+"""Tests for docsgpt/api/answer/services/conversation_service.py."""
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -14,10 +14,10 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.answer.services.conversation_service.db_session",
+        "docsgpt.api.answer.services.conversation_service.db_session",
         _yield,
     ), patch(
-        "application.api.answer.services.conversation_service.db_readonly",
+        "docsgpt.api.answer.services.conversation_service.db_readonly",
         _yield,
     ):
         yield
@@ -25,13 +25,13 @@ def _patch_db(conn):
 
 class TestConversationServiceGet:
     def test_returns_none_when_no_conversation_id(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
         assert ConversationService().get_conversation("", "u") is None
 
     def test_returns_none_when_no_user_id(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
         assert (
@@ -42,7 +42,7 @@ class TestConversationServiceGet:
         )
 
     def test_returns_none_when_not_found(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
         with _patch_db(pg_conn):
@@ -52,10 +52,10 @@ class TestConversationServiceGet:
         assert got is None
 
     def test_returns_conversation_with_messages(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -74,7 +74,7 @@ class TestConversationServiceGet:
         assert len(got["queries"]) == 1
 
     def test_handles_exception_returns_none(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -84,7 +84,7 @@ class TestConversationServiceGet:
             yield
 
         with patch(
-            "application.api.answer.services.conversation_service.db_readonly",
+            "docsgpt.api.answer.services.conversation_service.db_readonly",
             _broken,
         ):
             got = ConversationService().get_conversation("abc", "u")
@@ -93,7 +93,7 @@ class TestConversationServiceGet:
 
 class TestConversationServiceSave:
     def test_raises_for_none_token(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
         with pytest.raises(ValueError):
@@ -105,7 +105,7 @@ class TestConversationServiceSave:
             )
 
     def test_raises_when_no_user_in_token(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
         with pytest.raises(ValueError):
@@ -117,10 +117,10 @@ class TestConversationServiceSave:
             )
 
     def test_creates_new_conversation(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -141,10 +141,10 @@ class TestConversationServiceSave:
         assert got["name"] == "Title"
 
     def test_appends_message_to_existing(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -166,10 +166,10 @@ class TestConversationServiceSave:
         assert any(m["prompt"] == "q-new" for m in messages)
 
     def test_updates_message_at_index(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -193,7 +193,7 @@ class TestConversationServiceSave:
         assert messages[0]["prompt"] == "updated"
 
     def test_raises_when_conversation_missing(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
         with _patch_db(pg_conn), pytest.raises(ValueError):
@@ -206,10 +206,10 @@ class TestConversationServiceSave:
             )
 
     def test_save_with_empty_llm_title_falls_back(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -231,11 +231,11 @@ class TestConversationServiceSave:
 
 class TestSaveUserQuestion:
     def test_creates_conversation_and_reserves_message(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
             TERMINATED_RESPONSE_PLACEHOLDER,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -261,10 +261,10 @@ class TestSaveUserQuestion:
         assert messages[0]["request_id"] == result["request_id"]
 
     def test_appends_to_existing_conversation(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -285,7 +285,7 @@ class TestSaveUserQuestion:
         assert msgs[0]["prompt"] == "follow-up"
 
     def test_raises_when_token_missing(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
         with pytest.raises(ValueError):
@@ -302,10 +302,10 @@ class TestSaveUserQuestion:
         the end. Pre-fix the WAL path appended unconditionally and the
         old answer survived alongside the regenerated one.
         """
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -356,10 +356,10 @@ class TestSaveUserQuestion:
         """``index=0`` is a valid edge: it should drop every prior
         message and reseat the placeholder at position 0.
         """
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -398,10 +398,10 @@ class TestSaveUserQuestion:
         the create-then-reserve path silently treats it as a no-op
         rather than truncating a freshly-created conversation.
         """
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -421,7 +421,7 @@ class TestSaveUserQuestion:
         assert msgs[0]["prompt"] == "brand new q"
 
     def test_raises_when_conversation_unauthorized(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
         with _patch_db(pg_conn), pytest.raises(ValueError):
@@ -434,10 +434,10 @@ class TestSaveUserQuestion:
 
 class TestFinalizeMessage:
     def test_finalizes_complete(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -449,7 +449,7 @@ class TestFinalizeMessage:
                 question="q",
                 decoded_token={"sub": user},
             )
-            from application.storage.db.repositories.conversations import (
+            from docsgpt.storage.db.repositories.conversations import (
                 MessageUpdateOutcome,
             )
             assert svc.finalize_message(
@@ -477,10 +477,10 @@ class TestFinalizeMessage:
     def test_finalize_strips_null_bytes(self, pg_conn):
         """A NUL-laden tool result (07-17 PDF incident) must not kill the
         conversation save — Postgres rejects \\x00 in text and jsonb."""
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
             MessageUpdateOutcome,
         )
@@ -515,10 +515,10 @@ class TestFinalizeMessage:
         assert msgs[0]["metadata"] == {"key": "val"}
 
     def test_finalizes_failed_records_error(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -531,7 +531,7 @@ class TestFinalizeMessage:
                 decoded_token={"sub": user},
             )
             err = RuntimeError("provider down")
-            from application.storage.db.repositories.conversations import (
+            from docsgpt.storage.db.repositories.conversations import (
                 MessageUpdateOutcome,
             )
             assert svc.finalize_message(
@@ -552,7 +552,7 @@ class TestFinalizeMessage:
         rows as 'confirmed' for the same message_id."""
         from sqlalchemy import text as sql_text
 
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -572,7 +572,7 @@ class TestFinalizeMessage:
                 ),
                 {"cid": "c1", "mid": res["message_id"]},
             )
-            from application.storage.db.repositories.conversations import (
+            from docsgpt.storage.db.repositories.conversations import (
                 MessageUpdateOutcome,
             )
             assert svc.finalize_message(
@@ -586,10 +586,10 @@ class TestFinalizeMessage:
         assert status == "confirmed"
 
     def test_finalize_returns_not_found_for_unknown_message(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             MessageUpdateOutcome,
         )
         with _patch_db(pg_conn):
@@ -614,10 +614,10 @@ class TestFinalizeMessage:
 
         from sqlalchemy import text as sql_text
 
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories import conversations as conv_module
+        from docsgpt.storage.db.repositories import conversations as conv_module
 
         user = "u-fin-rollback"
 
@@ -632,10 +632,10 @@ class TestFinalizeMessage:
                 raise
 
         with patch(
-            "application.api.answer.services.conversation_service.db_session",
+            "docsgpt.api.answer.services.conversation_service.db_session",
             _savepoint_session,
         ), patch(
-            "application.api.answer.services.conversation_service.db_readonly",
+            "docsgpt.api.answer.services.conversation_service.db_readonly",
             _savepoint_session,
         ):
             svc = ConversationService()
@@ -686,10 +686,10 @@ class TestFinalizeMessage:
         assert msg_status == "pending"
 
     def test_finalize_generates_title_when_provided(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -703,7 +703,7 @@ class TestFinalizeMessage:
                 question="long question that becomes the fallback name",
                 decoded_token={"sub": user},
             )
-            from application.storage.db.repositories.conversations import (
+            from docsgpt.storage.db.repositories.conversations import (
                 MessageUpdateOutcome,
             )
             assert svc.finalize_message(
@@ -730,10 +730,10 @@ class TestSaveUserQuestionFinalizeFailedFlow:
     """LLM fails immediately; question stays queryable with status='failed' + error metadata."""
 
     def test_failed_llm_leaves_question_persisted(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -769,10 +769,10 @@ class TestSaveUserQuestionFinalizeFailedFlow:
 
 class TestCompressionMetadata:
     def test_update_compression_metadata(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -792,7 +792,7 @@ class TestCompressionMetadata:
             )
 
     def test_update_compression_raises_on_error(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -802,13 +802,13 @@ class TestCompressionMetadata:
             yield
 
         with patch(
-            "application.api.answer.services.conversation_service.db_session",
+            "docsgpt.api.answer.services.conversation_service.db_session",
             _broken,
         ), pytest.raises(RuntimeError):
             ConversationService().update_compression_metadata("abc", {})
 
     def test_append_compression_message_skips_empty_summary(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -818,10 +818,10 @@ class TestCompressionMetadata:
             )
 
     def test_append_compression_message_appends_summary(self, pg_conn):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.storage.db.repositories.conversations import (
+        from docsgpt.storage.db.repositories.conversations import (
             ConversationsRepository,
         )
 
@@ -844,7 +844,7 @@ class TestCompressionMetadata:
         assert any(m["response"] == "A summary" for m in messages)
 
     def test_append_compression_message_swallows_error(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -854,7 +854,7 @@ class TestCompressionMetadata:
             yield
 
         with patch(
-            "application.api.answer.services.conversation_service.db_session",
+            "docsgpt.api.answer.services.conversation_service.db_session",
             _broken,
         ):
             ConversationService().append_compression_message(
@@ -864,7 +864,7 @@ class TestCompressionMetadata:
     def test_get_compression_metadata_returns_none_for_missing(
         self, pg_conn,
     ):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
         with _patch_db(pg_conn):
@@ -881,7 +881,7 @@ class TestCompressionMetadata:
         would raise and pollute logs with a stack trace every call."""
         import logging
 
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -896,7 +896,7 @@ class TestCompressionMetadata:
         )
 
     def test_get_compression_metadata_handles_exception(self):
-        from application.api.answer.services.conversation_service import (
+        from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
         )
 
@@ -906,7 +906,7 @@ class TestCompressionMetadata:
             yield
 
         with patch(
-            "application.api.answer.services.conversation_service.db_readonly",
+            "docsgpt.api.answer.services.conversation_service.db_readonly",
             _broken,
         ):
             got = ConversationService().get_compression_metadata("abc")

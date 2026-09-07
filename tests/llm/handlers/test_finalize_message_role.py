@@ -20,7 +20,7 @@ appears past position 0, and the finalize round still sends ``tools=None``.
 from types import SimpleNamespace
 from typing import Any, Dict, Generator
 
-from application.llm.handlers.base import (
+from docsgpt.llm.handlers.base import (
     _FINALIZE_INSTRUCTION,
     MAX_TOOL_ITERATIONS,
     LLMHandler,

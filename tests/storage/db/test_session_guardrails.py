@@ -1,4 +1,4 @@
-"""Guardrail tests for :mod:`application.storage.db.session`.
+"""Guardrail tests for :mod:`docsgpt.storage.db.session`.
 
 Two invariants are covered here:
 
@@ -19,9 +19,9 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, InternalError, OperationalError
 
-from application.storage.db import engine as engine_module
-from application.storage.db.engine import STATEMENT_TIMEOUT_MS
-from application.storage.db.session import db_readonly, db_session
+from docsgpt.storage.db import engine as engine_module
+from docsgpt.storage.db.engine import STATEMENT_TIMEOUT_MS
+from docsgpt.storage.db.session import db_readonly, db_session
 
 
 # ---------------------------------------------------------------------------

@@ -20,3 +20,20 @@ jobs:
         uses: chartboost/ruff-action@v1
         with:
           version: 0.14.10
+
+  requirements-in-sync:
+    # application/requirements*.txt are exported from uv.lock; fail when a
+    # change to pyproject.toml or uv.lock was not re-exported.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+
+      - name: Re-export and diff
+        run: |
+          uv lock --check
+          bash scripts/export_requirements.sh
+          git diff --exit-code -- docsgpt/requirements.txt docsgpt/requirements-docling.txt docsgpt/requirements-milvus.txt

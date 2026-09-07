@@ -1,7 +1,7 @@
 """Tests for ThinkTool — the chain-of-thought pseudo-tool."""
 
 import pytest
-from application.agents.tools.think import (
+from docsgpt.agents.tools.think import (
     THINK_TOOL_ENTRY,
     THINK_TOOL_ID,
     ThinkTool,

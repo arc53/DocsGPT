@@ -5,7 +5,7 @@ import io
 
 import pytest
 
-from application.upload_limits import (
+from docsgpt.upload_limits import (
     copy_upload_to_path,
     read_upload_limited,
     read_text_upload_limited,
@@ -66,7 +66,7 @@ MP4_HEADER = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2avc1mp41"
 def test_enforce_parseable_attachment_rejects_binary_without_a_parser(
     filename, content, tmp_path
 ):
-    from application.upload_limits import (
+    from docsgpt.upload_limits import (
         enforce_parseable_attachment,
         UnsupportedUploadTypeError,
         unsupported_upload_message,
@@ -87,7 +87,7 @@ def test_enforce_parseable_attachment_rejects_binary_named_as_text(tmp_path):
     Renaming a video to notes.txt would otherwise walk straight back into the
     bug this gate exists for.
     """
-    from application.upload_limits import (
+    from docsgpt.upload_limits import (
         enforce_parseable_attachment,
         UnsupportedUploadTypeError,
     )
@@ -113,7 +113,7 @@ def test_enforce_parseable_attachment_accepts_bom_marked_unicode_text(
     content, tmp_path
 ):
     """A UTF-16 .txt is half NUL bytes and still ordinary text — the BOM says so."""
-    from application.upload_limits import enforce_parseable_attachment
+    from docsgpt.upload_limits import enforce_parseable_attachment
 
     path = tmp_path / "notes.txt"
     path.write_bytes(content)
@@ -130,7 +130,7 @@ def test_enforce_parseable_attachment_rejects_binary_behind_a_bom(bom, tmp_path)
 
     Otherwise three prepended bytes buy any binary a pass.
     """
-    from application.upload_limits import (
+    from docsgpt.upload_limits import (
         enforce_parseable_attachment,
         UnsupportedUploadTypeError,
     )
@@ -148,7 +148,7 @@ def test_enforce_parseable_attachment_uses_the_extractor_it_is_given(tmp_path):
     Without docling the fallback extractor has no .webp handler, so a .webp
     would otherwise skip the content check and be read as plain text.
     """
-    from application.upload_limits import (
+    from docsgpt.upload_limits import (
         enforce_parseable_attachment,
         UnsupportedUploadTypeError,
     )
@@ -181,7 +181,7 @@ def test_enforce_parseable_attachment_uses_the_extractor_it_is_given(tmp_path):
 )
 def test_enforce_parseable_attachment_accepts_parser_backed_types(filename, tmp_path):
     """A parser-backed suffix is admitted on its name — a PDF is binary and parses fine."""
-    from application.upload_limits import enforce_parseable_attachment
+    from docsgpt.upload_limits import enforce_parseable_attachment
 
     path = tmp_path / "staged.bin"
     path.write_bytes(MP4_HEADER)
@@ -203,7 +203,7 @@ def test_enforce_parseable_attachment_accepts_parser_backed_types(filename, tmp_
 )
 def test_enforce_parseable_attachment_accepts_text_without_a_parser(filename, tmp_path):
     """The plain-text fallthrough reads these correctly, so they must stay allowed."""
-    from application.upload_limits import enforce_parseable_attachment
+    from docsgpt.upload_limits import enforce_parseable_attachment
 
     path = tmp_path / "staged.txt"
     path.write_text("def main():\n\treturn 'café — ok'\n", encoding="utf-8")
@@ -230,14 +230,14 @@ def test_enforce_parseable_attachment_accepts_text_without_a_parser(filename, tm
     ],
 )
 def test_looks_like_text(sample, expected):
-    from application.upload_limits import looks_like_text
+    from docsgpt.upload_limits import looks_like_text
 
     assert looks_like_text(sample) is expected
 
 
 def test_file_looks_like_text_only_samples_the_head(tmp_path):
     """Binary past the sampled head is the parser's problem, not the gate's."""
-    from application.upload_limits import file_looks_like_text
+    from docsgpt.upload_limits import file_looks_like_text
 
     path = tmp_path / "staged.log"
     path.write_bytes(b"a" * 9000 + b"\x00" * 100)
@@ -246,13 +246,13 @@ def test_file_looks_like_text_only_samples_the_head(tmp_path):
 
 
 def test_file_looks_like_text_allows_an_unreadable_file(tmp_path):
-    from application.upload_limits import file_looks_like_text
+    from docsgpt.upload_limits import file_looks_like_text
 
     assert file_looks_like_text(tmp_path / "missing.txt") is True
 
 
 def test_unsupported_upload_message_names_the_extension():
-    from application.upload_limits import unsupported_upload_message
+    from docsgpt.upload_limits import unsupported_upload_message
 
     assert unsupported_upload_message("clip.mp4") == "Unsupported file type: .mp4"
     assert unsupported_upload_message("Clip.MP4") == "Unsupported file type: .mp4"

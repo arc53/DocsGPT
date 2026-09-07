@@ -49,7 +49,7 @@ Tech Stack Overview:
 
 ### 🖥 Backend Contributions (🐍 Python)
 
-- Review our issues and contribute to [`/application`](https://github.com/arc53/DocsGPT/tree/main/application) 
+- Review our issues and contribute to [`/docsgpt`](https://github.com/arc53/DocsGPT/tree/main/docsgpt) 
 - All new code should be covered with unit tests ([pytest](https://github.com/pytest-dev/pytest)). Please find tests under [`/tests`](https://github.com/arc53/DocsGPT/tree/main/tests) folder.
 - Before submitting your Pull Request, ensure it can be queried after ingesting some test data.
 - **Coding Style:** We adhere to the [PEP 8](https://www.python.org/dev/peps/pep-0008/) style guide for Python code. We use `ruff` as our linter and code formatter.  Please ensure your code is formatted correctly and passes `ruff` checks before submitting.

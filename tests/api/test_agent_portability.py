@@ -1,4 +1,4 @@
-"""Tests for agent YAML export/import (application.api.user.agents.portability).
+"""Tests for agent YAML export/import (docsgpt.api.user.agents.portability).
 
 These exercise real SQL against the ephemeral ``pg_conn`` fixture, calling
 the dependency-injected serialize/plan/apply functions directly so the
@@ -11,8 +11,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from application.agents.default_tools import default_tool_id
-from application.api.user.agents.portability import (
+from docsgpt.agents.default_tools import default_tool_id
+from docsgpt.api.user.agents.portability import (
     API_VERSION,
     AgentImportError,
     agent_to_yaml,
@@ -22,10 +22,10 @@ from application.api.user.agents.portability import (
     plan_import,
     serialize_agent,
 )
-from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.prompts import PromptsRepository
-from application.storage.db.repositories.sources import SourcesRepository
-from application.storage.db.repositories.user_tools import UserToolsRepository
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.prompts import PromptsRepository
+from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
 
 pytestmark = pytest.mark.integration
@@ -243,7 +243,7 @@ def test_apply_creates_tool_with_supplied_secret(pg_conn, monkeypatch):
     }
     fake_tool.get_actions_metadata.return_value = []
     monkeypatch.setattr(
-        "application.api.user.agents.portability._tool_instance",
+        "docsgpt.api.user.agents.portability._tool_instance",
         lambda tool_type: fake_tool,
     )
     doc = _doc(
@@ -380,7 +380,7 @@ def test_import_rejects_ssrf_tool_url(pg_conn, monkeypatch):
     fake_tool.get_config_requirements.return_value = {}
     fake_tool.get_actions_metadata.return_value = []
     monkeypatch.setattr(
-        "application.api.user.agents.portability._tool_instance",
+        "docsgpt.api.user.agents.portability._tool_instance",
         lambda tool_type: fake_tool,
     )
     doc = _doc(
@@ -473,12 +473,12 @@ def test_tool_skipped_when_encryption_fails(pg_conn, monkeypatch):
     }
     fake_tool.get_actions_metadata.return_value = []
     monkeypatch.setattr(
-        "application.api.user.agents.portability._tool_instance",
+        "docsgpt.api.user.agents.portability._tool_instance",
         lambda tool_type: fake_tool,
     )
     # Force credential encryption to fail (returns "").
     monkeypatch.setattr(
-        "application.api.user.tools.routes.encrypt_credentials",
+        "docsgpt.api.user.tools.routes.encrypt_credentials",
         lambda creds, user_id: "",
     )
     doc = _doc(
@@ -534,7 +534,7 @@ def _fake_telegram(monkeypatch):
         [_SEND_MESSAGE_META, _GET_UPDATES_META]
     )
     monkeypatch.setattr(
-        "application.api.user.agents.portability._tool_instance",
+        "docsgpt.api.user.agents.portability._tool_instance",
         lambda tool_type: fake_tool,
     )
     return fake_tool
@@ -711,12 +711,12 @@ def _fake_api_tool(monkeypatch):
     fake_tool.get_config_requirements.return_value = {}
     fake_tool.get_actions_metadata.return_value = []
     monkeypatch.setattr(
-        "application.api.user.agents.portability._tool_instance",
+        "docsgpt.api.user.agents.portability._tool_instance",
         lambda tool_type: fake_tool,
     )
     # The sanitizer SSRF-gates each action URL; DNS isn't available in tests.
     monkeypatch.setattr(
-        "application.api.user.agents.portability.validate_url", lambda url: url
+        "docsgpt.api.user.agents.portability.validate_url", lambda url: url
     )
     return fake_tool
 

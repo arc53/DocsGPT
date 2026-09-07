@@ -10,8 +10,8 @@ teardown that adopts the final round's shared ``_last_usage``.
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from application import usage as usage_mod
-from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+from docsgpt import usage as usage_mod
+from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 
 
 class RecordingStream:

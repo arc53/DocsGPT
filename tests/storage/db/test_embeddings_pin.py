@@ -4,13 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.storage.db import embeddings_pin
-from application.storage.db.embeddings_pin import (
+from docsgpt.storage.db import embeddings_pin
+from docsgpt.storage.db.embeddings_pin import (
     NOTICE_KEY,
     PIN_KEY,
     resolve_embeddings_pin,
 )
-from application.vectorstore.model_registry import DEFAULT_LEGACY, DEFAULT_NEW_INSTALL
+from docsgpt.vectorstore.model_registry import DEFAULT_LEGACY, DEFAULT_NEW_INSTALL
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ class TestExistingInstall:
     def test_the_notice_names_the_migration_command(self, store, capsys):
         _run(store, has_sources=True)
         out = capsys.readouterr().out
-        assert "application.scripts.reembed" in out
+        assert "docsgpt.scripts.reembed" in out
         assert DEFAULT_NEW_INSTALL in out
 
     def test_the_notice_is_shown_only_once(self, store, capsys):
@@ -112,7 +112,7 @@ class TestSourceModelMismatch:
         self._run([(DEFAULT_LEGACY, 28)], DEFAULT_NEW_INSTALL, log)
         message = log.warning.call_args.args[0] % log.warning.call_args.args[1:]
         assert "28 built with" in message
-        assert "application.scripts.reembed" in message
+        assert "docsgpt.scripts.reembed" in message
 
     def test_an_alias_is_not_a_mismatch(self):
         """A stored alias and the canonical name are the same model."""

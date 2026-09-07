@@ -14,15 +14,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from application.storage.db.bootstrap import ensure_vector_schema
+from docsgpt.storage.db.bootstrap import ensure_vector_schema
 
-_APP_PY = Path(__file__).resolve().parents[3] / "application" / "app.py"
+_APP_PY = Path(__file__).resolve().parents[3] / "docsgpt" / "app.py"
 
 
 @pytest.fixture
 def vector_settings(monkeypatch):
     """Settings configured for a pgvector deployment."""
-    from application.core import settings as settings_module
+    from docsgpt.core import settings as settings_module
 
     settings = settings_module.settings
     monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector", raising=False)
@@ -74,17 +74,17 @@ class TestEnsureVectorSchemaCreates:
         cursor = MagicMock()
         conn.cursor.return_value = cursor
         with patch("psycopg.connect", return_value=conn) as connect, patch(
-            "application.vectorstore.model_registry.dimension_for",
+            "docsgpt.vectorstore.model_registry.dimension_for",
             return_value=dimension,
         ), patch(
-            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+            "docsgpt.vectorstore.pgvector.PGVectorStore.create_schema"
         ) as vector_schema, patch(
-            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            "docsgpt.vectorstore.pgvector.PGVectorStore.table_dimension",
             return_value=table_dimension,
         ), patch(
-            "application.graphrag.store.GraphStore.create_schema"
+            "docsgpt.graphrag.store.GraphStore.create_schema"
         ) as graph_schema, patch(
-            "application.vectorstore.pgvector._pool_for"
+            "docsgpt.vectorstore.pgvector._pool_for"
         ) as pool_for:
             ensure_vector_schema()
         return connect, conn, cursor, vector_schema, graph_schema, pool_for
@@ -130,10 +130,10 @@ class TestEnsureVectorSchemaDimensionCheck:
     ):
         conn = MagicMock()
         with patch("psycopg.connect", return_value=conn), patch(
-            "application.vectorstore.model_registry.dimension_for",
+            "docsgpt.vectorstore.model_registry.dimension_for",
             return_value=1536,
-        ), patch("application.vectorstore.pgvector.PGVectorStore.create_schema"), patch(
-            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+        ), patch("docsgpt.vectorstore.pgvector.PGVectorStore.create_schema"), patch(
+            "docsgpt.vectorstore.pgvector.PGVectorStore.table_dimension",
             return_value=768,
         ):
             with pytest.raises(RuntimeError) as excinfo:
@@ -151,11 +151,11 @@ class TestEnsureVectorSchemaDimensionCheck:
         stub = MagicMock()
         del stub.dimension
         with patch("psycopg.connect", return_value=conn), patch(
-            "application.vectorstore.base.get_embeddings", return_value=stub
+            "docsgpt.vectorstore.base.get_embeddings", return_value=stub
         ), patch(
-            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+            "docsgpt.vectorstore.pgvector.PGVectorStore.create_schema"
         ) as vector_schema, patch(
-            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            "docsgpt.vectorstore.pgvector.PGVectorStore.table_dimension",
             return_value=1536,
         ):
             ensure_vector_schema()  # must not raise
@@ -165,12 +165,12 @@ class TestEnsureVectorSchemaDimensionCheck:
     def test_skips_the_check_when_the_model_cannot_be_loaded(self, vector_settings):
         conn = MagicMock()
         with patch("psycopg.connect", return_value=conn), patch(
-            "application.vectorstore.base.get_embeddings",
+            "docsgpt.vectorstore.base.get_embeddings",
             side_effect=RuntimeError("no model"),
         ), patch(
-            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+            "docsgpt.vectorstore.pgvector.PGVectorStore.create_schema"
         ) as vector_schema, patch(
-            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            "docsgpt.vectorstore.pgvector.PGVectorStore.table_dimension",
             return_value=1536,
         ):
             ensure_vector_schema()  # must not raise
@@ -182,7 +182,7 @@ class TestEnsureVectorSchemaDimensionCheck:
 class TestBootGating:
     """The boot hook must stay behind AUTO_VECTOR_SCHEMA.
 
-    Asserted on the source because importing ``application.app`` runs the hook,
+    Asserted on the source because importing ``docsgpt.app`` runs the hook,
     and a test that imports it cannot observe the gate it just executed.
     """
 
@@ -216,7 +216,7 @@ class TestBootGating:
         ), "ensure_vector_schema() at import time must be wrapped in try/except"
 
     def test_setting_defaults_on(self):
-        from application.core.settings import Settings
+        from docsgpt.core.settings import Settings
 
         assert Settings.model_fields["AUTO_VECTOR_SCHEMA"].default is True
 
@@ -241,14 +241,14 @@ class TestBootDoesNotLoadTheModel:
         conn = MagicMock()
         conn.cursor.return_value = MagicMock()
         with patch("psycopg.connect", return_value=conn), patch(
-            "application.vectorstore.model_registry.dimension_for",
+            "docsgpt.vectorstore.model_registry.dimension_for",
             return_value=registry_dim,
         ), patch(
-            "application.vectorstore.base.build_local_embeddings", loader
+            "docsgpt.vectorstore.base.build_local_embeddings", loader
         ), patch(
-            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+            "docsgpt.vectorstore.pgvector.PGVectorStore.create_schema"
         ) as vector_schema, patch(
-            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            "docsgpt.vectorstore.pgvector.PGVectorStore.table_dimension",
             return_value=None,
         ):
             ensure_vector_schema()
@@ -280,13 +280,13 @@ class TestUnknownWidthIsProbed:
         conn = MagicMock()
         conn.cursor.return_value = MagicMock()
         with patch("psycopg.connect", return_value=conn), patch(
-            "application.vectorstore.model_registry.dimension_for", return_value=None
+            "docsgpt.vectorstore.model_registry.dimension_for", return_value=None
         ), patch(
-            "application.vectorstore.base.build_local_embeddings", return_value=remote
+            "docsgpt.vectorstore.base.build_local_embeddings", return_value=remote
         ), patch(
-            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+            "docsgpt.vectorstore.pgvector.PGVectorStore.create_schema"
         ) as vector_schema, patch(
-            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            "docsgpt.vectorstore.pgvector.PGVectorStore.table_dimension",
             return_value=table_dimension,
         ):
             try:
@@ -340,7 +340,7 @@ class TestBootLoadedModelIsReleased:
     """
 
     def _run(self, vector_settings, *, delegate, base_url=None):
-        from application.vectorstore.base import EmbeddingsSingleton
+        from docsgpt.vectorstore.base import EmbeddingsSingleton
 
         monkeyed = _embeddings(1024)
         conn = MagicMock()
@@ -356,13 +356,13 @@ class TestBootLoadedModelIsReleased:
         ), patch.object(
             vector_settings, "EMBEDDINGS_BASE_URL", base_url
         ), patch("psycopg.connect", return_value=conn), patch(
-            "application.vectorstore.model_registry.dimension_for", return_value=None
+            "docsgpt.vectorstore.model_registry.dimension_for", return_value=None
         ), patch(
-            "application.vectorstore.base.build_local_embeddings", side_effect=_build
+            "docsgpt.vectorstore.base.build_local_embeddings", side_effect=_build
         ), patch(
-            "application.vectorstore.pgvector.PGVectorStore.create_schema"
+            "docsgpt.vectorstore.pgvector.PGVectorStore.create_schema"
         ) as vector_schema, patch(
-            "application.vectorstore.pgvector.PGVectorStore.table_dimension",
+            "docsgpt.vectorstore.pgvector.PGVectorStore.table_dimension",
             return_value=1024,
         ):
             ensure_vector_schema()

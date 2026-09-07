@@ -8,20 +8,20 @@ from __future__ import annotations
 
 import uuid
 
-from application.api.user.team_sharing import (
+from docsgpt.api.user.team_sharing import (
     can_access,
     effective_write_owner,
     owns_resource,
     team_access_for,
     visible_with_access,
 )
-from application.storage.db.repositories.team_scope import TeamScopeRepository
-from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.team_members import TeamMembersRepository
-from application.storage.db.repositories.team_resource_grants import (
+from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+from docsgpt.storage.db.repositories.team_resource_grants import (
     TeamResourceGrantsRepository,
 )
-from application.storage.db.repositories.teams import TeamsRepository
+from docsgpt.storage.db.repositories.teams import TeamsRepository
 
 
 def _team(conn, owner="alice"):

@@ -1,4 +1,4 @@
-"""Workflow-agent YAML export/import (application.api.user.agents.portability).
+"""Workflow-agent YAML export/import (docsgpt.api.user.agents.portability).
 
 Real SQL against the ephemeral ``pg_conn`` fixture, like
 ``test_agent_portability.py``. Covers the graph block: reference rewriting
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from application.agents.default_tools import default_tool_id
-from application.api.user.agents.portability import (
+from docsgpt.agents.default_tools import default_tool_id
+from docsgpt.api.user.agents.portability import (
     AgentImportError,
     agent_to_yaml,
     apply_import,
@@ -20,15 +20,15 @@ from application.api.user.agents.portability import (
     plan_import,
     serialize_agent,
 )
-from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.sources import SourcesRepository
-from application.storage.db.repositories.user_custom_models import (
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.user_custom_models import (
     UserCustomModelsRepository,
 )
-from application.storage.db.repositories.user_tools import UserToolsRepository
-from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
-from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
-from application.storage.db.repositories.workflows import WorkflowsRepository
+from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
+from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
+from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
 
 pytestmark = pytest.mark.integration
@@ -325,7 +325,7 @@ def test_import_route_rejects_invalid_graph_as_client_error(pg_conn):
 
     from flask import Flask, request
 
-    from application.api.user.agents.portability import ImportAgent
+    from docsgpt.api.user.agents.portability import ImportAgent
 
     @contextmanager
     def _conn():
@@ -345,7 +345,7 @@ def test_import_route_rejects_invalid_graph_as_client_error(pg_conn):
     )
     app = Flask(__name__)
     with patch(
-        "application.api.user.agents.portability.db_session", _conn
+        "docsgpt.api.user.agents.portability.db_session", _conn
     ), app.test_request_context(
         "/api/import_agent", method="POST", json={"yaml": yaml_text}
     ):

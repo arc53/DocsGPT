@@ -28,13 +28,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install bandit  # Bandit is needed for this action
-          if [ -f application/requirements.txt ]; then pip install -r application/requirements.txt; fi
+          if [ -f docsgpt/requirements.txt ]; then pip install -r docsgpt/requirements.txt; fi
 
       - name: Run Bandit scan
         uses: PyCQA/bandit-action@v1
         with:
           severity: medium
           confidence: medium
-          targets: application/
+          targets: docsgpt/
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

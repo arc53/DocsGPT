@@ -1,4 +1,4 @@
-"""Tests for application/api/user/sources/retrieval_test.py."""
+"""Tests for docsgpt/api/user/sources/retrieval_test.py."""
 
 import json
 import uuid
@@ -20,18 +20,18 @@ def _patch_db(conn):
     def _yield():
         yield conn
 
-    with patch("application.api.user.sources.retrieval_test.db_readonly", _yield):
+    with patch("docsgpt.api.user.sources.retrieval_test.db_readonly", _yield):
         yield
 
 
 def _grant_team_access(pg_conn, owner, member, source_id, access_level):
-    from application.storage.db.repositories.team_members import (
+    from docsgpt.storage.db.repositories.team_members import (
         TeamMembersRepository,
     )
-    from application.storage.db.repositories.team_resource_grants import (
+    from docsgpt.storage.db.repositories.team_resource_grants import (
         TeamResourceGrantsRepository,
     )
-    from application.storage.db.repositories.teams import TeamsRepository
+    from docsgpt.storage.db.repositories.teams import TeamsRepository
 
     team = TeamsRepository(pg_conn).create(
         "Acme", f"acme-{uuid.uuid4().hex[:8]}", owner
@@ -48,7 +48,7 @@ def _grant_team_access(pg_conn, owner, member, source_id, access_level):
 
 
 def _seed_source(pg_conn, user="u", name="src", config=None):
-    from application.storage.db.repositories.sources import SourcesRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
 
     repo = SourcesRepository(pg_conn)
     src = repo.create(name, user_id=user)
@@ -59,7 +59,7 @@ def _seed_source(pg_conn, user="u", name="src", config=None):
 
 
 def _post(app, source_id, body, user="u"):
-    from application.api.user.sources.retrieval_test import SourceSearch
+    from docsgpt.api.user.sources.retrieval_test import SourceSearch
 
     with app.test_request_context(
         f"/api/sources/{source_id}/search",
@@ -75,7 +75,7 @@ def _post(app, source_id, body, user="u"):
 
 class TestSourceSearchGuards:
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.sources.retrieval_test import SourceSearch
+        from docsgpt.api.user.sources.retrieval_test import SourceSearch
 
         with app.test_request_context(
             "/api/sources/abc/search",
@@ -96,7 +96,7 @@ class TestSourceSearchGuards:
         assert response.status_code == 400
 
     def test_returns_400_for_overlong_query(self, app, pg_conn):
-        from application.api.user.sources.retrieval_test import MAX_QUERY_LENGTH
+        from docsgpt.api.user.sources.retrieval_test import MAX_QUERY_LENGTH
 
         src = _seed_source(pg_conn, user="u-long")
         with _patch_db(pg_conn):
@@ -153,7 +153,7 @@ class TestSourceSearchAccess:
         fake.search.return_value = [{"text": "secret", "filename": "f.md"}]
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ) as dispatcher:
             response = _post(
@@ -174,7 +174,7 @@ class TestSourceSearchAccess:
         fake.search.return_value = [{"text": "shared chunk", "filename": "f.md"}]
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ):
             response = _post(app, str(src["id"]), {"query": "q"}, user=viewer)
@@ -209,7 +209,7 @@ class TestSourceSearchRetrieval:
         ]
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ):
             response = _post(app, str(src["id"]), {"query": "what runs"}, user=user)
@@ -232,7 +232,7 @@ class TestSourceSearchRetrieval:
         fake.search.return_value = [{"text": "graph chunk", "filename": "g.md"}]
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ):
             response = _post(app, str(src["id"]), {"query": "q"}, user=user)
@@ -244,7 +244,7 @@ class TestSourceSearchRetrieval:
     def test_ad_hoc_config_is_passed_to_dispatcher_and_not_persisted(
         self, app, pg_conn
     ):
-        from application.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
 
         user = "u-adhoc"
         src = _seed_source(pg_conn, user=user)
@@ -253,7 +253,7 @@ class TestSourceSearchRetrieval:
         fake.search.return_value = []
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ) as dispatcher:
             response = _post(
@@ -290,7 +290,7 @@ class TestSourceSearchRetrieval:
         fake.search.return_value = []
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ) as dispatcher:
             response = _post(app, str(src["id"]), {"query": "q"}, user=user)
@@ -307,7 +307,7 @@ class TestSourceSearchRetrieval:
         fake.search.side_effect = RuntimeError("vector store down")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ):
             response = _post(app, str(src["id"]), {"query": "q"}, user=user)
@@ -324,7 +324,7 @@ class TestPrescreenCostCeiling:
         src = _seed_source(pg_conn, user="u-costly")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher"
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher"
         ) as dispatcher:
             response = _post(
                 app,
@@ -354,7 +354,7 @@ class TestPrescreenCostCeiling:
         fake.search.return_value = []
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ) as dispatcher:
             response = _post(
@@ -395,7 +395,7 @@ class TestPrescreenCostCeiling:
         fake.search.return_value = []
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ) as dispatcher:
             response = _post(
@@ -417,7 +417,7 @@ class TestPrescreenCostCeiling:
         src = _seed_source(pg_conn, user="u-edit-costly", config={"retrieval": saved})
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher"
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher"
         ) as dispatcher:
             response = _post(
                 app,
@@ -452,10 +452,10 @@ class TestModelResolution:
         fake.search.return_value = []
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.get_default_model_id",
+            "docsgpt.api.user.sources.retrieval_test.get_default_model_id",
             return_value="gpt-4o",
         ), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ) as dispatcher:
             response = _post(app, str(src["id"]), {"query": "q"}, user="u-model")
@@ -472,10 +472,10 @@ class TestModelResolution:
         fake.search.return_value = []
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.retrieval_test.get_default_model_id",
+            "docsgpt.api.user.sources.retrieval_test.get_default_model_id",
             return_value=None,
         ), patch(
-            "application.api.user.sources.retrieval_test.Dispatcher",
+            "docsgpt.api.user.sources.retrieval_test.Dispatcher",
             return_value=fake,
         ) as dispatcher:
             response = _post(app, str(src["id"]), {"query": "q"}, user="u-nomodel")

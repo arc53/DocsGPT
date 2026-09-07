@@ -7,11 +7,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import text
 
-from application.api.user.reconciliation import run_reconciliation
-from application.storage.db.repositories.schedule_runs import (
+from docsgpt.api.user.reconciliation import run_reconciliation
+from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
-from application.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 
 def _now() -> datetime:
@@ -65,11 +65,11 @@ def _make_once_pending_run(conn, *, user_id="u1"):
 @pytest.fixture
 def patched_engine(pg_engine, monkeypatch):
     monkeypatch.setattr(
-        "application.api.user.reconciliation.get_engine",
+        "docsgpt.api.user.reconciliation.get_engine",
         lambda: pg_engine,
     )
     monkeypatch.setattr(
-        "application.api.user.reconciliation.settings",
+        "docsgpt.api.user.reconciliation.settings",
         type("S", (), {
             "POSTGRES_URI": str(pg_engine.url),
             "SCHEDULE_RUN_TIMEOUT": 60,
@@ -233,24 +233,24 @@ class TestReconciler:
 
 class TestCleanup:
     def test_cleanup_schedule_runs_trims_old_rows(self, pg_engine, monkeypatch):
-        from application.api.user.tasks import cleanup_schedule_runs as _task
+        from docsgpt.api.user.tasks import cleanup_schedule_runs as _task
 
         monkeypatch.setattr(
-            "application.storage.db.engine.get_engine",
+            "docsgpt.storage.db.engine.get_engine",
             lambda: pg_engine,
         )
 
         class S:
             POSTGRES_URI = str(pg_engine.url)
             SCHEDULE_RUN_OUTPUT_RETENTION_DAYS = 30
-        monkeypatch.setattr("application.api.user.tasks.settings", S, raising=False)
+        monkeypatch.setattr("docsgpt.api.user.tasks.settings", S, raising=False)
         monkeypatch.setattr(
-            "application.core.settings.settings.POSTGRES_URI",
+            "docsgpt.core.settings.settings.POSTGRES_URI",
             str(pg_engine.url),
             raising=False,
         )
         monkeypatch.setattr(
-            "application.core.settings.settings.SCHEDULE_RUN_OUTPUT_RETENTION_DAYS",
+            "docsgpt.core.settings.settings.SCHEDULE_RUN_OUTPUT_RETENTION_DAYS",
             30,
             raising=False,
         )

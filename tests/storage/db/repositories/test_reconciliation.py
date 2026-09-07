@@ -6,10 +6,10 @@ import json
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.conversations import (
+from docsgpt.storage.db.repositories.conversations import (
     ConversationsRepository,
 )
-from application.storage.db.repositories.reconciliation import (
+from docsgpt.storage.db.repositories.reconciliation import (
     ReconciliationRepository,
 )
 

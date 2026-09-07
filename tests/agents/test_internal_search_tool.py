@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-from application.agents.tools.internal_search import (
+from docsgpt.agents.tools.internal_search import (
     INTERNAL_TOOL_ID,
     InternalSearchTool,
     add_internal_search_tool,
@@ -24,7 +24,7 @@ class TestAddInternalSearchTool:
         }
         tools: dict = {}
         with patch(
-            "application.agents.tools.internal_search."
+            "docsgpt.agents.tools.internal_search."
             "sources_have_directory_structure",
             return_value=False,
         ):
@@ -254,7 +254,7 @@ class TestBuildHelpers:
         }
 
         with patch(
-            "application.agents.tools.internal_search.sources_have_directory_structure",
+            "docsgpt.agents.tools.internal_search.sources_have_directory_structure",
             return_value=False,
         ):
             add_internal_search_tool(tools_dict, retriever_config)
@@ -284,7 +284,7 @@ class TestInternalSearchToolGetRetriever:
     def test_get_retriever_creates_dispatcher(self):
         # _get_retriever now builds the per-source Dispatcher (B1c) lazily and
         # caches it; the Dispatcher creates per-group retrievers at search time.
-        from application.retriever.dispatcher import Dispatcher
+        from docsgpt.retriever.dispatcher import Dispatcher
 
         tool = InternalSearchTool({
             "source": {"active_docs": ["a"]},
@@ -295,7 +295,7 @@ class TestInternalSearchToolGetRetriever:
         assert tool._retriever is None
 
         with patch(
-            "application.retriever.classic_rag.LLMCreator.create_llm",
+            "docsgpt.retriever.classic_rag.LLMCreator.create_llm",
             return_value=Mock(),
         ):
             result = tool._get_retriever()
@@ -306,7 +306,7 @@ class TestInternalSearchToolGetRetriever:
     def test_get_retriever_kill_switch_falls_back_to_legacy(self, monkeypatch):
         # PER_SOURCE_RETRIEVAL_ENABLED=False → legacy single RetrieverCreator.
         monkeypatch.setattr(
-            "application.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
+            "docsgpt.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
             False,
         )
         tool = InternalSearchTool({
@@ -316,7 +316,7 @@ class TestInternalSearchToolGetRetriever:
         })
         mock_retriever = Mock()
         with patch(
-            "application.agents.tools.internal_search.RetrieverCreator"
+            "docsgpt.agents.tools.internal_search.RetrieverCreator"
         ) as mock_rc:
             mock_rc.create_retriever.return_value = mock_retriever
             result = tool._get_retriever()
@@ -396,7 +396,7 @@ class TestSourcesHaveDirectoryStructure:
     """Cover line 240, 254, 298: sources_have_directory_structure helper."""
 
     def test_no_active_docs_returns_false(self):
-        from application.agents.tools.internal_search import (
+        from docsgpt.agents.tools.internal_search import (
             sources_have_directory_structure,
         )
 

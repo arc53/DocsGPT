@@ -1,4 +1,4 @@
-"""Comprehensive tests for application/parser/file/docs_parser.py
+"""Comprehensive tests for docsgpt/parser/file/docs_parser.py
 
 Covers: PDFParser (init, parse with pypdf, parse as image, import error),
 DocxParser (init, parse, import error).
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch, mock_open
 
 import pytest
 
-from application.parser.file.docs_parser import PDFParser, DocxParser
+from docsgpt.parser.file.docs_parser import PDFParser, DocxParser
 
 
 # =====================================================================
@@ -44,7 +44,7 @@ class TestPDFParserInit:
 @pytest.mark.unit
 class TestPDFParserParse:
 
-    @patch("application.parser.file.docs_parser.settings")
+    @patch("docsgpt.parser.file.docs_parser.settings")
     def test_parse_with_pypdf(self, mock_settings):
         mock_settings.PARSE_PDF_AS_IMAGE = False
 
@@ -58,7 +58,7 @@ class TestPDFParserParse:
         mock_reader = MagicMock()
         mock_reader.pages = [mock_page1, mock_page2]
 
-        with patch("application.parser.file.docs_parser.PdfReader",
+        with patch("docsgpt.parser.file.docs_parser.PdfReader",
                    create=True), \
              patch("builtins.open", mock_open()):
             # Need to patch the import inside the function
@@ -74,8 +74,8 @@ class TestPDFParserParse:
             finally:
                 del sys.modules["pypdf"]
 
-    @patch("application.parser.file.docs_parser.settings")
-    @patch("application.parser.file.docs_parser.requests")
+    @patch("docsgpt.parser.file.docs_parser.settings")
+    @patch("docsgpt.parser.file.docs_parser.requests")
     def test_parse_as_image(self, mock_requests, mock_settings):
         mock_settings.PARSE_PDF_AS_IMAGE = True
 
@@ -89,7 +89,7 @@ class TestPDFParserParse:
             result = parser.parse_file(Path("test.pdf"))
             assert result == "# OCR Result"
 
-    @patch("application.parser.file.docs_parser.settings")
+    @patch("docsgpt.parser.file.docs_parser.settings")
     def test_parse_raises_on_missing_pypdf(self, mock_settings):
         mock_settings.PARSE_PDF_AS_IMAGE = False
 
@@ -196,17 +196,17 @@ class TestBaseParserProperties:
 class TestDocsParserGaps:
     def test_pdf_parser_parse_as_image(self, tmp_path):
         """Cover lines 33-34: PARSE_PDF_AS_IMAGE sends to external service."""
-        from application.parser.file.docs_parser import PDFParser
+        from docsgpt.parser.file.docs_parser import PDFParser
 
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake content")
 
         with patch(
-            "application.parser.file.docs_parser.settings"
+            "docsgpt.parser.file.docs_parser.settings"
         ) as mock_settings:
             mock_settings.PARSE_PDF_AS_IMAGE = True
             with patch(
-                "application.parser.file.docs_parser.requests.post"
+                "docsgpt.parser.file.docs_parser.requests.post"
             ) as mock_post:
                 mock_post.return_value = MagicMock(
                     json=MagicMock(return_value={"markdown": "# Parsed Content"})
@@ -218,7 +218,7 @@ class TestDocsParserGaps:
 
     def test_docx_parser_init_parser(self):
         """Cover line 59: DocxParser._init_parser returns empty dict."""
-        from application.parser.file.docs_parser import DocxParser
+        from docsgpt.parser.file.docs_parser import DocxParser
 
         parser = DocxParser()
         config = parser._init_parser()
@@ -226,7 +226,7 @@ class TestDocsParserGaps:
 
     def test_docx_parser_import_error(self):
         """Cover line 63: ImportError when docx2txt not installed."""
-        from application.parser.file.docs_parser import DocxParser
+        from docsgpt.parser.file.docs_parser import DocxParser
 
         parser = DocxParser()
         with patch.dict("sys.modules", {"docx2txt": None}):

@@ -16,9 +16,9 @@ def _patch_decorator_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.idempotency.db_session", _yield
+        "docsgpt.api.user.idempotency.db_session", _yield
     ), patch(
-        "application.api.user.idempotency.db_readonly", _yield
+        "docsgpt.api.user.idempotency.db_readonly", _yield
     ):
         yield
 
@@ -43,7 +43,7 @@ def _row_for(conn, key):
 @pytest.mark.unit
 class TestNoKey:
     def test_pass_through_no_db_hit(self, pg_conn):
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         calls = []
 
@@ -53,9 +53,9 @@ class TestNoKey:
             return {"x": x}
 
         with patch(
-            "application.api.user.idempotency.db_session"
+            "docsgpt.api.user.idempotency.db_session"
         ) as mock_session, patch(
-            "application.api.user.idempotency.db_readonly"
+            "docsgpt.api.user.idempotency.db_readonly"
         ) as mock_readonly:
             result = task(_fake_celery_self(), 7)
 
@@ -65,7 +65,7 @@ class TestNoKey:
         assert mock_readonly.call_count == 0
 
     def test_empty_string_key_treated_as_absent(self, pg_conn):
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         @with_idempotency(task_name="thing")
         def task(self, idempotency_key=None):
@@ -84,7 +84,7 @@ class TestNoKey:
 @pytest.mark.unit
 class TestFirstRunWithKey:
     def test_records_completed_row(self, pg_conn):
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         @with_idempotency(task_name="thing")
         def task(self, idempotency_key=None):
@@ -105,7 +105,7 @@ class TestFirstRunWithKey:
 @pytest.mark.unit
 class TestSecondRunCompletedShortCircuits:
     def test_returns_cached_without_invoking(self, pg_conn):
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         invocations = {"count": 0}
 
@@ -130,7 +130,7 @@ class TestFirstRunFails:
         stays in ``pending`` (with bumped attempt_count) so the next
         attempt isn't gated as already-completed.
         """
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         @with_idempotency(task_name="thing")
         def task(self, idempotency_key=None):
@@ -149,7 +149,7 @@ class TestFirstRunFails:
 @pytest.mark.unit
 class TestPoisonLoopGuard:
     def test_refuses_after_max_attempts(self, pg_conn):
-        from application.api.user.idempotency import (
+        from docsgpt.api.user.idempotency import (
             MAX_TASK_ATTEMPTS, with_idempotency,
         )
 
@@ -177,8 +177,8 @@ class TestPoisonLoopGuard:
 class TestPreviousPendingReruns:
     def test_pending_row_does_not_short_circuit(self, pg_conn):
         """HTTP boundary writes ``pending``; on first arrival the wrapper still runs."""
-        from application.api.user.idempotency import with_idempotency
-        from application.storage.db.repositories.idempotency import (
+        from docsgpt.api.user.idempotency import with_idempotency
+        from docsgpt.storage.db.repositories.idempotency import (
             IdempotencyRepository,
         )
 
@@ -215,8 +215,8 @@ class TestRaceWithCompletedRow:
     """A second worker finishing after the first should not clobber the completed row."""
 
     def test_second_record_no_ops_on_completed(self, pg_conn):
-        from application.api.user.idempotency import with_idempotency
-        from application.storage.db.repositories.idempotency import (
+        from docsgpt.api.user.idempotency import with_idempotency
+        from docsgpt.storage.db.repositories.idempotency import (
             IdempotencyRepository,
         )
 
@@ -258,10 +258,10 @@ class TestLiveLeaseDefersConcurrentRun:
     """
 
     def test_second_worker_reraises_retry_without_running(self, pg_conn):
-        from application.api.user.idempotency import (
+        from docsgpt.api.user.idempotency import (
             LEASE_TTL_SECONDS, with_idempotency,
         )
-        from application.storage.db.repositories.idempotency import (
+        from docsgpt.storage.db.repositories.idempotency import (
             IdempotencyRepository,
         )
 
@@ -303,8 +303,8 @@ class TestLiveLeaseDefersConcurrentRun:
         """
         from sqlalchemy import text
 
-        from application.api.user.idempotency import with_idempotency
-        from application.storage.db.repositories.idempotency import (
+        from docsgpt.api.user.idempotency import with_idempotency
+        from docsgpt.storage.db.repositories.idempotency import (
             IdempotencyRepository,
         )
 
@@ -344,7 +344,7 @@ class TestExceptionPathReleasesLease:
     def test_release_clears_lease_owner(self, pg_conn):
         from sqlalchemy import text
 
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         @with_idempotency(task_name="thing")
         def task(self, idempotency_key=None):
@@ -366,7 +366,7 @@ class TestExceptionPathReleasesLease:
 
     def test_next_attempt_can_reclaim_after_release(self, pg_conn):
         """Sequential retries don't get blocked by the lease TTL."""
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         invocations = {"count": 0}
 
@@ -398,7 +398,7 @@ class TestSuccessfulRunClearsLease:
     def test_completed_row_has_null_lease(self, pg_conn):
         from sqlalchemy import text
 
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         @with_idempotency(task_name="thing")
         def task(self, idempotency_key=None):
@@ -426,7 +426,7 @@ class TestSynthesizedKeyGuardsKeylessDispatch:
     """
 
     def test_keyless_with_source_id_records_dedup_row(self, pg_conn):
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         @with_idempotency(task_name="ingest")
         def task(self, idempotency_key=None, source_id=None):
@@ -445,7 +445,7 @@ class TestSynthesizedKeyGuardsKeylessDispatch:
         """Same ``source_id`` → same key → a redelivery short-circuits to
         the cached result instead of re-running the body.
         """
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         runs = {"count": 0}
 
@@ -465,7 +465,7 @@ class TestSynthesizedKeyGuardsKeylessDispatch:
         """The core fix: a keyless OOM-looping dispatch is bounded — the
         guard trips after MAX_TASK_ATTEMPTS with no explicit key.
         """
-        from application.api.user.idempotency import (
+        from docsgpt.api.user.idempotency import (
             MAX_TASK_ATTEMPTS, with_idempotency,
         )
 
@@ -491,16 +491,16 @@ class TestSynthesizedKeyGuardsKeylessDispatch:
         """No explicit key and no ``source_id`` anchor → pass through with
         no DB writes, exactly as before.
         """
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         @with_idempotency(task_name="store_attachment")
         def task(self, idempotency_key=None):
             return {"ran": True}
 
         with patch(
-            "application.api.user.idempotency.db_session"
+            "docsgpt.api.user.idempotency.db_session"
         ) as mock_session, patch(
-            "application.api.user.idempotency.db_readonly"
+            "docsgpt.api.user.idempotency.db_readonly"
         ) as mock_readonly:
             result = task(_fake_celery_self())
 
@@ -510,7 +510,7 @@ class TestSynthesizedKeyGuardsKeylessDispatch:
 
     def test_explicit_key_takes_precedence_over_source_id(self, pg_conn):
         """An explicit key wins; the synthesized ``auto:`` key is unused."""
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         @with_idempotency(task_name="ingest")
         def task(self, idempotency_key=None, source_id=None):
@@ -534,7 +534,7 @@ class TestPoisonHook:
     """
 
     def test_hook_invoked_with_bound_args_on_poison(self, pg_conn):
-        from application.api.user.idempotency import (
+        from docsgpt.api.user.idempotency import (
             MAX_TASK_ATTEMPTS, with_idempotency,
         )
 
@@ -559,7 +559,7 @@ class TestPoisonHook:
         assert bound["source_id"] == "src-h"
 
     def test_hook_not_invoked_on_success(self, pg_conn):
-        from application.api.user.idempotency import with_idempotency
+        from docsgpt.api.user.idempotency import with_idempotency
 
         calls = []
 
@@ -576,7 +576,7 @@ class TestPoisonHook:
 
     def test_hook_failure_does_not_break_poison_return(self, pg_conn):
         """A throwing hook must not change the poison-guard outcome."""
-        from application.api.user.idempotency import (
+        from docsgpt.api.user.idempotency import (
             MAX_TASK_ATTEMPTS, with_idempotency,
         )
 

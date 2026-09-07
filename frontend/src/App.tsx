@@ -1,3 +1,4 @@
+import { envVar } from '@/env';
 import './locale/i18n';
 
 import { useState } from 'react';
@@ -108,8 +109,8 @@ export default function App() {
     const saved = localStorage.getItem('showNotification');
     return saved ? JSON.parse(saved) : true;
   });
-  const notificationText = import.meta.env.VITE_NOTIFICATION_TEXT;
-  const notificationLink = import.meta.env.VITE_NOTIFICATION_LINK;
+  const notificationText = envVar('VITE_NOTIFICATION_TEXT');
+  const notificationLink = envVar('VITE_NOTIFICATION_LINK');
   // Hide the changelog banner on public share routes — those pages are
   // embedded / shared externally and shouldn't carry product chrome.
   const isPublicShareRoute =

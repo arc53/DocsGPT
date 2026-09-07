@@ -255,7 +255,7 @@ FLASK_PID="$PIDDIR/flask.pid"
 log "starting Flask on 127.0.0.1:$FLASK_PORT"
 (
     cd "$E2E_TMP"
-    PYTHONUNBUFFERED=1 nohup "$FLASK_BIN" --app ../application/app.py run \
+    PYTHONUNBUFFERED=1 nohup "$FLASK_BIN" --app ../docsgpt/app.py run \
         --host 127.0.0.1 --port "$FLASK_PORT" \
         >"$FLASK_LOG" 2>&1 &
     echo $! > "$FLASK_PID"
@@ -275,7 +275,7 @@ log "starting Celery worker (solo pool)"
     cd "$E2E_TMP"
     PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
     PYTHONUNBUFFERED=1 \
-    nohup "$PY_BIN" -m celery -A application.app.celery worker \
+    nohup "$PY_BIN" -m celery -A docsgpt.app.celery worker \
         -l INFO --pool=solo -Q docsgpt,parsing \
         --without-gossip --without-mingle --without-heartbeat \
         >"$CELERY_LOG" 2>&1 &
@@ -290,7 +290,7 @@ if ! wait_for_log "celery 'celery@'" 30 "$CELERY_LOG" "celery@"; then
 fi
 
 # Ready check via `celery inspect ping`. We can't grep the log for 'ready'
-# because application/core/logging_config.py calls dictConfig with the default
+# because docsgpt/core/logging_config.py calls dictConfig with the default
 # disable_existing_loggers=True, which silences celery.worker's ready banner.
 # `inspect ping` queries the worker over the broker — it's the canonical
 # responsiveness check and doesn't depend on log output.
@@ -301,7 +301,7 @@ while (( elapsed < CELERY_INSPECT_TIMEOUT )); do
     if ( cd "$E2E_TMP" && \
          PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
          PYTHONUNBUFFERED=1 \
-         "$PY_BIN" -m celery -A application.app.celery inspect ping \
+         "$PY_BIN" -m celery -A docsgpt.app.celery inspect ping \
              --timeout 2 >/dev/null 2>&1 ); then
         ping_ok=1
         log "  -> celery inspect ping OK after ${elapsed}s"

@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from application.storage.db.serialization import (
+from docsgpt.storage.db.serialization import (
     PGNativeJSONEncoder,
     coerce_pg_native,
     decode_base64_bytes,
@@ -132,7 +132,7 @@ class TestPGNativeJSONEncoder:
 class TestDecodeBase64Bytes:
     def test_roundtrip(self):
         b = b"\x00\x10\x20\xff"
-        from application.storage.db.serialization import _coerce_scalar
+        from docsgpt.storage.db.serialization import _coerce_scalar
         encoded = _coerce_scalar(b)
         assert decode_base64_bytes(encoded) == b
 

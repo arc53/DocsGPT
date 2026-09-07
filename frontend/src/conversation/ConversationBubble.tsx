@@ -1,3 +1,4 @@
+import { envVar } from '@/env';
 import 'katex/dist/katex.min.css';
 
 import { Pencil } from 'lucide-react';
@@ -37,7 +38,7 @@ import ResearchProgress from './ResearchProgress';
 import { ToolCallsType } from './types';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
-const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
+const DisableSourceFE = envVar('VITE_DISABLE_SOURCE_FE') === 'true';
 
 const ConversationBubble = forwardRef<
   HTMLDivElement,

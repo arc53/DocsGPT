@@ -1,10 +1,10 @@
-"""Tests for application/api/answer/services/compression/types.py"""
+"""Tests for docsgpt/api/answer/services/compression/types.py"""
 
 from datetime import datetime, timezone
 
 import pytest
 
-from application.api.answer.services.compression.types import (
+from docsgpt.api.answer.services.compression.types import (
     CompressionMetadata,
     CompressionResult,
 )

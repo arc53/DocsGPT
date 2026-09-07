@@ -1,0 +1,8 @@
+node_modules/
+dist/
+# Local overrides never belong in the image; .env.development and .env.production do.
+.env.local
+.env.*.local
+Dockerfile
+.dockerignore
+*.log

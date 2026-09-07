@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from application.storage.db.repositories.agent_folders import AgentFoldersRepository
+from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
 
 
 def _repo(conn) -> AgentFoldersRepository:

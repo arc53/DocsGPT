@@ -16,15 +16,15 @@ from unittest.mock import Mock
 
 import pytest
 
-from application.agents.tool_executor import ToolExecutor
-from application.agents.workflows.node_agent import WorkflowNodeAgentFactory
-from application.agents.workflows.schemas import (
+from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
+from docsgpt.agents.workflows.schemas import (
     NodeType,
     Workflow,
     WorkflowGraph,
     WorkflowNode,
 )
-from application.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 
 
 class _StubNodeAgent:
@@ -85,7 +85,7 @@ def test_agent_node_run_scopes_tool_executor(monkeypatch):
         WorkflowNodeAgentFactory, "create", staticmethod(lambda **kwargs: stub)
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_api_key_for_provider", lambda _provider: None
+        "docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None
     )
 
     list(engine._execute_agent_node(node))
@@ -108,7 +108,7 @@ def test_agent_node_skips_run_scope_when_not_persisted(monkeypatch):
         WorkflowNodeAgentFactory, "create", staticmethod(lambda **kwargs: stub)
     )
     monkeypatch.setattr(
-        "application.core.model_utils.get_api_key_for_provider", lambda _provider: None
+        "docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None
     )
 
     list(engine._execute_agent_node(node))
@@ -135,7 +135,7 @@ def _capture_tool_config(monkeypatch) -> Dict[str, Any]:
 
     mock_tm.load_tool.side_effect = _load_tool
     monkeypatch.setattr(
-        "application.agents.tool_executor.ToolManager", lambda config: mock_tm
+        "docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm
     )
     return captured
 
@@ -184,15 +184,15 @@ def test_get_or_load_tool_omits_workflow_run_id_for_chat(monkeypatch):
 def test_run_scoped_ref_resolves_for_edit(pg_engine, tmp_path, monkeypatch):
     """A1 created under a workflow_run_id resolves for edit_artifact -> v2."""
     pytest.importorskip("jsonschema")
-    from application.agents.tools.artifact_generator import ArtifactGeneratorTool
-    from application.storage.db.repositories.artifacts import ArtifactsRepository
-    from application.storage.local import LocalStorage
-    from application.storage.storage_creator import StorageCreator
+    from docsgpt.agents.tools.artifact_generator import ArtifactGeneratorTool
+    from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+    from docsgpt.storage.local import LocalStorage
+    from docsgpt.storage.storage_creator import StorageCreator
 
     storage = LocalStorage(base_dir=str(tmp_path))
     monkeypatch.setattr(StorageCreator, "_instance", storage, raising=False)
     monkeypatch.setattr(
-        "application.storage.db.session.get_engine", lambda: pg_engine
+        "docsgpt.storage.db.session.get_engine", lambda: pg_engine
     )
     # Skip the Jupyter-gateway renderer: the run-scoping under test is the ref
     # resolution + version append, not the rendered bytes.

@@ -3,7 +3,7 @@ import os
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
-from application.storage.local import LocalStorage
+from docsgpt.storage.local import LocalStorage
 
 
 @pytest.fixture

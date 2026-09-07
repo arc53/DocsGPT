@@ -7,17 +7,17 @@ from unittest.mock import Mock
 
 import pytest
 
-from application.agents.classic_agent import ClassicAgent
-from application.agents.tool_executor import ToolExecutor
-from application.guardrails.config import GuardrailsConfig
-from application.guardrails.engine import GuardrailEngine
-from application.guardrails.types import Stage
+from docsgpt.agents.classic_agent import ClassicAgent
+from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.guardrails.config import GuardrailsConfig
+from docsgpt.guardrails.engine import GuardrailEngine
+from docsgpt.guardrails.types import Stage
 
 
 @pytest.fixture
 def _no_tools(monkeypatch):
     monkeypatch.setattr(
-        "application.agents.tool_executor.ToolExecutor.get_tools", lambda self: {}
+        "docsgpt.agents.tool_executor.ToolExecutor.get_tools", lambda self: {}
     )
 
 
@@ -25,14 +25,14 @@ def _no_tools(monkeypatch):
 def _no_audit(monkeypatch):
     """Keep the audit journal out of these tests; persistence is covered separately."""
     monkeypatch.setattr(
-        "application.guardrails.runtime.GuardrailRecorder.flush", lambda self, mid=None: 0
+        "docsgpt.guardrails.runtime.GuardrailRecorder.flush", lambda self, mid=None: 0
     )
 
 
 @pytest.fixture
 def _no_floor(monkeypatch):
     monkeypatch.setattr(
-        "application.guardrails.runtime.instance_floor", lambda: None
+        "docsgpt.guardrails.runtime.instance_floor", lambda: None
     )
 
 
@@ -299,7 +299,7 @@ class TestFloorMerge:
         return GuardrailsConfig.model_validate(over)
 
     def test_floor_adds_a_control_the_agent_omitted(self):
-        from application.guardrails.runtime import merge_floor
+        from docsgpt.guardrails.runtime import merge_floor
 
         floor = self._cfg(
             enabled=True,
@@ -309,8 +309,8 @@ class TestFloorMerge:
         assert [c.check for c in merged.controls] == ["secrets"]
 
     def test_agent_cannot_weaken_a_floor_action(self):
-        from application.guardrails.runtime import merge_floor
-        from application.guardrails.types import Action
+        from docsgpt.guardrails.runtime import merge_floor
+        from docsgpt.guardrails.types import Action
 
         floor = self._cfg(
             enabled=True,
@@ -324,8 +324,8 @@ class TestFloorMerge:
         assert merged.controls[0].action is Action.BLOCK
 
     def test_agent_may_strengthen_beyond_the_floor(self):
-        from application.guardrails.runtime import merge_floor
-        from application.guardrails.types import Action
+        from docsgpt.guardrails.runtime import merge_floor
+        from docsgpt.guardrails.types import Action
 
         floor = self._cfg(
             enabled=True,
@@ -338,7 +338,7 @@ class TestFloorMerge:
         assert merge_floor(agent, floor).controls[0].action is Action.BLOCK
 
     def test_agent_cannot_disable_a_floor_control(self):
-        from application.guardrails.runtime import merge_floor
+        from docsgpt.guardrails.runtime import merge_floor
 
         floor = self._cfg(
             enabled=True,
@@ -354,7 +354,7 @@ class TestFloorMerge:
         assert merge_floor(agent, floor).controls[0].enabled is True
 
     def test_floor_forces_enabled_on_a_disabled_agent(self):
-        from application.guardrails.runtime import merge_floor
+        from docsgpt.guardrails.runtime import merge_floor
 
         floor = self._cfg(
             enabled=True,
@@ -363,13 +363,13 @@ class TestFloorMerge:
         assert merge_floor(self._cfg(enabled=False), floor).enabled is True
 
     def test_floor_can_force_fail_closed(self):
-        from application.guardrails.runtime import merge_floor
+        from docsgpt.guardrails.runtime import merge_floor
 
         floor = self._cfg(enabled=True, fail_open=False)
         assert merge_floor(self._cfg(enabled=True, fail_open=True), floor).fail_open is False
 
     def test_floor_raises_mode_but_never_lowers_it(self):
-        from application.guardrails.runtime import merge_floor
+        from docsgpt.guardrails.runtime import merge_floor
 
         floor = self._cfg(enabled=True, mode="scan_all")
         assert merge_floor(self._cfg(enabled=True, mode="monitor_only"), floor).mode == "scan_all"
@@ -377,22 +377,22 @@ class TestFloorMerge:
         assert merge_floor(self._cfg(enabled=True, mode="scan_all"), lenient).mode == "scan_all"
 
     def test_no_floor_leaves_the_agent_untouched(self):
-        from application.guardrails.runtime import merge_floor
+        from docsgpt.guardrails.runtime import merge_floor
 
         agent = self._cfg(enabled=True, mode="monitor_only")
         assert merge_floor(agent, None) is agent
 
     def test_invalid_floor_is_ignored_not_fatal(self, monkeypatch):
-        from application.core.settings import settings
-        from application.guardrails.runtime import instance_floor
+        from docsgpt.core.settings import settings
+        from docsgpt.guardrails.runtime import instance_floor
 
         monkeypatch.setattr(settings, "GUARDRAILS_FLOOR", {"mode": "not-a-mode"})
         assert instance_floor() is None
 
     def test_floor_with_controls_but_no_enabled_flag_warns(self, monkeypatch, caplog):
         """A floor that parses clean but merges to nothing must not do so silently."""
-        from application.core.settings import settings
-        from application.guardrails.runtime import instance_floor
+        from docsgpt.core.settings import settings
+        from docsgpt.guardrails.runtime import instance_floor
 
         monkeypatch.setattr(
             settings,
@@ -407,8 +407,8 @@ class TestFloorMerge:
 
     def test_documented_floor_example_is_effective(self, monkeypatch):
         """The example in settings.py must produce a floor that actually merges."""
-        from application.core.settings import settings
-        from application.guardrails.runtime import floor_keys, instance_floor
+        from docsgpt.core.settings import settings
+        from docsgpt.guardrails.runtime import floor_keys, instance_floor
 
         monkeypatch.setattr(
             settings,
@@ -423,8 +423,8 @@ class TestFloorMerge:
 @pytest.mark.unit
 class TestKillSwitch:
     def test_master_switch_off_disables_everything(self, monkeypatch):
-        from application.core.settings import settings
-        from application.guardrails.runtime import resolve_config
+        from docsgpt.core.settings import settings
+        from docsgpt.guardrails.runtime import resolve_config
 
         monkeypatch.setattr(settings, "GUARDRAILS_ENABLED", False)
         config = resolve_config(
@@ -455,7 +455,7 @@ class TestActivityLogIntegration:
             persisted["stacks"] = stacks
 
         monkeypatch.setattr(
-            "application.logging._log_activity_to_db", capture
+            "docsgpt.logging._log_activity_to_db", capture
         )
         agent = _agent(agent_base_params, BLOCK_INPUT)
         _stream(agent, ["unused"])

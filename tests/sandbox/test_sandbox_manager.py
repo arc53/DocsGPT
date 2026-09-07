@@ -6,8 +6,8 @@ from typing import Dict, List
 
 import pytest
 
-from application.sandbox.base import CodeSandbox, ExecResult, SandboxGoneError
-from application.sandbox.manager import SandboxCapacityError, SandboxManager
+from docsgpt.sandbox.base import CodeSandbox, ExecResult, SandboxGoneError
+from docsgpt.sandbox.manager import SandboxCapacityError, SandboxManager
 
 
 class FakeBackend(CodeSandbox):
@@ -154,7 +154,7 @@ def test_close_drops_registry_and_backend(backend):
 
 def test_reap_expired_closes_idle_sessions(backend, monkeypatch):
     clock = {"t": 1000.0}
-    monkeypatch.setattr("application.sandbox.manager.time.monotonic", lambda: clock["t"])
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
     mgr = SandboxManager(backend, max_ttl=100)
     mgr.open("conv-1", ttl=50)
     clock["t"] = 1051.0  # 51s idle > 50s ttl
@@ -256,24 +256,24 @@ def test_file_ops_require_open_session(backend):
 
 
 def test_sandbox_creator_selects_jupyter_backend(monkeypatch):
-    from application.sandbox import sandbox_creator as sc
+    from docsgpt.sandbox import sandbox_creator as sc
 
     sc.SandboxCreator.reset()
     backend = sc.SandboxCreator.create_backend("jupyter")
-    from application.sandbox.jupyter_gateway import JupyterKernelGatewaySandbox
+    from docsgpt.sandbox.jupyter_gateway import JupyterKernelGatewaySandbox
 
     assert isinstance(backend, JupyterKernelGatewaySandbox)
 
 
 def test_sandbox_creator_unknown_backend_raises():
-    from application.sandbox.sandbox_creator import SandboxCreator
+    from docsgpt.sandbox.sandbox_creator import SandboxCreator
 
     with pytest.raises(ValueError):
         SandboxCreator.create_backend("does-not-exist")
 
 
 def test_sandbox_creator_manager_is_singleton():
-    from application.sandbox.sandbox_creator import SandboxCreator
+    from docsgpt.sandbox.sandbox_creator import SandboxCreator
 
     SandboxCreator.reset()
     m1 = SandboxCreator.get_manager()
@@ -283,7 +283,7 @@ def test_sandbox_creator_manager_is_singleton():
 
 
 def test_sandbox_creator_peek_manager_never_builds():
-    from application.sandbox.sandbox_creator import SandboxCreator
+    from docsgpt.sandbox.sandbox_creator import SandboxCreator
 
     SandboxCreator.reset()
     assert SandboxCreator.peek_manager() is None  # nothing built yet -> None, no construction
@@ -308,7 +308,7 @@ def test_open_under_cap_does_not_evict(backend):
 
 def test_cap_evicts_lru_idle_session(backend, monkeypatch):
     clock = {"t": 1000.0}
-    monkeypatch.setattr("application.sandbox.manager.time.monotonic", lambda: clock["t"])
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
     mgr = SandboxManager(backend, max_ttl=600, max_sessions=2)
     mgr.open("a")  # last_access 1000
     clock["t"] = 1001.0
@@ -323,7 +323,7 @@ def test_cap_evicts_lru_idle_session(backend, monkeypatch):
 
 def test_cap_eviction_picks_least_recently_used(backend, monkeypatch):
     clock = {"t": 1000.0}
-    monkeypatch.setattr("application.sandbox.manager.time.monotonic", lambda: clock["t"])
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
     mgr = SandboxManager(backend, max_ttl=600, max_sessions=2)
     mgr.open("a")
     clock["t"] = 1001.0
@@ -441,7 +441,7 @@ def test_concurrent_open_same_id_does_not_evict_innocent():
 
 def test_reap_closes_idle_past_ttl_and_keeps_fresh(backend, monkeypatch):
     clock = {"t": 1000.0}
-    monkeypatch.setattr("application.sandbox.manager.time.monotonic", lambda: clock["t"])
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
     mgr = SandboxManager(backend, max_ttl=600)
     mgr.open("stale", ttl=50)
     clock["t"] = 1040.0
@@ -455,7 +455,7 @@ def test_reap_closes_idle_past_ttl_and_keeps_fresh(backend, monkeypatch):
 
 def test_reap_leaves_busy_session_even_if_expired(backend, monkeypatch):
     clock = {"t": 1000.0}
-    monkeypatch.setattr("application.sandbox.manager.time.monotonic", lambda: clock["t"])
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
     mgr = SandboxManager(backend, max_ttl=600)
     mgr.open("busy", ttl=10)
     mgr._enter("busy")  # mark in-use (e.g. a long exec in flight)
@@ -772,7 +772,7 @@ def test_sandbox_gone_during_file_op_drops_session_and_next_open_is_cold():
     """#46 hygiene: a file op hitting a deleted cloud sandbox must invalidate the
     manager session too, so the next open cold-opens instead of replaying the
     cached handle into 404s."""
-    from application.sandbox.base import SandboxGoneError
+    from docsgpt.sandbox.base import SandboxGoneError
 
     class _GoneOnPutBackend(FakeBackend):
         def put_file(self, session_id, dest_path, data):

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from application.agents.workflows.schemas import (
+from docsgpt.agents.workflows.schemas import (
     AgentNodeConfig,
     AgentType,
     ConditionCase,

@@ -7,7 +7,7 @@ source protects every lane at once.
 
 import pytest
 
-from application.agents.tool_executor import (
+from docsgpt.agents.tool_executor import (
     RESULT_FULL_MAX_CHARS,
     bound_result_full,
     sanitize_tool_result,

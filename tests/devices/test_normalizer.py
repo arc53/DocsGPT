@@ -1,6 +1,6 @@
-"""Tests for application.devices.normalizer."""
+"""Tests for docsgpt.devices.normalizer."""
 
-from application.devices.normalizer import normalize_command, normalize_segment
+from docsgpt.devices.normalizer import normalize_command, normalize_segment
 
 
 def test_normalize_git_checkout():

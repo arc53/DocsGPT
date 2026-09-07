@@ -21,7 +21,7 @@ def app():
 class TestAgentFoldersGet:
 
     def test_returns_folders(self, app):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         now = datetime.datetime(2024, 6, 15, tzinfo=datetime.timezone.utc)
         folder_id = uuid.uuid4().hex
@@ -37,7 +37,7 @@ class TestAgentFoldersGet:
         ]
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_collection,
         ):
             with app.test_request_context("/api/agents/folders/", method="GET"):
@@ -53,7 +53,7 @@ class TestAgentFoldersGet:
         assert folders[0]["name"] == "My Folder"
 
     def test_returns_401_unauthenticated(self, app):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         with app.test_request_context("/api/agents/folders/", method="GET"):
             from flask import request
@@ -68,14 +68,14 @@ class TestAgentFoldersGet:
 class TestAgentFoldersCreate:
 
     def test_creates_folder(self, app):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         inserted_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_collection,
         ):
             with app.test_request_context(
@@ -93,7 +93,7 @@ class TestAgentFoldersCreate:
         assert response.json["name"] == "New Folder"
 
     def test_returns_400_missing_name(self, app):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         with app.test_request_context(
             "/api/agents/folders/",
@@ -108,13 +108,13 @@ class TestAgentFoldersCreate:
         assert response.status_code == 400
 
     def test_validates_parent_folder_exists(self, app):
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         mock_collection = Mock()
         mock_collection.find_one.return_value = None
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_collection,
         ):
             with app.test_request_context(
@@ -134,7 +134,7 @@ class TestAgentFoldersCreate:
 class TestAgentFolderGet:
 
     def test_returns_folder_with_agents_and_subfolders(self, app):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         folder_id = uuid.uuid4().hex
         agent_id = uuid.uuid4().hex
@@ -154,10 +154,10 @@ class TestAgentFolderGet:
         ]
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_folders,
         ), patch(
-            "application.api.user.agents.folders.agents_collection",
+            "docsgpt.api.user.agents.folders.agents_collection",
             mock_agents,
         ):
             with app.test_request_context(
@@ -174,13 +174,13 @@ class TestAgentFolderGet:
         assert len(response.json["subfolders"]) == 1
 
     def test_returns_404_not_found(self, app):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         mock_collection = Mock()
         mock_collection.find_one.return_value = None
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_collection,
         ):
             with app.test_request_context(
@@ -198,14 +198,14 @@ class TestAgentFolderGet:
 class TestAgentFolderUpdate:
 
     def test_updates_folder_name(self, app):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         folder_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_collection.update_one.return_value = Mock(matched_count=1)
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_collection,
         ):
             with app.test_request_context(
@@ -222,7 +222,7 @@ class TestAgentFolderUpdate:
         assert response.json["success"] is True
 
     def test_prevents_self_parent(self, app):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         folder_id = str(uuid.uuid4().hex)
 
@@ -240,13 +240,13 @@ class TestAgentFolderUpdate:
         assert "own parent" in response.json["message"]
 
     def test_returns_404_when_not_found(self, app):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         mock_collection = Mock()
         mock_collection.update_one.return_value = Mock(matched_count=0)
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_collection,
         ):
             with app.test_request_context(
@@ -266,7 +266,7 @@ class TestAgentFolderUpdate:
 class TestAgentFolderDelete:
 
     def test_deletes_folder_and_unsets_references(self, app):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         folder_id = str(uuid.uuid4().hex)
         mock_folders = Mock()
@@ -274,10 +274,10 @@ class TestAgentFolderDelete:
         mock_agents = Mock()
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_folders,
         ), patch(
-            "application.api.user.agents.folders.agents_collection",
+            "docsgpt.api.user.agents.folders.agents_collection",
             mock_agents,
         ):
             with app.test_request_context(
@@ -294,17 +294,17 @@ class TestAgentFolderDelete:
         mock_folders.delete_one.assert_called_once()
 
     def test_returns_404_not_found(self, app):
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         mock_folders = Mock()
         mock_folders.delete_one.return_value = Mock(deleted_count=0)
         mock_agents = Mock()
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_folders,
         ), patch(
-            "application.api.user.agents.folders.agents_collection",
+            "docsgpt.api.user.agents.folders.agents_collection",
             mock_agents,
         ):
             with app.test_request_context(
@@ -322,7 +322,7 @@ class TestAgentFolderDelete:
 class TestMoveAgentToFolder:
 
     def test_moves_agent_to_folder(self, app):
-        from application.api.user.agents.folders import MoveAgentToFolder
+        from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         agent_id = uuid.uuid4().hex
         folder_id = uuid.uuid4().hex
@@ -332,10 +332,10 @@ class TestMoveAgentToFolder:
         mock_folders.find_one.return_value = {"_id": folder_id}
 
         with patch(
-            "application.api.user.agents.folders.agents_collection",
+            "docsgpt.api.user.agents.folders.agents_collection",
             mock_agents,
         ), patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_folders,
         ):
             with app.test_request_context(
@@ -355,14 +355,14 @@ class TestMoveAgentToFolder:
         mock_agents.update_one.assert_called_once()
 
     def test_removes_agent_from_folder(self, app):
-        from application.api.user.agents.folders import MoveAgentToFolder
+        from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         agent_id = uuid.uuid4().hex
         mock_agents = Mock()
         mock_agents.find_one.return_value = {"_id": agent_id, "user": "user1"}
 
         with patch(
-            "application.api.user.agents.folders.agents_collection",
+            "docsgpt.api.user.agents.folders.agents_collection",
             mock_agents,
         ):
             with app.test_request_context(
@@ -380,13 +380,13 @@ class TestMoveAgentToFolder:
         assert "$unset" in call_args[0][1]
 
     def test_returns_404_agent_not_found(self, app):
-        from application.api.user.agents.folders import MoveAgentToFolder
+        from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         mock_agents = Mock()
         mock_agents.find_one.return_value = None
 
         with patch(
-            "application.api.user.agents.folders.agents_collection",
+            "docsgpt.api.user.agents.folders.agents_collection",
             mock_agents,
         ):
             with app.test_request_context(
@@ -402,7 +402,7 @@ class TestMoveAgentToFolder:
         assert response.status_code == 404
 
     def test_returns_400_missing_agent_id(self, app):
-        from application.api.user.agents.folders import MoveAgentToFolder
+        from docsgpt.api.user.agents.folders import MoveAgentToFolder
 
         with app.test_request_context(
             "/api/agents/folders/move_agent",
@@ -421,7 +421,7 @@ class TestMoveAgentToFolder:
 class TestBulkMoveAgents:
 
     def test_bulk_moves_to_folder(self, app):
-        from application.api.user.agents.folders import BulkMoveAgents
+        from docsgpt.api.user.agents.folders import BulkMoveAgents
 
         folder_id = uuid.uuid4().hex
         agent_ids = [str(uuid.uuid4().hex), str(uuid.uuid4().hex)]
@@ -430,10 +430,10 @@ class TestBulkMoveAgents:
         mock_folders.find_one.return_value = {"_id": folder_id}
 
         with patch(
-            "application.api.user.agents.folders.agents_collection",
+            "docsgpt.api.user.agents.folders.agents_collection",
             mock_agents,
         ), patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_folders,
         ):
             with app.test_request_context(
@@ -450,13 +450,13 @@ class TestBulkMoveAgents:
         mock_agents.update_many.assert_called_once()
 
     def test_bulk_removes_from_folders(self, app):
-        from application.api.user.agents.folders import BulkMoveAgents
+        from docsgpt.api.user.agents.folders import BulkMoveAgents
 
         agent_ids = [str(uuid.uuid4().hex)]
         mock_agents = Mock()
 
         with patch(
-            "application.api.user.agents.folders.agents_collection",
+            "docsgpt.api.user.agents.folders.agents_collection",
             mock_agents,
         ):
             with app.test_request_context(
@@ -474,7 +474,7 @@ class TestBulkMoveAgents:
         assert "$unset" in call_args[0][1]
 
     def test_returns_400_missing_agent_ids(self, app):
-        from application.api.user.agents.folders import BulkMoveAgents
+        from docsgpt.api.user.agents.folders import BulkMoveAgents
 
         with app.test_request_context(
             "/api/agents/folders/bulk_move",
@@ -489,13 +489,13 @@ class TestBulkMoveAgents:
         assert response.status_code == 400
 
     def test_returns_404_folder_not_found(self, app):
-        from application.api.user.agents.folders import BulkMoveAgents
+        from docsgpt.api.user.agents.folders import BulkMoveAgents
 
         mock_folders = Mock()
         mock_folders.find_one.return_value = None
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_folders,
         ):
             with app.test_request_context(
@@ -524,7 +524,7 @@ class TestAgentFoldersGaps:
 
     def test_create_folder_no_auth(self, app):
         """Cover line 64: post returns 401 when no decoded_token."""
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         with app.test_request_context(
             "/api/agents/folders/",
@@ -539,14 +539,14 @@ class TestAgentFoldersGaps:
 
     def test_create_folder_exception(self, app):
         """Cover lines 90-91: exception during insert_one returns 400."""
-        from application.api.user.agents.folders import AgentFolders
+        from docsgpt.api.user.agents.folders import AgentFolders
 
         mock_folders = Mock()
         mock_folders.find_one.return_value = None
         mock_folders.insert_one.side_effect = Exception("db error")
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_folders,
         ):
             with app.test_request_context(
@@ -562,7 +562,7 @@ class TestAgentFoldersGaps:
 
     def test_get_folder_no_auth(self, app):
         """Cover line 100: get specific folder returns 401 when no auth."""
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         with app.test_request_context(
             "/api/agents/folders/abc",
@@ -576,13 +576,13 @@ class TestAgentFoldersGaps:
 
     def test_get_folder_exception(self, app):
         """Cover lines 125-126: exception during find returns 400."""
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         mock_folders = Mock()
         mock_folders.find_one.side_effect = Exception("db error")
 
         with patch(
-            "application.api.user.agents.folders.agent_folders_collection",
+            "docsgpt.api.user.agents.folders.agent_folders_collection",
             mock_folders,
         ):
             with app.test_request_context(
@@ -597,7 +597,7 @@ class TestAgentFoldersGaps:
 
     def test_update_folder_no_auth(self, app):
         """Cover line 132: put returns 401 when no decoded_token."""
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         with app.test_request_context(
             "/api/agents/folders/abc",
@@ -612,7 +612,7 @@ class TestAgentFoldersGaps:
 
     def test_update_folder_no_data(self, app):
         """Cover line 136: put with no data returns 400."""
-        from application.api.user.agents.folders import AgentFolder
+        from docsgpt.api.user.agents.folders import AgentFolder
 
         with app.test_request_context(
             "/api/agents/folders/abc",

@@ -513,29 +513,32 @@ function Configure-DocProcessing {
         Write-ColorText "PDF-as-image parsing enabled." -ForegroundColor "Green"
     }
 
-    # OCR needs the tesseract binary, an optional system package that only
-    # locally built images can include (INSTALL_TESSERACT build arg). The
-    # pre-built Docker Hub images ship without it, so there OCR stays off
-    # (its default) rather than being switched on to fail on every scan.
-    if ($COMPOSE_FILE -ne $COMPOSE_FILE_LOCAL) {
-        Write-ColorText "OCR for scanned PDFs and images stays off: the pre-built Docker Hub images do not include tesseract. To use OCR, rerun setup and choose option 5 (build images locally), or use a DeepSeek-OCR endpoint by adding OCR_ENABLED=true, OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> to .env." -ForegroundColor "Yellow"
+    # OCR needs the tesseract binary. The default (slim) images ship without
+    # it; the pre-built "-docling" image variant bakes tesseract, the docling
+    # layout engine and its models in, so with Docker Hub images OCR means
+    # switching the variant. Locally built images get it via build args.
+    $ocr_enabled = Read-Host "Enable OCR for scanned PDFs and images? (y/N)"
+    if (-not ($ocr_enabled -eq "y" -or $ocr_enabled -eq "Y")) {
         return
     }
-
-    $ocr_enabled = Read-Host "Enable OCR for scanned PDFs and images? (y/N)"
-    if ($ocr_enabled -eq "y" -or $ocr_enabled -eq "Y") {
-        "OCR_ENABLED=true" | Add-Content -Path $ENV_FILE -Encoding utf8
-        # Bakes tesseract into the locally built images (docker compose
-        # --env-file .env build).
-        "INSTALL_TESSERACT=true" | Add-Content -Path $ENV_FILE -Encoding utf8
-        Write-ColorText "OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); for a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> in .env." -ForegroundColor "Green"
-        $docling_ocr = Read-Host "Also install the Docling layout engine for OCR (better tables/reading order, several GB heavier)? (y/N)"
-        if ($docling_ocr -eq "y" -or $docling_ocr -eq "Y") {
-            # Locally built images include docling via this build arg; it becomes
-            # the OCR backend automatically (OCR_BACKEND=auto).
-            "INSTALL_DOCLING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
-            Write-ColorText "Docling will be built into locally built images (docker compose --env-file .env build). Pre-built Docker Hub images do not include it." -ForegroundColor "Green"
-        }
+    "OCR_ENABLED=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+    if ($COMPOSE_FILE -ne $COMPOSE_FILE_LOCAL) {
+        # Pre-built images: pull arc53/docsgpt:<tag>-docling instead of the
+        # slim default (about 1.5 GB more to download).
+        "DOCSGPT_IMAGE_VARIANT=-docling" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-ColorText "OCR enabled. The -docling image variant will be pulled (tesseract, docling layout engine and its models included). For a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> in .env." -ForegroundColor "Green"
+        return
+    }
+    # Bakes tesseract into the locally built images (docker compose
+    # --env-file .env build).
+    "INSTALL_TESSERACT=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Write-ColorText "OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); for a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> in .env." -ForegroundColor "Green"
+    $docling_ocr = Read-Host "Also install the Docling layout engine for OCR (better tables/reading order, several GB heavier)? (y/N)"
+    if ($docling_ocr -eq "y" -or $docling_ocr -eq "Y") {
+        # Locally built images include docling via this build arg; it becomes
+        # the OCR backend automatically (OCR_BACKEND=auto).
+        "INSTALL_DOCLING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-ColorText "Docling will be built into locally built images (docker compose --env-file .env build)." -ForegroundColor "Green"
     }
 }
 

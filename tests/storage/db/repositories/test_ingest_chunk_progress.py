@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from application.storage.db.repositories.ingest_chunk_progress import (
+from docsgpt.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
 

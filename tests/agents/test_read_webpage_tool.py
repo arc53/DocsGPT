@@ -1,12 +1,12 @@
-"""Tests for application/agents/tools/read_webpage.py"""
+"""Tests for docsgpt/agents/tools/read_webpage.py"""
 
 from unittest.mock import patch
 
 import pytest
 import requests
 
-from application.agents.tools.read_webpage import ReadWebpageTool
-from application.security.safe_url import ResponseTooLargeError
+from docsgpt.agents.tools.read_webpage import ReadWebpageTool
+from docsgpt.security.safe_url import ResponseTooLargeError
 
 
 class _FakeResponse:
@@ -43,7 +43,7 @@ class TestReadWebpageExecuteAction:
         assert "Error" in result
         assert "URL parameter is missing" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_successful_fetch(self, mock_fetch, tool):
         mock_fetch.return_value = _fetch_result(
             b"<html><body><h1>Title</h1><p>Content</p></body></html>",
@@ -55,7 +55,7 @@ class TestReadWebpageExecuteAction:
         assert "Title" in result
         assert "Content" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_request_error(self, mock_fetch, tool):
         mock_fetch.side_effect = requests.exceptions.ConnectionError("refused")
 
@@ -63,9 +63,9 @@ class TestReadWebpageExecuteAction:
 
         assert "Error fetching URL" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_ssrf_blocked(self, mock_fetch, tool):
-        from application.security.safe_url import UnsafeUserUrlError
+        from docsgpt.security.safe_url import UnsafeUserUrlError
 
         mock_fetch.side_effect = UnsafeUserUrlError("blocked")
 
@@ -74,7 +74,7 @@ class TestReadWebpageExecuteAction:
         assert "Error" in result
         assert "validation failed" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_http_error(self, mock_fetch, tool):
         mock_fetch.return_value = _fetch_result(b"", status_code=404)
 
@@ -88,7 +88,7 @@ class TestReadWebpageContentGuards:
     """Regression tests for the PDF-as-text incident: a binary body must
     never come back as NUL-laden 'markdown'."""
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_rejects_pdf_content_type(self, mock_fetch, tool):
         mock_fetch.return_value = _fetch_result(
             b"%PDF-1.7 binary...", content_type="application/pdf",
@@ -99,7 +99,7 @@ class TestReadWebpageContentGuards:
         assert result.startswith("Error")
         assert "application/pdf" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_rejects_pdf_magic_without_content_type(self, mock_fetch, tool):
         # No Content-Type header at all — the 07-17 incident shape.
         mock_fetch.return_value = _fetch_result(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3...")
@@ -108,7 +108,7 @@ class TestReadWebpageContentGuards:
 
         assert result.startswith("Error")
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_rejects_nul_laden_body_despite_html_content_type(self, mock_fetch, tool):
         # Mislabeled binary: content-type lies, the NUL sniff must catch it.
         mock_fetch.return_value = _fetch_result(
@@ -121,7 +121,7 @@ class TestReadWebpageContentGuards:
         assert result.startswith("Error")
         assert "\x00" not in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_rejects_octet_stream(self, mock_fetch, tool):
         mock_fetch.return_value = _fetch_result(
             b"anything", content_type="application/octet-stream",
@@ -132,7 +132,7 @@ class TestReadWebpageContentGuards:
         assert result.startswith("Error")
         assert "application/octet-stream" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_response_too_large(self, mock_fetch, tool):
         mock_fetch.side_effect = ResponseTooLargeError("body exceeds 10485760 bytes")
 
@@ -141,7 +141,7 @@ class TestReadWebpageContentGuards:
         assert result.startswith("Error")
         assert "large" in result.lower()
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_utf8_decoded_without_declared_charset(self, mock_fetch, tool):
         # text/html with no charset param: requests' RFC-2616 ISO-8859-1
         # fallback would mojibake this; we must default to UTF-8.
@@ -154,7 +154,7 @@ class TestReadWebpageContentGuards:
 
         assert "café über" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_declared_charset_respected(self, mock_fetch, tool):
         mock_fetch.return_value = _fetch_result(
             "<html><body><p>café</p></body></html>".encode("latin-1"),
@@ -165,7 +165,7 @@ class TestReadWebpageContentGuards:
 
         assert "café" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_unknown_declared_charset_falls_back_to_utf8(self, mock_fetch, tool):
         mock_fetch.return_value = _fetch_result(
             "<html><body><p>ok</p></body></html>".encode("utf-8"),
@@ -176,7 +176,7 @@ class TestReadWebpageContentGuards:
 
         assert "ok" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_text_plain_allowed(self, mock_fetch, tool):
         mock_fetch.return_value = _fetch_result(
             b"plain text document", content_type="text/plain",
@@ -186,7 +186,7 @@ class TestReadWebpageContentGuards:
 
         assert "plain text document" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_utf16_page_with_declared_charset_allowed(self, mock_fetch, tool):
         # UTF-16 text is NUL-dense; a correct charset declaration must
         # win over the NUL sniff (which is for undeclared/mislabeled bodies).
@@ -200,7 +200,7 @@ class TestReadWebpageContentGuards:
         assert "Hello world" in result
         assert "\x00" not in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_pdf_magic_beats_declared_charset(self, mock_fetch, tool):
         # The magic-prefix check stays unconditional: a lying
         # ``text/html; charset=utf-8`` header must not sneak a PDF through.
@@ -213,7 +213,7 @@ class TestReadWebpageContentGuards:
 
         assert result.startswith("Error")
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_nuls_past_sniff_window_are_stripped(self, mock_fetch, tool):
         # The sniff only sees the first KB; NULs beyond it must still
         # never leave the tool (self-contained, not reliant on the
@@ -226,7 +226,7 @@ class TestReadWebpageContentGuards:
         assert "\x00" not in result
         assert "tail" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_text_csv_allowed(self, mock_fetch, tool):
         mock_fetch.return_value = _fetch_result(
             b"name,qty\nwidget,2", content_type="text/csv",
@@ -236,7 +236,7 @@ class TestReadWebpageContentGuards:
 
         assert "widget" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_redirect_reported_with_target(self, mock_fetch, tool):
         # allow_redirects=False (SSRF) means a 3xx would otherwise return
         # the redirect body as near-empty markdown with no hint.
@@ -250,7 +250,7 @@ class TestReadWebpageContentGuards:
         assert result.startswith("Error")
         assert "https://example.com/moved-here" in result
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_redirect_without_location_reported(self, mock_fetch, tool):
         mock_fetch.return_value = _fetch_result(b"", status_code=302)
 
@@ -259,7 +259,7 @@ class TestReadWebpageContentGuards:
         assert result.startswith("Error")
         assert "redirect" in result.lower()
 
-    @patch("application.agents.tools.read_webpage.pinned_fetch_bytes")
+    @patch("docsgpt.agents.tools.read_webpage.pinned_fetch_bytes")
     def test_rss_feed_allowed(self, mock_fetch, tool):
         mock_fetch.return_value = _fetch_result(
             b"<rss><channel><title>Feed title</title></channel></rss>",

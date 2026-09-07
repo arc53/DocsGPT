@@ -51,9 +51,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
-from application.api.answer.routes.base import BaseAnswerResource
-from application.api.answer.services.conversation_service import ConversationService
-from application.api.v1.routes import v1_bp
+from docsgpt.api.answer.routes.base import BaseAnswerResource
+from docsgpt.api.answer.services.conversation_service import ConversationService
+from docsgpt.api.v1.routes import v1_bp
 
 
 # ---------------------------------------------------------------------------
@@ -215,9 +215,9 @@ def _wire_db(engine, monkeypatch):
     so we hand out fresh connections from the same ephemeral engine and
     swap the journal writer for a no-op.
     """
-    from application.api.answer.services import conversation_service as conv_mod
-    from application.api.answer.services import continuation_service as cont_mod
-    from application.api.answer.routes import base as base_mod
+    from docsgpt.api.answer.services import conversation_service as conv_mod
+    from docsgpt.api.answer.services import continuation_service as cont_mod
+    from docsgpt.api.answer.routes import base as base_mod
 
     @contextmanager
     def _session():
@@ -658,28 +658,28 @@ class TestV1ContinuationRoutesStatelessly:
             yield MagicMock()
 
         with patch(
-            "application.api.v1.routes._lookup_agent",
+            "docsgpt.api.v1.routes._lookup_agent",
             return_value={"id": "agent-1", "name": "Agent", "user_id": "owner"},
         ), patch(
-            "application.api.v1.routes.ContinuationService.claim_state",
+            "docsgpt.api.v1.routes.ContinuationService.claim_state",
             return_value=None,
         ), patch(
-            "application.api.v1.routes._conversation_belongs_to_agent",
+            "docsgpt.api.v1.routes._conversation_belongs_to_agent",
             return_value=True,
         ), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=_fake_translate,
         ), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ), patch(
-            "application.api.v1.routes._V1AnswerHelper",
+            "docsgpt.api.v1.routes._V1AnswerHelper",
             return_value=fake_helper,
         ), patch(
-            "application.api.v1.routes.db_readonly",
+            "docsgpt.api.v1.routes.db_readonly",
             _yield_conn,
         ), patch(
-            "application.api.v1.routes.translate_response",
+            "docsgpt.api.v1.routes.translate_response",
             return_value={"id": "x", "choices": []},
         ):
             with app.test_client() as c:
@@ -767,22 +767,22 @@ class TestV1ContinuationRoutesStatelessly:
             yield MagicMock()
 
         with patch(
-            "application.api.v1.routes._lookup_agent",
+            "docsgpt.api.v1.routes._lookup_agent",
             return_value={"id": "agent-1", "name": "Agent", "user_id": "owner"},
         ), patch(
-            "application.api.v1.routes.translate_request",
+            "docsgpt.api.v1.routes.translate_request",
             side_effect=_fake_translate,
         ), patch(
-            "application.api.v1.routes.StreamProcessor",
+            "docsgpt.api.v1.routes.StreamProcessor",
             return_value=fake_processor,
         ), patch(
-            "application.api.v1.routes._V1AnswerHelper",
+            "docsgpt.api.v1.routes._V1AnswerHelper",
             return_value=fake_helper,
         ), patch(
-            "application.api.v1.routes.db_readonly",
+            "docsgpt.api.v1.routes.db_readonly",
             _yield_conn,
         ), patch(
-            "application.api.v1.routes.translate_response",
+            "docsgpt.api.v1.routes.translate_response",
             return_value={"id": "x", "choices": []},
         ):
             with app.test_client() as c:
@@ -888,7 +888,7 @@ class _PauseThenAnswerAgent:
 
 
 def _seed_agent(conn, user_id: str, key: str) -> None:
-    from application.storage.db.repositories.agents import AgentsRepository
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
 
     AgentsRepository(conn).create(user_id, "Weather Agent", "published", key=key)
 
@@ -902,8 +902,8 @@ def _wire_v1_route_db(engine, monkeypatch):
     title-gen ``LLMCreator`` on the base module, so a real two-POST round-trip
     runs entirely against the ephemeral Postgres with no live LLM/provider.
     """
-    from application.api.v1 import routes as v1_routes_mod
-    from application.api.answer.routes import base as base_mod
+    from docsgpt.api.v1 import routes as v1_routes_mod
+    from docsgpt.api.answer.routes import base as base_mod
 
     @contextmanager
     def _readonly():
@@ -1007,11 +1007,11 @@ class TestV1ToolRoundTripEndToEnd:
 
         # ---- POST #1: user question -> agent pauses for the client tool ----
         with _wire_v1_route_db(pg_engine, monkeypatch), patch(
-            "application.api.answer.services.stream_processor.StreamProcessor"
+            "docsgpt.api.answer.services.stream_processor.StreamProcessor"
             ".build_agent",
             _fake_build_agent,
         ), patch(
-            "application.api.v1.routes._conversation_belongs_to_agent",
+            "docsgpt.api.v1.routes._conversation_belongs_to_agent",
             return_value=True,
         ):
             with app.test_client() as c:
@@ -1049,11 +1049,11 @@ class TestV1ToolRoundTripEndToEnd:
 
         # ---- POST #2: tool result + conversation_id -> agent answers ----
         with _wire_v1_route_db(pg_engine, monkeypatch), patch(
-            "application.api.answer.services.stream_processor.StreamProcessor"
+            "docsgpt.api.answer.services.stream_processor.StreamProcessor"
             ".build_agent",
             _fake_build_agent,
         ), patch(
-            "application.api.v1.routes._conversation_belongs_to_agent",
+            "docsgpt.api.v1.routes._conversation_belongs_to_agent",
             return_value=True,
         ):
             with app.test_client() as c:

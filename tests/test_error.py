@@ -1,5 +1,5 @@
 import pytest
-from application.error import bad_request, response_error, sanitize_api_error
+from docsgpt.error import bad_request, response_error, sanitize_api_error
 from flask import Flask
 
 

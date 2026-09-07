@@ -10,7 +10,7 @@ DocsGPT ingests content (files/URLs/connectors), indexes it, and answers queries
 
 Core components:
 - Backend API (`application/`)
-- Workers/ingestion (`application/worker.py` and related modules)
+- Workers/ingestion (`docsgpt/worker.py` and related modules)
 - Datastores (MongoDB/Redis/vector stores)
 - Frontend (`frontend/`)
 - Optional extensions/integrations (`extensions/`)

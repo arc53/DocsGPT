@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from sqlalchemy import text  # noqa: E402
 
-from application.storage.db.engine import get_engine  # noqa: E402
+from docsgpt.storage.db.engine import get_engine  # noqa: E402
 
 
 # Tier 1: parent message → user, conversation → agent.

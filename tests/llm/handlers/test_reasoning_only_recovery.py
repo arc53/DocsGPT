@@ -22,7 +22,7 @@ from typing import Any, Dict, Generator, List
 
 import pytest
 
-from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 
 
 # Scripted streams. Each element is either:
@@ -346,7 +346,7 @@ class TestReasoningOnlyRecovery:
         ``tools=None`` plus a "no more tools" system message. If it
         reasons-only-stops, the recovery MUST NOT reopen tools — the
         finalize contract exists precisely so no more tool calls run."""
-        from application.llm.handlers.base import MAX_TOOL_ITERATIONS
+        from docsgpt.llm.handlers.base import MAX_TOOL_ITERATIONS
 
         primary = [
             {"type": "thought", "thought": "reasoning..."},

@@ -3,8 +3,8 @@ from unittest.mock import mock_open, patch
 
 import pytest
 
-from application.parser.file.markdown_parser import MarkdownParser
-from application import utils
+from docsgpt.parser.file.markdown_parser import MarkdownParser
+from docsgpt import utils
 
 
 class _Enc:

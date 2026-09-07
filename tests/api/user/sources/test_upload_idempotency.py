@@ -21,9 +21,9 @@ def _patch_db(conn):
         yield conn
 
     with patch(
-        "application.api.user.sources.upload.db_session", _yield
+        "docsgpt.api.user.sources.upload.db_session", _yield
     ), patch(
-        "application.api.user.sources.upload.db_readonly", _yield
+        "docsgpt.api.user.sources.upload.db_readonly", _yield
     ):
         yield
 
@@ -38,16 +38,16 @@ def _apply_async_mock():
 
 class TestUploadIdempotency:
     def test_no_header_enqueues_normally(self, app, pg_conn):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -68,16 +68,16 @@ class TestUploadIdempotency:
     def test_header_first_post_records_row(self, app, pg_conn):
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -114,16 +114,16 @@ class TestUploadIdempotency:
         """The Celery task body needs the key so ``with_idempotency`` can
         record terminal status and ``_derive_source_id`` can pick it up.
         """
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -145,16 +145,16 @@ class TestUploadIdempotency:
         )
 
     def test_same_header_second_post_returns_cached(self, app, pg_conn):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             apply_mock,
         ):
             with app.test_request_context(
@@ -196,17 +196,17 @@ class TestUploadIdempotency:
         """
         from sqlalchemy import text as sql_text
 
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         apply_mock = _apply_async_mock()
 
         def _fire(user):
             with _patch_db(pg_conn), patch(
-                "application.api.user.sources.upload.StorageCreator.get_storage",
+                "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
                 return_value=fake_storage,
             ), patch(
-                "application.api.user.sources.upload.ingest.apply_async",
+                "docsgpt.api.user.sources.upload.ingest.apply_async",
                 apply_mock,
             ), app.test_request_context(
                 "/api/upload", method="POST",
@@ -248,7 +248,7 @@ class TestUploadIdempotency:
         from concurrent.futures import ThreadPoolExecutor
         from contextlib import contextmanager
 
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         apply_mock = _apply_async_mock()
@@ -285,16 +285,16 @@ class TestUploadIdempotency:
         # function instead of the mock. Set up patches once, share
         # across threads.
         with patch(
-            "application.api.user.sources.upload.db_session",
+            "docsgpt.api.user.sources.upload.db_session",
             _engine_session,
         ), patch(
-            "application.api.user.sources.upload.db_readonly",
+            "docsgpt.api.user.sources.upload.db_readonly",
             _engine_readonly,
         ), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             apply_mock,
         ), ThreadPoolExecutor(max_workers=8) as ex:
             responses = list(ex.map(fire, range(8)))
@@ -309,16 +309,16 @@ class TestUploadIdempotency:
     def test_empty_header_treated_as_absent(self, app, pg_conn):
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -340,16 +340,16 @@ class TestUploadIdempotency:
         assert count == 0
 
     def test_oversized_header_rejected_with_400(self, app, pg_conn):
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         oversized = "x" * 257
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
         ) as mock_apply, app.test_request_context(
             "/api/upload", method="POST",
             data={
@@ -372,16 +372,16 @@ class TestUploadIdempotency:
         """
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import UploadFile
+        from docsgpt.api.user.sources.upload import UploadFile
 
         fake_storage = MagicMock()
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.apply_async",
+            "docsgpt.api.user.sources.upload.ingest.apply_async",
             apply_mock,
         ):
             with app.test_request_context(
@@ -431,11 +431,11 @@ class TestUploadIdempotency:
 
 class TestRemoteIdempotency:
     def test_no_header_enqueues_normally(self, app, pg_conn):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         apply_mock = _apply_async_mock()
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.ingest_remote.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -454,11 +454,11 @@ class TestRemoteIdempotency:
     def test_header_first_post_records_row(self, app, pg_conn):
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         apply_mock = _apply_async_mock()
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.ingest_remote.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -485,11 +485,11 @@ class TestRemoteIdempotency:
         assert row[1] == "ingest_remote"
 
     def test_same_header_second_post_returns_cached(self, app, pg_conn):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         apply_mock = _apply_async_mock()
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.ingest_remote.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
             apply_mock,
         ):
             with app.test_request_context(
@@ -523,11 +523,11 @@ class TestRemoteIdempotency:
         assert apply_mock.call_count == 1
 
     def test_oversized_header_rejected_with_400(self, app, pg_conn):
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         oversized = "x" * 257
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.ingest_remote.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
         ) as mock_apply, app.test_request_context(
             "/api/remote", method="POST",
             data={
@@ -554,11 +554,11 @@ class TestRemoteIdempotency:
         random uuid, breaking push correlation for the default upload
         flow.
         """
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         apply_mock = _apply_async_mock()
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.ingest_remote.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_remote.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -584,12 +584,12 @@ class TestRemoteIdempotency:
         """Same regression as above for the connector branch
         (``ingest_connector_task``). The connector path took the
         no-key gap independently of the plain remote path."""
-        from application.api.user.sources.upload import UploadRemote
+        from docsgpt.api.user.sources.upload import UploadRemote
 
         apply_mock = _apply_async_mock()
         # Pick any registered connector — the route only branches on
         # ``ConnectorCreator.get_supported_connectors()``.
-        from application.parser.connectors.connector_creator import (
+        from docsgpt.parser.connectors.connector_creator import (
             ConnectorCreator,
         )
         supported = ConnectorCreator.get_supported_connectors()
@@ -598,7 +598,7 @@ class TestRemoteIdempotency:
         connector_source = next(iter(supported))
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.ingest_connector_task.apply_async",
+            "docsgpt.api.user.sources.upload.ingest_connector_task.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -623,7 +623,7 @@ class TestRemoteIdempotency:
 
 
 def _seed_source(pg_conn, user="u", **kw):
-    from application.storage.db.repositories.sources import SourcesRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
     return SourcesRepository(pg_conn).create("manage-src", user_id=user, **kw)
 
 
@@ -652,7 +652,7 @@ class TestManageSourceFilesIdempotency:
     def test_no_header_enqueues_normally_no_claim_row(self, app, pg_conn):
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "alice-mgr-noh"
         src = _seed_source(pg_conn, user=user, file_path="/data")
@@ -661,10 +661,10 @@ class TestManageSourceFilesIdempotency:
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             apply_mock,
         ), self._add_request(app, src["id"], user):
             from flask import request
@@ -683,7 +683,7 @@ class TestManageSourceFilesIdempotency:
     def test_header_records_dedup_row_with_predetermined_id(self, app, pg_conn):
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "alice-mgr-rec"
         src = _seed_source(pg_conn, user=user, file_path="/data")
@@ -692,10 +692,10 @@ class TestManageSourceFilesIdempotency:
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             apply_mock,
         ), self._add_request(app, src["id"], user, key="mgr-key-1"):
             from flask import request
@@ -721,7 +721,7 @@ class TestManageSourceFilesIdempotency:
         assert row[2] == "pending"
 
     def test_same_key_second_post_returns_cached(self, app, pg_conn):
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "alice-mgr-rep"
         src = _seed_source(pg_conn, user=user, file_path="/data")
@@ -730,10 +730,10 @@ class TestManageSourceFilesIdempotency:
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             apply_mock,
         ):
             with self._add_request(app, src["id"], user, key="mgr-rep"):
@@ -776,7 +776,7 @@ class TestManageSourceFilesIdempotency:
         SSE correlation silently fails on every idempotent retry and
         the user never sees the directory refresh.
         """
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "alice-mgr-rmrep"
         src = _seed_source(
@@ -804,10 +804,10 @@ class TestManageSourceFilesIdempotency:
             )
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             apply_mock,
         ):
             with _do_remove():
@@ -834,7 +834,7 @@ class TestManageSourceFilesIdempotency:
         """Same regression as the ``remove`` test, for the
         ``remove_directory`` branch.
         """
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "alice-mgr-rmdir-rep"
         src = _seed_source(
@@ -863,10 +863,10 @@ class TestManageSourceFilesIdempotency:
             )
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             apply_mock,
         ):
             with _do_remove_dir():
@@ -890,8 +890,8 @@ class TestManageSourceFilesIdempotency:
         from concurrent.futures import ThreadPoolExecutor
         from contextlib import contextmanager
 
-        from application.api.user.sources.upload import ManageSourceFiles
-        from application.storage.db.repositories.sources import (
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.storage.db.repositories.sources import (
             SourcesRepository,
         )
 
@@ -926,16 +926,16 @@ class TestManageSourceFilesIdempotency:
         # module-attribute patches once before fanning out so every
         # thread sees the mock instead of racing on save/restore.
         with patch(
-            "application.api.user.sources.upload.db_session",
+            "docsgpt.api.user.sources.upload.db_session",
             _engine_session,
         ), patch(
-            "application.api.user.sources.upload.db_readonly",
+            "docsgpt.api.user.sources.upload.db_readonly",
             _engine_readonly,
         ), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             apply_mock,
         ), ThreadPoolExecutor(max_workers=8) as ex:
             responses = list(ex.map(fire, range(8)))
@@ -950,7 +950,7 @@ class TestManageSourceFilesIdempotency:
         """
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "alice-mgr-rmfail"
         src = _seed_source(pg_conn, user=user, file_path="/data")
@@ -961,10 +961,10 @@ class TestManageSourceFilesIdempotency:
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             apply_mock,
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -1000,7 +1000,7 @@ class TestManageSourceFilesIdempotency:
         """
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "alice-mgr-storefail"
         src = _seed_source(pg_conn, user=user, file_path="/data")
@@ -1010,10 +1010,10 @@ class TestManageSourceFilesIdempotency:
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             apply_mock,
         ), self._add_request(app, src["id"], user, key="mgr-storefail"):
             from flask import request
@@ -1038,7 +1038,7 @@ class TestManageSourceFilesIdempotency:
         """
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "alice-mgr-brokerdown"
         src = _seed_source(pg_conn, user=user, file_path="/data")
@@ -1049,10 +1049,10 @@ class TestManageSourceFilesIdempotency:
             raise ConnectionError("broker unreachable")
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             side_effect=_broker_down,
         ), self._add_request(app, src["id"], user, key="mgr-brokerdown"):
             from flask import request
@@ -1075,8 +1075,8 @@ class TestManageSourceFilesIdempotency:
         """
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import ManageSourceFiles
-        from application.storage.db.repositories import sources as src_module
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.storage.db.repositories import sources as src_module
 
         user = "alice-mgr-dbfail"
         src = _seed_source(pg_conn, user=user, file_path="/data")
@@ -1092,10 +1092,10 @@ class TestManageSourceFilesIdempotency:
         src_module.SourcesRepository.update = _explode
         try:
             with _patch_db(pg_conn), patch(
-                "application.api.user.sources.upload.StorageCreator.get_storage",
+                "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
                 return_value=fake_storage,
             ), patch(
-                "application.api.user.tasks.reingest_source_task.apply_async",
+                "docsgpt.api.user.tasks.reingest_source_task.apply_async",
                 apply_mock,
             ), self._add_request(app, src["id"], user, key="mgr-dbfail"):
                 from flask import request
@@ -1123,7 +1123,7 @@ class TestManageSourceFilesIdempotency:
         """
         from sqlalchemy import text
 
-        from application.api.user.sources.upload import ManageSourceFiles
+        from docsgpt.api.user.sources.upload import ManageSourceFiles
 
         user = "alice-mgr-keep"
         src = _seed_source(pg_conn, user=user, file_path="/data")
@@ -1132,10 +1132,10 @@ class TestManageSourceFilesIdempotency:
         apply_mock = _apply_async_mock()
 
         with _patch_db(pg_conn), patch(
-            "application.api.user.sources.upload.StorageCreator.get_storage",
+            "docsgpt.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.apply_async",
+            "docsgpt.api.user.tasks.reingest_source_task.apply_async",
             apply_mock,
         ), self._add_request(app, src["id"], user, key="mgr-keep"):
             from flask import request
