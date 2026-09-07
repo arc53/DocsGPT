@@ -16,11 +16,18 @@ from docsgpt.version import __version__
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7091
-DEFAULT_QUEUES = "docsgpt,parsing,embeddings"
+
+
+def _announce_home() -> None:
+    """Say where runtime data and the env file come from; the API and the worker must agree."""
+    from docsgpt.core.paths import env_file, home_dir
+
+    print(f"docsgpt: data home {home_dir()} (env file {env_file()})", file=sys.stderr)
 
 
 def _api(args: argparse.Namespace) -> int:
     """Serve the ASGI app: gunicorn with the bounded-drain uvicorn worker, or uvicorn when reloading."""
+    _announce_home()
     if args.reload or sys.platform == "win32":
         import uvicorn
 
@@ -49,20 +56,43 @@ def _api(args: argparse.Namespace) -> int:
     return 0
 
 
-def _worker(args: argparse.Namespace) -> int:
-    """Run the Celery worker (with the beat scheduler unless ``--no-beat``)."""
+def _celery(argv: list[str]) -> int:
+    """Run a celery subcommand on the app and return its exit code (usage errors print usage)."""
+    import click
+
     from docsgpt.app import celery
 
-    argv = ["worker", "-l", args.loglevel, "-Q", args.queues]
+    try:
+        code = celery.start(argv)
+    except click.ClickException as exc:
+        exc.show()
+        return exc.exit_code
+    return int(code or 0)
+
+
+def _worker(args: argparse.Namespace) -> int:
+    """Run the Celery worker, with the beat scheduler embedded unless ``--no-beat`` (or on Windows)."""
+    _announce_home()
+    windows = sys.platform == "win32"
+    argv = ["worker", "-l", args.loglevel]
+    if args.queues:
+        argv += ["-Q", args.queues]
     if args.concurrency:
         argv += ["--concurrency", str(args.concurrency)]
-    if args.beat:
+    if args.beat and windows:
+        print("docsgpt: the embedded scheduler is not available on Windows; run `docsgpt beat` separately.", file=sys.stderr)
+    elif args.beat:
         argv.append("-B")
-    pool = args.pool or ("solo" if sys.platform == "darwin" else None)
+    pool = args.pool or ("solo" if sys.platform in ("darwin", "win32") else None)
     if pool:
         argv += ["--pool", pool]
-    celery.worker_main(argv)
-    return 0
+    return _celery(argv)
+
+
+def _beat(args: argparse.Namespace) -> int:
+    """Run the beat scheduler on its own (Windows, or a worker started with ``--no-beat``)."""
+    _announce_home()
+    return _celery(["beat", "-l", args.loglevel])
 
 
 def _migrate(args: argparse.Namespace) -> int:
@@ -70,6 +100,7 @@ def _migrate(args: argparse.Namespace) -> int:
     from docsgpt.core.settings import settings
     from docsgpt.storage.db.bootstrap import ensure_database_ready
 
+    _announce_home()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     if not settings.POSTGRES_URI:
         print("POSTGRES_URI is not set; nothing to migrate.", file=sys.stderr)
@@ -112,12 +143,16 @@ def build_parser() -> argparse.ArgumentParser:
     api.set_defaults(func=_api)
 
     worker = commands.add_parser("worker", help="run the Celery worker (and the scheduler)")
-    worker.add_argument("-Q", "--queues", default=DEFAULT_QUEUES, help=f"queues to consume (default: {DEFAULT_QUEUES})")
+    worker.add_argument("-Q", "--queues", help="queues to consume (default: every configured queue)")
     worker.add_argument("--concurrency", type=int, help="worker processes (default: one per CPU)")
-    worker.add_argument("--pool", help="celery pool (default: prefork; solo on macOS)")
+    worker.add_argument("--pool", help="celery pool (default: prefork; solo on macOS and Windows)")
     worker.add_argument("-l", "--loglevel", default="INFO")
     worker.add_argument("--no-beat", dest="beat", action="store_false", help="do not embed the beat scheduler")
     worker.set_defaults(func=_worker)
+
+    beat = commands.add_parser("beat", help="run the beat scheduler on its own")
+    beat.add_argument("-l", "--loglevel", default="INFO")
+    beat.set_defaults(func=_beat)
 
     migrate = commands.add_parser("migrate", help="create the database if needed and run the migrations")
     migrate.add_argument("--no-create", dest="create_db", action="store_false", help="fail instead of creating a missing database")

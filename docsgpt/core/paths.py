@@ -43,5 +43,8 @@ def env_file() -> Path:
     """The ``.env`` file settings load: ``DOCSGPT_ENV_FILE``, else ``<home>/.env``."""
     configured = os.environ.get(ENV_FILE_ENV)
     if configured:
-        return Path(configured).expanduser()
+        path = Path(configured).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"{ENV_FILE_ENV} is set to {path}, which is not a file")
+        return path
     return home_dir() / ".env"

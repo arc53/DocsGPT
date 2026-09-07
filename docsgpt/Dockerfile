@@ -150,7 +150,10 @@ ENV FLASK_APP=app.py
 # Thread caps. onnxruntime (FastEmbed) ignores OMP_NUM_THREADS and sizes its
 # pool to the host's core count, which a CPU-limited container still reports;
 # EMBEDDINGS_THREADS pins it the way OMP_NUM_THREADS pinned torch before.
-ENV MALLOC_ARENA_MAX=2 \
+# The image ships no checkout, so pin the data home (inputs, indexes, .env)
+# instead of depending on the working directory.
+ENV DOCSGPT_HOME=/app \
+    MALLOC_ARENA_MAX=2 \
     OMP_NUM_THREADS=4 \
     MKL_NUM_THREADS=4 \
     OPENBLAS_NUM_THREADS=4 \

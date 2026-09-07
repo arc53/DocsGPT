@@ -138,8 +138,16 @@ def _docling_check() -> object:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    import argparse
+
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
-    models: List[str] = list(argv) if argv else list(DEFAULT_MODELS)
+    parser = argparse.ArgumentParser(
+        prog="verify-offline", description="Check that the install serves its defaults without network access."
+    )
+    parser.add_argument(
+        "models", nargs="*", help=f"embedding model names or aliases to check (default: {', '.join(DEFAULT_MODELS)})"
+    )
+    models: List[str] = parser.parse_args(argv).models or list(DEFAULT_MODELS)
     if _network_reachable():
         print("note  network is reachable; run with --network none to prove the offline path")
     else:

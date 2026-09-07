@@ -97,11 +97,21 @@ def prefetch(names: Sequence[str], cache_dir: Optional[str] = None) -> List[str]
     return fetched
 
 
+def _parse(argv: Optional[Sequence[str]], prog: str, description: str) -> list[str]:
+    import argparse
+
+    parser = argparse.ArgumentParser(prog=prog, description=description)
+    parser.add_argument(
+        "models", nargs="*", help=f"embedding model names or aliases (default: {', '.join(DEFAULT_MODELS)})"
+    )
+    return parser.parse_args(argv).models or list(DEFAULT_MODELS)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     import os
 
-    names = list(argv) if argv else list(DEFAULT_MODELS)
+    names = _parse(argv, "prefetch-models", "Download the embedding models and the tiktoken encodings into the local caches.")
     fetched = prefetch(names, os.environ.get("EMBEDDINGS_CACHE_DIR"))
     logger.info("Cached %d model(s): %s", len(fetched), ", ".join(fetched))
     encodings = prefetch_tiktoken()

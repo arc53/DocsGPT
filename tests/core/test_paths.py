@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from docsgpt.core import paths
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -32,8 +34,16 @@ class TestEnvFile:
         assert paths.env_file() == tmp_path.resolve() / ".env"
 
     def test_the_env_var_wins(self, monkeypatch, tmp_path):
-        monkeypatch.setenv(paths.ENV_FILE_ENV, str(tmp_path / "custom.env"))
-        assert paths.env_file() == tmp_path / "custom.env"
+        custom = tmp_path / "custom.env"
+        custom.write_text("LLM_NAME=x\n")
+        monkeypatch.setenv(paths.ENV_FILE_ENV, str(custom))
+        assert paths.env_file() == custom
+
+    def test_a_missing_configured_file_is_an_error(self, monkeypatch, tmp_path):
+        """Booting with every default because of a typo in the path must not be silent."""
+        monkeypatch.setenv(paths.ENV_FILE_ENV, str(tmp_path / "nope.env"))
+        with pytest.raises(FileNotFoundError, match="DOCSGPT_ENV_FILE"):
+            paths.env_file()
 
 
 class TestSettingsFollowTheHome:

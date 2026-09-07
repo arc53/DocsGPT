@@ -80,7 +80,9 @@ docsgpt worker     # in a second terminal: the Celery worker, with the scheduler
 
 The API applies pending migrations when it starts (`AUTO_MIGRATE`), so `docsgpt migrate` is the explicit step for deployments that want the schema in place before the first request or that run the API with a restricted database role.
 
-The worker is not optional: query embedding runs on it, so search fails without one. `docsgpt worker --help` lists the queue, concurrency and pool options; `--no-beat` starts a worker without the scheduler when another worker already runs it.
+Both commands print the data home they resolved on start-up. Run them from the same directory, or set `DOCSGPT_HOME` for both, so the worker finds the files the API stores and the API finds the indexes the worker builds.
+
+The worker is not optional: query embedding runs on it, so search fails without one. `docsgpt worker --help` lists the queue, concurrency and pool options; `--no-beat` starts a worker without the scheduler when another worker already runs it. On Windows the scheduler cannot be embedded, so run `docsgpt beat` in a third terminal.
 
 Other commands:
 
