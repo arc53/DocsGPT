@@ -820,7 +820,7 @@ tokenizers==0.22.2
     #   fastembed
 toml==0.10.2
     # via daytona
-tqdm==4.67.3
+tqdm==4.70.0
     # via
     #   docsgpt
     #   fastembed

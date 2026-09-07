@@ -1017,7 +1017,7 @@ torchvision==0.26.0+cpu ; sys_platform == 'linux'
     #   docling-ibm-models
     #   docling-slim
     #   docsgpt
-tqdm==4.67.3
+tqdm==4.70.0
     # via
     #   docling-ibm-models
     #   docling-slim
