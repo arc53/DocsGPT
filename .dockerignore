@@ -3,7 +3,9 @@
 # what the image needs; everything else (frontend, docs, tests, venvs) stays out.
 *
 !docsgpt/
-!application/
+# Only the alias file: an upgraded checkout may still hold gitignored
+# application/{inputs,indexes,vectors,.env} from the old layout.
+!application/__init__.py
 
 # Inside the package: caches, local runtime data and secrets never ship.
 **/__pycache__/

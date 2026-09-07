@@ -44,9 +44,12 @@ services:
     ports:
       - "7091:7091"
     volumes:
-      - ../docsgpt/indexes:/app/indexes
-      - ../docsgpt/inputs:/app/inputs
-      - ../docsgpt/vectors:/app/vectors
+      # Host data stays under application/ (the old package directory) for this
+      # release so an upgraded checkout keeps its indexes; it moves with the
+      # packaging work, together with an upgrade note.
+      - ../application/indexes:/app/indexes
+      - ../application/inputs:/app/inputs
+      - ../application/vectors:/app/vectors
     depends_on:
       redis:
         condition: service_started
@@ -68,9 +71,12 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     volumes:
-      - ../docsgpt/indexes:/app/indexes
-      - ../docsgpt/inputs:/app/inputs
-      - ../docsgpt/vectors:/app/vectors
+      # Host data stays under application/ (the old package directory) for this
+      # release so an upgraded checkout keeps its indexes; it moves with the
+      # packaging work, together with an upgrade note.
+      - ../application/indexes:/app/indexes
+      - ../application/inputs:/app/inputs
+      - ../application/vectors:/app/vectors
     depends_on:
       redis:
         condition: service_started

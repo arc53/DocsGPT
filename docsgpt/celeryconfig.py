@@ -50,10 +50,7 @@ task_queues = tuple(
 
 beat_scheduler = "redbeat.RedBeatScheduler"
 redbeat_redis_url = broker_url
-# v2: the task names changed with the package rename; a new prefix leaves the
-# schedule entries the previous release wrote in Redis unread instead of firing
-# the old names alongside the new ones.
-redbeat_key_prefix = "redbeat:docsgpt:v2:"
+redbeat_key_prefix = "redbeat:docsgpt:"
 redbeat_lock_timeout = 90
 
 # Survive worker SIGKILL/OOM without silently dropping in-flight tasks.

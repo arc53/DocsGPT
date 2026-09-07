@@ -279,6 +279,19 @@ class TestIngestConnectorTask:
 
 class TestSetupPeriodicTasks:
     @pytest.mark.unit
+    def test_every_entry_has_a_stable_name(self):
+        """Unnamed entries get keyed by the task path, which redbeat cannot update in place when it changes."""
+        from docsgpt.api.user.tasks import setup_periodic_tasks
+
+        sender = MagicMock()
+        setup_periodic_tasks(sender)
+
+        names = [call.kwargs.get("name") for call in sender.add_periodic_task.call_args_list]
+        assert all(names), names
+        assert len(set(names)) == len(names), names
+        assert names[:3] == ["schedule-syncs-daily", "schedule-syncs-weekly", "schedule-syncs-monthly"]
+
+    @pytest.mark.unit
     def test_registers_periodic_tasks(self):
         from docsgpt.api.user.tasks import setup_periodic_tasks
 

@@ -138,7 +138,7 @@ RUN if python -c "import docling" 2>/dev/null; then \
 
 COPY --chown=appuser:appuser docsgpt /app/docsgpt
 # One-release alias so `-A application.app.celery` style entry points keep working.
-COPY --chown=appuser:appuser application /app/application
+COPY --chown=appuser:appuser application/__init__.py /app/application/__init__.py
 
 # Runtime data directories, owned by the process user so a named volume
 # mounted on them (docker-compose-standalone.yaml) inherits that ownership

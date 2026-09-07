@@ -44,9 +44,12 @@ services:
     ports:
       - "7091:7091"
     volumes:
-      - ../docsgpt/indexes:/app/docsgpt/indexes
-      - ../docsgpt/inputs:/app/docsgpt/inputs
-      - ../docsgpt/vectors:/app/docsgpt/vectors
+      # Host data stays under application/ (the old package directory) for this
+      # release so an upgraded checkout keeps its indexes; it moves with the
+      # packaging work, together with an upgrade note.
+      - ../application/indexes:/app/docsgpt/indexes
+      - ../application/inputs:/app/docsgpt/inputs
+      - ../application/vectors:/app/docsgpt/vectors
     depends_on:
       redis:
         condition: service_started

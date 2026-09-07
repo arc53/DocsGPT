@@ -176,19 +176,27 @@ def register_legacy_task_names(app: Celery) -> int:
     """Make every ``docsgpt.*`` task answer to its old ``application.*`` name too.
 
     Messages queued by the previous release carry the old names; without the
-    alias a worker on this release rejects them as unregistered. Kept for one
-    release, together with the ``application`` import alias.
+    alias a worker on this release rejects them as unregistered. Each alias is
+    a distinct task object (a subclass carrying the old name), not the same
+    object under a second key: Celery builds its execution tracer per task
+    object, and one object under two names would log every run under
+    whichever name was traced last. Kept for one release, together with the
+    ``application`` import alias.
 
     Returns:
         The number of aliases added.
     """
     added = 0
     for name, task in list(app.tasks.items()):
-        if name.startswith("docsgpt."):
-            legacy = LEGACY_TASK_PREFIX + name[len("docsgpt."):]
-            if legacy not in app.tasks:
-                app.tasks[legacy] = task
-                added += 1
+        if not name.startswith("docsgpt."):
+            continue
+        legacy = LEGACY_TASK_PREFIX + name[len("docsgpt."):]
+        if legacy in app.tasks:
+            continue
+        base = type(task)
+        legacy_cls = type(base.__name__, (base,), {"name": legacy, "__module__": base.__module__, "__doc__": base.__doc__})
+        app.register_task(legacy_cls())
+        added += 1
     return added
 
 

@@ -90,6 +90,26 @@ need attention:
   Staying on `all-mpnet-base-v2` is a supported choice — it remains in the model registry and in `setup.sh`. You only need this section if you want to move to granite.
 </Callout>
 
+## Backend package renamed to `docsgpt`
+
+The backend's Python package is `docsgpt` (it was `application`), the name it
+will carry on PyPI. For one release the old name keeps working through an
+alias, so nothing breaks on upgrade, but update these before the alias goes:
+
+- Entry points: `celery -A docsgpt.app.celery worker`,
+  `uvicorn docsgpt.asgi:asgi_app`, `python -m docsgpt.scripts.<name>`. The
+  `application.…` spellings still run and print a `FutureWarning`. The
+  compose files, Kubernetes manifests and setup scripts in the repository are
+  already updated; only custom copies need editing.
+- Local image builds: the build context is the repository root, so use
+  `docker build -f docsgpt/Dockerfile .` (or the compose files, which do this).
+- Celery task names changed with the package (`docsgpt.api.user.tasks.ingest`
+  and so on). A worker on this release also accepts the old names, so tasks
+  queued before the upgrade still run, and beat rewrites the periodic
+  schedule in Redis on start-up. Nothing to do.
+- Data directories do not move: the compose files keep your indexes, inputs
+  and vectors under `application/` in the checkout, where they already are.
+
 ## Check your version
 
 ```bash
