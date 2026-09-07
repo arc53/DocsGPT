@@ -1,17 +1,17 @@
 import os
-from pathlib import Path
 from typing import Optional
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-from docsgpt.core.db_uri import (  # noqa: E402
+from docsgpt.core.db_uri import (
     normalize_pgvector_connection_string,
     normalize_postgres_uri,
 )
+from docsgpt.core.paths import env_file, home_dir
+
+# Runtime data home (DOCSGPT_HOME, the checkout, or cwd); see docsgpt.core.paths.
+current_dir = str(home_dir())
 
 
 class Settings(BaseSettings):
@@ -581,6 +581,4 @@ class Settings(BaseSettings):
         return stripped
 
 
-# Project root is one level above application/
-path = Path(__file__).parent.parent.parent.absolute()
-settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")
+settings = Settings(_env_file=env_file(), _env_file_encoding="utf-8")

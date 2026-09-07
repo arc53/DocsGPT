@@ -4,6 +4,7 @@ import shutil
 import tempfile
 from typing import BinaryIO, List, Callable
 
+from docsgpt.core.paths import home_dir
 from docsgpt.storage.base import BaseStorage
 
 
@@ -15,11 +16,10 @@ class LocalStorage(BaseStorage):
         Initialize local storage.
 
         Args:
-            base_dir: Base directory for all operations. If None, uses current directory.
+            base_dir: Base directory for all operations. Defaults to the data home
+                (see ``docsgpt.core.paths.home_dir``).
         """
-        self.base_dir = base_dir or os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        )
+        self.base_dir = base_dir or str(home_dir())
 
     def _get_full_path(self, path: str) -> str:
         """Get absolute path by combining base_dir and path.

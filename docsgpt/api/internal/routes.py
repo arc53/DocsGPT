@@ -5,6 +5,7 @@ from flask import Blueprint, request, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
 import logging
 
+from docsgpt.core.paths import home_dir
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -14,9 +15,7 @@ from docsgpt.storage.storage_creator import StorageCreator
 
 logger = logging.getLogger(__name__)
 
-current_dir = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+current_dir = str(home_dir())
 
 
 internal = Blueprint("internal", __name__)

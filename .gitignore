@@ -206,3 +206,6 @@ tests/e2e/.e2e-last-run.json
 docsgpt/core/models/foundry_test_internal.yaml
 bench/
 /benchmark/
+
+# Python package build output (uv build)
+dist/

@@ -15,6 +15,10 @@ export default {
     "title": "🛳️ Docker Setup",
     "href": "/Deploying/Docker-Deploying"
   },
+  "Pip-Install": {
+    "title": "🐍 Install with pip",
+    "href": "/Deploying/Pip-Install"
+  },
   "Development-Environment": {
     "title": "🛠️Development Environment",
     "href": "/Deploying/Development-Environment"

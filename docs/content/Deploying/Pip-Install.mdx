@@ -1,0 +1,86 @@
+---
+title: Install with pip
+description: Run the DocsGPT backend from the PyPI package, inside your own Python environment.
+---
+
+import { Callout } from 'nextra/components'
+
+# Install with pip
+
+The DocsGPT backend is on PyPI as [`docsgpt`](https://pypi.org/project/docsgpt/): the API server, the Celery worker and the maintenance scripts in one package, behind a single `docsgpt` command. Use it when you want DocsGPT inside your own Python environment or process manager rather than the [Docker images](/Deploying/Docker-Deploying).
+
+<Callout type="info">
+  The package is the backend only. The web UI ships in the Docker images and in the repository under `frontend/`; serving it from the package is planned.
+</Callout>
+
+## Requirements
+
+- Python 3.12 or newer
+- [PostgreSQL](/Deploying/Postgres-Migration) for user data, with the `vector` extension if you set `VECTOR_STORE=pgvector`
+- Redis for the task queue and the cache
+- An LLM: an API key for a hosted provider, or a local model server
+
+## Install
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install docsgpt
+```
+
+Extras add the optional engines:
+
+```bash
+pip install "docsgpt[docling]"   # DOC_PARSER_ENGINE=docling: OCR backend, structured output
+pip install "docsgpt[milvus]"    # VECTOR_STORE=milvus
+```
+
+The `docling` extra pulls in PyTorch. On Linux, PyPI's torch wheels bring the CUDA stack with them; on a CPU-only machine add `--extra-index-url https://download.pytorch.org/whl/cpu` to the install command to get the CPU build instead. `uv pip install` and `pipx install` work the same way.
+
+## Configure
+
+DocsGPT keeps its runtime files in a **data home**: the `.env` file it reads settings from, uploaded files under `inputs/` and vector indexes under `indexes/`. The data home is the directory you run the commands from, or the directory `DOCSGPT_HOME` points to. `DOCSGPT_ENV_FILE` points at a `.env` kept somewhere else.
+
+Create a `.env` in the data home. The minimum for a hosted LLM:
+
+```ini
+# LLM provider and model: see App Configuration for the options
+LLM_PROVIDER=openai
+LLM_NAME=<model name>
+API_KEY=<provider API key>
+
+# User data
+POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
+
+# Worker-to-API authentication (required for uploads)
+INTERNAL_KEY=<a long random string>
+```
+
+Redis defaults to `localhost:6379` (`CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `CACHE_REDIS_URL`). Every setting is listed in [App Configuration](/Deploying/DocsGPT-Settings).
+
+## Run
+
+```bash
+docsgpt migrate    # create the database if it is missing and apply the migrations
+docsgpt api        # the API on http://localhost:7091
+docsgpt worker     # in a second terminal: the Celery worker, with the scheduler
+```
+
+The API applies pending migrations when it starts (`AUTO_MIGRATE`), so `docsgpt migrate` is the explicit step for deployments that want the schema in place before the first request or that run the API with a restricted database role.
+
+The worker is not optional: query embedding runs on it, so search fails without one. `docsgpt worker --help` lists the queue, concurrency and pool options; `--no-beat` starts a worker without the scheduler when another worker already runs it.
+
+Other commands:
+
+- `docsgpt api --reload`: a development server with auto-reload.
+- `docsgpt prefetch-models`: download the embedding, tokenizer and parser models ahead of time, for machines that go offline.
+- `docsgpt verify-offline`: check that a prepared install starts with networking off.
+- `docsgpt reembed`: re-embed every index after changing `EMBEDDINGS_NAME` (see [Upgrading](/upgrading)).
+
+## Upgrade
+
+```bash
+pip install -U docsgpt
+docsgpt migrate
+```
+
+Read the [upgrade notes](/upgrading) first when moving between minor versions.
