@@ -177,7 +177,7 @@ daytona-api-client-async==0.205.1
     # via daytona
 daytona-toolbox-api-client==0.205.1
     # via daytona
-daytona-toolbox-api-client-async==0.205.1
+daytona-toolbox-api-client-async==0.210.0
     # via daytona
 ddgs==9.16.0
     # via docsgpt
