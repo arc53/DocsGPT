@@ -29,7 +29,7 @@ To link the widget to your api and your documents you can pass parameters to the
       return <DocsGPTWidget
                apiHost="https://gptcloud.arc53.com"
                apiKey=""
-               avatar = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png"
+               avatar = "https://your-cdn/avatar.png"
                title = "Get AI assistance"
                description = "DocsGPT's AI Chatbot is here to help"
                heroTitle = "Welcome to DocsGPT !"
@@ -38,9 +38,13 @@ To link the widget to your api and your documents you can pass parameters to the
                theme = "dark"
                buttonIcon = "https://your-icon"
                buttonBg = "#222327"
+               allowedFileExtensions = {['.pdf', '.docx', '.md', '.png']}
+               showMicButton
           />;
     };
 ```
+
+`allowedFileExtensions` and `showMicButton` are both off unless you set them. Attached files are parsed and billed against your key's token budget, and the microphone uses the browser's Web Speech API, which forwards audio to the browser vendor's speech service outside on-device Chromium builds. See [the widget docs](https://docs.docsgpt.cloud/Extensions/chat-widget) for details and browser support.
 
 ### Html
 
@@ -86,14 +90,16 @@ To link the widget to your api and your documents you can pass parameters to the
             renderDocsGPTWidget('app', {
               apiHost: 'http://localhost:7001',
               apiKey:"",
-              avatar: 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
+              avatar: 'https://your-cdn/avatar.png',
               title: 'Get AI assistance',
               description: "DocsGPT's AI Chatbot is here to help",
               heroTitle: 'Welcome to DocsGPT!',
               heroDescription: 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
               theme:"dark",
               buttonIcon:"https://your-icon.svg",
-              buttonBg:"#222327"
+              buttonBg:"#222327",
+              allowedFileExtensions: ['.pdf', '.docx', '.md', '.png'],
+              showMicButton: true
             });
           }
         </script>

@@ -10,6 +10,8 @@ interface FetchAnswerStreamingProps {
   history?: HistoryItem[];
   conversationId?: string | null;
   apiHost?: string;
+  /** Server-side ids of attachments to send with this question. */
+  attachments?: string[];
   onEvent?: (event: MessageEvent) => void;
   signal?: AbortSignal;
 }
@@ -29,13 +31,14 @@ export function fetchAnswerStreaming({
   history = [],
   conversationId = null,
   apiHost = '',
+  attachments = [],
   onEvent = () => {
     console.log('Event triggered, but no handler provided.');
   },
   signal,
 }: FetchAnswerStreamingProps): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const body = {
+    const body: Record<string, unknown> = {
       question: question,
       history: JSON.stringify(
         history
@@ -45,6 +48,7 @@ export function fetchAnswerStreaming({
       conversation_id: conversationId,
       api_key: apiKey,
     };
+    if (attachments.length > 0) body.attachments = attachments;
     fetch(apiHost + '/stream', {
       method: 'POST',
       headers: {

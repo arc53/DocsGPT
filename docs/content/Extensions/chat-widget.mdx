@@ -47,7 +47,7 @@ Now, you can embed the widget within your React component's JSX:
 <DocsGPTWidget
   apiHost="https://gptcloud.arc53.com"
   apiKey="your-agent-api-key"
-  avatar="https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png"
+  avatar="https://your-cdn/avatar.png"
   title="Get AI assistance"
   description="DocsGPT's AI Chatbot is here to help"
   heroTitle="Welcome to DocsGPT !"
@@ -90,7 +90,7 @@ Then, in a `<script type="module">` block, use the `renderDocsGPTWidget` functio
     renderDocsGPTWidget('app', {
       apiHost: 'https://gptcloud.arc53.com', // self-hosted: your API URL, e.g. http://localhost:7091
       apiKey: "your-agent-api-key",
-      avatar: 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
+      avatar: 'https://your-cdn/avatar.png',
       title: 'Get AI assistance',
       description: "DocsGPT's AI Chatbot is here to help",
       heroTitle: 'Welcome to DocsGPT!',
@@ -143,7 +143,7 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 |--------------------|------------------|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
 | **`apiHost`**      | `string`         | `"https://gptcloud.arc53.com"`                                     | **Required.** The URL of your DocsGPT API backend. This endpoint handles vector search and chatbot queries. |
 | **`apiKey`**       | `string`         | `"your-api-key"`                                            | API key for authentication with your DocsGPT API. Leave empty if no authentication is required.       |
-| **`avatar`**       | `string`         | [`dino-icon-link`](https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png)   | URL for the avatar image displayed in the chatbot interface.                                         |
+| **`avatar`**       | `string`         | built-in placeholder                                        | URL for the avatar image shown in the chatbot header. Defaults to a neutral silhouette drawn inline, so no image is fetched unless you supply one. |
 | **`title`**        | `string`         | `"Get AI assistance"`                                       | Title text shown in the chatbot header.                                                              |
 | **`description`**  | `string`         | `"DocsGPT's AI Chatbot is here to help"`                     | Sub-title or descriptive text displayed below the title in the chatbot header.                       |
 | **`heroTitle`**    | `string`         | `"Welcome to DocsGPT !"`                                    | Welcome message displayed when the chatbot is initially opened.                                     |
@@ -153,6 +153,32 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 | **`buttonBg`**     | `string`         | `"#222327"`                                                 | Background color of the widget's launch button.                                                      |
 | **`size`**         | `"small" \| "medium"` | `"medium"`                                              | Size of the widget. Options: `"small"` or `"medium"`. Defaults to `"medium"`.                         |
 | **`showSources`**         | `boolean` | `false`                                              | Enables displaying source URLs for data fetched within the widget. When set to `true`, the widget will show the original sources of the fetched data.                         |
+| **`allowedFileExtensions`** | `string[]` | _unset_                                        | File extensions the composer accepts, e.g. `['.pdf', '.docx', '.md', '.png']`. Setting it turns on attachments: an Attach button, drag-and-drop onto the panel, and paste-to-attach. Leave it unset to keep attachments off. |
+| **`showMicButton`**       | `boolean` | `false`                                              | Adds a microphone that dictates a question into the input using the browser's Web Speech API. No backend STT provider needed; hides itself where the browser lacks the API.   |
+
+---
+
+## Attachments and Voice Input
+
+Both features are off until you turn them on, and each has a cost worth knowing about.
+
+**Attachments** are enabled by `allowedFileExtensions`, which acts as both the switch and the filter. Every attached file is uploaded to `/api/store_attachment`, parsed, and its text sent with the question, billed against the token budget of the key owner's account. Which types are worth that depends on your assistant, so there is no default list. A leading dot is optional (`'pdf'` works) and matching is case-insensitive.
+
+Files that finish uploading before the question is sent are attached to it, and the send waits while any are still uploading or parsing, so a file is never silently dropped. The list only filters what the picker offers: a file it allows but the backend cannot parse is still refused by the server, and the reason appears under that file's chip.
+
+**Voice input** is enabled by `showMicButton` and uses the browser's Web Speech API. Words appear in the input as they are spoken and extend whatever was already typed, so a question you had started typing survives. Nothing is uploaded to DocsGPT and no `STT_PROVIDER` is needed.
+
+It is off by default because of where the audio goes. Outside the Chromium builds that expose on-device recognition, the browser forwards the microphone to its vendor's speech service — Google's, in Chrome's case. That is a third-party data flow on your page, so it is your decision to enable.
+
+Browser support is uneven, and the microphone hides itself where it cannot work. Chrome, Edge and Safari have the API, Firefox does not enable it, and it requires a secure origin (HTTPS, or localhost).
+
+```jsx
+<DocsGPTWidget
+  apiKey="your-agent-api-key"
+  allowedFileExtensions={['.pdf', '.docx', '.md', '.png']}
+  showMicButton
+/>
+```
 
 ---
 

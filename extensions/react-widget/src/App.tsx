@@ -5,7 +5,10 @@ export const App = () => {
   return (
     <div>
       <SearchBar />
-      <DocsGPTWidget />
+      <DocsGPTWidget
+        allowedFileExtensions={['.pdf', '.md', '.txt', '.docx', '.png', '.jpg']}
+        showMicButton
+      />
     </div>
   );
 };

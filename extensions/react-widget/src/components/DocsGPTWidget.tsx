@@ -14,11 +14,34 @@ import {
   FEEDBACK,
   MESSAGE_TYPE,
   Query,
+  SentAttachment,
   Status,
   WidgetCoreProps,
   WidgetProps,
 } from '../types/index';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
+import {
+  acceptAttribute,
+  normalizeExtensions,
+  useAttachments,
+} from '../hooks/useAttachments';
+import { useVoiceInput, voiceInputSupported } from '../hooks/useVoiceInput';
+import {
+  AttachButton,
+  AttachmentChips,
+  ClipIcon,
+  ComposerNote,
+  ControlBar,
+  ControlGroup,
+  DropOverlay,
+  DropTarget,
+  MicButton,
+  type MicButtonState,
+  SentAttachments,
+  VoiceWaveform,
+} from './ComposerControls';
+import { DEFAULT_AVATAR } from './defaultAvatar';
+import { radii } from './tokens';
 import { ThemeProvider } from 'styled-components';
 import MarkdownIt from 'markdown-it';
 import {
@@ -220,14 +243,6 @@ const themes = {
       border: 'rgba(185, 28, 28, 0.24)',
     },
   },
-};
-
-const radii = {
-  sm: '8px',
-  md: '12px',
-  lg: '18px',
-  panel: '16px',
-  full: '9999px',
 };
 
 const sizesConfig = {
@@ -1007,17 +1022,20 @@ const Composer = styled.div`
   padding: 12px 16px 0 16px;
   border-top: 1px solid ${(props) => props.theme.hairline};
 `;
-const PromptContainer = styled.form`
+const PromptContainer = styled.form<{ $stacked?: boolean }>`
   box-sizing: border-box;
-  padding: 4px 4px 4px 6px;
+  padding: ${(props) =>
+    props.$stacked ? '6px 8px 8px 8px' : '4px 4px 4px 6px'};
   background-color: ${(props) => props.theme.secondary.bg};
   border: 1px solid ${(props) => props.theme.hairline};
-  border-radius: 24px;
+  border-radius: ${(props) => (props.$stacked ? radii.lg : '24px')};
   min-height: ${(props) =>
     props.theme.dimensions!.size == 'large' ? '40px' : '23px'};
-  max-height: 150px;
+  /* Stacked needs room for the chips and control row; inline keeps the cap. */
+  max-height: ${(props) => (props.$stacked ? 'none' : '150px')};
   display: flex;
-  align-items: end;
+  flex-direction: ${(props) => (props.$stacked ? 'column' : 'row')};
+  align-items: ${(props) => (props.$stacked ? 'stretch' : 'end')};
   gap: 6px;
   transition:
     border-color 0.15s ease,
@@ -1028,8 +1046,20 @@ const PromptContainer = styled.form`
     box-shadow: 0 0 0 3px ${(props) => props.theme.accent!.soft};
   }
 `;
-const StyledTextarea = styled.textarea`
+const PromptRow = styled.div`
   box-sizing: border-box;
+  display: flex;
+  align-items: end;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+`;
+const HiddenFileInput = styled.input`
+  display: none;
+`;
+const StyledTextarea = styled.textarea<{ $hidden?: boolean }>`
+  box-sizing: border-box;
+  ${(props) => (props.$hidden ? 'display: none;' : '')}
   width: 100%;
   border: none;
   padding: ${(props) =>
@@ -1151,10 +1181,14 @@ const HeroDescription = styled.p`
   padding: 0px;
 `;
 const Hyperlink = styled.a`
-  color: ${(props) => props.theme.accent!.link};
-  text-decoration: none;
+  /* Inherits the tagline colour; the underline is what marks it as a link. */
+  color: inherit;
+  text-decoration: underline;
+  /* Keeps descenders clear of the rule at 11px. */
+  text-underline-offset: 2px;
+  transition: opacity 0.2s ease;
   &:hover {
-    text-decoration: underline;
+    opacity: 0.8;
   }
 `;
 const Tagline = styled.div`
@@ -1302,7 +1336,7 @@ export const DocsGPTWidget = (props: WidgetProps) => {
 export const WidgetCore = ({
   apiHost = 'https://gptcloud.arc53.com',
   apiKey = '527686a3-e867-4b4d-9fec-f5f45fdb613a',
-  avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
+  avatar = DEFAULT_AVATAR,
   title = 'Get AI assistance',
   description = "DocsGPT's AI Chatbot is here to help",
   heroTitle = 'Welcome to DocsGPT !',
@@ -1314,6 +1348,8 @@ export const WidgetCore = ({
   showSources = true,
   handleClose,
   prefilledQuery = '',
+  allowedFileExtensions,
+  showMicButton = false,
 }: WidgetCoreProps) => {
   const [prompt, setPrompt] = React.useState<string>('');
   const [mounted, setMounted] = React.useState(false);
@@ -1329,11 +1365,85 @@ export const WidgetCore = ({
   const [feedbackErrorIndex, setFeedbackErrorIndex] = React.useState<
     number | null
   >(null);
+  const [isDraggingFiles, setIsDraggingFiles] = React.useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
+  // The draft as it stood when dictation began; recognised words extend it.
+  const voiceBaseRef = React.useRef('');
+  // dragenter/dragleave fire per child crossed, hence a depth count.
+  const dragDepthRef = React.useRef(0);
+
+  // The list doubles as the on switch: no accepted types, no attachments.
+  const acceptedExtensions = React.useMemo(
+    () => normalizeExtensions(allowedFileExtensions),
+    [allowedFileExtensions],
+  );
+  const attachmentsEnabled = acceptedExtensions.length > 0;
+
+  const {
+    attachments,
+    addFiles,
+    remove: removeAttachment,
+    clear: clearAttachments,
+    pendingCount,
+    failedCount,
+    completed: completedAttachments,
+  } = useAttachments({ apiKey, apiHost, acceptedExtensions });
+
+  // One place for the height arithmetic: typing, transcripts and sends all
+  // go through here.
+  const resizePrompt = React.useCallback(() => {
+    const el = promptRef.current;
+    if (!el) return;
+    const baseHeight = size === 'large' ? 60 : 40;
+    const maxHeight = 140;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(
+      baseHeight,
+      Math.min(el.scrollHeight, maxHeight),
+    )}px`;
+  }, [size]);
+
+  // The textarea is controlled by `prompt`, so its value is the live draft.
+  const handleVoiceStart = React.useCallback(() => {
+    voiceBaseRef.current = promptRef.current?.value ?? '';
+  }, []);
+
+  const applyTranscript = React.useCallback(
+    (text: string) => {
+      // The base is fixed at the start, so revised interim words overwrite
+      // only themselves and a typed half-question survives.
+      const base = voiceBaseRef.current;
+      setPrompt(base.trim() ? `${base.replace(/\s+$/, '')}\n${text}` : text);
+      // The height can only be recomputed once React has committed.
+      window.requestAnimationFrame(resizePrompt);
+    },
+    [resizePrompt],
+  );
+
+  const handleVoiceEnd = React.useCallback(() => {
+    // Once at the end, not on every interim word.
+    window.requestAnimationFrame(() => promptRef.current?.focus());
+  }, []);
+
+  const {
+    recordingState,
+    error: voiceError,
+    toggle: toggleVoiceInput,
+    clearError: clearVoiceError,
+    analyserRef: voiceAnalyserRef,
+  } = useVoiceInput({
+    onStart: handleVoiceStart,
+    onTranscript: applyTranscript,
+    onEnd: handleVoiceEnd,
+  });
+
+  // Firefox has no SpeechRecognition, nor does an insecure origin.
+  const canUseVoice = showMicButton && voiceInputSupported();
   const md = new MarkdownIt();
   //Custom markdown for the table
   md.renderer.rules.table_open = () =>
@@ -1447,7 +1557,7 @@ export const WidgetCore = ({
     setStatus('idle');
   };
 
-  async function stream(question: string) {
+  async function stream(question: string, attachmentIds: string[] = []) {
     setStatus('loading');
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1459,6 +1569,7 @@ export const WidgetCore = ({
         apiHost: apiHost,
         history: queries,
         conversationId: conversationId,
+        attachments: attachmentIds,
         onEvent: (event: MessageEvent) => {
           let data: StreamEvent;
           try {
@@ -1562,10 +1673,24 @@ export const WidgetCore = ({
   const appendQuery = async (userQuery: string) => {
     if (!userQuery) return;
 
+    // Only parsed attachments have a server id. The send is held until none
+    // are pending, so this is the whole list.
+    const sent: SentAttachment[] = completedAttachments.map((attachment) => ({
+      id: attachment.attachmentId as string,
+      fileName: attachment.fileName,
+    }));
+
     setIsPinnedToLatest(true);
-    queries.push({ prompt: userQuery });
+    queries.push({
+      prompt: userQuery,
+      attachments: sent.length > 0 ? sent : undefined,
+    });
     setPrompt('');
-    await stream(userQuery);
+    if (sent.length > 0) clearAttachments();
+    await stream(
+      userQuery,
+      sent.map((attachment) => attachment.id),
+    );
   };
   const handleCopy = async (text: string, index: number) => {
     try {
@@ -1585,48 +1710,59 @@ export const WidgetCore = ({
     if (status === 'loading') return;
     const prompt = queries[index]?.prompt;
     if (!prompt) return;
+    // The composer list was cleared on send, so the row's ids are the only
+    // record of what the question carried.
+    const attached = queries[index]?.attachments;
     setQueries((prev: Query[]) => {
       const updated = [...prev];
-      updated[index] = { prompt };
+      updated[index] = { prompt, attachments: attached };
       return updated.slice(0, index + 1);
     });
     setIsPinnedToLatest(true);
-    await stream(prompt);
+    await stream(
+      prompt,
+      (attached ?? []).map((attachment) => attachment.id),
+    );
   };
 
-  // submit handler
+  // Pending and failed attachments both hold the send, so neither is
+  // silently dropped. Pending reads first: it clears on its own.
+  const pendingNote =
+    pendingCount > 0
+      ? `Waiting for ${pendingCount} file${pendingCount === 1 ? '' : 's'} to finish\u2026`
+      : null;
+  const failedNote =
+    failedCount > 0
+      ? 'Remove the file that could not be attached, then send.'
+      : null;
+  const sendBlockedReason = pendingNote ?? failedNote;
+  const isDictating =
+    recordingState === 'recording' || recordingState === 'transcribing';
+  const canSubmit =
+    prompt.trim().length > 0 && !sendBlockedReason && !isDictating;
+
+  const submitPrompt = async () => {
+    if (!canSubmit) return;
+    // Before the value clears, or the composer sits tall and empty a frame.
+    if (promptRef.current) promptRef.current.style.height = 'auto';
+    await appendQuery(prompt);
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!prompt.trim()) return;
-    if (promptRef.current) {
-      promptRef.current.style.height = 'auto';
-    }
-    await appendQuery(prompt);
+    await submitPrompt();
   };
   const handlePromptKeyDown = async (
     e: React.KeyboardEvent<HTMLTextAreaElement>,
   ) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // Prevent sending empty messages
-      if (promptRef.current && promptRef.current.value.trim() === '') return;
-      //Rest the input to it's original size after submitting
-      if (promptRef.current) {
-        promptRef.current.value = '';
-        promptRef.current.style.height = 'auto';
-      }
-      await appendQuery(prompt);
+      await submitPrompt();
     }
   };
   // Auto-resize the input textarea while typing, clamping to base or max height
   const handleUserInput = () => {
-    const el = promptRef.current;
-    if (!el) return;
-    const baseHeight = size === 'large' ? 60 : 40;
-    const maxHeight = 140;
-    el.style.height = 'auto';
-    const next = Math.min(el.scrollHeight, maxHeight);
-    el.style.height = Math.max(baseHeight, next) + 'px';
+    resizePrompt();
   };
 
   // Update prompt state, auto resize textarea to content, and maintain scroll on new lines
@@ -1634,22 +1770,78 @@ export const WidgetCore = ({
     event: React.ChangeEvent<HTMLTextAreaElement>,
   ) => {
     const value = event.target.value;
+    // A stale voice error would hide the attachment notice below.
+    if (voiceError) clearVoiceError();
     setPrompt(value);
-    const el = event.currentTarget;
-    const baseHeight = size === 'large' ? 60 : 40;
-    const maxHeight = 140;
-    el.style.height = 'auto';
-    const next = Math.min(el.scrollHeight, maxHeight);
-    el.style.height = Math.max(baseHeight, next) + 'px';
+    resizePrompt();
     if (value.includes('\n')) {
+      const el = event.currentTarget;
       el.scrollTop = el.scrollHeight;
     }
+  };
+
+  const handleAttachmentPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    // Clear it or picking the same file twice fires no change event.
+    e.target.value = '';
+    if (files.length > 0) addFiles(files);
+  };
+
+  const handlePromptPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!attachmentsEnabled || isDictating) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (let index = 0; index < items.length; index += 1) {
+      if (items[index].kind !== 'file') continue;
+      const file = items[index].getAsFile();
+      if (file) files.push(file);
+    }
+    if (files.length === 0) return;
+    // Or the file also lands in the textarea as binary noise.
+    e.preventDefault();
+    addFiles(files);
+  };
+
+  // Otherwise the overlay flashes on every drag crossing the page.
+  const isFileDrag = (e: React.DragEvent) =>
+    Array.from(e.dataTransfer?.types ?? []).includes('Files');
+
+  // A file dropped mid-dictation would queue behind the waveform, unseen
+  // and unsendable until recording stops.
+  const acceptsFiles = attachmentsEnabled && !isDictating;
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!acceptsFiles || !isFileDrag(e)) return;
+    dragDepthRef.current += 1;
+    setIsDraggingFiles(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!acceptsFiles || !isFileDrag(e)) return;
+    // Without this the browser opens the file instead of dropping it.
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!acceptsFiles || !isFileDrag(e)) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingFiles(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!acceptsFiles) return;
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingFiles(false);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length > 0) addFiles(files);
   };
   const handleImageError = (
     event: React.SyntheticEvent<HTMLImageElement, Event>,
   ) => {
-    event.currentTarget.src =
-      'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png';
+    event.currentTarget.src = DEFAULT_AVATAR;
   };
 
   const renderStatusLine = (query: Query, index: number) => {
@@ -1666,6 +1858,43 @@ export const WidgetCore = ({
       </StatusLine>
     );
   };
+
+  // Neither feature enabled keeps the original single-row composer.
+  const hasComposerControls = attachmentsEnabled || canUseVoice;
+
+  const micButtonState: MicButtonState =
+    recordingState === 'recording' || recordingState === 'transcribing'
+      ? recordingState
+      : 'idle';
+
+  // A failure to act on outranks a wait that clears itself.
+  const composerNote = voiceError
+    ? { text: voiceError, tone: 'danger' as const }
+    : sendBlockedReason
+      ? {
+          text: sendBlockedReason,
+          tone: pendingNote ? undefined : ('danger' as const),
+        }
+      : null;
+
+  const sendControl =
+    status === 'loading' ? (
+      <StyledButton
+        type="button"
+        onClick={stopGenerating}
+        aria-label="Stop generating"
+      >
+        <StopIcon width={16} height={16} />
+      </StyledButton>
+    ) : (
+      <StyledButton
+        disabled={!canSubmit}
+        aria-label="Send message"
+        title={sendBlockedReason ?? undefined}
+      >
+        <PaperPlaneIcon width={16} height={16} />
+      </StyledButton>
+    );
 
   const baseDimensions =
     typeof size === 'object' && 'custom' in size
@@ -1686,7 +1915,13 @@ export const WidgetCore = ({
           className={`${size !== 'large' ? (isOpen ? 'open' : 'close') : 'modal'}`}
           $modal={size === 'large'}
         >
-          <StyledContainer $isOpen={isOpen}>
+          <StyledContainer
+            $isOpen={isOpen}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <Header>
               <Avatar onError={handleImageError} src={avatar} alt="" />
               <ContentWrapper>
@@ -1729,6 +1964,12 @@ export const WidgetCore = ({
                       <Turn key={index}>
                         {query.prompt && (
                           <MessageBubble $type="QUESTION">
+                            {query.attachments &&
+                              query.attachments.length > 0 && (
+                                <SentAttachments
+                                  attachments={query.attachments}
+                                />
+                              )}
                             <Message
                               $type="QUESTION"
                               ref={
@@ -1902,36 +2143,90 @@ export const WidgetCore = ({
               )}
             </ConversationArea>
             <Composer>
-              <PromptContainer onSubmit={handleSubmit}>
-                <StyledTextarea
-                  id="chatInput"
-                  ref={promptRef}
-                  autoFocus
-                  onInput={handleUserInput}
-                  value={prompt}
-                  onChange={handlePromptChange}
-                  placeholder="Ask your question"
-                  onKeyDown={handlePromptKeyDown}
-                  rows={1}
-                  wrap="soft"
+              {attachmentsEnabled && (
+                <HiddenFileInput
+                  ref={attachmentInputRef}
+                  type="file"
+                  multiple
+                  accept={acceptAttribute(acceptedExtensions)}
+                  onChange={handleAttachmentPick}
                 />
-                {status === 'loading' ? (
-                  <StyledButton
-                    type="button"
-                    onClick={stopGenerating}
-                    aria-label="Stop generating"
-                  >
-                    <StopIcon width={16} height={16} />
-                  </StyledButton>
-                ) : (
-                  <StyledButton
-                    disabled={prompt.trim().length == 0}
-                    aria-label="Send message"
-                  >
-                    <PaperPlaneIcon width={16} height={16} />
-                  </StyledButton>
+              )}
+              <PromptContainer
+                onSubmit={handleSubmit}
+                $stacked={hasComposerControls}
+              >
+                {attachments.length > 0 && (
+                  <AttachmentChips
+                    attachments={attachments}
+                    onRemove={removeAttachment}
+                  />
+                )}
+                <PromptRow>
+                  {isDictating && (
+                    <VoiceWaveform
+                      analyserRef={voiceAnalyserRef}
+                      label={
+                        recordingState === 'recording'
+                          ? 'Listening\u2026'
+                          : 'Finishing\u2026'
+                      }
+                    />
+                  )}
+                  {/* Hidden, not unmounted: the ref stays live for reading
+                      the draft and refocusing afterwards. */}
+                  <StyledTextarea
+                    $hidden={isDictating}
+                    id="chatInput"
+                    ref={promptRef}
+                    autoFocus
+                    onInput={handleUserInput}
+                    value={prompt}
+                    onChange={handlePromptChange}
+                    placeholder="Ask your question"
+                    onKeyDown={handlePromptKeyDown}
+                    onPaste={handlePromptPaste}
+                    /* Typing would be overwritten by the next interim
+                       revision. */
+                    readOnly={isDictating}
+                    rows={1}
+                    wrap="soft"
+                  />
+                  {!hasComposerControls && sendControl}
+                </PromptRow>
+                {hasComposerControls && (
+                  <ControlBar>
+                    <ControlGroup>
+                      {attachmentsEnabled && (
+                        <AttachButton
+                          onClick={() => attachmentInputRef.current?.click()}
+                          disabled={isDictating}
+                        />
+                      )}
+                      {canUseVoice && (
+                        <MicButton
+                          state={micButtonState}
+                          // Never while recording: it is the only way to
+                          // close the microphone.
+                          disabled={
+                            status === 'loading' && micButtonState === 'idle'
+                          }
+                          onClick={toggleVoiceInput}
+                        />
+                      )}
+                    </ControlGroup>
+                    {sendControl}
+                  </ControlBar>
                 )}
               </PromptContainer>
+              {composerNote && (
+                <ComposerNote
+                  role={composerNote.tone === 'danger' ? 'alert' : 'status'}
+                  $tone={composerNote.tone}
+                >
+                  {composerNote.text}
+                </ComposerNote>
+              )}
               <Tagline>
                 Powered by&nbsp;
                 <Hyperlink target="_blank" href="https://www.docsgpt.cloud/">
@@ -1939,6 +2234,14 @@ export const WidgetCore = ({
                 </Hyperlink>
               </Tagline>
             </Composer>
+            {isDraggingFiles && (
+              <DropOverlay>
+                <DropTarget>
+                  <ClipIcon width={16} height={16} aria-hidden="true" />
+                  Drop files to attach
+                </DropTarget>
+              </DropOverlay>
+            )}
           </StyledContainer>
         </WidgetContainer>
       }

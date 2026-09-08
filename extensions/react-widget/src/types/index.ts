@@ -50,6 +50,30 @@ export type Status = 'idle' | 'loading' | 'failed';
 
 export type FEEDBACK = 'LIKE' | 'DISLIKE';
 
+export type AttachmentStatus =
+  | 'uploading'
+  | 'processing'
+  | 'completed'
+  | 'failed';
+
+export interface Attachment {
+  /** Client-side key for the chip; never sent to the server. */
+  id: string;
+  fileName: string;
+  status: AttachmentStatus;
+  /** Only meaningful while `status` is 'uploading'. */
+  progress: number;
+  /** Server-side id; what `/stream` expects in its `attachments` array. */
+  attachmentId?: string;
+  /** Why it failed, when there is something worth showing. */
+  error?: string;
+}
+
+export interface SentAttachment {
+  id: string;
+  fileName: string;
+}
+
 export type THEME = 'light' | 'dark';
 
 export interface Query {
@@ -66,6 +90,8 @@ export interface Query {
   notice?: string;
   /** Tool names from tool_calls / tool_call. */
   toolCalls?: string[];
+  /** Files sent with the question. */
+  attachments?: SentAttachment[];
 }
 
 export interface WidgetProps {
@@ -95,6 +121,21 @@ export interface WidgetProps {
   collectFeedback?: boolean;
   showSources?: boolean;
   defaultOpen?: boolean;
+  /**
+   * File extensions the composer accepts, e.g. `['.pdf', '.md', '.png']`.
+   * Attachments stay off until this is set, since every uploaded file is
+   * parsed and billed against the key owner's token budget. A leading dot is
+   * optional and matching is case-insensitive.
+   */
+  allowedFileExtensions?: string[];
+  /**
+   * Show the microphone that dictates into the input via the browser's Web
+   * Speech API. Off by default: outside Chromium builds with on-device
+   * recognition the browser forwards audio to its vendor's speech service.
+   * The button hides itself where the API is missing or the origin is
+   * insecure.
+   */
+  showMicButton?: boolean;
 }
 export interface WidgetCoreProps extends WidgetProps {
   widgetRef?: React.RefObject<HTMLDivElement> | null;

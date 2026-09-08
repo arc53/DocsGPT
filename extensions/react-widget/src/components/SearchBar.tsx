@@ -1,6 +1,7 @@
 import React from 'react';
 import styled, { ThemeProvider, createGlobalStyle } from 'styled-components';
 import { WidgetCore } from './DocsGPTWidget';
+import { DEFAULT_AVATAR } from './defaultAvatar';
 import { SearchBarProps } from '@/types';
 import { getSearchResults } from '../requests/searchAPI';
 import { Result } from '@/types';
@@ -491,12 +492,7 @@ export const SearchBar = ({
                   </EscapeInstruction>
                 </SearchHeader>
                 <AskAIButton onClick={openWidget}>
-                  <img
-                    src="https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png"
-                    alt="DocsGPT"
-                    width={24}
-                    height={24}
-                  />
+                  <img src={DEFAULT_AVATAR} alt="" width={24} height={24} />
                   <span>Ask the AI</span>
                 </AskAIButton>
                 <SearchResultsScroll>
