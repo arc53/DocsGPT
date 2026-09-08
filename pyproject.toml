@@ -133,7 +133,7 @@ docling = [
   # docling-core at <5.9: 5.9+ breaks the PDF layout model on Apple Silicon.
   "torch>=2.11.0,<3",
   "torchvision>=0.26.0,<0.27",
-  "transformers>=5.8.1,<5.9",
+  "transformers>=5.8.1,<5.11",
 ]
 # VECTOR_STORE=milvus. milvus-lite (the embedded server) pulls pyarrow.
 milvus = [
