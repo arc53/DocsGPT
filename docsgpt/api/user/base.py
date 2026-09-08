@@ -32,10 +32,6 @@ from docsgpt.vectorstore.vector_creator import VectorCreator
 storage = StorageCreator.get_storage()
 
 
-current_dir = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
-
 def generate_minute_range(start_date, end_date):
     """Generate a dictionary with minute-level time ranges."""
     return {

@@ -11,6 +11,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from docsgpt.auth import handle_auth
 
 from docsgpt.core import log_context
+from docsgpt.core.paths import env_file
 from docsgpt.core.logging_config import setup_logging
 
 setup_logging()
@@ -53,7 +54,7 @@ if platform.system() == "Windows":
     import pathlib
 
     pathlib.PosixPath = pathlib.WindowsPath
-dotenv.load_dotenv()
+dotenv.load_dotenv(env_file())
 
 # Self-bootstrap the user-data Postgres DB. Runs before any blueprint or
 # repository touches the engine, so the first request can't race the

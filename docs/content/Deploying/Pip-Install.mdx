@@ -1,0 +1,101 @@
+---
+title: Install with pip
+description: Run the DocsGPT backend from the PyPI package, inside your own Python environment.
+---
+
+import { Callout } from 'nextra/components'
+
+# Install with pip
+
+The DocsGPT backend is on PyPI as [`docsgpt`](https://pypi.org/project/docsgpt/): the API server, the Celery worker and the maintenance scripts in one package, behind a single `docsgpt` command. Use it when you want DocsGPT inside your own Python environment or process manager rather than the [Docker images](/Deploying/Docker-Deploying).
+
+<Callout type="info">
+  The package is the backend only. The web UI ships in the Docker images and in the repository under `frontend/`; serving it from the package is planned.
+</Callout>
+
+## Requirements
+
+- Python 3.12 or newer
+- [PostgreSQL](/Deploying/Postgres-Migration) for user data, with the `vector` extension if you set `VECTOR_STORE=pgvector`
+- Redis for the task queue and the cache
+- An LLM: an API key for a hosted provider, or a local model server
+
+## Install
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install docsgpt
+```
+
+Extras add the optional engines:
+
+```bash
+pip install "docsgpt[docling]"   # DOC_PARSER_ENGINE=docling: OCR backend, structured output
+pip install "docsgpt[milvus]"    # VECTOR_STORE=milvus
+```
+
+The `docling` extra pulls in PyTorch, and on Linux the PyPI torch wheels bring the CUDA stack with them. On a CPU-only machine install the CPU build first, then the extra; pip keeps the torch it already has:
+
+```bash
+pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+pip install "docsgpt[docling]"
+```
+
+`uv pip install` accepts the same two commands. With `pipx`, install `docsgpt[docling]` first, then replace the CUDA build inside its environment (`--no-deps` keeps pip from touching torch's dependencies, which the PyTorch index carries in older copies):
+
+```bash
+pipx runpip docsgpt install --force-reinstall --no-deps --index-url https://download.pytorch.org/whl/cpu torch torchvision
+```
+
+## Configure
+
+DocsGPT keeps its runtime files in a **data home**: the `.env` file it reads settings from, uploaded files under `inputs/` and vector indexes under `indexes/`. The data home is the directory you run the commands from, or the directory `DOCSGPT_HOME` points to. `DOCSGPT_ENV_FILE` points at a `.env` kept somewhere else.
+
+Create a `.env` in the data home. The minimum for a hosted LLM:
+
+```ini
+# LLM provider and model: see App Configuration for the options
+LLM_PROVIDER=openai
+LLM_NAME=<model name>
+API_KEY=<provider API key>
+
+# User data
+POSTGRES_URI=postgresql://docsgpt:<password>@localhost:5432/docsgpt
+
+# Worker-to-API authentication (required for uploads)
+INTERNAL_KEY=<a long random string>
+```
+
+Redis defaults to `localhost:6379` (`CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `CACHE_REDIS_URL`). Every setting is listed in [App Configuration](/Deploying/DocsGPT-Settings).
+
+## Run
+
+```bash
+docsgpt migrate    # create the database if it is missing and apply the migrations
+docsgpt api        # the API on http://127.0.0.1:7091
+docsgpt worker     # in a second terminal: the Celery worker, with the scheduler
+```
+
+`docsgpt api` listens on localhost only. Pass `--host 0.0.0.0` to accept connections from other machines or containers, and put a reverse proxy with TLS in front of it for anything public.
+
+The API applies pending migrations when it starts (`AUTO_MIGRATE`), so `docsgpt migrate` is the explicit step for deployments that want the schema in place before the first request or that run the API with a restricted database role.
+
+Both commands print the data home they resolved on start-up. Run them from the same directory, or set `DOCSGPT_HOME` for both, so the worker finds the files the API stores and the API finds the indexes the worker builds.
+
+The worker is not optional: query embedding runs on it, so search fails without one. `docsgpt worker --help` lists the queue, concurrency and pool options; `--no-beat` starts a worker without the scheduler when another worker already runs it. On Windows the scheduler cannot be embedded, so run `docsgpt beat` in a third terminal.
+
+Other commands:
+
+- `docsgpt api --reload`: a development server with auto-reload.
+- `docsgpt prefetch-models`: download the embedding, tokenizer and parser models ahead of time, for machines that go offline.
+- `docsgpt verify-offline`: check that a prepared install starts with networking off.
+- `docsgpt reembed`: re-embed every index after changing `EMBEDDINGS_NAME` (see [Upgrading](/upgrading)).
+
+## Upgrade
+
+```bash
+pip install -U docsgpt
+docsgpt migrate
+```
+
+Read the [upgrade notes](/upgrading) first when moving between minor versions.

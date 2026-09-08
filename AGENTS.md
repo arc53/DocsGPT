@@ -37,6 +37,14 @@ uv pip install -r docsgpt/requirements.txt  # or: pip install -r docsgpt/require
 # (the file adds the PyTorch CPU index; prefer `uv sync --extra docling`).
 ```
 
+The backend is also an installable package (`pyproject.toml`, hatchling).
+`uv sync` installs it editable and puts a `docsgpt` command on PATH:
+`docsgpt api --reload`, `docsgpt worker`, `docsgpt migrate`,
+`docsgpt prefetch-models`, `docsgpt verify-offline`. Runtime data (`.env`,
+`inputs/`, `indexes/`) lives in the checkout by default; `DOCSGPT_HOME` moves
+that data home, and `DOCSGPT_ENV_FILE` selects only the `.env` file (see
+`docsgpt/core/paths.py`).
+
 Dependencies are declared in `pyproject.toml` and locked in `uv.lock`; the
 `docsgpt/requirements*.txt` files are exported from the lock. To add or
 bump a package: edit `pyproject.toml`, run `uv lock`, then

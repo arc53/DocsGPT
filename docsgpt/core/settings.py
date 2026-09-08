@@ -1,17 +1,17 @@
 import os
-from pathlib import Path
 from typing import Optional
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-from docsgpt.core.db_uri import (  # noqa: E402
+from docsgpt.core.db_uri import (
     normalize_pgvector_connection_string,
     normalize_postgres_uri,
 )
+from docsgpt.core.paths import env_file, home_dir
+
+# Runtime data home (DOCSGPT_HOME, the checkout, or cwd); see docsgpt.core.paths.
+current_dir = str(home_dir())
 
 
 class Settings(BaseSettings):
@@ -326,11 +326,12 @@ class Settings(BaseSettings):
     PGVECTOR_IVFFLAT_PROBES: Optional[int] = None
     # Milvus vectorstore config
     MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
-    MILVUS_URI: Optional[str] = "./milvus_local.db"  # milvus lite version as default
+    # milvus-lite (embedded) database file, under the data home like the other local stores
+    MILVUS_URI: Optional[str] = Field(default_factory=lambda: str(home_dir() / "milvus_local.db"))
     MILVUS_TOKEN: Optional[str] = ""
 
     # LanceDB vectorstore config
-    LANCEDB_PATH: str = "./data/lancedb"  # Path where LanceDB stores its local data
+    LANCEDB_PATH: str = Field(default_factory=lambda: str(home_dir() / "data" / "lancedb"))  # LanceDB local data
     LANCEDB_TABLE_NAME: Optional[str] = "docsgpts"  # Name of the table to use for storing vectors
 
     FLASK_DEBUG_MODE: bool = False
@@ -581,6 +582,4 @@ class Settings(BaseSettings):
         return stripped
 
 
-# Project root is one level above application/
-path = Path(__file__).parent.parent.parent.absolute()
-settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")
+settings = Settings(_env_file=env_file(), _env_file_encoding="utf-8")

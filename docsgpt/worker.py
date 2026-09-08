@@ -380,10 +380,6 @@ def generate_random_string(length):
     return "".join([string.ascii_letters[i % 52] for i in range(length)])
 
 
-current_dir = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
-
 # Zip extraction security limits. Kept as module constants for backward
 # compatibility with worker callers/tests; values come from operator settings.
 MAX_UNCOMPRESSED_SIZE = settings.UPLOAD_MAX_ARCHIVE_BYTES

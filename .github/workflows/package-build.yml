@@ -1,0 +1,88 @@
+name: Build the Python package
+
+# Builds the sdist and wheel, checks the wheel carries the data the app reads
+# at runtime and nothing from the checkout, then installs it into a clean
+# environment and runs the docsgpt command.
+
+on:
+  pull_request:
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'docsgpt/**'
+      - 'README.md'
+      - 'LICENSE'
+      - '.github/workflows/package-build.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'docsgpt/**'
+      - 'README.md'
+      - 'LICENSE'
+      - '.github/workflows/package-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+
+      - name: Build the sdist and wheel
+        run: uv build
+
+      - name: Check the archives
+        run: |
+          uvx twine check --strict dist/*
+          python3 - <<'PY'
+          import glob
+          import zipfile
+
+          names = set(zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist())
+          for required in (
+              "docsgpt/cli.py",
+              "docsgpt/alembic.ini",
+              "docsgpt/alembic/env.py",
+              "docsgpt/alembic/script.py.mako",
+              "docsgpt/prompts/chat_reduce_prompt.txt",
+              "docsgpt/prompts/fragments/identity.txt",
+              "docsgpt/core/models/_defaults.yaml",
+              "docsgpt/seed/config/premade_agents.yaml",
+          ):
+              assert required in names, f"missing from the wheel: {required}"
+          for banned in (
+              "docsgpt/Dockerfile",
+              "docsgpt/requirements.txt",
+              "docsgpt/requirements-docling.txt",
+              "docsgpt/index.faiss",
+              "docsgpt/index.pkl",
+              "application/__init__.py",
+          ):
+              assert banned not in names, f"must not ship: {banned}"
+          stray = [n for n in names if n.startswith(("docsgpt/indexes/", "docsgpt/inputs/", "docsgpt/vectors/"))]
+          assert not stray, stray
+          print(f"wheel ok: {len(names)} files")
+          PY
+
+      - name: Install the wheel into a clean environment and run the command
+        run: |
+          uv venv "$RUNNER_TEMP/docsgpt-venv"
+          uv pip install --python "$RUNNER_TEMP/docsgpt-venv/bin/python" dist/*.whl
+          "$RUNNER_TEMP/docsgpt-venv/bin/docsgpt" --version
+          "$RUNNER_TEMP/docsgpt-venv/bin/docsgpt" --help
+          "$RUNNER_TEMP/docsgpt-venv/bin/docsgpt" api --help
+          "$RUNNER_TEMP/docsgpt-venv/bin/python" -c "from docsgpt.core import paths; print('home:', paths.home_dir())"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
