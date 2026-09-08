@@ -1,13 +1,21 @@
 name: Publish to PyPI
 
 # Trusted publishing: PyPI trusts this workflow file in arc53/DocsGPT running
-# in the `pypi` environment, so no API token is stored. A published release
-# (which the backend-release workflow creates when docsgpt/version.py changes
-# on main) publishes to PyPI; a manual run publishes to TestPyPI by default.
+# in the `pypi` environment, so no API token is stored. The backend-release
+# workflow calls this one after it tags a version bump on main (a release it
+# creates with GITHUB_TOKEN never fires the release trigger); a release created
+# by hand publishes through that trigger; a manual run publishes to TestPyPI
+# by default.
 
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      version:
+        description: Version the archives must carry (the release tag)
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       target:
@@ -18,6 +26,11 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # The version being released: passed in by the caller, or the release's tag;
+  # empty for a manual run, which publishes whatever main builds.
+  RELEASE_VERSION: ${{ inputs.version || github.event.release.tag_name }}
 
 jobs:
   build:
@@ -37,11 +50,9 @@ jobs:
         run: uv build
 
       - name: The archives carry the released version
-        if: github.event_name == 'release'
-        env:
-          TAG: ${{ github.event.release.tag_name }}
+        if: env.RELEASE_VERSION != ''
         run: |
-          ls "dist/docsgpt-${TAG}.tar.gz" "dist/docsgpt-${TAG}-py3-none-any.whl"
+          ls "dist/docsgpt-${RELEASE_VERSION}.tar.gz" "dist/docsgpt-${RELEASE_VERSION}-py3-none-any.whl"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -50,7 +61,8 @@ jobs:
           if-no-files-found: error
 
   publish-pypi:
-    if: github.event_name == 'release' || inputs.target == 'pypi'
+    # A release event, a call from backend-release, or a manual run aimed at PyPI.
+    if: github.event_name == 'release' || inputs.version != '' || inputs.target == 'pypi'
     needs: build
     runs-on: ubuntu-latest
     environment:
