@@ -13,9 +13,13 @@ on:
   workflow_call:
     inputs:
       version:
-        description: Version the archives must carry (the release tag)
+        description: Version the archives must carry (empty skips the check)
         type: string
-        required: true
+        default: ''
+      target:
+        description: Package index to publish to (pypi or testpypi)
+        type: string
+        default: pypi
   workflow_dispatch:
     inputs:
       target:
@@ -61,8 +65,8 @@ jobs:
           if-no-files-found: error
 
   publish-pypi:
-    # A release event, a call from backend-release, or a manual run aimed at PyPI.
-    if: github.event_name == 'release' || inputs.version != '' || inputs.target == 'pypi'
+    # A release event, or a call or manual run aimed at PyPI (the call default).
+    if: github.event_name == 'release' || inputs.target == 'pypi'
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -79,7 +83,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
 
   publish-testpypi:
-    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    if: inputs.target == 'testpypi'
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -96,3 +100,6 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
+          # TestPyPI is a rehearsal target: a version that is already there
+          # must not fail the run.
+          skip-existing: true

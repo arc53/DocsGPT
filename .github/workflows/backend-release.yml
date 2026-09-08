@@ -28,7 +28,10 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.ver.outputs.version }}
-      created: ${{ steps.check.outputs.exists == 'false' }}
+      # The publish jobs run only for a release this run created. A release
+      # that already existed was either made by hand (its release event
+      # published it) or made by an earlier run: re-run that run's failed jobs.
+      created: ${{ steps.check.outputs.release == 'missing' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -45,20 +48,30 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VERSION"
 
-      - name: Check if tag already exists
+      - name: Check what already exists
         id: check
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
+          # The tag and the release are checked separately: a run that pushed
+          # the tag and then failed to create the release must still create
+          # it (and publish) when re-run.
           if git ls-remote --tags --exit-code origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag $VERSION already exists on origin — skipping."
+            echo "tag=exists" >> "$GITHUB_OUTPUT"
+            echo "Tag $VERSION already exists on origin."
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "tag=missing" >> "$GITHUB_OUTPUT"
+          fi
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "release=exists" >> "$GITHUB_OUTPUT"
+            echo "Release $VERSION already exists — nothing to publish."
+          else
+            echo "release=missing" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create and push tag
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.tag == 'missing'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.ver.outputs.version }}
@@ -74,7 +87,7 @@ jobs:
             "$VERSION"
 
       - name: Create GitHub release
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.release == 'missing'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.ver.outputs.version }}
