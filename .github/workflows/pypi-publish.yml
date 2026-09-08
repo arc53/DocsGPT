@@ -50,6 +50,15 @@ jobs:
           # A publishing workflow must not restore a cache another job could have poisoned.
           enable-cache: false
 
+      - name: The publish target is one this workflow knows
+        # A caller's typo would otherwise skip both publish jobs and upload nothing.
+        if: inputs.target != '' && inputs.target != 'pypi' && inputs.target != 'testpypi'
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          echo "::error::unknown target '$TARGET': expected pypi or testpypi"
+          exit 1
+
       - name: Build the sdist and wheel
         run: uv build
 
