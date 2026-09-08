@@ -1,8 +1,31 @@
 name: Build and push DocsGPT Docker image
 
+# Runs for a release created by hand (the release event), or called by the
+# backend-release workflow with the version it just tagged: GitHub never starts
+# workflows from events GITHUB_TOKEN produces, so a bot-created release does not
+# fire the release trigger on its own.
+
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      version:
+        description: Release tag to build and push (the images are tagged with it)
+        type: string
+        required: true
+    secrets:
+      DOCKER_USERNAME:
+        required: true
+      DOCKER_PASSWORD:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  # The tag being published: passed in by the caller, or the release's own.
+  RELEASE_TAG: ${{ inputs.version || github.event.release.tag_name }}
 
 jobs:
   build:
@@ -58,7 +81,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/docsgpt
           labels: |
             org.opencontainers.image.title=DocsGPT${{ matrix.variant }}
-            org.opencontainers.image.version=${{ github.event.release.tag_name }}
+            org.opencontainers.image.version=${{ env.RELEASE_TAG }}
 
       - name: Build and push platform-specific images
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
@@ -71,8 +94,8 @@ jobs:
             EXTRAS=${{ matrix.variant == '-docling' && 'docling' || '' }}
             INSTALL_TESSERACT=${{ matrix.variant == '-docling' && 'true' || 'false' }}
           tags: |
-            ${{ env.DOCKERHUB_NAMESPACE }}/docsgpt:${{ github.event.release.tag_name }}${{ matrix.variant }}-${{ matrix.platform == 'linux/arm64' && 'arm64' || 'amd64' }}
-            ghcr.io/${{ github.repository_owner }}/docsgpt:${{ github.event.release.tag_name }}${{ matrix.variant }}-${{ matrix.platform == 'linux/arm64' && 'arm64' || 'amd64' }}
+            ${{ env.DOCKERHUB_NAMESPACE }}/docsgpt:${{ env.RELEASE_TAG }}${{ matrix.variant }}-${{ matrix.platform == 'linux/arm64' && 'arm64' || 'amd64' }}
+            ghcr.io/${{ github.repository_owner }}/docsgpt:${{ env.RELEASE_TAG }}${{ matrix.variant }}-${{ matrix.platform == 'linux/arm64' && 'arm64' || 'amd64' }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: false
           sbom: false
@@ -118,7 +141,7 @@ jobs:
 
       - name: Create and push multi-arch manifests
         env:
-          TAG: ${{ github.event.release.tag_name }}${{ matrix.variant }}
+          TAG: ${{ env.RELEASE_TAG }}${{ matrix.variant }}
           LATEST: latest${{ matrix.variant }}
         run: |
           set -e
@@ -145,6 +168,6 @@ jobs:
       - name: Attach the standalone compose file to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           gh release upload "$TAG" deployment/docker-compose-standalone.yaml --clobber

@@ -1,5 +1,12 @@
 name: Backend release
 
+# A version bump on main tags the commit, creates the GitHub release, then
+# publishes the Docker images and the PyPI package by calling those workflows.
+# The release is created with GITHUB_TOKEN, and GitHub never starts workflows
+# from events that token produces, so the `release: published` triggers on the
+# publish workflows would not fire (0.18.0 got no images that way). Releases
+# created by hand still publish through those triggers.
+
 on:
   push:
     branches: [main]
@@ -7,8 +14,7 @@ on:
       - 'docsgpt/version.py'
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
 
 concurrency:
   group: backend-release
@@ -18,6 +24,14 @@ jobs:
   release:
     if: github.repository == 'arc53/DocsGPT'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      # The publish jobs run only for a release this run created. A release
+      # that already existed was either made by hand (its release event
+      # published it) or made by an earlier run: re-run that run's failed jobs.
+      created: ${{ steps.check.outputs.release == 'missing' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -34,20 +48,30 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VERSION"
 
-      - name: Check if tag already exists
+      - name: Check what already exists
         id: check
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
+          # The tag and the release are checked separately: a run that pushed
+          # the tag and then failed to create the release must still create
+          # it (and publish) when re-run.
           if git ls-remote --tags --exit-code origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag $VERSION already exists on origin — skipping."
+            echo "tag=exists" >> "$GITHUB_OUTPUT"
+            echo "Tag $VERSION already exists on origin."
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "tag=missing" >> "$GITHUB_OUTPUT"
+          fi
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "release=exists" >> "$GITHUB_OUTPUT"
+            echo "Release $VERSION already exists — nothing to publish."
+          else
+            echo "release=missing" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create and push tag
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.tag == 'missing'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.ver.outputs.version }}
@@ -63,7 +87,7 @@ jobs:
             "$VERSION"
 
       - name: Create GitHub release
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.release == 'missing'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.ver.outputs.version }}
@@ -71,3 +95,26 @@ jobs:
           gh release create "$VERSION" \
             --title "v$VERSION" \
             --generate-notes
+
+  docker:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    uses: $/.github/workflows/ci.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+    permissions:
+      contents: write # release-assets attaches the compose file to the release
+      packages: write
+
+  pypi:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    uses: $/.github/workflows/pypi-publish.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    permissions:
+      contents: read
+      id-token: write
