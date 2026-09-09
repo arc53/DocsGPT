@@ -525,6 +525,9 @@ export const VoiceWaveform = ({
     const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
 
+    // Safari exposed webkitSpeechRecognition from 14.1 but roundRect only
+    // from 16.4, so dictation can run where the rounded path throws.
+    const canRoundRect = typeof context.roundRect === 'function';
     const levels = new Array<number>(WAVEFORM_BARS).fill(0);
     // Bare `Uint8Array` widens to ArrayBufferLike, which the analyser
     // signature rejects.
@@ -573,9 +576,13 @@ export const VoiceWaveform = ({
         const x = index * slot + (slot - barWidth) / 2;
         const y = (height - barHeight) / 2;
         context.globalAlpha = 0.35 + 0.65 * (index / WAVEFORM_BARS);
-        context.beginPath();
-        context.roundRect(x, y, barWidth, barHeight, radius);
-        context.fill();
+        if (canRoundRect) {
+          context.beginPath();
+          context.roundRect(x, y, barWidth, barHeight, radius);
+          context.fill();
+        } else {
+          context.fillRect(x, y, barWidth, barHeight);
+        }
       }
       context.globalAlpha = 1;
     };

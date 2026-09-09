@@ -5,6 +5,8 @@
  * response carries. Auth is the agent key as `api_key` in the multipart body.
  */
 
+const UPLOAD_TIMEOUT_MS = 2 * 60 * 1000;
+
 interface UploadAttachmentOptions {
   file: File;
   apiKey: string;
@@ -91,7 +93,13 @@ export function uploadAttachment({
       reject(new DOMException('Upload aborted', 'AbortError'));
     };
 
+    xhr.ontimeout = () => {
+      signal?.removeEventListener('abort', onAbort);
+      reject(new Error('Upload timed out.'));
+    };
+
     xhr.open('POST', `${apiHost}/api/store_attachment`);
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
     xhr.send(formData);
   });
 }

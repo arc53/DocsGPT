@@ -1208,7 +1208,7 @@ const SourcesList = styled.div`
   gap: 6px;
 `;
 
-const SourceChip = styled.span`
+const SourceChip = styled.a`
   color: ${(props) => props.theme.secondary.text};
   background: ${(props) => props.theme.secondary.bg};
   border: 1px solid ${(props) => props.theme.hairline};
@@ -1219,6 +1219,21 @@ const SourceChip = styled.span`
   align-items: center;
   max-width: min(100%, 220px);
   line-height: 1.6;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    color: ${(props) => props.theme.primary.text};
+    border-color: ${(props) => props.theme.accent!.base};
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${(props) => props.theme.accent!.base};
+    outline-offset: 2px;
+  }
 `;
 const SourceLabel = styled.span`
   min-width: 0;
@@ -1255,7 +1270,13 @@ const SourcesComponent = ({
   return (
     <SourcesList>
       {visibleSources.map((source, idx) => (
-        <SourceChip key={idx} title={source.title}>
+        <SourceChip
+          key={idx}
+          href={source.source}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={source.title}
+        >
           <SourceLabel>{source.title}</SourceLabel>
         </SourceChip>
       ))}
@@ -1739,7 +1760,10 @@ export const WidgetCore = ({
   const isDictating =
     recordingState === 'recording' || recordingState === 'transcribing';
   const canSubmit =
-    prompt.trim().length > 0 && !sendBlockedReason && !isDictating;
+    prompt.trim().length > 0 &&
+    !sendBlockedReason &&
+    !isDictating &&
+    status !== 'loading';
 
   const submitPrompt = async () => {
     if (!canSubmit) return;
