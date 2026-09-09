@@ -128,6 +128,23 @@ class TestGetAgents:
         names = [a["name"] for a in response.json]
         assert "B1" in names and "B2" in names
 
+    def test_lists_source_less_agent_without_retriever(self, app, pg_conn):
+        """A published agent with no source and no retriever skips retrieval
+        at run time, so the list must not hide it."""
+        from docsgpt.api.user.agents.routes import GetAgents
+
+        user = "u-list-no-source"
+        _seed_agent(
+            pg_conn, user=user, name="bare", with_source=False, retriever="",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context("/api/get_agents"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetAgents().get()
+        assert response.status_code == 200
+        assert "bare" in [a["name"] for a in response.json]
+
     def test_db_error_returns_400(self, app):
         from docsgpt.api.user.agents.routes import GetAgents
 
@@ -1692,6 +1709,35 @@ class TestPinnedAgentsListing:
         assert response.status_code == 200
         assert len(response.json) == 1
         assert response.json[0]["pinned"] is True
+
+    def test_lists_pinned_source_less_agent_without_retriever(
+        self, app, pg_conn,
+    ):
+        """Pinning follows the main list: no source and no retriever is
+        still a runnable agent and must not be dropped."""
+        from docsgpt.api.user.agents.routes import PinAgent, PinnedAgents
+
+        user = "u-pinned-no-source"
+        agent = _seed_agent(
+            pg_conn, user=user, with_source=False, retriever="",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/pin_agent?id={agent['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            PinAgent().post()
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/pinned_agents"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PinnedAgents().get()
+
+        assert response.status_code == 200
+        assert [a["id"] for a in response.json] == [str(agent["id"])]
 
     def test_pinned_db_error_returns_400(self, app):
         from docsgpt.api.user.agents.routes import PinnedAgents

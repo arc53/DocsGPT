@@ -67,7 +67,8 @@ function Upload({
   isOnboarding: boolean;
   renderTab: string | null;
   close: () => void;
-  onSuccessfulUpload?: () => void;
+  /** Fires once the upload is ingested, with the id of the source it created. */
+  onSuccessfulUpload?: (sourceId?: string) => void;
 }) {
   const token = useSelector(selectToken);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -442,7 +443,10 @@ function Upload({
     (clientTaskId: string) => {
       let handled = false;
 
-      const handleTerminal = (status: 'completed' | 'failed') => {
+      const handleTerminal = (
+        status: 'completed' | 'failed',
+        sourceId?: string,
+      ) => {
         if (handled) return;
         handled = true;
         if (status !== 'completed') return;
@@ -468,7 +472,7 @@ function Upload({
                 }
               }
             }
-            onSuccessfulUpload?.();
+            onSuccessfulUpload?.(sourceId);
           })
           .catch((err) => {
             console.error(
@@ -483,7 +487,7 @@ function Upload({
         const task = state.upload.tasks.find((t) => t.id === clientTaskId);
         if (!task) return false;
         if (task.status === 'completed' || task.status === 'failed') {
-          handleTerminal(task.status);
+          handleTerminal(task.status, task.sourceId);
           return true;
         }
         // Recover from the race where the terminal SSE landed before
@@ -494,7 +498,7 @@ function Upload({
           for (const event of state.notifications.recentEvents) {
             if (event.scope?.id !== task.sourceId) continue;
             if (event.type === 'source.ingest.completed') {
-              handleTerminal('completed');
+              handleTerminal('completed', task.sourceId);
               return true;
             }
             if (event.type === 'source.ingest.failed') {
@@ -626,7 +630,7 @@ function Upload({
                 updates: { status: 'completed', progress: 100 },
               }),
             );
-            onSuccessfulUpload?.();
+            onSuccessfulUpload?.(parsed.source_id);
           }
         } catch (error) {
           handleTaskFailure(clientTaskId);
@@ -762,7 +766,7 @@ function Upload({
                 updates: { status: 'completed', progress: 100 },
               }),
             );
-            onSuccessfulUpload?.();
+            onSuccessfulUpload?.(response.source_id);
           }
         } catch (error) {
           handleTaskFailure(clientTaskId);
@@ -813,7 +817,7 @@ function Upload({
             },
           }),
         );
-        onSuccessfulUpload?.();
+        onSuccessfulUpload?.(data.source_id);
       })
       .catch(() => handleTaskFailure(clientTaskId));
   };

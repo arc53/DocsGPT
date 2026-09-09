@@ -153,9 +153,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
-  // Set once an upload started from this form finishes, so the source it
-  // created can be selected as soon as the refreshed list arrives.
-  const [pendingUploadSelect, setPendingUploadSelect] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(
     new Set(),
   );
@@ -181,7 +178,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
   const toolAnchorButtonRef = useRef<HTMLButtonElement>(null);
   const modelAnchorButtonRef = useRef<HTMLButtonElement>(null);
-  const sourceIdsBeforeUploadRef = useRef<Set<string>>(new Set());
 
   const modeConfig = {
     new: {
@@ -275,11 +271,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           });
 
   const handleUploadClick = () => {
-    sourceIdsBeforeUploadRef.current = new Set(
-      (sourceDocs ?? []).map(sourceItemId),
-    );
     setIsSourcePopupOpen(false);
     setUploadModalState('ACTIVE');
+  };
+
+  // Select the source an upload started from this form created. The id comes
+  // from the upload itself, so a source that appeared meanwhile for another
+  // reason is never picked up by accident.
+  const handleUploadedSource = (sourceId?: string) => {
+    if (!sourceId) return;
+    setSelectedSourceIds((prev) => new Set([...prev, sourceId]));
   };
 
   // Sources go out as the legacy single ``source`` for one selection and as
@@ -655,16 +656,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
     validateAndSetFolder();
   }, [folderIdFromUrl, agentFolders, token, dispatch]);
-
-  // After an upload started from this form, select the source it created.
-  useEffect(() => {
-    if (!pendingUploadSelect || !sourceDocs) return;
-    const before = sourceIdsBeforeUploadRef.current;
-    const added = sourceDocs.map(sourceItemId).filter((id) => !before.has(id));
-    if (added.length === 0) return;
-    setPendingUploadSelect(false);
-    setSelectedSourceIds((prev) => new Set([...prev, ...added]));
-  }, [pendingUploadSelect, sourceDocs]);
 
   useEffect(() => {
     if ((mode === 'edit' || mode === 'draft') && agentId) {
@@ -1476,7 +1467,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           isOnboarding={false}
           renderTab={null}
           close={() => setUploadModalState('INACTIVE')}
-          onSuccessfulUpload={() => setPendingUploadSelect(true)}
+          onSuccessfulUpload={handleUploadedSource}
         />
       )}
       <AddPromptModal

@@ -481,18 +481,11 @@ class GetAgents(Resource):
                 shared_ids = [aid for aid in team_shared if aid not in owned_ids]
                 shared_agents = agents_repo.list_by_ids(shared_ids)
 
-            def _is_runnable(agent: dict) -> bool:
-                return bool(
-                    agent.get("source_id")
-                    or (agent.get("extra_source_ids") or [])
-                    or agent.get("retriever")
-                    or agent.get("agent_type") == "workflow"
-                )
-
+            # Every agent is listed: one with no source skips retrieval and
+            # answers from the model and its tools, so it is still runnable.
             list_agents = [
                 _format_agent_output(agent, pinned=str(agent["id"]) in pinned_ids)
                 for agent in agents
-                if _is_runnable(agent)
             ]
             list_agents += [
                 _format_agent_output(
@@ -501,7 +494,6 @@ class GetAgents(Resource):
                     team_access=team_shared.get(str(agent["id"])),
                 )
                 for agent in shared_agents
-                if _is_runnable(agent)
             ]
         except Exception as err:
             current_app.logger.error(f"Error retrieving agents: {err}", exc_info=True)
@@ -1511,8 +1503,6 @@ class PinnedAgents(Resource):
             list_pinned_agents = []
             for agent in pinned_agents:
                 source_id = agent.get("source_id")
-                if not source_id and not agent.get("retriever"):
-                    continue
                 list_pinned_agents.append(
                     {
                         "id": str(agent["id"]),
