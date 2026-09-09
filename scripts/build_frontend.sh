@@ -19,8 +19,22 @@ fi
 # As in frontend/Dockerfile: the committed .env.development is the baseline
 # of the production build. The API rewrites VITE_API_HOST and VITE_BASE_URL
 # at runtime through /config.js, so those baked values never reach a browser.
+# A developer's own .env.production.local is set aside for the build and put
+# back afterwards, whatever happens in between.
+saved_override=""
+if [ -e .env.production.local ] || [ -L .env.production.local ]; then
+  saved_override="$(mktemp "${TMPDIR:-/tmp}/docsgpt-env-production-local.XXXXXX")"
+  cp -p .env.production.local "$saved_override"
+fi
+restore_override() {
+  if [ -n "$saved_override" ]; then
+    mv -f "$saved_override" .env.production.local
+  else
+    rm -f .env.production.local
+  fi
+}
+trap restore_override EXIT
 cp .env.development .env.production.local
-trap 'rm -f .env.production.local' EXIT
 npm run build
 
 # Load the runtime config ahead of the bundle, as the nginx image does.
