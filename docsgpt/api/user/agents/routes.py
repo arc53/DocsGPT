@@ -76,7 +76,8 @@ AGENT_TYPE_SCHEMAS = {
         # is acceptable and maps to NULL downstream.
         "validate_published": ["name", "description"],
         "validate_draft": [],
-        "require_source": True,
+        # No source is required: a source-less agent answers from the model
+        # and its tools, and ``source``/``sources`` map to NULL downstream.
         "fields": [
             "name",
             "description",
@@ -661,20 +662,6 @@ class CreateAgent(Resource):
         if data.get("status") == "published":
             required_fields = schema["required_published"]
             validate_fields = schema["validate_published"]
-            if (
-                schema.get("require_source")
-                and not data.get("source")
-                and not data.get("sources")
-            ):
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": "Either 'source' or 'sources' field is required for published agents",
-                        }
-                    ),
-                    400,
-                )
         else:
             required_fields = schema["required_draft"]
             validate_fields = schema["validate_draft"]
@@ -1190,29 +1177,9 @@ class UpdateAgent(Resource):
                             )
                             if not final_value:
                                 missing_published_fields.append(field_label)
-                        source_final = update_fields.get(
-                            "source_id", existing_agent.get("source_id"),
-                        )
-                        extra_final = update_fields.get(
-                            "extra_source_ids", existing_agent.get("extra_source_ids") or [],
-                        )
-                        # ``retriever`` carries the runtime identity for
-                        # agents that publish against the synthetic
-                        # "Default" source (frontend's auto-selected
-                        # ``{name: "Default", retriever: "classic"}``
-                        # entry has no ``id``, so ``source_id`` ends up
-                        # NULL even though the user picked something).
-                        # Without this fallback the most common new-agent
-                        # publish flow gets a 400.
-                        retriever_final = update_fields.get(
-                            "retriever", existing_agent.get("retriever"),
-                        )
-                        if (
-                            not source_final
-                            and not extra_final
-                            and not retriever_final
-                        ):
-                            missing_published_fields.append("Source or retriever")
+                        # Sources are optional: a published agent with no
+                        # ``source_id`` and no ``extra_source_ids`` skips
+                        # retrieval and answers from the model and its tools.
                         if missing_published_fields:
                             return _reject(
                                 "Cannot publish agent. Missing or invalid required "

@@ -241,13 +241,7 @@ function createWorkflowPayload(
     nodes: workflowNodes.map((node) => ({
       id: node.id,
       type: node.type as
-        | 'start'
-        | 'end'
-        | 'agent'
-        | 'note'
-        | 'state'
-        | 'condition'
-        | 'code',
+        'start' | 'end' | 'agent' | 'note' | 'state' | 'condition' | 'code',
       title: node.data.title || node.data.label || node.type,
       position: node.position,
       data:
@@ -327,10 +321,9 @@ function WorkflowBuilderInner() {
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
   const sourceOptions = useMemo(
     () =>
-      (sourceDocs ?? []).map((doc) => ({
-        value: doc.id ?? 'default',
-        label: doc.name,
-      })),
+      (sourceDocs ?? [])
+        .filter((doc) => Boolean(doc.id))
+        .map((doc) => ({ value: doc.id as string, label: doc.name })),
     [sourceDocs],
   );
   const [agentJsonSchemaDrafts, setAgentJsonSchemaDrafts] = useState<
@@ -3042,11 +3035,7 @@ function WorkflowBuilderInner() {
                   .map((n) => ({
                     id: n.id,
                     type: n.type as
-                      | 'start'
-                      | 'end'
-                      | 'agent'
-                      | 'state'
-                      | 'code',
+                      'start' | 'end' | 'agent' | 'state' | 'code',
                     title: n.data.title || n.data.label || n.type,
                     position: n.position,
                     data:

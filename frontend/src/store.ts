@@ -43,16 +43,7 @@ const preloadedState: { preference: Preference } = {
       data: null,
       loading: false,
     },
-    sourceDocs: [
-      {
-        name: 'default',
-        date: '',
-        model: '1.0',
-        type: 'remote',
-        id: 'default',
-        retriever: 'clasic',
-      },
-    ],
+    sourceDocs: null,
     modalState: 'INACTIVE',
     paginatedDocuments: null,
     templateAgents: null,

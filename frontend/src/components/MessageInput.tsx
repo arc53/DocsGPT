@@ -55,6 +55,7 @@ import {
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
+import { sourceItemId } from '../utils/sourceUtils';
 import { isChatToolVisible } from '../utils/toolUtils';
 
 const generateId = (): string =>
@@ -1458,9 +1459,6 @@ export default function MessageInput({
     // Hook point for downstream side-effects after a source is toggled.
     void _docs;
   };
-
-  // Stable id for matching selected sources: prefer ``id``, fall back to ``date``.
-  const sourceItemId = (doc: Doc): string => doc.id || doc.date;
 
   const sourceItems: MultiSelectPopoverItem[] = (sourceDocs || []).map(
     (doc) => ({

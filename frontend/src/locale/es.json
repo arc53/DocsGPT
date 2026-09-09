@@ -1088,7 +1088,8 @@
       "text": "Elegir tus fuentes",
       "link": "Enlace fuente",
       "view_more": "Ver {{count}} más fuentes",
-      "noSourcesAvailable": "No hay fuentes disponibles"
+      "noSourcesAvailable": "No hay fuentes disponibles",
+      "selectedCount": "{{count}} fuentes seleccionadas"
     },
     "attachments": {
       "attach": "Adjuntar",
@@ -1248,7 +1249,10 @@
       "sourcePopup": {
         "title": "Seleccionar Fuentes",
         "searchPlaceholder": "Buscar fuentes...",
-        "noOptionsMessage": "No hay fuentes disponibles"
+        "noOptionsMessage": "No hay fuentes disponibles",
+        "groupOwn": "Tus fuentes",
+        "groupTeam": "Compartidas con el equipo",
+        "noSourceHint": "Opcional. Sin una fuente, el agente responde solo con el modelo y sus herramientas."
       },
       "toolsPopup": {
         "title": "Seleccionar Herramientas",

@@ -647,9 +647,9 @@ class StreamProcessor:
     def _configure_source(self):
         """Configure the source based on agent data.
 
-        The literal string ``"default"`` is a placeholder meaning "no
-        ingested source" and is normalized to an empty source so that no
-        retrieval is attempted.
+        The literal string ``"default"`` is a legacy placeholder (older
+        clients sent it for "no ingested source") and is normalized to an
+        empty source so that no retrieval is attempted.
         """
         if self._agent_data:
             agent_data = self._agent_data

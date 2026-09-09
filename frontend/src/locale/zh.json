@@ -1088,7 +1088,8 @@
       "text": "来源文本",
       "link": "来源链接",
       "view_more": "还有{{count}}个来源",
-      "noSourcesAvailable": "没有可用的来源"
+      "noSourcesAvailable": "没有可用的来源",
+      "selectedCount": "已选择 {{count}} 个来源"
     },
     "attachments": {
       "attach": "附件",
@@ -1248,7 +1249,10 @@
       "sourcePopup": {
         "title": "选择来源",
         "searchPlaceholder": "搜索来源...",
-        "noOptionsMessage": "没有可用的来源"
+        "noOptionsMessage": "没有可用的来源",
+        "groupOwn": "我的来源",
+        "groupTeam": "团队共享",
+        "noSourceHint": "可选。未选择来源时，智能体仅根据模型和工具作答。"
       },
       "toolsPopup": {
         "title": "选择工具",

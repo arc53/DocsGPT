@@ -1088,7 +1088,8 @@
       "text": "來源文字",
       "link": "來源連結",
       "view_more": "查看更多 {{count}} 個來源",
-      "noSourcesAvailable": "沒有可用的來源"
+      "noSourcesAvailable": "沒有可用的來源",
+      "selectedCount": "已選擇 {{count}} 個來源"
     },
     "attachments": {
       "attach": "附件",
@@ -1248,7 +1249,10 @@
       "sourcePopup": {
         "title": "選擇來源",
         "searchPlaceholder": "搜尋來源...",
-        "noOptionsMessage": "沒有可用的來源"
+        "noOptionsMessage": "沒有可用的來源",
+        "groupOwn": "我的來源",
+        "groupTeam": "團隊共享",
+        "noSourceHint": "可選。未選擇來源時，代理僅根據模型和工具作答。"
       },
       "toolsPopup": {
         "title": "選擇工具",

@@ -47,14 +47,12 @@ export const ShareConversationModal = ({
   const selectedPrompt = useSelector(selectPrompt);
   const selectedChunk = useSelector(selectChunks);
 
+  // Only ingested sources (rows with an id) can be shared.
   const extractDocPaths = (docs: Doc[]) =>
     docs
-      ? docs.map((doc: Doc) => {
-          return {
-            label: doc.name,
-            value: doc.id ?? 'default',
-          };
-        })
+      ? docs
+          .filter((doc: Doc) => Boolean(doc.id))
+          .map((doc: Doc) => ({ label: doc.name, value: doc.id as string }))
       : [];
 
   const [sourcePath, setSourcePath] = useState<{

@@ -782,12 +782,10 @@ class TestUpdateAgent:
             response = UpdateAgent().put(str(agent["id"]))
         assert response.status_code == 400
 
-    def test_publish_with_default_source_succeeds(self, app, pg_conn):
-        """The frontend's auto-selected "Default" source has no UUID — it
-        sends ``source: ''`` and ``sources: []`` with ``retriever: 'classic'``.
-        Pre-fix, the publish gate rejected this with
-        ``Missing or invalid required fields: Source``. The retriever
-        carries the runtime identity, so the gate now accepts it.
+    def test_publish_with_no_source_succeeds(self, app, pg_conn):
+        """An agent with no source is a valid published state: it answers
+        from the model and its tools. The form sends ``source: ''`` and
+        ``sources: []`` with the default ``retriever``.
         """
         from docsgpt.api.user.agents.routes import UpdateAgent
         from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -827,11 +825,11 @@ class TestUpdateAgent:
             f"unexpected error: {response.json}"
         )
 
-    def test_publish_without_source_or_retriever_returns_400(
+    def test_publish_without_source_or_retriever_succeeds(
         self, app, pg_conn,
     ):
-        """If neither a source nor a retriever is configured, the gate
-        still trips — the agent has no way to retrieve anything."""
+        """Neither a source nor a retriever is required to publish; a
+        source-less agent simply skips retrieval at run time."""
         from docsgpt.api.user.agents.routes import UpdateAgent
         from docsgpt.storage.db.repositories.agents import AgentsRepository
         from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -864,8 +862,12 @@ class TestUpdateAgent:
             from flask import request
             request.decoded_token = {"sub": user}
             response = UpdateAgent().put(str(agent["id"]))
-        assert response.status_code == 400
-        assert "Source or retriever" in response.json.get("message", "")
+        assert response.status_code == 200, (
+            f"unexpected error: {response.json}"
+        )
+        stored = AgentsRepository(pg_conn).get_by_id(str(agent["id"]))
+        assert stored["status"] == "published"
+        assert stored["source_id"] is None
 
     def test_publishing_generates_api_key(self, app, pg_conn):
         from docsgpt.api.user.agents.routes import UpdateAgent
@@ -1075,25 +1077,71 @@ class TestCreateAgentMore:
         )
         assert status == 400
 
-    def test_publish_classic_without_source_returns_400(self, app):
+    def test_publish_classic_without_source_succeeds(self, app, pg_conn):
+        """Publishing with ``source: ''`` and ``sources: []`` creates a
+        source-less agent (``source_id`` NULL) instead of a 400."""
         from docsgpt.api.user.agents.routes import CreateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
-        with app.test_request_context(
+        user = "u-create-no-source"
+        with _patch_db(pg_conn), app.test_request_context(
             "/api/create_agent", method="POST",
             json={
-                "name": "n",
+                "name": "no-source",
                 "description": "d",
                 "status": "published",
                 "agent_type": "classic",
+                "chunks": "2",
+                "retriever": "classic",
+                "prompt_id": "default",
+                "source": "",
+                "sources": [],
             },
         ):
             from flask import request
-            request.decoded_token = {"sub": "u"}
+            request.decoded_token = {"sub": user}
             response = CreateAgent().post()
-        status = (
-            response[1] if isinstance(response, tuple) else response.status_code
+        assert response.status_code == 201, (
+            f"unexpected error: {response.json}"
         )
-        assert status == 400
+        agents = AgentsRepository(pg_conn).list_for_user(user)
+        created = next(a for a in agents if a["name"] == "no-source")
+        assert created["status"] == "published"
+        assert created["source_id"] is None
+        assert not created.get("extra_source_ids")
+        assert created["key"]
+
+    def test_publish_classic_with_legacy_default_sentinel_succeeds(
+        self, app, pg_conn,
+    ):
+        """Older clients still send ``source: "default"``; it keeps mapping
+        to a NULL source rather than being rejected."""
+        from docsgpt.api.user.agents.routes import CreateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-create-legacy-default"
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/create_agent", method="POST",
+            json={
+                "name": "legacy-default",
+                "description": "d",
+                "status": "published",
+                "agent_type": "classic",
+                "chunks": "2",
+                "retriever": "classic",
+                "prompt_id": "default",
+                "source": "default",
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = CreateAgent().post()
+        assert response.status_code == 201, (
+            f"unexpected error: {response.json}"
+        )
+        agents = AgentsRepository(pg_conn).list_for_user(user)
+        created = next(a for a in agents if a["name"] == "legacy-default")
+        assert created["source_id"] is None
 
     def test_unknown_agent_type_falls_back_classic(self, app, pg_conn):
         from docsgpt.api.user.agents.routes import CreateAgent

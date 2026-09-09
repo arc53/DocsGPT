@@ -1,6 +1,12 @@
 import isEqual from 'lodash/isEqual';
 import { MoreHorizontal } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -32,12 +38,13 @@ import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
 } from '../components/MultiSelectPopover';
+import SourcesPopoverFooter from '../components/SourcesPopoverFooter';
 import Spinner from '../components/Spinner';
 import ToolIcon from '../components/ToolIcon';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
-import { ActiveState, Doc, Prompt } from '../models/misc';
+import { ActiveState, Prompt } from '../models/misc';
 import {
   selectAgentFolders,
   selectSelectedAgent,
@@ -51,6 +58,13 @@ import {
 import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
+import Upload from '../upload/Upload';
+import {
+  selectedSourceIdsFromAgent,
+  serializeAgentSources,
+  sourceItemId,
+  toSourcePickerItems,
+} from '../utils/sourceUtils';
 import {
   getToolDisplayName,
   isClassicAgentToolVisible,
@@ -137,6 +151,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
+  const [uploadModalState, setUploadModalState] =
+    useState<ActiveState>('INACTIVE');
+  // Set once an upload started from this form finishes, so the source it
+  // created can be selected as soon as the refreshed list arrives.
+  const [pendingUploadSelect, setPendingUploadSelect] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(
     new Set(),
   );
@@ -162,6 +181,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
   const toolAnchorButtonRef = useRef<HTMLButtonElement>(null);
   const modelAnchorButtonRef = useRef<HTMLButtonElement>(null);
+  const sourceIdsBeforeUploadRef = useRef<Set<string>>(new Set());
 
   const modeConfig = {
     new: {
@@ -199,11 +219,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       agent.name && agent.description && agent.prompt_id && agent.agent_type;
     const isJsonSchemaValidOrEmpty =
       jsonSchemaText.trim() === '' || jsonSchemaValid;
-    const hasSource = selectedSourceIds.size > 0;
     const guardrailsOk = !guardrailsIncomplete(agent.config?.guardrails);
-    return (
-      hasRequiredFields && isJsonSchemaValidOrEmpty && hasSource && guardrailsOk
-    );
+    // Sources are optional: an agent without one answers from the model and
+    // its tools only.
+    return hasRequiredFields && isJsonSchemaValidOrEmpty && guardrailsOk;
   };
 
   const isJsonSchemaInvalid = () => {
@@ -222,13 +241,56 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // source name instead of "External KB"; only then show the generic label.
   const resolveSourceLabel = (id: string): string => {
     const matchedDoc = sourceDocs?.find(
-      (source) =>
-        source.id === id || source.name === id || source.retriever === id,
+      (source) => sourceItemId(source) === id,
     );
     if (matchedDoc?.name) return matchedDoc.name;
     const detail = agent.source_details?.find((d) => d.id === id);
     if (detail?.name) return detail.name;
     return t('agents.form.externalKb');
+  };
+
+  const sourceItems = useMemo(
+    () =>
+      toSourcePickerItems(
+        sourceDocs,
+        {
+          own: t('agents.form.sourcePopup.groupOwn'),
+          team: t('agents.form.sourcePopup.groupTeam'),
+        },
+        SourceIcon,
+      ),
+    [sourceDocs, t],
+  );
+
+  const selectedSourceNames = Array.from(selectedSourceIds)
+    .map((id) => resolveSourceLabel(id))
+    .filter(Boolean);
+  const sourceTriggerLabel =
+    selectedSourceIds.size === 0
+      ? t('agents.form.placeholders.selectSources')
+      : selectedSourceIds.size === 1
+        ? selectedSourceNames[0]
+        : t('conversation.sources.selectedCount', {
+            count: selectedSourceIds.size,
+          });
+
+  const handleUploadClick = () => {
+    sourceIdsBeforeUploadRef.current = new Set(
+      (sourceDocs ?? []).map(sourceItemId),
+    );
+    setIsSourcePopupOpen(false);
+    setUploadModalState('ACTIVE');
+  };
+
+  // Sources go out as the legacy single ``source`` for one selection and as
+  // the ``sources`` list for several; an empty selection sends both empty.
+  const appendSourceFields = (formData: FormData) => {
+    const { source, sources } = serializeAgentSources(
+      selectedSourceIds,
+      sourceDocs,
+    );
+    formData.append('source', source);
+    formData.append('sources', JSON.stringify(sources));
   };
 
   const handleUpload = useCallback((files: File[]) => {
@@ -261,39 +323,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('name', agent.name);
     formData.append('description', agent.description);
 
-    if (selectedSourceIds.size > 1) {
-      const sourcesArray = Array.from(selectedSourceIds)
-        .map((id) => {
-          const sourceDoc = sourceDocs?.find(
-            (source) =>
-              source.id === id || source.retriever === id || source.name === id,
-          );
-          if (sourceDoc?.name === 'Default' && !sourceDoc?.id) {
-            return 'default';
-          }
-          return sourceDoc?.id || id;
-        })
-        .filter(Boolean);
-      formData.append('sources', JSON.stringify(sourcesArray));
-      formData.append('source', '');
-    } else if (selectedSourceIds.size === 1) {
-      const singleSourceId = Array.from(selectedSourceIds)[0];
-      const sourceDoc = sourceDocs?.find(
-        (source) =>
-          source.id === singleSourceId ||
-          source.retriever === singleSourceId ||
-          source.name === singleSourceId,
-      );
-      let finalSourceId;
-      if (sourceDoc?.name === 'Default' && !sourceDoc?.id)
-        finalSourceId = 'default';
-      else finalSourceId = sourceDoc?.id || singleSourceId;
-      formData.append('source', String(finalSourceId));
-      formData.append('sources', JSON.stringify([]));
-    } else {
-      formData.append('source', '');
-      formData.append('sources', JSON.stringify([]));
-    }
+    appendSourceFields(formData);
 
     formData.append('chunks', agent.chunks);
     formData.append('retriever', agent.retriever);
@@ -386,39 +416,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('name', agent.name);
     formData.append('description', agent.description);
 
-    if (selectedSourceIds.size > 1) {
-      const sourcesArray = Array.from(selectedSourceIds)
-        .map((id) => {
-          const sourceDoc = sourceDocs?.find(
-            (source) =>
-              source.id === id || source.retriever === id || source.name === id,
-          );
-          if (sourceDoc?.name === 'Default' && !sourceDoc?.id) {
-            return 'default';
-          }
-          return sourceDoc?.id || id;
-        })
-        .filter(Boolean);
-      formData.append('sources', JSON.stringify(sourcesArray));
-      formData.append('source', '');
-    } else if (selectedSourceIds.size === 1) {
-      const singleSourceId = Array.from(selectedSourceIds)[0];
-      const sourceDoc = sourceDocs?.find(
-        (source) =>
-          source.id === singleSourceId ||
-          source.retriever === singleSourceId ||
-          source.name === singleSourceId,
-      );
-      let finalSourceId;
-      if (sourceDoc?.name === 'Default' && !sourceDoc?.id)
-        finalSourceId = 'default';
-      else finalSourceId = sourceDoc?.id || singleSourceId;
-      formData.append('source', String(finalSourceId));
-      formData.append('sources', JSON.stringify([]));
-    } else {
-      formData.append('source', '');
-      formData.append('sources', JSON.stringify([]));
-    }
+    appendSourceFields(formData);
 
     formData.append('chunks', agent.chunks);
     formData.append('retriever', agent.retriever);
@@ -658,16 +656,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     validateAndSetFolder();
   }, [folderIdFromUrl, agentFolders, token, dispatch]);
 
-  // Auto-select default source if none selected
+  // After an upload started from this form, select the source it created.
   useEffect(() => {
-    if (sourceDocs && sourceDocs.length > 0 && selectedSourceIds.size === 0) {
-      const defaultSource = sourceDocs.find((s) => s.name === 'Default');
-      const fallback = defaultSource || sourceDocs[0];
-      setSelectedSourceIds(
-        new Set([String(fallback.id || fallback.retriever || fallback.name)]),
-      );
-    }
-  }, [sourceDocs, selectedSourceIds.size]);
+    if (!pendingUploadSelect || !sourceDocs) return;
+    const before = sourceIdsBeforeUploadRef.current;
+    const added = sourceDocs.map(sourceItemId).filter((id) => !before.has(id));
+    if (added.length === 0) return;
+    setPendingUploadSelect(false);
+    setSelectedSourceIds((prev) => new Set([...prev, ...added]));
+  }, [pendingUploadSelect, sourceDocs]);
 
   useEffect(() => {
     if ((mode === 'edit' || mode === 'draft') && agentId) {
@@ -679,31 +676,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         }
         const data = await response.json();
 
-        if (data.sources && data.sources.length > 0) {
-          const mappedSources = data.sources.map((sourceId: string) => {
-            if (sourceId === 'default') {
-              const defaultSource = sourceDocs?.find(
-                (source) => source.name === 'Default',
-              );
-              return defaultSource?.retriever || 'classic';
-            }
-            return sourceId;
-          });
-          setSelectedSourceIds(new Set(mappedSources));
-        } else if (data.source) {
-          if (data.source === 'default') {
-            const defaultSource = sourceDocs?.find(
-              (source) => source.name === 'Default',
-            );
-            setSelectedSourceIds(
-              new Set([defaultSource?.retriever || 'classic']),
-            );
-          } else {
-            setSelectedSourceIds(new Set([data.source]));
-          }
-        } else if (data.retriever) {
-          setSelectedSourceIds(new Set([data.retriever]));
-        }
+        setSelectedSourceIds(new Set(selectedSourceIdsFromAgent(data)));
 
         if (data.tool_details) setSelectedTools(data.tool_details);
         if (data.status === 'draft') setEffectiveMode('draft');
@@ -763,56 +736,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [selectedModelIds]);
 
   useEffect(() => {
-    const selectedSources = Array.from(selectedSourceIds)
-      .map((id) =>
-        sourceDocs?.find(
-          (source) =>
-            source.id === id || source.retriever === id || source.name === id,
-        ),
-      )
-      .filter(Boolean);
-
-    if (selectedSources.length > 0) {
-      // Handle multiple sources
-      if (selectedSources.length > 1) {
-        // Multiple sources selected - store in sources array
-        const sourceIds = selectedSources
-          .map((source) => source?.id)
-          .filter((id): id is string => Boolean(id));
-        setAgent((prev) => ({
-          ...prev,
-          sources: sourceIds,
-          source: '', // Clear single source for multiple sources
-          retriever: '',
-        }));
-      } else {
-        // Single source selected - maintain backward compatibility
-        const selectedSource = selectedSources[0];
-        if (selectedSource && 'id' in selectedSource) {
-          setAgent((prev) => ({
-            ...prev,
-            source: selectedSource?.id || 'default',
-            sources: [], // Clear sources array for single source
-            retriever: '',
-          }));
-        } else {
-          setAgent((prev) => ({
-            ...prev,
-            source: '',
-            sources: [], // Clear sources array
-            retriever: selectedSource?.retriever || 'classic',
-          }));
-        }
-      }
-    } else {
-      // No sources selected
-      setAgent((prev) => ({
-        ...prev,
-        source: '',
-        sources: [],
-        retriever: '',
-      }));
-    }
+    const { source, sources } = serializeAgentSources(
+      selectedSourceIds,
+      sourceDocs,
+    );
+    setAgent((prev) => ({
+      ...prev,
+      source,
+      sources,
+      // A source-less agent keeps the default retriever name so its runtime
+      // config stays valid; real sources carry their own retriever.
+      retriever: selectedSourceIds.size === 0 ? 'classic' : '',
+    }));
   }, [selectedSourceIds]);
 
   useEffect(() => {
@@ -999,63 +934,46 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   open={isSourcePopupOpen}
                   onOpenChange={setIsSourcePopupOpen}
                   title={t('agents.form.sourcePopup.title')}
-                  items={
-                    sourceDocs?.map((doc: Doc) => ({
-                      id: String(doc.id || doc.retriever || doc.name),
-                      label: doc.name,
-                      icon: <img src={SourceIcon} alt="" />,
-                    })) || []
-                  }
+                  items={sourceItems}
                   selectedIds={Array.from(selectedSourceIds)}
                   onToggle={(id) => {
                     const next = new Set(selectedSourceIds);
                     if (next.has(id)) next.delete(id);
                     else next.add(id);
-                    if (
-                      next.size === 0 &&
-                      sourceDocs &&
-                      sourceDocs.length > 0
-                    ) {
-                      const defaultSource = sourceDocs.find(
-                        (s) => s.name === 'Default',
-                      );
-                      const fallback = defaultSource || sourceDocs[0];
-                      setSelectedSourceIds(
-                        new Set([
-                          String(
-                            fallback.id || fallback.retriever || fallback.name,
-                          ),
-                        ]),
-                      );
-                    } else {
-                      setSelectedSourceIds(next);
-                    }
+                    setSelectedSourceIds(next);
                   }}
                   searchPlaceholder={t(
                     'agents.form.sourcePopup.searchPlaceholder',
                   )}
                   emptyMessage={t('agents.form.sourcePopup.noOptionsMessage')}
+                  footer={
+                    <SourcesPopoverFooter
+                      onNavigate={() => setIsSourcePopupOpen(false)}
+                      onUploadClick={handleUploadClick}
+                    />
+                  }
                   trigger={
                     <Button
                       type="button"
                       variant="outline"
                       ref={sourceAnchorButtonRef}
+                      title={selectedSourceNames.join(', ')}
                       className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
                         selectedSourceIds.size > 0
                           ? 'text-foreground dark:text-foreground'
                           : 'dark:text-muted-foreground text-gray-400'
                       }`}
                     >
-                      {selectedSourceIds.size > 0
-                        ? Array.from(selectedSourceIds)
-                            .map((id) => resolveSourceLabel(id))
-                            .filter(Boolean)
-                            .join(', ')
-                        : t('agents.form.placeholders.selectSources')}
+                      {sourceTriggerLabel}
                     </Button>
                   }
                 />
               </div>
+              {selectedSourceIds.size === 0 && (
+                <p className="text-muted-foreground mt-2 text-xs">
+                  {t('agents.form.sourcePopup.noSourceHint')}
+                </p>
+              )}
             </div>
           </div>
           <div className="bg-card rounded-2xl px-6 py-3">
@@ -1549,6 +1467,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           resourceId={agent.id}
           resourceName={agent.name}
           onClose={() => setShareModalOpen(false)}
+        />
+      )}
+      {uploadModalState === 'ACTIVE' && (
+        <Upload
+          receivedFile={[]}
+          setModalState={setUploadModalState}
+          isOnboarding={false}
+          renderTab={null}
+          close={() => setUploadModalState('INACTIVE')}
+          onSuccessfulUpload={() => setPendingUploadSelect(true)}
         />
       )}
       <AddPromptModal

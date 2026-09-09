@@ -55,16 +55,7 @@ const initialState: Preference = {
     { name: 'strict', id: 'strict', type: 'public' },
   ],
   chunks: '2',
-  selectedDocs: [
-    {
-      id: 'default',
-      name: 'default',
-      type: 'remote',
-      date: 'default',
-      model: 'openai_text-embedding-ada-002',
-      retriever: 'classic',
-    },
-  ] as Doc[],
+  selectedDocs: [],
   sourceDocs: null,
   conversations: {
     data: null,
