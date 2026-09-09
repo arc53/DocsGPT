@@ -43,7 +43,10 @@ The backend is also an installable package (`pyproject.toml`, hatchling).
 `docsgpt prefetch-models`, `docsgpt verify-offline`. Runtime data (`.env`,
 `inputs/`, `indexes/`) lives in the checkout by default; `DOCSGPT_HOME` moves
 that data home, and `DOCSGPT_ENV_FILE` selects only the `.env` file (see
-`docsgpt/core/paths.py`).
+`docsgpt/core/paths.py`). `bash scripts/build_frontend.sh` builds the web UI
+into `docsgpt/static` (gitignored); the API serves it when present
+(`docsgpt/ui.py`, switch `SERVE_UI`), and the package workflows run the script
+before `uv build` so the wheel ships it.
 
 Dependencies are declared in `pyproject.toml` and locked in `uv.lock`; the
 `docsgpt/requirements*.txt` files are exported from the lock. To add or

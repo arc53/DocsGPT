@@ -107,6 +107,8 @@ class Settings(BaseSettings):
         "request_limit": 500,
     }
     UPLOAD_FOLDER: str = "inputs"
+    # Serve the web UI shipped in the package (docsgpt/static) from the API process.
+    SERVE_UI: bool = True
     # Request cap is applied by Flask before multipart parsing; the per-file cap also while copying.
     UPLOAD_MAX_REQUEST_BYTES: int = Field(default=256 * 1024 * 1024, gt=0)
     UPLOAD_MAX_FILE_BYTES: int = Field(default=100 * 1024 * 1024, gt=0)

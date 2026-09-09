@@ -12,10 +12,18 @@ from docsgpt.api.async_sse import async_sse_routes
 from docsgpt.app import app as flask_app
 from docsgpt.core.settings import settings
 from docsgpt.mcp_server import mcp
+from docsgpt.ui import StaticUI
 
 _WSGI_THREADPOOL = int(settings.WSGI_THREADPOOL_WORKERS)
 
 mcp_app = mcp.http_app(path="/")
+
+# The web UI, when the package ships one (docsgpt/static) and SERVE_UI is on:
+# files are served directly, Flask's own path prefixes pass through, and any
+# other GET renders index.html for the client-side router.
+_backend = StaticUI.wrap(
+    WSGIMiddleware(flask_app, workers=_WSGI_THREADPOOL), flask_app.url_map, enabled=settings.SERVE_UI
+)
 
 asgi_app = Starlette(
     routes=[
@@ -26,7 +34,7 @@ asgi_app = Starlette(
         # Starlette matches routes top-to-bottom, so these must precede the
         # Mount("/") that hands everything else to Flask.
         *async_sse_routes,
-        Mount("/", app=WSGIMiddleware(flask_app, workers=_WSGI_THREADPOOL)),
+        Mount("/", app=_backend),
     ],
     middleware=[
         Middleware(

@@ -7,10 +7,10 @@ import { Callout } from 'nextra/components'
 
 # Install with pip
 
-The DocsGPT backend is on PyPI as [`docsgpt`](https://pypi.org/project/docsgpt/): the API server, the Celery worker and the maintenance scripts in one package, behind a single `docsgpt` command. Use it when you want DocsGPT inside your own Python environment or process manager rather than the [Docker images](/Deploying/Docker-Deploying).
+DocsGPT is on PyPI as [`docsgpt`](https://pypi.org/project/docsgpt/): the API server, the web UI, the Celery worker and the maintenance scripts in one package, behind a single `docsgpt` command. Use it when you want DocsGPT inside your own Python environment or process manager rather than the [Docker images](/Deploying/Docker-Deploying).
 
 <Callout type="info">
-  The package is the backend only. The web UI ships in the Docker images and in the repository under `frontend/`; serving it from the package is planned.
+  `docsgpt api` serves the web UI on the same port as the API. Set `SERVE_UI=false` to run the API alone, for example behind the frontend Docker image or a UI you host yourself.
 </Callout>
 
 ## Requirements
@@ -49,7 +49,7 @@ pipx runpip docsgpt install --force-reinstall --no-deps --index-url https://down
 
 ## Configure
 
-DocsGPT keeps its runtime files in a **data home**: the `.env` file it reads settings from, uploaded files under `inputs/` and vector indexes under `indexes/`. The data home is the directory you run the commands from, or the directory `DOCSGPT_HOME` points to. `DOCSGPT_ENV_FILE` points at a `.env` kept somewhere else.
+DocsGPT keeps its runtime files in a **data home**: the `.env` file it reads settings from, uploaded files under `inputs/` and vector indexes under `indexes/`. The data home is the directory you run the commands from, or the directory `DOCSGPT_HOME` points to. `DOCSGPT_ENV_FILE` points at a `.env` kept somewhere else. Both variables must be set in the process environment, not in `.env`: they decide where `.env` is read from.
 
 Create a `.env` in the data home. The minimum for a hosted LLM:
 
@@ -72,7 +72,7 @@ Redis defaults to `localhost:6379` (`CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
 
 ```bash
 docsgpt migrate    # create the database if it is missing and apply the migrations
-docsgpt api        # the API on http://127.0.0.1:7091
+docsgpt api        # the API and the web UI on http://127.0.0.1:7091
 docsgpt worker     # in a second terminal: the Celery worker, with the scheduler
 ```
 
