@@ -35,20 +35,31 @@ class TestTopLevel:
 
 
 class TestApi:
-    def test_gunicorn_argv(self, monkeypatch, capsys):
-        run = MagicMock()
-        monkeypatch.setitem(sys.modules, "gunicorn.app.wsgiapp", types.SimpleNamespace(run=run))
+    def test_gunicorn_runs_with_the_image_settings_and_leaves_argv_alone(self, monkeypatch, capsys):
+        application = MagicMock()
+        factory = MagicMock(return_value=application)
+        monkeypatch.setattr(cli, "_gunicorn_application", factory)
         monkeypatch.setattr(sys, "platform", "linux")
-        monkeypatch.setattr(sys, "argv", ["docsgpt"])
+        monkeypatch.setattr(sys, "argv", ["/venv/bin/docsgpt", "api", "--port", "8000"])
         assert cli.main(["api", "--port", "8000", "--workers", "2"]) == 0
-        run.assert_called_once_with()
-        argv = sys.argv
-        assert argv[0] == "gunicorn" and argv[-1] == "docsgpt.asgi:asgi_app"
-        assert argv[argv.index("--bind") + 1] == "127.0.0.1:8000"
-        assert argv[argv.index("-w") + 1] == "2"
-        assert argv[argv.index("-k") + 1] == "docsgpt.gunicorn_worker.BoundedDrainUvicornWorker"
-        assert argv[argv.index("--config") + 1] == "python:docsgpt.gunicorn_conf"
+        application.run.assert_called_once_with()
+        options = factory.call_args.args[0]
+        assert options["bind"] == "127.0.0.1:8000"
+        assert options["workers"] == 2
+        assert options["worker_class"] == "docsgpt.gunicorn_worker.BoundedDrainUvicornWorker"
+        assert options["max_requests"] == 5000
+        # gunicorn re-executes sys.argv on SIGUSR2; it must still be the docsgpt invocation.
+        assert sys.argv == ["/venv/bin/docsgpt", "api", "--port", "8000"]
         assert "data home" in capsys.readouterr().err
+
+    def test_the_gunicorn_application_carries_the_settings_and_the_log_config(self):
+        app = cli._gunicorn_application(cli._gunicorn_options("127.0.0.1", 8001, 3))
+        assert app.cfg.bind == ["127.0.0.1:8001"]
+        assert app.cfg.workers == 3
+        assert app.cfg.worker_class_str == "docsgpt.gunicorn_worker.BoundedDrainUvicornWorker"
+        assert app.cfg.keepalive == 5
+        assert app.cfg.graceful_timeout == 120
+        assert "ncsa_access" in app.cfg.logconfig_dict["formatters"], "docsgpt.gunicorn_conf was loaded"
 
     def test_reload_uses_uvicorn(self, monkeypatch):
         uvicorn = types.SimpleNamespace(run=MagicMock())

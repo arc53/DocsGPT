@@ -170,11 +170,14 @@ dev = [
 path = "docsgpt/version.py"
 
 # The wheel is the docsgpt package with the data it reads at runtime: prompts,
-# model catalogs, the seed config, alembic.ini and the migrations. Build inputs
-# (Dockerfile, exported requirements), the sample index and local runtime data
-# stay out. The one-release `application` import alias is checkout-only.
+# model catalogs, the seed config, alembic.ini and the migrations, plus the web
+# UI build under docsgpt/static (gitignored; scripts/build_frontend.sh makes
+# it, and `artifacts` admits it). Build inputs (Dockerfile, exported
+# requirements), the sample index and local runtime data stay out. The
+# one-release `application` import alias is checkout-only.
 [tool.hatch.build.targets.wheel]
 packages = ["docsgpt"]
+artifacts = ["docsgpt/static/**"]
 exclude = [
   "docsgpt/Dockerfile",
   "docsgpt/requirements*.txt",
@@ -187,6 +190,7 @@ exclude = [
 
 [tool.hatch.build.targets.sdist]
 include = ["/docsgpt"]
+artifacts = ["docsgpt/static/**"]
 exclude = [
   "docsgpt/Dockerfile",
   "docsgpt/requirements*.txt",

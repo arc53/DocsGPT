@@ -69,6 +69,8 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`STT_PROVIDER`**: Selects the speech-to-text provider used for microphone transcription in chat and for audio file ingestion through the parser pipeline.
 
+- **`SERVE_UI`**: Whether the API process serves the web UI shipped in the Python package (`pip install docsgpt`). Defaults to `true`; set `false` when a separate frontend, such as the Docker frontend image, serves the UI. Has no effect in the backend Docker image, which carries no UI build.
+
 ## Configuration Examples
 
 Let's look at some concrete examples of how to configure these settings in your `.env` file.

@@ -181,6 +181,8 @@ frontend/*.sw?
 
 docsgpt/vectors/
 application/vectors/
+# The web UI build the package ships (scripts/build_frontend.sh)
+docsgpt/static/
 
 **/inputs
 

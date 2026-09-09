@@ -23,3 +23,5 @@ docsgpt/*.pkl
 docsgpt/.env
 docsgpt/.env.*
 docsgpt/Dockerfile
+# The backend image serves no UI (the frontend image does); a local UI build stays out.
+docsgpt/static/

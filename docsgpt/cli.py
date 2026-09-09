@@ -25,6 +25,49 @@ def _announce_home() -> None:
     print(f"docsgpt: data home {home_dir()} (env file {env_file()})", file=sys.stderr)
 
 
+def _gunicorn_options(host: str, port: int, workers: int) -> dict:
+    """The image's gunicorn flags (docsgpt/Dockerfile CMD), as settings."""
+    options = {
+        "bind": f"{host}:{port}",
+        "workers": workers,
+        "worker_class": "docsgpt.gunicorn_worker.BoundedDrainUvicornWorker",
+        "timeout": 180,
+        "graceful_timeout": 120,
+        "keepalive": 5,
+        "max_requests": 5000,
+        "max_requests_jitter": 500,
+    }
+    if os.path.isdir("/dev/shm"):
+        options["worker_tmp_dir"] = "/dev/shm"
+    return options
+
+
+def _gunicorn_application(options: dict):
+    """A gunicorn application configured in code rather than from sys.argv.
+
+    gunicorn records sys.argv at start and re-executes it on SIGUSR2 (the
+    zero-downtime upgrade), so sys.argv has to stay the ``docsgpt api ...``
+    invocation: the console script is what a re-exec must run again.
+    """
+    from gunicorn.app.base import Application
+
+    class DocsGPTApplication(Application):
+        def init(self, parser, opts, args):
+            return None
+
+        def load_config(self):
+            self.load_config_from_module_name_or_filename("python:docsgpt.gunicorn_conf")
+            for key, value in options.items():
+                self.cfg.set(key, value)
+
+        def load(self):
+            from docsgpt.asgi import asgi_app
+
+            return asgi_app
+
+    return DocsGPTApplication()
+
+
 def _api(args: argparse.Namespace) -> int:
     """Serve the ASGI app: gunicorn with the bounded-drain uvicorn worker, or uvicorn when reloading."""
     _announce_home()
@@ -34,25 +77,7 @@ def _api(args: argparse.Namespace) -> int:
         uvicorn.run("docsgpt.asgi:asgi_app", host=args.host, port=args.port, reload=args.reload)
         return 0
 
-    from gunicorn.app.wsgiapp import run as gunicorn_run
-
-    argv = [
-        "gunicorn",
-        "-w", str(args.workers),
-        "-k", "docsgpt.gunicorn_worker.BoundedDrainUvicornWorker",
-        "--bind", f"{args.host}:{args.port}",
-        "--timeout", "180",
-        "--graceful-timeout", "120",
-        "--keep-alive", "5",
-        "--max-requests", "5000",
-        "--max-requests-jitter", "500",
-        "--config", "python:docsgpt.gunicorn_conf",
-    ]
-    if os.path.isdir("/dev/shm"):
-        argv += ["--worker-tmp-dir", "/dev/shm"]
-    argv.append("docsgpt.asgi:asgi_app")
-    sys.argv = argv
-    gunicorn_run()
+    _gunicorn_application(_gunicorn_options(args.host, args.port, args.workers)).run()
     return 0
 
 
