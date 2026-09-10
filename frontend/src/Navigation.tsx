@@ -510,8 +510,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                         >
                           <img
                             src={agent.pinned ? UnPin : Pin}
+                            alt={agent.pinned ? 'Unpin agent' : 'Pin agent'}
                             className="h-4 w-4"
-                          ></img>
+                          />
                         </Button>
                       </div>
                     </div>
