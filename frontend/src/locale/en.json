@@ -532,7 +532,7 @@
         "needsAuth": "Needs Auth",
         "configured": "Configured"
       },
-      "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\" ?",
+      "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\"?",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "leaveWithoutSaving": "Leave without Saving",
       "saveAndLeave": "Save and Leave",
@@ -799,7 +799,7 @@
         "preparing": "Preparing upload",
         "parsing": "Parsing files…",
         "embedding": "Embedding…",
-        "tokenLimit": "Over the token limit, please consider uploading smaller document",
+        "tokenLimit": "Over the token limit, please consider uploading a smaller document",
         "expandDetails": "Expand upload details",
         "collapseDetails": "Collapse upload details",
         "dismiss": "Dismiss upload toast",
