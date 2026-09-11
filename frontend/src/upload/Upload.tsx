@@ -27,7 +27,6 @@ import { ActiveState, Doc } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import {
   selectSelectedDocs,
-  selectSourceDocs,
   selectToken,
   setSelectedDocs,
   setSourceDocs,
@@ -411,8 +410,6 @@ function Upload({
     heading: schema.heading,
   }));
 
-  const sourceDocs = useSelector(selectSourceDocs);
-
   const resetUploaderState = useCallback(() => {
     setIngestor({ type: null, name: '', config: {} });
     setfiles([]);
@@ -485,15 +482,11 @@ function Upload({
         if (status !== 'completed') return;
         refreshSourceDocs()
           .then((docs) => {
-            if (selectUploadedDoc && Array.isArray(docs)) {
-              const existingDocIds = new Set(
-                (Array.isArray(sourceDocs) ? sourceDocs : [])
-                  .map((doc: Doc) => doc?.id)
-                  .filter((id): id is string => Boolean(id)),
-              );
-              const newDoc = docs.find(
-                (doc: Doc) => doc.id && !existingDocIds.has(doc.id),
-              );
+            if (selectUploadedDoc && Array.isArray(docs) && sourceId) {
+              // Match the id this upload returned. Diffing against the list as
+              // it looked before would pick up any source that appeared
+              // meanwhile — another upload finishing, or a new team share.
+              const newDoc = docs.find((doc: Doc) => doc.id === sourceId);
               if (newDoc) {
                 // If only one doc is selected, replace it completely
                 // If multiple docs are selected, append the new doc
@@ -578,7 +571,6 @@ function Upload({
       refreshSourceDocs,
       selectedDocs,
       selectUploadedDoc,
-      sourceDocs,
       store,
     ],
   );
