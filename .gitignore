@@ -211,3 +211,7 @@ bench/
 
 # Python package build output (uv build)
 dist/
+
+# Personal agent exports/imports kept at the repo root (may hold chat ids,
+# webhook targets and other per-user config)
+/*.agent.yaml
