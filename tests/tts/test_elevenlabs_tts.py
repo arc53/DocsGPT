@@ -8,7 +8,11 @@ from docsgpt.tts.elevenlabs import ElevenlabsTTS
 def test_elevenlabs_text_to_speech_monkeypatched_client(monkeypatch):
     monkeypatch.setattr(
         "docsgpt.tts.elevenlabs.settings",
-        SimpleNamespace(ELEVENLABS_API_KEY="api-key"),
+        SimpleNamespace(
+            ELEVENLABS_API_KEY="api-key",
+            ELEVENLABS_VOICE_ID="custom-voice-id",
+            ELEVENLABS_LANGUAGE="fr",
+        ),
     )
 
     created = {}
@@ -50,12 +54,11 @@ def test_elevenlabs_text_to_speech_monkeypatched_client(monkeypatch):
     assert created["api_key"] == "api-key"
     assert tts.client.convert_calls == [
         {
-            "voice_id": "nPczCjzI2devNBz1zQrb",
+            "voice_id": "custom-voice-id",
             "model_id": "eleven_multilingual_v2",
             "text": "Speak",
             "output_format": "mp3_44100_128",
         }
     ]
-    assert lang == "en"
+    assert lang == "fr"
     assert base64.b64decode(audio_base64.encode()) == b"chunk-onechunk-two"
-
