@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Doc } from '../models/misc';
 import {
   getDocs,
   getConversations,
@@ -9,11 +8,9 @@ import {
 } from '../preferences/preferenceApi';
 import {
   selectConversations,
-  selectSelectedDocs,
   selectToken,
   setConversations,
   setPrompts,
-  setSelectedDocs,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 
@@ -22,7 +19,7 @@ import {
  *
  * Custom hook responsible for initializing all application data on mount.
  * This hook handles:
- * - Fetching and setting up documents (source docs and selected docs)
+ * - Fetching and setting up source documents
  * - Fetching and setting up prompts
  * - Fetching and setting up conversations
  *
@@ -31,7 +28,6 @@ import {
 export default function useDataInitializer(isAuthLoading: boolean) {
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
-  const selectedDoc = useSelector(selectSelectedDocs);
   const conversations = useSelector(selectConversations);
 
   // Initialize documents
@@ -45,20 +41,6 @@ export default function useDataInitializer(isAuthLoading: boolean) {
       try {
         const data = await getDocs(token);
         dispatch(setSourceDocs(data));
-
-        // Auto-select default document if none selected
-        if (
-          !selectedDoc ||
-          (Array.isArray(selectedDoc) && selectedDoc.length === 0)
-        ) {
-          if (Array.isArray(data)) {
-            data.forEach((doc: Doc) => {
-              if (doc.model && doc.name === 'default') {
-                dispatch(setSelectedDocs([doc]));
-              }
-            });
-          }
-        }
       } catch (error) {
         console.error('Failed to fetch documents:', error);
       }

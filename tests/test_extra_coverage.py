@@ -341,8 +341,9 @@ class TestSeederExtra:
 
 
 class TestAgentsRoutesRemainingGaps:
-    def test_get_agents_filters_out_incomplete(self, app, pg_conn):
-        """Agents missing both source and retriever are filtered from the list."""
+    def test_get_agents_lists_source_less_agents(self, app, pg_conn):
+        """An agent with neither source nor retriever is still listed: it
+        skips retrieval at run time and answers from the model and tools."""
         from docsgpt.api.user.agents.routes import GetAgents
         from docsgpt.storage.db.repositories.agents import AgentsRepository
 
@@ -351,12 +352,11 @@ class TestAgentsRoutesRemainingGaps:
             yield pg_conn
 
         user = "u-filter"
-        # Complete agent: has retriever
         AgentsRepository(pg_conn).create(
             user, "ok", "published", retriever="classic",
         )
-        # Incomplete agent: no source, no retriever, not workflow type
-        AgentsRepository(pg_conn).create(user, "bad", "published")
+        # No source, no retriever, not a workflow agent.
+        AgentsRepository(pg_conn).create(user, "bare", "published")
 
         with patch(
             "docsgpt.api.user.agents.routes.db_session", _yield
@@ -369,4 +369,4 @@ class TestAgentsRoutesRemainingGaps:
         assert response.status_code == 200
         names = [a["name"] for a in response.json]
         assert "ok" in names
-        assert "bad" not in names
+        assert "bare" in names

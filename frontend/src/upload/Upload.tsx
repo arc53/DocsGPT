@@ -27,7 +27,6 @@ import { ActiveState, Doc } from '../models/misc';
 import { getDocs } from '../preferences/preferenceApi';
 import {
   selectSelectedDocs,
-  selectSourceDocs,
   selectToken,
   setSelectedDocs,
   setSourceDocs,
@@ -61,13 +60,21 @@ function Upload({
   renderTab = null,
   close,
   onSuccessfulUpload = () => undefined,
+  selectUploadedDoc = true,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
   isOnboarding: boolean;
   renderTab: string | null;
   close: () => void;
-  onSuccessfulUpload?: () => void;
+  /** Fires once the upload is ingested, with the id of the source it created. */
+  onSuccessfulUpload?: (sourceId?: string) => void;
+  /**
+   * Whether a finished upload also becomes the chat's selected source. Callers
+   * that only need the new source's id (the agent builder) pass ``false`` so
+   * uploading never repoints the conversation the user left open.
+   */
+  selectUploadedDoc?: boolean;
 }) {
   const token = useSelector(selectToken);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -403,8 +410,6 @@ function Upload({
     heading: schema.heading,
   }));
 
-  const sourceDocs = useSelector(selectSourceDocs);
-
   const resetUploaderState = useCallback(() => {
     setIngestor({ type: null, name: '', config: {} });
     setfiles([]);
@@ -430,6 +435,32 @@ function Upload({
     [dispatch],
   );
 
+  /** Re-read the source list into the store so a new source is pickable. */
+  const refreshSourceDocs = useCallback(
+    () =>
+      getDocs(token).then((docs) => {
+        dispatch(setSourceDocs(docs));
+        return docs;
+      }),
+    [dispatch, token],
+  );
+
+  /**
+   * Finish an upload that never got an ingest task (the wiki source is created
+   * synchronously). The list still has to be refreshed, or the caller selects
+   * an id no picker can render.
+   */
+  const finishUntrackedUpload = useCallback(
+    (sourceId?: string) => {
+      refreshSourceDocs()
+        .catch((err) => {
+          console.error('Post-upload source-list refresh failed:', err);
+        })
+        .finally(() => onSuccessfulUpload?.(sourceId));
+    },
+    [onSuccessfulUpload, refreshSourceDocs],
+  );
+
   /**
    * Wait for the source.ingest.* SSE pipeline to flip this task into a
    * terminal state, then run the post-completion side effects: refresh
@@ -442,22 +473,20 @@ function Upload({
     (clientTaskId: string) => {
       let handled = false;
 
-      const handleTerminal = (status: 'completed' | 'failed') => {
+      const handleTerminal = (
+        status: 'completed' | 'failed',
+        sourceId?: string,
+      ) => {
         if (handled) return;
         handled = true;
         if (status !== 'completed') return;
-        getDocs(token)
+        refreshSourceDocs()
           .then((docs) => {
-            dispatch(setSourceDocs(docs));
-            if (Array.isArray(docs)) {
-              const existingDocIds = new Set(
-                (Array.isArray(sourceDocs) ? sourceDocs : [])
-                  .map((doc: Doc) => doc?.id)
-                  .filter((id): id is string => Boolean(id)),
-              );
-              const newDoc = docs.find(
-                (doc: Doc) => doc.id && !existingDocIds.has(doc.id),
-              );
+            if (selectUploadedDoc && Array.isArray(docs) && sourceId) {
+              // Match the id this upload returned. Diffing against the list as
+              // it looked before would pick up any source that appeared
+              // meanwhile — another upload finishing, or a new team share.
+              const newDoc = docs.find((doc: Doc) => doc.id === sourceId);
               if (newDoc) {
                 // If only one doc is selected, replace it completely
                 // If multiple docs are selected, append the new doc
@@ -468,7 +497,7 @@ function Upload({
                 }
               }
             }
-            onSuccessfulUpload?.();
+            onSuccessfulUpload?.(sourceId);
           })
           .catch((err) => {
             console.error(
@@ -483,7 +512,7 @@ function Upload({
         const task = state.upload.tasks.find((t) => t.id === clientTaskId);
         if (!task) return false;
         if (task.status === 'completed' || task.status === 'failed') {
-          handleTerminal(task.status);
+          handleTerminal(task.status, task.sourceId);
           return true;
         }
         // Recover from the race where the terminal SSE landed before
@@ -494,7 +523,7 @@ function Upload({
           for (const event of state.notifications.recentEvents) {
             if (event.scope?.id !== task.sourceId) continue;
             if (event.type === 'source.ingest.completed') {
-              handleTerminal('completed');
+              handleTerminal('completed', task.sourceId);
               return true;
             }
             if (event.type === 'source.ingest.failed') {
@@ -536,7 +565,14 @@ function Upload({
         }
       });
     },
-    [dispatch, onSuccessfulUpload, selectedDocs, sourceDocs, store, token],
+    [
+      dispatch,
+      onSuccessfulUpload,
+      refreshSourceDocs,
+      selectedDocs,
+      selectUploadedDoc,
+      store,
+    ],
   );
 
   const onDrop = useCallback(
@@ -626,7 +662,7 @@ function Upload({
                 updates: { status: 'completed', progress: 100 },
               }),
             );
-            onSuccessfulUpload?.();
+            finishUntrackedUpload(parsed.source_id);
           }
         } catch (error) {
           handleTaskFailure(clientTaskId);
@@ -762,7 +798,7 @@ function Upload({
                 updates: { status: 'completed', progress: 100 },
               }),
             );
-            onSuccessfulUpload?.();
+            finishUntrackedUpload(response.source_id);
           }
         } catch (error) {
           handleTaskFailure(clientTaskId);
@@ -813,7 +849,7 @@ function Upload({
             },
           }),
         );
-        onSuccessfulUpload?.();
+        finishUntrackedUpload(data.source_id);
       })
       .catch(() => handleTaskFailure(clientTaskId));
   };

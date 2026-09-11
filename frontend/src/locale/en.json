@@ -1093,7 +1093,10 @@
       "text": "Choose Your Sources",
       "link": "Source link",
       "view_more": "{{count}} more sources",
-      "noSourcesAvailable": "No sources available"
+      "noSourcesAvailable": "No sources available",
+      "selectedCount": "{{count}} sources selected",
+      "groupOwn": "Your sources",
+      "groupTeam": "Shared with team"
     },
     "attachments": {
       "attach": "Attach",
@@ -1258,7 +1261,10 @@
       "sourcePopup": {
         "title": "Select Sources",
         "searchPlaceholder": "Search sources...",
-        "noOptionsMessage": "No sources available"
+        "noOptionsMessage": "No sources available",
+        "groupOwn": "Your sources",
+        "groupTeam": "Shared with team",
+        "noSourceHint": "Optional. Without a source the agent answers from the model and its tools only."
       },
       "toolsPopup": {
         "title": "Select Tools",

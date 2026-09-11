@@ -80,7 +80,9 @@ class TestCombinedJson:
             response = CombinedJson().get()
         assert response.status_code == 401
 
-    def test_returns_default_plus_user_sources(self, app, pg_conn):
+    def test_returns_only_real_user_sources(self, app, pg_conn):
+        """No synthetic "Default" row: every entry is an ingested source
+        with an id, so clients never have to special-case a placeholder."""
         from docsgpt.api.user.sources.routes import CombinedJson
 
         user = "u-list-sources"
@@ -93,8 +95,20 @@ class TestCombinedJson:
 
         assert response.status_code == 200
         names = [d["name"] for d in response.json]
-        assert "Default" in names
-        assert "doc1" in names
+        assert "Default" not in names
+        assert names == ["doc1"]
+        assert all(d.get("id") for d in response.json)
+
+    def test_returns_empty_list_when_user_has_no_sources(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import CombinedJson
+
+        with _patch_db(pg_conn), app.test_request_context("/api/sources"):
+            from flask import request
+            request.decoded_token = {"sub": "u-no-sources"}
+            response = CombinedJson().get()
+
+        assert response.status_code == 200
+        assert response.json == []
 
     def test_db_error_returns_400(self, app):
         from docsgpt.api.user.sources.routes import CombinedJson

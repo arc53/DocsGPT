@@ -1088,7 +1088,10 @@
       "text": "ソーステキスト",
       "link": "ソースリンク",
       "view_more": "さらに{{count}}個のソース",
-      "noSourcesAvailable": "利用可能なソースがありません"
+      "noSourcesAvailable": "利用可能なソースがありません",
+      "selectedCount": "{{count}} 件のソースを選択中",
+      "groupOwn": "自分のソース",
+      "groupTeam": "チームと共有"
     },
     "attachments": {
       "attach": "添付",
@@ -1248,7 +1251,10 @@
       "sourcePopup": {
         "title": "ソースを選択",
         "searchPlaceholder": "ソースを検索...",
-        "noOptionsMessage": "利用可能なソースがありません"
+        "noOptionsMessage": "利用可能なソースがありません",
+        "groupOwn": "自分のソース",
+        "groupTeam": "チームと共有",
+        "noSourceHint": "任意。ソースがない場合、エージェントはモデルとツールのみで回答します。"
       },
       "toolsPopup": {
         "title": "ツールを選択",

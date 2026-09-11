@@ -1088,7 +1088,10 @@
       "text": "Wähle deine Quellen",
       "link": "Quellen-Link",
       "view_more": "{{count}} weitere Quellen",
-      "noSourcesAvailable": "Keine Quellen verfügbar"
+      "noSourcesAvailable": "Keine Quellen verfügbar",
+      "selectedCount": "{{count}} Quellen ausgewählt",
+      "groupOwn": "Deine Quellen",
+      "groupTeam": "Mit dem Team geteilt"
     },
     "attachments": {
       "attach": "Anhängen",
@@ -1248,7 +1251,10 @@
       "sourcePopup": {
         "title": "Quellen auswählen",
         "searchPlaceholder": "Quellen suchen...",
-        "noOptionsMessage": "Keine Quellen verfügbar"
+        "noOptionsMessage": "Keine Quellen verfügbar",
+        "groupOwn": "Deine Quellen",
+        "groupTeam": "Mit dem Team geteilt",
+        "noSourceHint": "Optional. Ohne Quelle antwortet der Agent nur anhand des Modells und seiner Werkzeuge."
       },
       "toolsPopup": {
         "title": "Werkzeuge auswählen",

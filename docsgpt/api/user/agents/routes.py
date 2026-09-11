@@ -76,7 +76,8 @@ AGENT_TYPE_SCHEMAS = {
         # is acceptable and maps to NULL downstream.
         "validate_published": ["name", "description"],
         "validate_draft": [],
-        "require_source": True,
+        # No source is required: a source-less agent answers from the model
+        # and its tools, and ``source``/``sources`` map to NULL downstream.
         "fields": [
             "name",
             "description",
@@ -480,18 +481,11 @@ class GetAgents(Resource):
                 shared_ids = [aid for aid in team_shared if aid not in owned_ids]
                 shared_agents = agents_repo.list_by_ids(shared_ids)
 
-            def _is_runnable(agent: dict) -> bool:
-                return bool(
-                    agent.get("source_id")
-                    or (agent.get("extra_source_ids") or [])
-                    or agent.get("retriever")
-                    or agent.get("agent_type") == "workflow"
-                )
-
+            # Every agent is listed: one with no source skips retrieval and
+            # answers from the model and its tools, so it is still runnable.
             list_agents = [
                 _format_agent_output(agent, pinned=str(agent["id"]) in pinned_ids)
                 for agent in agents
-                if _is_runnable(agent)
             ]
             list_agents += [
                 _format_agent_output(
@@ -500,7 +494,6 @@ class GetAgents(Resource):
                     team_access=team_shared.get(str(agent["id"])),
                 )
                 for agent in shared_agents
-                if _is_runnable(agent)
             ]
         except Exception as err:
             current_app.logger.error(f"Error retrieving agents: {err}", exc_info=True)
@@ -661,20 +654,6 @@ class CreateAgent(Resource):
         if data.get("status") == "published":
             required_fields = schema["required_published"]
             validate_fields = schema["validate_published"]
-            if (
-                schema.get("require_source")
-                and not data.get("source")
-                and not data.get("sources")
-            ):
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": "Either 'source' or 'sources' field is required for published agents",
-                        }
-                    ),
-                    400,
-                )
         else:
             required_fields = schema["required_draft"]
             validate_fields = schema["validate_draft"]
@@ -1190,29 +1169,9 @@ class UpdateAgent(Resource):
                             )
                             if not final_value:
                                 missing_published_fields.append(field_label)
-                        source_final = update_fields.get(
-                            "source_id", existing_agent.get("source_id"),
-                        )
-                        extra_final = update_fields.get(
-                            "extra_source_ids", existing_agent.get("extra_source_ids") or [],
-                        )
-                        # ``retriever`` carries the runtime identity for
-                        # agents that publish against the synthetic
-                        # "Default" source (frontend's auto-selected
-                        # ``{name: "Default", retriever: "classic"}``
-                        # entry has no ``id``, so ``source_id`` ends up
-                        # NULL even though the user picked something).
-                        # Without this fallback the most common new-agent
-                        # publish flow gets a 400.
-                        retriever_final = update_fields.get(
-                            "retriever", existing_agent.get("retriever"),
-                        )
-                        if (
-                            not source_final
-                            and not extra_final
-                            and not retriever_final
-                        ):
-                            missing_published_fields.append("Source or retriever")
+                        # Sources are optional: a published agent with no
+                        # ``source_id`` and no ``extra_source_ids`` skips
+                        # retrieval and answers from the model and its tools.
                         if missing_published_fields:
                             return _reject(
                                 "Cannot publish agent. Missing or invalid required "
@@ -1497,6 +1456,33 @@ class DeleteAgent(Resource):
         return make_response(jsonify({"id": pg_agent_id}), 200)
 
 
+def _user_may_pin(conn, agent: dict, user_id: str, shared_with_me: set) -> bool:
+    """Whether ``user_id`` may pin, and keep reading, ``agent``.
+
+    Pinning follows visibility: the owner, a team grantee, anyone who opened a
+    still-live share link, and the premade system templates. Without this gate a
+    pin is an unscoped read of any agent id.
+
+    Args:
+        conn: Open database connection.
+        agent: The agent row, needing at least ``id``, ``user_id`` and ``shared``.
+        user_id: The caller.
+        shared_with_me: Agent ids the caller reached through a share link.
+
+    Returns:
+        True if the caller is allowed to see the agent.
+    """
+    owner_id = agent.get("user_id")
+    if owner_id == user_id:
+        return True
+    if owner_id in ("system", "__system__"):
+        return True
+    agent_id = str(agent["id"])
+    if agent.get("shared") and agent_id in shared_with_me:
+        return True
+    return can_access(conn, "agent", agent_id, user_id)
+
+
 @agents_ns.route("/pinned_agents")
 class PinnedAgents(Resource):
     @api.doc(description="Get pinned agents for the user")
@@ -1510,11 +1496,13 @@ class PinnedAgents(Resource):
             with db_session() as conn:
                 users_repo = UsersRepository(conn)
                 user_doc = users_repo.upsert(user_id)
-                pinned_ids = (
-                    user_doc.get("agent_preferences", {}).get("pinned", [])
+                prefs = (
+                    user_doc.get("agent_preferences", {})
                     if isinstance(user_doc.get("agent_preferences"), dict)
-                    else []
+                    else {}
                 )
+                pinned_ids = prefs.get("pinned", []) or []
+                shared_with_me = set(prefs.get("shared_with_me", []) or [])
                 if not pinned_ids:
                     return make_response(jsonify([]), 200)
 
@@ -1541,11 +1529,18 @@ class PinnedAgents(Resource):
                 if stale:
                     users_repo.remove_pinned_bulk(user_id, stale)
 
+                # A pin is not proof of access: a share or team grant can be
+                # revoked long after the agent was pinned, so re-check every
+                # row on read rather than trusting the stored id list.
+                pinned_agents = [
+                    agent
+                    for agent in pinned_agents
+                    if _user_may_pin(conn, agent, user_id, shared_with_me)
+                ]
+
             list_pinned_agents = []
             for agent in pinned_agents:
                 source_id = agent.get("source_id")
-                if not source_id and not agent.get("retriever"):
-                    continue
                 list_pinned_agents.append(
                     {
                         "id": str(agent["id"]),
@@ -1571,7 +1566,7 @@ class PinnedAgents(Resource):
                         "last_used_at": agent.get("last_used_at", ""),
                         "key": (
                             f"{agent['key'][:4]}...{agent['key'][-4:]}"
-                            if agent.get("key")
+                            if agent.get("key") and agent.get("user_id") == user_id
                             else ""
                         ),
                         "pinned": True,
@@ -1840,20 +1835,25 @@ class PinAgent(Resource):
             )
         try:
             with db_session() as conn:
-                # Any user can pin any agent they can see — including
-                # shared ones. Use the non-user-scoped lookup so pins
-                # aren't restricted to owner-only.
+                # Any user can pin any agent they can *see* — owned, team-shared,
+                # reached through a share link, or a system template. The lookup
+                # is deliberately not owner-scoped, so visibility is checked
+                # separately below.
                 from sqlalchemy import text as _sql_text
 
                 if looks_like_uuid(agent_id):
                     agent_row = conn.execute(
-                        _sql_text("SELECT id FROM agents WHERE id = CAST(:id AS uuid)"),
+                        _sql_text(
+                            "SELECT id, user_id, shared FROM agents "
+                            "WHERE id = CAST(:id AS uuid)"
+                        ),
                         {"id": agent_id},
                     ).fetchone()
                 else:
                     agent_row = conn.execute(
                         _sql_text(
-                            "SELECT id FROM agents WHERE legacy_mongo_id = :id"
+                            "SELECT id, user_id, shared FROM agents "
+                            "WHERE legacy_mongo_id = :id"
                         ),
                         {"id": agent_id},
                     ).fetchone()
@@ -1866,15 +1866,28 @@ class PinAgent(Resource):
 
                 users_repo = UsersRepository(conn)
                 user_doc = users_repo.upsert(user_id)
-                pinned_list = (
-                    user_doc.get("agent_preferences", {}).get("pinned", [])
+                prefs = (
+                    user_doc.get("agent_preferences", {})
                     if isinstance(user_doc.get("agent_preferences"), dict)
-                    else []
+                    else {}
                 )
+                pinned_list = prefs.get("pinned", []) or []
                 if pg_agent_id in pinned_list:
+                    # Unpinning stays open regardless of current access, or a
+                    # revoked share would leave a pin the user can't clear.
                     users_repo.remove_pinned(user_id, pg_agent_id)
                     action = "unpinned"
                 else:
+                    if not _user_may_pin(
+                        conn,
+                        dict(agent_row._mapping),
+                        user_id,
+                        set(prefs.get("shared_with_me", []) or []),
+                    ):
+                        return make_response(
+                            jsonify({"success": False, "message": "Agent not found"}),
+                            404,
+                        )
                     users_repo.add_pinned(user_id, pg_agent_id)
                     action = "pinned"
         except Exception as err:

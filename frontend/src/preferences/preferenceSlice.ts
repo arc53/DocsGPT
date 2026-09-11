@@ -55,16 +55,7 @@ const initialState: Preference = {
     { name: 'strict', id: 'strict', type: 'public' },
   ],
   chunks: '2',
-  selectedDocs: [
-    {
-      id: 'default',
-      name: 'default',
-      type: 'remote',
-      date: 'default',
-      model: 'openai_text-embedding-ada-002',
-      retriever: 'classic',
-    },
-  ] as Doc[],
+  selectedDocs: [],
   sourceDocs: null,
   conversations: {
     data: null,
@@ -223,14 +214,12 @@ prefListenerMiddleware.startListening({
   effect: (_action, listenerApi) => {
     const state = listenerApi.getState() as RootState;
     const sourceDocs = state.preference.sourceDocs;
-    if (sourceDocs && sourceDocs.length > 0) {
-      const validatedDocs = getLocalRecentDocs(sourceDocs);
-      if (validatedDocs !== null) {
-        listenerApi.dispatch(setSelectedDocs(validatedDocs));
-      } else {
-        listenerApi.dispatch(setSelectedDocs([]));
-      }
-    }
+    // ``null`` means the list hasn't loaded; an empty array is a real answer
+    // and still has to prune a stored selection, or a deleted last source
+    // stays checked forever.
+    if (!sourceDocs) return;
+    const validatedDocs = getLocalRecentDocs(sourceDocs);
+    listenerApi.dispatch(setSelectedDocs(validatedDocs ?? []));
   },
 });
 

@@ -128,6 +128,23 @@ class TestGetAgents:
         names = [a["name"] for a in response.json]
         assert "B1" in names and "B2" in names
 
+    def test_lists_source_less_agent_without_retriever(self, app, pg_conn):
+        """A published agent with no source and no retriever skips retrieval
+        at run time, so the list must not hide it."""
+        from docsgpt.api.user.agents.routes import GetAgents
+
+        user = "u-list-no-source"
+        _seed_agent(
+            pg_conn, user=user, name="bare", with_source=False, retriever="",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context("/api/get_agents"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetAgents().get()
+        assert response.status_code == 200
+        assert "bare" in [a["name"] for a in response.json]
+
     def test_db_error_returns_400(self, app):
         from docsgpt.api.user.agents.routes import GetAgents
 
@@ -782,12 +799,10 @@ class TestUpdateAgent:
             response = UpdateAgent().put(str(agent["id"]))
         assert response.status_code == 400
 
-    def test_publish_with_default_source_succeeds(self, app, pg_conn):
-        """The frontend's auto-selected "Default" source has no UUID — it
-        sends ``source: ''`` and ``sources: []`` with ``retriever: 'classic'``.
-        Pre-fix, the publish gate rejected this with
-        ``Missing or invalid required fields: Source``. The retriever
-        carries the runtime identity, so the gate now accepts it.
+    def test_publish_with_no_source_succeeds(self, app, pg_conn):
+        """An agent with no source is a valid published state: it answers
+        from the model and its tools. The form sends ``source: ''`` and
+        ``sources: []`` with the default ``retriever``.
         """
         from docsgpt.api.user.agents.routes import UpdateAgent
         from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -827,11 +842,11 @@ class TestUpdateAgent:
             f"unexpected error: {response.json}"
         )
 
-    def test_publish_without_source_or_retriever_returns_400(
+    def test_publish_without_source_or_retriever_succeeds(
         self, app, pg_conn,
     ):
-        """If neither a source nor a retriever is configured, the gate
-        still trips — the agent has no way to retrieve anything."""
+        """Neither a source nor a retriever is required to publish; a
+        source-less agent simply skips retrieval at run time."""
         from docsgpt.api.user.agents.routes import UpdateAgent
         from docsgpt.storage.db.repositories.agents import AgentsRepository
         from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -864,8 +879,12 @@ class TestUpdateAgent:
             from flask import request
             request.decoded_token = {"sub": user}
             response = UpdateAgent().put(str(agent["id"]))
-        assert response.status_code == 400
-        assert "Source or retriever" in response.json.get("message", "")
+        assert response.status_code == 200, (
+            f"unexpected error: {response.json}"
+        )
+        stored = AgentsRepository(pg_conn).get_by_id(str(agent["id"]))
+        assert stored["status"] == "published"
+        assert stored["source_id"] is None
 
     def test_publishing_generates_api_key(self, app, pg_conn):
         from docsgpt.api.user.agents.routes import UpdateAgent
@@ -1075,25 +1094,71 @@ class TestCreateAgentMore:
         )
         assert status == 400
 
-    def test_publish_classic_without_source_returns_400(self, app):
+    def test_publish_classic_without_source_succeeds(self, app, pg_conn):
+        """Publishing with ``source: ''`` and ``sources: []`` creates a
+        source-less agent (``source_id`` NULL) instead of a 400."""
         from docsgpt.api.user.agents.routes import CreateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
 
-        with app.test_request_context(
+        user = "u-create-no-source"
+        with _patch_db(pg_conn), app.test_request_context(
             "/api/create_agent", method="POST",
             json={
-                "name": "n",
+                "name": "no-source",
                 "description": "d",
                 "status": "published",
                 "agent_type": "classic",
+                "chunks": "2",
+                "retriever": "classic",
+                "prompt_id": "default",
+                "source": "",
+                "sources": [],
             },
         ):
             from flask import request
-            request.decoded_token = {"sub": "u"}
+            request.decoded_token = {"sub": user}
             response = CreateAgent().post()
-        status = (
-            response[1] if isinstance(response, tuple) else response.status_code
+        assert response.status_code == 201, (
+            f"unexpected error: {response.json}"
         )
-        assert status == 400
+        agents = AgentsRepository(pg_conn).list_for_user(user)
+        created = next(a for a in agents if a["name"] == "no-source")
+        assert created["status"] == "published"
+        assert created["source_id"] is None
+        assert not created.get("extra_source_ids")
+        assert created["key"]
+
+    def test_publish_classic_with_legacy_default_sentinel_succeeds(
+        self, app, pg_conn,
+    ):
+        """Older clients still send ``source: "default"``; it keeps mapping
+        to a NULL source rather than being rejected."""
+        from docsgpt.api.user.agents.routes import CreateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-create-legacy-default"
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/create_agent", method="POST",
+            json={
+                "name": "legacy-default",
+                "description": "d",
+                "status": "published",
+                "agent_type": "classic",
+                "chunks": "2",
+                "retriever": "classic",
+                "prompt_id": "default",
+                "source": "default",
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = CreateAgent().post()
+        assert response.status_code == 201, (
+            f"unexpected error: {response.json}"
+        )
+        agents = AgentsRepository(pg_conn).list_for_user(user)
+        created = next(a for a in agents if a["name"] == "legacy-default")
+        assert created["source_id"] is None
 
     def test_unknown_agent_type_falls_back_classic(self, app, pg_conn):
         from docsgpt.api.user.agents.routes import CreateAgent
@@ -1438,6 +1503,138 @@ class TestPinAgentMore:
         assert response.status_code == 500
 
 
+class TestPinAccessControl:
+    """Pinning must follow visibility — it is a read of the agent."""
+
+    def _pin(self, app, pg_conn, agent_id, user):
+        from docsgpt.api.user.agents.routes import PinAgent
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/pin_agent?id={agent_id}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return PinAgent().post()
+
+    def _pinned(self, app, pg_conn, user):
+        from docsgpt.api.user.agents.routes import PinnedAgents
+
+        with _patch_db(pg_conn), app.test_request_context("/api/pinned_agents"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return PinnedAgents().get()
+
+    def test_stranger_cannot_pin_another_users_agent(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        owner, stranger = "u-pin-owner", "u-pin-stranger"
+        agent = _seed_agent(pg_conn, user=owner, name="Private")
+
+        response = self._pin(app, pg_conn, str(agent["id"]), stranger)
+
+        assert response.status_code == 404
+        prefs = UsersRepository(pg_conn).upsert(stranger).get(
+            "agent_preferences"
+        ) or {}
+        assert prefs.get("pinned", []) == []
+
+    def test_stranger_pinned_list_stays_empty(self, app, pg_conn):
+        """Even a pin forced into the prefs must not leak the agent."""
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        owner, stranger = "u-pin-owner2", "u-pin-stranger2"
+        agent = _seed_agent(pg_conn, user=owner, name="Private")
+        users_repo = UsersRepository(pg_conn)
+        users_repo.upsert(stranger)
+        users_repo.add_pinned(stranger, str(agent["id"]))
+
+        response = self._pinned(app, pg_conn, stranger)
+
+        assert response.status_code == 200
+        assert response.json == []
+
+    def test_share_link_recipient_can_pin(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        owner, recipient = "u-pin-sharer", "u-pin-recipient"
+        agent = _seed_agent(pg_conn, user=owner, name="Shared")
+        agent_id = str(agent["id"])
+        AgentsRepository(pg_conn).update(agent_id, owner, {"shared": True})
+        users_repo = UsersRepository(pg_conn)
+        users_repo.upsert(recipient)
+        users_repo.add_shared(recipient, agent_id)
+
+        assert self._pin(app, pg_conn, agent_id, recipient).status_code == 200
+        listed = self._pinned(app, pg_conn, recipient)
+        assert [a["id"] for a in listed.json] == [agent_id]
+
+    def test_revoked_share_drops_out_of_the_pinned_list(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        owner, recipient = "u-pin-revoke-owner", "u-pin-revoke-recipient"
+        agent = _seed_agent(pg_conn, user=owner, name="Shared")
+        agent_id = str(agent["id"])
+        repo = AgentsRepository(pg_conn)
+        repo.update(agent_id, owner, {"shared": True})
+        users_repo = UsersRepository(pg_conn)
+        users_repo.upsert(recipient)
+        users_repo.add_shared(recipient, agent_id)
+        self._pin(app, pg_conn, agent_id, recipient)
+
+        repo.update(agent_id, owner, {"shared": False})
+
+        assert self._pinned(app, pg_conn, recipient).json == []
+
+    def test_team_grantee_can_pin_but_gets_no_key(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        owner, member = "u-pin-team-owner", "u-pin-team-member"
+        agent = _seed_agent(pg_conn, user=owner, name="Team")
+        agent_id = str(agent["id"])
+        AgentsRepository(pg_conn).update(agent_id, owner, {"key": "abcd1234wxyz"})
+
+        with patch(
+            "docsgpt.api.user.agents.routes.can_access", return_value=True
+        ):
+            assert self._pin(app, pg_conn, agent_id, member).status_code == 200
+            listed = self._pinned(app, pg_conn, member)
+
+        assert [a["id"] for a in listed.json] == [agent_id]
+        assert listed.json[0]["key"] == ""
+
+    def test_owner_still_sees_the_masked_key(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        owner = "u-pin-key-owner"
+        agent = _seed_agent(pg_conn, user=owner, name="Mine")
+        agent_id = str(agent["id"])
+        AgentsRepository(pg_conn).update(agent_id, owner, {"key": "abcd1234wxyz"})
+
+        self._pin(app, pg_conn, agent_id, owner)
+
+        assert self._pinned(app, pg_conn, owner).json[0]["key"] == "abcd...wxyz"
+
+    def test_unpin_survives_lost_access(self, app, pg_conn):
+        """A revoked share must not strand a pin the user can't remove."""
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        owner, recipient = "u-unpin-owner", "u-unpin-recipient"
+        agent = _seed_agent(pg_conn, user=owner, name="Gone")
+        agent_id = str(agent["id"])
+        users_repo = UsersRepository(pg_conn)
+        users_repo.upsert(recipient)
+        users_repo.add_pinned(recipient, agent_id)
+
+        response = self._pin(app, pg_conn, agent_id, recipient)
+
+        assert response.status_code == 200
+        assert response.json["action"] == "unpinned"
+        prefs = users_repo.upsert(recipient).get("agent_preferences") or {}
+        assert agent_id not in prefs.get("pinned", [])
+
+
 class TestRegenerateAgentKey:
     def _seed_published_with_key(self, pg_conn, user, key):
         from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -1644,6 +1841,35 @@ class TestPinnedAgentsListing:
         assert response.status_code == 200
         assert len(response.json) == 1
         assert response.json[0]["pinned"] is True
+
+    def test_lists_pinned_source_less_agent_without_retriever(
+        self, app, pg_conn,
+    ):
+        """Pinning follows the main list: no source and no retriever is
+        still a runnable agent and must not be dropped."""
+        from docsgpt.api.user.agents.routes import PinAgent, PinnedAgents
+
+        user = "u-pinned-no-source"
+        agent = _seed_agent(
+            pg_conn, user=user, with_source=False, retriever="",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/pin_agent?id={agent['id']}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            PinAgent().post()
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/pinned_agents"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PinnedAgents().get()
+
+        assert response.status_code == 200
+        assert [a["id"] for a in response.json] == [str(agent["id"])]
 
     def test_pinned_db_error_returns_400(self, app):
         from docsgpt.api.user.agents.routes import PinnedAgents

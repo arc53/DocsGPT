@@ -73,16 +73,10 @@ class CombinedJson(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
-        data = [
-            {
-                "name": "Default",
-                "date": "default",
-                "model": settings.EMBEDDINGS_NAME,
-                "location": "remote",
-                "tokens": "",
-                "retriever": "classic",
-            }
-        ]
+        # Only ingested sources are listed. There is no synthetic "Default"
+        # entry: "no source" is expressed by an empty selection on the client,
+        # and the answer path treats a missing source as "skip retrieval".
+        data = []
 
         try:
             with db_readonly() as conn:
