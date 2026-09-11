@@ -1456,6 +1456,33 @@ class DeleteAgent(Resource):
         return make_response(jsonify({"id": pg_agent_id}), 200)
 
 
+def _user_may_pin(conn, agent: dict, user_id: str, shared_with_me: set) -> bool:
+    """Whether ``user_id`` may pin, and keep reading, ``agent``.
+
+    Pinning follows visibility: the owner, a team grantee, anyone who opened a
+    still-live share link, and the premade system templates. Without this gate a
+    pin is an unscoped read of any agent id.
+
+    Args:
+        conn: Open database connection.
+        agent: The agent row, needing at least ``id``, ``user_id`` and ``shared``.
+        user_id: The caller.
+        shared_with_me: Agent ids the caller reached through a share link.
+
+    Returns:
+        True if the caller is allowed to see the agent.
+    """
+    owner_id = agent.get("user_id")
+    if owner_id == user_id:
+        return True
+    if owner_id in ("system", "__system__"):
+        return True
+    agent_id = str(agent["id"])
+    if agent.get("shared") and agent_id in shared_with_me:
+        return True
+    return can_access(conn, "agent", agent_id, user_id)
+
+
 @agents_ns.route("/pinned_agents")
 class PinnedAgents(Resource):
     @api.doc(description="Get pinned agents for the user")
@@ -1469,11 +1496,13 @@ class PinnedAgents(Resource):
             with db_session() as conn:
                 users_repo = UsersRepository(conn)
                 user_doc = users_repo.upsert(user_id)
-                pinned_ids = (
-                    user_doc.get("agent_preferences", {}).get("pinned", [])
+                prefs = (
+                    user_doc.get("agent_preferences", {})
                     if isinstance(user_doc.get("agent_preferences"), dict)
-                    else []
+                    else {}
                 )
+                pinned_ids = prefs.get("pinned", []) or []
+                shared_with_me = set(prefs.get("shared_with_me", []) or [])
                 if not pinned_ids:
                     return make_response(jsonify([]), 200)
 
@@ -1499,6 +1528,15 @@ class PinnedAgents(Resource):
                 stale.extend(non_uuid)
                 if stale:
                     users_repo.remove_pinned_bulk(user_id, stale)
+
+                # A pin is not proof of access: a share or team grant can be
+                # revoked long after the agent was pinned, so re-check every
+                # row on read rather than trusting the stored id list.
+                pinned_agents = [
+                    agent
+                    for agent in pinned_agents
+                    if _user_may_pin(conn, agent, user_id, shared_with_me)
+                ]
 
             list_pinned_agents = []
             for agent in pinned_agents:
@@ -1528,7 +1566,7 @@ class PinnedAgents(Resource):
                         "last_used_at": agent.get("last_used_at", ""),
                         "key": (
                             f"{agent['key'][:4]}...{agent['key'][-4:]}"
-                            if agent.get("key")
+                            if agent.get("key") and agent.get("user_id") == user_id
                             else ""
                         ),
                         "pinned": True,
@@ -1797,20 +1835,25 @@ class PinAgent(Resource):
             )
         try:
             with db_session() as conn:
-                # Any user can pin any agent they can see — including
-                # shared ones. Use the non-user-scoped lookup so pins
-                # aren't restricted to owner-only.
+                # Any user can pin any agent they can *see* — owned, team-shared,
+                # reached through a share link, or a system template. The lookup
+                # is deliberately not owner-scoped, so visibility is checked
+                # separately below.
                 from sqlalchemy import text as _sql_text
 
                 if looks_like_uuid(agent_id):
                     agent_row = conn.execute(
-                        _sql_text("SELECT id FROM agents WHERE id = CAST(:id AS uuid)"),
+                        _sql_text(
+                            "SELECT id, user_id, shared FROM agents "
+                            "WHERE id = CAST(:id AS uuid)"
+                        ),
                         {"id": agent_id},
                     ).fetchone()
                 else:
                     agent_row = conn.execute(
                         _sql_text(
-                            "SELECT id FROM agents WHERE legacy_mongo_id = :id"
+                            "SELECT id, user_id, shared FROM agents "
+                            "WHERE legacy_mongo_id = :id"
                         ),
                         {"id": agent_id},
                     ).fetchone()
@@ -1823,15 +1866,28 @@ class PinAgent(Resource):
 
                 users_repo = UsersRepository(conn)
                 user_doc = users_repo.upsert(user_id)
-                pinned_list = (
-                    user_doc.get("agent_preferences", {}).get("pinned", [])
+                prefs = (
+                    user_doc.get("agent_preferences", {})
                     if isinstance(user_doc.get("agent_preferences"), dict)
-                    else []
+                    else {}
                 )
+                pinned_list = prefs.get("pinned", []) or []
                 if pg_agent_id in pinned_list:
+                    # Unpinning stays open regardless of current access, or a
+                    # revoked share would leave a pin the user can't clear.
                     users_repo.remove_pinned(user_id, pg_agent_id)
                     action = "unpinned"
                 else:
+                    if not _user_may_pin(
+                        conn,
+                        dict(agent_row._mapping),
+                        user_id,
+                        set(prefs.get("shared_with_me", []) or []),
+                    ):
+                        return make_response(
+                            jsonify({"success": False, "message": "Agent not found"}),
+                            404,
+                        )
                     users_repo.add_pinned(user_id, pg_agent_id)
                     action = "pinned"
         except Exception as err:

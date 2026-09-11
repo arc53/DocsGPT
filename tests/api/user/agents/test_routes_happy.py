@@ -1503,6 +1503,138 @@ class TestPinAgentMore:
         assert response.status_code == 500
 
 
+class TestPinAccessControl:
+    """Pinning must follow visibility — it is a read of the agent."""
+
+    def _pin(self, app, pg_conn, agent_id, user):
+        from docsgpt.api.user.agents.routes import PinAgent
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/pin_agent?id={agent_id}", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return PinAgent().post()
+
+    def _pinned(self, app, pg_conn, user):
+        from docsgpt.api.user.agents.routes import PinnedAgents
+
+        with _patch_db(pg_conn), app.test_request_context("/api/pinned_agents"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return PinnedAgents().get()
+
+    def test_stranger_cannot_pin_another_users_agent(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        owner, stranger = "u-pin-owner", "u-pin-stranger"
+        agent = _seed_agent(pg_conn, user=owner, name="Private")
+
+        response = self._pin(app, pg_conn, str(agent["id"]), stranger)
+
+        assert response.status_code == 404
+        prefs = UsersRepository(pg_conn).upsert(stranger).get(
+            "agent_preferences"
+        ) or {}
+        assert prefs.get("pinned", []) == []
+
+    def test_stranger_pinned_list_stays_empty(self, app, pg_conn):
+        """Even a pin forced into the prefs must not leak the agent."""
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        owner, stranger = "u-pin-owner2", "u-pin-stranger2"
+        agent = _seed_agent(pg_conn, user=owner, name="Private")
+        users_repo = UsersRepository(pg_conn)
+        users_repo.upsert(stranger)
+        users_repo.add_pinned(stranger, str(agent["id"]))
+
+        response = self._pinned(app, pg_conn, stranger)
+
+        assert response.status_code == 200
+        assert response.json == []
+
+    def test_share_link_recipient_can_pin(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        owner, recipient = "u-pin-sharer", "u-pin-recipient"
+        agent = _seed_agent(pg_conn, user=owner, name="Shared")
+        agent_id = str(agent["id"])
+        AgentsRepository(pg_conn).update(agent_id, owner, {"shared": True})
+        users_repo = UsersRepository(pg_conn)
+        users_repo.upsert(recipient)
+        users_repo.add_shared(recipient, agent_id)
+
+        assert self._pin(app, pg_conn, agent_id, recipient).status_code == 200
+        listed = self._pinned(app, pg_conn, recipient)
+        assert [a["id"] for a in listed.json] == [agent_id]
+
+    def test_revoked_share_drops_out_of_the_pinned_list(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        owner, recipient = "u-pin-revoke-owner", "u-pin-revoke-recipient"
+        agent = _seed_agent(pg_conn, user=owner, name="Shared")
+        agent_id = str(agent["id"])
+        repo = AgentsRepository(pg_conn)
+        repo.update(agent_id, owner, {"shared": True})
+        users_repo = UsersRepository(pg_conn)
+        users_repo.upsert(recipient)
+        users_repo.add_shared(recipient, agent_id)
+        self._pin(app, pg_conn, agent_id, recipient)
+
+        repo.update(agent_id, owner, {"shared": False})
+
+        assert self._pinned(app, pg_conn, recipient).json == []
+
+    def test_team_grantee_can_pin_but_gets_no_key(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        owner, member = "u-pin-team-owner", "u-pin-team-member"
+        agent = _seed_agent(pg_conn, user=owner, name="Team")
+        agent_id = str(agent["id"])
+        AgentsRepository(pg_conn).update(agent_id, owner, {"key": "abcd1234wxyz"})
+
+        with patch(
+            "docsgpt.api.user.agents.routes.can_access", return_value=True
+        ):
+            assert self._pin(app, pg_conn, agent_id, member).status_code == 200
+            listed = self._pinned(app, pg_conn, member)
+
+        assert [a["id"] for a in listed.json] == [agent_id]
+        assert listed.json[0]["key"] == ""
+
+    def test_owner_still_sees_the_masked_key(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        owner = "u-pin-key-owner"
+        agent = _seed_agent(pg_conn, user=owner, name="Mine")
+        agent_id = str(agent["id"])
+        AgentsRepository(pg_conn).update(agent_id, owner, {"key": "abcd1234wxyz"})
+
+        self._pin(app, pg_conn, agent_id, owner)
+
+        assert self._pinned(app, pg_conn, owner).json[0]["key"] == "abcd...wxyz"
+
+    def test_unpin_survives_lost_access(self, app, pg_conn):
+        """A revoked share must not strand a pin the user can't remove."""
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        owner, recipient = "u-unpin-owner", "u-unpin-recipient"
+        agent = _seed_agent(pg_conn, user=owner, name="Gone")
+        agent_id = str(agent["id"])
+        users_repo = UsersRepository(pg_conn)
+        users_repo.upsert(recipient)
+        users_repo.add_pinned(recipient, agent_id)
+
+        response = self._pin(app, pg_conn, agent_id, recipient)
+
+        assert response.status_code == 200
+        assert response.json["action"] == "unpinned"
+        prefs = users_repo.upsert(recipient).get("agent_preferences") or {}
+        assert agent_id not in prefs.get("pinned", [])
+
+
 class TestRegenerateAgentKey:
     def _seed_published_with_key(self, pg_conn, user, key):
         from docsgpt.storage.db.repositories.agents import AgentsRepository
