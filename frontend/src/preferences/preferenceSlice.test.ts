@@ -1,12 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { configureStore } from '@reduxjs/toolkit';
+import { beforeEach, describe, expect, it } from 'vitest';
 
+import type { Doc } from '../models/misc';
 import type { RootState } from '../store';
 import reducer, {
   clearRoles,
+  prefListenerMiddleware,
   selectIsAdmin,
   selectRoles,
   selectRolesResolved,
   setRoles,
+  setSourceDocs,
 } from './preferenceSlice';
 
 const baseState = () => reducer(undefined, { type: '@@INIT' });
@@ -45,5 +49,56 @@ describe('roles selectors', () => {
   it('selectRoles and selectRolesResolved read state', () => {
     expect(selectRoles(stateWith(['user']))).toEqual(['user']);
     expect(selectRolesResolved(stateWith(['user'], false))).toBe(false);
+  });
+});
+
+const sourceDoc = (overrides: Partial<Doc>): Doc => ({
+  name: 'doc',
+  date: '2026-01-01',
+  model: 'm',
+  ...overrides,
+});
+
+const storeWithListener = () =>
+  configureStore({
+    reducer: { preference: reducer },
+    middleware: (getDefault) =>
+      getDefault().prepend(prefListenerMiddleware.middleware),
+  });
+
+describe('setSourceDocs reconciler', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('prunes a stored selection when the source list comes back empty', () => {
+    const stored = [sourceDoc({ id: 'gone', name: 'Deleted' })];
+    localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(stored));
+    const store = storeWithListener();
+
+    store.dispatch(setSourceDocs([]));
+
+    expect(store.getState().preference.selectedDocs).toEqual([]);
+    expect(localStorage.getItem('DocsGPTRecentDocs')).toBeNull();
+  });
+
+  it('keeps a stored selection that is still in the list', () => {
+    const kept = sourceDoc({ id: 'kept', name: 'Kept' });
+    localStorage.setItem('DocsGPTRecentDocs', JSON.stringify([kept]));
+    const store = storeWithListener();
+
+    store.dispatch(setSourceDocs([kept, sourceDoc({ id: 'other' })]));
+
+    expect(store.getState().preference.selectedDocs).toEqual([kept]);
+  });
+
+  it('leaves the selection alone while the list has not loaded', () => {
+    const stored = [sourceDoc({ id: 'pending' })];
+    localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(stored));
+    const store = storeWithListener();
+
+    store.dispatch(setSourceDocs(null));
+
+    expect(localStorage.getItem('DocsGPTRecentDocs')).not.toBeNull();
   });
 });

@@ -61,6 +61,7 @@ function Upload({
   renderTab = null,
   close,
   onSuccessfulUpload = () => undefined,
+  selectUploadedDoc = true,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
@@ -69,6 +70,12 @@ function Upload({
   close: () => void;
   /** Fires once the upload is ingested, with the id of the source it created. */
   onSuccessfulUpload?: (sourceId?: string) => void;
+  /**
+   * Whether a finished upload also becomes the chat's selected source. Callers
+   * that only need the new source's id (the agent builder) pass ``false`` so
+   * uploading never repoints the conversation the user left open.
+   */
+  selectUploadedDoc?: boolean;
 }) {
   const token = useSelector(selectToken);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -431,6 +438,32 @@ function Upload({
     [dispatch],
   );
 
+  /** Re-read the source list into the store so a new source is pickable. */
+  const refreshSourceDocs = useCallback(
+    () =>
+      getDocs(token).then((docs) => {
+        dispatch(setSourceDocs(docs));
+        return docs;
+      }),
+    [dispatch, token],
+  );
+
+  /**
+   * Finish an upload that never got an ingest task (the wiki source is created
+   * synchronously). The list still has to be refreshed, or the caller selects
+   * an id no picker can render.
+   */
+  const finishUntrackedUpload = useCallback(
+    (sourceId?: string) => {
+      refreshSourceDocs()
+        .catch((err) => {
+          console.error('Post-upload source-list refresh failed:', err);
+        })
+        .finally(() => onSuccessfulUpload?.(sourceId));
+    },
+    [onSuccessfulUpload, refreshSourceDocs],
+  );
+
   /**
    * Wait for the source.ingest.* SSE pipeline to flip this task into a
    * terminal state, then run the post-completion side effects: refresh
@@ -450,10 +483,9 @@ function Upload({
         if (handled) return;
         handled = true;
         if (status !== 'completed') return;
-        getDocs(token)
+        refreshSourceDocs()
           .then((docs) => {
-            dispatch(setSourceDocs(docs));
-            if (Array.isArray(docs)) {
+            if (selectUploadedDoc && Array.isArray(docs)) {
               const existingDocIds = new Set(
                 (Array.isArray(sourceDocs) ? sourceDocs : [])
                   .map((doc: Doc) => doc?.id)
@@ -540,7 +572,15 @@ function Upload({
         }
       });
     },
-    [dispatch, onSuccessfulUpload, selectedDocs, sourceDocs, store, token],
+    [
+      dispatch,
+      onSuccessfulUpload,
+      refreshSourceDocs,
+      selectedDocs,
+      selectUploadedDoc,
+      sourceDocs,
+      store,
+    ],
   );
 
   const onDrop = useCallback(
@@ -630,7 +670,7 @@ function Upload({
                 updates: { status: 'completed', progress: 100 },
               }),
             );
-            onSuccessfulUpload?.(parsed.source_id);
+            finishUntrackedUpload(parsed.source_id);
           }
         } catch (error) {
           handleTaskFailure(clientTaskId);
@@ -766,7 +806,7 @@ function Upload({
                 updates: { status: 'completed', progress: 100 },
               }),
             );
-            onSuccessfulUpload?.(response.source_id);
+            finishUntrackedUpload(response.source_id);
           }
         } catch (error) {
           handleTaskFailure(clientTaskId);
@@ -817,7 +857,7 @@ function Upload({
             },
           }),
         );
-        onSuccessfulUpload?.(data.source_id);
+        finishUntrackedUpload(data.source_id);
       })
       .catch(() => handleTaskFailure(clientTaskId));
   };

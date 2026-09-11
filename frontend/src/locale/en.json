@@ -1094,7 +1094,9 @@
       "link": "Source link",
       "view_more": "{{count}} more sources",
       "noSourcesAvailable": "No sources available",
-      "selectedCount": "{{count}} sources selected"
+      "selectedCount": "{{count}} sources selected",
+      "groupOwn": "Your sources",
+      "groupTeam": "Shared with team"
     },
     "attachments": {
       "attach": "Attach",

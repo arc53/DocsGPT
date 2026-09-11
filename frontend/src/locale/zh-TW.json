@@ -1089,7 +1089,9 @@
       "link": "來源連結",
       "view_more": "查看更多 {{count}} 個來源",
       "noSourcesAvailable": "沒有可用的來源",
-      "selectedCount": "已選擇 {{count}} 個來源"
+      "selectedCount": "已選擇 {{count}} 個來源",
+      "groupOwn": "我的來源",
+      "groupTeam": "團隊共享"
     },
     "attachments": {
       "attach": "附件",

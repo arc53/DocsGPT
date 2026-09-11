@@ -1089,7 +1089,9 @@
       "link": "来源链接",
       "view_more": "还有{{count}}个来源",
       "noSourcesAvailable": "没有可用的来源",
-      "selectedCount": "已选择 {{count}} 个来源"
+      "selectedCount": "已选择 {{count}} 个来源",
+      "groupOwn": "我的来源",
+      "groupTeam": "团队共享"
     },
     "attachments": {
       "attach": "附件",

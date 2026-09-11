@@ -235,32 +235,45 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // source list; fall back to the owner-resolved name embedded in the agent
   // payload (source_details) so a team member viewing a shared agent sees the
   // source name instead of "External KB"; only then show the generic label.
-  const resolveSourceLabel = (id: string): string => {
-    const matchedDoc = sourceDocs?.find(
-      (source) => sourceItemId(source) === id,
-    );
-    if (matchedDoc?.name) return matchedDoc.name;
-    const detail = agent.source_details?.find((d) => d.id === id);
-    if (detail?.name) return detail.name;
-    return t('agents.form.externalKb');
-  };
-
-  const sourceItems = useMemo(
-    () =>
-      toSourcePickerItems(
-        sourceDocs,
-        {
-          own: t('agents.form.sourcePopup.groupOwn'),
-          team: t('agents.form.sourcePopup.groupTeam'),
-        },
-        SourceIcon,
-      ),
-    [sourceDocs, t],
+  const resolveSourceLabel = useCallback(
+    (id: string): string => {
+      const matchedDoc = sourceDocs?.find(
+        (source) => sourceItemId(source) === id,
+      );
+      if (matchedDoc?.name) return matchedDoc.name;
+      const detail = agent.source_details?.find((d) => d.id === id);
+      if (detail?.name) return detail.name;
+      return t('agents.form.externalKb');
+    },
+    [agent.source_details, sourceDocs, t],
   );
 
-  const selectedSourceNames = Array.from(selectedSourceIds)
-    .map((id) => resolveSourceLabel(id))
-    .filter(Boolean);
+  const sourceItems = useMemo(() => {
+    const items = toSourcePickerItems(
+      sourceDocs,
+      {
+        own: t('agents.form.sourcePopup.groupOwn'),
+        team: t('agents.form.sourcePopup.groupTeam'),
+      },
+      SourceIcon,
+    );
+    // An attached source the caller can't list — an owner's private source on
+    // a team-shared agent — still needs a row of its own, or it reads as
+    // selected with nothing to switch it off.
+    const listed = new Set(items.map((item) => item.id));
+    const unlisted = Array.from(selectedSourceIds)
+      .filter((id) => !listed.has(id))
+      .map((id) => ({ id, label: resolveSourceLabel(id), icon: SourceIcon }));
+    return [...items, ...unlisted];
+  }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t]);
+
+  const selectedSourceNames = useMemo(
+    () =>
+      Array.from(selectedSourceIds)
+        .map((id) => resolveSourceLabel(id))
+        .filter(Boolean),
+    [resolveSourceLabel, selectedSourceIds],
+  );
   const sourceTriggerLabel =
     selectedSourceIds.size === 0
       ? t('agents.form.placeholders.selectSources')
@@ -667,7 +680,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         }
         const data = await response.json();
 
-        setSelectedSourceIds(new Set(selectedSourceIdsFromAgent(data)));
+        const agentSourceIds = selectedSourceIdsFromAgent(data);
+        setSelectedSourceIds(new Set(agentSourceIds));
 
         if (data.tool_details) setSelectedTools(data.tool_details);
         if (data.status === 'draft') setEffectiveMode('draft');
@@ -679,16 +693,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         // Backfill required fields so older agents (created before
         // agent_type / prompt_id / models existed) don't fail
         // ``isPublishable()`` and leave Save permanently disabled.
+        // Normalise exactly as the source and model effects below will, or the
+        // form compares unequal to this snapshot and reports unsaved changes
+        // before the user has touched anything.
+        const agentModels: string[] = data.models || [];
         const normalized = {
           ...data,
           agent_type: data.agent_type || 'classic',
           prompt_id: data.prompt_id || 'default',
-          retriever: data.retriever || 'classic',
+          retriever: agentSourceIds.length === 0 ? 'classic' : '',
           chunks: data.chunks || '2',
           tools: data.tools || [],
-          sources: data.sources || [],
-          models: data.models || [],
-          default_model_id: data.default_model_id || '',
+          ...serializeAgentSources(agentSourceIds, sourceDocs),
+          models: agentModels,
+          default_model_id: agentModels.includes(data.default_model_id || '')
+            ? data.default_model_id
+            : agentModels[0] || '',
           config: data.config || {},
         };
         setAgent(normalized);
@@ -1468,6 +1488,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           renderTab={null}
           close={() => setUploadModalState('INACTIVE')}
           onSuccessfulUpload={handleUploadedSource}
+          selectUploadedDoc={false}
         />
       )}
       <AddPromptModal

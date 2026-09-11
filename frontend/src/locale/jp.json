@@ -1089,7 +1089,9 @@
       "link": "ソースリンク",
       "view_more": "さらに{{count}}個のソース",
       "noSourcesAvailable": "利用可能なソースがありません",
-      "selectedCount": "{{count}} 件のソースを選択中"
+      "selectedCount": "{{count}} 件のソースを選択中",
+      "groupOwn": "自分のソース",
+      "groupTeam": "チームと共有"
     },
     "attachments": {
       "attach": "添付",

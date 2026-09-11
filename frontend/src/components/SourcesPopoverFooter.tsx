@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 
 import RedirectIcon from '../assets/redirect.svg';
 import { Button } from './ui/button';
@@ -18,14 +19,14 @@ export default function SourcesPopoverFooter({
 
   return (
     <div className="flex flex-col gap-3">
-      <a
-        href="/settings/sources"
+      <Link
+        to="/settings/sources"
         className="text-primary inline-flex items-center gap-2 text-base font-medium"
         onClick={onNavigate}
       >
         {t('settings.sources.goToSources')}
         <img src={RedirectIcon} alt="" aria-hidden="true" className="h-3 w-3" />
-      </a>
+      </Link>
       <Button
         type="button"
         variant="outline"

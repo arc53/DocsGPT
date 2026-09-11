@@ -56,18 +56,20 @@ export function serializeAgentSources(
 }
 
 /**
- * Selected source ids for a stored agent. ``sources`` wins over the legacy
- * single ``source``; the legacy ``"default"`` placeholder means no source.
+ * Selected source ids for a stored agent: the legacy single ``source`` and the
+ * ``sources`` list merged, because retrieval reads both. Preferring one over
+ * the other would drop the omitted field on the next save. The legacy
+ * ``"default"`` placeholder means no source.
  */
 export function selectedSourceIdsFromAgent(agent: {
   source?: string;
   sources?: string[];
 }): string[] {
-  const ids =
-    agent.sources && agent.sources.length > 0
-      ? agent.sources
-      : agent.source
-        ? [agent.source]
-        : [];
-  return ids.filter((id) => Boolean(id) && id !== 'default');
+  const ids = [
+    ...(agent.source ? [agent.source] : []),
+    ...(agent.sources ?? []),
+  ];
+  return Array.from(new Set(ids)).filter(
+    (id) => Boolean(id) && id !== 'default',
+  );
 }

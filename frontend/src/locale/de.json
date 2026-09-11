@@ -1089,7 +1089,9 @@
       "link": "Quellen-Link",
       "view_more": "{{count}} weitere Quellen",
       "noSourcesAvailable": "Keine Quellen verfügbar",
-      "selectedCount": "{{count}} Quellen ausgewählt"
+      "selectedCount": "{{count}} Quellen ausgewählt",
+      "groupOwn": "Deine Quellen",
+      "groupTeam": "Mit dem Team geteilt"
     },
     "attachments": {
       "attach": "Anhängen",

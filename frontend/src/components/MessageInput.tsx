@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -55,7 +56,7 @@ import {
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
-import { sourceItemId } from '../utils/sourceUtils';
+import { sourceItemId, toSourcePickerItems } from '../utils/sourceUtils';
 import { isChatToolVisible } from '../utils/toolUtils';
 
 const generateId = (): string =>
@@ -1460,12 +1461,17 @@ export default function MessageInput({
     void _docs;
   };
 
-  const sourceItems: MultiSelectPopoverItem[] = (sourceDocs || []).map(
-    (doc) => ({
-      id: sourceItemId(doc),
-      label: doc.name,
-      icon: SourceIcon,
-    }),
+  const sourceItems: MultiSelectPopoverItem[] = useMemo(
+    () =>
+      toSourcePickerItems(
+        sourceDocs,
+        {
+          own: t('conversation.sources.groupOwn'),
+          team: t('conversation.sources.groupTeam'),
+        },
+        SourceIcon,
+      ),
+    [sourceDocs, t],
   );
 
   const selectedSourceIds = (

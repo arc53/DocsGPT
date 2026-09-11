@@ -115,9 +115,15 @@ describe('serializeAgentSources', () => {
 });
 
 describe('selectedSourceIdsFromAgent', () => {
-  it('prefers the sources list over the single source', () => {
+  it('merges the single source with the sources list', () => {
     expect(
       selectedSourceIdsFromAgent({ source: 'x', sources: ['a', 'b'] }),
+    ).toEqual(['x', 'a', 'b']);
+  });
+
+  it('keeps a source named in both fields once', () => {
+    expect(
+      selectedSourceIdsFromAgent({ source: 'a', sources: ['a', 'b'] }),
     ).toEqual(['a', 'b']);
   });
 

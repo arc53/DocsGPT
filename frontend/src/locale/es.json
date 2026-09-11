@@ -1089,7 +1089,9 @@
       "link": "Enlace fuente",
       "view_more": "Ver {{count}} más fuentes",
       "noSourcesAvailable": "No hay fuentes disponibles",
-      "selectedCount": "{{count}} fuentes seleccionadas"
+      "selectedCount": "{{count}} fuentes seleccionadas",
+      "groupOwn": "Tus fuentes",
+      "groupTeam": "Compartidas con el equipo"
     },
     "attachments": {
       "attach": "Adjuntar",
