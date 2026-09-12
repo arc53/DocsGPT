@@ -231,9 +231,9 @@ fast-ebook==0.2.0
     # via docsgpt
 fastembed==0.8.0
     # via docsgpt
-fastmcp==3.4.7
+fastmcp==4.0.3
     # via docsgpt
-fastmcp-slim==3.4.7
+fastmcp-slim==4.0.3
     # via fastmcp
 filelock==3.32.6
     # via
@@ -327,20 +327,18 @@ httpx==0.28.1
     #   daytona
     #   docling-slim
     #   elevenlabs
-    #   fastmcp-slim
     #   google-genai
     #   httpx-ws
     #   huggingface-hub
-    #   mcp
     #   qdrant-client
-httpx-sse==0.4.3
-    # via mcp
 httpx-ws==0.9.0
     # via daytona
 httpx2==2.12.0
     # via
     #   anthropic
     #   docsgpt
+    #   fastmcp-slim
+    #   mcp
     #   openai
 httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
     # via httpx2
@@ -444,8 +442,12 @@ markupsafe==3.0.3
     #   werkzeug
 marshmallow==3.26.2
     # via dataclasses-json
-mcp==1.30.0
+mcp==2.2.0
     # via fastmcp-slim
+mcp-types==2.2.0
+    # via
+    #   fastmcp-slim
+    #   mcp
 mdurl==0.1.2
     # via markdown-it-py
 mmh3==5.3.0
@@ -519,6 +521,7 @@ opentelemetry-api==1.44.0
     #   daytona
     #   fastmcp-slim
     #   google-api-core
+    #   mcp
     #   opentelemetry-distro
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
@@ -734,6 +737,7 @@ pydantic==2.13.5
     #   fastmcp-slim
     #   google-genai
     #   mcp
+    #   mcp-types
     #   openai
     #   openapi-pydantic
     #   openapi3-parser
@@ -749,7 +753,6 @@ pydantic-settings==2.15.0
     #   docling-slim
     #   docsgpt
     #   fastmcp-slim
-    #   mcp
 pygments==2.21.0
     # via
     #   mpire
@@ -1049,6 +1052,7 @@ typing-extensions==4.16.0
     #   httpx2
     #   huggingface-hub
     #   mcp
+    #   mcp-types
     #   obstore
     #   openai
     #   opentelemetry-api

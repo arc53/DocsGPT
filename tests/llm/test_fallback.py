@@ -372,9 +372,10 @@ class TestStreamingFallback:
         self, patch_model_utils, error
     ):
         """The providers are split across two HTTP stacks whose exception
-        classes are unrelated types: openai and anthropic raise from httpx2,
-        google-genai and elevenlabs still from httpx. Naming one stack makes
-        the retry silently stop firing for the other half.
+        classes are unrelated types: openai, anthropic and the MCP client
+        raise from httpx2, google-genai and elevenlabs still from httpx.
+        Naming one stack makes the retry silently stop firing for the other
+        half.
         """
         backup = FakeLLM(stream_chunks=["fallback"])
         patch_model_utils(

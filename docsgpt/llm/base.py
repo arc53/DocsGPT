@@ -22,10 +22,10 @@ logger = logging.getLogger(__name__)
 # retries — RateLimitError needs backoff, BadRequestError won't get any
 # better on retry, and the existing fallback handles both.
 # Both HTTP stacks are listed because the providers are split across them and
-# the two libraries' exception classes are unrelated types: openai and
-# anthropic run on httpx2, while google-genai, elevenlabs, qdrant-client and
-# the MCP client are still on httpx. Naming only one silently stops matching
-# for half the providers — the retry just never fires.
+# the two libraries' exception classes are unrelated types: openai, anthropic
+# and the MCP client run on httpx2, while google-genai, elevenlabs,
+# qdrant-client and daytona are still on httpx. Naming only one silently stops
+# matching for half the providers — the retry just never fires.
 _TRANSPORT_ERROR_NAMES = (
     "RemoteProtocolError",
     "ReadError",
