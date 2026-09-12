@@ -62,9 +62,7 @@ class MarkdownParser(BaseParser):
         for line in lines:
             header_match = re.match(r"^#+\s", line)
             if header_match:
-                if current_header is not None:
-                    if current_text == "" or None:
-                        continue
+                if current_header is not None and current_text != "":
                     markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
 
                 current_header = line
@@ -81,7 +79,7 @@ class MarkdownParser(BaseParser):
             ]
         else:
             markdown_tups = [
-                (key, re.sub("\n", "", value)) for key, value in markdown_tups
+                (key, re.sub("\n", " ", value)) for key, value in markdown_tups
             ]
 
         return markdown_tups
