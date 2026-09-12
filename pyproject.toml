@@ -44,7 +44,7 @@ dependencies = [
   "croniter>=6.2.4,<7",
   "cryptography>=50.0.0,<51",
   "dataclasses-json>=0.6.7,<0.7",
-  "daytona>=0.205.1,<0.206",
+  "daytona>=0.211.2,<0.212",
   "ddgs>=8.0.0,<10",
   "defusedxml>=0.7.1,<0.8",
   "docx2txt>=0.9,<0.10",
@@ -72,7 +72,7 @@ dependencies = [
   # fastembed's runtime: local embeddings execute on it.
   "onnxruntime>=1.28.0,<2",
   "openai>=2.53.0,<3",
-  "openapi3-parser>=1.1.22,<2",
+  "openapi3-parser>=2.0.0,<3",
   # pandas reads .xlsx through openpyxl but does not depend on it.
   "openpyxl>=3.1.5,<4",
   "opentelemetry-distro>=0.50b0,<1",
@@ -101,12 +101,12 @@ dependencies = [
   "python-pptx>=1.0.2,<2",
   "PyYAML>=6.0.3,<7",
   "qdrant-client>=1.19.0,<2",
-  "redis>=7.4.0,<8",
+  "redis>=8.1.0,<9",
   "requests>=2.34.2,<3",
   "retry>=0.9.2,<0.10",
   "sqlalchemy>=2.0,<3",
   "starlette>=1.0,<2",
-  "tiktoken>=0.13.0,<0.14",
+  "tiktoken>=0.14.0,<0.15",
   "tldextract>=5.3.2,<6",
   "tokenizers>=0.22.2,<0.23",
   "tqdm>=4.67.3,<5",
@@ -162,7 +162,7 @@ dev = [
   "pytest-postgresql>=6.0.0",
   "jupyter-client>=8.0",
   "python-docx>=1.1",
-  "reportlab>=4.0,<5",
+  "reportlab>=5.0.1,<6",
   "ruff",
 ]
 

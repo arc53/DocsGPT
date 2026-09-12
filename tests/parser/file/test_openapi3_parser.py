@@ -3,6 +3,19 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
+_HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
+
+
+def _path_item(description=None, parameters=None, **operations):
+    """A stand-in for openapi-parser 2.x's PathItem: one field per HTTP method,
+    ``None`` where the spec defines no operation."""
+    item = MagicMock()
+    item.description = description
+    item.parameters = parameters
+    for method in _HTTP_METHODS:
+        setattr(item, method, operations.get(method))
+    return item
+
 
 @pytest.mark.unit
 class TestOpenAPI3ParserImportFallback:
@@ -31,14 +44,12 @@ class TestOpenAPI3ParserImportFallback:
             assert len(urls) == 2
 
     def test_get_info_from_paths_empty(self):
-        """Cover path with no operations."""
+        """Cover a path item that defines no methods."""
         with patch("docsgpt.parser.file.openapi3_parser.parse"):
             from docsgpt.parser.file.openapi3_parser import OpenAPI3Parser
 
             parser = OpenAPI3Parser()
-            mock_path = MagicMock()
-            mock_path.operations = []
-            result = parser.get_info_from_paths(mock_path)
+            result = parser.get_info_from_paths(_path_item())
             assert result == ""
 
     def test_parse_file_writes_results(self, tmp_path):
@@ -49,15 +60,9 @@ class TestOpenAPI3ParserImportFallback:
             mock_server = MagicMock()
             mock_server.url = "https://api.example.com"
 
-            mock_path = MagicMock()
-            mock_path.url = "/users"
-            mock_path.description = "Get users"
-            mock_path.parameters = []
-            mock_path.operations = []
-
             mock_data = MagicMock()
             mock_data.servers = [mock_server]
-            mock_data.paths = [mock_path]
+            mock_data.paths = {"/users": _path_item(description="Get users")}
             mock_parse.return_value = mock_data
 
             parser = OpenAPI3Parser()
