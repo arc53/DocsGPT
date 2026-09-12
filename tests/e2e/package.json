@@ -18,7 +18,7 @@
     "@types/pg": "^8.23.1",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.23.0",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=20"
