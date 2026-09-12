@@ -1,7 +1,8 @@
 name: Backend release
 
 # A version bump on main tags the commit, creates the GitHub release, then
-# publishes the Docker images and the PyPI package by calling those workflows.
+# publishes the backend and frontend Docker images and the PyPI package by
+# calling those workflows.
 # The release is created with GITHUB_TOKEN, and GitHub never starts workflows
 # from events that token produces, so the `release: published` triggers on the
 # publish workflows would not fire (0.18.0 got no images that way). Releases
@@ -107,6 +108,19 @@ jobs:
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
     permissions:
       contents: write # release-assets attaches the compose file to the release
+      packages: write
+
+  frontend:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    uses: $/.github/workflows/cife.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+    permissions:
+      contents: read
       packages: write
 
   pypi:
