@@ -71,11 +71,11 @@ export default function CopyButton({
     ? t('conversation.copied')
     : t('conversation.copy');
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = useCallback(async () => {
     if (isCopied) return;
 
     try {
-      const success = copy(textToCopy);
+      const success = await copy(textToCopy);
       if (success) {
         setIsCopied(true);
 
