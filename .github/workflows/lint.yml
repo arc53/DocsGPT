@@ -19,7 +19,7 @@ jobs:
       - name: Lint with Ruff
         uses: chartboost/ruff-action@v1
         with:
-          version: 0.14.10
+          version: 0.16.7
 
   requirements-in-sync:
     # application/requirements*.txt are exported from uv.lock; fail when a

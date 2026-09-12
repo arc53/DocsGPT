@@ -79,11 +79,15 @@ def _fake_anydoc(monkeypatch, to_markdown):
     class UnsupportedError(ConvertError):
         pass
 
+    class NeedsOcrError(ConvertError):
+        pass
+
     class ResourceLimitError(ConvertError):
         pass
 
     fake.ConvertError = ConvertError
     fake.UnsupportedError = UnsupportedError
+    fake.NeedsOcrError = NeedsOcrError
     fake.ResourceLimitError = ResourceLimitError
     fake.to_markdown = to_markdown
     monkeypatch.setitem(sys.modules, "anydoc", fake)
@@ -327,6 +331,22 @@ CID_PDF = FIXTURES / "nda_en_zh_cid_font.pdf"
 # Long enough to clear the near-empty guard a trust-check re-parse must pass.
 _REROUTE_TEXT = "docling reroute text, long enough to clear the near-empty reroute guard"
 
+# What anydoc's CID-font silent drop looked like: the English column extracted,
+# the Chinese one gone. anydoc 0.2.4 refuses this PDF outright
+# (``test_cid_font_pdf_is_refused_as_needing_ocr``), so the trust check is
+# exercised against CID_PDF's real bytes with the dropped output stubbed in —
+# the check's own inputs, independent of which anydoc is installed.
+_CID_DROPPED_TEXT = (
+    "# NON-DISCLOSURE AGREEMENT\n\nThis Agreement is entered into between the "
+    "parties on the date set out below. Confidential Information shall not be "
+    "disclosed to any third party."
+)
+
+
+def _anydoc_dropping_cjk(monkeypatch):
+    """Stub anydoc into the silent CID-font drop the trust check exists for."""
+    return _fake_anydoc(monkeypatch, lambda path: _CID_DROPPED_TEXT)
+
 
 class _FakeDoclingFallback:
     """Registered as a DoclingParser subclass so ``_is_docling_backed`` is True."""
@@ -348,7 +368,20 @@ class _FakeDoclingFallback:
         return _Inner()
 
 
-def test_trust_flagged_pdf_reroutes_to_docling_fallback():
+def test_cid_font_pdf_is_refused_as_needing_ocr():
+    """anydoc 0.2.4 detects the unmappable CID font and raises NeedsOcrError
+    rather than dropping the Chinese column silently; that must route as
+    "needs OCR", which is what makes the scan guard fire."""
+    fallback = _RecordingFallback(result="   ")
+    fallback.ocr_enabled = False
+    parser = AnydocParser(fallback_parser=fallback)
+
+    with pytest.raises(DocumentParseError, match="OCR_ENABLED=true"):
+        parser.parse_file(CID_PDF)
+
+
+def test_trust_flagged_pdf_reroutes_to_docling_fallback(monkeypatch):
+    _anydoc_dropping_cjk(monkeypatch)
     fallback = _FakeDoclingFallback()
     parser = AnydocParser(fallback_parser=fallback)
 
@@ -360,12 +393,13 @@ def test_trust_flagged_pdf_reroutes_to_docling_fallback():
     assert parser.get_file_metadata(CID_PDF) == {}  # rerouted, nothing to warn about
 
 
-def test_trust_flagged_pdf_without_docling_keeps_output_and_warns():
+def test_trust_flagged_pdf_without_docling_keeps_output_and_warns(monkeypatch):
+    _anydoc_dropping_cjk(monkeypatch)
     parser = AnydocParser(fallback_parser=_RecordingFallback())  # not docling-backed
 
     out = parser.parse_file(CID_PDF)
 
-    assert "NON-DISCLOSURE" in out.upper() or len(out) > 50  # anydoc's own output kept
+    assert "NON-DISCLOSURE" in out.upper()  # anydoc's own output kept
     meta = parser.get_file_metadata(CID_PDF)
     assert "parse_warnings" in meta
     assert any("ToUnicode" in w for w in meta["parse_warnings"])
@@ -377,6 +411,7 @@ def test_trust_check_disabled_stamps_nothing(monkeypatch):
     from docsgpt.parser.file import anydoc_parser as ap
 
     monkeypatch.setattr(ap.settings, "PDF_TRUST_CHECK", False)
+    _anydoc_dropping_cjk(monkeypatch)
     parser = AnydocParser()
 
     parser.parse_file(CID_PDF)
@@ -384,7 +419,8 @@ def test_trust_check_disabled_stamps_nothing(monkeypatch):
     assert parser.get_file_metadata(CID_PDF) == {}
 
 
-def test_trust_reroute_failure_keeps_anydoc_output():
+def test_trust_reroute_failure_keeps_anydoc_output(monkeypatch):
+    _anydoc_dropping_cjk(monkeypatch)
     fallback = _FakeDoclingFallback()
 
     def _boom(file, errors="ignore"):
@@ -400,9 +436,10 @@ def test_trust_reroute_failure_keeps_anydoc_output():
     assert parser.last_engine == "anydoc"
 
 
-def test_trust_reroute_near_empty_keeps_anydoc_output():
+def test_trust_reroute_near_empty_keeps_anydoc_output(monkeypatch):
     """A docling pipeline dropout ('' / '<!-- image -->') returns without
     raising; adopting it would swap anydoc's real text for an empty document."""
+    _anydoc_dropping_cjk(monkeypatch)
     fallback = _FakeDoclingFallback()
     fallback.parse_file = lambda file, errors="ignore": "<!-- image -->"
     parser = AnydocParser(fallback_parser=fallback)
@@ -414,7 +451,8 @@ def test_trust_reroute_near_empty_keeps_anydoc_output():
     assert parser.last_engine == "anydoc"
 
 
-def test_warnings_reset_between_files(tmp_path):
+def test_warnings_reset_between_files(monkeypatch, tmp_path):
+    _anydoc_dropping_cjk(monkeypatch)
     parser = AnydocParser()
     parser.parse_file(CID_PDF)
     assert parser.get_file_metadata(CID_PDF) != {}
@@ -474,6 +512,7 @@ def test_tableize_never_touches_docling_reroute(monkeypatch):
     from docsgpt.parser.file import anydoc_parser as ap
 
     monkeypatch.setattr(ap.settings, "ANYDOC_TABLEIZE", True)
+    _anydoc_dropping_cjk(monkeypatch)
     fallback = _FakeDoclingFallback()
     parser = AnydocParser(fallback_parser=fallback)
 

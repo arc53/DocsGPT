@@ -9,11 +9,11 @@ of 2.3 GB, with equivalent output on clean office files, CSV and text-layer
 PDFs.
 
 anydoc never OCRs. It *detects* a scanned or image-only PDF and raises
-``UnsupportedError`` ("OCR is required"), which is the routing point: a
-parser given a ``fallback_parser`` (docling when installed, the native OCR
-parser when OCR is on without docling, otherwise the legacy parser for the
-suffix) delegates there; without one the file fails loudly as
-``DocumentParseError`` rather than being stored empty.
+``NeedsOcrError`` (``UnsupportedError`` "OCR is required" before 0.2.4),
+which is the routing point: a parser given a ``fallback_parser`` (docling
+when installed, the native OCR parser when OCR is on without docling,
+otherwise the legacy parser for the suffix) delegates there; without one the
+file fails loudly as ``DocumentParseError`` rather than being stored empty.
 """
 import logging
 from pathlib import Path
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # not content.
 _MIN_SCAN_FALLBACK_CHARS = 50
 
-# Suffixes anydoc 0.2.3 converts, verified with ``anydoc.format_from_extension``.
+# Suffixes anydoc 0.2.4 converts, verified with ``anydoc.format_from_extension``.
 # ``.epub`` is deliberately absent: it stays on ``EpubParser``.
 ANYDOC_SUFFIXES: Tuple[str, ...] = (
     # Word processing
@@ -89,6 +89,22 @@ def _result_chars(result: Union[str, List[str]]) -> int:
     if isinstance(result, list):
         return sum(len(str(part).strip()) for part in result)
     return len(str(result).strip())
+
+
+def _needs_ocr(exc: Exception) -> bool:
+    """Whether an ``anydoc.ConvertError`` means "text exists but needs OCR".
+
+    anydoc 0.2.4 raises a dedicated ``NeedsOcrError`` for a PDF with no text
+    layer; 0.2.3 raised ``UnsupportedError`` with "OCR" in the message. Both
+    spellings route the same way, and the class is looked up lazily so an
+    anydoc without it still works.
+    """
+    import anydoc
+
+    needs_ocr_error = getattr(anydoc, "NeedsOcrError", None)
+    if needs_ocr_error is not None and isinstance(exc, needs_ocr_error):
+        return True
+    return isinstance(exc, anydoc.UnsupportedError) and "OCR" in str(exc)
 
 
 def _is_docling_backed(parser: Optional[BaseParser]) -> bool:
@@ -191,11 +207,10 @@ class AnydocParser(BaseParser):
             ) from exc
         except anydoc.ConvertError as exc:
             # Typed, per-document failures another engine may still handle:
-            # UnsupportedError (scanned PDF / unknown format), MalformedError,
-            # EncryptedError, MissingPartError.
-            ocr_needed = isinstance(exc, anydoc.UnsupportedError) and "OCR" in str(exc)
+            # NeedsOcrError (scanned PDF), UnsupportedError (unknown format),
+            # MalformedError, EncryptedError, MissingPartError.
             return self._delegate(
-                path, errors, f"{type(exc).__name__}: {exc}", ocr_needed=ocr_needed
+                path, errors, f"{type(exc).__name__}: {exc}", ocr_needed=_needs_ocr(exc)
             )
         except OSError as exc:
             raise DocumentParseError(
