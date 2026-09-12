@@ -13,7 +13,15 @@ const DocsGPTWidget = dynamic(
 
 const apiHost =
   process.env.NEXT_PUBLIC_DOCSGPT_API_HOST || 'https://gptcloud.arc53.com';
-const apiKey = process.env.NEXT_PUBLIC_DOCSGPT_API_KEY;
+
+// Public embed token for the docs agent, the same way every documented
+// DocsGPT embed carries one. It reaches the browser either way, since
+// NEXT_PUBLIC_* is inlined at build time. Abuse is capped by the agent's
+// daily request and token limits, so rotate the agent key if it needs
+// revoking. NEXT_PUBLIC_DOCSGPT_API_KEY overrides it for staging.
+const apiKey =
+  process.env.NEXT_PUBLIC_DOCSGPT_API_KEY ||
+  '0e714713-1bc6-4aae-a595-aa0b3bf317b3';
 
 export function DocsGPTChatWidget() {
   const { resolvedTheme } = useTheme();
@@ -21,9 +29,9 @@ export function DocsGPTChatWidget() {
 
   useEffect(() => setMounted(true), []);
 
-  // No key means no widget. Falling through would silently use the demo key
-  // baked into the package default.
-  if (!apiKey || !mounted) return null;
+  // Hold off until next-themes has resolved, so the widget does not flash
+  // the wrong theme on first paint.
+  if (!mounted) return null;
 
   return (
     <DocsGPTWidget
