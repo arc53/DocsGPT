@@ -1,4 +1,3 @@
-'use client';
 import React, { useRef } from 'react';
 import DOMPurify from 'dompurify';
 import styled, { keyframes, css } from 'styled-components';

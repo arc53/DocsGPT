@@ -5,6 +5,7 @@ import { getPageMap } from 'nextra/page-map';
 import { Footer, Layout, Navbar } from 'nextra-theme-docs';
 import 'nextra-theme-docs/style.css';
 
+import { DocsGPTChatWidget } from '../components/DocsGPTChatWidget';
 import CuteLogo from '../public/cute-docsgpt.png';
 import themeConfig from '../theme.config';
 
@@ -79,6 +80,7 @@ export default async function RootLayout({ children }) {
         >
           {children}
         </Layout>
+        <DocsGPTChatWidget />
         <Analytics />
       </body>
     </html>
