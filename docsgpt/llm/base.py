@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import ClassVar, Dict, Optional, Tuple
 
 import httpx
+import httpx2
 import openai
 
 from docsgpt.cache import gen_cache, stream_cache
@@ -20,17 +21,26 @@ logger = logging.getLogger(__name__)
 # Excludes API-level errors (4xx / 5xx status) which are not transport
 # retries — RateLimitError needs backoff, BadRequestError won't get any
 # better on retry, and the existing fallback handles both.
-_STREAM_RETRYABLE_TRANSPORT_ERRORS = (
-    httpx.RemoteProtocolError,
-    httpx.ReadError,
-    httpx.ReadTimeout,
-    httpx.WriteError,
-    httpx.WriteTimeout,
-    httpx.ConnectError,
-    httpx.ConnectTimeout,
-    httpx.PoolTimeout,
-    openai.APIConnectionError,
+# Both HTTP stacks are listed because the providers are split across them and
+# the two libraries' exception classes are unrelated types: openai and
+# anthropic run on httpx2, while google-genai, elevenlabs, qdrant-client and
+# the MCP client are still on httpx. Naming only one silently stops matching
+# for half the providers — the retry just never fires.
+_TRANSPORT_ERROR_NAMES = (
+    "RemoteProtocolError",
+    "ReadError",
+    "ReadTimeout",
+    "WriteError",
+    "WriteTimeout",
+    "ConnectError",
+    "ConnectTimeout",
+    "PoolTimeout",
 )
+_STREAM_RETRYABLE_TRANSPORT_ERRORS = tuple(
+    getattr(module, name)
+    for module in (httpx2, httpx)
+    for name in _TRANSPORT_ERROR_NAMES
+) + (openai.APIConnectionError,)
 
 
 def optional_int(value) -> Optional[int]:

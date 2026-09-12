@@ -16,7 +16,7 @@ Three entry points:
   Resolves once, dials the IP literal, preserves the original hostname
   in the ``Host`` header and via SNI / cert verification for HTTPS.
 * :func:`pinned_httpx_client` — called at dispatch time when the caller
-  hands an ``httpx.Client`` to a third-party SDK (e.g. the OpenAI
+  hands an ``httpx2.Client`` to a third-party SDK (e.g. the OpenAI
   Python SDK via ``OpenAI(http_client=...)``). Same DNS-rebinding
   closure on the httpx transport layer.
 
@@ -35,7 +35,12 @@ import socket
 from typing import Any, Iterable
 from urllib.parse import urlsplit, urlunsplit
 
-import httpx
+# httpx2 (the maintained fork of httpx, by its original author, published by
+# Pydantic at github.com/pydantic/httpx2) is what the OpenAI and Anthropic
+# SDKs run on; a client built on the old ``httpx`` is rejected at their
+# construction. This module uses it only for the pinned client below — its
+# own fetches go through ``requests``.
+import httpx2 as httpx
 import requests
 from requests.adapters import HTTPAdapter
 
@@ -507,7 +512,10 @@ class _PinnedHTTPSTransport(httpx.HTTPTransport):
        ``httpcore`` feeds into ``start_tls``'s ``server_hostname``
        parameter. Without this, ``urllib3``-equivalent code would use
        the IP literal as SNI and cert verification would fail (the
-       cert is for the original hostname, not the IP).
+       cert is for the original hostname, not the IP). It must be a
+       ``str``: ``httpcore`` passes it through to
+       ``ssl.SSLContext.wrap_socket``, and the ``truststore`` backend
+       httpx2 uses on macOS encodes it rather than accepting bytes.
     """
 
     def __init__(
@@ -544,7 +552,7 @@ class _PinnedHTTPSTransport(httpx.HTTPTransport):
         # hostname even though TCP dials the IP literal.
         request.extensions = {
             **request.extensions,
-            "sni_hostname": self._host.encode("ascii"),
+            "sni_hostname": self._host,
         }
         request.url = request.url.copy_with(host=self._ip_netloc)
         return super().handle_request(request)

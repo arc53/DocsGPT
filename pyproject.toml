@@ -35,7 +35,7 @@ classifiers = [
 dependencies = [
   "a2wsgi>=1.10.10,<2",
   "alembic>=1.13,<2",
-  "anthropic>=0.121.0,<0.122",
+  "anthropic>=1.5.0,<2",
   "beautifulsoup4>=4.15.0,<5",
   "boto3>=1.43.67,<2",
   "cel-python>=0.5.0,<0.6",
@@ -63,6 +63,9 @@ dependencies = [
   "google-genai>=2.17.0,<3",
   "gTTS>=2.5.4,<3",
   "gunicorn>=26.0.0,<27",
+  # Imported directly by the BYOM DNS-pinning transport and the LLM
+  # stream-retry error tuple; it is what anthropic and openai run on.
+  "httpx2>=2.7.0,<3",
   "jinja2>=3.1.6,<4",
   "kombu>=5.6.2,<6",
   "markdownify>=1.2.3,<2",
@@ -71,7 +74,7 @@ dependencies = [
   "numpy>=2.5.1,<3",
   # fastembed's runtime: local embeddings execute on it.
   "onnxruntime>=1.28.0,<2",
-  "openai>=2.53.0,<3",
+  "openai>=3.13.0,<4",
   "openapi3-parser>=2.0.0,<3",
   # pandas reads .xlsx through openpyxl but does not depend on it.
   "openpyxl>=3.1.5,<4",

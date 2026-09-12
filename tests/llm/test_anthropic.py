@@ -585,6 +585,10 @@ class TestRawGen:
         assert _sent(llm)["max_tokens"] == 1234
 
     def test_sampling_params_forwarded(self, llm):
+        """anthropic 1.x dropped the sampling params from
+        ``messages.create``'s signature (passing one is a TypeError), so they
+        ride in ``extra_body``, which the SDK merges into the request JSON
+        as-is. The wire request is unchanged."""
         llm._raw_gen(
             llm,
             model="m",
@@ -592,8 +596,10 @@ class TestRawGen:
             temperature=0.3,
             top_p=0.9,
         )
-        assert _sent(llm)["temperature"] == 0.3
-        assert _sent(llm)["top_p"] == 0.9
+        sent = _sent(llm)
+        assert sent["extra_body"] == {"temperature": 0.3, "top_p": 0.9}
+        assert "temperature" not in sent
+        assert "top_p" not in sent
 
     def test_openai_only_params_not_forwarded(self, llm):
         """OpenAI-shaped request params reach every provider via

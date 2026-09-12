@@ -537,7 +537,7 @@ def _capture_httpx_handle_request(monkeypatch):
     opening a real socket.
     """
 
-    import httpx
+    import httpx2
 
     captured: dict = {}
 
@@ -545,10 +545,10 @@ def _capture_httpx_handle_request(monkeypatch):
         captured["url"] = request.url
         captured["sni"] = request.extensions.get("sni_hostname")
         captured["host_header"] = request.headers.get("host")
-        return httpx.Response(200, content=b"ok")
+        return httpx2.Response(200, content=b"ok")
 
     monkeypatch.setattr(
-        "httpx.HTTPTransport.handle_request", fake_handle
+        "httpx2.HTTPTransport.handle_request", fake_handle
     )
     return captured
 
@@ -610,7 +610,14 @@ def test_pinned_httpx_transport_rewrites_url_to_validated_ip(monkeypatch):
 def test_pinned_httpx_transport_sets_sni_for_original_hostname(monkeypatch):
     """TLS SNI / cert verification must use the original hostname; the
     transport sets it via the ``sni_hostname`` extension that
-    httpcore forwards to ``start_tls``'s ``server_hostname``."""
+    httpcore forwards to ``start_tls``'s ``server_hostname``.
+
+    The value must be a ``str``, not ascii bytes: httpcore passes it
+    straight to ``ssl.SSLContext.wrap_socket``, and the ``truststore``
+    backend httpx2 uses for the default system trust store encodes it
+    rather than accepting bytes — so bytes fail every real handshake
+    while passing any test that stubs the transport out.
+    """
 
     captured = _capture_httpx_handle_request(monkeypatch)
 
@@ -623,7 +630,8 @@ def test_pinned_httpx_transport_sets_sni_for_original_hostname(monkeypatch):
     finally:
         client.close()
 
-    assert captured["sni"] == b"api.example.com"
+    assert captured["sni"] == "api.example.com"
+    assert isinstance(captured["sni"], str)
 
 
 @pytest.mark.unit
@@ -712,7 +720,7 @@ def test_pinned_httpx_transport_refuses_unexpected_host(monkeypatch):
     transport refuses rather than silently dialing the validated IP
     with a different host's credentials."""
 
-    import httpx
+    import httpx2
 
     with mock.patch(
         "socket.getaddrinfo", return_value=_addrinfo("104.18.6.192")
@@ -721,7 +729,7 @@ def test_pinned_httpx_transport_refuses_unexpected_host(monkeypatch):
     try:
         with pytest.raises(UnsafeUserUrlError, match="refused request"):
             client.get("https://other.example.com/v1/test")
-    except httpx.RequestError:
+    except httpx2.RequestError:
         # Some httpx versions may wrap the transport error; accept
         # either path so long as the request didn't succeed.
         pass

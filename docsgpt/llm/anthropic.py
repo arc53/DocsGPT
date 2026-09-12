@@ -23,13 +23,21 @@ DEFAULT_MAX_TOKENS = 4096
 # OpenAI-only key (``frequency_penalty``, ``response_format``,
 # ``reasoning_effort``, ...) from 400-ing an Anthropic request.
 _PASSTHROUGH_PARAMS = (
-    "temperature",
-    "top_p",
-    "top_k",
     "stop_sequences",
     "tool_choice",
     "thinking",
     "metadata",
+)
+
+# Sampling params the Messages API still honours on the models that accept
+# them, but which anthropic 1.x removed from ``messages.create``'s signature
+# (passing one is a TypeError). They go through ``extra_body``, which the SDK
+# merges into the request JSON as-is, so the wire request is unchanged and a
+# model that rejects them 400s exactly as it does today.
+_SAMPLING_PARAMS = (
+    "temperature",
+    "top_p",
+    "top_k",
 )
 
 # ``tool_choice`` values in OpenAI's vocabulary mapped to Anthropic's. OpenAI
@@ -448,7 +456,8 @@ class AnthropicLLM(BaseLLM):
             messages: Internal conversation history.
             tools: OpenAI-shaped tool definitions, or ``None``.
             kwargs: Caller kwargs; the params in ``_PASSTHROUGH_PARAMS`` are
-                forwarded verbatim, and the OpenAI aliases ``max_tokens`` /
+                forwarded verbatim, those in ``_SAMPLING_PARAMS`` through
+                ``extra_body``, and the OpenAI aliases ``max_tokens`` /
                 ``max_completion_tokens``, ``stop`` and ``tool_choice`` are
                 translated. Everything else is dropped.
 
@@ -482,6 +491,12 @@ class AnthropicLLM(BaseLLM):
         for key in _PASSTHROUGH_PARAMS:
             if kwargs.get(key) is not None:
                 params[key] = kwargs[key]
+
+        sampling = {
+            key: kwargs[key] for key in _SAMPLING_PARAMS if kwargs.get(key) is not None
+        }
+        if sampling:
+            params["extra_body"] = {**(params.get("extra_body") or {}), **sampling}
 
         # OpenAI's ``stop`` is Anthropic's ``stop_sequences``. A caller that
         # already speaks Anthropic wins.
