@@ -10,6 +10,7 @@ import types
 from unittest.mock import MagicMock
 
 import httpx
+import httpx2
 import pytest
 
 from docsgpt.llm.anthropic import AnthropicLLM
@@ -359,6 +360,37 @@ class TestStreamingFallback:
         chunks = list(primary.gen_stream(**CALL_ARGS))
 
         assert chunks == ["ok1", "ok2"]
+        assert primary.stream_calls == 2
+        assert not backup.gen_stream_called
+
+    @pytest.mark.parametrize(
+        "error",
+        [httpx2.RemoteProtocolError, httpx.RemoteProtocolError],
+        ids=["httpx2", "httpx"],
+    )
+    def test_stream_transport_error_retries_on_either_http_stack(
+        self, patch_model_utils, error
+    ):
+        """The providers are split across two HTTP stacks whose exception
+        classes are unrelated types: openai, anthropic and the MCP client
+        raise from httpx2, google-genai and elevenlabs still from httpx.
+        Naming one stack makes the retry silently stop firing for the other
+        half.
+        """
+        backup = FakeLLM(stream_chunks=["fallback"])
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+        primary = FakeLLM(
+            stream_chunks=["ok1", "ok2"],
+            backup_models=["backup-model"],
+        )
+        primary.fail_schedule = [0, None]
+        primary.error_schedule = [error, RuntimeError]
+
+        assert list(primary.gen_stream(**CALL_ARGS)) == ["ok1", "ok2"]
         assert primary.stream_calls == 2
         assert not backup.gen_stream_called
 

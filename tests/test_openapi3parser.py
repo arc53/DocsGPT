@@ -26,11 +26,23 @@ def test_get_base_urls(urls, expected_base_urls):
 def test_get_info_from_paths():
     file_path = "tests/test_openapi3.yaml"
     data = parse(file_path)
-    path = data.paths[1]
+    path_item = data.paths["/pets/{petId}"]
     assert (
-        OpenAPI3Parser().get_info_from_paths(path)
+        OpenAPI3Parser().get_info_from_paths(path_item)
         == "\nget=Expected response to a valid request"
     )
+
+
+@pytest.mark.unit
+def test_get_operations_follows_spec_method_order():
+    """openapi-parser 2.x exposes one field per method instead of an
+    ``operations`` list; the rendered order stays the spec's."""
+    data = parse("tests/test_openapi3.yaml")
+    path_item = data.paths["/pets"]
+    assert [method for method, _ in OpenAPI3Parser().get_operations(path_item)] == [
+        "get",
+        "post",
+    ]
 
 
 @pytest.mark.unit

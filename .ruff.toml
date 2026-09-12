@@ -1,6 +1,13 @@
 # Allow lines to be as long as 120 characters.
 line-length = 120
 
+[lint]
+# Ruff's historical default rule set, stated explicitly: 0.16 widened the
+# implicit default (pyupgrade and friends), which silently turns a linter
+# upgrade into thousands of findings across the tree. Adding rules is a
+# deliberate change, not a side effect of bumping the pin.
+select = ["E4", "E7", "E9", "F"]
+
 [lint.per-file-ignores]
 # Integration tests use sys.path.insert() before imports for standalone execution
 "tests/integration/*.py" = ["E402"]

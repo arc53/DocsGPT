@@ -416,12 +416,15 @@ class TestSecurityDispatchSSRFGuard:
     def test_dispatch_injects_pinned_http_client_for_user_model(
         self, pg_conn
     ):
-        """LLMCreator must build a DNS-rebinding-safe httpx.Client and
+        """LLMCreator must build a DNS-rebinding-safe httpx2.Client and
         forward it to the OpenAI SDK so the SDK's request-time DNS
         lookup cannot escape the create-time SSRF guard. ``validate_
         user_base_url`` alone is TOCTOU and does not close the
-        rebinding window — the pinned client is what does."""
-        import httpx
+        rebinding window — the pinned client is what does. The client
+        must be httpx2's: the OpenAI SDK rejects an old-httpx client
+        at construction, which would take the guard offline.
+        """
+        import httpx2
 
         from docsgpt.core.model_settings import (
             AvailableModel,
@@ -474,7 +477,7 @@ class TestSecurityDispatchSSRFGuard:
 
         client = captured["http_client"]
         try:
-            assert isinstance(client, httpx.Client), (
+            assert isinstance(client, httpx2.Client), (
                 "http_client must be set for user-source models so the "
                 "OpenAI SDK doesn't re-resolve DNS at request time"
             )
