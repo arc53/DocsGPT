@@ -42,7 +42,7 @@
     "ci": "yarn build && yarn test && yarn lint && yarn check"
   },
   "dependencies": {
-    "@babel/plugin-transform-flow-strip-types": "^7.29.7",
+    "@babel/plugin-transform-flow-strip-types": "^8.0.1",
     "@parcel/resolver-glob": "^2.16.4",
     "@parcel/transformer-svg-react": "^2.16.4",
     "@parcel/transformer-typescript-tsc": "^2.16.4",
@@ -51,16 +51,16 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.15",
-    "flow-bin": "^0.326.0",
-    "markdown-it": "^14.3.2",
+    "flow-bin": "^0.331.0",
+    "markdown-it": "^15.0.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "styled-components": "^6.5.3"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.7",
-    "@babel/preset-env": "^7.29.7",
-    "@babel/preset-react": "^7.29.7",
+    "@babel/core": "^8.0.5",
+    "@babel/preset-env": "^8.0.5",
+    "@babel/preset-react": "^8.0.1",
     "@eslint/js": "^9.39.4",
     "@parcel/packager-ts": "^2.16.4",
     "@parcel/transformer-typescript-types": "^2.16.4",
