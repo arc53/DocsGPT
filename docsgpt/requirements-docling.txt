@@ -959,14 +959,14 @@ tiktoken==0.14.0
     # via docsgpt
 tldextract==5.3.2
     # via docsgpt
-tokenizers==0.22.2
+tokenizers==0.23.2
     # via
     #   docsgpt
     #   fastembed
     #   transformers
 toml==0.10.2
     # via daytona
-torch==2.11.0 ; sys_platform != 'linux'
+torch==2.14.0 ; sys_platform != 'linux'
     # via
     #   accelerate
     #   docling-ibm-models
@@ -974,7 +974,7 @@ torch==2.11.0 ; sys_platform != 'linux'
     #   docsgpt
     #   safetensors
     #   torchvision
-torch==2.11.0+cpu ; sys_platform == 'linux'
+torch==2.14.0+cpu ; sys_platform == 'linux'
     # via
     #   accelerate
     #   docling-ibm-models
@@ -982,12 +982,12 @@ torch==2.11.0+cpu ; sys_platform == 'linux'
     #   docsgpt
     #   safetensors
     #   torchvision
-torchvision==0.26.0 ; sys_platform != 'linux'
+torchvision==0.29.0 ; sys_platform != 'linux'
     # via
     #   docling-ibm-models
     #   docling-slim
     #   docsgpt
-torchvision==0.26.0+cpu ; sys_platform == 'linux'
+torchvision==0.29.0+cpu ; sys_platform == 'linux'
     # via
     #   docling-ibm-models
     #   docling-slim
@@ -1002,7 +1002,7 @@ tqdm==4.70.1
     #   rapidocr
     #   semchunk
     #   transformers
-transformers==5.8.1
+transformers==5.17.0
     # via
     #   docling-core
     #   docling-ibm-models

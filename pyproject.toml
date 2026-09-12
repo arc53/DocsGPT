@@ -111,7 +111,7 @@ dependencies = [
   "starlette>=1.0,<2",
   "tiktoken>=0.14.0,<0.15",
   "tldextract>=5.3.2,<6",
-  "tokenizers>=0.22.2,<0.23",
+  "tokenizers>=0.23.2,<0.24",
   "tqdm>=4.67.3,<5",
   "uvicorn[standard]>=0.30,<1",
   "uvicorn-worker>=0.4,<1",
@@ -132,11 +132,14 @@ docling = [
   "docling>=2.119.0,<3",
   "rapidocr>=3.9.2,<4",
   # docling's model stack. Declared here (not left transitive) so the floors
-  # hold and the CPU index source below applies. transformers is capped by
-  # docling-core at <5.9: 5.9+ breaks the PDF layout model on Apple Silicon.
-  "torch>=2.11.0,<3",
-  "torchvision>=0.26.0,<0.27",
-  "transformers>=5.8.1,<5.9",
+  # hold and the CPU index source below applies. transformers was held at
+  # <5.9 because 5.9 broke the PDF layout model on Apple Silicon; 5.17 does
+  # not — on a four-document benchmark (papers, a 30-page table corpus) the
+  # converted Markdown is byte-identical on three and differs on the fourth
+  # only by one dropped `<!-- image -->` placeholder.
+  "torch>=2.14.0,<3",
+  "torchvision>=0.29.0,<0.30",
+  "transformers>=5.17.0,<6",
 ]
 # VECTOR_STORE=milvus. milvus-lite (the embedded server) pulls pyarrow.
 milvus = [

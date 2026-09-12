@@ -798,7 +798,7 @@ tiktoken==0.14.0
     # via docsgpt
 tldextract==5.3.2
     # via docsgpt
-tokenizers==0.22.2
+tokenizers==0.23.2
     # via
     #   docsgpt
     #   fastembed
