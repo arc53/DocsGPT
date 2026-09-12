@@ -12,12 +12,12 @@
     "e2e:report": "playwright show-report"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.63.0",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^22.9.0",
-    "@types/pg": "^8.20.0",
+    "@types/node": "^22.20.2",
+    "@types/pg": "^8.23.1",
     "jsonwebtoken": "^9.0.3",
-    "pg": "^8.20.0",
+    "pg": "^8.23.0",
     "typescript": "^5.9.3"
   },
   "engines": {
