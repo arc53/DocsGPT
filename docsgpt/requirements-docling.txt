@@ -914,7 +914,7 @@ secretstorage==3.5.0 ; sys_platform == 'linux'
     # via keyring
 semchunk==3.2.5
     # via docling-core
-setuptools==81.0.0
+setuptools==84.0.0
     # via torch
 shapely==2.1.2
     # via rapidocr
