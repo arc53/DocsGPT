@@ -656,20 +656,28 @@ const ActionButton = styled.button<{
   ${(props) =>
     props.$active &&
     css`
-      color: ${props.$tone === 'danger'
-        ? props.theme.danger!.text
-        : props.theme.accent!.base};
-      background-color: ${props.$tone === 'danger'
-        ? props.theme.danger!.soft
-        : props.theme.accent!.soft};
+      color: ${
+        props.$tone === 'danger'
+          ? props.theme.danger!.text
+          : props.theme.accent!.base
+      };
+      background-color: ${
+        props.$tone === 'danger'
+          ? props.theme.danger!.soft
+          : props.theme.accent!.soft
+      };
 
       &:hover {
-        color: ${props.$tone === 'danger'
-          ? props.theme.danger!.text
-          : props.theme.accent!.base};
-        background-color: ${props.$tone === 'danger'
-          ? props.theme.danger!.soft
-          : props.theme.accent!.soft};
+        color: ${
+          props.$tone === 'danger'
+            ? props.theme.danger!.text
+            : props.theme.accent!.base
+        };
+        background-color: ${
+          props.$tone === 'danger'
+            ? props.theme.danger!.soft
+            : props.theme.accent!.soft
+        };
       }
 
       svg {
