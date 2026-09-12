@@ -41,7 +41,7 @@
     "i18next-browser-languagedetector": "^8.2.1",
     "lodash": "^4.18.1",
     "lucide-react": "^1.45.0",
-    "mermaid": "^11.17.2",
+    "mermaid": "^12.0.0",
     "prop-types": "^15.8.1",
     "radix-ui": "^1.6.7",
     "react": "^19.3.0",
@@ -92,5 +92,8 @@
     "vite": "^8.3.0",
     "vite-plugin-svgr": "^5.2.0",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "lodash-es": "^4.18.1"
   }
 }
