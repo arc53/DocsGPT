@@ -966,7 +966,7 @@ tokenizers==0.23.2
     #   transformers
 toml==0.10.2
     # via daytona
-torch==2.14.0 ; sys_platform != 'linux'
+torch==2.14.0+cpu ; sys_platform != 'linux'
     # via
     #   accelerate
     #   docling-ibm-models
