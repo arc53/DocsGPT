@@ -51,10 +51,7 @@ export type Status = 'idle' | 'loading' | 'failed';
 export type FEEDBACK = 'LIKE' | 'DISLIKE';
 
 export type AttachmentStatus =
-  | 'uploading'
-  | 'processing'
-  | 'completed'
-  | 'failed';
+  'uploading' | 'processing' | 'completed' | 'failed';
 
 export interface Attachment {
   /** Client-side key for the chip; never sent to the server. */

@@ -35,6 +35,9 @@ export default function CopyButton({
   const { t } = useTranslation();
   const [isCopied, setIsCopied] = useState(false);
   const timeoutIdRef = useRef<number | null>(null);
+  // `copy` is async, so `isCopied` and the disabled prop only catch up after it
+  // resolves. Guard that window so rapid clicks cannot start a second write.
+  const copyInFlightRef = useRef(false);
 
   const iconWrapperClasses = clsx(
     'flex items-center justify-center rounded-full transition-colors duration-150 ease-in-out',
@@ -71,11 +74,12 @@ export default function CopyButton({
     ? t('conversation.copied')
     : t('conversation.copy');
 
-  const handleCopy = useCallback(() => {
-    if (isCopied) return;
+  const handleCopy = useCallback(async () => {
+    if (isCopied || copyInFlightRef.current) return;
+    copyInFlightRef.current = true;
 
     try {
-      const success = copy(textToCopy);
+      const success = await copy(textToCopy);
       if (success) {
         setIsCopied(true);
 
@@ -92,6 +96,8 @@ export default function CopyButton({
       }
     } catch (error) {
       console.error('Failed to copy text:', error);
+    } finally {
+      copyInFlightRef.current = false;
     }
   }, [textToCopy, copiedDuration, isCopied]);
 

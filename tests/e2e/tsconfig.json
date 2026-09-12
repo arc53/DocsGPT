@@ -8,9 +8,8 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "types": ["node", "@playwright/test"],
-    "baseUrl": ".",
     "paths": {
-      "@helpers/*": ["helpers/*"]
+      "@helpers/*": ["./helpers/*"]
     }
   },
   "include": ["specs/**/*.ts", "helpers/**/*.ts", "playwright.config.ts"]
