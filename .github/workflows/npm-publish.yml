@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   publish:
@@ -27,7 +28,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
@@ -52,8 +53,6 @@ jobs:
 
       - name: Publish docsgpt
         run: npm publish --verbose
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # ── docsgpt-react (React library bundle) ─────────────────────────────
       # Uses `build:react` script (parcel build src/index.ts) and strips
@@ -80,8 +79,6 @@ jobs:
 
       - name: Publish docsgpt-react
         run: npm publish --verbose
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # ── Commit the bumped version back to the repository ─────────────────
 
