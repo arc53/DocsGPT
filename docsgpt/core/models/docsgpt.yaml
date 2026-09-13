@@ -5,3 +5,5 @@ models:
     display_name: DocsGPT Model
     description: Local model
     supports_tools: true
+    attachments: [image]
+    context_window: 1048576
