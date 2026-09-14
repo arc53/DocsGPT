@@ -468,6 +468,28 @@ class TestConnectorCallbackStatusOrigin:
         assert '"*"' not in page
         assert "https://api.example.com" in page
 
+    @pytest.mark.parametrize(
+        "configured",
+        [
+            # `urlparse` itself raises "Invalid IPv6 URL" on an unmatched `[`.
+            "https://[broken",
+            # This one parses; only `.port` rejects it.
+            "https://app.example.com:notaport",
+        ],
+    )
+    def test_a_setting_that_cannot_be_parsed_falls_back_instead_of_500ing(
+        self, app, configured
+    ):
+        """A misconfigured `OIDC_FRONTEND_URL` must degrade to this request's
+        own origin. Letting the `ValueError` escape would make the callback
+        page a 500 -- the popup then never delivers the token at all, which is
+        a harder failure than the one the setting was meant to fix."""
+        page = self._page(app, OIDC_FRONTEND_URL=configured)
+
+        assert '"https://api.example.com"' in page
+        assert "'*'" not in page
+        assert '"*"' not in page
+
 
 class TestConnectorDisconnect:
     def test_returns_400_missing_provider(self, app):

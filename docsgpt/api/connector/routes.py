@@ -49,7 +49,15 @@ def _browser_app_origin() -> str:
     """
     configured = getattr(settings, "OIDC_FRONTEND_URL", None)
     source = configured or request.host_url
-    parsed = urlparse(source)
+    try:
+        parsed = urlparse(source)
+        # `.port` parses lazily, so `https://host:notaport` survives urlparse
+        # and only fails here; `urlparse` itself raises on an unmatched `[`
+        # ("Invalid IPv6 URL"). Neither is an origin a browser would accept,
+        # and an exception escaping here turns the callback page into a 500.
+        _ = parsed.port
+    except ValueError:
+        return request.host_url.rstrip("/")
     if parsed.scheme and parsed.netloc:
         return f"{parsed.scheme}://{parsed.netloc}"
     # An unparseable configuration must not silently widen back to a wildcard.
