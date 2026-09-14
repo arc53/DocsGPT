@@ -632,7 +632,7 @@ pydantic==2.13.5
     #   openapi3-parser
     #   pydantic-settings
     #   qdrant-client
-pydantic-core==2.46.5
+pydantic-core==2.49.0
     # via
     #   elevenlabs
     #   pydantic
