@@ -41,8 +41,8 @@ def _rewrite_uri_prefixes(v, rewrites):
     if not v or v.lower() == "none":
         return None
     for prefix, target in rewrites:
-        if v.startswith(prefix):
-            return target + v[len(prefix):]
+        if v[: len(prefix)].lower() == prefix:
+            return target + v[len(prefix) :]
     return v
 
 
