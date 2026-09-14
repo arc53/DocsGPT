@@ -40,6 +40,16 @@ def _jsonb(value: Any) -> Any:
     return json.dumps(value, cls=PGNativeJSONEncoder)
 
 
+def owns_connector_session(session: Optional[dict], user_id: str, provider: Optional[str]) -> bool:
+    """Whether ``session`` belongs to ``user_id`` and was issued for ``provider`` (case-insensitive)."""
+    return bool(
+        session
+        and session.get("user_id") == user_id
+        and provider
+        and (session.get("provider") or "").lower() == provider.lower()
+    )
+
+
 class ConnectorSessionsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn

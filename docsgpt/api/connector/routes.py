@@ -24,6 +24,7 @@ from docsgpt.core.settings import settings
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
+    owns_connector_session,
 )
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -102,8 +103,16 @@ def _render_callback_page(
 ):
     """Popup page that reports an OAuth result to the opener on allowed origins only."""
     status = status if status in ("success", "error", "cancelled") else "error"
-    # Without a token there is no result to report, so post to no one.
-    target_origins = connector_allowed_origins(request.host_url) if session_token else []
+    # The script only carries server-side values: the provider key comes from the
+    # supported-connector list rather than the request, and nothing posts without a token.
+    provider_key = next(
+        (key for key in ConnectorCreator.get_supported_connectors() if key == provider_raw.lower()), None,
+    )
+    payload = (
+        {"type": f"{provider_key}_auth_success", "session_token": session_token, "user_email": user_email}
+        if status == "success" and session_token and provider_key else None
+    )
+    target_origins = connector_allowed_origins(request.host_url) if payload else []
     provider = html.escape(provider_raw.replace("_", " ").title())
     connected_as = (
         f"<p>Connected as: {html.escape(user_email)}</p>" if status == "success" and user_email else ""
@@ -126,26 +135,15 @@ def _render_callback_page(
         </style>
         <script>
             window.onload = function() {{
-                const status = {_js_literal(status)};
-                const sessionToken = {_js_literal(session_token)};
-                const userEmail = {_js_literal(user_email)};
-                const providerType = {_js_literal(provider_raw)};
+                const payload = {_js_literal(payload)};
                 const targetOrigins = {_js_literal(target_origins)};
 
-                if (status === "success" && window.opener) {{
-                    const payload = {{
-                        type: providerType + '_auth_success',
-                        session_token: sessionToken,
-                        user_email: userEmail
-                    }};
+                if (payload && window.opener) {{
                     targetOrigins.forEach(function(origin) {{
                         window.opener.postMessage(payload, origin);
                     }});
-
-                    setTimeout(() => window.close(), 3000);
-                }} else if (status === "cancelled" || status === "error") {{
-                    setTimeout(() => window.close(), 3000);
                 }}
+                setTimeout(() => window.close(), 3000);
             }};
         </script>
     </head>
@@ -357,7 +355,7 @@ class ConnectorFiles(Resource):
                 session = ConnectorSessionsRepository(conn).get_by_session_token(
                     session_token,
                 )
-            if not session or session.get("user_id") != user:
+            if not owns_connector_session(session, user, provider):
                 return make_response(jsonify({"success": False, "error": "Invalid or unauthorized session"}), 401)
 
             loader = ConnectorCreator.create_connector(provider, session_token)
@@ -426,7 +424,7 @@ class ConnectorValidateSession(Resource):
                 session = ConnectorSessionsRepository(conn).get_by_session_token(
                     session_token,
                 )
-            if not session or session.get("user_id") != user or not session.get("token_info"):
+            if not owns_connector_session(session, user, provider) or not session.get("token_info"):
                 return make_response(jsonify({"success": False, "error": "Invalid or expired session"}), 401)
 
             token_info = session["token_info"]
@@ -563,7 +561,7 @@ class ConnectorSync(Resource):
 
             with db_readonly() as conn:
                 session = ConnectorSessionsRepository(conn).get_by_session_token(session_token)
-            if not session or session.get("user_id") != user_id:
+            if not owns_connector_session(session, user_id, source_type):
                 return make_response(
                     jsonify({"success": False, "error": "Invalid or unauthorized session"}),
                     401,

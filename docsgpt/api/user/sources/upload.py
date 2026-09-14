@@ -24,7 +24,10 @@ from docsgpt.security.zip_archive import (
     ZipExtractionError,
     ZipExtractionLimits,
 )
-from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+from docsgpt.storage.db.repositories.connector_sessions import (
+    ConnectorSessionsRepository,
+    owns_connector_session,
+)
 from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.source_config import SourceConfig
@@ -499,7 +502,7 @@ class UploadRemote(Resource):
                     )
                 with db_readonly() as conn:
                     connector_session = ConnectorSessionsRepository(conn).get_by_session_token(session_token)
-                if not connector_session or connector_session.get("user_id") != user:
+                if not owns_connector_session(connector_session, user, data["source"]):
                     if scoped_key:
                         _release_claim(scoped_key)
                     return make_response(
