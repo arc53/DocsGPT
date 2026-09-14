@@ -222,6 +222,31 @@ class TestSimpleDirectoryReaderLoadData:
         with pytest.raises(DocumentParseError, match="InvalidCxxCompiler"):
             reader.load_data()
 
+    def test_single_unparseable_file_keeps_the_parsers_error_type(self, tmp_path):
+        """The attachment worker tells a scan from a broken file by the error's type.
+
+        Re-wrapping the parser's exception in a plain ``DocumentParseError``
+        would erase ``NoTextLayerError`` and turn every scanned PDF back into
+        a failed upload.
+        """
+        from docsgpt.parser.file.base_parser import NoTextLayerError
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+
+        (tmp_path / "scan.pdf").write_bytes(b"%PDF-1.7")
+
+        mock_parser = MagicMock()
+        mock_parser.parser_config_set = True
+        mock_parser.parse_file.side_effect = NoTextLayerError(
+            "scan.pdf appears to be a scanned PDF (no text layer)"
+        )
+
+        reader = SimpleDirectoryReader(
+            input_files=[str(tmp_path / "scan.pdf")],
+            file_extractor={".pdf": mock_parser},
+        )
+        with pytest.raises(NoTextLayerError, match="scanned PDF"):
+            reader.load_data()
+
     def test_all_files_unparseable_raises(self, tmp_path):
         """Nothing parsed is a failed ingest, not an empty success."""
         from docsgpt.parser.file.base_parser import DocumentParseError
@@ -587,6 +612,21 @@ class TestParserEngineSwitch:
         assert type(extractor[".pdf"].fallback_parser).__name__ == "PDFParser"
         assert type(extractor[".xlsx"].fallback_parser).__name__ == "ExcelParser"
         assert type(extractor[".png"]).__name__ == "ImageParser"
+
+    def test_anydoc_without_docling_admits_every_image_format(self, monkeypatch):
+        """The production image ships neither docling nor OCR. An image is
+        sent to the model as an image, so .webp/.tiff/.bmp need a parser
+        entry or the worker refuses them before any model sees them."""
+        pytest.importorskip("anydoc")
+        import sys
+
+        from docsgpt.parser.file.bulk import get_default_file_extractor
+
+        monkeypatch.setitem(sys.modules, "docling", None)
+        extractor = get_default_file_extractor(engine="anydoc")
+
+        for suffix in (".webp", ".tiff", ".tif", ".bmp"):
+            assert type(extractor[suffix]).__name__ == "ImageParser", suffix
 
     def test_docling_engine_keeps_docling_map(self):
         pytest.importorskip("docling")

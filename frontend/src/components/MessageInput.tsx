@@ -28,6 +28,7 @@ import {
 import { ActiveState, Doc } from '../models/misc';
 import {
   selectSelectedDocs,
+  selectSelectedModel,
   selectSourceDocs,
   selectToken,
   setSelectedDocs,
@@ -47,6 +48,7 @@ import {
   ToolsTrigger,
 } from './message-input';
 import { useArmedSend } from './message-input/armedSend';
+import { cannotReadAttachment } from './message-input/attachmentReadability';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
@@ -345,6 +347,21 @@ export default function MessageInput({
   const sourceDocs = useSelector(selectSourceDocs);
   const token = useSelector(selectToken);
   const attachments = useSelector(selectAttachments);
+  const selectedModel = useSelector(selectSelectedModel);
+  const unreadableAttachmentIds = useMemo(
+    () =>
+      new Set(
+        attachments
+          .filter((attachment) =>
+            cannotReadAttachment(
+              attachment,
+              selectedModel?.supported_attachment_types,
+            ),
+          )
+          .map((attachment) => attachment.id),
+      ),
+    [attachments, selectedModel],
+  );
 
   const dispatch = useDispatch();
   const store = useStore<RootState>();
@@ -452,6 +469,12 @@ export default function MessageInput({
                   progress: 100,
                   ...(Number.isFinite(tokenCount)
                     ? { token_count: tokenCount }
+                    : {}),
+                  ...(typeof payload.mime_type === 'string'
+                    ? { mimeType: payload.mime_type }
+                    : {}),
+                  ...(typeof payload.extraction_status === 'string'
+                    ? { extractionStatus: payload.extraction_status }
                     : {}),
                 },
               }),
@@ -1662,6 +1685,8 @@ export default function MessageInput({
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDropOn={handleDropOn}
+          unreadableIds={unreadableAttachmentIds}
+          modelName={selectedModel?.display_name}
         />
 
         {sendArmed && sendReadiness.state === 'waiting' && (

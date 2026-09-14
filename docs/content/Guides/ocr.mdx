@@ -150,6 +150,14 @@ takes over as the fallback parser. If that fallback also extracts almost
 nothing — OCR off, or no engine available — the upload fails with a clear
 message instead of silently indexing an empty document.
 
+Chat attachments are the exception: a scanned PDF attached from the message
+box is kept with no text (`extraction.status: no_text`), because the file
+itself is what a model reads. Models that take PDFs get the document; models
+that take only images get its pages as images; a text-only model is told it
+cannot read the file, and the message box warns before sending. Images work
+the same way with OCR off, and TIFF and BMP attachments are stored as PNG,
+since model providers do not accept those formats.
+
 Mixed documents — text pages with scanned pages among them — convert
 through anydoc, which reads the text pages and skips the scanned ones. With
 OCR on, DocsGPT probes every page's text layer, OCRs the pages that have

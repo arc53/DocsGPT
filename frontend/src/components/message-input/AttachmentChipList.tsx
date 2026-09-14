@@ -13,6 +13,10 @@ type AttachmentChipListProps = {
   onDragStart: (e: React.DragEvent, id: string) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDropOn: (e: React.DragEvent, targetId: string) => void;
+  /** Completed attachments the selected model has no way to read. */
+  unreadableIds?: Set<string>;
+  /** Display name of the selected model, for the unreadable-file warning. */
+  modelName?: string;
 };
 
 export default function AttachmentChipList({
@@ -22,6 +26,8 @@ export default function AttachmentChipList({
   onDragStart,
   onDragOver,
   onDropOn,
+  unreadableIds,
+  modelName,
 }: AttachmentChipListProps) {
   const { t } = useTranslation();
 
@@ -31,6 +37,11 @@ export default function AttachmentChipList({
   const failures = attachments.filter(
     (attachment) => attachment.status === 'failed' && attachment.errorMessage,
   );
+  // Not a failure: the file is kept and still sends. It only warns that the
+  // model picked right now would receive nothing it can read.
+  const unreadable = modelName
+    ? attachments.filter((attachment) => unreadableIds?.has(attachment.id))
+    : [];
 
   return (
     <>
@@ -137,6 +148,22 @@ export default function AttachmentChipList({
           {failures.map((attachment) => (
             <span key={attachment.id}>
               {attachment.fileName}: {attachment.errorMessage}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {unreadable.length > 0 && (
+        <div
+          className="flex flex-col gap-0.5 px-2 pb-1 text-xs text-[#B54708] sm:px-3 dark:text-[#FDB022]"
+          role="status"
+        >
+          {unreadable.map((attachment) => (
+            <span key={attachment.id}>
+              {t('conversation.attachments.unreadableByModel', {
+                name: attachment.fileName,
+                model: modelName,
+              })}
             </span>
           ))}
         </div>

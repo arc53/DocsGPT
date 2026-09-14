@@ -46,6 +46,13 @@ export interface Attachment {
    */
   attachmentId?: string;
   token_count?: number;
+  /** Mime type the server stored (a converted TIFF/BMP reports ``image/png``). */
+  mimeType?: string;
+  /**
+   * ``metadata.extraction.status`` of a completed attachment: ``ok``, or
+   * ``no_text`` for a scanned PDF kept for models that read it natively.
+   */
+  extractionStatus?: string;
   /** Why a ``failed`` attachment failed, when known (server or client gate). */
   errorMessage?: string;
 }
@@ -298,6 +305,12 @@ export const uploadSlice = createSlice({
               const tokenCount = Number(payload.token_count);
               if (Number.isFinite(tokenCount)) {
                 attachment.token_count = tokenCount;
+              }
+              if (typeof payload.mime_type === 'string') {
+                attachment.mimeType = payload.mime_type;
+              }
+              if (typeof payload.extraction_status === 'string') {
+                attachment.extractionStatus = payload.extraction_status;
               }
               break;
             }

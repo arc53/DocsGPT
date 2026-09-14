@@ -401,6 +401,24 @@ describe('attachment race recovery', () => {
     ...overrides,
   });
 
+  it('keeps the mime type and extraction status a completed attachment reports', () => {
+    let state = reducer(undefined, addAttachment(makeAttachment()));
+    state = reducer(
+      state,
+      sseEventReceived(
+        attEvent('attachment.completed', {
+          token_count: 0,
+          mime_type: 'application/pdf',
+          extraction_status: 'no_text',
+        }),
+      ),
+    );
+
+    expect(state.attachments[0].status).toBe('completed');
+    expect(state.attachments[0].mimeType).toBe('application/pdf');
+    expect(state.attachments[0].extractionStatus).toBe('no_text');
+  });
+
   it('drops attachment.completed silently when no row matches attachmentId', () => {
     const state = reducer(
       undefined,

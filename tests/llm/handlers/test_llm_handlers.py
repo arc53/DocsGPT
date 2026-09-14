@@ -2394,3 +2394,71 @@ class TestAttachmentExtractionGate:
         assert "truncated" in prompt
         assert "100,000" in prompt
         assert "250,000" in prompt
+
+    def test_scanned_pdf_row_tells_the_model_it_cannot_read_the_file(self):
+        """A no-text PDF reaches this path only on a model that reads neither
+        PDFs nor images. Dropping it silently lets the model answer as if
+        nothing were attached; naming it lets the model tell the user."""
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "filename": "bylaws.pdf",
+            "mime_type": "application/pdf",
+            "content": "",
+            "metadata": {"extraction": {"status": "no_text"}},
+        }]
+
+        prompt = handler._append_unsupported_attachments(messages, attachments)[0]["content"]
+
+        assert "bylaws.pdf" in prompt
+        assert "cannot read" in prompt
+        assert "Attached file content" not in prompt
+
+    def test_image_without_text_is_named_instead_of_an_empty_block(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "filename": "photo.webp",
+            "mime_type": "image/webp",
+            "content": "",
+            "metadata": {"extraction": {"status": "ok"}},
+        }]
+
+        prompt = handler._append_unsupported_attachments(messages, attachments)[0]["content"]
+
+        assert "photo.webp" in prompt
+        assert "cannot read" in prompt
+        assert "Attached file content" not in prompt
+
+    def test_image_with_extracted_text_is_still_appended(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "filename": "receipt.png",
+            "mime_type": "image/png",
+            "content": "Total due: 42 EUR",
+            "metadata": {"extraction": {"status": "ok"}},
+        }]
+
+        prompt = handler._append_unsupported_attachments(messages, attachments)[0]["content"]
+
+        assert "Total due: 42 EUR" in prompt
+        assert "cannot read" not in prompt
+
+    def test_failed_scan_row_is_still_skipped_silently(self):
+        handler = ConcreteHandler()
+        messages = [{"role": "system", "content": "sys"}]
+        attachments = [{
+            "id": "a1",
+            "filename": "broken.pdf",
+            "mime_type": "application/pdf",
+            "content": None,
+            "metadata": {"extraction": {"status": "failed", "error": "boom"}},
+        }]
+
+        result = handler._append_unsupported_attachments(messages, attachments)
+
+        assert result[0]["content"] == "sys"

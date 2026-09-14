@@ -384,14 +384,14 @@ class TestAttachmentTypeGuard:
     ):
         """The guard judges against the parser table actually loaded.
 
-        Without docling the fallback extractor has no .webp parser, so a
-        .webp the route admitted on its name would otherwise be opened as
-        plain text here.
+        The route admits ``.vtt`` by name, but a docling-less install has no
+        VTT parser, so a binary file named ``.vtt`` would otherwise be opened
+        as plain text here.
         """
         from docsgpt import worker
 
-        local_path = tmp_path / "scan.webp"
-        local_path.write_bytes(b"RIFF\x00\x00\x00\x00WEBPVP8 " + bytes(range(256)))
+        local_path = tmp_path / "subs.vtt"
+        local_path.write_bytes(b"\x00\x01\x02\x03" + bytes(range(256)))
 
         events = []
         fake_storage = MagicMock(name="storage")
@@ -399,7 +399,7 @@ class TestAttachmentTypeGuard:
             str(local_path)
         )
         monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: fake_storage)
-        # The docling-less fallback table: images are handled, .webp is not.
+        # A trimmed parser table: .png is handled, .vtt is not.
         monkeypatch.setattr(
             worker,
             "get_default_file_extractor",
@@ -412,19 +412,176 @@ class TestAttachmentTypeGuard:
         )
 
         file_info = {
-            "filename": "scan.webp",
+            "filename": "subs.vtt",
             "attachment_id": "507f1f77bcf86cd799439014",
-            "path": "uploads/user1/attachments/scan.webp",
+            "path": "uploads/user1/attachments/subs.vtt",
             "metadata": {"source": "chat"},
         }
 
         with pytest.raises(
-            worker.AttachmentRejectedError, match=r"Unsupported file type: \.webp"
+            worker.AttachmentRejectedError, match=r"Unsupported file type: \.vtt"
         ):
             worker.attachment_worker(task_self, file_info, "user1")
 
         failed = [payload for name, payload in events if name == "attachment.failed"]
-        assert failed and failed[0]["error"] == "Unsupported file type: .webp"
+        assert failed and failed[0]["error"] == "Unsupported file type: .vtt"
+
+    def test_scanned_pdf_completes_without_text_for_models_that_read_it_natively(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """A PDF with no text layer is still a usable attachment.
+
+        Models that read PDFs natively (or as page images) are sent the
+        stored file, not its extracted text, so failing the upload only kept
+        the file from a model that could read it (prod 2026-09-12: a paying
+        user's scanned club bylaws). The row is kept with ``status: no_text``
+        — text inlining still skips it — and the user is told it completed.
+        """
+        from docsgpt import worker
+        from docsgpt.parser.file.base_parser import NoTextLayerError
+
+        published: list[tuple[str, dict]] = []
+        monkeypatch.setattr(
+            worker,
+            "publish_user_event",
+            lambda user, event, payload, **kw: published.append((event, payload)),
+        )
+        fake_storage = MagicMock(name="storage")
+        fake_storage.process_file.side_effect = NoTextLayerError(
+            "bylaws.pdf appears to be a scanned PDF (no text layer), and "
+            "PDFParser extracted almost nothing"
+        )
+        monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: fake_storage)
+        monkeypatch.setattr(
+            worker, "get_default_file_extractor", lambda ocr_enabled=False, pdf_text_fast_path=False: {}
+        )
+
+        file_info = {
+            "filename": "bylaws.pdf",
+            "attachment_id": "507f1f77bcf86cd799439021",
+            "path": "uploads/user1/attachments/bylaws.pdf",
+            "metadata": {"source": "chat"},
+        }
+
+        result = worker.attachment_worker(task_self, file_info, "user1")
+
+        assert result["token_count"] == 0
+        assert result["mime_type"] == "application/pdf"
+        extraction = result["metadata"]["extraction"]
+        assert extraction["status"] == "no_text"
+        assert "scanned PDF" in extraction["reason"]
+
+        row = AttachmentsRepository(pg_conn).get_by_legacy_id(
+            file_info["attachment_id"], "user1"
+        )
+        assert row["upload_path"] == file_info["path"]
+        assert row["content"] == ""
+        assert row["metadata"]["extraction"]["status"] == "no_text"
+
+        events = [event for event, _ in published]
+        assert "attachment.failed" not in events
+        completed = [payload for event, payload in published if event == "attachment.completed"]
+        assert completed[0]["extraction_status"] == "no_text"
+        assert completed[0]["mime_type"] == "application/pdf"
+
+    def test_no_text_on_a_type_models_cannot_read_natively_still_fails(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """Only PDFs and images have a native path; anything else without text stays a failure."""
+        from docsgpt import worker
+        from docsgpt.parser.file.base_parser import NoTextLayerError
+
+        published: list[tuple[str, dict]] = []
+        monkeypatch.setattr(
+            worker,
+            "publish_user_event",
+            lambda user, event, payload, **kw: published.append((event, payload)),
+        )
+        fake_storage = MagicMock(name="storage")
+        fake_storage.process_file.side_effect = NoTextLayerError("notes.docx has no text")
+        monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: fake_storage)
+        monkeypatch.setattr(
+            worker, "get_default_file_extractor", lambda ocr_enabled=False, pdf_text_fast_path=False: {}
+        )
+
+        file_info = {
+            "filename": "notes.docx",
+            "attachment_id": "507f1f77bcf86cd799439022",
+            "path": "uploads/user1/attachments/notes.docx",
+            "metadata": {"source": "chat"},
+        }
+
+        with pytest.raises(NoTextLayerError):
+            worker.attachment_worker(task_self, file_info, "user1")
+
+        events = [event for event, _ in published]
+        assert "attachment.failed" in events
+        assert "attachment.completed" not in events
+
+    def test_tiff_is_stored_as_png_so_providers_accept_it(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        """OpenAI and Anthropic reject TIFF, so the row must point at a PNG copy."""
+        import io
+
+        from PIL import Image
+
+        from docsgpt import worker
+
+        buf = io.BytesIO()
+        Image.new("RGB", (32, 20), color=(10, 120, 200)).save(buf, format="TIFF")
+        tiff_bytes = buf.getvalue()
+
+        published: list[tuple[str, dict]] = []
+        saved: dict[str, bytes] = {}
+
+        def _save(data, path, **kwargs):
+            saved[path] = data.read()
+            return {"storage_type": "local"}
+
+        fake_storage = MagicMock(name="storage")
+        fake_storage.process_file.return_value = Document(text="", extra_info={})
+        fake_storage.get_file.side_effect = lambda path: io.BytesIO(tiff_bytes)
+        fake_storage.save_file.side_effect = _save
+        monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: fake_storage)
+        monkeypatch.setattr(
+            worker, "get_default_file_extractor", lambda ocr_enabled=False, pdf_text_fast_path=False: {}
+        )
+        monkeypatch.setattr(
+            worker,
+            "publish_user_event",
+            lambda user, event, payload, **kw: published.append((event, payload)),
+        )
+
+        file_info = {
+            "filename": "fax.tiff",
+            "attachment_id": "507f1f77bcf86cd799439023",
+            "path": "uploads/user1/attachments/abc/fax.tiff",
+            "metadata": {"source": "chat"},
+        }
+
+        result = worker.attachment_worker(task_self, file_info, "user1")
+
+        png_path = "uploads/user1/attachments/abc/fax.png"
+        assert list(saved) == [png_path]
+        assert Image.open(io.BytesIO(saved[png_path])).format == "PNG"
+        assert result["path"] == png_path
+        assert result["mime_type"] == "image/png"
+        assert result["metadata"]["image_conversion"] == {
+            "from": "image/tiff",
+            "to": "image/png",
+            "frames": 1,
+        }
+
+        row = AttachmentsRepository(pg_conn).get_by_legacy_id(
+            file_info["attachment_id"], "user1"
+        )
+        assert row["filename"] == "fax.tiff"
+        assert row["upload_path"] == png_path
+        assert row["mime_type"] == "image/png"
+
+        completed = [payload for event, payload in published if event == "attachment.completed"]
+        assert completed[0]["mime_type"] == "image/png"
 
     def test_text_without_a_parser_is_parsed(
         self, pg_conn, patch_worker_db, task_self, monkeypatch, tmp_path

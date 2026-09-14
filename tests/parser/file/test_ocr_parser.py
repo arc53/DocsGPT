@@ -536,13 +536,16 @@ class TestNativeOcrImageParser:
 
 @pytest.mark.unit
 class TestExtractorWiring:
-    def test_legacy_map_without_ocr_is_unchanged(self):
+    def test_legacy_map_without_ocr_hands_every_image_to_image_parser(self):
+        """Without OCR an image still reaches the model as an image, so every
+        image suffix the upload gate admits needs an entry. Only png/jpg/jpeg
+        had one, and a .webp was refused outright (prod 2026-09-10)."""
         from docsgpt.parser.file.bulk import _legacy_file_extractor
 
         extractor = _legacy_file_extractor()
         assert type(extractor[".pdf"]).__name__ == "PDFParser"
-        assert type(extractor[".png"]).__name__ == "ImageParser"
-        assert ".tiff" not in extractor
+        for suffix in op.IMAGE_SUFFIXES:
+            assert type(extractor[suffix]).__name__ == "ImageParser", suffix
 
     def test_legacy_map_with_ocr_uses_native_parsers(self):
         from docsgpt.parser.file.bulk import _legacy_file_extractor

@@ -324,6 +324,25 @@ class LLMHandler(ABC):
 
         return images_data
 
+    @staticmethod
+    def _is_unreadable_visual(attachment: Dict) -> bool:
+        """Whether an unsupported attachment is an image or PDF with no text to use.
+
+        Images and scanned PDFs (``extraction.status == "no_text"``) reach this
+        path only on a model that takes neither format natively. They carry no
+        text, so dropping them would let the model answer as if nothing had
+        been attached.
+        """
+        mime_type = attachment.get("mime_type") or ""
+        if not (mime_type.startswith("image/") or mime_type == "application/pdf"):
+            return False
+        extraction = (attachment.get("metadata") or {}).get("extraction") or {}
+        status = extraction.get("status")
+        if status == "no_text":
+            return True
+        content = attachment.get("content")
+        return status in (None, "ok") and content is not None and not str(content).strip()
+
     def _append_unsupported_attachments(
         self, messages: List[Dict], attachments: List[Dict]
     ) -> List[Dict]:
@@ -339,8 +358,12 @@ class LLMHandler(ABC):
         """
         prepared_messages = messages.copy()
         attachment_texts = []
+        unreadable_names = []
 
         for attachment in attachments:
+            if self._is_unreadable_visual(attachment):
+                unreadable_names.append(attachment.get("filename") or "an attached file")
+                continue
             # ``metadata.extraction`` records what parsing actually did.
             # Rows predating it have no ``extraction`` key and pass; rows
             # whose extraction failed must not reach the prompt (a PG row
@@ -374,6 +397,14 @@ class LLMHandler(ABC):
                     "Scope any whole-document claims to this portion.]\n\n"
                 )
             attachment_texts.append(f"Attached file content:\n\n{note}{content}")
+        if unreadable_names:
+            listed = ", ".join(f'"{name}"' for name in unreadable_names)
+            attachment_texts.append(
+                f"[NOTE: The user attached {listed}, but the current model cannot read "
+                "images or scanned PDFs, so the file contents are not available to you. "
+                "Tell the user you cannot see the file and suggest switching to a model "
+                "that supports images or PDFs. Do not guess what it contains.]"
+            )
         if attachment_texts:
             combined_text = "\n\n".join(attachment_texts)
 

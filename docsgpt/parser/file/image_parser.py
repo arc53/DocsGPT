@@ -1,14 +1,51 @@
 """Image parser.
 
-Contains parser for .png, .jpg, .jpeg files.
+Contains the parser for image files (.png, .jpg, .jpeg, .tiff, .tif, .bmp,
+.webp) and the PNG re-encoding for the formats model providers reject.
 
 """
+import io
 from pathlib import Path
-import requests
-from typing import Dict, Union
+from typing import BinaryIO, Dict, Tuple, Union
 
-from docsgpt.parser.file.base_parser import BaseParser
+import requests
+
 from docsgpt.core.settings import settings
+from docsgpt.parser.file.base_parser import BaseParser, DocumentParseError
+
+# Image types the vision APIs refuse: OpenAI and Anthropic take png, jpeg,
+# webp and gif only. A chat attachment in one of these formats is re-encoded
+# to PNG before it is stored for the model.
+VISION_CONVERTIBLE_MIME_TYPES = frozenset({"image/tiff", "image/bmp", "image/x-ms-bmp"})
+
+
+def convert_image_to_png(file_obj: BinaryIO) -> Tuple[bytes, int]:
+    """Re-encode the first frame of an image as PNG.
+
+    Args:
+        file_obj: Readable binary stream of the source image.
+
+    Returns:
+        Tuple[bytes, int]: The PNG bytes, and how many frames (pages) the
+        source had. Only the first is kept.
+
+    Raises:
+        DocumentParseError: If the bytes are not an image Pillow can decode.
+    """
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(file_obj) as image:
+            frames = getattr(image, "n_frames", 1)
+            image.seek(0)
+            frame = image
+            if frame.mode not in ("RGB", "RGBA", "L", "LA"):
+                frame = frame.convert("RGBA" if "A" in frame.getbands() else "RGB")
+            out = io.BytesIO()
+            frame.save(out, format="PNG")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise DocumentParseError(f"Could not read the image: {exc}") from exc
+    return out.getvalue(), frames
 
 
 class ImageParser(BaseParser):
@@ -24,8 +61,8 @@ class ImageParser(BaseParser):
             # alternatively you can use local vision capable LLM
             with open(file, "rb") as file_loaded:
                 files = {'file': file_loaded}
-                response = requests.post(doc2md_service, files=files, timeout=100)   
-                data = response.json()["markdown"] 
+                response = requests.post(doc2md_service, files=files, timeout=100)
+                data = response.json()["markdown"]
         else:
             data = ""
         return data
