@@ -52,9 +52,44 @@ class TestConvertImageToPng:
         assert Image.open(io.BytesIO(png)).format == "PNG"
         assert frames == 1
 
+    def test_palette_tiff_is_stored_as_rgb_png(self):
+        buf = io.BytesIO()
+        Image.new("RGB", (40, 24), color=(0, 204, 51)).convert("P").save(buf, format="TIFF")
+        buf.seek(0)
+
+        png, _ = convert_image_to_png(buf)
+
+        decoded = Image.open(io.BytesIO(png))
+        assert decoded.mode == "RGB"
+        assert decoded.getpixel((0, 0)) == (0, 204, 51)
+
     def test_unreadable_bytes_raise_a_parse_error(self):
         with pytest.raises(DocumentParseError):
             convert_image_to_png(io.BytesIO(b"not an image"))
+
+    def test_image_over_the_pixel_limit_is_refused_before_decoding(self, monkeypatch):
+        # A deflate TIFF under 1 MB can decode to over a gigabyte, so the
+        # dimensions in the header are checked before any pixel data is read.
+        from PIL import TiffImagePlugin
+
+        from docsgpt.parser.file import image_parser
+
+        def decode(*args, **kwargs):
+            raise AssertionError("pixel data was decoded")
+
+        monkeypatch.setattr(image_parser, "MAX_CONVERTIBLE_PIXELS", 500)
+        monkeypatch.setattr(TiffImagePlugin.TiffImageFile, "load", decode)
+
+        with pytest.raises(DocumentParseError, match="40×24"):
+            convert_image_to_png(_encoded("TIFF"))
+
+    def test_decompression_bomb_refusal_is_a_parse_error(self, monkeypatch):
+        # Pillow refuses images over twice MAX_IMAGE_PIXELS with an error that
+        # is not an OSError; it must fail the upload like any unreadable image.
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)
+
+        with pytest.raises(DocumentParseError):
+            convert_image_to_png(_encoded("TIFF"))
 
     def test_only_formats_the_providers_reject_are_converted(self):
         assert {"image/tiff", "image/bmp"} <= VISION_CONVERTIBLE_MIME_TYPES

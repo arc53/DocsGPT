@@ -18,6 +18,12 @@ from docsgpt.parser.file.base_parser import BaseParser, DocumentParseError
 # to PNG before it is stored for the model.
 VISION_CONVERTIBLE_MIME_TYPES = frozenset({"image/tiff", "image/bmp", "image/x-ms-bmp"})
 
+# Largest image re-encoded to PNG. A deflate TIFF under 1 MB can declare
+# 144 million pixels and take 1.2 GB to convert, while Pillow only warns below
+# 179 million. Vision models downscale far below this cap (Anthropic refuses
+# more than 8000 px per side), so a larger image gains nothing.
+MAX_CONVERTIBLE_PIXELS = 40_000_000
+
 
 def convert_image_to_png(file_obj: BinaryIO) -> Tuple[bytes, int]:
     """Re-encode the first frame of an image as PNG.
@@ -30,12 +36,20 @@ def convert_image_to_png(file_obj: BinaryIO) -> Tuple[bytes, int]:
         source had. Only the first is kept.
 
     Raises:
-        DocumentParseError: If the bytes are not an image Pillow can decode.
+        DocumentParseError: If the bytes are not an image Pillow can decode,
+            or the image is larger than ``MAX_CONVERTIBLE_PIXELS``.
     """
     from PIL import Image, UnidentifiedImageError
 
     try:
         with Image.open(file_obj) as image:
+            # Opening reads only the header; refuse before any pixels decode.
+            width, height = image.size
+            if width * height > MAX_CONVERTIBLE_PIXELS:
+                raise DocumentParseError(
+                    f"The image is too large to convert ({width}×{height} pixels; the limit is "
+                    f"{MAX_CONVERTIBLE_PIXELS // 1_000_000} million pixels). Resize it and upload it again."
+                )
             frames = getattr(image, "n_frames", 1)
             image.seek(0)
             frame = image
@@ -43,7 +57,7 @@ def convert_image_to_png(file_obj: BinaryIO) -> Tuple[bytes, int]:
                 frame = frame.convert("RGBA" if "A" in frame.getbands() else "RGB")
             out = io.BytesIO()
             frame.save(out, format="PNG")
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise DocumentParseError(f"Could not read the image: {exc}") from exc
     return out.getvalue(), frames
 
