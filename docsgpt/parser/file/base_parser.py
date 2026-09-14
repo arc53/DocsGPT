@@ -26,6 +26,17 @@ class DocumentParseError(Exception):
     """
 
 
+class NoTextLayerError(DocumentParseError):
+    """A readable document with no text to extract, such as a scanned PDF.
+
+    Still a failed parse wherever text is the point (source ingestion needs
+    something to embed), so it subclasses ``DocumentParseError`` and callers
+    that do not know about it keep failing loudly. The file itself is intact,
+    though: a chat attachment can still go to a model that reads the format
+    natively, which is why the attachment worker catches this type.
+    """
+
+
 class BaseParser:
     """Base class for all parsers."""
 

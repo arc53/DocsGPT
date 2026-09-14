@@ -527,22 +527,28 @@ def test_tableize_never_touches_docling_reroute(monkeypatch):
 def test_scanned_pdf_with_near_empty_fallback_fails_loudly_when_ocr_off(tmp_path):
     """A scan whose fallback (OCR off) extracts almost nothing must fail with
     an actionable message, not be stored as an empty document."""
+    from docsgpt.parser.file.base_parser import NoTextLayerError
+
     path = _scanned_pdf(tmp_path / "scan.pdf")
     fallback = _RecordingFallback(result="   ")
     fallback.ocr_enabled = False
     parser = AnydocParser(fallback_parser=fallback)
 
-    with pytest.raises(DocumentParseError, match="OCR_ENABLED"):
+    # Still a DocumentParseError for source ingestion, but typed, so the
+    # attachment worker can keep the file for models that read it natively.
+    with pytest.raises(NoTextLayerError, match="OCR_ENABLED"):
         parser.parse_file(path)
     assert parser.last_engine is None
 
 
 def test_scanned_pdf_with_near_empty_fallback_and_ocr_on_reports_it(tmp_path):
+    from docsgpt.parser.file.base_parser import NoTextLayerError
+
     path = _scanned_pdf(tmp_path / "scan.pdf")
     fallback = _RecordingFallback(result="x")
     fallback.ocr_enabled = True
 
-    with pytest.raises(DocumentParseError, match="even with OCR enabled"):
+    with pytest.raises(NoTextLayerError, match="even with OCR enabled"):
         AnydocParser(fallback_parser=fallback).parse_file(path)
 
 

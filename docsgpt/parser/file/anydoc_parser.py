@@ -23,6 +23,7 @@ from docsgpt.core.settings import settings
 from docsgpt.parser.file.base_parser import (
     BaseParser,
     DocumentParseError,
+    NoTextLayerError,
     delegate_parse,
     module_available,
 )
@@ -424,7 +425,7 @@ class AnydocParser(BaseParser):
                     "tesseract binary or a DeepSeek-OCR endpoint (OCR_ENGINE), or "
                     "through the optional docling extra when installed."
                 )
-            raise DocumentParseError(
+            raise NoTextLayerError(
                 f"{path.name} appears to be a scanned PDF (no text layer), and "
                 f"{type(fallback).__name__} extracted almost nothing{hint}"
             )
