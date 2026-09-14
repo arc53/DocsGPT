@@ -22,7 +22,7 @@ flowchart TB
     Clients["Web UI, widgets and API clients"] --> API
 
     subgraph Runtime["DocsGPT processes"]
-        API["API process<br/>Flask routes and agent execution<br/>ASGI shell: MCP and chat reconnect"]
+        API["API process<br/>Flask routes and agent execution<br/>ASGI shell: MCP and streaming routes"]
         Redis["Redis<br/>Task broker, results and realtime delivery"]
         Worker["Celery workers<br/>Ingestion, parsing, embeddings<br/>and background agent runs"]
         API -->|"Enqueue work"| Redis
@@ -63,7 +63,7 @@ The storage boxes describe responsibilities, not a required number of servers. F
 
 ### API entry points
 
-[The ASGI application](https://github.com/arc53/DocsGPT/blob/main/docsgpt/asgi.py) mounts Flask through a WSGI adapter, the FastMCP server, and native asynchronous chat-reconnect readers in one process.
+[The ASGI application](https://github.com/arc53/DocsGPT/blob/main/docsgpt/asgi.py) mounts Flask through a WSGI adapter, the FastMCP server, and native asynchronous routes in one process. The asynchronous routes are the ones that hold a response open: the notification stream, chat reconnect, the remote-device command stream, and artifact downloads. They run on the event loop, so an idle connection doesn't occupy a Flask worker thread.
 
 | Interface | Purpose |
 | --- | --- |
@@ -76,7 +76,7 @@ The storage boxes describe responsibilities, not a required number of servers. F
 DocsGPT also acts as an **MCP client**: agents can call external MCP servers through the [MCP tool integration](/Guides/Integrations/mcp-tool-integration). This is a separate direction from exposing DocsGPT search at `/mcp`.
 
 <Callout type="info">
-Use the ASGI entry point for the complete application. A plain `flask run` server omits `/mcp` and the native async chat-reconnect routes. See [Development Environment](/Deploying/Development-Environment).
+Use the ASGI entry point for the complete application. A plain `flask run` server omits `/mcp` and the native asynchronous routes: notifications, chat reconnect, the remote-device command stream, and artifact downloads. See [Development Environment](/Deploying/Development-Environment).
 </Callout>
 
 ### Agents and retrieval

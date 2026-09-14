@@ -1,16 +1,28 @@
-"""Route-layer tests for the artifacts API (parent-derived authz)."""
+"""Route-layer tests for the artifacts API (parent-derived authz).
+
+Metadata, restore and delete are Flask-RESTX resources driven through a test
+request context. The download is a native-async Starlette route
+(``docsgpt/api/user/artifacts/download.py``) driven through Starlette's
+``TestClient``, with the JWT decoder patched to the caller's claims.
+"""
 
 from __future__ import annotations
 
 import io
 import uuid
 from contextlib import contextmanager
+from unittest.mock import patch
 
 import pytest
 from flask import request
 from sqlalchemy import text
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import StreamingResponse
+from starlette.testclient import TestClient
 
 from docsgpt.api.user.artifacts import authz
+from docsgpt.api.user.artifacts.download import artifact_download_routes, download_artifact
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
@@ -18,6 +30,7 @@ from docsgpt.storage.db.repositories.shared_conversations import (
     SharedConversationsRepository,
 )
 from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+from tests.asgi_stream import stream_then_disconnect
 
 
 OWNER = "artifact_owner"
@@ -35,6 +48,7 @@ def _patch_db(pg_conn, monkeypatch):
 
     monkeypatch.setattr("docsgpt.api.user.artifacts.routes.db_readonly", _use_conn)
     monkeypatch.setattr("docsgpt.api.user.artifacts.routes.db_session", _use_conn)
+    monkeypatch.setattr("docsgpt.api.user.artifacts.download.db_readonly", _use_conn)
     return pg_conn
 
 
@@ -100,6 +114,51 @@ def _call(flask_app, resource_cls, *args, token=None, query=None, json_body=None
             request.decoded_token = token
             resource = resource_cls()
             return getattr(resource, method)(*args)
+
+
+def _download(artifact_id, *, token=None, query=None, headers=None):
+    """GET the native-async download route; ``token`` is what the JWT decoder returns."""
+    client = TestClient(Starlette(routes=artifact_download_routes))
+    with patch("docsgpt.api.asgi_auth.handle_auth", return_value=token):
+        return client.get(
+            f"/api/artifacts/{artifact_id}/download",
+            params=query or {},
+            headers=headers or {},
+            follow_redirects=False,
+        )
+
+
+class _FakeStorage:
+    def __init__(self, data: bytes = b""):
+        self._data = data
+        self.deleted: list = []
+        self.opened: list = []
+
+    def get_file(self, path):
+        handle = io.BytesIO(self._data)
+        self.opened.append(handle)
+        return handle
+
+    def generate_presigned_url(self, path, expires_in=300):
+        return f"https://signed.example/{path}?exp={expires_in}"
+
+    def delete_file(self, path):
+        self.deleted.append(path)
+        return True
+
+
+def _use_storage(monkeypatch, storage, strategy="backend"):
+    """Serve downloads from ``storage`` under the given ``URL_STRATEGY``."""
+    monkeypatch.setattr(
+        "docsgpt.api.user.artifacts.download.StorageCreator.get_storage",
+        lambda: storage,
+    )
+    monkeypatch.setattr(
+        "docsgpt.api.user.artifacts.download.settings.URL_STRATEGY",
+        strategy,
+        raising=False,
+    )
+    return storage
 
 
 # ---------------------------------------------------------------------------
@@ -291,9 +350,20 @@ class TestSharedAccess:
         resp = _call(flask_app, GetArtifact, art["id"], token={"sub": SHARED_USER})
         assert resp.status_code == 200
 
-    def test_share_token_holder_can_download(self, _patch_db, flask_app, monkeypatch):
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
+    def test_shared_with_user_can_download(self, _patch_db, monkeypatch):
+        conv = _make_conversation(_patch_db)
+        ConversationsRepository(_patch_db).add_shared_user(str(conv["id"]), SHARED_USER)
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+        _use_storage(monkeypatch, _FakeStorage(b"SHARED"))
 
+        resp = _download(art["id"], token={"sub": SHARED_USER})
+        assert resp.status_code == 200
+        assert resp.content == b"SHARED"
+
+    def test_share_token_holder_can_download(self, _patch_db, monkeypatch):
         conv = _make_conversation(_patch_db)
         # Attach to the first message so it falls inside the first_n_queries snapshot.
         msg = _make_message(_patch_db, str(conv["id"]))
@@ -308,25 +378,23 @@ class TestSharedAccess:
         share = SharedConversationsRepository(_patch_db).create(
             str(conv["id"]), OWNER, first_n_queries=1
         )
-
-        storage = _FakeStorage(b"PDFDATA")
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
-            lambda: storage,
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
-            "backend",
-            raising=False,
-        )
+        _use_storage(monkeypatch, _FakeStorage(b"PDFDATA"))
 
         # Anonymous link holder (no JWT) supplies the share token.
-        resp = _call(
-            flask_app, DownloadArtifact, art["id"], token=None,
-            query={"share_token": str(share["uuid"])},
-        )
+        resp = _download(art["id"], token=None, query={"share_token": str(share["uuid"])})
         assert resp.status_code == 200
-        assert resp.data == b"PDFDATA"
+        assert resp.content == b"PDFDATA"
+
+    def test_anonymous_without_share_token_denied(self, _patch_db, monkeypatch):
+        conv = _make_conversation(_patch_db)
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]),
+            storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+        _use_storage(monkeypatch, _FakeStorage(b"SECRET"))
+
+        resp = _download(art["id"], token=None)
+        assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -360,19 +428,6 @@ class TestShareTokenSnapshotScope:
             conv_id, OWNER, first_n_queries=first_n
         )
         return conv_id, in_art, out_art, null_art, str(share["uuid"])
-
-    @staticmethod
-    def _mock_storage(monkeypatch, data=b"BYTES"):
-        storage = _FakeStorage(data)
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
-            lambda: storage,
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
-            "backend", raising=False,
-        )
-        return storage
 
     def test_share_token_list_only_snapshot(self, _patch_db, flask_app):
         from docsgpt.api.user.artifacts.routes import ListArtifacts
@@ -418,31 +473,23 @@ class TestShareTokenSnapshotScope:
         )
         assert resp.status_code == 403
 
-    def test_share_token_download_in_snapshot_200(
-        self, _patch_db, flask_app, monkeypatch
-    ):
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
-
+    def test_share_token_download_in_snapshot_200(self, _patch_db, monkeypatch):
         _, in_art, _out, _null, token = self._seed(_patch_db)
-        self._mock_storage(monkeypatch, b"INDATA")
-        resp = _call(
-            flask_app, DownloadArtifact, in_art["id"], token=None,
-            query={"share_token": token},
-        )
+        _use_storage(monkeypatch, _FakeStorage(b"INDATA"))
+        resp = _download(in_art["id"], token=None, query={"share_token": token})
         assert resp.status_code == 200
-        assert resp.data == b"INDATA"
+        assert resp.content == b"INDATA"
 
-    def test_share_token_download_out_of_snapshot_403(
-        self, _patch_db, flask_app, monkeypatch
-    ):
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
-
+    def test_share_token_download_out_of_snapshot_403(self, _patch_db, monkeypatch):
         _, _in, out_art, _null, token = self._seed(_patch_db)
-        self._mock_storage(monkeypatch, b"OUTDATA")
-        resp = _call(
-            flask_app, DownloadArtifact, out_art["id"], token=None,
-            query={"share_token": token},
-        )
+        _use_storage(monkeypatch, _FakeStorage(b"OUTDATA"))
+        resp = _download(out_art["id"], token=None, query={"share_token": token})
+        assert resp.status_code == 403
+
+    def test_share_token_download_null_message_id_403(self, _patch_db, monkeypatch):
+        _, _in, _out, null_art, token = self._seed(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"NULLDATA"))
+        resp = _download(null_art["id"], token=None, query={"share_token": token})
         assert resp.status_code == 403
 
     def test_owner_sees_all_artifacts(self, _patch_db, flask_app, token_owner):
@@ -484,149 +531,190 @@ class TestShareTokenSnapshotScope:
 
 
 # ---------------------------------------------------------------------------
-# Download
+# Download (native-async route)
 # ---------------------------------------------------------------------------
-class _FakeStorage:
-    def __init__(self, data: bytes = b""):
-        self._data = data
-        self.deleted: list = []
-
-    def get_file(self, path):
-        return io.BytesIO(self._data)
-
-    def generate_presigned_url(self, path, expires_in=300):
-        return f"https://signed.example/{path}?exp={expires_in}"
-
-    def delete_file(self, path):
-        self.deleted.append(path)
-        return True
+def _seed_download(conn, **over):
+    conv = _make_conversation(conn)
+    defaults = dict(
+        conversation_id=str(conv["id"]),
+        filename="deck.pptx",
+        mime_type="application/vnd.ms-powerpoint",
+        storage_path="inputs/owner/artifacts/x/v1/deck.pptx",
+    )
+    defaults.update(over)
+    return _make_artifact(conn, **defaults)
 
 
 @pytest.mark.unit
 class TestDownloadArtifact:
-    def _seed(self, conn, **over):
-        conv = _make_conversation(conn)
-        defaults = dict(
-            conversation_id=str(conv["id"]),
-            filename="deck.pptx",
-            mime_type="application/vnd.ms-powerpoint",
-            storage_path="inputs/owner/artifacts/x/v1/deck.pptx",
-        )
-        defaults.update(over)
-        return _make_artifact(conn, **defaults)
-
     def test_local_streams_bytes_with_content_disposition(
-        self, _patch_db, flask_app, token_owner, monkeypatch
+        self, _patch_db, token_owner, monkeypatch
     ):
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
+        art = _seed_download(_patch_db)
+        storage = _use_storage(monkeypatch, _FakeStorage(b"BINARY"))
 
-        art = self._seed(_patch_db)
-        storage = _FakeStorage(b"BINARY")
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
-            lambda: storage,
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
-            "backend",
-            raising=False,
-        )
-
-        resp = _call(flask_app, DownloadArtifact, art["id"], token=token_owner)
+        resp = _download(art["id"], token=token_owner)
         assert resp.status_code == 200
-        assert resp.data == b"BINARY"
-        assert resp.headers["Content-Disposition"] == 'attachment; filename="deck.pptx"'
-        assert resp.headers["Content-Type"] == "application/vnd.ms-powerpoint"
+        assert resp.content == b"BINARY"
+        assert resp.headers["content-disposition"] == 'attachment; filename="deck.pptx"'
+        assert resp.headers["content-type"] == "application/vnd.ms-powerpoint"
+        assert storage.opened[0].closed
 
-    def test_local_download_is_streamed_not_buffered(
-        self, _patch_db, flask_app, token_owner, monkeypatch
+    def test_missing_mime_type_defaults_to_octet_stream(
+        self, _patch_db, token_owner, monkeypatch
     ):
-        # The response body must be a stream (generator), not the whole object
-        # buffered into memory via make_response(file_obj.read()).
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
+        art = _seed_download(_patch_db, mime_type=None)
+        _use_storage(monkeypatch, _FakeStorage(b"X"))
+        resp = _download(art["id"], token=token_owner)
+        assert resp.headers["content-type"] == "application/octet-stream"
 
-        art = self._seed(_patch_db)
-        storage = _FakeStorage(b"Z" * 200_000)
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
-            lambda: storage,
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
-            "backend", raising=False,
-        )
-        resp = _call(flask_app, DownloadArtifact, art["id"], token=token_owner)
-        assert resp.is_streamed
-        assert resp.get_data() == b"Z" * 200_000
-
-    def test_s3_strategy_redirects_to_presigned(
-        self, _patch_db, flask_app, token_owner, monkeypatch
+    def test_missing_filename_falls_back_to_artifact_id(
+        self, _patch_db, token_owner, monkeypatch
     ):
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
+        art = _seed_download(_patch_db, filename=None)
+        _use_storage(monkeypatch, _FakeStorage(b"X"))
+        resp = _download(art["id"], token=token_owner)
+        assert resp.headers["content-disposition"] == f'attachment; filename="artifact-{art["id"]}"'
 
-        art = self._seed(_patch_db)
-        storage = _FakeStorage(b"unused")
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
-            lambda: storage,
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
-            "s3",
-            raising=False,
-        )
+    def test_disk_file_streamed_in_chunks_and_closed(
+        self, _patch_db, token_owner, monkeypatch, tmp_path
+    ):
+        # A real file handle is read off the event loop, chunk by chunk.
+        payload = bytes(range(256)) * 800  # 204_800 bytes -> 4 chunks
+        path = tmp_path / "deck.pptx"
+        path.write_bytes(payload)
+        handles = []
 
-        resp = _call(flask_app, DownloadArtifact, art["id"], token=token_owner)
+        class _DiskStorage:
+            def get_file(self, _path):
+                handle = open(path, "rb")
+                handles.append(handle)
+                return handle
+
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _DiskStorage())
+        resp = _download(art["id"], token=token_owner)
+        assert resp.status_code == 200
+        assert resp.content == payload
+        assert handles[0].closed
+
+    def test_explicit_version_served(self, _patch_db, token_owner, monkeypatch):
+        art = _seed_download(_patch_db)
+        ArtifactsRepository(_patch_db).append_version(
+            art["id"], filename="deck-v2.pptx", storage_path="inputs/owner/artifacts/x/v2/deck.pptx",
+        )
+        seen_paths = []
+
+        class _PathStorage(_FakeStorage):
+            def get_file(self, path):
+                seen_paths.append(path)
+                return super().get_file(path)
+
+        _use_storage(monkeypatch, _PathStorage(b"V1"))
+        resp = _download(art["id"], token=token_owner, query={"version": "1"})
+        assert resp.status_code == 200
+        assert seen_paths == ["inputs/owner/artifacts/x/v1/deck.pptx"]
+
+        _download(art["id"], token=token_owner)
+        assert seen_paths[-1] == "inputs/owner/artifacts/x/v2/deck.pptx"
+
+    def test_invalid_version_400(self, _patch_db, token_owner, monkeypatch):
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"X"))
+        resp = _download(art["id"], token=token_owner, query={"version": "latest"})
+        assert resp.status_code == 400
+        assert resp.json() == {"success": False, "message": "Invalid version"}
+
+    def test_unknown_version_404(self, _patch_db, token_owner, monkeypatch):
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"X"))
+        resp = _download(art["id"], token=token_owner, query={"version": "7"})
+        assert resp.status_code == 404
+        assert resp.json() == {"success": False, "message": "Version not found"}
+
+    def test_version_without_file_404(self, _patch_db, token_owner, monkeypatch):
+        art = _seed_download(_patch_db, storage_path=None)
+        _use_storage(monkeypatch, _FakeStorage(b"X"))
+        resp = _download(art["id"], token=token_owner)
+        assert resp.status_code == 404
+        assert resp.json() == {"success": False, "message": "No file for this version"}
+
+    def test_missing_bytes_404(self, _patch_db, token_owner, monkeypatch):
+        class _GoneStorage(_FakeStorage):
+            def get_file(self, path):
+                raise FileNotFoundError(path)
+
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _GoneStorage())
+        resp = _download(art["id"], token=token_owner)
+        assert resp.status_code == 404
+        assert resp.json() == {"success": False, "message": "File not found"}
+
+    def test_storage_failure_400(self, _patch_db, token_owner, monkeypatch):
+        class _BrokenStorage(_FakeStorage):
+            def get_file(self, path):
+                raise RuntimeError("backend exploded")
+
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _BrokenStorage())
+        resp = _download(art["id"], token=token_owner)
+        assert resp.status_code == 400
+        assert resp.json() == {"success": False}
+
+    def test_s3_strategy_redirects_to_presigned(self, _patch_db, token_owner, monkeypatch):
+        art = _seed_download(_patch_db)
+        storage = _use_storage(monkeypatch, _FakeStorage(b"unused"), strategy="s3")
+
+        resp = _download(art["id"], token=token_owner)
         assert resp.status_code == 302
-        assert resp.headers["Location"].startswith("https://signed.example/")
+        assert resp.headers["location"] == (
+            "https://signed.example/inputs/owner/artifacts/x/v1/deck.pptx?exp=300"
+        )
+        assert storage.opened == []
 
     def test_s3_strategy_disposition_url_returns_json(
-        self, _patch_db, flask_app, token_owner, monkeypatch
+        self, _patch_db, token_owner, monkeypatch
     ):
         # ?disposition=url opts into a JSON envelope (for a top-level browser
         # navigation) instead of the CORS-blocked cross-origin 302.
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"unused"), strategy="s3")
 
-        art = self._seed(_patch_db)
-        storage = _FakeStorage(b"unused")
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
-            lambda: storage,
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
-            "s3",
-            raising=False,
-        )
-
-        resp = _call(
-            flask_app,
-            DownloadArtifact,
-            art["id"],
-            token=token_owner,
-            query={"disposition": "url"},
-        )
+        resp = _download(art["id"], token=token_owner, query={"disposition": "url"})
         assert resp.status_code == 200
-        assert resp.json["success"] is True
-        assert resp.json["url"].startswith("https://signed.example/")
+        assert resp.json()["success"] is True
+        assert resp.json()["url"].startswith("https://signed.example/")
         # The envelope carries a distinctive media type so the client keys off
         # a server signal, not the JSON body shape (open-redirect gadget guard).
-        assert resp.mimetype == "application/vnd.docsgpt.artifact-url+json"
+        assert resp.headers["content-type"] == "application/vnd.docsgpt.artifact-url+json"
 
-    def test_stranger_denied(self, _patch_db, flask_app, monkeypatch):
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
+    def test_s3_strategy_accept_json_returns_json(self, _patch_db, token_owner, monkeypatch):
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"unused"), strategy="s3")
 
-        art = self._seed(_patch_db)
-        resp = _call(flask_app, DownloadArtifact, art["id"], token={"sub": STRANGER})
+        resp = _download(art["id"], token=token_owner, headers={"Accept": "application/json"})
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/vnd.docsgpt.artifact-url+json"
+
+    def test_stranger_denied(self, _patch_db, monkeypatch):
+        art = _seed_download(_patch_db)
+        storage = _use_storage(monkeypatch, _FakeStorage(b"SECRET"))
+        resp = _download(art["id"], token={"sub": STRANGER})
         assert resp.status_code == 403
+        assert resp.json() == {"success": False, "message": "Forbidden"}
+        assert storage.opened == []
+
+    def test_invalid_bearer_401_with_decoder_payload(self, _patch_db, monkeypatch):
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"X"))
+        err = {"message": "Authentication error: invalid token", "error": "invalid_token"}
+        resp = _download(art["id"], token=err)
+        assert resp.status_code == 401
+        assert resp.json() == err
 
     def test_s3_strategy_misconfigured_backend_500(
-        self, _patch_db, flask_app, token_owner, monkeypatch
+        self, _patch_db, token_owner, monkeypatch
     ):
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
-
-        art = self._seed(_patch_db)
-
         class _NoPresignStorage:
             def get_file(self, path):
                 return io.BytesIO(b"unused")
@@ -634,39 +722,131 @@ class TestDownloadArtifact:
             def generate_presigned_url(self, path, expires_in=300):
                 raise NotImplementedError("backend cannot mint presigned URLs")
 
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
-            lambda: _NoPresignStorage(),
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
-            "s3",
-            raising=False,
-        )
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _NoPresignStorage(), strategy="s3")
 
-        resp = _call(flask_app, DownloadArtifact, art["id"], token=token_owner)
+        resp = _download(art["id"], token=token_owner)
         assert resp.status_code == 500
+        assert resp.json() == {"success": False, "message": "Storage misconfigured"}
 
-    def test_crlf_filename_sanitized_in_header(
-        self, _patch_db, flask_app, token_owner, monkeypatch
-    ):
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
-
-        art = self._seed(_patch_db, filename='a"\r\nInjected: x.txt')
-        storage = _FakeStorage(b"X")
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
-            lambda: storage,
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
-            "backend",
-            raising=False,
-        )
-        resp = _call(flask_app, DownloadArtifact, art["id"], token=token_owner)
-        disposition = resp.headers["Content-Disposition"]
+    def test_crlf_filename_sanitized_in_header(self, _patch_db, token_owner, monkeypatch):
+        art = _seed_download(_patch_db, filename='a"\r\nInjected: x.txt')
+        _use_storage(monkeypatch, _FakeStorage(b"X"))
+        resp = _download(art["id"], token=token_owner)
+        disposition = resp.headers["content-disposition"]
         assert "\r" not in disposition and "\n" not in disposition
         assert disposition == 'attachment; filename="aInjected: x.txt"'
+        assert "injected" not in resp.headers
+
+    def test_unicode_filename_served_with_rfc5987_header(self, _patch_db, token_owner, monkeypatch):
+        # Latin-1 header encoding used to reject this and return 400 after
+        # opening the file.
+        art = _seed_download(_patch_db, filename="报告.pdf", mime_type="application/pdf")
+        storage = _use_storage(monkeypatch, _FakeStorage(b"PDF"))
+        resp = _download(art["id"], token=token_owner)
+        assert resp.status_code == 200
+        assert resp.content == b"PDF"
+        assert resp.headers["content-disposition"] == (
+            f'attachment; filename="artifact-{art["id"]}.pdf"; '
+            "filename*=UTF-8''%E6%8A%A5%E5%91%8A.pdf"
+        )
+        assert storage.opened[0].closed
+
+    def test_accented_filename_keeps_readable_ascii_fallback(self, _patch_db, token_owner, monkeypatch):
+        art = _seed_download(_patch_db, filename="résumé final.pdf")
+        _use_storage(monkeypatch, _FakeStorage(b"CV"))
+        resp = _download(art["id"], token=token_owner)
+        assert resp.status_code == 200
+        assert resp.headers["content-disposition"] == (
+            'attachment; filename="resume final.pdf"; '
+            "filename*=UTF-8''r%C3%A9sum%C3%A9%20final.pdf"
+        )
+
+    def test_disk_file_closed_off_the_event_loop(self, _patch_db, token_owner, monkeypatch):
+        import threading
+
+        class _TrackedHandle:
+            """A non-BytesIO handle, like LocalStorage's open file."""
+
+            def __init__(self, data: bytes):
+                self._buf = io.BytesIO(data)
+                self.close_thread = None
+
+            def read(self, size=-1):
+                return self._buf.read(size)
+
+            def close(self):
+                self.close_thread = threading.current_thread().name
+
+        handle = _TrackedHandle(b"DISK")
+
+        class _HandleStorage(_FakeStorage):
+            def get_file(self, path):
+                return handle
+
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _HandleStorage())
+        resp = _download(art["id"], token=token_owner)
+        assert resp.content == b"DISK"
+        assert handle.close_thread == "AnyIO worker thread"
+
+    def test_non_uuid_id_404(self, _patch_db, token_owner):
+        resp = _download("legacy-mongo-objectid-aabbcc", token=token_owner)
+        assert resp.status_code == 404
+        assert resp.json() == {"success": False, "message": "Artifact not found"}
+
+    def test_unknown_artifact_404(self, _patch_db, token_owner):
+        resp = _download(str(uuid.uuid4()), token=token_owner)
+        assert resp.status_code == 404
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestDownloadStreaming:
+    async def test_download_is_streamed_not_buffered(self, _patch_db, token_owner, monkeypatch):
+        # The body must be a chunked stream, not the whole object read into memory.
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"Z" * 200_000))
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": f"/api/artifacts/{art['id']}/download",
+                "path_params": {"artifact_id": str(art["id"])},
+                "headers": [],
+                "query_string": b"",
+            }
+        )
+        with patch("docsgpt.api.asgi_auth.handle_auth", return_value=token_owner):
+            resp = await download_artifact(request)
+        assert isinstance(resp, StreamingResponse)
+        chunks = [chunk async for chunk in resp.body_iterator]
+        assert [len(chunk) for chunk in chunks] == [65536, 65536, 65536, 3392]
+
+    async def test_client_disconnect_closes_file(
+        self, _patch_db, token_owner, monkeypatch, tmp_path
+    ):
+        path = tmp_path / "big.bin"
+        path.write_bytes(b"B" * (1024 * 1024))
+        handles = []
+
+        class _DiskStorage:
+            def get_file(self, _path):
+                handle = open(path, "rb")
+                handles.append(handle)
+                return handle
+
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _DiskStorage())
+        with patch("docsgpt.api.asgi_auth.handle_auth", return_value=token_owner):
+            status, _, chunks = await stream_then_disconnect(
+                Starlette(routes=artifact_download_routes),
+                f"/api/artifacts/{art['id']}/download",
+                chunks_before_disconnect=1,
+            )
+        assert status == 200
+        assert chunks[0] == b"B" * 65536
+        assert handles[0].closed
 
 
 # ---------------------------------------------------------------------------
@@ -850,7 +1030,6 @@ class TestMalformedArtifactId:
         [
             ("GetArtifact", (), "get", None),
             ("GetArtifactVersion", (1,), "get", None),
-            ("DownloadArtifact", (), "get", None),
             ("RestoreArtifact", (), "post", {"version": 1}),
         ],
     )
@@ -930,13 +1109,9 @@ class TestApiKeyPrincipal:
         )
         assert resp.status_code == 403
 
-    def test_api_key_download_requires_conversation_id(
-        self, _patch_db, flask_app, monkeypatch
-    ):
+    def test_api_key_download_requires_conversation_id(self, _patch_db, monkeypatch):
         # Download follows the same bearer-capability rule as get: the key alone is
         # denied; the key + matching conversation_id is served.
-        from docsgpt.api.user.artifacts.routes import DownloadArtifact
-
         agent = _make_agent(_patch_db)
         conv = _make_agent_conversation(_patch_db, agent["id"])
         art = _make_artifact(
@@ -944,28 +1119,33 @@ class TestApiKeyPrincipal:
             filename="f.bin", storage_path="inputs/owner/artifacts/x/v1/f.bin",
         )
         _wire_api_key(monkeypatch, _patch_db)
-        storage = _FakeStorage(b"BYTES")
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.StorageCreator.get_storage",
-            lambda: storage,
-        )
-        monkeypatch.setattr(
-            "docsgpt.api.user.artifacts.routes.settings.URL_STRATEGY",
-            "backend", raising=False,
-        )
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
 
-        denied = _call(
-            flask_app, DownloadArtifact, art["id"], token=None,
-            query={"api_key": "secret-key"},
-        )
+        denied = _download(art["id"], token=None, query={"api_key": "secret-key"})
         assert denied.status_code == 403
 
-        ok = _call(
-            flask_app, DownloadArtifact, art["id"], token=None,
+        ok = _download(
+            art["id"], token=None,
             query={"api_key": "secret-key", "conversation_id": str(conv["id"])},
         )
         assert ok.status_code == 200
-        assert ok.data == b"BYTES"
+        assert ok.content == b"BYTES"
+
+    def test_api_key_download_outside_agent_scope_denied(self, _patch_db, monkeypatch):
+        _make_agent(_patch_db)
+        other_conv = _make_conversation(_patch_db, user_id=OWNER)  # no agent_id
+        art = _make_artifact(
+            _patch_db, conversation_id=str(other_conv["id"]),
+            storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+        _wire_api_key(monkeypatch, _patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(
+            art["id"], token=None,
+            query={"api_key": "secret-key", "conversation_id": str(other_conv["id"])},
+        )
+        assert resp.status_code == 403
 
     def test_api_key_list_without_conversation_id_forbidden(
         self, _patch_db, flask_app, monkeypatch

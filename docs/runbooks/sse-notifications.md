@@ -39,10 +39,10 @@ redis-cli -n 2 XLEN user:<user_id>:stream
 Worker (publish_user_event)             Frontend tab
         │                                    ▲
         ▼                                    │  GET /api/events SSE
-  Redis Streams: XADD                  Flask route
+  Redis Streams: XADD                  async route (event loop)
   user:<id>:stream  ──────────────►   replay_backlog (snapshot)
         │                                    +
-        ▼                              Topic.subscribe (live tail)
+        ▼                              AsyncTopic.subscribe (live tail)
   Redis pub/sub: PUBLISH                     │
   user:<id>  ────────────────────────────────┘
 ```
@@ -158,14 +158,16 @@ null clear propagates into the next reconnect.**
 
 The per-user concurrent-connection cap (`SSE_MAX_CONCURRENT_PER_USER`,
 default 8) refused the connection. User has too many tabs open or a
-runaway reconnect loop. `redis-cli -n 2 GET user:<id>:sse_count`
-shows the live counter; the TTL is 1h from the last connection
-attempt (rolling — every INCR re-seeds it), so the key only ages
-out after the user stops reconnecting for a full hour.
+runaway reconnect loop. The cap covers `/api/events` and chat reconnects
+together.
 
-If the count is wedged high without explanation, the
-counter-DECR-in-finally path didn't run (worker SIGKILL, OOM). Wait
-for the TTL or `redis-cli -n 2 DEL user:<id>:sse_count` to reset.
+Each open stream holds a lease in a sorted set scored by its last
+refresh; `redis-cli -n 2 ZRANGE user:<id>:sse_leases 0 -1 WITHSCORES`
+lists them. A live stream refreshes its lease as it sends frames. A
+lease whose stream died without cleanup (worker SIGKILL, OOM) stops
+counting once it is older than the lease TTL: 60s, or 4 ×
+`SSE_KEEPALIVE_SECONDS` if that is larger. The cap heals on its own;
+`redis-cli -n 2 DEL user:<id>:sse_leases` clears it immediately.
 
 ### G. "Replay snapshot stops at 200 events"
 
@@ -204,11 +206,13 @@ the snapshot would re-serve from the start, the cap would re-trip).
   logs to confirm the publisher is still firing.
 - Pull `event.connect user=<id>` from the API logs to confirm the
   client is reconnecting.
-- Check the gunicorn worker count and `WSGIMiddleware(workers=32)` —
-  if the deploy reduced worker count, the per-user cap is still 8
-  but total concurrent SSE connections are bounded by `gunicorn
-  workers × 32`. A capacity miss looks like users randomly getting
-  429'd.
+- Check the async Redis pool. Every open `/api/events` stream holds
+  one connection from it, so concurrent streams per worker are bounded
+  by `ASYNC_REDIS_MAX_CONNECTIONS` (default 2000). When the pool is
+  full the API logs `async Redis pool exhausted subscribing to
+  user:<id>` and the stream closes at once, so clients reconnect in a
+  loop. Raise the setting (keeping the total across workers under the
+  Redis server's `maxclients`) or add workers.
 
 ---
 
@@ -303,8 +307,8 @@ redis-cli -n 2 PUBSUB NUMSUB $(redis-cli -n 2 PUBSUB CHANNELS 'user:*')
 # subscribers; OK after explaining to the user)
 redis-cli -n 2 XTRIM user:<id>:stream MAXLEN 0
 
-# Clear a wedged concurrent-connection counter
-redis-cli -n 2 DEL user:<id>:sse_count
+# Clear a user's SSE connection leases (they also age out on their own)
+redis-cli -n 2 DEL user:<id>:sse_leases
 
 # Force-flip every client to re-snapshot (drop the stream key entirely
 # — destroys the backlog; clients reconnect with their last id and
@@ -324,6 +328,7 @@ Everything in `docsgpt/core/settings.py`:
 | `EVENTS_STREAM_MAXLEN`                        | `1000`  | Per-user backlog cap. Approximate via `XADD MAXLEN ~`. |
 | `SSE_KEEPALIVE_SECONDS`                       | `15`    | Comment-frame cadence. Must sit under reverse-proxy idle close. |
 | `SSE_MAX_CONCURRENT_PER_USER`                 | `8`     | Cap on simultaneous SSE connections per user. 0 = disabled. |
+| `ASYNC_REDIS_MAX_CONNECTIONS`                 | `2000`  | Async Redis pool per API worker; each open stream holds one connection. |
 | `EVENTS_REPLAY_MAX_PER_REQUEST`               | `200`   | Hard cap on snapshot rows per request. |
 | `EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW`    | `30`    | Per-user replays per window. 0 = disabled. |
 | `EVENTS_REPLAY_BUDGET_WINDOW_SECONDS`         | `60`    | Window length. |
@@ -360,22 +365,16 @@ running task and the terminal SSE arrives later, the toast pops
 back. Intentional ("notify the user it's done"); revisit if the
 re-surface UX is too aggressive for v2.
 
-### Reconnect reader needs the ASGI entrypoint
+### Both SSE channels need the ASGI entrypoint
 
-The chat-stream reconnect reader `GET /api/messages/<id>/events`
-is a native-async Starlette route mounted in
-`docsgpt/asgi.py`, not a Flask route. Plain `flask run`
-serves only the WSGI Flask app, so under it that endpoint 404s
-and reconnect-after-disconnect can't resume. Run the backend via
-`uvicorn docsgpt.asgi:asgi_app --reload` (or the production
-gunicorn uvicorn-worker) to exercise it.
-
-### Werkzeug doesn't auto-reload route files
-
-The dev server (`flask run`) doesn't watch
-`docsgpt/api/events/routes.py` for changes by default.
-After editing the route, restart Flask manually — `--reload`
-isn't on. (Production gunicorn reloads via deploy.)
+`GET /api/events` and the chat-stream reconnect reader
+`GET /api/messages/<id>/events` are native-async Starlette routes
+mounted in `docsgpt/asgi.py`, not Flask routes. Plain `flask run`
+serves only the WSGI Flask app, so under it both endpoints 404:
+no live notifications, and reconnect-after-disconnect can't resume.
+Run the backend via `uvicorn docsgpt.asgi:asgi_app --reload` (or the
+production gunicorn uvicorn-worker) to exercise them; `--reload`
+picks up edits to `docsgpt/api/events/routes.py`.
 
 ### MCP OAuth completion can fall outside the user stream's MAXLEN window
 

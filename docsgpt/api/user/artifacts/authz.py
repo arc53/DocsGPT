@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Mapping, Optional
 
 from flask import request
 
@@ -40,24 +40,34 @@ class Principal:
         return self.agent_id is not None
 
 
-def resolve_principal() -> Principal:
-    """Resolve the caller to a :class:`Principal`.
+def principal_for(decoded_token: Optional[dict], api_key: Optional[str]) -> Principal:
+    """Resolve a caller from its decoded JWT or ``api_key``, independent of the web framework.
 
-    Priority: a decoded JWT (owner session) first, then an ``api_key`` query/form
-    param (agent-scoped). An unresolvable caller yields an anonymous principal
-    (both fields ``None``) that only a valid ``share_token`` can authorize.
+    Priority: a decoded JWT (owner session) first, then the ``api_key``
+    (agent-scoped). An unresolvable caller yields an anonymous principal (both
+    fields ``None``) that only a valid ``share_token`` can authorize.
     """
-    decoded_token = getattr(request, "decoded_token", None)
     if decoded_token:
         return Principal(user_id=decoded_token.get("sub"))
 
-    api_key = request.args.get("api_key") or request.form.get("api_key")
     if api_key:
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_key(api_key)
         if agent and agent.get("user_id") and agent.get("id"):
             return Principal(user_id=str(agent["user_id"]), agent_id=str(agent["id"]))
     return Principal()
+
+
+def resolve_principal() -> Principal:
+    """Resolve the current Flask request's caller to a :class:`Principal`.
+
+    Reads the decoded JWT, then an ``api_key`` query/form param; see
+    :func:`principal_for`.
+    """
+    return principal_for(
+        getattr(request, "decoded_token", None),
+        request.args.get("api_key") or request.form.get("api_key"),
+    )
 
 
 def _shared_row_for(conn, conversation_id, share_token):
@@ -87,7 +97,12 @@ def user_can_access_conversation(
     return _shared_row_for(conn, conversation_id, share_token) is not None
 
 
-def authorize_artifact(conn, artifact: dict, principal: Principal) -> bool:
+def authorize_artifact(
+    conn,
+    artifact: dict,
+    principal: Principal,
+    args: Optional[Mapping[str, str]] = None,
+) -> bool:
     """Authorize a READ of ``artifact`` for ``principal``; missing parent fails closed.
 
     A low-trust agent api_key is confined to a single conversation it proves by
@@ -96,7 +111,13 @@ def authorize_artifact(conn, artifact: dict, principal: Principal) -> bool:
     JWT owner or ``shared_with`` collaborator gets full access to every artifact of
     the parent; a share-token holder is confined to the shared ``first_n_queries``
     snapshot (an artifact whose ``message_id`` is outside it, or NULL, is denied).
+
+    ``args`` are the request's query params; they default to the current Flask
+    request's, and a native-async route passes its own.
     """
+    if args is None:
+        args = request.args
+
     if principal.is_agent_scoped:
         # An agent key is not the owner's session and is embedded in public widget
         # JS, so require the artifact to belong to the owner AND the request to
@@ -104,7 +125,7 @@ def authorize_artifact(conn, artifact: dict, principal: Principal) -> bool:
         # the key alone, without that id, cannot download a known artifact.
         if str(artifact.get("user_id")) != str(principal.user_id):
             return False
-        req_conv = request.args.get("conversation_id")
+        req_conv = args.get("conversation_id")
         parent = artifact.get("conversation_id")
         if not req_conv or parent is None or str(parent) != str(req_conv):
             return False
@@ -114,7 +135,7 @@ def authorize_artifact(conn, artifact: dict, principal: Principal) -> bool:
 
     conversation_id = artifact.get("conversation_id")
     workflow_run_id = artifact.get("workflow_run_id")
-    share_token = request.args.get("share_token")
+    share_token = args.get("share_token")
 
     if conversation_id is not None:
         # Owner or shared_with collaborator: full access to every artifact.
