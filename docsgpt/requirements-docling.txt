@@ -982,7 +982,7 @@ torch==2.14.0+cpu ; sys_platform == 'linux'
     #   docsgpt
     #   safetensors
     #   torchvision
-torchvision==0.29.0 ; sys_platform != 'linux'
+torchvision==0.29.0+cpu ; sys_platform != 'linux'
     # via
     #   docling-ibm-models
     #   docling-slim
