@@ -13,7 +13,7 @@ import json
 import logging
 import time
 from functools import partial
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator
 
 import anyio
 from starlette.requests import Request
@@ -61,13 +61,6 @@ def _signed_path(request: Request) -> str:
     if root and path.startswith(root):
         path = path[len(root):]
     return path
-
-
-def _claim_session(broker: DeviceBroker, device: dict, session_id: str) -> Optional[SessionState]:
-    """Open the device's session iff ``session_id`` is its unexpired ticket; runs in a worker thread."""
-    if not broker.validate_ticket(device["id"], session_id):
-        return None
-    return broker.register_session(device["id"], device["user_id"])
 
 
 async def _close_session(broker: DeviceBroker, session_id: str) -> None:
@@ -132,11 +125,13 @@ async def device_session_events(request: Request) -> Response:
         return _error(*failure)
     log_context.bind(user_id=device["user_id"])
     broker = get_broker()
-    # Claiming consumes the ticket, so it happens before the response opens and
+    # Redeeming consumes the ticket, so it happens before the response opens and
     # ``on_close`` closes the session even if the body never starts. Shielded
     # so a cancellation can't leave a registered session with no response.
     with anyio.CancelScope(shield=True):
-        sess = await anyio.to_thread.run_sync(_claim_session, broker, device, session_id)
+        sess = await anyio.to_thread.run_sync(
+            broker.redeem_ticket, device["id"], device["user_id"], session_id
+        )
     if sess is None:
         return _error("session_ticket_invalid", 410)
     return ClosingStreamingResponse(

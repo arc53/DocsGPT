@@ -61,6 +61,16 @@ def _ticket_key(device_id: str) -> str:
     return f"dev:ticket:{device_id}"
 
 
+# Deletes the device's ticket iff it still holds the presented one. Runs
+# server-side so two requests racing with one ticket can't both redeem it.
+_REDEEM_TICKET_LUA = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('DEL', KEYS[1])
+end
+return 0
+"""
+
+
 def _inv_key(invocation_id: str) -> str:
     return f"dev:inv:{invocation_id}"
 
@@ -142,6 +152,31 @@ class DeviceBroker:
             except Exception:
                 logger.exception("ticket lookup failed for %s", device_id)
         session_id = _as_str(issued) if issued else f"st_{uuid.uuid4().hex}"
+        return self._adopt_session(session_id, device_id, user_id)
+
+    def redeem_ticket(self, device_id: str, user_id: str, ticket: str) -> Optional[SessionState]:
+        """Consume the device's poll-issued ``ticket`` and open its session under it.
+
+        Returns ``None``, and opens nothing, unless ``ticket`` is still the
+        device's unexpired ticket. The compare and delete are one Redis step,
+        so a replay racing the first redeem can't replace its session.
+        """
+        if not ticket:
+            return None
+        redis = get_redis_instance()
+        if redis is None:
+            return None
+        try:
+            redeemed = redis.eval(_REDEEM_TICKET_LUA, 1, _ticket_key(device_id), ticket)
+        except Exception:
+            logger.exception("ticket redeem failed for %s", device_id)
+            return None
+        if not redeemed:
+            return None
+        return self._adopt_session(ticket, device_id, user_id)
+
+    def _adopt_session(self, session_id: str, device_id: str, user_id: str) -> SessionState:
+        """Make a new session the device's live one, closing the one it replaces."""
         sess = SessionState(
             session_id=session_id, device_id=device_id, user_id=user_id
         )
