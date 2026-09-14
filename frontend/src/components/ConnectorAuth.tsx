@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
+import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -18,6 +19,17 @@ interface ConnectorAuthProps {
   errorMessage?: string;
 }
 
+// The origin serving `/api/connectors/callback-status`, which is the only
+// window allowed to deliver a connector session token. Resolved once: a
+// relative or unparseable `baseURL` means the API shares this page's origin.
+export const resolveAuthMessageOrigin = (host: string, pageOrigin: string) => {
+  try {
+    return new URL(host, pageOrigin).origin;
+  } catch {
+    return pageOrigin;
+  }
+};
+
 const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   provider,
   onSuccess,
@@ -29,6 +41,10 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   errorMessage,
 }) => {
   const { t } = useTranslation();
+  const authMessageOrigin = resolveAuthMessageOrigin(
+    baseURL,
+    window.location.origin,
+  );
   const token = useSelector(selectToken);
   const [isDarkTheme] = useDarkTheme();
   const completedRef = useRef(false);
@@ -54,6 +70,11 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   };
 
   const handleAuthMessage = (event: MessageEvent) => {
+    // GHSA-949x-3mqg-5xfr: this handler took any message from any origin, so
+    // a page could hand the app a fabricated session_token. The popup is the
+    // API's own callback page, so only that origin may speak here.
+    if (event.origin !== authMessageOrigin) return;
+
     const successGeneric = event.data?.type === 'connector_auth_success';
     const successProvider = event.data?.type === `${provider}_auth_success`;
     const errorProvider = event.data?.type === `${provider}_auth_error`;

@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from flask import Flask
+from flask import Flask, request
 
 
 @pytest.fixture
@@ -418,6 +418,57 @@ class TestConnectorValidateSession:
         assert r.json["access_token"] == "new-at"
 
 
+class TestConnectorCallbackStatusOrigin:
+    """GHSA-949x-3mqg-5xfr: the callback page posted the session token with a
+    wildcard target origin, so any page that arranged to be this popup's opener
+    received a handle to a stored OAuth credential."""
+
+    def _page(self, app, **settings_overrides):
+        from docsgpt.api.connector.routes import ConnectorCallbackStatus
+        from docsgpt.core.settings import settings
+
+        saved = {k: getattr(settings, k, None) for k in settings_overrides}
+        for key, value in settings_overrides.items():
+            setattr(settings, key, value)
+        try:
+            with app.test_request_context(
+                "/api/connectors/callback-status"
+                "?status=success&session_token=st-1&provider=google_drive",
+                base_url="https://api.example.com",
+            ):
+                response = ConnectorCallbackStatus().get()
+            return response.get_data(as_text=True)
+        finally:
+            for key, value in saved.items():
+                setattr(settings, key, value)
+
+    def test_the_token_is_never_posted_to_a_wildcard_origin(self, app):
+        page = self._page(app, OIDC_FRONTEND_URL=None)
+
+        assert "postMessage" in page
+        assert "'*'" not in page
+        assert '"*"' not in page
+
+    def test_it_targets_the_configured_browser_app_origin(self, app):
+        page = self._page(app, OIDC_FRONTEND_URL="https://app.example.com/some/path")
+
+        # Origin only -- a path would make postMessage refuse to deliver.
+        assert '"https://app.example.com"' in page
+        assert "some/path" not in page
+
+    def test_it_falls_back_to_this_request_s_origin(self, app):
+        page = self._page(app, OIDC_FRONTEND_URL=None)
+
+        assert '"https://api.example.com"' in page
+
+    def test_an_unusable_setting_does_not_widen_back_to_a_wildcard(self, app):
+        page = self._page(app, OIDC_FRONTEND_URL="not a url")
+
+        assert "'*'" not in page
+        assert '"*"' not in page
+        assert "https://api.example.com" in page
+
+
 class TestConnectorDisconnect:
     def test_returns_400_missing_provider(self, app):
         from docsgpt.api.connector.routes import ConnectorDisconnect
@@ -425,8 +476,57 @@ class TestConnectorDisconnect:
         with app.test_request_context(
             "/api/connectors/disconnect", method="POST", json={}
         ):
+            request.decoded_token = {"sub": "u-disc"}
             r = ConnectorDisconnect().post()
         assert r.status_code == 400
+
+    def test_rejects_an_unauthenticated_caller(self, app, pg_conn):
+        """GHSA-949x-3mqg-5xfr: the endpoint took a session token and no
+        credentials, so a leaked token was enough to destroy the session."""
+        from docsgpt.api.connector.routes import ConnectorDisconnect
+        from docsgpt.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+
+        repo = ConnectorSessionsRepository(pg_conn)
+        session = repo.upsert("u-victim", "google_drive", status="authorized")
+        repo.update(str(session["id"]), {"session_token": "st-unauth"})
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/connectors/disconnect",
+            method="POST",
+            json={"provider": "google_drive", "session_token": "st-unauth"},
+        ):
+            request.decoded_token = None
+            r = ConnectorDisconnect().post()
+
+        assert r.status_code == 401
+        assert repo.get_by_session_token("st-unauth") is not None
+
+    def test_another_users_token_is_not_destroyed(self, app, pg_conn):
+        """Authentication alone is not enough: a logged-in caller who learns
+        somebody else's token must not be able to disconnect them."""
+        from docsgpt.api.connector.routes import ConnectorDisconnect
+        from docsgpt.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+
+        repo = ConnectorSessionsRepository(pg_conn)
+        session = repo.upsert("u-victim", "google_drive", status="authorized")
+        repo.update(str(session["id"]), {"session_token": "st-victim"})
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/connectors/disconnect",
+            method="POST",
+            json={"provider": "google_drive", "session_token": "st-victim"},
+        ):
+            request.decoded_token = {"sub": "u-attacker"}
+            r = ConnectorDisconnect().post()
+
+        # Same answer as a token that does not exist: a different status here
+        # would say which tokens are real.
+        assert r.status_code == 200
+        assert repo.get_by_session_token("st-victim") is not None
 
     def test_disconnects_session(self, app, pg_conn):
         from docsgpt.api.connector.routes import ConnectorDisconnect
@@ -444,9 +544,12 @@ class TestConnectorDisconnect:
             method="POST",
             json={"provider": "google_drive", "session_token": "st-disc"},
         ):
+            request.decoded_token = {"sub": user}
             r = ConnectorDisconnect().post()
         assert r.status_code == 200
         assert r.json["success"] is True
+        # The accept control for the two refusals above: the owner still can.
+        assert repo.get_by_session_token("st-disc") is None
 
     def test_disconnect_without_session_token_succeeds(self, app):
         from docsgpt.api.connector.routes import ConnectorDisconnect
@@ -456,6 +559,7 @@ class TestConnectorDisconnect:
             method="POST",
             json={"provider": "google_drive"},
         ):
+            request.decoded_token = {"sub": "u-disc"}
             r = ConnectorDisconnect().post()
         assert r.status_code == 200
 

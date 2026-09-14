@@ -2,7 +2,7 @@ import base64
 import html
 import json
 import uuid
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 
 from flask import (
@@ -16,6 +16,7 @@ from flask_restx import fields, Namespace, Resource
 
 
 from docsgpt.api import api
+from docsgpt.core.settings import settings
 from docsgpt.api.user.tasks import (
     ingest_connector_task,
 )
@@ -33,6 +34,26 @@ api.add_namespace(connectors_ns)
 
 # Fixed callback status path to prevent open redirect
 CALLBACK_STATUS_PATH = "/api/connectors/callback-status"
+
+
+def _browser_app_origin() -> str:
+    """The single origin the OAuth popup may hand the session token to.
+
+    `OIDC_FRONTEND_URL` is documented as the browser-facing app origin and is
+    what a split deployment (app and API on different hosts) has to set. When
+    it is unset the app is served from this request's own origin, which is the
+    default single-host deployment.
+
+    Never `"*"`: the token this is used for resolves to a stored OAuth
+    credential (GHSA-949x-3mqg-5xfr).
+    """
+    configured = getattr(settings, "OIDC_FRONTEND_URL", None)
+    source = configured or request.host_url
+    parsed = urlparse(source)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    # An unparseable configuration must not silently widen back to a wildcard.
+    return request.host_url.rstrip("/")
 
 
 def build_callback_redirect(params: dict) -> str:
@@ -346,6 +367,16 @@ class ConnectorDisconnect(Resource):
     @api.doc(description="Disconnect a connector session")
     def post(self):
         try:
+            # GHSA-949x-3mqg-5xfr: this endpoint took a session token and no
+            # credentials, so anyone holding a leaked token could destroy the
+            # session it names. Authenticated like every other route here, and
+            # the session has to belong to the caller -- a token alone is not
+            # authority over somebody else's connector.
+            decoded_token = request.decoded_token
+            if not decoded_token:
+                return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
+            user_id = decoded_token.get('sub')
+
             data = request.get_json()
             provider = data.get('provider')
             session_token = data.get('session_token')
@@ -355,9 +386,13 @@ class ConnectorDisconnect(Resource):
 
             if session_token:
                 with db_session() as conn:
-                    ConnectorSessionsRepository(conn).delete_by_session_token(
-                        session_token,
-                    )
+                    repository = ConnectorSessionsRepository(conn)
+                    session_row = repository.get_by_session_token(session_token)
+                    # Same answer whether the token is unknown or belongs to
+                    # someone else: a different status would turn this into an
+                    # oracle for which tokens exist.
+                    if session_row and str(session_row.get("user_id")) == str(user_id):
+                        repository.delete_by_session_token(session_token)
 
             return make_response(jsonify({"success": True}), 200)
         except Exception as e:
@@ -492,10 +527,20 @@ class ConnectorCallbackStatus(Resource):
                 js_encoded = json.dumps(value)
                 return js_encoded.replace('</', '<\\/').replace('<!--', '<\\!--')
 
+            # GHSA-949x-3mqg-5xfr: the session token below was posted with a
+            # wildcard target origin, so any page that arranged to be this
+            # popup's opener received it -- and the token maps to a stored
+            # OAuth credential. The message now names the one origin allowed to
+            # read it: the browser-facing app. `OIDC_FRONTEND_URL` is that
+            # origin when the app and the API are served separately; otherwise
+            # they share this request's origin.
+            opener_origin = _browser_app_origin()
+
             js_status = safe_js_string(status)
             js_session_token = safe_js_string(session_token)
             js_user_email = safe_js_string(user_email)
             js_provider_type = safe_js_string(provider_raw)
+            js_opener_origin = safe_js_string(opener_origin)
 
             html_content = f"""
             <!DOCTYPE html>
@@ -521,7 +566,7 @@ class ConnectorCallbackStatus(Resource):
                                 type: providerType + '_auth_success',
                                 session_token: sessionToken,
                                 user_email: userEmail
-                            }}, '*');
+                            }}, {js_opener_origin});
 
                             setTimeout(() => window.close(), 3000);
                         }} else if (status === "cancelled" || status === "error") {{
