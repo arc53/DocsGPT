@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterable, Awaitable, Callable, Optional
+from typing import Any, AsyncIterable, AsyncIterator, Awaitable, Callable, Optional
 
 import anyio
 from starlette.responses import StreamingResponse
 from starlette.types import Receive, Scope, Send
+
+from docsgpt.streaming.sse_leases import StreamLease, hold_lease
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +17,15 @@ logger = logging.getLogger(__name__)
 # that ended the response, so a step stuck on a dead connection would otherwise
 # hold the request task, and a graceful shutdown, indefinitely.
 _CLEANUP_TIMEOUT_SECONDS = 5.0
+
+# Headers for the browser-facing SSE streams (notifications, chat reconnect).
+SSE_HEADERS = {
+    "Cache-Control": "no-store",
+    "X-Accel-Buffering": "no",
+    "Connection": "keep-alive",
+    # Marks the response as served by the event loop. Purely diagnostic.
+    "X-SSE-Transport": "async",
+}
 
 
 class ClosingStreamingResponse(StreamingResponse):
@@ -48,6 +59,16 @@ class ClosingStreamingResponse(StreamingResponse):
                 await _bounded(aclose, "closing the response stream")
             if self._on_close is not None:
                 await _bounded(self._on_close, "response on_close hook")
+
+
+def sse_response(stream: AsyncIterator[str], lease: Optional[StreamLease]) -> ClosingStreamingResponse:
+    """Serve ``stream`` as SSE, refreshing ``lease`` between frames and releasing it however the response ends."""
+    return ClosingStreamingResponse(
+        hold_lease(stream, lease),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+        on_close=lease.release if lease is not None else None,
+    )
 
 
 async def _bounded(step: Callable[[], Awaitable[None]], what: str) -> None:

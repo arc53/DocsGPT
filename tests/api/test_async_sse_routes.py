@@ -184,6 +184,24 @@ class TestOwnershipGate:
         assert ": connected" in r.text
 
 
+    def test_stream_logs_carry_request_context(self):
+        from docsgpt.core import log_context
+
+        seen: dict = {}
+
+        async def _gen(message_id, last_event_id=None, **kwargs):
+            seen.update(log_context.snapshot())
+            yield ": connected\n\n"
+
+        with patch(_AUTH, return_value={"sub": "alice"}), patch(
+            _OWNS, return_value=True
+        ), patch(_STREAM, _gen):
+            _client().get(f"/api/messages/{VALID_UUID}/events")
+        assert seen["endpoint"] == "message_events"
+        assert seen["user_id"] == "alice"
+        assert seen["activity_id"]
+
+
 # ── Last-Event-ID parsing ───────────────────────────────────────────────────
 
 

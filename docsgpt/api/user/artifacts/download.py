@@ -51,6 +51,7 @@ def _sanitize_header_filename(filename: Optional[str], fallback: str) -> str:
 
 
 def _ascii_fold(value: str) -> str:
+    """Drop accents and any other non-ASCII characters from ``value``."""
     return unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
 
 
@@ -130,7 +131,8 @@ async def download_artifact(request: Request) -> Response:
     decoded, error = await authenticate(request)
     if error is not None:
         return error
-    bind_log_context("artifact_download", decoded.get("sub") if decoded else None)
+    # Same endpoint value the Flask-RESTX route logged, so saved log queries keep matching.
+    bind_log_context("artifacts_download_artifact", decoded.get("sub") if decoded else None)
     query = request.query_params
 
     try:

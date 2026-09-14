@@ -26,7 +26,7 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from docsgpt.api.asgi_auth import authenticate, bind_log_context, json_error
-from docsgpt.api.asgi_stream import ClosingStreamingResponse
+from docsgpt.api.asgi_stream import sse_response
 from docsgpt.cache import PUBSUB_SOCKET_TIMEOUT_SECONDS
 from docsgpt.core.settings import settings
 from docsgpt.core.shutdown import is_shutting_down
@@ -37,20 +37,12 @@ from docsgpt.events.keys import (
     topic_name,
 )
 from docsgpt.streaming.async_broadcast_channel import AsyncTopic
-from docsgpt.streaming.async_redis import get_async_redis_instance
-from docsgpt.streaming.sse_leases import (
-    StreamCapExceeded,
-    acquire_stream_lease,
-    hold_lease,
-)
+from docsgpt.streaming.async_redis import ASYNC_REDIS_OP_TIMEOUT_SECONDS, get_async_redis_instance
+from docsgpt.streaming.sse_leases import StreamCapExceeded, acquire_stream_lease
 
 logger = logging.getLogger(__name__)
 
 SUBSCRIBE_POLL_INTERVAL_SECONDS = 1.0
-
-# Upper bound on the replay-budget check, so a stalled Redis connection fails
-# open instead of holding the request.
-_REDIS_OP_TIMEOUT_SECONDS = 5.0
 
 # WHATWG SSE treats CRLF, CR, and LF equivalently as line terminators.
 _SSE_LINE_SPLIT = re.compile(r"\r\n|\r|\n")
@@ -60,14 +52,6 @@ _SSE_LINE_SPLIT = re.compile(r"\r\n|\r|\n")
 # not be passed to XRANGE — Redis would reject it and our truncation gate
 # would silently fail.
 _STREAM_ID_RE = re.compile(r"^\d+(-\d+)?$")
-
-_SSE_HEADERS = {
-    "Cache-Control": "no-store",
-    "X-Accel-Buffering": "no",
-    "Connection": "keep-alive",
-    # Marks the response as served by the event loop. Purely diagnostic.
-    "X-SSE-Transport": "async",
-}
 
 # Only emitted at most once per process so a misconfigured deployment
 # doesn't drown the logs.
@@ -146,7 +130,7 @@ async def _allow_replay(
     window = max(1, int(settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS))
     key = replay_budget_key(user_id)
     try:
-        with anyio.fail_after(_REDIS_OP_TIMEOUT_SECONDS):
+        with anyio.fail_after(ASYNC_REDIS_OP_TIMEOUT_SECONDS):
             used = int(await redis_client.incr(key))
             # Always (re)seed the TTL. Gating on ``used == 1`` would wedge
             # the counter forever if INCR succeeds but EXPIRE raises on
@@ -431,7 +415,8 @@ async def stream_events(request: Request) -> Response:
     user_id = decoded.get("sub") if isinstance(decoded, dict) else None
     if not user_id:
         return json_error("Authentication required", 401)
-    bind_log_context("event_stream", user_id)
+    # Same endpoint value the Flask route logged, so saved log queries keep matching.
+    bind_log_context("event_stream.stream_events", user_id)
 
     # In dev deployments without AUTH_TYPE configured, every request
     # resolves to user_id="local" and shares one stream. Surface this so
@@ -476,13 +461,7 @@ async def stream_events(request: Request) -> Response:
         " (rejected_invalid)" if last_event_id_invalid else "",
     )
     stream = _event_stream(redis_client, user_id, last_event_id, last_event_id_invalid, push_enabled)
-    return ClosingStreamingResponse(
-        hold_lease(stream, lease),
-        media_type="text/event-stream",
-        headers=_SSE_HEADERS,
-        # Released once the response is over, however it ended.
-        on_close=lease.release if lease is not None else None,
-    )
+    return sse_response(stream, lease)
 
 
 # Mounted in ``docsgpt/asgi.py`` ahead of the Flask catch-all.

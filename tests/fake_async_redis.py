@@ -3,8 +3,9 @@
 Sorted sets and transactional pipelines behave like Redis, enough for the
 per-connection leases. ``incr``, ``expire``, ``xrange`` and ``xinfo_stream``
 are ``AsyncMock`` attributes that tests configure directly. Set ``fail`` to
-make sorted-set commands and pipelines raise, or ``hang`` to make them never
-return (a dead connection).
+make sorted-set commands and pipelines raise, ``hang`` to make them never
+return (a dead connection), or ``hang_after_execute`` to make a pipeline apply
+its commands and then never reply (a reply lost after the server ran EXEC).
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ class FakeAsyncRedis:
         self.key_ttls: dict[str, int] = {}
         self.fail: Optional[BaseException] = None
         self.hang = False
+        self.hang_after_execute = False
         self.incr = AsyncMock(return_value=1)
         self.expire = AsyncMock(return_value=True)
         self.xrange = AsyncMock(return_value=[])
@@ -146,4 +148,6 @@ class FakePipeline:
         await self._redis._gate()
         results = [fn(*args, **kwargs) for fn, args, kwargs in self._ops]
         self._ops.clear()
+        if self._redis.hang_after_execute:
+            await anyio.sleep_forever()
         return results

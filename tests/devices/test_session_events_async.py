@@ -16,13 +16,16 @@ import json
 import time
 from types import SimpleNamespace
 
+import anyio
 import pytest
 from flask import Flask
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.testclient import TestClient
 
 from docsgpt.api.devices import auth as auth_module
 from docsgpt.api.devices import session_events as events_module
+from docsgpt.core import log_context
 from docsgpt.core.shutdown import begin_shutdown, reset_shutdown
 from tests.asgi_stream import stream_then_disconnect
 
@@ -95,6 +98,27 @@ def _path(session_id: str) -> str:
     return f"/api/devices/sessions/{session_id}/events"
 
 
+def _scope(session_id: str, headers: dict | None = None) -> dict:
+    """A raw ASGI GET scope for the stream route."""
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": _path(session_id),
+        "raw_path": _path(session_id).encode(),
+        "root_path": "",
+        "query_string": b"",
+        "headers": [
+            (name.lower().encode("latin-1"), value.encode("latin-1"))
+            for name, value in (AUTH if headers is None else headers).items()
+        ],
+        "client": ("testclient", 50000),
+        "server": ("testserver", 80),
+    }
+
+
 def _open(session_id: str, headers: dict | None = None):
     return TestClient(_app()).get(_path(session_id), headers=headers if headers is not None else AUTH)
 
@@ -149,6 +173,42 @@ class TestAuth:
         ticket = _ticket(b)
         assert _open(ticket).status_code == 200
         assert device.touched == [DEVICE["id"]]
+
+    @pytest.mark.asyncio
+    async def test_unauthenticated_request_body_is_never_read(self, device, broker):
+        # An endless body must not be buffered before the token check rejects it.
+        reads = 0
+        sent: list = []
+
+        async def receive():
+            nonlocal reads
+            reads += 1
+            await anyio.sleep(0)
+            return {"type": "http.request", "body": b"x" * 65536, "more_body": True}
+
+        async def send(message):
+            sent.append(message)
+
+        with anyio.fail_after(2):
+            await _app()(_scope("st_x", headers={}), receive, send)
+        assert sent[0]["status"] == 401
+        assert reads == 0
+
+    def test_stream_logs_carry_request_context(self, device, broker, monkeypatch):
+        b, _ = broker
+        ticket = _ticket(b)
+        seen: dict = {}
+        original = b.next_command_async
+
+        async def _capture(sess, timeout=1.0):
+            seen.update(log_context.snapshot())
+            return await original(sess, timeout=timeout)
+
+        monkeypatch.setattr(b, "next_command_async", _capture)
+        assert _open(ticket).status_code == 200
+        assert seen["endpoint"] == "devices.session_events"
+        assert seen["user_id"] == DEVICE["user_id"]
+        assert seen["activity_id"]
 
 
 # ── stream ──────────────────────────────────────────────────────────────
@@ -271,6 +331,27 @@ class TestStreamLifecycle:
         assert b.get_session(ticket) is None
         assert DEVICE["id"] not in b._sessions_by_device
 
+    async def test_ticket_is_claimed_before_the_body_starts(self, device, broker):
+        b, fake = broker
+        ticket = _ticket(b)
+        scope = {**_scope(ticket), "path_params": {"session_id": ticket}}
+
+        async def receive():
+            return {"type": "http.disconnect"}
+
+        response = await events_module.device_session_events(Request(scope, receive))
+        assert response.status_code == 200
+        # A response whose body never runs has still used the ticket up.
+        assert fake.get(f"dev:ticket:{DEVICE['id']}") is None
+        assert b.get_session(ticket) is not None
+
+        async def send(_message):
+            return None
+
+        with anyio.fail_after(2):
+            await response(scope, receive, send)
+        assert b.get_session(ticket) is None
+
 
 # ── machine-key signatures ──────────────────────────────────────────────
 
@@ -319,6 +400,26 @@ class TestSignature:
         assert r.json() == {"success": False, "error": "invalid_signature"}
         # Rejected before the session opened: the ticket is still unclaimed.
         assert fake.get(f"dev:ticket:{DEVICE['id']}") == ticket.encode()
+
+    @pytest.mark.asyncio
+    async def test_signed_path_excludes_root_path(self, device, broker, monkeypatch):
+        # The Flask device routes verify against PATH_INFO, which has the mount
+        # prefix stripped; the stream must check the same path.
+        monkeypatch.setattr(auth_module.settings, "REMOTE_DEVICE_REQUIRE_SIGNATURE", True)
+        b, _ = broker
+        ticket = _ticket(b)
+        fingerprint, headers = _signed_headers(_path(ticket))
+        device.row["machine_pubkey_fingerprint"] = fingerprint
+        status, _, chunks = await stream_then_disconnect(
+            _app(),
+            _path(ticket),
+            headers=headers,
+            root_path="/docsgpt",
+            chunks_before_disconnect=10**6,
+            timeout=3,
+        )
+        assert status == 200
+        assert b"event: invocation" in b"".join(chunks)
 
     def test_missing_signature_rejected(self, device, broker, monkeypatch):
         monkeypatch.setattr(auth_module.settings, "REMOTE_DEVICE_REQUIRE_SIGNATURE", True)

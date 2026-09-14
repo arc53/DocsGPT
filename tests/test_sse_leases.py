@@ -89,11 +89,21 @@ class TestAcquire:
         assert await acquire_stream_lease(redis, "alice") is None
 
     async def test_stalled_redis_fails_open_within_timeout(self, monkeypatch):
-        monkeypatch.setattr(sse_leases, "_REDIS_OP_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr(sse_leases, "ASYNC_REDIS_OP_TIMEOUT_SECONDS", 0.05)
         redis = FakeAsyncRedis()
         redis.hang = True
         with anyio.fail_after(2):
             assert await acquire_stream_lease(redis, "alice") is None
+
+    async def test_timed_out_acquire_leaves_no_orphan_lease(self, monkeypatch):
+        # EXEC ran on the server but its reply never arrived: the stream opens
+        # without a lease, so the member it added must not keep counting.
+        monkeypatch.setattr(sse_leases, "ASYNC_REDIS_OP_TIMEOUT_SECONDS", 0.05)
+        redis = FakeAsyncRedis()
+        redis.hang_after_execute = True
+        with anyio.fail_after(2):
+            assert await acquire_stream_lease(redis, "alice") is None
+        assert redis.zsets == {}
 
 
 @pytest.mark.unit
@@ -110,7 +120,7 @@ class TestLeaseLifecycle:
         assert set(redis.zsets[KEY]) == {second.lease_id}
 
     async def test_release_is_bounded_when_redis_stalls(self, monkeypatch):
-        monkeypatch.setattr(sse_leases, "_REDIS_OP_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr(sse_leases, "ASYNC_REDIS_OP_TIMEOUT_SECONDS", 0.05)
         redis = FakeAsyncRedis()
         lease = await acquire_stream_lease(redis, "alice")
         redis.hang = True
@@ -143,6 +153,26 @@ class TestLeaseLifecycle:
         await long_lived.release()
         assert long_lived.lease_id not in redis.zsets[KEY]
         assert len(redis.zsets[KEY]) == 7
+
+    async def test_refresh_does_not_revive_a_pruned_lease(self, clock):
+        # Refreshes failed past the TTL, a newer connect pruned the lease and
+        # took the slot. Re-adding it would put the user over the cap.
+        redis = FakeAsyncRedis()
+        lease = await acquire_stream_lease(redis, "alice")
+        redis.zsets[KEY].pop(lease.lease_id)
+        _fill(redis, 8, clock["t"])
+        clock["t"] += 30
+        await lease.refresh_if_due()
+        assert lease.lease_id not in redis.zsets[KEY]
+        assert len(redis.zsets[KEY]) == 8
+
+    async def test_refresh_does_not_undo_a_manual_clear(self, clock):
+        redis = FakeAsyncRedis()
+        lease = await acquire_stream_lease(redis, "alice")
+        redis.zsets.clear()  # redis-cli DEL user:<id>:sse_leases
+        clock["t"] += 30
+        await lease.refresh_if_due()
+        assert redis.zsets == {}
 
     async def test_refresh_failure_is_swallowed(self, clock):
         redis = FakeAsyncRedis()

@@ -40,6 +40,17 @@ class TestGetAsyncRedisInstance:
         assert kwargs["socket_connect_timeout"] == 2
         assert kwargs["health_check_interval"] == 10
 
+    async def test_reads_bounded_like_the_sync_pubsub_client(self):
+        # A silently dropped connection must fail a BLPOP or XRANGE, not hang it.
+        from docsgpt.cache import PUBSUB_SOCKET_TIMEOUT_SECONDS
+
+        with patch(_FROM_URL) as from_url:
+            await async_redis.get_async_redis_instance()
+        kwargs = from_url.call_args.kwargs
+        assert kwargs["socket_timeout"] == PUBSUB_SOCKET_TIMEOUT_SECONDS
+        assert kwargs["socket_keepalive"] is True
+        assert "socket_keepalive_options" in kwargs
+
     async def test_real_client_pool_honours_setting(self, monkeypatch):
         # from_url connects lazily, so this never opens a socket.
         monkeypatch.setattr(async_redis.settings, "ASYNC_REDIS_MAX_CONNECTIONS", 777)

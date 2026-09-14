@@ -22,12 +22,9 @@ import anyio
 
 from docsgpt.core.settings import settings
 from docsgpt.events.keys import connection_leases_key
+from docsgpt.streaming.async_redis import ASYNC_REDIS_OP_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
-
-# Upper bound on any one lease command, so a stalled Redis connection can't
-# hold a request, a stream, or its cleanup.
-_REDIS_OP_TIMEOUT_SECONDS = 5.0
 
 T = TypeVar("T")
 
@@ -63,9 +60,11 @@ class StreamLease:
             return
         self.refreshed_at = now
         try:
-            with anyio.fail_after(_REDIS_OP_TIMEOUT_SECONDS):
+            with anyio.fail_after(ASYNC_REDIS_OP_TIMEOUT_SECONDS):
                 async with self.redis.pipeline(transaction=True) as pipe:
-                    pipe.zadd(self.key, {self.lease_id: time.time()})
+                    # XX: a lease pruned or cleared while refreshes were failing
+                    # stays gone instead of retaking a slot past the cap.
+                    pipe.zadd(self.key, {self.lease_id: time.time()}, xx=True)
                     pipe.expire(self.key, int(self.ttl))
                     await pipe.execute()
         except Exception:
@@ -73,7 +72,7 @@ class StreamLease:
 
     async def release(self) -> None:
         """Remove this lease; shielded so it completes during cancellation, and bounded."""
-        with anyio.move_on_after(_REDIS_OP_TIMEOUT_SECONDS, shield=True):
+        with anyio.move_on_after(ASYNC_REDIS_OP_TIMEOUT_SECONDS, shield=True):
             try:
                 await self.redis.zrem(self.key, self.lease_id)
             except Exception:
@@ -99,21 +98,23 @@ async def acquire_stream_lease(redis: Any, user_id: str) -> Optional[StreamLease
         return None
     key = connection_leases_key(user_id)
     ttl = lease_ttl_seconds()
-    lease_id = uuid.uuid4().hex
+    lease = StreamLease(redis=redis, key=key, lease_id=uuid.uuid4().hex, ttl=ttl, refreshed_at=time.monotonic())
     now = time.time()
     try:
-        with anyio.fail_after(_REDIS_OP_TIMEOUT_SECONDS):
+        with anyio.fail_after(ASYNC_REDIS_OP_TIMEOUT_SECONDS):
             # One transaction, so concurrent connects are counted one at a time.
             async with redis.pipeline(transaction=True) as pipe:
                 pipe.zremrangebyscore(key, "-inf", now - ttl)
-                pipe.zadd(key, {lease_id: now})
+                pipe.zadd(key, {lease.lease_id: now})
                 pipe.zcard(key)
                 pipe.expire(key, int(ttl))
                 results = await pipe.execute()
     except Exception:
         logger.debug("SSE lease acquire failed for user=%s; failing open", user_id, exc_info=True)
+        # EXEC may have run before its reply was lost; the stream opens without
+        # a lease, so its member must not keep counting against the cap.
+        await lease.release()
         return None
-    lease = StreamLease(redis=redis, key=key, lease_id=lease_id, ttl=ttl, refreshed_at=time.monotonic())
     if int(results[2]) > cap:
         await lease.release()
         raise StreamCapExceeded()

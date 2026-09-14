@@ -21,11 +21,11 @@ from typing import Optional
 import anyio
 from sqlalchemy import text
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import Response
 from starlette.routing import Route
 
-from docsgpt.api.asgi_auth import authenticate
-from docsgpt.api.asgi_stream import ClosingStreamingResponse
+from docsgpt.api.asgi_auth import authenticate, bind_log_context, json_error
+from docsgpt.api.asgi_stream import sse_response
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.streaming.async_event_replay import (
@@ -36,11 +36,7 @@ from docsgpt.streaming.event_replay import (
     DEFAULT_KEEPALIVE_SECONDS,
     DEFAULT_POLL_TIMEOUT_SECONDS,
 )
-from docsgpt.streaming.sse_leases import (
-    StreamCapExceeded,
-    acquire_stream_lease,
-    hold_lease,
-)
+from docsgpt.streaming.sse_leases import StreamCapExceeded, acquire_stream_lease
 
 logger = logging.getLogger(__name__)
 
@@ -89,22 +85,6 @@ def _user_owns_message(message_id: str, user_id: str) -> bool:
         )
         return False
 
-_SSE_HEADERS = {
-    "Cache-Control": "no-store",
-    "X-Accel-Buffering": "no",
-    "Connection": "keep-alive",
-    # Marks the response as served by the event-loop reader rather than the
-    # WSGI-threaded Flask fallback. Purely diagnostic — the frontend reads
-    # the body via fetch+getReader and ignores response headers.
-    "X-SSE-Transport": "async",
-}
-
-
-def _json(message: str, status_code: int) -> JSONResponse:
-    return JSONResponse(
-        {"success": False, "message": message}, status_code=status_code
-    )
-
 
 async def stream_message_events(request: Request) -> Response:
     """GET /api/messages/{message_id}/events — async reconnect tail.
@@ -120,17 +100,18 @@ async def stream_message_events(request: Request) -> Response:
         return error
     user_id = decoded.get("sub") if isinstance(decoded, dict) else None
     if not user_id:
-        return _json("Authentication required", 401)
+        return json_error("Authentication required", 401)
+    bind_log_context("message_events", user_id)
 
     message_id = request.path_params["message_id"]
     if not _MESSAGE_ID_RE.match(message_id):
-        return _json("Invalid message id", 400)
+        return json_error("Invalid message id", 400)
 
     # Ownership check is a sync DB read — push it off the loop.
     owns = await anyio.to_thread.run_sync(_user_owns_message, message_id, user_id)
     if not owns:
         # Same opaque 404 as the Flask route — don't disclose existence.
-        return _json("Not found", 404)
+        return json_error("Not found", 404)
 
     # Per-user connection cap, shared with /api/events so it bounds a user's
     # total live SSE footprint. Reserved before the response opens so an
@@ -139,7 +120,7 @@ async def stream_message_events(request: Request) -> Response:
         lease = await acquire_stream_lease(await get_async_redis_instance(), user_id)
     except StreamCapExceeded:
         logger.warning("sse.reconnect.rejected user_id=%s (over cap)", user_id)
-        return _json("Too many concurrent SSE connections", 429)
+        return json_error("Too many concurrent SSE connections", 429)
 
     raw_cursor = request.headers.get("Last-Event-ID") or request.query_params.get(
         "last_event_id"
@@ -163,13 +144,7 @@ async def stream_message_events(request: Request) -> Response:
         keepalive_seconds=keepalive_seconds,
         poll_timeout_seconds=DEFAULT_POLL_TIMEOUT_SECONDS,
     )
-    return ClosingStreamingResponse(
-        hold_lease(stream, lease),
-        media_type="text/event-stream",
-        headers=_SSE_HEADERS,
-        # Released once the response is over, however it ended.
-        on_close=lease.release if lease is not None else None,
-    )
+    return sse_response(stream, lease)
 
 
 # Mounted in ``docsgpt/asgi.py`` ahead of the Flask catch-all. Keep

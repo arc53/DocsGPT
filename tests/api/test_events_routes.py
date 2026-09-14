@@ -197,6 +197,18 @@ class TestStreamShape:
         assert record["poll_timeout"] == events_module.SUBSCRIBE_POLL_INTERVAL_SECONDS
         assert record["liveness_timeout"] == PUBSUB_SOCKET_TIMEOUT_SECONDS
 
+    def test_stream_logs_carry_the_flask_endpoint_name(self):
+        from docsgpt.core import log_context
+
+        seen: dict = {}
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=_redis())
+        ), patch(_SUBSCRIBE, _subscribe(probe=lambda: seen.update(log_context.snapshot()))):
+            _get()
+        # Same value the Flask route logged, so saved log queries keep matching.
+        assert seen["endpoint"] == "event_stream.stream_events"
+        assert seen["user_id"] == "alice"
+
     def test_keepalive_emitted_on_idle_ticks(self, monkeypatch):
         monkeypatch.setattr(events_module.settings, "SSE_KEEPALIVE_SECONDS", 0)
         with patch(_AUTH, return_value=ALICE), patch(
@@ -474,7 +486,7 @@ class TestReplayBudget:
         assert await events_module._allow_replay(redis, "alice", OLD_CURSOR) is True
 
     async def test_fail_open_when_redis_stalls(self, monkeypatch):
-        monkeypatch.setattr(events_module, "_REDIS_OP_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr(events_module, "ASYNC_REDIS_OP_TIMEOUT_SECONDS", 0.05)
         redis = _redis()
 
         async def _stalled(_key):

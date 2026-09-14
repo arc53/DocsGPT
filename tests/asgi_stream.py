@@ -19,6 +19,7 @@ async def stream_then_disconnect(
     *,
     headers: Optional[Mapping[str, str]] = None,
     query_string: bytes = b"",
+    root_path: str = "",
     chunks_before_disconnect: int = 1,
     timeout: float = 5.0,
 ) -> tuple[Optional[int], dict[str, str], list[bytes]]:
@@ -26,8 +27,9 @@ async def stream_then_disconnect(
 
     A response that finishes on its own (a 401, a stream that ends) returns
     without any disconnect. ``chunks_before_disconnect=0`` disconnects as soon
-    as the request is read, before any body. ``timeout`` fails the test
-    instead of hanging it when a stream never ends.
+    as the request is read, before any body. ``root_path`` mounts the app under
+    a prefix, which ASGI servers include in ``path``. ``timeout`` fails the
+    test instead of hanging it when a stream never ends.
 
     Returns:
         tuple: ``(status, headers, body_chunks)`` with lower-cased header names.
@@ -46,9 +48,9 @@ async def stream_then_disconnect(
         "http_version": "1.1",
         "method": "GET",
         "scheme": "http",
-        "path": path,
-        "raw_path": path.encode("utf-8"),
-        "root_path": "",
+        "path": root_path + path,
+        "raw_path": (root_path + path).encode("utf-8"),
+        "root_path": root_path,
         "query_string": query_string,
         "headers": [
             (name.lower().encode("latin-1"), value.encode("latin-1"))
