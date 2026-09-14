@@ -105,9 +105,6 @@ def _image_entries(factory: Callable[[], BaseParser], suffixes) -> Dict[str, Bas
     return {suffix: factory() for suffix in suffixes}
 
 
-_LEGACY_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg")
-
-
 def _legacy_file_extractor(pdf_text_fast_path: bool = False, ocr_enabled: bool = False) -> Dict[str, BaseParser]:
     """Parser map that needs neither docling nor anydoc.
 
@@ -124,7 +121,10 @@ def _legacy_file_extractor(pdf_text_fast_path: bool = False, ocr_enabled: bool =
     from docsgpt.parser.file.ocr_parser import IMAGE_SUFFIXES
 
     pdf_parser: BaseParser = PDFParser()
-    images: Dict[str, BaseParser] = _image_entries(ImageParser, _LEGACY_IMAGE_SUFFIXES)
+    # Every image suffix gets an entry even without OCR: the image itself is
+    # what a vision model is sent, so a missing entry only means the upload is
+    # refused before any model sees it (.webp was, in production).
+    images: Dict[str, BaseParser] = _image_entries(ImageParser, sorted(IMAGE_SUFFIXES))
     if ocr_enabled:
         native = _native_ocr_parsers()
         if native is not None:
@@ -490,6 +490,7 @@ class SimpleDirectoryReader(BaseReader):
         data: Union[str, List[str]] = ""
         data_list: List[str] = []
         metadata_list = []
+        first_error: Optional[DocumentParseError] = None
         self.file_token_counts = {}
         self.failed_files = []
 
@@ -529,6 +530,7 @@ class SimpleDirectoryReader(BaseReader):
             except DocumentParseError as e:
                 logging.warning(f"Skipping unreadable file {input_file.name}: {e}")
                 self.failed_files.append((input_file, str(e)))
+                first_error = first_error or e
                 report_progress(file_index + 1)
                 continue
 
@@ -579,10 +581,10 @@ class SimpleDirectoryReader(BaseReader):
         # ingest tasks) treat it as terminal and tell the user.
         if self.failed_files and not data_list:
             if len(self.failed_files) == 1:
-                # Single-file read (the attachment path): the parser's own
-                # message reaches the user verbatim, so don't wrap it in
-                # "None of the 1 file(s)…".
-                raise DocumentParseError(self.failed_files[0][1])
+                # Single-file read (the attachment path): re-raise the parser's
+                # own exception, so its message reaches the user verbatim and
+                # its type (``NoTextLayerError`` for a scan) reaches the caller.
+                raise first_error
             names = ", ".join(p.name for p, _ in self.failed_files[:5])
             raise DocumentParseError(
                 f"None of the {len(self.failed_files)} files could be parsed: "

@@ -1,615 +1,581 @@
-"""Tests for docsgpt/api/events/routes.py — the SSE endpoint.
+"""Tests for docsgpt/api/events/routes.py — the native-async ``GET /api/events``.
 
-The SSE generator runs in a separate thread under the WSGI test client;
-we drive it with mocked Redis (the ``pubsub.get_message`` and ``xrange``
-sequences) and read the response body until we have enough records to
-assert on, then close the response to terminate the generator.
+The route is a Starlette endpoint served on the event loop. Tests drive it
+through Starlette's ``TestClient`` with the async Redis client faked
+(``tests/fake_async_redis.py``: real sorted sets for connection leases, mocks
+for streams) and ``AsyncTopic.subscribe`` replaced. Fake subscriptions end
+after a few frames so the stream finishes and the client returns the body; a
+mid-stream client disconnect and the shutdown path go through
+``tests/asgi_stream.py``.
 """
 
 from __future__ import annotations
 
+import inspect
 import json
-import threading
-from typing import Any
-from unittest.mock import MagicMock, patch
+import time
+from typing import Any, Callable, Optional
+from unittest.mock import AsyncMock, patch
 
+import anyio
 import pytest
-from flask import Flask, request
+from starlette.applications import Starlette
+from starlette.testclient import TestClient
+
+from docsgpt.api.events import routes as events_module
+from docsgpt.cache import PUBSUB_SOCKET_TIMEOUT_SECONDS
+from docsgpt.core.shutdown import begin_shutdown, reset_shutdown
+from tests.asgi_stream import stream_then_disconnect
+from tests.fake_async_redis import FakeAsyncRedis
+
+_AUTH = "docsgpt.api.asgi_auth.handle_auth"
+_AREDIS = "docsgpt.api.events.routes.get_async_redis_instance"
+_SUBSCRIBE = "docsgpt.api.events.routes.AsyncTopic.subscribe"
+_LEASES = "user:alice:sse_leases"
+ALICE = {"sub": "alice"}
+OLD_CURSOR = "1735682300000-0"
 
 
-def _make_app():
-    """Mount the events blueprint on a bare Flask app + JWT shim.
-
-    The shim mimics ``docsgpt/app.py`` populating
-    ``request.decoded_token`` so the SSE handler's auth gate sees a
-    user-id without requiring the full app stack.
-    """
-    from docsgpt.api.events.routes import events
-
-    app = Flask(__name__)
-    app.register_blueprint(events)
-    app.config["TESTING"] = True
-
-    @app.before_request
-    def _shim_auth():  # noqa: D401
-        header = request.headers.get("X-Test-Sub")
-        request.decoded_token = {"sub": header} if header else None
-
-    return app
+def _app() -> Starlette:
+    return Starlette(routes=events_module.event_stream_routes)
 
 
-class _FakePubSub:
-    """Minimal Redis pub/sub stand-in for the SSE handler.
-
-    ``messages`` is a list of message dicts the generator should see in
-    order. After exhausting it, ``get_message`` returns ``None`` (poll
-    timeout) so the generator stays alive emitting keepalives until the
-    test closes the response.
-    """
-
-    def __init__(self, messages: list[dict[str, Any]]):
-        self._messages = list(messages)
-        self.subscribed: list[str] = []
-        self.unsubscribed: list[str] = []
-        self.closed = False
-        self._lock = threading.Lock()
-
-    def subscribe(self, name: str):
-        self.subscribed.append(name)
-
-    def unsubscribe(self, name: str):
-        self.unsubscribed.append(name)
-
-    def close(self):
-        self.closed = True
-
-    def get_message(self, timeout: float = 0):
-        with self._lock:
-            if self._messages:
-                return self._messages.pop(0)
-        return None
+def _get(headers: dict | None = None, params: dict | None = None):
+    return TestClient(_app()).get("/api/events", headers=headers or {}, params=params or {})
 
 
-def _drain_until(response, predicate, max_chunks: int = 200) -> bytes:
-    """Consume the streamed response until ``predicate(buf)`` is true.
+def _redis() -> FakeAsyncRedis:
+    return FakeAsyncRedis()
 
-    Returns the accumulated bytes. Closes the response so the generator
-    exits cleanly via GeneratorExit.
-    """
-    buf = b""
-    iterator = response.iter_encoded()
-    for _ in range(max_chunks):
+
+def _subscribe(
+    *payloads: Any,
+    fire_callback: bool = True,
+    record: dict | None = None,
+    probe: Optional[Callable[[], None]] = None,
+):
+    """``AsyncTopic.subscribe`` stand-in: ack, one idle tick, the payloads, then end."""
+
+    async def _impl(self, on_subscribe=None, poll_timeout=1.0, **kwargs):
+        if record is not None:
+            record.update(kwargs, poll_timeout=poll_timeout, topic=self.name)
+        if probe is not None:
+            probe()
+        if fire_callback and on_subscribe is not None:
+            result = on_subscribe()
+            if inspect.isawaitable(result):
+                await result
+        yield None
+        for payload in payloads:
+            yield payload
+
+    return _impl
+
+
+def _subscribe_dies_after_callback():
+    """SUBSCRIBE acks and the callback runs, then the connection drops before any poll."""
+
+    async def _impl(self, on_subscribe=None, poll_timeout=1.0, **kwargs):
+        if on_subscribe is not None:
+            result = on_subscribe()
+            if inspect.isawaitable(result):
+                await result
+        return
+        yield  # pragma: no cover — make the function an async generator
+
+    return _impl
+
+
+def _endless_subscribe(state: dict):
+    """A subscription that idles until cancelled; records its own teardown."""
+
+    async def _impl(self, on_subscribe=None, poll_timeout=1.0, **kwargs):
+        if on_subscribe is not None:
+            result = on_subscribe()
+            if inspect.isawaitable(result):
+                await result
         try:
-            chunk = next(iterator)
-        except StopIteration:
-            break
-        if not chunk:
-            continue
-        buf += chunk
-        if predicate(buf):
-            break
-    response.close()
-    return buf
+            while True:
+                await anyio.sleep(0.01)
+                yield None
+        finally:
+            state["closed"] = True
+
+    return _impl
+
+
+def _stored(payload: dict) -> bytes:
+    return json.dumps(payload).encode()
+
+
+@pytest.fixture(autouse=True)
+def _baseline(monkeypatch):
+    """Hermetic defaults: push on, cap 8, no async Redis, clean shutdown flag."""
+    monkeypatch.setattr(events_module.settings, "AUTH_TYPE", None)
+    monkeypatch.setattr(events_module.settings, "ENABLE_SSE_PUSH", True)
+    monkeypatch.setattr(events_module.settings, "SSE_MAX_CONCURRENT_PER_USER", 8)
+    monkeypatch.setattr(events_module.settings, "SSE_KEEPALIVE_SECONDS", 15)
+    monkeypatch.setattr(events_module.settings, "EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW", 30)
+    monkeypatch.setattr(events_module.settings, "EVENTS_REPLAY_BUDGET_WINDOW_SECONDS", 60)
+    monkeypatch.setattr(events_module.settings, "EVENTS_REPLAY_MAX_AGE_HOURS", 0)
+    monkeypatch.setattr(events_module.settings, "EVENTS_REPLAY_MAX_PER_REQUEST", 200)
+    monkeypatch.setattr(
+        "docsgpt.streaming.async_broadcast_channel.get_async_redis_instance",
+        AsyncMock(return_value=None),
+    )
+    reset_shutdown()
+    with patch(_AREDIS, AsyncMock(return_value=None)):
+        yield
+    reset_shutdown()
 
 
 # ── auth gate ───────────────────────────────────────────────────────────
 
 
+@pytest.mark.unit
 class TestAuthGate:
-    def test_rejects_when_no_decoded_token(self):
-        app = _make_app()
-        with app.test_client() as c:
-            r = c.get("/api/events")
+    def test_401_when_no_token(self):
+        with patch(_AUTH, return_value=None):
+            r = _get()
+        assert r.status_code == 401
+        assert r.json() == {"success": False, "message": "Authentication required"}
+
+    def test_401_when_token_has_no_sub(self):
+        with patch(_AUTH, return_value={"email": "x@y.z"}):
+            r = _get()
         assert r.status_code == 401
 
-    def test_rejects_when_decoded_token_missing_sub(self):
-        from docsgpt.api.events import routes as events_module
-
-        app = _make_app()
-
-        # Clear the shim's behavior — supply a decoded_token without sub.
-        @app.before_request
-        def _override():
-            request.decoded_token = {"email": "x@y.z"}
-
-        with patch.object(events_module, "get_redis_instance", return_value=None):
-            with app.test_client() as c:
-                r = c.get("/api/events")
+    def test_401_passes_decoder_error_through(self):
+        err = {"message": "Authentication error: token expired", "error": "token_expired"}
+        with patch(_AUTH, return_value=err):
+            r = _get()
         assert r.status_code == 401
+        assert r.json() == err
+
+    def test_401_when_oidc_session_revoked(self, monkeypatch):
+        monkeypatch.setattr(events_module.settings, "AUTH_TYPE", "oidc")
+        with patch(_AUTH, return_value={"sub": "alice", "iat": 1}), patch(
+            "docsgpt.api.asgi_auth.oidc_session_denied", return_value=True
+        ):
+            r = _get()
+        assert r.status_code == 401
+        assert r.json()["error"] == "token_revoked"
 
 
 # ── streaming response shape ────────────────────────────────────────────
 
 
+@pytest.mark.unit
 class TestStreamShape:
-    def test_returns_event_stream_mimetype_and_no_buffering_header(self):
-        from docsgpt.api.events import routes as events_module
+    def test_event_stream_headers_and_prelude(self):
+        with patch(_AUTH, return_value=ALICE):
+            r = _get()
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/event-stream")
+        assert r.headers["cache-control"] == "no-store"
+        assert r.headers["x-accel-buffering"] == "no"
+        assert r.headers["x-sse-transport"] == "async"
+        assert r.text.startswith(": connected\n\n")
 
-        app = _make_app()
-        with patch.object(events_module, "get_redis_instance", return_value=None):
-            with app.test_client() as c:
-                r = c.get("/api/events", headers={"X-Test-Sub": "alice"})
-                assert r.status_code == 200
-                assert r.mimetype == "text/event-stream"
-                assert r.headers.get("Cache-Control") == "no-store"
-                assert r.headers.get("X-Accel-Buffering") == "no"
-                # Drain enough to see the prelude comment then close.
-                body = _drain_until(r, lambda b: b": connected" in b)
-                assert b": connected" in body
+    def test_push_disabled_skips_redis_entirely(self, monkeypatch):
+        monkeypatch.setattr(events_module.settings, "ENABLE_SSE_PUSH", False)
+        redis = _redis()
+        with patch(_AUTH, return_value=ALICE), patch(_AREDIS, AsyncMock(return_value=redis)):
+            r = _get()
+        assert r.status_code == 200
+        assert r.text == ": connected\n\n: push_disabled\n\n"
+        redis.incr.assert_not_awaited()
+        assert redis.zsets == {}
 
-    def test_emits_push_disabled_when_setting_off(self):
-        from docsgpt.api.events import routes as events_module
+    def test_subscribes_to_user_topic_with_liveness_probe(self):
+        record: dict = {}
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=_redis())
+        ), patch(_SUBSCRIBE, _subscribe(record=record)):
+            _get()
+        assert record["topic"] == "user:alice"
+        assert record["poll_timeout"] == events_module.SUBSCRIBE_POLL_INTERVAL_SECONDS
+        assert record["liveness_timeout"] == PUBSUB_SOCKET_TIMEOUT_SECONDS
 
-        app = _make_app()
-        with patch.object(events_module, "get_redis_instance", return_value=None), \
-             patch.object(events_module.settings, "ENABLE_SSE_PUSH", False):
-            with app.test_client() as c:
-                r = c.get("/api/events", headers={"X-Test-Sub": "alice"})
-                body = _drain_until(r, lambda b: b": push_disabled" in b)
-                assert b": push_disabled" in body
-                assert b": connected" in body  # prelude still emitted
+    def test_stream_logs_carry_the_flask_endpoint_name(self):
+        from docsgpt.core import log_context
+
+        seen: dict = {}
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=_redis())
+        ), patch(_SUBSCRIBE, _subscribe(probe=lambda: seen.update(log_context.snapshot()))):
+            _get()
+        # Same value the Flask route logged, so saved log queries keep matching.
+        assert seen["endpoint"] == "event_stream.stream_events"
+        assert seen["user_id"] == "alice"
+
+    def test_keepalive_emitted_on_idle_ticks(self, monkeypatch):
+        monkeypatch.setattr(events_module.settings, "SSE_KEEPALIVE_SECONDS", 0)
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=_redis())
+        ), patch(_SUBSCRIBE, _subscribe()):
+            r = _get()
+        assert ": keepalive\n\n" in r.text
 
 
-# ── concurrency cap ─────────────────────────────────────────────────────
+# ── concurrency cap (per-connection leases) ─────────────────────────────
 
 
+@pytest.mark.unit
 class TestConcurrencyCap:
-    def test_returns_429_when_user_over_cap(self):
-        from docsgpt.api.events import routes as events_module
-
-        app = _make_app()
-        redis_client = MagicMock()
-        # First INCR returns 9 (over cap of 8).
-        redis_client.incr.return_value = 9
-
-        with patch.object(events_module, "get_redis_instance", return_value=redis_client), \
-             patch.object(events_module.settings, "SSE_MAX_CONCURRENT_PER_USER", 8):
-            with app.test_client() as c:
-                r = c.get("/api/events", headers={"X-Test-Sub": "alice"})
+    def test_429_when_user_already_holds_the_cap(self):
+        redis = _redis()
+        redis.zsets[_LEASES] = {f"tab-{i}": time.time() for i in range(8)}
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()):
+            r = _get()
         assert r.status_code == 429
-        # DECR fired to release the over-cap increment.
-        redis_client.decr.assert_called_once_with("user:alice:sse_count")
+        assert r.json() == {"success": False, "message": "Too many concurrent SSE connections"}
+        # The rejected attempt removed its own lease and nobody else's.
+        assert set(redis.zsets[_LEASES]) == {f"tab-{i}" for i in range(8)}
 
-    def test_skips_cap_when_zero_disabled(self):
-        from docsgpt.api.events import routes as events_module
+    def test_leases_left_by_dead_streams_age_out(self):
+        redis = _redis()
+        redis.zsets[_LEASES] = {f"crashed-{i}": time.time() - 3600 for i in range(8)}
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()):
+            r = _get()
+        assert r.status_code == 200
+        assert redis.zsets == {}
 
-        app = _make_app()
-        redis_client = MagicMock()
+    def test_cap_disabled_takes_no_lease(self, monkeypatch):
+        monkeypatch.setattr(events_module.settings, "SSE_MAX_CONCURRENT_PER_USER", 0)
+        redis = _redis()
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()):
+            r = _get()
+        assert r.status_code == 200
+        assert redis.zsets == {}
 
-        with patch.object(events_module, "get_redis_instance", return_value=redis_client), \
-             patch.object(events_module.settings, "SSE_MAX_CONCURRENT_PER_USER", 0), \
-             patch.object(events_module, "Topic") as mock_topic_cls:
-            mock_topic = MagicMock()
-            mock_topic.subscribe.return_value = iter([])
-            mock_topic_cls.return_value = mock_topic
-            redis_client.xinfo_stream.side_effect = Exception("no stream")
-            redis_client.xrange.return_value = []
-            with app.test_client() as c:
-                r = c.get("/api/events", headers={"X-Test-Sub": "alice"})
-                assert r.status_code == 200
-                # Concurrency counter not touched when cap is 0. The
-                # replay-budget INCR is unrelated and may still fire.
-                incr_keys = [
-                    call.args[0] for call in redis_client.incr.call_args_list
-                ]
-                assert "user:alice:sse_count" not in incr_keys
-                _drain_until(r, lambda b: b": connected" in b)
+    def test_redis_errors_fail_open(self):
+        redis = _redis()
+        redis.fail = ConnectionError("reset by peer")
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()):
+            r = _get()
+        assert r.status_code == 200
+
+    def test_lease_held_while_streaming_and_released_at_end(self):
+        redis = _redis()
+        seen: dict = {}
+
+        def _count_leases():
+            seen["during"] = len(redis.zsets.get(_LEASES, {}))
+
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe(probe=_count_leases)):
+            r = _get()
+        assert r.status_code == 200
+        assert seen["during"] == 1
+        assert redis.zsets == {}
+
+    def test_redis_unavailable_serves_stream_without_cap(self):
+        with patch(_AUTH, return_value=ALICE):
+            r = _get()
+        assert r.status_code == 200
+        assert r.text.startswith(": connected")
+
+
+# ── disconnect and shutdown (raw ASGI) ──────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestStreamLifecycle:
+    async def test_client_disconnect_releases_lease_and_closes_subscription(self, monkeypatch):
+        monkeypatch.setattr(events_module.settings, "SSE_KEEPALIVE_SECONDS", 0)
+        redis = _redis()
+        state: dict = {}
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _endless_subscribe(state)):
+            # Prelude + one keepalive proves the subscription is live before
+            # the tab closes.
+            status, _, chunks = await stream_then_disconnect(
+                _app(), "/api/events", chunks_before_disconnect=2
+            )
+        assert status == 200
+        assert chunks[0] == b": connected\n\n"
+        assert state.get("closed") is True
+        assert redis.zsets == {}
+
+    async def test_disconnect_before_first_frame_still_releases_lease(self):
+        # The tab closes as the response starts: the body generator may never
+        # run, so its own cleanup can't be what frees the slot.
+        redis = _redis()
+        state: dict = {}
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _endless_subscribe(state)):
+            status, _, _ = await stream_then_disconnect(
+                _app(), "/api/events", chunks_before_disconnect=0
+            )
+        assert status == 200
+        assert redis.zsets == {}
+
+    async def test_shutdown_ends_stream_and_releases_lease(self):
+        redis = _redis()
+        state: dict = {}
+        begin_shutdown()
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _endless_subscribe(state)):
+            status, _, chunks = await stream_then_disconnect(
+                _app(), "/api/events", chunks_before_disconnect=10**6, timeout=3
+            )
+        assert status == 200
+        assert b"".join(chunks) == b": connected\n\n"
+        assert state.get("closed") is True
+        assert redis.zsets == {}
 
 
 # ── replay + live tail ──────────────────────────────────────────────────
 
 
+@pytest.mark.unit
 class TestReplayAndTail:
     def test_replay_yields_xrange_entries_with_injected_id(self):
-        from docsgpt.api.events import routes as events_module
+        redis = _redis()
+        redis.xrange = AsyncMock(
+            return_value=[
+                (
+                    b"1735682400000-0",
+                    {b"event": _stored({"type": "source.ingest.progress", "payload": {"current": 25}})},
+                ),
+            ]
+        )
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()):
+            r = _get(headers={"Last-Event-ID": OLD_CURSOR})
+        body = r.text
+        assert body.startswith(": connected\n\n")
+        assert "id: 1735682400000-0" in body
+        data_line = next(line for line in body.split("\n") if line.startswith("data: "))
+        envelope = json.loads(data_line[len("data: "):])
+        assert envelope["id"] == "1735682400000-0"
+        assert envelope["payload"] == {"current": 25}
+        assert "backlog.truncated" not in body
+        assert redis.xrange.await_args.kwargs["min"] == f"({OLD_CURSOR}"
 
-        app = _make_app()
-        redis_client = MagicMock()
-        redis_client.incr.return_value = 1
-        # Empty stream (no truncation).
-        redis_client.xinfo_stream.side_effect = Exception("nope")
-        # XRANGE returns one stored envelope (without ``id``); the route
-        # injects the entry id on the way out.
-        stored_event = json.dumps(
-            {
-                "type": "source.ingest.progress",
-                "ts": "2026-04-28T00:00:00.000Z",
-                "user_id": "alice",
-                "topic": "user:alice",
-                "scope": {"kind": "source", "id": "src-1"},
-                "payload": {"current": 25, "total": 100},
-            }
-        ).encode()
-        redis_client.xrange.return_value = [
-            (b"1735682400000-0", {b"event": stored_event}),
-        ]
-
-        # Topic.subscribe yields an immediate timeout so the generator
-        # keeps running long enough to flush replay; subsequent calls
-        # also return None.
-        from docsgpt.api.events.routes import _SSE_LINE_SPLIT  # noqa: F401
-
-        # Fake the broadcast Topic to invoke on_subscribe immediately
-        # then yield None ticks until close.
-        def _fake_subscribe(self, on_subscribe=None, poll_timeout=1.0):
-            if on_subscribe is not None:
-                on_subscribe()
-            while True:
-                yield None
-
-        with patch.object(events_module, "get_redis_instance", return_value=redis_client), \
-             patch.object(
-                 events_module.Topic, "subscribe", _fake_subscribe, create=False
-             ):
-            with app.test_client() as c:
-                r = c.get(
-                    "/api/events",
-                    headers={"X-Test-Sub": "alice", "Last-Event-ID": "1735682300000-0"},
-                )
-                body = _drain_until(
-                    r,
-                    lambda b: b'"current": 25' in b or b'"current":25' in b,
-                    max_chunks=80,
-                )
-                # Replay yields the entry id as the SSE id field.
-                assert b"id: 1735682400000-0" in body
-                # Envelope was rewritten to include the injected id.
-                assert b'"id": "1735682400000-0"' in body or b'"id":"1735682400000-0"' in body
-                # The connect log fires before replay.
-                assert b": connected" in body
+    def test_query_param_cursor_is_honoured(self):
+        redis = _redis()
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()):
+            _get(params={"last_event_id": OLD_CURSOR})
+        assert redis.xrange.await_args.kwargs["min"] == f"({OLD_CURSOR}"
 
     def test_snapshot_flushed_when_subscribe_dies_after_callback(self):
-        """Regression: if ``on_subscribe`` populated ``replay_lines`` but
-        ``Topic.subscribe`` exits before yielding once (transient Redis
-        hiccup between SUBSCRIBE-ack and the first poll), the snapshot
-        must still reach the client. Prior to the fix the in-loop flush
-        was the only flush, so the backlog was silently dropped.
-        """
-        from docsgpt.api.events import routes as events_module
-
-        app = _make_app()
-        redis_client = MagicMock()
-        redis_client.incr.return_value = 1
-        redis_client.xinfo_stream.side_effect = Exception("nope")
-        stored_event = json.dumps(
-            {
-                "type": "notification",
-                "payload": {"text": "from snapshot"},
-            }
-        ).encode()
-        redis_client.xrange.return_value = [
-            (b"1735682400000-0", {b"event": stored_event}),
-        ]
-
-        # Mimic the broadcast_channel race: SUBSCRIBE acks, on_subscribe
-        # runs, then the next get_message raises and the generator
-        # returns without ever yielding.
-        def _subscribe_dies_after_callback(
-            self, on_subscribe=None, poll_timeout=1.0
-        ):
-            if on_subscribe is not None:
-                on_subscribe()
-            return
-            yield  # pragma: no cover  (make the function a generator)
-
-        with patch.object(events_module, "get_redis_instance", return_value=redis_client), \
-             patch.object(
-                 events_module.Topic,
-                 "subscribe",
-                 _subscribe_dies_after_callback,
-                 create=False,
-             ):
-            with app.test_client() as c:
-                r = c.get(
-                    "/api/events",
-                    headers={
-                        "X-Test-Sub": "alice",
-                        "Last-Event-ID": "1735682300000-0",
-                    },
-                )
-                body = _drain_until(
-                    r,
-                    lambda b: b"from snapshot" in b,
-                    max_chunks=80,
-                )
-                # Snapshot frame must have been flushed via the post-loop
-                # safety net even though Topic.subscribe exited before
-                # the in-loop flush could fire.
-                assert b"id: 1735682400000-0" in body
-                assert b"from snapshot" in body
-                # XRANGE was issued exactly once (no double-flush).
-                redis_client.xrange.assert_called_once()
+        redis = _redis()
+        redis.xrange = AsyncMock(
+            return_value=[
+                (b"1735682400000-0", {b"event": _stored({"type": "notification", "payload": {"text": "from snapshot"}})}),
+            ]
+        )
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe_dies_after_callback()):
+            r = _get(headers={"Last-Event-ID": OLD_CURSOR})
+        assert "id: 1735682400000-0" in r.text
+        assert "from snapshot" in r.text
+        redis.xrange.assert_awaited_once()
 
     def test_invalid_last_event_id_emits_truncation_notice(self):
-        from docsgpt.api.events import routes as events_module
-
-        app = _make_app()
-        redis_client = MagicMock()
-        redis_client.incr.return_value = 1
-        redis_client.xinfo_stream.return_value = {"first-entry": [b"1-0", []]}
-        redis_client.xrange.return_value = []
-
-        def _fake_subscribe(self, on_subscribe=None, poll_timeout=1.0):
-            if on_subscribe is not None:
-                on_subscribe()
-            while True:
-                yield None
-
-        with patch.object(events_module, "get_redis_instance", return_value=redis_client), \
-             patch.object(events_module.Topic, "subscribe", _fake_subscribe, create=False):
-            with app.test_client() as c:
-                r = c.get(
-                    "/api/events",
-                    headers={"X-Test-Sub": "alice", "Last-Event-ID": "definitely-not-an-id"},
-                )
-                body = _drain_until(
-                    r, lambda b: b"backlog.truncated" in b, max_chunks=80
-                )
-                assert b"backlog.truncated" in body
+        redis = _redis()
+        redis.xinfo_stream = AsyncMock(return_value={"first-entry": [b"1-0", []]})
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()):
+            r = _get(headers={"Last-Event-ID": "definitely-not-an-id"})
+        assert "backlog.truncated" in r.text
+        # A corrupt cursor is a fresh session: nothing to replay.
+        redis.xrange.assert_not_awaited()
 
     def test_live_tail_rejects_malformed_event_id_for_dedupe(self):
-        """A pub/sub envelope carrying a non-Redis-Streams ``id`` must not
-        seed the dedup floor. Otherwise an adversarial or buggy publisher
-        could ship ``id="9999999999999-9"`` (lex-greater than any real
-        id) and pin every subsequent legitimate event below the floor,
-        silently dropping the user's notifications.
+        """A pub/sub envelope with a non-Streams ``id`` must not seed the dedup
+        floor, or a bogus lex-greater id would pin every later event below it.
+        The event itself still ships, just without an ``id:`` line."""
+        redis = _redis()
+        redis.xrange = AsyncMock(
+            return_value=[(b"1735682400000-0", {b"event": _stored({"type": "x", "payload": {"step": "replay"}})})]
+        )
+        live_bogus = _stored({"id": "definitely-not-an-id", "type": "x", "payload": {"step": "live-bogus"}})
+        live_real = _stored({"id": "1735682500000-0", "type": "x", "payload": {"step": "live-real"}})
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe(live_bogus, live_real)):
+            r = _get(headers={"Last-Event-ID": OLD_CURSOR})
+        body = r.text
+        assert "live-real" in body
+        assert "id: 1735682500000-0" in body
+        assert "live-bogus" in body
+        assert "id: definitely-not-an-id" not in body
 
-        The event itself should still be delivered to the client — we
-        just refuse to use the bogus id for ordering, so it ships
-        without an SSE ``id:`` header and ``max_replayed_id`` stays put.
-        """
-        from docsgpt.api.events import routes as events_module
+    def test_live_event_already_covered_by_snapshot_is_dropped(self):
+        redis = _redis()
+        redis.xrange = AsyncMock(
+            return_value=[(b"1735682400000-0", {b"event": _stored({"type": "x", "payload": {"step": "replay"}})})]
+        )
+        duplicate = _stored({"id": "1735682400000-0", "type": "x", "payload": {"step": "replay"}})
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe(duplicate)):
+            r = _get(headers={"Last-Event-ID": OLD_CURSOR})
+        assert r.text.count("id: 1735682400000-0") == 1
 
-        app = _make_app()
-        redis_client = MagicMock()
-        redis_client.incr.return_value = 1
-        redis_client.xinfo_stream.side_effect = Exception("nope")
-        # Snapshot covers ids up to 1735682400000-0; max_replayed_id
-        # becomes that value after the in-loop flush.
-        replay_event = json.dumps({
-            "type": "source.ingest.progress",
-            "payload": {"step": "replay"},
-        }).encode()
-        redis_client.xrange.return_value = [
-            (b"1735682400000-0", {b"event": replay_event}),
-        ]
-
-        live_bogus = json.dumps({
-            "id": "definitely-not-an-id",
-            "type": "source.ingest.completed",
-            "payload": {"step": "live-bogus"},
-        })
-        live_real = json.dumps({
-            "id": "1735682500000-0",
-            "type": "source.ingest.completed",
-            "payload": {"step": "live-real"},
-        })
-
-        def _fake_subscribe(self, on_subscribe=None, poll_timeout=1.0):
-            # ``Topic.subscribe`` already unpacks redis-py pubsub dicts
-            # and yields the raw ``data`` bytes (or ``None`` on poll
-            # timeout). Mirror that contract.
-            if on_subscribe is not None:
-                on_subscribe()
-            yield live_bogus.encode()
-            yield live_real.encode()
-            while True:
-                yield None
-
-        with patch.object(
-            events_module, "get_redis_instance", return_value=redis_client
-        ), patch.object(
-            events_module.Topic, "subscribe", _fake_subscribe, create=False
-        ):
-            with app.test_client() as c:
-                r = c.get(
-                    "/api/events",
-                    headers={
-                        "X-Test-Sub": "alice",
-                        "Last-Event-ID": "1735682300000-0",
-                    },
-                )
-                body = _drain_until(
-                    r, lambda b: b"live-real" in b, max_chunks=80
-                )
-
-                # Live-real arrived (its id is strictly greater than the
-                # replayed snapshot's id), with its valid id surfaced as
-                # the SSE ``id:`` header so the frontend can advance.
-                assert b"live-real" in body
-                assert b"id: 1735682500000-0" in body
-
-                # The bogus-id event was still delivered to the client,
-                # but no ``id: definitely-not-an-id`` line was emitted —
-                # the malformed id never reached the SSE wire and so
-                # could not pin the dedup floor.
-                assert b"live-bogus" in body
-                assert b"id: definitely-not-an-id" not in body
+    def test_non_json_live_payload_passes_through_without_id(self):
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=_redis())
+        ), patch(_SUBSCRIBE, _subscribe(b"plain text")):
+            r = _get()
+        assert "data: plain text\n\n" in r.text
 
 
-# ── format helpers (already covered in test_events_substrate but
-#    duplicated here as a smoke for the route's surface) ─────────────────
+# ── replay budget and helpers ───────────────────────────────────────────
 
 
-class TestReplayRateLimit:
-    """Enumeration defenses on the per-user backlog."""
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestReplayBudget:
+    async def test_budget_disabled(self, monkeypatch):
+        monkeypatch.setattr(events_module.settings, "EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW", 0)
+        assert await events_module._allow_replay(_redis(), "alice", OLD_CURSOR) is True
 
-    def test_allow_replay_returns_true_when_budget_disabled(self):
-        from docsgpt.api.events.routes import _allow_replay
+    async def test_redis_unavailable_fails_open(self):
+        assert await events_module._allow_replay(None, "alice", OLD_CURSOR) is True
 
-        with patch("docsgpt.api.events.routes.settings") as mock_settings:
-            mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 0
-            mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
-            assert _allow_replay(MagicMock(), "alice", "1735682400000-0") is True
+    async def test_no_cursor_never_consumes_budget(self, monkeypatch):
+        """Fresh sessions start live and must never 429 on the replay budget,
+        no matter how many tabs open at once."""
+        monkeypatch.setattr(events_module.settings, "EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW", 3)
+        redis = _redis()
+        for _ in range(50):
+            assert await events_module._allow_replay(redis, "alice", None) is True
+        redis.incr.assert_not_awaited()
 
-    def test_allow_replay_returns_true_when_redis_unavailable(self):
-        from docsgpt.api.events.routes import _allow_replay
+    async def test_passes_until_budget_exhausted(self, monkeypatch):
+        monkeypatch.setattr(events_module.settings, "EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW", 3)
+        redis = _redis()
+        counter = {"v": 0}
 
-        with patch("docsgpt.api.events.routes.settings") as mock_settings:
-            mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 5
-            mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
-            assert _allow_replay(None, "alice", "1735682400000-0") is True
+        def _incr(_key):
+            counter["v"] += 1
+            return counter["v"]
 
-    def test_allow_replay_never_consumes_budget_without_cursor(self):
-        """No cursor ⇒ no replay work ⇒ no budget. Fresh sessions start
-        live and must never 429 on the replay budget, no matter how many
-        tabs open at once (30 fresh connects/min used to exhaust it).
-        """
-        from docsgpt.api.events.routes import _allow_replay
+        redis.incr = AsyncMock(side_effect=_incr)
+        results = [await events_module._allow_replay(redis, "alice", OLD_CURSOR) for _ in range(4)]
+        assert results == [True, True, True, False]
+        # TTL re-seeded on every INCR so a failed seeding EXPIRE can't wedge the key.
+        assert redis.expire.await_count == 4
+        assert all(call.args == ("user:alice:replay_count", 60) for call in redis.expire.await_args_list)
 
-        with patch("docsgpt.api.events.routes.settings") as mock_settings:
-            mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 3
-            mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
-            redis = MagicMock()
-            redis.xlen.return_value = 42
+    async def test_fail_open_on_redis_error(self):
+        redis = _redis()
+        redis.incr = AsyncMock(side_effect=Exception("redis down"))
+        assert await events_module._allow_replay(redis, "alice", OLD_CURSOR) is True
 
-            for _ in range(50):
-                assert _allow_replay(redis, "alice", None) is True
+    async def test_fail_open_when_redis_stalls(self, monkeypatch):
+        monkeypatch.setattr(events_module, "ASYNC_REDIS_OP_TIMEOUT_SECONDS", 0.05)
+        redis = _redis()
 
-            redis.incr.assert_not_called()
-            redis.xlen.assert_not_called()
+        async def _stalled(_key):
+            await anyio.sleep_forever()
 
-    def test_allow_replay_passes_until_budget_exhausted(self):
-        from docsgpt.api.events.routes import _allow_replay
+        redis.incr = AsyncMock(side_effect=_stalled)
+        with anyio.fail_after(2):
+            assert await events_module._allow_replay(redis, "alice", OLD_CURSOR) is True
 
-        with patch("docsgpt.api.events.routes.settings") as mock_settings:
-            mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 3
-            mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
-            redis = MagicMock()
-            counter = {"v": 0}
+    async def test_recovers_when_seeding_expire_raises(self):
+        redis = _redis()
+        counter = {"v": 0}
 
-            def _incr(_key):
-                counter["v"] += 1
-                return counter["v"]
+        def _incr(_key):
+            counter["v"] += 1
+            return counter["v"]
 
-            redis.incr.side_effect = _incr
+        redis.incr = AsyncMock(side_effect=_incr)
+        redis.expire = AsyncMock(side_effect=[Exception("expire blip"), True])
+        assert await events_module._allow_replay(redis, "alice", OLD_CURSOR) is True
+        assert await events_module._allow_replay(redis, "alice", OLD_CURSOR) is True
+        assert redis.expire.await_count == 2
 
-            # Cursor set → XLEN short-circuit doesn't fire, INCR always runs.
-            cursor = "1735682400000-0"
-            # First three pass.
-            assert _allow_replay(redis, "alice", cursor) is True
-            assert _allow_replay(redis, "alice", cursor) is True
-            assert _allow_replay(redis, "alice", cursor) is True
-            # Fourth refused.
-            assert _allow_replay(redis, "alice", cursor) is False
-            # TTL re-seeded on every successful INCR so a transient
-            # EXPIRE failure on the seeding call can't wedge the key.
-            assert redis.expire.call_count == 4
-            for call in redis.expire.call_args_list:
-                assert call.args[1] == 60
+    async def test_replay_backlog_passes_count_to_xrange(self):
+        redis = _redis()
+        assert await events_module._replay_backlog(redis, "alice", None, 200) == []
+        assert redis.xrange.await_args.kwargs["count"] == 200
 
-    def test_allow_replay_fail_open_on_redis_error(self):
-        from docsgpt.api.events.routes import _allow_replay
+    async def test_replay_backlog_skips_entries_without_event(self):
+        redis = _redis()
+        redis.xrange = AsyncMock(
+            return_value=[
+                (b"1-0", {b"other": b"x"}),
+                (b"2-0", {b"event": b"not json"}),
+            ]
+        )
+        lines = await events_module._replay_backlog(redis, "alice", "0-0", 200)
+        assert [entry_id for entry_id, _ in lines] == ["2-0"]
+        assert lines[0][1] == "id: 2-0\ndata: not json\n\n"
 
-        with patch("docsgpt.api.events.routes.settings") as mock_settings:
-            mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 5
-            mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
-            redis = MagicMock()
-            redis.incr.side_effect = Exception("redis down")
-            assert _allow_replay(redis, "alice", "1735682400000-0") is True
+    async def test_replay_backlog_returns_nothing_on_xrange_error(self):
+        redis = _redis()
+        redis.xrange = AsyncMock(side_effect=Exception("WRONGTYPE"))
+        assert await events_module._replay_backlog(redis, "alice", "0-0", 200) == []
 
-    def test_allow_replay_recovers_when_seeding_expire_raises(self):
-        """Regression: INCR=1 then EXPIRE raising must not wedge the key.
+    async def test_oldest_retained_id(self):
+        redis = _redis()
+        redis.xinfo_stream = AsyncMock(return_value={"first-entry": [b"5-0", [b"event", b"{}"]]})
+        assert await events_module._oldest_retained_id(redis, "alice") == "5-0"
 
-        Earlier code only called EXPIRE when ``used == 1``. If that EXPIRE
-        raised, the counter persisted with no TTL and every subsequent
-        call hit ``used > 1`` without re-seeding — locking the user out
-        until an operator DEL'd the key. The fix calls EXPIRE on every
-        successful INCR so the next call still re-seeds the TTL.
-        """
-        from docsgpt.api.events.routes import _allow_replay
+    async def test_oldest_retained_id_bytes_keys(self):
+        redis = _redis()
+        redis.xinfo_stream = AsyncMock(return_value={b"first-entry": [b"6-0", []]})
+        assert await events_module._oldest_retained_id(redis, "alice") == "6-0"
 
-        with patch("docsgpt.api.events.routes.settings") as mock_settings:
-            mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 5
-            mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
-            redis = MagicMock()
-            counter = {"v": 0}
+    async def test_oldest_retained_id_none_on_error_or_empty(self):
+        redis = _redis()
+        assert await events_module._oldest_retained_id(redis, "alice") is None
+        redis.xinfo_stream = AsyncMock(return_value={"first-entry": None})
+        assert await events_module._oldest_retained_id(redis, "alice") is None
 
-            def _incr(_key):
-                counter["v"] += 1
-                return counter["v"]
 
-            redis.incr.side_effect = _incr
-            # First EXPIRE raises (the seeding call that would have
-            # wedged the key under the old gated logic). Second EXPIRE
-            # succeeds — and crucially, must still run.
-            redis.expire.side_effect = [Exception("expire blip"), True]
-
-            cursor = "1735682400000-0"
-            # First call: INCR=1 succeeds, EXPIRE raises -> outer except
-            # returns True (fail-open) for this call.
-            assert _allow_replay(redis, "alice", cursor) is True
-            # Second call: INCR=2, EXPIRE succeeds -> still under budget,
-            # and the TTL is now seeded (no permanent lockout).
-            assert _allow_replay(redis, "alice", cursor) is True
-
-            assert redis.expire.call_count == 2
-            # Both EXPIRE calls used the configured window.
-            for call in redis.expire.call_args_list:
-                assert call.args[1] == 60
-
-    def test_replay_backlog_passes_count_to_xrange(self):
-        from docsgpt.api.events.routes import _replay_backlog
-
-        redis = MagicMock()
-        redis.xrange.return_value = []
-        # Drain the iterator so xrange is actually called.
-        list(_replay_backlog(redis, "alice", None, 200))
-        redis.xrange.assert_called_once()
-        kwargs = redis.xrange.call_args.kwargs
-        assert kwargs.get("count") == 200
-
+@pytest.mark.unit
+class TestReplayBudgetRoute:
     def test_returns_429_when_replay_budget_exhausted(self):
-        """Route refuses the connection rather than serving live tail
-        only. Earlier behavior silently skipped replay and let the
-        client advance ``lastEventId`` via id-bearing live frames,
-        permanently stranding the un-replayed window. The 429 keeps
-        the cursor pinned so the next reconnect (after the budget
-        window slides) can replay normally.
-        """
-        from docsgpt.api.events import routes as events_module
-
-        app = _make_app()
-        redis_client = MagicMock()
-
-        def _incr(key):
-            if key == "user:alice:sse_count":
-                return 1
-            # Budget counter: report over-limit.
-            return 31
-
-        redis_client.incr.side_effect = _incr
-
-        with patch.object(
-            events_module, "get_redis_instance", return_value=redis_client
-        ), patch.object(
-            events_module.settings,
-            "EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW",
-            30,
-        ):
-            with app.test_client() as c:
-                r = c.get(
-                    "/api/events",
-                    headers={
-                        "X-Test-Sub": "alice",
-                        "Last-Event-ID": "1735682300000-0",
-                    },
-                )
+        """The route refuses rather than serving live-tail only: id-bearing
+        live frames would advance the client's cursor past the un-replayed
+        window. The 429 keeps the cursor pinned for the next attempt."""
+        redis = _redis()
+        redis.incr = AsyncMock(return_value=31)
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()):
+            r = _get(headers={"Last-Event-ID": OLD_CURSOR})
         assert r.status_code == 429
-        # Concurrency slot is released so a budget-denied request
-        # doesn't permanently consume a connection from the cap.
-        redis_client.decr.assert_called_once_with("user:alice:sse_count")
+        assert r.json() == {"success": False, "message": "Replay budget exhausted"}
+        # The connection lease is released so a denied request doesn't hold a slot.
+        assert redis.zsets == {}
 
 
+# ── format helpers ──────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
 class TestFormatHelpers:
     def test_format_sse_two_terminating_newlines(self):
-        from docsgpt.api.events.routes import _format_sse
-
-        out = _format_sse("hello", event_id="1-0")
+        out = events_module._format_sse("hello", event_id="1-0")
         assert out.endswith("\n\n")
-        # Exactly one ``id:`` and one ``data:``.
-        lines = out.rstrip("\n").split("\n")
-        assert lines == ["id: 1-0", "data: hello"]
+        assert out.rstrip("\n").split("\n") == ["id: 1-0", "data: hello"]
 
     @pytest.mark.parametrize(
         "candidate, expected",
@@ -625,122 +591,56 @@ class TestFormatHelpers:
         ],
     )
     def test_normalize_last_event_id(self, candidate, expected):
-        from docsgpt.api.events.routes import _normalize_last_event_id
-
-        assert _normalize_last_event_id(candidate) == expected
+        assert events_module._normalize_last_event_id(candidate) == expected
 
 
 # ── replay policy: fresh sessions start live, snapshots are age-capped ──
 
 
+@pytest.mark.unit
 class TestReplayPolicy:
-    def test_replay_floor_id_disabled_when_setting_zero(self):
-        from docsgpt.api.events.routes import _replay_floor_id
+    def test_replay_floor_id_disabled_when_setting_zero(self, monkeypatch):
+        monkeypatch.setattr(events_module.settings, "EVENTS_REPLAY_MAX_AGE_HOURS", 0)
+        assert events_module._replay_floor_id() is None
 
-        with patch("docsgpt.api.events.routes.settings") as mock_settings:
-            mock_settings.EVENTS_REPLAY_MAX_AGE_HOURS = 0
-            assert _replay_floor_id() is None
-
-    def test_replay_floor_id_is_ms_stream_id(self):
-        from docsgpt.api.events.routes import _replay_floor_id
-
-        with patch("docsgpt.api.events.routes.settings") as mock_settings:
-            mock_settings.EVENTS_REPLAY_MAX_AGE_HOURS = 48
-            with patch(
-                "docsgpt.api.events.routes.time.time",
-                return_value=1_800_000_000.0,
-            ):
-                floor = _replay_floor_id()
+    def test_replay_floor_id_is_ms_stream_id(self, monkeypatch):
+        monkeypatch.setattr(events_module.settings, "EVENTS_REPLAY_MAX_AGE_HOURS", 48)
+        with patch("docsgpt.api.events.routes.time.time", return_value=1_800_000_000.0):
+            floor = events_module._replay_floor_id()
         assert floor == f"{(1_800_000_000 - 48 * 3600) * 1000}-0"
 
-    def test_replay_backlog_uses_cursor_when_newer_than_floor(self):
-        from docsgpt.api.events.routes import _replay_backlog
+    @pytest.mark.asyncio
+    async def test_replay_backlog_uses_cursor_when_newer_than_floor(self):
+        redis = _redis()
+        with patch("docsgpt.api.events.routes._replay_floor_id", return_value="1000-0"):
+            await events_module._replay_backlog(redis, "alice", "2000-0", 200)
+        assert redis.xrange.await_args.kwargs["min"] == "(2000-0"
 
-        redis = MagicMock()
-        redis.xrange.return_value = []
-        with patch(
-            "docsgpt.api.events.routes._replay_floor_id",
-            return_value="1000-0",
-        ):
-            list(_replay_backlog(redis, "alice", "2000-0", 200))
-        assert redis.xrange.call_args.kwargs["min"] == "(2000-0"
-
-    def test_replay_backlog_clamps_start_to_age_floor(self):
-        from docsgpt.api.events.routes import _replay_backlog
-
-        redis = MagicMock()
-        redis.xrange.return_value = []
-        with patch(
-            "docsgpt.api.events.routes._replay_floor_id",
-            return_value="5000-0",
-        ):
-            list(_replay_backlog(redis, "alice", "2000-0", 200))
-        # Cursor is older than the floor: replay starts at the floor
-        # (inclusive), not the cursor — entries past their shelf life
-        # are never shipped.
-        assert redis.xrange.call_args.kwargs["min"] == "5000-0"
+    @pytest.mark.asyncio
+    async def test_replay_backlog_clamps_start_to_age_floor(self):
+        redis = _redis()
+        with patch("docsgpt.api.events.routes._replay_floor_id", return_value="5000-0"):
+            await events_module._replay_backlog(redis, "alice", "2000-0", 200)
+        # Entries past their shelf life are never shipped.
+        assert redis.xrange.await_args.kwargs["min"] == "5000-0"
 
     def test_no_cursor_connect_never_replays(self):
-        """A fresh session (no Last-Event-ID) starts live: no XRANGE, no
-        weeks-old backlog on every tab-open."""
-        from docsgpt.api.events import routes as events_module
-
-        app = _make_app()
-        redis_client = MagicMock()
-        redis_client.incr.return_value = 1
-
-        def _fake_subscribe(self, on_subscribe=None, poll_timeout=1.0):
-            if on_subscribe is not None:
-                on_subscribe()
-            yield None
-
-        with patch.object(
-            events_module, "get_redis_instance", return_value=redis_client
-        ), patch.object(
-            events_module.Topic, "subscribe", _fake_subscribe, create=False
-        ):
-            with app.test_client() as c:
-                r = c.get("/api/events", headers={"X-Test-Sub": "alice"})
-                body = _drain_until(
-                    r, lambda b: b": connected" in b, max_chunks=40
-                )
-        assert b": connected" in body
-        redis_client.xrange.assert_not_called()
+        redis = _redis()
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()):
+            r = _get()
+        assert r.text.startswith(": connected")
+        redis.xrange.assert_not_awaited()
 
     def test_cursor_older_than_floor_emits_truncation_notice(self):
-        """An age-clamped snapshot has a gap the client can't see from
-        entry ids alone — it must get the truncation notice so it
-        refetches full state instead of trusting a partial replay."""
-        from docsgpt.api.events import routes as events_module
-
-        app = _make_app()
-        redis_client = MagicMock()
-        redis_client.incr.return_value = 1
-        # No retained-oldest available: the floor alone must trigger it.
-        redis_client.xinfo_stream.side_effect = Exception("nope")
-        redis_client.xrange.return_value = []
-
-        def _fake_subscribe(self, on_subscribe=None, poll_timeout=1.0):
-            if on_subscribe is not None:
-                on_subscribe()
-            yield None
-
-        with patch.object(
-            events_module, "get_redis_instance", return_value=redis_client
-        ), patch.object(
-            events_module.Topic, "subscribe", _fake_subscribe, create=False
-        ), patch.object(
+        """An age-clamped snapshot has a gap the client can't see from entry
+        ids alone, so it must get the truncation notice and refetch state."""
+        redis = _redis()
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()), patch.object(
             events_module, "_replay_floor_id", return_value="9999999999999-0"
         ):
-            with app.test_client() as c:
-                r = c.get(
-                    "/api/events",
-                    headers={
-                        "X-Test-Sub": "alice",
-                        "Last-Event-ID": "1735682400000-0",
-                    },
-                )
-                body = _drain_until(
-                    r, lambda b: b"backlog.truncated" in b, max_chunks=40
-                )
-        assert b"backlog.truncated" in body
+            r = _get(headers={"Last-Event-ID": "1735682400000-0"})
+        assert "backlog.truncated" in r.text

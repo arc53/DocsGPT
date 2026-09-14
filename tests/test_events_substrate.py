@@ -19,7 +19,7 @@ from docsgpt.api.events.routes import (
     _normalize_last_event_id,
 )
 from docsgpt.events.keys import (
-    connection_counter_key,
+    connection_leases_key,
     stream_id_compare,
     stream_key,
     topic_name,
@@ -39,8 +39,8 @@ class TestKeys:
     def test_topic_name(self):
         assert topic_name("alice") == "user:alice"
 
-    def test_connection_counter_key(self):
-        assert connection_counter_key("alice") == "user:alice:sse_count"
+    def test_connection_leases_key(self):
+        assert connection_leases_key("alice") == "user:alice:sse_leases"
 
 
 # ── stream_id_compare ───────────────────────────────────────────────────

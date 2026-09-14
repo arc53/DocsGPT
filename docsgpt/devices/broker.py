@@ -38,8 +38,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, Optional
 
+import anyio
+
 from docsgpt.cache import get_redis_instance
 from docsgpt.core.settings import settings
+from docsgpt.streaming.async_redis import get_async_redis_instance
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +59,16 @@ def _cmd_key(device_id: str) -> str:
 
 def _ticket_key(device_id: str) -> str:
     return f"dev:ticket:{device_id}"
+
+
+# Deletes the device's ticket iff it still holds the presented one. Runs
+# server-side so two requests racing with one ticket can't both redeem it.
+_REDEEM_TICKET_LUA = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('DEL', KEYS[1])
+end
+return 0
+"""
 
 
 def _inv_key(invocation_id: str) -> str:
@@ -139,6 +152,31 @@ class DeviceBroker:
             except Exception:
                 logger.exception("ticket lookup failed for %s", device_id)
         session_id = _as_str(issued) if issued else f"st_{uuid.uuid4().hex}"
+        return self._adopt_session(session_id, device_id, user_id)
+
+    def redeem_ticket(self, device_id: str, user_id: str, ticket: str) -> Optional[SessionState]:
+        """Consume the device's poll-issued ``ticket`` and open its session under it.
+
+        Returns ``None``, and opens nothing, unless ``ticket`` is still the
+        device's unexpired ticket. The compare and delete are one Redis step,
+        so a replay racing the first redeem can't replace its session.
+        """
+        if not ticket:
+            return None
+        redis = get_redis_instance()
+        if redis is None:
+            return None
+        try:
+            redeemed = redis.eval(_REDEEM_TICKET_LUA, 1, _ticket_key(device_id), ticket)
+        except Exception:
+            logger.exception("ticket redeem failed for %s", device_id)
+            return None
+        if not redeemed:
+            return None
+        return self._adopt_session(ticket, device_id, user_id)
+
+    def _adopt_session(self, session_id: str, device_id: str, user_id: str) -> SessionState:
+        """Make a new session the device's live one, closing the one it replaces."""
         sess = SessionState(
             session_id=session_id, device_id=device_id, user_id=user_id
         )
@@ -191,13 +229,8 @@ class DeviceBroker:
             return None
         if not popped:
             return None
-        _key, raw = popped
-        try:
-            envelope = json.loads(_as_str(raw))
-        except (TypeError, ValueError):
-            logger.warning("dropping malformed command envelope")
-            return None
-        if not isinstance(envelope, dict):
+        envelope = self._decode_envelope(popped[1])
+        if envelope is None:
             return None
         # Drop an envelope whose invocation was already reaped (timed out /
         # cleaned up) after it was queued, so a command the user already saw
@@ -208,6 +241,54 @@ class DeviceBroker:
             logger.debug("dropping reaped invocation %s", inv_id)
             return None
         return envelope
+
+    async def next_command_async(
+        self, session: SessionState, timeout: float = 1.0
+    ) -> Optional[Dict[str, Any]]:
+        """Await up to ``timeout`` for the next queued command envelope.
+
+        Event-loop twin of :meth:`next_command` for the native-async SSE
+        stream: the same envelope checks over the async Redis client, so an
+        idle device session holds no thread.
+        """
+        redis = await get_async_redis_instance()
+        if redis is None:
+            await anyio.sleep(timeout)
+            return None
+        try:
+            popped = await redis.blpop(_cmd_key(session.device_id), timeout=timeout)
+        except Exception:
+            logger.exception("async blpop failed for %s", session.device_id)
+            await anyio.sleep(timeout)
+            return None
+        if not popped:
+            return None
+        envelope = self._decode_envelope(popped[1])
+        if envelope is None:
+            return None
+        # Same reaped-invocation guard as ``next_command``; a failed lookup
+        # drops the envelope too, as ``get_invocation`` returning None does.
+        inv_id = envelope.get("invocation_id")
+        if inv_id:
+            try:
+                reaped = not await redis.exists(_inv_key(inv_id))
+            except Exception:
+                logger.exception("invocation lookup failed for %s", inv_id)
+                reaped = True
+            if reaped:
+                logger.debug("dropping reaped invocation %s", inv_id)
+                return None
+        return envelope
+
+    @staticmethod
+    def _decode_envelope(raw: Any) -> Optional[Dict[str, Any]]:
+        """Parse a queued command envelope; ``None`` for anything malformed."""
+        try:
+            envelope = json.loads(_as_str(raw))
+        except (TypeError, ValueError):
+            logger.warning("dropping malformed command envelope")
+            return None
+        return envelope if isinstance(envelope, dict) else None
 
     # ------------------------------------------------------------------
     # Polling / tickets

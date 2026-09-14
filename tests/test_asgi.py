@@ -168,3 +168,92 @@ def test_wsgi_threadpool_sized_from_settings():
 
     assert asgi._WSGI_THREADPOOL == int(settings.WSGI_THREADPOOL_WORKERS)
     assert asgi._WSGI_THREADPOOL >= 64
+
+
+_UUID = "67d65e8f-e7fb-4df1-9e6e-99ea6c830206"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "path, endpoint_name",
+    [
+        ("/api/events", "stream_events"),
+        ("/api/devices/sessions/st_abc/events", "device_session_events"),
+        (f"/api/artifacts/{_UUID}/download", "download_artifact"),
+        (f"/api/messages/{_UUID}/events", "stream_message_events"),
+    ],
+)
+def test_long_lived_routes_served_on_event_loop_not_flask(path, endpoint_name):
+    """Held-open GETs must resolve to a Starlette route ahead of the Flask
+    mount; otherwise each one pins a WSGI threadpool slot."""
+    from starlette.routing import Match
+
+    from docsgpt.asgi import asgi_app
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": path,
+        "root_path": "",
+        "headers": [],
+        "query_string": b"",
+    }
+    for route in asgi_app.routes:
+        match, _ = route.matches(scope)
+        if match is Match.FULL:
+            endpoint = getattr(route, "endpoint", None)
+            assert endpoint is not None, f"{path} fell through to {route!r}"
+            assert endpoint.__name__ == endpoint_name
+            return
+    pytest.fail(f"no route matched {path}")
+
+
+@pytest.mark.unit
+def test_flask_no_longer_registers_moved_routes():
+    from docsgpt.app import app as flask_app
+
+    rules = {rule.rule for rule in flask_app.url_map.iter_rules()}
+    assert "/api/events" not in rules
+    assert "/api/devices/sessions/<session_id>/events" not in rules
+    assert "/api/artifacts/<artifact_id>/download" not in rules
+    # Their siblings stay on Flask.
+    assert "/api/devices/poll" in rules
+    assert "/api/artifacts/<artifact_id>" in rules
+
+
+@pytest.mark.unit
+def test_event_stream_served_through_full_asgi_stack(monkeypatch):
+    """Auth, CORS and the SSE route work together in the real app."""
+    from unittest.mock import AsyncMock
+
+    from starlette.testclient import TestClient
+
+    from docsgpt.asgi import asgi_app
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "AUTH_TYPE", None)
+    monkeypatch.setattr(
+        "docsgpt.api.events.routes.get_async_redis_instance", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        "docsgpt.streaming.async_broadcast_channel.get_async_redis_instance",
+        AsyncMock(return_value=None),
+    )
+    with TestClient(asgi_app) as client:
+        r = client.get("/api/events", headers={"Origin": "http://example.com"})
+    assert r.status_code == 200
+    assert r.headers["x-sse-transport"] == "async"
+    assert r.headers.get("access-control-allow-origin") == "*"
+    assert r.text.startswith(": connected")
+
+
+@pytest.mark.unit
+def test_artifact_download_served_through_full_asgi_stack():
+    from starlette.testclient import TestClient
+
+    from docsgpt.asgi import asgi_app
+
+    with TestClient(asgi_app) as client:
+        r = client.get("/api/artifacts/not-a-uuid/download")
+    assert r.status_code == 404
+    assert r.json() == {"success": False, "message": "Artifact not found"}

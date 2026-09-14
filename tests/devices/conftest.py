@@ -11,6 +11,8 @@ deliberately *not* faithful in several ways, so tests must not lean on them:
   real Redis with ``approximate=True`` only trims past a slack.
 One ``FakeRedis`` shared by two ``DeviceBroker`` instances models two
 processes (e.g. a Celery worker and the web tier) talking through one Redis.
+``AsyncFakeRedis`` puts an awaitable face on the same store for the broker's
+async session path, so sync writers and the async reader share state.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from __future__ import annotations
 import threading
 import time
 
+import anyio
 import pytest
 
 from docsgpt.devices.broker import DeviceBroker
@@ -82,6 +85,14 @@ class FakeRedis:
 
     def expire(self, key, ttl):  # TTL is not simulated.
         return True
+
+    def eval(self, _script, _numkeys, key, expected):
+        """Model the broker's one Lua script: delete ``key`` iff it holds ``expected``."""
+        with self._lock:
+            if self.kv.get(key) != _b(expected):
+                return 0
+            del self.kv[key]
+            return 1
 
     # -- lists --------------------------------------------------------
     def llen(self, key):
@@ -187,6 +198,24 @@ class FakeRedis:
         return out or None
 
 
+class AsyncFakeRedis:
+    """Awaitable facade over a ``FakeRedis`` for the broker's async session path."""
+
+    def __init__(self, sync: FakeRedis) -> None:
+        self.sync = sync
+
+    async def blpop(self, key, timeout=0):
+        popped = self.sync.blpop(key, timeout=timeout)
+        if popped is None:
+            # Real BLPOP waits out ``timeout``; a short sleep keeps a polling
+            # loop from spinning without slowing tests down.
+            await anyio.sleep(min(float(timeout or 0), 0.01))
+        return popped
+
+    async def exists(self, key):
+        return self.sync.exists(key)
+
+
 @pytest.fixture
 def fake_redis() -> FakeRedis:
     return FakeRedis()
@@ -197,5 +226,22 @@ def broker_env(monkeypatch, fake_redis):
     """A ``DeviceBroker`` wired to a fresh ``FakeRedis``; returns (broker, fake)."""
     monkeypatch.setattr(
         "docsgpt.devices.broker.get_redis_instance", lambda: fake_redis
+    )
+    return DeviceBroker(), fake_redis
+
+
+@pytest.fixture
+def async_broker_env(monkeypatch, fake_redis):
+    """Like ``broker_env``, with the async client backed by the same store."""
+    async_redis = AsyncFakeRedis(fake_redis)
+
+    async def _get_async_redis():
+        return async_redis
+
+    monkeypatch.setattr(
+        "docsgpt.devices.broker.get_redis_instance", lambda: fake_redis
+    )
+    monkeypatch.setattr(
+        "docsgpt.devices.broker.get_async_redis_instance", _get_async_redis
     )
     return DeviceBroker(), fake_redis

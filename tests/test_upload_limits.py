@@ -145,23 +145,24 @@ def test_enforce_parseable_attachment_rejects_binary_behind_a_bom(bom, tmp_path)
 def test_enforce_parseable_attachment_uses_the_extractor_it_is_given(tmp_path):
     """The worker holds the live parser table; a trimmed install must not admit on trust.
 
-    Without docling the fallback extractor has no .webp handler, so a .webp
-    would otherwise skip the content check and be read as plain text.
+    Without docling the fallback extractor has no .vtt handler, so a binary
+    file named .vtt would otherwise skip the content check and be read as
+    plain text.
     """
     from docsgpt.upload_limits import (
         enforce_parseable_attachment,
         UnsupportedUploadTypeError,
     )
 
-    path = tmp_path / "scan.webp"
-    path.write_bytes(b"RIFF\x00\x00\x00\x00WEBPVP8 " + bytes(range(256)))
+    path = tmp_path / "subs.vtt"
+    path.write_bytes(b"\x00\x01\x02\x03" + bytes(range(256)))
 
-    # Default list: .webp is parser-backed, admitted on its name.
-    enforce_parseable_attachment(path, "scan.webp")
+    # Default list: .vtt is parser-backed, admitted on its name.
+    enforce_parseable_attachment(path, "subs.vtt")
 
-    # The extractor actually loaded has no .webp parser.
+    # The extractor actually loaded has no .vtt parser.
     with pytest.raises(UnsupportedUploadTypeError):
-        enforce_parseable_attachment(path, "scan.webp", {".pdf", ".docx"})
+        enforce_parseable_attachment(path, "subs.vtt", {".pdf", ".docx"})
 
 
 @pytest.mark.parametrize(

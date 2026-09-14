@@ -18,9 +18,9 @@ def topic_name(user_id: str) -> str:
     return f"user:{user_id}"
 
 
-def connection_counter_key(user_id: str) -> str:
-    """Redis counter tracking active SSE connections for ``user_id``."""
-    return f"user:{user_id}:sse_count"
+def connection_leases_key(user_id: str) -> str:
+    """Redis sorted set of live SSE connection leases for ``user_id``."""
+    return f"user:{user_id}:sse_leases"
 
 
 def replay_budget_key(user_id: str) -> str:

@@ -70,7 +70,7 @@ GET /api/messages/<message_id>/events
 This replays the message's events past your last-seen sequence number and tails the rest live. It is backed by the Postgres `message_events` journal (retained for `MESSAGE_EVENTS_RETENTION_DAYS`, default 14).
 
 <Callout type="warning" emoji="⚠️">
-The chat reconnect endpoint is a native-async route served by the ASGI entrypoint. Under a plain `flask run` dev server it returns `404`; run the backend via the ASGI app (`uvicorn docsgpt.asgi:asgi_app`) or the production gunicorn uvicorn worker to use it. See the [Development Environment](/Deploying/Development-Environment) guide.
+Both channels are native-async routes served by the ASGI entrypoint. Under a plain `flask run` dev server they return `404`; run the backend via the ASGI app (`uvicorn docsgpt.asgi:asgi_app`) or the production gunicorn uvicorn worker to use them. See the [Development Environment](/Deploying/Development-Environment) guide.
 </Callout>
 
 ## Settings
@@ -81,6 +81,7 @@ The chat reconnect endpoint is a native-async route served by the ASGI entrypoin
 | `EVENTS_STREAM_MAXLEN` | `1000` | Per-user backlog cap (approximate). |
 | `SSE_KEEPALIVE_SECONDS` | `15` | Keepalive comment-frame cadence (keep below your proxy's idle timeout). |
 | `SSE_MAX_CONCURRENT_PER_USER` | `8` | Max simultaneous SSE connections per user (`0` disables the cap). |
+| `ASYNC_REDIS_MAX_CONNECTIONS` | `2000` | Redis connection pool per API worker. Each open SSE connection holds one, so this caps concurrent streams per worker. |
 | `EVENTS_REPLAY_MAX_PER_REQUEST` | `200` | Max backlog entries per replay request. |
 | `EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW` | `30` | Per-user replay requests per window (`0` disables). |
 | `EVENTS_REPLAY_BUDGET_WINDOW_SECONDS` | `60` | Replay budget window length. |

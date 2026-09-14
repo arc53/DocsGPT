@@ -1,4 +1,7 @@
-"""Device session endpoints: poll, SSE, ack, output."""
+"""Device session endpoints: poll, me, ack, output.
+
+The SSE command stream itself is a native-async route (``session_events.py``).
+"""
 
 from __future__ import annotations
 
@@ -6,14 +9,10 @@ import gzip
 import io
 import json
 import logging
-import time
-from typing import Iterator
 
-from flask import Response, jsonify, make_response, request, stream_with_context
+from flask import Response, jsonify, make_response, request
 
 from docsgpt.api.devices.auth import verify_device_session
-from docsgpt.core.settings import settings
-from docsgpt.core.shutdown import is_shutting_down
 from docsgpt.devices.broker import get_broker
 from docsgpt.storage.db.repositories.device_audit_log import (
     DeviceAuditLogRepository,
@@ -80,71 +79,6 @@ def me() -> Response:
         if value is not None and not isinstance(value, str):
             out[key] = value.isoformat()
     return make_response(jsonify(out), 200)
-
-
-def session_events(session_id: str) -> Response:
-    """``GET /api/devices/sessions/{id}/events`` — SSE invocation stream.
-
-    The ``session_id`` must be the ``session_ticket`` the device's own
-    ``/poll`` just issued (the path it was handed as ``session_url``). A
-    stale, mismatched, or fabricated ticket is rejected with ``410 Gone``
-    before any stream is opened.
-    """
-    device, err = verify_device_session()
-    if err is not None:
-        return err
-    broker = get_broker()
-    if not broker.validate_ticket(device["id"], session_id):
-        return make_response(
-            jsonify({"success": False, "error": "session_ticket_invalid"}), 410
-        )
-    sess = broker.register_session(device["id"], device["user_id"])
-
-    keepalive_interval = float(settings.SSE_KEEPALIVE_SECONDS)
-    idle_seconds = float(settings.REMOTE_DEVICE_SESSION_IDLE_SECONDS)
-
-    @stream_with_context
-    def generate() -> Iterator[str]:
-        try:
-            last_keepalive = time.time()
-            while not sess.closed.is_set():
-                # Break promptly on shutdown (see docsgpt/core/shutdown.py).
-                if is_shutting_down():
-                    break
-                now = time.time()
-                if now - sess.last_activity_at > idle_seconds:
-                    yield _sse_event(
-                        "session_end",
-                        {"reason": "inactivity_timeout"},
-                        sess.last_event_id + 1,
-                    )
-                    sess.last_event_id += 1
-                    broker.close_session(sess.session_id, reason="idle")
-                    return
-                envelope = broker.next_command(sess, timeout=1.0)
-                if envelope is None:
-                    if time.time() - last_keepalive >= keepalive_interval:
-                        last_keepalive = time.time()
-                        yield ": heartbeat\n\n"
-                    continue
-                sess.last_event_id += 1
-                sess.last_activity_at = time.time()
-                yield _sse_event("invocation", envelope, sess.last_event_id)
-                last_keepalive = time.time()
-        except GeneratorExit:
-            logger.debug("device SSE generator exiting for session %s", sess.session_id)
-            raise
-        finally:
-            broker.close_session(sess.session_id, reason="generator_exit")
-
-    return Response(
-        generate(),
-        mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
-    )
 
 
 def ack_invocation(session_id: str, invocation_id: str) -> Response:
@@ -262,11 +196,3 @@ def _as_opt_int(value) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
-
-
-def _sse_event(name: str, payload: dict, event_id: int) -> str:
-    return (
-        f"event: {name}\n"
-        f"id: {event_id}\n"
-        f"data: {json.dumps(payload)}\n\n"
-    )

@@ -1,4 +1,5 @@
 import datetime
+import io
 import json
 import logging
 import mimetypes
@@ -23,8 +24,13 @@ from docsgpt.parser.embedding_pipeline import (
     assert_index_complete,
     embed_and_store_documents,
 )
+from docsgpt.parser.file.base_parser import NoTextLayerError
 from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from docsgpt.parser.file.image_parser import (
+    VISION_CONVERTIBLE_MIME_TYPES,
+    convert_image_to_png,
+)
 from docsgpt.parser.remote.remote_creator import (
     RemoteCreator,
     normalize_remote_data,
@@ -1598,6 +1604,44 @@ def _reject_attachment_zip_bomb(local_path: str) -> None:
         raise AttachmentRejectedError(reason)
 
 
+def _readable_without_text(filename: str) -> bool:
+    """Whether a model can read an attachment from its original file alone.
+
+    PDFs and images are sent to models as the file itself (a PDF as page
+    images on image-only models); every other format needs extracted text.
+
+    Args:
+        filename: The upload's original filename.
+
+    Returns:
+        bool: True for PDFs and images.
+    """
+    mime_type = mimetypes.guess_type(filename)[0] or ""
+    return mime_type == "application/pdf" or mime_type.startswith("image/")
+
+
+def _store_png_copy(storage, relative_path: str, mime_type: str) -> tuple[str, dict]:
+    """Store a PNG copy, beside the original, of an image the providers reject.
+
+    Args:
+        storage: The storage backend holding the upload.
+        relative_path: Storage path of the original image.
+        mime_type: The original's mime type, e.g. ``image/tiff``.
+
+    Returns:
+        tuple[str, dict]: The PNG's storage path, and the conversion record
+        kept in the attachment's metadata.
+
+    Raises:
+        DocumentParseError: If the image cannot be decoded.
+    """
+    with storage.get_file(relative_path) as source:
+        png_bytes, frames = convert_image_to_png(source)
+    png_path = f"{os.path.splitext(relative_path)[0]}.png"
+    storage.save_file(io.BytesIO(png_bytes), png_path)
+    return png_path, {"from": mime_type, "to": "image/png", "frames": frames}
+
+
 def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
     """Bound how much of a text attachment reaches the parser.
 
@@ -1794,7 +1838,24 @@ def attachment_worker(self, file_info, user):
                     except OSError:
                         pass
 
-        attachment_document = storage.process_file(relative_path, _parse_local_file)
+        extraction_status = "ok"
+        no_text_reason = None
+        try:
+            attachment_document = storage.process_file(relative_path, _parse_local_file)
+        except NoTextLayerError as exc:
+            # A PDF with no text layer is still a usable attachment: models
+            # that read PDFs natively, or as page images, are sent the stored
+            # file rather than its text. Keep it with nothing to inline; the
+            # LLM handler names it to any model that cannot read it.
+            if not _readable_without_text(filename):
+                raise
+            logging.info(
+                f"Attachment {filename} has no text layer; keeping it for native reading",
+                extra={"user": user},
+            )
+            attachment_document = Document(text="", extra_info={})
+            extraction_status = "no_text"
+            no_text_reason = str(exc)[:1024]
         content = attachment_document.text
         # A fast-path parser may have delegated to its fallback for this file,
         # so record the engine that actually ran rather than the one selected.
@@ -1823,11 +1884,12 @@ def attachment_worker(self, file_info, user):
         metadata = {
             **metadata,
             "extraction": {
-                "status": "ok",
+                "status": extraction_status,
                 "parser": parser_name,
                 "truncated": truncated,
                 "original_tokens": original_tokens,
                 "stored_tokens": token_count,
+                **({"reason": no_text_reason} if no_text_reason else {}),
             },
         }
 
@@ -1847,6 +1909,10 @@ def attachment_worker(self, file_info, user):
         )
 
         mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        if mime_type in VISION_CONVERTIBLE_MIME_TYPES:
+            relative_path, conversion = _store_png_copy(storage, relative_path, mime_type)
+            mime_type = conversion["to"]
+            metadata = {**metadata, "image_conversion": conversion}
 
         _upsert_attachment_row(
             user,
@@ -1873,6 +1939,7 @@ def attachment_worker(self, file_info, user):
                 "filename": filename,
                 "token_count": token_count,
                 "mime_type": mime_type,
+                "extraction_status": extraction_status,
             },
             scope={"kind": "attachment", "id": str(attachment_id)},
         )

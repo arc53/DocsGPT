@@ -444,9 +444,14 @@ class Settings(BaseSettings):
     GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = 30
     WSGI_THREADPOOL_WORKERS: int = 96
     SSE_KEEPALIVE_SECONDS: int = Field(default=15, ge=1)
-    # Simultaneous SSE connections per user; each holds a WSGI thread and a Redis pub/sub
-    # connection. 8 covers multi-tab use without one user starving the pool. 0 disables.
+    # Simultaneous SSE connections per user; each holds a pooled async Redis connection for
+    # its lifetime. 8 covers multi-tab use without one user starving the pool. 0 disables.
     SSE_MAX_CONCURRENT_PER_USER: int = 8
+    # Pool size of the async Redis client behind the event-loop routes, per process. Every
+    # open notification tab, chat reconnect and device session holds one connection, so this
+    # caps concurrent streams per worker (redis-py's own default is 100). Keep the total
+    # across workers below the Redis server's maxclients (10000 by default).
+    ASYNC_REDIS_MAX_CONNECTIONS: int = Field(default=2000, ge=1)
     # Backlog entries XRANGE returns per /api/events snapshot. Bounds what one replay moves
     # from Redis to the wire: a client looping Last-Event-ID reconnects enumerates at most
     # this many per round-trip, and the budget below bounds total throughput.
