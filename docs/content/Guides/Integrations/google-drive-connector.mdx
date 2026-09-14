@@ -50,7 +50,7 @@ VITE_GOOGLE_CLIENT_ID=your-google-client-id
 | `GOOGLE_CLIENT_ID` | OAuth Client ID from GCP Credentials | Yes |
 | `GOOGLE_CLIENT_SECRET` | OAuth Client Secret from GCP Credentials | Yes |
 | `VITE_GOOGLE_CLIENT_ID` | Same Client ID, used by the frontend to show the Google Drive option | Yes |
-| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com`. Not needed when the frontend shares the API origin or runs on `localhost:5173` | When the frontend is on its own origin |
+| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com`. Not needed when the frontend shares the API origin, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
 
 <Callout type="warning" emoji="⚠️">
 Make sure to use the same Google Client ID in both backend and frontend configurations.

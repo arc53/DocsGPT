@@ -2,6 +2,7 @@
 
 import base64
 import json
+import logging
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -82,6 +83,19 @@ class TestConnectorAllowedOrigins:
         assert "http://127.0.0.1:5173" in local
         assert "http://localhost:5173" not in public
 
+    def test_loopback_aliases_keep_callback_scheme_and_port(self):
+        from docsgpt.api.connector.routes import connector_allowed_origins
+        from docsgpt.core.settings import settings
+
+        with patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", None), \
+                patch.object(settings, "OIDC_FRONTEND_URL", None), \
+                patch.object(settings, "CONNECTOR_REDIRECT_BASE_URI", "https://localhost/api/connectors/callback"):
+            origins = connector_allowed_origins("https://localhost/")
+
+        assert "https://127.0.0.1" in origins
+        assert "http://localhost" not in origins
+        assert "http://127.0.0.1" not in origins
+
 
 class TestCallbackStatusPage:
     def test_never_posts_to_wildcard_origin(self, app):
@@ -107,6 +121,15 @@ class TestCallbackStatusPage:
         body = r.get_data(as_text=True)
         assert "attacker-supplied" not in body
         assert "evil@example.com" not in body
+
+    def test_tokenless_success_posts_to_no_origin(self, app):
+        from docsgpt.api.connector.routes import ConnectorCallbackStatus
+
+        with app.test_request_context(
+            "/api/connectors/callback-status?status=success&provider=google_drive"
+        ):
+            r = ConnectorCallbackStatus().get()
+        assert "const targetOrigins = [];" in r.get_data(as_text=True)
 
 
 class TestCallbackDeliversTokenSafely:
@@ -170,6 +193,37 @@ class TestAuthUrlReportsCallbackOrigin:
 
         assert r.status_code == 200
         assert r.json["callback_origin"] == "https://api.example.com"
+
+    @pytest.mark.parametrize(
+        "origin, warns",
+        [("https://app.example.com", True), ("https://api.example.com", False), (None, False)],
+    )
+    def test_warns_when_requesting_origin_cannot_receive_result(self, app, pg_conn, caplog, origin, warns):
+        from docsgpt.api.connector.routes import ConnectorAuth
+        from docsgpt.core.settings import settings
+
+        fake_auth = MagicMock()
+        fake_auth.get_authorization_url.return_value = "https://ex/auth?state=x"
+        headers = {"Origin": origin} if origin else {}
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.connector.routes.ConnectorCreator.is_supported", return_value=True,
+        ), patch(
+            "docsgpt.api.connector.routes.ConnectorCreator.create_auth", return_value=fake_auth,
+        ), patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", None), patch.object(
+            settings, "OIDC_FRONTEND_URL", None,
+        ), patch.object(
+            settings, "CONNECTOR_REDIRECT_BASE_URI", "https://api.example.com/api/connectors/callback",
+        ), app.test_request_context(
+            "/api/connectors/auth?provider=google_drive", headers=headers, base_url="https://api.example.com",
+        ), caplog.at_level(logging.WARNING):
+            from flask import request
+            request.decoded_token = {"sub": "u-auth-warn"}
+            r = ConnectorAuth().get()
+
+        assert r.status_code == 200
+        warned = any("CONNECTOR_ALLOWED_ORIGINS" in rec.getMessage() for rec in caplog.records)
+        assert warned is warns
 
 
 class TestDisconnectOwnership:

@@ -81,8 +81,9 @@ def connector_allowed_origins(request_host_url: str) -> list[str]:
     if callback_origin:
         callback = urlsplit(callback_origin)
         if callback.hostname in _LOOPBACK_HOSTS:
-            for port in (_DEV_FRONTEND_PORT, callback.port or 80):
-                candidates += [f"http://localhost:{port}", f"http://127.0.0.1:{port}"]
+            callback_port = f":{callback.port}" if callback.port else ""
+            for host in ("localhost", "127.0.0.1"):
+                candidates += [f"http://{host}:{_DEV_FRONTEND_PORT}", f"{callback.scheme}://{host}{callback_port}"]
     origins: list[str] = []
     for candidate in candidates:
         origin = _origin_of(candidate)
@@ -101,6 +102,8 @@ def _render_callback_page(
 ):
     """Popup page that reports an OAuth result to the opener on allowed origins only."""
     status = status if status in ("success", "error", "cancelled") else "error"
+    # Without a token there is no result to report, so post to no one.
+    target_origins = connector_allowed_origins(request.host_url) if session_token else []
     provider = html.escape(provider_raw.replace("_", " ").title())
     connected_as = (
         f"<p>Connected as: {html.escape(user_email)}</p>" if status == "success" and user_email else ""
@@ -127,7 +130,7 @@ def _render_callback_page(
                 const sessionToken = {_js_literal(session_token)};
                 const userEmail = {_js_literal(user_email)};
                 const providerType = {_js_literal(provider_raw)};
-                const targetOrigins = {_js_literal(connector_allowed_origins(request.host_url))};
+                const targetOrigins = {_js_literal(target_origins)};
 
                 if (status === "success" && window.opener) {{
                     const payload = {{
@@ -196,6 +199,14 @@ class ConnectorAuth(Resource):
 
             auth = ConnectorCreator.create_auth(provider)
             authorization_url = auth.get_authorization_url(state=state)
+            # The popup drops results for origins outside the allowlist, which the
+            # user only sees as a cancelled sign-in; name the missing origin here.
+            request_origin = _origin_of(request.headers.get("Origin"))
+            if request_origin and request_origin not in connector_allowed_origins(request.host_url):
+                current_app.logger.warning(
+                    f"Connector sign-in requested from {request_origin}, which cannot receive the result; "
+                    "add it to CONNECTOR_ALLOWED_ORIGINS"
+                )
             return make_response(jsonify({
                 "success": True,
                 "authorization_url": authorization_url,
