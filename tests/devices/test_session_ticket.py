@@ -2,8 +2,8 @@
 
 Two layers:
 
-* Broker unit tests for ``claim_ticket`` / ``validate_ticket`` (issue, match,
-  mismatch, eviction, absence).
+* Broker unit tests for ``claim_ticket`` / ``validate_ticket`` /
+  ``redeem_ticket`` (issue, match, mismatch, eviction, absence, single use).
 * Route tests proving the real CLI loop still works: ``/poll`` (Flask) issues
   a ticket and the native-async stream accepts *that* ticket, while a
   mismatched ticket is rejected with ``410`` before any stream opens.
@@ -97,6 +97,45 @@ def test_register_session_consumes_issued_ticket_as_session_id(broker_env):
     assert sess.session_id == ticket
     # Ticket is consumed on registration.
     assert fake.get("dev:ticket:dev_x") is None
+
+
+def test_redeem_ticket_opens_session_under_the_ticket(broker_env):
+    broker, fake = broker_env
+    _queue_work(broker)
+    ticket = broker.claim_ticket("dev_x", 30)
+    sess = broker.redeem_ticket("dev_x", "user_x", ticket)
+    assert sess.session_id == ticket
+    assert broker.get_session(ticket) is sess
+    assert fake.get("dev:ticket:dev_x") is None
+
+
+def test_redeem_ticket_succeeds_only_once(broker_env):
+    # Two requests racing with one ticket: the loser must not open a session
+    # that replaces the winner's live stream.
+    broker, _fake = broker_env
+    _queue_work(broker)
+    ticket = broker.claim_ticket("dev_x", 30)
+    first = broker.redeem_ticket("dev_x", "user_x", ticket)
+    assert broker.redeem_ticket("dev_x", "user_x", ticket) is None
+    assert not first.closed.is_set()
+    assert broker._sessions_by_device["dev_x"] is first
+
+
+def test_redeem_ticket_rejects_other_ticket_and_keeps_issued_one(broker_env):
+    broker, fake = broker_env
+    _queue_work(broker)
+    ticket = broker.claim_ticket("dev_x", 30)
+    assert broker.redeem_ticket("dev_x", "user_x", "st_not_the_one") is None
+    assert broker.redeem_ticket("dev_x", "user_x", "") is None
+    assert fake.get("dev:ticket:dev_x") == ticket.encode()
+    assert "dev_x" not in broker._sessions_by_device
+
+
+def test_redeem_ticket_rejects_when_redis_unavailable(monkeypatch):
+    monkeypatch.setattr("docsgpt.devices.broker.get_redis_instance", lambda: None)
+    broker = DeviceBroker()
+    assert broker.redeem_ticket("dev_x", "user_x", "st_anything") is None
+    assert "dev_x" not in broker._sessions_by_device
 
 
 # ---------------------------------------------------------------------------

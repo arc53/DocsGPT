@@ -86,6 +86,14 @@ class FakeRedis:
     def expire(self, key, ttl):  # TTL is not simulated.
         return True
 
+    def eval(self, _script, _numkeys, key, expected):
+        """Model the broker's one Lua script: delete ``key`` iff it holds ``expected``."""
+        with self._lock:
+            if self.kv.get(key) != _b(expected):
+                return 0
+            del self.kv[key]
+            return 1
+
     # -- lists --------------------------------------------------------
     def llen(self, key):
         with self._lock:
