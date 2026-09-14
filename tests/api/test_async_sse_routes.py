@@ -24,7 +24,7 @@ from docsgpt.core.settings import settings
 
 VALID_UUID = "67d65e8f-e7fb-4df1-9e6e-99ea6c830206"
 
-_AUTH = "docsgpt.api.async_sse.handle_auth"
+_AUTH = "docsgpt.api.asgi_auth.handle_auth"
 _OWNS = "docsgpt.api.async_sse._user_owns_message"
 _STREAM = "docsgpt.api.async_sse.build_message_event_stream_async"
 _AREDIS = "docsgpt.api.async_sse.get_async_redis_instance"

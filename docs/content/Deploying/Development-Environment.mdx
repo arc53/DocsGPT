@@ -133,7 +133,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     flask --app docsgpt/app.py run --host=0.0.0.0 --port=7091
     ```
 
-    But it serves **only** the WSGI Flask app and omits the routes mounted on the ASGI shell in `docsgpt/asgi.py`: the `/mcp` FastMCP endpoint and the native-async SSE reconnect reader `GET /api/messages/<id>/events`. Under `flask run` those paths return 404 — chat still works (`POST /stream` is a Flask route), but a stream interrupted by a disconnect won't auto-resume on reconnect. Use `flask run` only when you don't need those routes.
+    But it serves **only** the WSGI Flask app and omits the native-async routes mounted on the ASGI shell in `docsgpt/asgi.py`: the `/mcp` FastMCP endpoint, the chat reconnect reader `GET /api/messages/<id>/events`, the notification stream `GET /api/events`, the remote-device command stream `GET /api/devices/sessions/<id>/events`, and artifact downloads `GET /api/artifacts/<id>/download`. Under `flask run` those paths return 404 — chat still works (`POST /stream` is a Flask route), but live notifications, stream auto-resume, paired devices and artifact downloads don't. Use `flask run` only when you don't need them.
 
 6.  **Start the Celery Worker:**
 

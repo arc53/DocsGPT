@@ -2,7 +2,7 @@
 
 These Starlette routes serve the chat-stream *reconnect* path on the event
 loop, so a long-lived, mostly-idle tail costs a coroutine instead of one of
-the 32 a2wsgi threadpool slots (see ``docsgpt/asgi.py``). They are the
+the a2wsgi threadpool slots (see ``docsgpt/asgi.py``). They are the
 sole reconnect reader — the old Flask blueprint has been removed. The heavy
 *producer* (``POST /api/answer/stream`` → agent → LLM) stays on the sync
 path untouched.
@@ -24,8 +24,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
-from docsgpt.api.oidc.denylist import is_denied as oidc_session_denied
-from docsgpt.auth import handle_auth
+from docsgpt.api.asgi_auth import authenticate
 from docsgpt.core.settings import settings
 from docsgpt.events.keys import connection_counter_key
 from docsgpt.storage.db.session import db_readonly
@@ -176,19 +175,14 @@ async def stream_message_events(request: Request) -> JSONResponse | StreamingRes
     cursor → per-user connection cap) then streams snapshot+tail off the
     event loop.
     """
-    # ``handle_auth`` only reads ``request.headers.get("Authorization")``;
-    # Starlette's headers are case-insensitive, so the Flask helper works
-    # verbatim. With AUTH_TYPE unset it returns ``{"sub": "local"}``.
-    decoded = handle_auth(request)
-    if isinstance(decoded, dict) and "error" in decoded:
-        return _json("Authentication error: invalid token", 401)
+    # Same JWT decoder and OIDC revocation check as the Flask routes. With
+    # AUTH_TYPE unset the caller resolves to ``{"sub": "local"}``.
+    decoded, error = await authenticate(request)
+    if error is not None:
+        return error
     user_id = decoded.get("sub") if isinstance(decoded, dict) else None
     if not user_id:
         return _json("Authentication required", 401)
-    if settings.AUTH_TYPE == "oidc" and await anyio.to_thread.run_sync(
-        oidc_session_denied, decoded
-    ):
-        return _json("Authentication error: session revoked", 401)
 
     message_id = request.path_params["message_id"]
     if not _MESSAGE_ID_RE.match(message_id):

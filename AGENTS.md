@@ -66,12 +66,17 @@ inner loop (quick startup, the Werkzeug interactive debugger), but it serves
 **only** the WSGI Flask app and omits the routes mounted on the ASGI shell
 in `docsgpt/asgi.py`:
 
-- the `/mcp` FastMCP endpoint, and
-- the native-async SSE reconnect reader `GET /api/messages/<id>/events`.
+- the `/mcp` FastMCP endpoint,
+- the chat reconnect reader `GET /api/messages/<id>/events`,
+- the notification stream `GET /api/events`,
+- the remote-device command stream `GET /api/devices/sessions/<id>/events`, and
+- artifact downloads `GET /api/artifacts/<id>/download`.
 
-Under `flask run` those paths 404. Chat still works (`POST /stream` is a
-Flask route), but a stream interrupted by a disconnect won't auto-resume on
-reconnect. Use `flask run` only when you don't need those routes.
+These are native-async Starlette routes because they hold a response open
+for a long time; on Flask each would pin a WSGI threadpool slot. Under
+`flask run` those paths 404: chat still works (`POST /stream` is a Flask
+route), but live notifications, stream auto-resume, paired devices and
+artifact downloads don't. Use `flask run` only when you don't need them.
 
 Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same
 `docsgpt.asgi:asgi_app` target; see `docsgpt/Dockerfile` for the

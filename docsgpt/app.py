@@ -20,7 +20,6 @@ from docsgpt.api import api  # noqa: E402
 from docsgpt.api.admin import admin_ns  # noqa: E402
 from docsgpt.api.answer import answer  # noqa: E402
 from docsgpt.api.devices import devices_bp  # noqa: E402
-from docsgpt.api.events.routes import events  # noqa: E402
 from docsgpt.api.internal.routes import internal  # noqa: E402
 from docsgpt.api.oidc import oidc_bp  # noqa: E402
 from docsgpt.api.oidc.denylist import is_denied as oidc_session_denied  # noqa: E402
@@ -99,7 +98,6 @@ validate_default_chat_tools()
 app = Flask(__name__)
 app.register_blueprint(user)
 app.register_blueprint(answer)
-app.register_blueprint(events)
 app.register_blueprint(internal)
 app.register_blueprint(connector)
 app.register_blueprint(devices_bp)

@@ -16,7 +16,6 @@ from docsgpt.api.devices.session import (
     ack_invocation,
     me,
     poll,
-    session_events,
     submit_output,
 )
 from docsgpt.devices.normalizer import normalize_command
@@ -313,10 +312,7 @@ def register(bp: Blueprint) -> None:
     bp.add_url_rule(
         "/api/devices/me", view_func=me, methods=["GET"], endpoint="device_me",
     )
-    bp.add_url_rule(
-        "/api/devices/sessions/<session_id>/events", view_func=session_events,
-        methods=["GET"], endpoint="device_session_events",
-    )
+    # The session's SSE stream is native-async (session_events.py, mounted in asgi.py).
     bp.add_url_rule(
         "/api/devices/sessions/<session_id>/invocations/<invocation_id>/ack",
         view_func=ack_invocation, methods=["POST"], endpoint="device_ack",

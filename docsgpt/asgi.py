@@ -9,6 +9,9 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Mount
 
 from docsgpt.api.async_sse import async_sse_routes
+from docsgpt.api.devices.session_events import device_session_routes
+from docsgpt.api.events.routes import event_stream_routes
+from docsgpt.api.user.artifacts.download import artifact_download_routes
 from docsgpt.app import app as flask_app
 from docsgpt.core.settings import settings
 from docsgpt.mcp_server import mcp
@@ -28,12 +31,17 @@ _backend = StaticUI.wrap(
 asgi_app = Starlette(
     routes=[
         Mount("/mcp", app=mcp_app),
-        # Native-async SSE readers intercept their exact paths before the
-        # Flask catch-all, so a mostly-idle reconnect tail rides the event
-        # loop instead of pinning a WSGI threadpool slot. Order matters:
-        # Starlette matches routes top-to-bottom, so these must precede the
-        # Mount("/") that hands everything else to Flask.
+        # Native-async routes intercept their exact paths before the Flask
+        # catch-all. Each holds its response open for a long time (the chat
+        # reconnect tail, the notification stream, a device's command stream,
+        # large artifact downloads), so it rides the event loop instead of
+        # pinning a WSGI threadpool slot. Order matters: Starlette matches
+        # routes top-to-bottom, so these must precede the Mount("/") that
+        # hands everything else to Flask.
         *async_sse_routes,
+        *event_stream_routes,
+        *device_session_routes,
+        *artifact_download_routes,
         Mount("/", app=_backend),
     ],
     middleware=[

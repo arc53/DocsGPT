@@ -1,11 +1,11 @@
-"""Lazy async Redis client for the native-async SSE reader.
+"""Lazy async Redis client for the native-async (event-loop) routes.
 
-Async twin of :func:`docsgpt.cache.get_redis_instance`. The
-Starlette-mounted reader (``docsgpt.api.async_sse``) tails pub/sub on
-the event loop, so it needs a ``redis.asyncio`` client rather than the
-sync one used by the producer side. The app runs a single ASGI worker /
-event loop, so a module-level singleton is sufficient and avoids
-reconnecting per request.
+Async twin of :func:`docsgpt.cache.get_redis_instance`. The Starlette-mounted
+routes — the chat reconnect reader, ``/api/events`` and the device command
+stream — wait on Redis from the event loop, so they need a ``redis.asyncio``
+client rather than the sync one used by the producer side. The app runs a
+single ASGI worker / event loop, so a module-level singleton is sufficient
+and avoids reconnecting per request.
 """
 
 from __future__ import annotations
@@ -30,7 +30,9 @@ async def get_async_redis_instance() -> Optional[aioredis.Redis]:
     lazy), so a transient broker outage surfaces later on the first command
     rather than here. Mirrors the sync client's ``socket_connect_timeout``
     and ``health_check_interval`` so a half-open TCP can't wedge the tail
-    loop past its keepalive cadence.
+    loop past its keepalive cadence. Every open stream holds a pooled
+    connection, so the pool is sized by ``ASYNC_REDIS_MAX_CONNECTIONS``
+    rather than redis-py's default of 100.
     """
     global _async_redis, _creation_failed
     if _async_redis is None and not _creation_failed:
@@ -39,6 +41,7 @@ async def get_async_redis_instance() -> Optional[aioredis.Redis]:
                 settings.CACHE_REDIS_URL,
                 socket_connect_timeout=2,
                 health_check_interval=10,
+                max_connections=int(settings.ASYNC_REDIS_MAX_CONNECTIONS),
             )
         except ValueError as e:
             logger.error("Invalid Redis URL for async client: %s", e)

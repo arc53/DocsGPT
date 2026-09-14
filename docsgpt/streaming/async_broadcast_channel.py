@@ -1,4 +1,4 @@
-"""Async Redis pub/sub Topic for the native-async SSE reader.
+"""Async Redis pub/sub Topic for the native-async SSE readers.
 
 Event-loop twin of :class:`docsgpt.streaming.broadcast_channel.Topic`.
 Same contract — ``subscribe`` yields ``None`` on poll timeout (so the
@@ -15,15 +15,21 @@ from __future__ import annotations
 
 import inspect
 import logging
+import time
 from typing import AsyncIterator, Awaitable, Callable, Optional, Union
 
 import anyio
+from redis.exceptions import MaxConnectionsError
 
 from docsgpt.streaming.async_redis import get_async_redis_instance
 
 logger = logging.getLogger(__name__)
 
 OnSubscribe = Callable[[], Union[None, Awaitable[None]]]
+
+# Payload of the liveness PING. It differs from redis-py's own health-check
+# payload, whose PONG the client swallows before ``get_message`` returns.
+_LIVENESS_PING = "docsgpt-liveness"
 
 
 class AsyncTopic:
@@ -36,6 +42,7 @@ class AsyncTopic:
         self,
         on_subscribe: Optional[OnSubscribe] = None,
         poll_timeout: float = 1.0,
+        liveness_timeout: Optional[float] = None,
     ) -> AsyncIterator[Optional[bytes]]:
         """Subscribe to the topic; yield raw payloads or ``None`` on tick.
 
@@ -45,6 +52,13 @@ class AsyncTopic:
         live message is processed. If Redis is unavailable, returns
         immediately without yielding so the caller can fall back to a
         direct snapshot read. Cleanly unsubscribes on close / disconnect.
+
+        ``liveness_timeout`` protects long-lived subscribers from a
+        connection NAT/IPVS dropped without a FIN. Such a socket never
+        errors; ``get_message`` just keeps timing out. After that many
+        seconds with nothing received a PING goes out, and if nothing comes
+        back within the same window the subscription ends, so the client
+        reconnects and replays from its cursor.
         """
         redis = await get_async_redis_instance()
         if redis is None:
@@ -58,6 +72,14 @@ class AsyncTopic:
         try:
             try:
                 await pubsub.subscribe(self.name)
+            except MaxConnectionsError:
+                # Every pooled connection is held by another open stream.
+                logger.warning(
+                    "async Redis pool exhausted subscribing to %s; raise "
+                    "ASYNC_REDIS_MAX_CONNECTIONS if this worker should hold more streams",
+                    self.name,
+                )
+                return
             except Exception:
                 # Transient subscribe failure is treated like "Redis
                 # unavailable": yield nothing, let the caller fall back to
@@ -65,6 +87,8 @@ class AsyncTopic:
                 # pubsub down cleanly.
                 logger.exception("async pubsub.subscribe failed for %s", self.name)
                 return
+            last_received = time.monotonic()
+            ping_sent_at: Optional[float] = None
             while True:
                 try:
                     msg = await pubsub.get_message(timeout=poll_timeout)
@@ -73,10 +97,34 @@ class AsyncTopic:
                         "async pubsub.get_message failed for %s", self.name
                     )
                     return
+                now = time.monotonic()
                 if msg is None:
+                    if liveness_timeout is not None:
+                        if ping_sent_at is not None:
+                            if now - ping_sent_at >= liveness_timeout:
+                                logger.info(
+                                    "pubsub liveness probe unanswered for %s; closing subscriber",
+                                    self.name,
+                                )
+                                return
+                        elif now - last_received >= liveness_timeout:
+                            try:
+                                await pubsub.ping(_LIVENESS_PING)
+                            except Exception:
+                                logger.info(
+                                    "pubsub liveness probe failed for %s; closing subscriber",
+                                    self.name,
+                                    exc_info=True,
+                                )
+                                return
+                            ping_sent_at = now
                     yield None
                     continue
+                last_received = now
+                ping_sent_at = None
                 msg_type = msg.get("type")
+                if msg_type == "pong":
+                    continue
                 if msg_type == "subscribe":
                     if not on_subscribe_fired and on_subscribe is not None:
                         try:
