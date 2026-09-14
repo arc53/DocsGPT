@@ -31,6 +31,11 @@ OnSubscribe = Callable[[], Union[None, Awaitable[None]]]
 # payload, whose PONG the client swallows before ``get_message`` returns.
 _LIVENESS_PING = "docsgpt-liveness"
 
+# Upper bound on each teardown call (unsubscribe, close). Teardown is shielded
+# from the cancellation that ended the stream, so without a bound a dead
+# connection could hold the stream's task and a graceful shutdown.
+_TEARDOWN_TIMEOUT_SECONDS = 5.0
+
 
 class AsyncTopic:
     """An async pub/sub channel identified by a string name."""
@@ -145,12 +150,11 @@ class AsyncTopic:
                 yield data if isinstance(data, bytes) else str(data).encode("utf-8")
         finally:
             # Client disconnect cancels this generator at the ``await
-            # get_message`` above; without shielding, the cancellation could
-            # re-fire mid-teardown and skip ``aclose()``, leaking the pooled
-            # connection back to nothing. Shield so unsubscribe + aclose
-            # always complete and the connection returns to the pool.
-            with anyio.CancelScope(shield=True):
-                if on_subscribe_fired:
+            # get_message`` above. Each teardown call is shielded so the
+            # cancellation can't skip it and strand the pooled connection, and
+            # bounded separately so a stuck unsubscribe still lets the close run.
+            if on_subscribe_fired:
+                with anyio.move_on_after(_TEARDOWN_TIMEOUT_SECONDS, shield=True):
                     try:
                         await pubsub.unsubscribe(self.name)
                     except Exception:
@@ -159,6 +163,7 @@ class AsyncTopic:
                             self.name,
                             exc_info=True,
                         )
+            with anyio.move_on_after(_TEARDOWN_TIMEOUT_SECONDS, shield=True):
                 try:
                     await pubsub.aclose()
                 except Exception:

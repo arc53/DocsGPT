@@ -158,14 +158,16 @@ null clear propagates into the next reconnect.**
 
 The per-user concurrent-connection cap (`SSE_MAX_CONCURRENT_PER_USER`,
 default 8) refused the connection. User has too many tabs open or a
-runaway reconnect loop. `redis-cli -n 2 GET user:<id>:sse_count`
-shows the live counter; the TTL is 1h from the last connection
-attempt (rolling — every INCR re-seeds it), so the key only ages
-out after the user stops reconnecting for a full hour.
+runaway reconnect loop. The cap covers `/api/events` and chat reconnects
+together.
 
-If the count is wedged high without explanation, the
-counter-DECR-in-finally path didn't run (worker SIGKILL, OOM). Wait
-for the TTL or `redis-cli -n 2 DEL user:<id>:sse_count` to reset.
+Each open stream holds a lease in a sorted set scored by its last
+refresh; `redis-cli -n 2 ZRANGE user:<id>:sse_leases 0 -1 WITHSCORES`
+lists them. A live stream refreshes its lease as it sends frames. A
+lease whose stream died without cleanup (worker SIGKILL, OOM) stops
+counting once it is older than the lease TTL: 60s, or 4 ×
+`SSE_KEEPALIVE_SECONDS` if that is larger. The cap heals on its own;
+`redis-cli -n 2 DEL user:<id>:sse_leases` clears it immediately.
 
 ### G. "Replay snapshot stops at 200 events"
 
@@ -305,8 +307,8 @@ redis-cli -n 2 PUBSUB NUMSUB $(redis-cli -n 2 PUBSUB CHANNELS 'user:*')
 # subscribers; OK after explaining to the user)
 redis-cli -n 2 XTRIM user:<id>:stream MAXLEN 0
 
-# Clear a wedged concurrent-connection counter
-redis-cli -n 2 DEL user:<id>:sse_count
+# Clear a user's SSE connection leases (they also age out on their own)
+redis-cli -n 2 DEL user:<id>:sse_leases
 
 # Force-flip every client to re-snapshot (drop the stream key entirely
 # — destroys the backlog; clients reconnect with their last id and

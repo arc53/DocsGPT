@@ -17,9 +17,10 @@ import logging
 import re
 import time
 from contextlib import aclosing
-from functools import partial
 from typing import AsyncIterator, Optional
 
+import anyio
+from redis.asyncio import Redis
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
@@ -30,7 +31,6 @@ from docsgpt.cache import PUBSUB_SOCKET_TIMEOUT_SECONDS
 from docsgpt.core.settings import settings
 from docsgpt.core.shutdown import is_shutting_down
 from docsgpt.events.keys import (
-    connection_counter_key,
     replay_budget_key,
     stream_id_compare,
     stream_key,
@@ -38,14 +38,19 @@ from docsgpt.events.keys import (
 )
 from docsgpt.streaming.async_broadcast_channel import AsyncTopic
 from docsgpt.streaming.async_redis import get_async_redis_instance
+from docsgpt.streaming.sse_leases import (
+    StreamCapExceeded,
+    acquire_stream_lease,
+    hold_lease,
+)
 
 logger = logging.getLogger(__name__)
 
 SUBSCRIBE_POLL_INTERVAL_SECONDS = 1.0
 
-# Safety TTL on the per-user connection counter: counts orphaned by a hard
-# crash self-heal after this window.
-_COUNTER_TTL_SECONDS = 3600
+# Upper bound on the replay-budget check, so a stalled Redis connection fails
+# open instead of holding the request.
+_REDIS_OP_TIMEOUT_SECONDS = 5.0
 
 # WHATWG SSE treats CRLF, CR, and LF equivalently as line terminators.
 _SSE_LINE_SPLIT = re.compile(r"\r\n|\r|\n")
@@ -95,7 +100,7 @@ def _decode(value) -> Optional[str]:
     return str(value)
 
 
-async def _oldest_retained_id(redis_client, user_id: str) -> Optional[str]:
+async def _oldest_retained_id(redis_client: Redis, user_id: str) -> Optional[str]:
     """Return the id of the oldest entry still in the stream, or ``None``.
 
     Used to detect ``Last-Event-ID`` having slid off the back of the
@@ -120,14 +125,15 @@ async def _oldest_retained_id(redis_client, user_id: str) -> Optional[str]:
 
 
 async def _allow_replay(
-    redis_client, user_id: str, last_event_id: Optional[str]
+    redis_client: Optional[Redis], user_id: str, last_event_id: Optional[str]
 ) -> bool:
     """Per-user sliding-window snapshot-replay budget.
 
-    Fails open on Redis errors or when the budget is disabled. No-cursor
-    connects never consume budget: fresh sessions start live and do no
-    snapshot work, so counting them only starved real reconnects (a burst
-    of fresh tabs could 429 a user's cursor-bearing reconnect).
+    Fails open on Redis errors, a stalled connection, or when the budget is
+    disabled. No-cursor connects never consume budget: fresh sessions start
+    live and do no snapshot work, so counting them only starved real
+    reconnects (a burst of fresh tabs could 429 a user's cursor-bearing
+    reconnect).
     """
     budget = int(settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW)
     if budget <= 0:
@@ -140,12 +146,13 @@ async def _allow_replay(
     window = max(1, int(settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS))
     key = replay_budget_key(user_id)
     try:
-        used = int(await redis_client.incr(key))
-        # Always (re)seed the TTL. Gating on ``used == 1`` would wedge
-        # the counter forever if INCR succeeds but EXPIRE raises on
-        # the seeding call. EXPIRE on an existing key resets the TTL
-        # to ``window`` — within ±1s of the per-window budget semantic.
-        await redis_client.expire(key, window)
+        with anyio.fail_after(_REDIS_OP_TIMEOUT_SECONDS):
+            used = int(await redis_client.incr(key))
+            # Always (re)seed the TTL. Gating on ``used == 1`` would wedge
+            # the counter forever if INCR succeeds but EXPIRE raises on
+            # the seeding call. EXPIRE on an existing key resets the TTL
+            # to ``window`` — within ±1s of the per-window budget semantic.
+            await redis_client.expire(key, window)
     except Exception:
         logger.debug(
             "replay budget probe failed for user=%s; failing open",
@@ -188,7 +195,7 @@ def _replay_floor_id() -> Optional[str]:
 
 
 async def _replay_backlog(
-    redis_client, user_id: str, last_event_id: Optional[str], max_count: int
+    redis_client: Redis, user_id: str, last_event_id: Optional[str], max_count: int
 ) -> list[tuple[str, str]]:
     """Return ``(entry_id, sse_line)`` pairs for backlog entries past ``last_event_id``.
 
@@ -261,15 +268,8 @@ def _truncation_notice_line(oldest_id: str) -> str:
     )
 
 
-async def _release_slot(redis_client, counter_key: str) -> None:
-    try:
-        await redis_client.decr(counter_key)
-    except Exception:
-        logger.debug("SSE connection counter DECR failed for key=%s", counter_key)
-
-
 async def _event_stream(
-    redis_client,
+    redis_client: Optional[Redis],
     user_id: str,
     last_event_id: Optional[str],
     last_event_id_invalid: bool,
@@ -451,34 +451,22 @@ async def stream_events(request: Request) -> Response:
     last_event_id_invalid = raw_last_event_id is not None and last_event_id is None
 
     push_enabled = settings.ENABLE_SSE_PUSH
-    cap = int(settings.SSE_MAX_CONCURRENT_PER_USER)
     redis_client = await get_async_redis_instance() if push_enabled else None
-    counter_key = connection_counter_key(user_id)
-    counted = False
 
-    if redis_client is not None and cap > 0:
-        try:
-            current = int(await redis_client.incr(counter_key))
-            counted = True
-        except Exception:
-            logger.debug("SSE connection counter INCR failed for user=%s", user_id)
-        if counted:
-            # EXPIRE failure must NOT bypass the cap.
-            try:
-                await redis_client.expire(counter_key, _COUNTER_TTL_SECONDS)
-            except Exception:
-                logger.debug("SSE connection counter EXPIRE failed for user=%s", user_id)
-            if current > cap:
-                await _release_slot(redis_client, counter_key)
-                return json_error("Too many concurrent SSE connections", 429)
+    # Reserve a per-user connection slot before the response opens, so an
+    # over-cap caller gets a clean 429 instead of a mid-stream cutoff.
+    try:
+        lease = await acquire_stream_lease(redis_client, user_id)
+    except StreamCapExceeded:
+        return json_error("Too many concurrent SSE connections", 429)
 
     # Replay budget is checked before the stream opens so a denial surfaces
     # as HTTP 429 instead of a silent snapshot skip: a live tail carrying
     # ``id:`` headers would advance the client's cursor past the entries it
     # never received. 429 keeps the cursor pinned and the frontend backs off.
     if redis_client is not None and not await _allow_replay(redis_client, user_id, last_event_id):
-        if counted:
-            await _release_slot(redis_client, counter_key)
+        if lease is not None:
+            await lease.release()
         return json_error("Replay budget exhausted", 429)
 
     logger.info(
@@ -487,12 +475,13 @@ async def stream_events(request: Request) -> Response:
         last_event_id or "-",
         " (rejected_invalid)" if last_event_id_invalid else "",
     )
+    stream = _event_stream(redis_client, user_id, last_event_id, last_event_id_invalid, push_enabled)
     return ClosingStreamingResponse(
-        _event_stream(redis_client, user_id, last_event_id, last_event_id_invalid, push_enabled),
+        hold_lease(stream, lease),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
         # Released once the response is over, however it ended.
-        on_close=partial(_release_slot, redis_client, counter_key) if counted else None,
+        on_close=lease.release if lease is not None else None,
     )
 
 

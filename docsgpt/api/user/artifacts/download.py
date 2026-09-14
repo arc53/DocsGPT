@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import re
+import unicodedata
 from functools import partial
 from typing import AsyncIterator, BinaryIO, Mapping, Optional, Tuple
+from urllib.parse import quote
 
 import anyio
 from starlette.requests import Request
@@ -45,6 +48,25 @@ def _sanitize_header_filename(filename: Optional[str], fallback: str) -> str:
         return fallback
     cleaned = re.sub(r'[\r\n"]', "", str(filename)).strip()
     return cleaned or fallback
+
+
+def _ascii_fold(value: str) -> str:
+    return unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+
+
+def _content_disposition(filename: Optional[str], artifact_id: str) -> str:
+    """Build an ``attachment`` Content-Disposition value that any filename can travel in.
+
+    Header values are Latin-1, so a non-ASCII name gets an ASCII ``filename``
+    fallback plus an RFC 5987 ``filename*`` carrying the real name.
+    """
+    name = _sanitize_header_filename(filename, f"artifact-{artifact_id}")
+    if name.isascii():
+        return f'attachment; filename="{name}"'
+    stem, ext = os.path.splitext(name)
+    ascii_stem = _ascii_fold(stem).strip()
+    fallback = f"{ascii_stem or f'artifact-{artifact_id}'}{_ascii_fold(ext)}"
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
 def _load_version(
@@ -90,9 +112,14 @@ async def _read_chunks(file_obj: BinaryIO) -> AsyncIterator[bytes]:
 
 
 async def _close_file(file_obj: BinaryIO) -> None:
+    """Close the handle; closing anything but an in-memory buffer runs in a worker thread."""
     close = getattr(file_obj, "close", None)
-    if callable(close):
+    if not callable(close):
+        return
+    if isinstance(file_obj, io.BytesIO):
         close()
+    else:
+        await anyio.to_thread.run_sync(close)
 
 
 async def download_artifact(request: Request) -> Response:
@@ -118,7 +145,6 @@ async def download_artifact(request: Request) -> Response:
         if not storage_path:
             return json_error("No file for this version", 404)
 
-        filename = _sanitize_header_filename(version_row.get("filename"), f"artifact-{artifact_id}")
         mime_type = version_row.get("mime_type") or "application/octet-stream"
         storage = await anyio.to_thread.run_sync(StorageCreator.get_storage)
 
@@ -157,6 +183,9 @@ async def download_artifact(request: Request) -> Response:
                 )
             return RedirectResponse(url, status_code=302)
 
+        # Build the headers before opening the file, so nothing between the
+        # open and the response can fail and leave the handle unclosed.
+        headers = {"Content-Disposition": _content_disposition(version_row.get("filename"), artifact_id)}
         # Stream the bytes in chunks instead of buffering the whole object in
         # memory (artifacts can be many MB); the handle closes when the
         # response ends, including on a client disconnect.
@@ -164,7 +193,7 @@ async def download_artifact(request: Request) -> Response:
         return ClosingStreamingResponse(
             _read_chunks(file_obj),
             media_type=mime_type,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers=headers,
             on_close=partial(_close_file, file_obj),
         )
     except FileNotFoundError:

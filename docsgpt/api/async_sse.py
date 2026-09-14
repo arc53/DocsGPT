@@ -21,12 +21,12 @@ from typing import Optional
 import anyio
 from sqlalchemy import text
 from starlette.requests import Request
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from docsgpt.api.asgi_auth import authenticate
+from docsgpt.api.asgi_stream import ClosingStreamingResponse
 from docsgpt.core.settings import settings
-from docsgpt.events.keys import connection_counter_key
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.streaming.async_event_replay import (
     build_message_event_stream_async,
@@ -36,14 +36,13 @@ from docsgpt.streaming.event_replay import (
     DEFAULT_KEEPALIVE_SECONDS,
     DEFAULT_POLL_TIMEOUT_SECONDS,
 )
+from docsgpt.streaming.sse_leases import (
+    StreamCapExceeded,
+    acquire_stream_lease,
+    hold_lease,
+)
 
 logger = logging.getLogger(__name__)
-
-# Per-user concurrent-connection counter TTL (seconds) — orphaned counts
-# from a hard crash self-heal after this window, mirroring the /api/events
-# notification stream. The reconnect reader shares the same counter key, so
-# the cap bounds a user's *total* live SSE footprint.
-_COUNTER_TTL_SECONDS = 3600
 
 # A message_id is the canonical UUID hex format. Reject anything else before
 # the SQL layer so a malformed cookie can't surface as a 500.
@@ -107,68 +106,7 @@ def _json(message: str, status_code: int) -> JSONResponse:
     )
 
 
-async def _acquire_stream_slot(user_id: str):
-    """Reserve a per-user connection slot; returns ``(redis, key)`` to release.
-
-    Mirrors the ``/api/events`` cap (INCR + safety TTL, reject when the
-    post-increment count exceeds ``SSE_MAX_CONCURRENT_PER_USER``). Returns
-    ``(None, None)`` when the cap is disabled or Redis is unavailable
-    (fail-open, like the notification stream). Raises ``_CapExceeded`` when
-    the user is over the cap so the caller can 429.
-    """
-    cap = int(getattr(settings, "SSE_MAX_CONCURRENT_PER_USER", 0))
-    if cap <= 0:
-        return None, None
-    redis = await get_async_redis_instance()
-    if redis is None:
-        return None, None
-    key = connection_counter_key(user_id)
-    try:
-        current = int(await redis.incr(key))
-    except Exception:
-        logger.debug("async SSE counter INCR failed for user=%s", user_id)
-        return None, None
-    # EXPIRE failure must not bypass the cap, so it's best-effort after INCR.
-    try:
-        await redis.expire(key, _COUNTER_TTL_SECONDS)
-    except Exception:
-        logger.debug("async SSE counter EXPIRE failed for user=%s", user_id)
-    if current > cap:
-        await _release_stream_slot(redis, key)
-        raise _CapExceeded()
-    return redis, key
-
-
-async def _release_stream_slot(redis, key) -> None:
-    if redis is None or key is None:
-        return
-    try:
-        await redis.decr(key)
-    except Exception:
-        logger.debug("async SSE counter DECR failed for key=%s", key)
-
-
-class _CapExceeded(Exception):
-    """Raised when a user is over their concurrent-stream cap."""
-
-
-async def _counted_stream(inner, redis, key):
-    """Wrap the reader so the per-user slot is released when it ends.
-
-    The slot is reserved before the response starts (so over-cap surfaces as
-    HTTP 429, not mid-stream); the release runs in ``finally`` on terminal
-    close, client disconnect, or error. Shielded so a disconnect-cancellation
-    can't skip the DECR and leak the count.
-    """
-    try:
-        async for line in inner:
-            yield line
-    finally:
-        with anyio.CancelScope(shield=True):
-            await _release_stream_slot(redis, key)
-
-
-async def stream_message_events(request: Request) -> JSONResponse | StreamingResponse:
+async def stream_message_events(request: Request) -> Response:
     """GET /api/messages/{message_id}/events — async reconnect tail.
 
     Mirrors the Flask handler's gates (auth → id format → ownership →
@@ -194,11 +132,12 @@ async def stream_message_events(request: Request) -> JSONResponse | StreamingRes
         # Same opaque 404 as the Flask route — don't disclose existence.
         return _json("Not found", 404)
 
-    # Per-user concurrent-connection cap — reserve before the response opens
-    # so an over-cap caller gets a clean 429 instead of a mid-stream cutoff.
+    # Per-user connection cap, shared with /api/events so it bounds a user's
+    # total live SSE footprint. Reserved before the response opens so an
+    # over-cap caller gets a clean 429 instead of a mid-stream cutoff.
     try:
-        redis, counter_key = await _acquire_stream_slot(user_id)
-    except _CapExceeded:
+        lease = await acquire_stream_lease(await get_async_redis_instance(), user_id)
+    except StreamCapExceeded:
         logger.warning("sse.reconnect.rejected user_id=%s (over cap)", user_id)
         return _json("Too many concurrent SSE connections", 429)
 
@@ -224,10 +163,12 @@ async def stream_message_events(request: Request) -> JSONResponse | StreamingRes
         keepalive_seconds=keepalive_seconds,
         poll_timeout_seconds=DEFAULT_POLL_TIMEOUT_SECONDS,
     )
-    return StreamingResponse(
-        _counted_stream(stream, redis, counter_key),
+    return ClosingStreamingResponse(
+        hold_lease(stream, lease),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
+        # Released once the response is over, however it ended.
+        on_close=lease.release if lease is not None else None,
     )
 
 

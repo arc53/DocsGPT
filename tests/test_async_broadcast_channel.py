@@ -155,6 +155,25 @@ class TestLivenessProbe:
         assert "ASYNC_REDIS_MAX_CONNECTIONS" in str(log.warning.call_args)
         log.exception.assert_not_called()
 
+    async def test_stuck_unsubscribe_does_not_block_teardown(self, monkeypatch):
+        # Teardown is shielded, so each Redis call in it needs its own deadline.
+        monkeypatch.setattr(
+            "docsgpt.streaming.async_broadcast_channel._TEARDOWN_TIMEOUT_SECONDS", 0.05
+        )
+        pubsub = _FakePubSub()
+
+        async def _stuck_unsubscribe(name):
+            await anyio.sleep_forever()
+
+        pubsub.unsubscribe = _stuck_unsubscribe
+        with patch(_AREDIS, _redis_with(pubsub)):
+            agen = AsyncTopic("t").subscribe(poll_timeout=0.01)
+            assert await agen.__anext__() is None
+            with anyio.fail_after(2):
+                await agen.aclose()
+        # The pooled connection is still closed after the stuck unsubscribe.
+        assert pubsub.closed
+
     async def test_no_probe_when_liveness_disabled(self):
         pubsub = _FakePubSub(answer_pings=False)
         with patch(_AREDIS, _redis_with(pubsub)):

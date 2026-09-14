@@ -39,10 +39,12 @@ _SSE_HEADERS = {
 
 
 def _error(code: str, status_code: int) -> JSONResponse:
+    """Return the ``{"success": false, "error": code}`` body the Flask device routes use."""
     return JSONResponse({"success": False, "error": code}, status_code=status_code)
 
 
 def _sse_event(name: str, payload: dict, event_id: int) -> str:
+    """Encode one SSE record with an event name, an id and a JSON data line."""
     return (
         f"event: {name}\n"
         f"id: {event_id}\n"

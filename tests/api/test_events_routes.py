@@ -1,17 +1,20 @@
 """Tests for docsgpt/api/events/routes.py — the native-async ``GET /api/events``.
 
 The route is a Starlette endpoint served on the event loop. Tests drive it
-through Starlette's ``TestClient`` with the async Redis client and
-``AsyncTopic.subscribe`` faked. Fake subscriptions end after a few frames so
-the stream finishes and the client returns the body; a mid-stream client
-disconnect and the shutdown path go through ``tests/asgi_stream.py``.
+through Starlette's ``TestClient`` with the async Redis client faked
+(``tests/fake_async_redis.py``: real sorted sets for connection leases, mocks
+for streams) and ``AsyncTopic.subscribe`` replaced. Fake subscriptions end
+after a few frames so the stream finishes and the client returns the body; a
+mid-stream client disconnect and the shutdown path go through
+``tests/asgi_stream.py``.
 """
 
 from __future__ import annotations
 
 import inspect
 import json
-from typing import Any
+import time
+from typing import Any, Callable, Optional
 from unittest.mock import AsyncMock, patch
 
 import anyio
@@ -23,11 +26,12 @@ from docsgpt.api.events import routes as events_module
 from docsgpt.cache import PUBSUB_SOCKET_TIMEOUT_SECONDS
 from docsgpt.core.shutdown import begin_shutdown, reset_shutdown
 from tests.asgi_stream import stream_then_disconnect
+from tests.fake_async_redis import FakeAsyncRedis
 
 _AUTH = "docsgpt.api.asgi_auth.handle_auth"
 _AREDIS = "docsgpt.api.events.routes.get_async_redis_instance"
 _SUBSCRIBE = "docsgpt.api.events.routes.AsyncTopic.subscribe"
-_COUNTER = "user:alice:sse_count"
+_LEASES = "user:alice:sse_leases"
 ALICE = {"sub": "alice"}
 OLD_CURSOR = "1735682300000-0"
 
@@ -40,22 +44,23 @@ def _get(headers: dict | None = None, params: dict | None = None):
     return TestClient(_app()).get("/api/events", headers=headers or {}, params=params or {})
 
 
-def _redis(incr: int = 1) -> AsyncMock:
-    redis = AsyncMock()
-    redis.incr = AsyncMock(return_value=incr)
-    redis.expire = AsyncMock(return_value=True)
-    redis.decr = AsyncMock(return_value=0)
-    redis.xinfo_stream = AsyncMock(side_effect=Exception("no such key"))
-    redis.xrange = AsyncMock(return_value=[])
-    return redis
+def _redis() -> FakeAsyncRedis:
+    return FakeAsyncRedis()
 
 
-def _subscribe(*payloads: Any, fire_callback: bool = True, record: dict | None = None):
+def _subscribe(
+    *payloads: Any,
+    fire_callback: bool = True,
+    record: dict | None = None,
+    probe: Optional[Callable[[], None]] = None,
+):
     """``AsyncTopic.subscribe`` stand-in: ack, one idle tick, the payloads, then end."""
 
     async def _impl(self, on_subscribe=None, poll_timeout=1.0, **kwargs):
         if record is not None:
             record.update(kwargs, poll_timeout=poll_timeout, topic=self.name)
+        if probe is not None:
+            probe()
         if fire_callback and on_subscribe is not None:
             result = on_subscribe()
             if inspect.isawaitable(result):
@@ -180,6 +185,7 @@ class TestStreamShape:
         assert r.status_code == 200
         assert r.text == ": connected\n\n: push_disabled\n\n"
         redis.incr.assert_not_awaited()
+        assert redis.zsets == {}
 
     def test_subscribes_to_user_topic_with_liveness_probe(self):
         record: dict = {}
@@ -200,22 +206,34 @@ class TestStreamShape:
         assert ": keepalive\n\n" in r.text
 
 
-# ── concurrency cap ─────────────────────────────────────────────────────
+# ── concurrency cap (per-connection leases) ─────────────────────────────
 
 
 @pytest.mark.unit
 class TestConcurrencyCap:
-    def test_429_when_over_cap_and_increment_rolled_back(self):
-        redis = _redis(incr=9)
+    def test_429_when_user_already_holds_the_cap(self):
+        redis = _redis()
+        redis.zsets[_LEASES] = {f"tab-{i}": time.time() for i in range(8)}
         with patch(_AUTH, return_value=ALICE), patch(
             _AREDIS, AsyncMock(return_value=redis)
         ), patch(_SUBSCRIBE, _subscribe()):
             r = _get()
         assert r.status_code == 429
         assert r.json() == {"success": False, "message": "Too many concurrent SSE connections"}
-        redis.decr.assert_awaited_once_with(_COUNTER)
+        # The rejected attempt removed its own lease and nobody else's.
+        assert set(redis.zsets[_LEASES]) == {f"tab-{i}" for i in range(8)}
 
-    def test_cap_disabled_leaves_counter_alone(self, monkeypatch):
+    def test_leases_left_by_dead_streams_age_out(self):
+        redis = _redis()
+        redis.zsets[_LEASES] = {f"crashed-{i}": time.time() - 3600 for i in range(8)}
+        with patch(_AUTH, return_value=ALICE), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ), patch(_SUBSCRIBE, _subscribe()):
+            r = _get()
+        assert r.status_code == 200
+        assert redis.zsets == {}
+
+    def test_cap_disabled_takes_no_lease(self, monkeypatch):
         monkeypatch.setattr(events_module.settings, "SSE_MAX_CONCURRENT_PER_USER", 0)
         redis = _redis()
         with patch(_AUTH, return_value=ALICE), patch(
@@ -223,38 +241,31 @@ class TestConcurrencyCap:
         ), patch(_SUBSCRIBE, _subscribe()):
             r = _get()
         assert r.status_code == 200
-        assert _COUNTER not in [call.args[0] for call in redis.incr.await_args_list]
-        redis.decr.assert_not_awaited()
+        assert redis.zsets == {}
 
-    def test_expire_failure_does_not_bypass_cap(self):
-        redis = _redis(incr=9)
-        redis.expire = AsyncMock(side_effect=Exception("expire blip"))
-        with patch(_AUTH, return_value=ALICE), patch(
-            _AREDIS, AsyncMock(return_value=redis)
-        ), patch(_SUBSCRIBE, _subscribe()):
-            r = _get()
-        assert r.status_code == 429
-
-    def test_incr_failure_fails_open(self):
+    def test_redis_errors_fail_open(self):
         redis = _redis()
-        redis.incr = AsyncMock(side_effect=Exception("redis down"))
+        redis.fail = ConnectionError("reset by peer")
         with patch(_AUTH, return_value=ALICE), patch(
             _AREDIS, AsyncMock(return_value=redis)
         ), patch(_SUBSCRIBE, _subscribe()):
             r = _get()
         assert r.status_code == 200
-        # Nothing was counted, so nothing is released.
-        redis.decr.assert_not_awaited()
 
-    def test_slot_released_when_stream_ends(self):
-        redis = _redis(incr=1)
+    def test_lease_held_while_streaming_and_released_at_end(self):
+        redis = _redis()
+        seen: dict = {}
+
+        def _count_leases():
+            seen["during"] = len(redis.zsets.get(_LEASES, {}))
+
         with patch(_AUTH, return_value=ALICE), patch(
             _AREDIS, AsyncMock(return_value=redis)
-        ), patch(_SUBSCRIBE, _subscribe()):
+        ), patch(_SUBSCRIBE, _subscribe(probe=_count_leases)):
             r = _get()
         assert r.status_code == 200
-        redis.incr.assert_awaited_once_with(_COUNTER)
-        redis.decr.assert_awaited_once_with(_COUNTER)
+        assert seen["during"] == 1
+        assert redis.zsets == {}
 
     def test_redis_unavailable_serves_stream_without_cap(self):
         with patch(_AUTH, return_value=ALICE):
@@ -269,9 +280,9 @@ class TestConcurrencyCap:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestStreamLifecycle:
-    async def test_client_disconnect_releases_slot_and_closes_subscription(self, monkeypatch):
+    async def test_client_disconnect_releases_lease_and_closes_subscription(self, monkeypatch):
         monkeypatch.setattr(events_module.settings, "SSE_KEEPALIVE_SECONDS", 0)
-        redis = _redis(incr=1)
+        redis = _redis()
         state: dict = {}
         with patch(_AUTH, return_value=ALICE), patch(
             _AREDIS, AsyncMock(return_value=redis)
@@ -284,12 +295,12 @@ class TestStreamLifecycle:
         assert status == 200
         assert chunks[0] == b": connected\n\n"
         assert state.get("closed") is True
-        redis.decr.assert_awaited_once_with(_COUNTER)
+        assert redis.zsets == {}
 
-    async def test_disconnect_before_first_frame_still_releases_slot_once(self):
+    async def test_disconnect_before_first_frame_still_releases_lease(self):
         # The tab closes as the response starts: the body generator may never
         # run, so its own cleanup can't be what frees the slot.
-        redis = _redis(incr=1)
+        redis = _redis()
         state: dict = {}
         with patch(_AUTH, return_value=ALICE), patch(
             _AREDIS, AsyncMock(return_value=redis)
@@ -298,10 +309,10 @@ class TestStreamLifecycle:
                 _app(), "/api/events", chunks_before_disconnect=0
             )
         assert status == 200
-        redis.decr.assert_awaited_once_with(_COUNTER)
+        assert redis.zsets == {}
 
-    async def test_shutdown_ends_stream_and_releases_slot(self):
-        redis = _redis(incr=1)
+    async def test_shutdown_ends_stream_and_releases_lease(self):
+        redis = _redis()
         state: dict = {}
         begin_shutdown()
         with patch(_AUTH, return_value=ALICE), patch(
@@ -313,7 +324,7 @@ class TestStreamLifecycle:
         assert status == 200
         assert b"".join(chunks) == b": connected\n\n"
         assert state.get("closed") is True
-        redis.decr.assert_awaited_once_with(_COUNTER)
+        assert redis.zsets == {}
 
 
 # ── replay + live tail ──────────────────────────────────────────────────
@@ -457,10 +468,21 @@ class TestReplayBudget:
         assert redis.expire.await_count == 4
         assert all(call.args == ("user:alice:replay_count", 60) for call in redis.expire.await_args_list)
 
-    async def test_fail_open_on_redis_error(self, monkeypatch):
+    async def test_fail_open_on_redis_error(self):
         redis = _redis()
         redis.incr = AsyncMock(side_effect=Exception("redis down"))
         assert await events_module._allow_replay(redis, "alice", OLD_CURSOR) is True
+
+    async def test_fail_open_when_redis_stalls(self, monkeypatch):
+        monkeypatch.setattr(events_module, "_REDIS_OP_TIMEOUT_SECONDS", 0.05)
+        redis = _redis()
+
+        async def _stalled(_key):
+            await anyio.sleep_forever()
+
+        redis.incr = AsyncMock(side_effect=_stalled)
+        with anyio.fail_after(2):
+            assert await events_module._allow_replay(redis, "alice", OLD_CURSOR) is True
 
     async def test_recovers_when_seeding_expire_raises(self):
         redis = _redis()
@@ -522,19 +544,15 @@ class TestReplayBudgetRoute:
         live frames would advance the client's cursor past the un-replayed
         window. The 429 keeps the cursor pinned for the next attempt."""
         redis = _redis()
-
-        def _incr(key):
-            return 1 if key == _COUNTER else 31
-
-        redis.incr = AsyncMock(side_effect=_incr)
+        redis.incr = AsyncMock(return_value=31)
         with patch(_AUTH, return_value=ALICE), patch(
             _AREDIS, AsyncMock(return_value=redis)
         ), patch(_SUBSCRIBE, _subscribe()):
             r = _get(headers={"Last-Event-ID": OLD_CURSOR})
         assert r.status_code == 429
         assert r.json() == {"success": False, "message": "Replay budget exhausted"}
-        # The concurrency slot is released so a denied request doesn't hold it.
-        redis.decr.assert_awaited_once_with(_COUNTER)
+        # The connection lease is released so a denied request doesn't hold a slot.
+        assert redis.zsets == {}
 
 
 # ── format helpers ──────────────────────────────────────────────────────

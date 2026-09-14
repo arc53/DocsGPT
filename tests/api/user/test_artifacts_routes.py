@@ -738,6 +738,58 @@ class TestDownloadArtifact:
         assert disposition == 'attachment; filename="aInjected: x.txt"'
         assert "injected" not in resp.headers
 
+    def test_unicode_filename_served_with_rfc5987_header(self, _patch_db, token_owner, monkeypatch):
+        # Latin-1 header encoding used to reject this and return 400 after
+        # opening the file.
+        art = _seed_download(_patch_db, filename="报告.pdf", mime_type="application/pdf")
+        storage = _use_storage(monkeypatch, _FakeStorage(b"PDF"))
+        resp = _download(art["id"], token=token_owner)
+        assert resp.status_code == 200
+        assert resp.content == b"PDF"
+        assert resp.headers["content-disposition"] == (
+            f'attachment; filename="artifact-{art["id"]}.pdf"; '
+            "filename*=UTF-8''%E6%8A%A5%E5%91%8A.pdf"
+        )
+        assert storage.opened[0].closed
+
+    def test_accented_filename_keeps_readable_ascii_fallback(self, _patch_db, token_owner, monkeypatch):
+        art = _seed_download(_patch_db, filename="résumé final.pdf")
+        _use_storage(monkeypatch, _FakeStorage(b"CV"))
+        resp = _download(art["id"], token=token_owner)
+        assert resp.status_code == 200
+        assert resp.headers["content-disposition"] == (
+            'attachment; filename="resume final.pdf"; '
+            "filename*=UTF-8''r%C3%A9sum%C3%A9%20final.pdf"
+        )
+
+    def test_disk_file_closed_off_the_event_loop(self, _patch_db, token_owner, monkeypatch):
+        import threading
+
+        class _TrackedHandle:
+            """A non-BytesIO handle, like LocalStorage's open file."""
+
+            def __init__(self, data: bytes):
+                self._buf = io.BytesIO(data)
+                self.close_thread = None
+
+            def read(self, size=-1):
+                return self._buf.read(size)
+
+            def close(self):
+                self.close_thread = threading.current_thread().name
+
+        handle = _TrackedHandle(b"DISK")
+
+        class _HandleStorage(_FakeStorage):
+            def get_file(self, path):
+                return handle
+
+        art = _seed_download(_patch_db)
+        _use_storage(monkeypatch, _HandleStorage())
+        resp = _download(art["id"], token=token_owner)
+        assert resp.content == b"DISK"
+        assert handle.close_thread == "AnyIO worker thread"
+
     def test_non_uuid_id_404(self, _patch_db, token_owner):
         resp = _download("legacy-mongo-objectid-aabbcc", token=token_owner)
         assert resp.status_code == 404

@@ -1,26 +1,29 @@
 """Tests for ``docsgpt/api/async_sse.py``.
 
 Native-async reconnect endpoint: GET /api/messages/<id>/events. Auth gate,
-ownership gate, malformed-id rejection, Last-Event-ID normalisation, and the
-SSE response shape (headers + ``: connected`` prelude). The route is a
-Starlette endpoint, so it's driven through Starlette's TestClient over a
-minimal app built from ``async_sse_routes``.
+ownership gate, malformed-id rejection, Last-Event-ID normalisation, the
+per-user connection lease, and the SSE response shape (headers + ``: connected``
+prelude). The route is a Starlette endpoint, so it's driven through Starlette's
+TestClient over a minimal app built from ``async_sse_routes``.
 """
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
+from docsgpt.api import async_sse
 from docsgpt.api.async_sse import (
     _MESSAGE_ID_RE,
     _normalise_last_event_id,
     async_sse_routes,
 )
-from docsgpt.core.settings import settings
+from tests.asgi_stream import stream_then_disconnect
+from tests.fake_async_redis import FakeAsyncRedis
 
 VALID_UUID = "67d65e8f-e7fb-4df1-9e6e-99ea6c830206"
 
@@ -28,38 +31,50 @@ _AUTH = "docsgpt.api.asgi_auth.handle_auth"
 _OWNS = "docsgpt.api.async_sse._user_owns_message"
 _STREAM = "docsgpt.api.async_sse.build_message_event_stream_async"
 _AREDIS = "docsgpt.api.async_sse.get_async_redis_instance"
+_LEASES = "user:alice:sse_leases"
+
+
+def _app() -> Starlette:
+    return Starlette(routes=async_sse_routes)
 
 
 def _client() -> TestClient:
-    return TestClient(Starlette(routes=async_sse_routes))
+    return TestClient(_app())
 
 
 @pytest.fixture(autouse=True)
-def _no_redis_by_default():
+def _no_redis_by_default(monkeypatch):
     """Disable the per-user cap (no Redis) so gate tests stay hermetic.
 
-    Cap-specific tests override this with their own mock Redis.
+    Cap-specific tests override this with their own fake Redis.
     """
+    monkeypatch.setattr(async_sse.settings, "SSE_MAX_CONCURRENT_PER_USER", 8)
+    monkeypatch.setattr(async_sse.settings, "SSE_KEEPALIVE_SECONDS", 15)
     with patch(_AREDIS, AsyncMock(return_value=None)):
         yield
 
 
-def _mock_redis(incr_value: int) -> AsyncMock:
-    redis = AsyncMock()
-    redis.incr = AsyncMock(return_value=incr_value)
-    redis.expire = AsyncMock(return_value=True)
-    redis.decr = AsyncMock(return_value=incr_value - 1)
-    return redis
-
-
-def _fake_stream(record: dict | None = None):
-    """Async builder stub: records the cursor, yields the prelude, returns."""
+def _fake_stream(record: dict | None = None, redis: FakeAsyncRedis | None = None):
+    """Async builder stub: records the cursor (and live leases), yields the prelude, returns."""
 
     async def _gen(message_id, last_event_id=None, **kwargs):
         if record is not None:
             record["message_id"] = message_id
             record["last_event_id"] = last_event_id
+            if redis is not None:
+                record["leases_during"] = len(redis.zsets.get(_LEASES, {}))
         yield ": connected\n\n"
+
+    return _gen
+
+
+def _endless_stream():
+    async def _gen(message_id, last_event_id=None, **kwargs):
+        import anyio
+
+        while True:
+            await anyio.sleep(0.01)
+            yield ": keepalive\n\n"
 
     return _gen
 
@@ -206,17 +221,14 @@ class TestLastEventIdParsing:
         assert captured["last_event_id"] is None
 
 
-# ── per-user concurrent-connection cap ──────────────────────────────────────
+# ── per-user connection lease ───────────────────────────────────────────────
 
 
 @pytest.mark.unit
 class TestConnectionCap:
-    def _cap(self) -> int:
-        return int(settings.SSE_MAX_CONCURRENT_PER_USER) or 8
-
-    def test_429_when_over_cap(self):
-        cap = self._cap()
-        redis = _mock_redis(incr_value=cap + 1)  # post-incr count exceeds cap
+    def test_429_when_user_already_holds_the_cap(self):
+        redis = FakeAsyncRedis()
+        redis.zsets[_LEASES] = {f"tab-{i}": time.time() for i in range(8)}
         with patch(_AUTH, return_value={"sub": "alice"}), patch(
             _OWNS, return_value=True
         ), patch(_STREAM, _fake_stream()), patch(
@@ -224,23 +236,22 @@ class TestConnectionCap:
         ):
             r = _client().get(f"/api/messages/{VALID_UUID}/events")
         assert r.status_code == 429
-        # The increment is rolled back so a rejected attempt doesn't wedge
-        # the counter at the cap forever.
-        redis.decr.assert_awaited_once()
+        # The rejected attempt removed its own lease and nobody else's.
+        assert set(redis.zsets[_LEASES]) == {f"tab-{i}" for i in range(8)}
 
-    def test_200_and_slot_released_when_under_cap(self):
-        redis = _mock_redis(incr_value=1)
+    def test_200_lease_held_while_streaming_then_released(self):
+        redis = FakeAsyncRedis()
+        captured: dict = {}
         with patch(_AUTH, return_value={"sub": "alice"}), patch(
             _OWNS, return_value=True
-        ), patch(_STREAM, _fake_stream()), patch(
+        ), patch(_STREAM, _fake_stream(captured, redis)), patch(
             _AREDIS, AsyncMock(return_value=redis)
         ):
             r = _client().get(f"/api/messages/{VALID_UUID}/events")
         assert r.status_code == 200
         assert ": connected" in r.text
-        redis.incr.assert_awaited_once()
-        # Slot released when the stream finishes (terminal/close).
-        redis.decr.assert_awaited_once()
+        assert captured["leases_during"] == 1
+        assert redis.zsets == {}
 
     def test_cap_skipped_when_redis_unavailable(self):
         # The autouse fixture already makes get_async_redis_instance -> None;
@@ -250,3 +261,18 @@ class TestConnectionCap:
         ), patch(_STREAM, _fake_stream()):
             r = _client().get(f"/api/messages/{VALID_UUID}/events")
         assert r.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_disconnect_releases_lease(self):
+        redis = FakeAsyncRedis()
+        with patch(_AUTH, return_value={"sub": "alice"}), patch(
+            _OWNS, return_value=True
+        ), patch(_STREAM, _endless_stream()), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ):
+            status, _, chunks = await stream_then_disconnect(
+                _app(), f"/api/messages/{VALID_UUID}/events", chunks_before_disconnect=1
+            )
+        assert status == 200
+        assert chunks[0] == b": keepalive\n\n"
+        assert redis.zsets == {}
