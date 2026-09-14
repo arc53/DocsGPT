@@ -307,11 +307,13 @@ class ConnectorSessionsRepository:
         result = self._conn.execute(text(sql), params)
         return result.rowcount > 0
 
-    def delete_by_session_token(self, session_token: str) -> bool:
+    def delete_by_session_token(self, session_token: str, user_id: str) -> bool:
+        """Delete the session behind ``session_token`` only if ``user_id`` owns it."""
         result = self._conn.execute(
             text(
-                "DELETE FROM connector_sessions WHERE session_token = :token"
+                "DELETE FROM connector_sessions "
+                "WHERE session_token = :token AND user_id = :user_id"
             ),
-            {"token": session_token},
+            {"token": session_token, "user_id": user_id},
         )
         return result.rowcount > 0

@@ -158,12 +158,17 @@ class TestSourcesUploadExtra:
             response = UploadRemote().post()
         assert response.status_code == 400
 
-    def test_remote_connector_triggers_task(self, app):
+    def test_remote_connector_triggers_task(self, app, pg_conn):
         from docsgpt.api.user.sources.upload import UploadRemote
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
         import json as _json
 
+        repo = ConnectorSessionsRepository(pg_conn)
+        session = repo.upsert("u", "google_drive", status="authorized")
+        repo.update(str(session["id"]), {"session_token": "st"})
+
         fake_task = MagicMock(id="conn-t")
-        with patch(
+        with _patch_upload_db(pg_conn), patch(
             "docsgpt.parser.connectors.connector_creator.ConnectorCreator"
             ".get_supported_connectors",
             return_value={"google_drive"},
@@ -210,6 +215,8 @@ class TestConnectorExtra:
             "/api/connectors/disconnect", method="POST",
             json={"provider": "x", "session_token": "y"},
         ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
             response = ConnectorDisconnect().post()
         assert response.status_code == 500
 

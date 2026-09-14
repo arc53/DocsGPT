@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import { isTrustedConnectorMessage } from '../utils/connectorAuthUtils';
 import { Button } from './ui/button';
 
 interface ConnectorAuthProps {
@@ -34,6 +35,8 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   const completedRef = useRef(false);
   const intervalRef = useRef<number | null>(null);
   const authWindowRef = useRef<Window | null>(null);
+  // Origin the OAuth callback page is served from, as reported by the backend.
+  const callbackOriginRef = useRef<string | null>(null);
   // Hold the exact listener identity so unmount cleanup removes the same fn.
   const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(
     null,
@@ -54,6 +57,16 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   };
 
   const handleAuthMessage = (event: MessageEvent) => {
+    // Only the popup we opened, on the callback origin, may report a result.
+    if (
+      !isTrustedConnectorMessage(
+        event,
+        authWindowRef.current,
+        callbackOriginRef.current,
+      )
+    ) {
+      return;
+    }
     const successGeneric = event.data?.type === 'connector_auth_success';
     const successProvider = event.data?.type === `${provider}_auth_success`;
     const errorProvider = event.data?.type === `${provider}_auth_error`;
@@ -139,6 +152,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
           onError(t('modals.uploadDoc.connectors.auth.authCancelled'));
           return;
         }
+        callbackOriginRef.current = authData.callback_origin || null;
         authWindow.location.href = authData.authorization_url;
 
         messageHandlerRef.current = handleAuthMessage;

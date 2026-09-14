@@ -199,8 +199,11 @@ class TestConnectorsCallback:
             f"/api/connectors/callback?state={state}&code=auth-code"
         ):
             r = ConnectorsCallback().get()
-        assert r.status_code == 302
-        assert "status=success" in r.location
+        token = ConnectorSessionsRepository(pg_conn).get_by_user_provider(
+            "u-callback", "google_drive",
+        )["session_token"]
+        assert r.status_code == 200
+        assert token and token in r.get_data(as_text=True)
 
     def test_token_exchange_failure_redirects_error(self, app, pg_conn):
         from docsgpt.api.connector.routes import ConnectorsCallback
@@ -425,6 +428,8 @@ class TestConnectorDisconnect:
         with app.test_request_context(
             "/api/connectors/disconnect", method="POST", json={}
         ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
             r = ConnectorDisconnect().post()
         assert r.status_code == 400
 
@@ -444,9 +449,12 @@ class TestConnectorDisconnect:
             method="POST",
             json={"provider": "google_drive", "session_token": "st-disc"},
         ):
+            from flask import request
+            request.decoded_token = {"sub": user}
             r = ConnectorDisconnect().post()
         assert r.status_code == 200
         assert r.json["success"] is True
+        assert repo.get_by_session_token("st-disc") is None
 
     def test_disconnect_without_session_token_succeeds(self, app):
         from docsgpt.api.connector.routes import ConnectorDisconnect
@@ -456,6 +464,8 @@ class TestConnectorDisconnect:
             method="POST",
             json={"provider": "google_drive"},
         ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
             r = ConnectorDisconnect().post()
         assert r.status_code == 200
 
@@ -529,6 +539,14 @@ class TestConnectorSync:
             "github-src", user_id=user,
             remote_data={"provider": "github", "file_ids": [], "folder_ids": []},
         )
+
+        from docsgpt.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+
+        repo = ConnectorSessionsRepository(pg_conn)
+        session = repo.upsert(user, "github", status="authorized")
+        repo.update(str(session["id"]), {"session_token": "st"})
 
         fake_task = MagicMock(id="task-abc")
         with _patch_db(pg_conn), patch(

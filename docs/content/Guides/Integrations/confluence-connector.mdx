@@ -52,6 +52,7 @@ VITE_CONFLUENCE_CLIENT_ID=your-atlassian-client-id
 | `CONFLUENCE_CLIENT_ID` | Client ID from your Atlassian OAuth app | Yes |
 | `CONFLUENCE_CLIENT_SECRET` | Client secret from your Atlassian OAuth app | Yes |
 | `VITE_CONFLUENCE_CLIENT_ID` | Same Client ID, used by the frontend to show the Confluence option | Yes |
+| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com`. Not needed when the frontend shares the API origin or runs on `localhost:5173` | When the frontend is on its own origin |
 
 ### Step 5: Restart and Use
 
@@ -62,6 +63,7 @@ Restart your application, then go to the upload section in DocsGPT and select **
 ## Troubleshooting
 
 - **Option not appearing** — Verify `VITE_CONFLUENCE_CLIENT_ID` is set in the frontend `.env`, then restart.
+- **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
 - **Authentication failed** — Check that the callback URL matches exactly, including `?provider=confluence`.
 - **No accessible sites** — Ensure the authenticating user has access to at least one Confluence Cloud site.
 - **Permission denied** — Verify that the Confluence API scopes are enabled in your Atlassian app settings.

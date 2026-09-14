@@ -2,7 +2,8 @@ import base64
 import html
 import json
 import uuid
-from urllib.parse import urlencode
+from typing import Optional
+from urllib.parse import urlencode, urlsplit
 
 
 from flask import (
@@ -19,6 +20,7 @@ from docsgpt.api import api
 from docsgpt.api.user.tasks import (
     ingest_connector_task,
 )
+from docsgpt.core.settings import settings
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
@@ -42,6 +44,125 @@ def build_callback_redirect(params: dict) -> str:
     to prevent URL injection and open redirect vulnerabilities.
     """
     return f"{CALLBACK_STATUS_PATH}?{urlencode(params)}"
+
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_DEV_FRONTEND_PORT = 5173
+
+
+def _origin_of(url: Optional[str]) -> Optional[str]:
+    """Normalized ``scheme://host[:port]`` origin of an http(s) URL, or None."""
+    if not url:
+        return None
+    try:
+        parts = urlsplit(url.strip())
+        port = parts.port
+    except ValueError:
+        return None
+    host = parts.hostname
+    if parts.scheme not in ("http", "https") or not host:
+        return None
+    if ":" in host:
+        host = f"[{host}]"
+    if port is None or port == {"http": 80, "https": 443}[parts.scheme]:
+        return f"{parts.scheme}://{host}"
+    return f"{parts.scheme}://{host}:{port}"
+
+
+def connector_allowed_origins(request_host_url: str) -> list[str]:
+    """Frontend origins the OAuth popup may hand a connector session token to."""
+    candidates = [
+        request_host_url,
+        settings.CONNECTOR_REDIRECT_BASE_URI,
+        settings.OIDC_FRONTEND_URL,
+        *(settings.CONNECTOR_ALLOWED_ORIGINS or "").split(","),
+    ]
+    callback_origin = _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI)
+    if callback_origin:
+        callback = urlsplit(callback_origin)
+        if callback.hostname in _LOOPBACK_HOSTS:
+            for port in (_DEV_FRONTEND_PORT, callback.port or 80):
+                candidates += [f"http://localhost:{port}", f"http://127.0.0.1:{port}"]
+    origins: list[str] = []
+    for candidate in candidates:
+        origin = _origin_of(candidate)
+        if origin and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+def _js_literal(value) -> str:
+    """Encode a value as a JavaScript literal that is safe inside an inline script."""
+    return json.dumps(value).replace("</", "<\\/").replace("<!--", "<\\!--")
+
+
+def _render_callback_page(
+    status: str, message: str, provider_raw: str, session_token: str = "", user_email: str = "",
+):
+    """Popup page that reports an OAuth result to the opener on allowed origins only."""
+    status = status if status in ("success", "error", "cancelled") else "error"
+    provider = html.escape(provider_raw.replace("_", " ").title())
+    connected_as = (
+        f"<p>Connected as: {html.escape(user_email)}</p>" if status == "success" and user_email else ""
+    )
+    closing_note = (
+        f"Your {provider} is now connected and ready to use." if status == "success"
+        else "Feel free to close this window."
+    )
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>{provider} Authentication</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; }}
+            .container {{ max-width: 600px; margin: 0 auto; }}
+            .success {{ color: #4CAF50; }}
+            .error {{ color: #F44336; }}
+            .cancelled {{ color: #FF9800; }}
+        </style>
+        <script>
+            window.onload = function() {{
+                const status = {_js_literal(status)};
+                const sessionToken = {_js_literal(session_token)};
+                const userEmail = {_js_literal(user_email)};
+                const providerType = {_js_literal(provider_raw)};
+                const targetOrigins = {_js_literal(connector_allowed_origins(request.host_url))};
+
+                if (status === "success" && window.opener) {{
+                    const payload = {{
+                        type: providerType + '_auth_success',
+                        session_token: sessionToken,
+                        user_email: userEmail
+                    }};
+                    targetOrigins.forEach(function(origin) {{
+                        window.opener.postMessage(payload, origin);
+                    }});
+
+                    setTimeout(() => window.close(), 3000);
+                }} else if (status === "cancelled" || status === "error") {{
+                    setTimeout(() => window.close(), 3000);
+                }}
+            }};
+        </script>
+    </head>
+    <body>
+        <div class="container">
+            <h2>{provider} Authentication</h2>
+            <div class="{status}">
+                <p>{html.escape(message)}</p>
+                {connected_as}
+            </div>
+            <p><small>You can close this window. {closing_note}</small></p>
+        </div>
+    </body>
+    </html>
+    """
+    return make_response(
+        html_content,
+        200,
+        {"Content-Type": "text/html", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
 
 
 
@@ -78,7 +199,8 @@ class ConnectorAuth(Resource):
             return make_response(jsonify({
                 "success": True,
                 "authorization_url": authorization_url,
-                "state": state
+                "state": state,
+                "callback_origin": _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI),
             }), 200)
         except Exception as e:
             current_app.logger.error(f"Error generating connector auth URL: {e}", exc_info=True)
@@ -172,14 +294,12 @@ class ConnectorsCallback(Resource):
                         if not updated:
                             repo.update_by_legacy_id(value, patch)
 
-                # Redirect to success page with session token and user email
-                return redirect(build_callback_redirect({
-                    "status": "success",
-                    "message": "Authentication successful",
-                    "provider": provider,
-                    "session_token": session_token,
-                    "user_email": user_email
-                }))
+                # Render instead of redirecting so the session token never
+                # lands in a URL (browser history, access logs, Referer).
+                return _render_callback_page(
+                    "success", "Authentication successful", provider,
+                    session_token=session_token, user_email=user_email,
+                )
 
             except Exception as e:
                 current_app.logger.error(f"Error exchanging code for tokens: {str(e)}", exc_info=True)
@@ -345,6 +465,9 @@ class ConnectorDisconnect(Resource):
     @api.expect(api.model("ConnectorDisconnectModel", {"provider": fields.String(required=True), "session_token": fields.String(required=False)}))
     @api.doc(description="Disconnect a connector session")
     def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
         try:
             data = request.get_json()
             provider = data.get('provider')
@@ -352,11 +475,10 @@ class ConnectorDisconnect(Resource):
             if not provider:
                 return make_response(jsonify({"success": False, "error": "provider is required"}), 400)
 
-
             if session_token:
                 with db_session() as conn:
                     ConnectorSessionsRepository(conn).delete_by_session_token(
-                        session_token,
+                        session_token, decoded_token.get('sub'),
                     )
 
             return make_response(jsonify({"success": True}), 200)
@@ -428,6 +550,14 @@ class ConnectorSync(Resource):
                     400
                 )
 
+            with db_readonly() as conn:
+                session = ConnectorSessionsRepository(conn).get_by_session_token(session_token)
+            if not session or session.get("user_id") != user_id:
+                return make_response(
+                    jsonify({"success": False, "error": "Invalid or unauthorized session"}),
+                    401,
+                )
+
             # Extract configuration from remote_data
             file_ids = remote_data.get('file_ids', [])
             folder_ids = remote_data.get('folder_ids', [])
@@ -476,74 +606,13 @@ class ConnectorCallbackStatus(Resource):
     def get(self):
         """Return HTML page with connector authentication status"""
         try:
-            # Validate and sanitize status to a known value
-            status_raw = request.args.get('status', 'error')
-            status = status_raw if status_raw in ('success', 'error', 'cancelled') else 'error'
-
-            # Escape all user-controlled values for HTML context
-            message = html.escape(request.args.get('message', ''))
-            provider_raw = request.args.get('provider', 'connector')
-            provider = html.escape(provider_raw.replace('_', ' ').title())
-            session_token = request.args.get('session_token', '')
-            user_email = html.escape(request.args.get('user_email', ''))
-
-            def safe_js_string(value: str) -> str:
-                """Safely encode a string for embedding in inline JavaScript."""
-                js_encoded = json.dumps(value)
-                return js_encoded.replace('</', '<\\/').replace('<!--', '<\\!--')
-
-            js_status = safe_js_string(status)
-            js_session_token = safe_js_string(session_token)
-            js_user_email = safe_js_string(user_email)
-            js_provider_type = safe_js_string(provider_raw)
-
-            html_content = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>{provider} Authentication</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; }}
-                    .container {{ max-width: 600px; margin: 0 auto; }}
-                    .success {{ color: #4CAF50; }}
-                    .error {{ color: #F44336; }}
-                    .cancelled {{ color: #FF9800; }}
-                </style>
-                <script>
-                    window.onload = function() {{
-                        const status = {js_status};
-                        const sessionToken = {js_session_token};
-                        const userEmail = {js_user_email};
-                        const providerType = {js_provider_type};
-
-                        if (status === "success" && window.opener) {{
-                            window.opener.postMessage({{
-                                type: providerType + '_auth_success',
-                                session_token: sessionToken,
-                                user_email: userEmail
-                            }}, '*');
-
-                            setTimeout(() => window.close(), 3000);
-                        }} else if (status === "cancelled" || status === "error") {{
-                            setTimeout(() => window.close(), 3000);
-                        }}
-                    }};
-                </script>
-            </head>
-            <body>
-                <div class="container">
-                    <h2>{provider} Authentication</h2>
-                    <div class="{status}">
-                        <p>{message}</p>
-                        {f'<p>Connected as: {user_email}</p>' if status == 'success' else ''}
-                    </div>
-                    <p><small>You can close this window. {f"Your {provider} is now connected and ready to use." if status == 'success' else "Feel free to close this window."}</small></p>
-                </div>
-            </body>
-            </html>
-            """
-
-            return make_response(html_content, 200, {'Content-Type': 'text/html'})
+            # Query params are attacker-controllable, so this page never
+            # carries a session token; the OAuth callback renders that itself.
+            return _render_callback_page(
+                request.args.get('status', 'error'),
+                request.args.get('message', ''),
+                request.args.get('provider', 'connector'),
+            )
         except Exception as e:
             current_app.logger.error(f"Error rendering callback status page: {e}")
             return make_response("Authentication error occurred", 500, {'Content-Type': 'text/html'})
