@@ -125,18 +125,28 @@ def wait_healthy(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> bool:
-    """Poll ``url`` until it answers 2xx (True) or ``timeout`` seconds pass (False); tries at least once."""
+    """Poll ``url`` until it answers 2xx (True) or ``timeout`` seconds pass (False); tries at least once.
+
+    No request starts once the deadline is reached, and neither the pauses nor the
+    requests after the first run past it.
+    """
     deadline = clock() + timeout
+    request_timeout = min(5.0, timeout) if timeout > 0 else 5.0
     while True:
         try:
-            with opener(url, timeout=5) as response:
+            with opener(url, timeout=request_timeout) as response:
                 if 200 <= response.status < 300:
                     return True
         except (OSError, http.client.HTTPException):
             pass
-        if clock() >= deadline:
+        remaining = deadline - clock()
+        if remaining <= 0:
             return False
-        sleep(2)
+        sleep(min(2.0, remaining))
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return False
+        request_timeout = min(5.0, remaining)
 
 
 def lan_ip() -> str:

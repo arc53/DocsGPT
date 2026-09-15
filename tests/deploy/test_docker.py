@@ -120,6 +120,38 @@ class TestWaitHealthy:
                                           sleep=lambda s: None, clock=lambda: next(clock))
         assert attempts["n"] == 3
 
+    def test_no_request_starts_at_or_after_the_deadline(self):
+        """A short timeout must not be overrun by a sleep and one more five-second request."""
+        now = {"t": 0.0}
+        starts = []
+
+        def opener(url, timeout):
+            starts.append((now["t"], timeout))
+            now["t"] += 1
+            raise OSError("connection refused")
+
+        def sleep(seconds):
+            now["t"] += seconds
+
+        assert not docker_module.wait_healthy("http://127.0.0.1:7091/api/health", 3, opener=opener,
+                                              sleep=sleep, clock=lambda: now["t"])
+        assert starts, "the first attempt always runs"
+        for started, timeout in starts[1:]:
+            assert started < 3
+            assert started + timeout <= 3
+        assert now["t"] <= 3
+
+    def test_a_zero_timeout_still_tries_once(self):
+        calls = []
+
+        def opener(url, timeout):
+            calls.append(timeout)
+            return _Response(200)
+
+        assert docker_module.wait_healthy("http://127.0.0.1:7091/api/health", 0, opener=opener,
+                                          sleep=lambda s: None, clock=lambda: 0.0)
+        assert len(calls) == 1 and calls[0] > 0
+
     def test_gives_up_after_the_timeout(self):
         def opener(url, timeout):
             raise OSError("connection refused")

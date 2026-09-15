@@ -19,19 +19,21 @@ def _parse_value(raw: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] == "'":
         return value[1:-1]
     if len(value) >= 2 and value[0] == value[-1] == '"':
-        return re.sub(r'\\(["\\])', r"\1", value[1:-1])
+        return re.sub(r'\\(["\\])', r"\1", value[1:-1]).replace("$$", "$")
     return value.split(" #", 1)[0].rstrip()
 
 
 def _format_value(value: str) -> str:
-    """``value`` quoted so it reads back unchanged."""
+    """``value`` quoted so it reads back unchanged, and so Compose passes it on unchanged."""
     if "\n" in value or "\r" in value:
         raise ValueError("a .env value cannot contain a newline")
     if _PLAIN.match(value):
         return value
     if "'" not in value:
+        # Compose does not interpolate single-quoted values.
         return f"'{value}'"
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    # Double quotes are interpolated: $$ is Compose's literal dollar.
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "$$") + '"'
 
 
 def read(path: Path) -> dict[str, str]:

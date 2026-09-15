@@ -55,11 +55,20 @@ class TestUpdate:
         envfile.update(path, {"A": "3"})
         assert path.read_text() == "A=3\nX=y\n"
 
-    @pytest.mark.parametrize("value", ["plain", "with space", "hash # inside", "it's", 'say "hi"', "back\\slash", ""])
+    @pytest.mark.parametrize(
+        "value",
+        ["plain", "with space", "hash # inside", "it's", 'say "hi"', "back\\slash", "", "pa$w'rd", "a$$b'c", "$HOME"],
+    )
     def test_values_round_trip(self, tmp_path, value):
         path = tmp_path / ".env"
         envfile.update(path, {"VALUE": value})
         assert envfile.read(path)["VALUE"] == value
+
+    def test_a_dollar_in_double_quotes_is_escaped_for_compose(self, tmp_path):
+        """Compose interpolates double-quoted .env values; $$ is its literal dollar."""
+        path = tmp_path / ".env"
+        envfile.update(path, {"API_KEY": "pa$w'rd"})
+        assert path.read_text() == "API_KEY=\"pa$$w'rd\"\n"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
     def test_a_new_file_is_private(self, tmp_path):
