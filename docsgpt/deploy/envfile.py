@@ -52,7 +52,7 @@ def read(path: Path) -> dict[str, str]:
 def update(path: Path, values: Mapping[str, Optional[str]]) -> None:
     """Set each key in place (``None`` removes it), append new keys, and leave every other line alone.
 
-    A new file is created readable by its owner only: it holds secrets.
+    The file is left readable by its owner only, including one that existed with a wider mode: it holds secrets.
     """
     formatted = {key: None if value is None else _format_value(value) for key, value in values.items()}
     path = Path(path)
@@ -71,6 +71,10 @@ def update(path: Path, values: Mapping[str, Optional[str]]) -> None:
     out.extend(f"{key}={value}" for key, value in formatted.items() if key not in written and value is not None)
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
+    if hasattr(os, "fchmod"):
+        # The creation mode only applies to a new file; tighten an existing one before writing.
+        os.fchmod(descriptor, 0o600)
+    os.ftruncate(descriptor, 0)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write("\n".join(out) + "\n" if out else "")

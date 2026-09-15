@@ -76,6 +76,16 @@ class TestUpdate:
         envfile.update(path, {"JWT_SECRET_KEY": "s"})
         assert oct(os.stat(path).st_mode & 0o777) == oct(0o600)
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+    def test_an_existing_readable_file_is_made_private_before_writing(self, tmp_path):
+        """Secrets are rewritten into the file, so a permissive mode left from before must not stay."""
+        path = tmp_path / ".env"
+        path.write_text("LLM_PROVIDER=openai\n")
+        os.chmod(path, 0o644)
+        envfile.update(path, {"JWT_SECRET_KEY": "s"})
+        assert oct(os.stat(path).st_mode & 0o777) == oct(0o600)
+        assert envfile.read(path) == {"LLM_PROVIDER": "openai", "JWT_SECRET_KEY": "s"}
+
     def test_rejects_a_newline_in_a_value(self, tmp_path):
         with pytest.raises(ValueError, match="newline"):
             envfile.update(tmp_path / ".env", {"A": "1\n2"})

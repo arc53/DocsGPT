@@ -119,9 +119,10 @@ jobs:
           "$docsgpt" up --yes --dir "$stack" --image-tag verify
           "$docsgpt" status --dir "$stack"
           curl -fsS http://127.0.0.1:7091/ | grep -q 'src="/config.js"'
-          grep -q '^POSTGRES_PASSWORD=' "$stack/.env"
+          # The secrets must have values: an empty one would fall back to a default silently.
+          grep -Eq '^POSTGRES_PASSWORD=.+$' "$stack/.env"
           # Running up again keeps the generated secrets.
-          before=$(grep '^JWT_SECRET_KEY=' "$stack/.env")
+          before=$(grep -E '^JWT_SECRET_KEY=.+$' "$stack/.env")
           "$docsgpt" up --yes --dir "$stack" --image-tag verify
           [ "$(grep '^JWT_SECRET_KEY=' "$stack/.env")" = "$before" ]
           "$docsgpt" uninstall --yes --purge --dir "$stack"
