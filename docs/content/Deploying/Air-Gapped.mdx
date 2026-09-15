@@ -1,0 +1,197 @@
+---
+title: Air-Gapped Deployment
+description: Run DocsGPT on a network with no internet access.
+---
+
+import { Callout } from 'nextra/components'
+
+# Air-Gapped Deployment
+
+DocsGPT runs without internet access once three things are inside your network: the software, the embedding models, and an LLM you host yourself. This guide covers bringing them in, the settings that switch off features that need the internet, blocking outbound traffic, and checking that nothing gets out.
+
+## What needs the internet
+
+With a self-hosted LLM, chat, document ingestion and retrieval work offline. These parts of DocsGPT contact external services by default and need a setting:
+
+| Feature | What it contacts | Air-gapped setting |
+| --- | --- | --- |
+| Default LLM (`LLM_PROVIDER=docsgpt`) | DocsGPT's hosted model API | Point DocsGPT at your own model server |
+| Version check | `gptcloud.arc53.com`, when the worker starts and periodically after | `VERSION_CHECK=0` |
+| Text-to-speech (Speak button) | Google (`google_tts`) or ElevenLabs | `TTS_PROVIDER=none` |
+| Speech-to-text (microphone, audio files) | OpenAI (`openai`) | `STT_PROVIDER=none` |
+| `read_webpage` chat tool | Any URL the model chooses | Leave it out of `DEFAULT_CHAT_TOOLS` |
+| Embedding models | Hugging Face, the first time a model is used | Bundled in the Docker image; `docsgpt prefetch-models` for pip |
+
+Features whose purpose is to fetch outside content cannot work offline: URL, crawler, sitemap, GitHub and Reddit sources, the Google Drive, SharePoint and Confluence connectors, web search and other internet-facing tools, and hosted LLM or embedding providers.
+
+<Callout type="info">
+  Keep the default document parser. `DOC_PARSER_ENGINE=anydoc` needs no models, and OCR is off unless you turn it on. Use the default backend image rather than the `-docling` variant, and don't install the `docling` extra.
+</Callout>
+
+## 1. Bring the software in
+
+### Docker
+
+The backend image already contains everything the default configuration loads at run time: both default embedding models (granite for new installs, mpnet for upgrades), their tokenizers and the token-counting encoding. A container downloads nothing on first use.
+
+On a machine with internet access, pull the images and save them to one file:
+
+```bash
+TAG=latest   # or a release, e.g. 0.19.0
+docker pull arc53/docsgpt:$TAG
+docker pull arc53/docsgpt-fe:$TAG
+docker pull redis:6-alpine
+docker pull postgres:16-alpine
+docker save -o docsgpt-images.tar \
+  arc53/docsgpt:$TAG arc53/docsgpt-fe:$TAG redis:6-alpine postgres:16-alpine
+```
+
+Copy `docsgpt-images.tar` and the [standalone Compose file](/Deploying/Docker-Deploying#quickest-setup-pre-built-images-no-checkout) into the air-gapped network, then load the images (or push them to your internal registry):
+
+```bash
+docker load -i docsgpt-images.tar
+```
+
+Set `DOCSGPT_IMAGE_TAG` to the same tag when you start the stack. Bring your model server's image and weights in the same way, following its own documentation.
+
+To use an embedding model other than the two defaults, build your own backend image with it baked in: `docker build -f docsgpt/Dockerfile --build-arg EMBEDDINGS_PREFETCH=<model> .`
+
+### pip
+
+On a connected machine with the same operating system, CPU architecture and Python version as the target, download the packages and the models:
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip download docsgpt -d wheelhouse
+pip install --no-index --find-links wheelhouse docsgpt
+DOCSGPT_HOME=./docsgpt-home docsgpt prefetch-models
+```
+
+`prefetch-models` stores both default embedding models and their tokenizers under `models/` in the [data home](/Deploying/Pip-Install). Pass model names to fetch a different set.
+
+Copy `wheelhouse/` and `docsgpt-home/models/` to the target, install from the wheelhouse, and put `models/` in the target's data home (or point `EMBEDDINGS_CACHE_DIR` at it):
+
+```bash
+pip install --no-index --find-links wheelhouse docsgpt
+```
+
+## 2. Point DocsGPT at your own LLM
+
+Run an OpenAI-compatible model server inside the network, such as vLLM, Ollama, a llama.cpp server or Text Generation Inference, and set:
+
+```env
+LLM_PROVIDER=openai
+OPENAI_BASE_URL=http://llm.internal:8000/v1
+LLM_NAME=your-model-name
+API_KEY=None
+```
+
+Setting `OPENAI_BASE_URL` also removes DocsGPT's hosted model from the model list. See [Local inference engines](/Models/local-inference) for the base URL of each server.
+
+## 3. Switch off the features that call out
+
+Add these to `.env`:
+
+```env
+VERSION_CHECK=0
+TTS_PROVIDER=none
+STT_PROVIDER=none
+DEFAULT_CHAT_TOOLS=["memory","scheduler"]
+HF_HUB_OFFLINE=1
+```
+
+- `VERSION_CHECK=0` stops the worker's anonymous version check.
+- `TTS_PROVIDER=none` hides the Speak button on answers.
+- `STT_PROVIDER=none` hides the microphone button, and audio files fail to ingest with a message naming the setting. If your model server offers an OpenAI-compatible `/v1/audio/transcriptions` endpoint, keep `STT_PROVIDER=openai` instead: speech-to-text uses `OPENAI_BASE_URL` too.
+- `DEFAULT_CHAT_TOOLS` defaults to `memory`, `read_webpage` and `scheduler`; this list drops `read_webpage`.
+- `HF_HUB_OFFLINE=1` makes the Hugging Face libraries read models from the local cache only. A model that was never fetched fails at once with an error, instead of waiting on a connection that never opens. The libraries read it from the process environment: Docker Compose's `env_file` provides that, and for pip installs export it in the environment that starts `docsgpt api` and `docsgpt worker`.
+
+Leave the document parsing and OCR settings at their defaults.
+
+## 4. Block outbound traffic in the network
+
+DocsGPT doesn't block outbound connections itself. Enforce that in the network, where the same rule also covers Postgres, Redis, your model server and anything you add later.
+
+**Hosts with no route out.** The simplest setup: servers whose firewall allows only internal address ranges and your internal DNS.
+
+**Docker.** Attach the services to a network created with `internal: true`, which has no route out of the Docker host. A container on an internal network can't publish ports, so give only a reverse proxy (nginx, Caddy, Traefik) a second, regular network and serve the UI and API through it:
+
+```yaml
+networks:
+  airgap:
+    internal: true
+  edge: {}
+
+services:
+  backend:
+    networks: [airgap]
+  worker:
+    networks: [airgap]
+  frontend:
+    networks: [airgap]
+  postgres:
+    networks: [airgap]
+  redis:
+    networks: [airgap]
+  proxy:
+    image: nginx:stable
+    networks: [airgap, edge]
+    ports: ["443:443"]
+```
+
+Docker's published ports bypass host firewalls such as `ufw`. If you rely on host rules instead of internal networks, filter container traffic in the `DOCKER-USER` iptables chain.
+
+**Kubernetes.** With a network plugin that enforces NetworkPolicy, deny egress for the namespace except to its own pods and cluster DNS:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-external-egress
+  namespace: docsgpt
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {}
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+```
+
+Add a rule for your model server if it runs in another namespace.
+
+**Egress proxy.** When some traffic must leave the network, for example to a hosted LLM, send it through a forward proxy that allows only those hosts. The Python HTTP libraries DocsGPT uses honour the standard variables; exclude internal services in `NO_PROXY`:
+
+```env
+HTTPS_PROXY=http://proxy.internal:3128
+HTTP_PROXY=http://proxy.internal:3128
+NO_PROXY=localhost,127.0.0.1,backend,llm.internal
+```
+
+- Features that fetch user-supplied URLs connect to the resolved IP address, so a hostname allowlist can't match them. Keep those features off.
+- If the proxy inspects TLS, add its CA certificate with `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE`. For model downloads through such a proxy, also set `HF_HUB_DISABLE_XET=1`: Hugging Face's transfer client ignores `SSL_CERT_FILE`.
+
+## 5. Verify
+
+Check that the models load with networking disabled:
+
+```bash
+docker run --rm --network none arc53/docsgpt:$TAG python -m docsgpt.scripts.verify_offline
+```
+
+On a pip install, run `docsgpt verify-offline` on the air-gapped host. Both check token counting, each default embedding model's tokenizer, and an embedding; pass a model name to check a different model.
+
+Then use the app: upload a document and ask a question about it. Your firewall or proxy logs should show no connection attempts from DocsGPT to outside hosts. The web UI loads its fonts and scripts from the DocsGPT server only.
+
+<Callout type="info">
+  The [chat widget](/Extensions/chat-widget) loads its font from Google Fonts and, unless you pass `buttonIcon`, its launcher icon from a CDN. Set `apiHost` to your own DocsGPT API; the default is DocsGPT's cloud.
+</Callout>

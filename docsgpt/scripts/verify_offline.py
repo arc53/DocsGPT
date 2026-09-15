@@ -21,7 +21,7 @@ import time
 from typing import Callable, List, Optional, Sequence
 
 from docsgpt.core.optional_deps import is_available
-from docsgpt.scripts.prefetch_models import DEFAULT_MODELS, TIKTOKEN_ENCODINGS
+from docsgpt.scripts.prefetch_models import DEFAULT_MODELS
 from docsgpt.vectorstore.model_registry import resolve
 
 logger = logging.getLogger("verify_offline")
@@ -50,16 +50,12 @@ def verify(models: Sequence[str]) -> bool:
     """Run every check; return whether all passed."""
     ok = True
 
-    def tiktoken_check(encoding: str) -> Callable[[], object]:
-        def run() -> object:
-            import tiktoken
+    def tiktoken_check() -> object:
+        from docsgpt.utils import get_encoding
 
-            return f"{len(tiktoken.get_encoding(encoding).encode('hello world'))} tokens"
+        return f"{len(get_encoding().encode('hello world'))} tokens"
 
-        return run
-
-    for encoding in TIKTOKEN_ENCODINGS:
-        ok &= _check(f"tiktoken {encoding}", tiktoken_check(encoding))
+    ok &= _check("tiktoken cl100k_base", tiktoken_check)
 
     for name in models:
         spec = resolve(name)

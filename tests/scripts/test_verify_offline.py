@@ -8,8 +8,11 @@ from docsgpt.scripts import verify_offline
 
 
 def _fake_tiktoken(monkeypatch):
+    """The check must exercise the app's own loader, which reads the packaged encoding."""
+    encoding = types.SimpleNamespace(name="cl100k_base", encode=lambda text: [1, 2])
+    monkeypatch.setattr("docsgpt.utils.get_encoding", lambda: encoding)
     module = types.ModuleType("tiktoken")
-    module.get_encoding = lambda name: types.SimpleNamespace(encode=lambda text: [1, 2])
+    module.get_encoding = lambda name: (_ for _ in ()).throw(AssertionError("downloaded via tiktoken"))
     monkeypatch.setitem(sys.modules, "tiktoken", module)
 
 

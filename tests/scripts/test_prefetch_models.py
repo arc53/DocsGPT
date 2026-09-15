@@ -95,17 +95,12 @@ class TestMain:
             prefetch_models.main(["granite-97m"])
         assert spy.call_args.args[1] == "/app/models"
 
+    def test_cache_dir_defaults_to_the_one_the_app_reads(self, fake_fastembed, monkeypatch):
+        """Without the variable, models must land where the running app looks for them."""
+        from docsgpt.core.settings import settings
 
-class TestPrefetchTiktoken:
-    def test_warms_every_listed_encoding(self):
-        """The image sets TIKTOKEN_CACHE_DIR; warming fills it at build time."""
-        fake = MagicMock()
-        module = types.ModuleType("tiktoken")
-        module.get_encoding = fake
-        with patch.dict(sys.modules, {"tiktoken": module}):
-            fetched = prefetch_models.prefetch_tiktoken()
-        assert fetched == list(prefetch_models.TIKTOKEN_ENCODINGS)
-        assert [c.args[0] for c in fake.call_args_list] == list(prefetch_models.TIKTOKEN_ENCODINGS)
-
-    def test_cl100k_is_the_encoding_token_counting_uses(self):
-        assert "cl100k_base" in prefetch_models.TIKTOKEN_ENCODINGS
+        monkeypatch.delenv("EMBEDDINGS_CACHE_DIR", raising=False)
+        monkeypatch.setattr(settings, "EMBEDDINGS_CACHE_DIR", "/home/docsgpt/models")
+        with patch.object(prefetch_models, "prefetch", return_value=[]) as spy:
+            prefetch_models.main(["granite-97m"])
+        assert spy.call_args.args[1] == "/home/docsgpt/models"

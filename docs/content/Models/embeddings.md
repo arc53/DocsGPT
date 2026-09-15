@@ -37,7 +37,7 @@ Set `EMBEDDINGS_NAME` in your `.env` to a registry name or a Hugging Face reposi
 EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2
 ```
 
-The model is downloaded on first use and cached; set `EMBEDDINGS_CACHE_DIR` to control where. There is no `model/` folder to populate by hand, and a filesystem path is not accepted as a model name.
+The model is downloaded on first use and cached, together with its tokenizer, under `models/` in the data home; set `EMBEDDINGS_CACHE_DIR` to use another directory. There is no folder to populate by hand, and a filesystem path is not accepted as a model name.
 
 DocsGPT knows the pooling, vector width and context window of the models in its registry (`all-mpnet-base-v2`, `granite-embedding-311m-multilingual-r2`, `granite-embedding-97m-multilingual-r2`). For any other repository it reads those from the repository's own `1_Pooling/config.json` and `modules.json`. If a repository declares neither, mean pooling with L2 normalization is assumed and a warning is logged — pin the real values with `EMBEDDINGS_POOLING` (`cls` or `mean`) and `EMBEDDINGS_NORMALIZE`.
 

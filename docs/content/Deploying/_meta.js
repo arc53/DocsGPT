@@ -27,6 +27,10 @@ export default {
     "title": "☸️ Deploying on Kubernetes",
     "href": "/Deploying/Kubernetes-Deploying"
   },
+  "Air-Gapped": {
+    "title": "🔒 Air-Gapped Deployment",
+    "href": "/Deploying/Air-Gapped"
+  },
   "Hosting-the-app": {
     "title": "☁️ Hosting DocsGPT",
     "href": "/Deploying/Hosting-the-app"

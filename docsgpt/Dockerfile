@@ -108,11 +108,10 @@ COPY --from=builder /venv /venv
 #   EMBEDDINGS_CACHE_DIR / HF_HUB_CACHE  FastEmbed models and their tokenizers
 #                                        (chunking reads tokenizer.json from
 #                                        the same hub-layout snapshot)
-#   TIKTOKEN_CACHE_DIR                   cl100k_base for token accounting
 #   DOCLING_ARTIFACTS_PATH               docling's models (docling extra only)
+# tiktoken's cl100k_base encoding ships inside the package.
 ENV EMBEDDINGS_CACHE_DIR=/app/models \
     HF_HUB_CACHE=/app/models \
-    TIKTOKEN_CACHE_DIR=/app/models/tiktoken \
     DOCLING_ARTIFACTS_PATH=/app/models/docling \
     HF_HUB_DISABLE_TELEMETRY=1 \
     PATH="/venv/bin:$PATH"

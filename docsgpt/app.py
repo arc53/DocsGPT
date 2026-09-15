@@ -203,12 +203,16 @@ def health():
 @app.route("/api/config")
 def get_config():
     from docsgpt.graphrag import graphrag_available
+    from docsgpt.stt.stt_creator import STTCreator
+    from docsgpt.tts.tts_creator import TTSCreator
 
     response = {
         "auth_type": settings.AUTH_TYPE,
         "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "oidc"],
         "graphrag_available": graphrag_available(),
         "hybrid_available": settings.VECTOR_STORE == "pgvector",
+        "tts_available": TTSCreator.is_enabled(settings.TTS_PROVIDER),
+        "stt_available": STTCreator.is_enabled(settings.STT_PROVIDER),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

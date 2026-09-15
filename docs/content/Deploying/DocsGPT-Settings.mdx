@@ -67,7 +67,9 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`OPENAI_BASE_URL`**: Specifically used when `LLM_PROVIDER` is set to `openai` but you are connecting to a local inference engine (like Ollama, Llama.cpp, etc.) that exposes an OpenAI-compatible API. This setting tells DocsGPT where to find your local LLM server.
 
-- **`STT_PROVIDER`**: Selects the speech-to-text provider used for microphone transcription in chat and for audio file ingestion through the parser pipeline.
+- **`STT_PROVIDER`**: Selects the speech-to-text provider used for microphone transcription in chat and for audio file ingestion through the parser pipeline. Set it to `none` to switch speech-to-text off: the microphone button is hidden, and audio files fail to ingest with a message naming the setting.
+
+- **`TTS_PROVIDER`**: Selects the text-to-speech provider behind the Speak button on answers: `google_tts` (default) or `elevenlabs`. Both are hosted services. Set it to `none` to switch text-to-speech off and hide the button.
 
 - **`SERVE_UI`**: Whether the API process serves the web UI shipped in the Python package (`pip install docsgpt`). Defaults to `true`; set `false` when a separate frontend, such as the Docker frontend image, serves the UI. Has no effect in the backend Docker image, which carries no UI build.
 
@@ -238,7 +240,7 @@ The settings below control speech-to-text behaviour for both voice input and aud
 
 | Setting | Purpose | Typical values |
 | --- | --- | --- |
-| `STT_PROVIDER` | Speech-to-text backend provider. | `openai`, `faster_whisper` |
+| `STT_PROVIDER` | Speech-to-text backend provider, or `none` to switch speech-to-text off. | `openai`, `faster_whisper`, `none` |
 | `OPENAI_STT_MODEL` | OpenAI transcription model used when `STT_PROVIDER=openai`. | `gpt-4o-mini-transcribe` |
 | `STT_LANGUAGE` | Optional language hint passed to the provider. Leave unset for auto-detection when supported. | `en`, `es`, unset |
 | `STT_MAX_FILE_SIZE_MB` | Maximum file size accepted by the synchronous `/api/stt` endpoint. | `50` |
