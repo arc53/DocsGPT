@@ -23,6 +23,9 @@ function Install-DocsGPT {
     $ErrorActionPreference = 'Stop'
     $UvVersion = '0.12.15'
     $UvMinVersion = [version]'0.8.0'
+    # sha256 of https://astral.sh/uv/$UvVersion/install.ps1, checked before it runs. Bump it with
+    # $UvVersion: (Invoke-WebRequest "https://astral.sh/uv/<version>/install.ps1").Content | …
+    $UvInstallerSha256 = '63f2d7e2ccc347cc018127b22f56f569080e5730a390dcb702b654daf6822193'
 
     function Say([string]$Message) { Write-Host "==> $Message" }
 
@@ -50,9 +53,20 @@ function Install-DocsGPT {
         $env:UV_INSTALL_DIR = $uvDir
         $env:UV_NO_MODIFY_PATH = '1'
         $env:UV_PRINT_QUIET = '1'
-        # A child PowerShell, so nothing the uv installer does can end this session.
-        $shell = (Get-Process -Id $PID).Path
-        & $shell -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/$UvVersion/install.ps1 | iex"
+        # Downloaded and checked before it runs, and run in a child PowerShell so nothing the
+        # uv installer does can end this session.
+        $installer = Join-Path ([System.IO.Path]::GetTempPath()) "uv-installer-$UvVersion.ps1"
+        try {
+            Invoke-WebRequest -Uri "https://astral.sh/uv/$UvVersion/install.ps1" -OutFile $installer -UseBasicParsing
+            $actual = (Get-FileHash -Path $installer -Algorithm SHA256).Hash.ToLower()
+            if ($actual -ne $UvInstallerSha256) {
+                throw "The uv installer does not match its pinned sha256: got $actual, expected $UvInstallerSha256. Refusing to run it."
+            }
+            $shell = (Get-Process -Id $PID).Path
+            & $shell -NoProfile -ExecutionPolicy Bypass -File $installer
+        } finally {
+            Remove-Item $installer -Force -ErrorAction SilentlyContinue
+        }
         $uv = Join-Path $uvDir 'uv.exe'
         if (-not (Test-Path $uv)) { throw "uv did not install into $uvDir" }
     }

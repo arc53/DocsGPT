@@ -20,6 +20,9 @@
 
 UV_VERSION="0.12.15"
 UV_MIN_VERSION="0.8.0"
+# sha256 of https://astral.sh/uv/$UV_VERSION/install.sh, checked before it runs. Bump it with
+# UV_VERSION: curl -fsSL https://astral.sh/uv/<version>/install.sh | shasum -a 256
+UV_INSTALLER_SHA256="716a1d6844740756c68770fcec2f79c2013fb9b03869a113f61e15f6f482a6a1"
 
 main() {
   set -euo pipefail
@@ -47,15 +50,32 @@ main() {
       die "curl or wget is needed to download $1"
     fi
   }
-  # run_downloaded URL COMMAND...: save URL to a file, then run COMMAND with the file as its last
-  # argument. A transfer cut short fails before anything runs.
+  sha256_of() {
+    if has shasum; then
+      shasum -a 256 "$1" | awk '{print $1}'
+    elif has sha256sum; then
+      sha256sum "$1" | awk '{print $1}'
+    else
+      die "neither shasum nor sha256sum is available to check $1"
+    fi
+  }
+  # run_downloaded URL SHA256 COMMAND...: save URL to a file, check it against SHA256 ("-" to
+  # skip), then run COMMAND with the file as its last argument. A transfer cut short, or content
+  # that does not match, fails before anything runs.
   run_downloaded() {
-    local url="$1" script status=0
-    shift
+    local url="$1" expected="$2" script status=0 actual
+    shift 2
     script="$(mktemp)"
     if ! download "$url" >"$script"; then
       rm -f "$script"
       die "could not download $url"
+    fi
+    if [ "$expected" != "-" ]; then
+      actual="$(sha256_of "$script")"
+      if [ "$actual" != "$expected" ]; then
+        rm -f "$script"
+        die "$url does not match its pinned sha256: got $actual, expected $expected. Refusing to run it."
+      fi
     fi
     "$@" "$script" || status=$?
     rm -f "$script"
@@ -96,7 +116,9 @@ main() {
         sudo="sudo"
       fi
       say "Installing Docker"
-      run_downloaded https://get.docker.com $sudo sh
+      # Docker's script changes over time and publishes no checksum, so it is only downloaded
+      # in full before it runs.
+      run_downloaded https://get.docker.com - $sudo sh
       $sudo systemctl enable --now docker >/dev/null 2>&1 || true
       if [ -n "$sudo" ]; then
         $sudo usermod -aG docker "$(id -un)"
@@ -122,7 +144,8 @@ main() {
   if [ -z "$uv" ]; then
     local uv_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
     say "Installing uv $UV_VERSION into $uv_dir"
-    run_downloaded "https://astral.sh/uv/$UV_VERSION/install.sh" env UV_INSTALL_DIR="$uv_dir" UV_NO_MODIFY_PATH=1 UV_PRINT_QUIET=1 sh
+    run_downloaded "https://astral.sh/uv/$UV_VERSION/install.sh" "$UV_INSTALLER_SHA256" \
+      env UV_INSTALL_DIR="$uv_dir" UV_NO_MODIFY_PATH=1 UV_PRINT_QUIET=1 sh
     uv="$uv_dir/uv"
     [ -x "$uv" ] || die "uv did not install into $uv_dir"
   fi
