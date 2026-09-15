@@ -101,6 +101,9 @@ jobs:
       - name: Set up uv
         if: matrix.variant == ''
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          # No cache: a cache restored into a job that runs the built image is a poisoning risk.
+          enable-cache: false
 
       - name: docsgpt up runs the same image from the installed package
         if: matrix.variant == ''
