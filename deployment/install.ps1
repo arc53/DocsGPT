@@ -64,6 +64,10 @@ function Install-DocsGPT {
             }
             $shell = (Get-Process -Id $PID).Path
             & $shell -NoProfile -ExecutionPolicy Bypass -File $installer
+            if ($LASTEXITCODE -ne 0) {
+                # Without this, a uv.exe left behind by an older install would be accepted below.
+                throw "The uv installer exited with code $LASTEXITCODE."
+            }
         } finally {
             Remove-Item $installer -Force -ErrorAction SilentlyContinue
         }

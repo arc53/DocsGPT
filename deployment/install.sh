@@ -50,6 +50,14 @@ main() {
       die "curl or wget is needed to download $1"
     fi
   }
+  # POSIX single-quote encoding: what needs quoting is decided here, not by the shell that runs it.
+  shell_quote() {
+    local arg out=""
+    for arg in "$@"; do
+      out="$out'$(printf '%s' "$arg" | sed "s/'/'\\\\''/g")' "
+    done
+    printf '%s' "$out"
+  }
   sha256_of() {
     if has shasum; then
       shasum -a 256 "$1" | awk '{print $1}'
@@ -182,9 +190,10 @@ main() {
 
   if [ "$docker_group_pending" = 1 ]; then
     if has sg; then
-      # The docker group applies to new logins; sg gives it to this command now.
+      # The docker group applies to new logins; sg gives it to this command now. sg runs the
+      # command with /bin/sh, which need not be bash, so quote for POSIX sh rather than with %q.
       local command
-      command="$(printf '%q ' "$docsgpt" up "$@")"
+      command="$(shell_quote "$docsgpt" up "$@")"
       if have_tty; then
         exec sg docker -c "$command </dev/tty"
       fi
