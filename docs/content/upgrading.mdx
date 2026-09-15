@@ -11,6 +11,10 @@ import { Callout } from 'nextra/components'
   **Upgrading from 0.16.x?** User data moved from MongoDB to Postgres in 0.17.0. Follow the [Postgres Migration guide](/Deploying/Postgres-Migration) before running `docker compose pull` or `git pull` — existing deployments will not start cleanly without it.
 </Callout>
 
+## Standalone Compose file: one port
+
+The standalone Compose file (`docker-compose-standalone.yaml`) no longer runs a frontend container. The backend image serves the web UI on port 7091, and the port is published on `127.0.0.1` unless you set `DOCSGPT_BIND`. After downloading the new file, start it with `--remove-orphans` to remove the old frontend container, then open port 7091 instead of 5173. If you opened DocsGPT from other machines, see [Upgrading from an earlier standalone file](/Deploying/Docker-Deploying#upgrading-from-an-earlier-standalone-file). The checkout Compose files and the Kubernetes manifests are unchanged.
+
 ## Embedding models
 
 DocsGPT now runs embeddings through [FastEmbed](https://github.com/qdrant/fastembed) (ONNX Runtime) instead of SentenceTransformer. The models are the same and the vectors are identical, so **your existing index needs no action** — `all-mpnet-base-v2` keeps working exactly as before.

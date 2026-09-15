@@ -2,8 +2,8 @@
 #   DOCSGPT_IMAGE_TAG      develop (default, follows main) or a release, e.g. 0.20.0
 #   DOCSGPT_IMAGE_VARIANT  empty (default, slim) or -docling: docling parser engine,
 #                          its models, and tesseract baked in (OCR-ready)
-# Set them in ../.env or the shell. deployment/docker-compose-standalone.yaml is
-# the same stack without a git checkout.
+# Set them in ../.env or the shell. deployment/docker-compose-standalone.yaml runs
+# the same images without a git checkout, with the backend serving the UI on one port.
 name: docsgpt-oss
 services:
 
