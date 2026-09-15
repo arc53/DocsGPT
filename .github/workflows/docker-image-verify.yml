@@ -118,9 +118,10 @@ jobs:
           stack="$HOME/.docsgpt/server"
           "$docsgpt" status
           curl -fsS http://127.0.0.1:7091/ | grep -q 'src="/config.js"'
-          grep -q '^POSTGRES_PASSWORD=' "$stack/.env"
+          # The secrets must have values: an empty one would fall back to a default silently.
+          grep -Eq '^POSTGRES_PASSWORD=.+$' "$stack/.env"
           # Running the installer again upgrades in place and keeps the generated secrets.
-          before=$(grep '^JWT_SECRET_KEY=' "$stack/.env")
+          before=$(grep -E '^JWT_SECRET_KEY=.+$' "$stack/.env")
           bash deployment/install.sh --image-tag verify </dev/null
           [ "$(grep '^JWT_SECRET_KEY=' "$stack/.env")" = "$before" ]
           "$docsgpt" uninstall --yes --purge
