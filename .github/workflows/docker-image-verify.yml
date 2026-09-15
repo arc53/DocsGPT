@@ -119,12 +119,12 @@ jobs:
           "$docsgpt" up --yes --dir "$stack" --image-tag verify
           "$docsgpt" status --dir "$stack"
           curl -fsS http://127.0.0.1:7091/ | grep -q 'src="/config.js"'
-          # The secrets must have values: an empty one would fall back to a default silently.
-          grep -Eq '^POSTGRES_PASSWORD=.+$' "$stack/.env"
-          # Running up again keeps the generated secrets.
-          before=$(grep -E '^JWT_SECRET_KEY=.+$' "$stack/.env")
+          # Both secrets must have values: an empty one falls back to a default silently.
+          secrets=$(grep -E '^(POSTGRES_PASSWORD|JWT_SECRET_KEY)=.+$' "$stack/.env" | sort)
+          [ "$(printf '%s\n' "$secrets" | wc -l)" -eq 2 ]
+          # Running up again keeps them; a changed database password locks the stack out of its volume.
           "$docsgpt" up --yes --dir "$stack" --image-tag verify
-          [ "$(grep '^JWT_SECRET_KEY=' "$stack/.env")" = "$before" ]
+          [ "$(grep -E '^(POSTGRES_PASSWORD|JWT_SECRET_KEY)=.+$' "$stack/.env" | sort)" = "$secrets" ]
           "$docsgpt" uninstall --yes --purge --dir "$stack"
           test ! -e "$stack"
 
