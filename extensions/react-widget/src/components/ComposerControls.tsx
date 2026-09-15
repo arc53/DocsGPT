@@ -109,8 +109,8 @@ const spin = keyframes`
 `;
 
 /**
- * Determinate while bytes move, indeterminate while the server parses: that
- * phase has no percentage, and a bar frozen at 100% reads as a hang.
+ * Determinate while uploading; indeterminate while the server parses, since
+ * parsing reports no progress.
  */
 const ProgressRing = styled.svg<{ $indeterminate?: boolean }>`
   width: 14px;
@@ -238,7 +238,6 @@ const ChipRemove = styled.button`
   }
 `;
 
-/** Chip status, for the hover title. */
 const statusLabel = (attachment: Attachment): string => {
   if (attachment.status === 'uploading')
     return `Uploading ${attachment.progress}%`;
@@ -254,8 +253,7 @@ export const AttachmentChips = ({
   attachments: Attachment[];
   onRemove: (id: string) => void;
 }) => {
-  // A touch user cannot see a tooltip, and a phone picker's unsupported
-  // file lands here. Say why in the open.
+  // Tooltips are unreachable on touch, so failure reasons are shown inline.
   const failures = attachments.filter(
     (attachment) => attachment.status === 'failed' && attachment.error,
   );
@@ -322,12 +320,19 @@ export const ControlGroup = styled.div`
   gap: 6px;
 `;
 
-const ControlButton = styled.button<{ $recording?: boolean }>`
+const ControlButton = styled.button<{
+  $recording?: boolean;
+  $iconOnly?: boolean;
+}>`
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 28px;
-  padding: 0 10px;
+  height: ${(props) => (props.$iconOnly ? '32px' : '28px')};
+  padding: ${(props) => (props.$iconOnly ? '0' : '0 10px')};
+  ${(props) =>
+    props.$iconOnly
+      ? 'width: 32px; flex-shrink: 0; justify-content: center;'
+      : ''}
   border-radius: ${radii.full};
   border: 1px solid
     ${(props) =>
@@ -371,9 +376,7 @@ export const AttachButton = ({
   onClick: () => void;
   disabled?: boolean;
 }) => (
-  // A button opening a hidden input, not a label wrapping one: a
-  // `display: none` input takes no focus, so the label form is unreachable
-  // from the keyboard.
+  // A label wrapping a display:none input cannot be reached by keyboard.
   <ControlButton
     type="button"
     onClick={onClick}
@@ -404,16 +407,19 @@ export const MicButton = ({
   state,
   disabled,
   onClick,
+  variant = 'pill',
 }: {
   state: MicButtonState;
   disabled?: boolean;
   onClick: () => void;
+  variant?: 'pill' | 'icon';
 }) => (
   <ControlButton
     type="button"
     onClick={onClick}
     disabled={disabled || state === 'transcribing'}
     $recording={state === 'recording'}
+    $iconOnly={variant === 'icon'}
     aria-label={MIC_TITLES[state]}
     title={MIC_TITLES[state]}
   >
@@ -422,7 +428,7 @@ export const MicButton = ({
     ) : (
       <MicIcon aria-hidden="true" />
     )}
-    {MIC_LABELS[state]}
+    {variant === 'pill' && MIC_LABELS[state]}
   </ControlButton>
 );
 
@@ -472,22 +478,21 @@ export const SentAttachments = ({
   </SentList>
 );
 
-// One bar per animation frame, so the row holds about a second of history.
+// One bar per frame: roughly a second of history at 60fps.
 const WAVEFORM_BARS = 48;
 const BAR_GAP_RATIO = 0.4;
 // Speech peaks well below full scale; the floor keeps a quiet line visible.
 const LEVEL_GAIN = 2.8;
 const MIN_BAR_RATIO = 0.06;
 
-const WaveformRow = styled.div`
+const WaveformRow = styled.div<{ $minHeight: string }>`
   display: flex;
   flex: 1;
   min-width: 0;
   align-items: center;
   gap: 10px;
   padding: 0 10px;
-  min-height: ${(props) =>
-    props.theme.dimensions!.size === 'large' ? '60px' : '40px'};
+  min-height: ${(props) => props.$minHeight};
 `;
 
 const WaveformCanvas = styled.canvas`
@@ -505,16 +510,18 @@ const ListeningLabel = styled.span`
 `;
 
 /**
- * Live microphone level, standing in for the input while dictation runs.
- * Canvas inside a rAF loop, because sixty React updates a second would
- * re-render the whole composer. A null analyser draws the resting line.
+ * Live microphone level, drawn to canvas in a rAF loop so frames do not
+ * re-render React. A null analyser draws a flat line.
  */
 export const VoiceWaveform = ({
   analyserRef,
   label,
+  minHeight = '40px',
 }: {
   analyserRef: React.RefObject<AnalyserNode | null>;
   label: string;
+  /** Min height of the input it replaces, to avoid a layout shift. */
+  minHeight?: string;
 }) => {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const theme = useTheme();
@@ -543,7 +550,7 @@ export const VoiceWaveform = ({
         if (!samples || samples.length !== analyser.fftSize)
           samples = new Uint8Array(analyser.fftSize);
         analyser.getByteTimeDomainData(samples);
-        // Time-domain bytes ride on 128; RMS of the deviation is the level.
+        // Time-domain bytes are centred on 128.
         let sumSquares = 0;
         for (let index = 0; index < samples.length; index += 1) {
           const deviation = (samples[index] - 128) / 128;
@@ -554,7 +561,7 @@ export const VoiceWaveform = ({
       levels.push(Math.min(1, level * LEVEL_GAIN));
       levels.shift();
 
-      // Re-read each frame: the panel resizes and the row reflows.
+      // The panel can resize, so dimensions are read each frame.
       const ratio = window.devicePixelRatio || 1;
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
@@ -592,7 +599,7 @@ export const VoiceWaveform = ({
   }, [analyserRef, barColor]);
 
   return (
-    <WaveformRow role="status" aria-label={label}>
+    <WaveformRow role="status" aria-label={label} $minHeight={minHeight}>
       <WaveformCanvas ref={canvasRef} aria-hidden="true" />
       <ListeningLabel>{label}</ListeningLabel>
     </WaveformRow>

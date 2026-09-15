@@ -98,9 +98,11 @@ The DocsGPT Search Bar Widget offers a range of customizable properties that all
 |-----------------|-----------|-------------------------------------|--------------------------------------------------------------------------------------------------|
 | **`apiKey`**    | `string`  | `"your-api-key"`                  | API key for authentication with your DocsGPT API. Leave empty if no authentication is required.                         |
 | **`apiHost`**   | `string`  | `"https://gptcloud.arc53.com"`       | **Required.** The URL of your DocsGPT API backend. This endpoint handles vector similarity search queries.           |
-| **`theme`**     | `"dark" \| "light"` | `"dark"`                            | Color theme of the search bar. Options: `"dark"` or `"light"`. Defaults to `"dark"`.                                     |
+| **`theme`**     | `"dark" \| "light"` | `"dark"`                            | Color theme of the search bar and of the chat it opens. Options: `"dark"` or `"light"`. Defaults to `"dark"`.            |
 | **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field.                                           |
 | **`width`**     | `string`  | `"256px"`                          | Width of the search bar. Accepts any valid CSS width value (e.g., `"300px"`, `"100%"`, `"20rem"`). |
+| **`allowedFileExtensions`** | `string[]` | _unset_ | Passed to the chat opened from "Ask the AI". File extensions its composer accepts, e.g. `['.pdf', '.md']`; attachments stay off while unset. See the [chat widget page](/Extensions/chat-widget). |
+| **`showMicButton`** | `boolean` | `false` | Adds a microphone to the search field for dictating a query, and passes the same option to the chat opened from "Ask the AI". Uses the browser's Web Speech API. See the [chat widget page](/Extensions/chat-widget). |
 
 ---
 
