@@ -20,8 +20,18 @@ Docker is the recommended method for deploying DocsGPT, providing a consistent a
 ## Run it with `docsgpt up`
 
 The `docsgpt` Python package can set up and run the stack described below for
-you. It needs Docker with Compose 2.24 or newer, and Python 3.12 or newer (uv
-installs one when it is missing):
+you. It needs Docker with Compose 2.24 or newer. The installer gets
+[uv](https://docs.astral.sh/uv/), installs the package with it and runs
+`docsgpt up`:
+
+```bash
+curl -fsSL https://docs.ac/install | bash      # macOS and Linux
+irm https://docs.ac/install.ps1 | iex          # Windows (PowerShell)
+```
+
+Both scripts are attached to every [release](https://github.com/arc53/DocsGPT/releases)
+as `install.sh` and `install.ps1`. To install the package yourself instead
+(Python 3.12 or newer; uv brings one when it is missing):
 
 ```bash
 uv tool install docsgpt      # or: pipx install docsgpt
