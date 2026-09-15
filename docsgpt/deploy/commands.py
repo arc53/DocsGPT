@@ -130,17 +130,20 @@ def _current_provider(env: Mapping[str, str]) -> str:
     return name if name in stack.PROVIDERS else "docsgpt"
 
 
-def _check_other_stacks(args, context: Context, directory: Path) -> None:
+def _check_other_stacks(args, context: Context, directory: Path) -> bool:
+    """True when containers of the project were started from another folder and ``up`` takes them over."""
     others = {path for path in context.docker.project_dirs(PROJECT) if path.resolve() != directory.resolve()}
-    if not others or args.adopt:
-        return
+    if not others:
+        return False
+    if args.adopt:
+        return True
     where = ", ".join(sorted(str(path) for path in others))
     question = (
         f"Docker already runs a DocsGPT stack started from {where}; it uses the same data volumes. "
         f"Manage it from {directory} instead?"
     )
     if context.interactive and context.prompter.confirm(question, default=False):
-        return
+        return True
     raise DeployError(
         f"Docker already runs a DocsGPT stack started from {where}. Stop it with `docker compose down` "
         f"in that folder, or run again with --adopt to manage it from {directory}."
@@ -179,7 +182,9 @@ def up(args, context: Optional[Context] = None) -> int:
     configured = record_path.is_file()
 
     context.docker.preflight(context.interactive)
-    _check_other_stacks(args, context, directory)
+    # Compose keeps containers whose configuration did not change, and with them the other
+    # folder's working-directory label; recreating them all makes the takeover complete.
+    recreate = ["--force-recreate"] if _check_other_stacks(args, context, directory) else []
 
     ask = context.interactive and (not configured or args.reconfigure)
     expose, domain = args.expose, args.domain
@@ -214,7 +219,7 @@ def up(args, context: Optional[Context] = None) -> int:
     if stack.exposure(existing) == "domain" and stack.exposure(env) != "domain":
         # With the https profile off, `up --remove-orphans` would leave Caddy running on ports 80 and 443.
         context.docker.compose(directory, *_EVERY_PROFILE, "rm", "--stop", "--force", "caddy", check=False)
-    up_args = ["up", "-d", "--remove-orphans"]
+    up_args = ["up", "-d", "--remove-orphans", *recreate]
     if image_tag in _MOVING_TAGS:
         up_args += ["--pull", "always"]
     print(f"Starting DocsGPT {image_tag} from {directory} ...")

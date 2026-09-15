@@ -185,6 +185,17 @@ class TestUpAgain:
         assert docker.calls == []
         assert _run(["up", "--yes", "--adopt", "--dir", str(tmp_path)], _context(docker)) == 0
 
+    def test_adopting_recreates_every_container(self, tmp_path):
+        """Compose keeps unchanged containers, and with them the old folder's label; the next up would ask again."""
+        docker = FakeDocker(project_dirs={"/srv/old-docsgpt"})
+        assert _run(["up", "--yes", "--adopt", "--dir", str(tmp_path)], _context(docker)) == 0
+        assert docker.calls == [(tmp_path, ["up", "-d", "--remove-orphans", "--force-recreate"])]
+
+    def test_containers_from_this_folder_are_not_recreated(self, tmp_path):
+        docker = FakeDocker(project_dirs={str(tmp_path)})
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(docker)) == 0
+        assert docker.calls == [(tmp_path, ["up", "-d", "--remove-orphans"])]
+
     def test_consent_can_be_given_at_the_prompt(self, tmp_path):
         docker = FakeDocker(project_dirs={"/srv/old-docsgpt"})
         prompter = FakePrompter([True, "local", "docsgpt"])
