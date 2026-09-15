@@ -39,12 +39,13 @@ On a machine with internet access, pull the images and save them to one file:
 ```bash
 TAG=latest   # or a release, e.g. 0.19.0
 docker pull arc53/docsgpt:$TAG
-docker pull arc53/docsgpt-fe:$TAG
 docker pull redis:6-alpine
 docker pull postgres:16-alpine
 docker save -o docsgpt-images.tar \
-  arc53/docsgpt:$TAG arc53/docsgpt-fe:$TAG redis:6-alpine postgres:16-alpine
+  arc53/docsgpt:$TAG redis:6-alpine postgres:16-alpine
 ```
+
+The backend image serves the web UI too, so the standalone stack needs no frontend image. Add `arc53/docsgpt-fe:$TAG` only if you run the checkout Compose files or Kubernetes, which use it.
 
 Copy `docsgpt-images.tar` and the [standalone Compose file](/Deploying/Docker-Deploying#quickest-setup-pre-built-images-no-checkout) into the air-gapped network, then load the images (or push them to your internal registry):
 

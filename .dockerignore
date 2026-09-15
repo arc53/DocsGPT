@@ -1,11 +1,14 @@
 # Build context for docsgpt/Dockerfile is the repository root, so the image can
 # carry the `application` import alias next to the `docsgpt` package. Allow only
-# what the image needs; everything else (frontend, docs, tests, venvs) stays out.
+# what the image needs; everything else (docs, tests, venvs) stays out.
 *
 !docsgpt/
 # Only the alias file: an upgraded checkout may still hold gitignored
 # application/{inputs,indexes,vectors,.env} from the old layout.
 !application/__init__.py
+# The web UI's source and the script that builds it (the `ui` stage).
+!frontend/
+!scripts/build_frontend.sh
 
 # Inside the package: caches, local runtime data and secrets never ship.
 **/__pycache__/
@@ -23,5 +26,17 @@ docsgpt/*.pkl
 docsgpt/.env
 docsgpt/.env.*
 docsgpt/Dockerfile
-# The backend image serves no UI (the frontend image does); a local UI build stays out.
+# A local UI build stays out: the `ui` stage builds the one the image serves.
 docsgpt/static/
+
+# Inside the frontend: installed packages and local builds are redone in the
+# `ui` stage, and local VITE_* overrides must not be baked into a published image.
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
+frontend/*.log
+# The frontend image's own build files; changing them must not rebuild this UI.
+frontend/Dockerfile
+frontend/.dockerignore
+frontend/docker/
