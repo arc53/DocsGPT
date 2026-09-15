@@ -108,7 +108,9 @@ jobs:
           # Same Compose project name as the step above; stop that stack first.
           docker compose -f deployment/docker-compose-standalone.yaml down -v
           pipx run build --wheel --outdir "$RUNNER_TEMP/dist"
-          export DOCSGPT_PACKAGE="$(ls "$RUNNER_TEMP"/dist/docsgpt-*.whl)"
+          # Assigned before export, so a missing wheel fails here instead of installing from PyPI.
+          DOCSGPT_PACKAGE="$(ls "$RUNNER_TEMP"/dist/docsgpt-*.whl)"
+          export DOCSGPT_PACKAGE
           # No uv is set up beforehand, so the installer's pinned uv download runs too.
           # Without a terminal the installer passes --yes to docsgpt up.
           bash deployment/install.sh --image-tag verify </dev/null

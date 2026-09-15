@@ -61,7 +61,7 @@ function Install-DocsGPT {
         throw 'Set DOCSGPT_VERSION or DOCSGPT_PACKAGE, not both.'
     }
     if ($env:DOCSGPT_PACKAGE) {
-        Say "Installing docsgpt from $env:DOCSGPT_PACKAGE"
+        Say 'Installing docsgpt from DOCSGPT_PACKAGE'
         & $uv tool install --reinstall --python 3.12 $env:DOCSGPT_PACKAGE
     } elseif ($env:DOCSGPT_VERSION) {
         Say "Installing docsgpt $env:DOCSGPT_VERSION"

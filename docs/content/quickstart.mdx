@@ -34,7 +34,7 @@ The installer:
    * **Who should reach DocsGPT:** only this computer; other machines on your network (plain HTTP, with an access token); or a domain name with HTTPS (a certificate from Let's Encrypt, with an access token).
    * **Which model provider:** the DocsGPT public API (no key needed), OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, or an OpenAI-compatible server such as Ollama or vLLM.
 
-It then starts DocsGPT and prints its address, [http://localhost:7091](http://localhost:7091) for a local install. Settings and generated secrets are in `~/.docsgpt/server/.env`.
+It then starts DocsGPT and prints its address, [http://localhost:7091](http://localhost:7091) for a local install. Settings and generated secrets are in `~/.docsgpt/server/.env`, or `/opt/docsgpt/.env` when the installer runs as root on Linux; `docsgpt up --dir` or `DOCSGPT_HOME` choose another folder.
 
 <Callout type="info">
   To read the script before running it, download it first: `curl -fsSL https://docs.ac/install -o install.sh`, then `bash install.sh`. On Windows: `irm https://docs.ac/install.ps1 -OutFile install.ps1`, then `.\install.ps1`.

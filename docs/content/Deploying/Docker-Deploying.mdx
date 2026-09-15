@@ -24,9 +24,16 @@ you. It needs Docker with Compose 2.24 or newer. The installer gets
 [uv](https://docs.astral.sh/uv/), installs the package with it and runs
 `docsgpt up`:
 
+macOS and Linux:
+
 ```bash
-curl -fsSL https://docs.ac/install | bash      # macOS and Linux
-irm https://docs.ac/install.ps1 | iex          # Windows (PowerShell)
+curl -fsSL https://docs.ac/install | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://docs.ac/install.ps1 | iex
 ```
 
 Both scripts are attached to every [release](https://github.com/arc53/DocsGPT/releases)

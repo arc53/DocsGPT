@@ -47,6 +47,20 @@ main() {
       die "curl or wget is needed to download $1"
     fi
   }
+  # run_downloaded URL COMMAND...: save URL to a file, then run COMMAND with the file as its last
+  # argument. A transfer cut short fails before anything runs.
+  run_downloaded() {
+    local url="$1" script status=0
+    shift
+    script="$(mktemp)"
+    if ! download "$url" >"$script"; then
+      rm -f "$script"
+      die "could not download $url"
+    fi
+    "$@" "$script" || status=$?
+    rm -f "$script"
+    return "$status"
+  }
   # version_ge A B: A >= B for dotted version numbers.
   version_ge() {
     local -a left right
@@ -82,7 +96,7 @@ main() {
         sudo="sudo"
       fi
       say "Installing Docker"
-      download https://get.docker.com | $sudo sh
+      run_downloaded https://get.docker.com $sudo sh
       $sudo systemctl enable --now docker >/dev/null 2>&1 || true
       if [ -n "$sudo" ]; then
         $sudo usermod -aG docker "$(id -un)"
@@ -108,7 +122,7 @@ main() {
   if [ -z "$uv" ]; then
     local uv_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
     say "Installing uv $UV_VERSION into $uv_dir"
-    download "https://astral.sh/uv/$UV_VERSION/install.sh" | env UV_INSTALL_DIR="$uv_dir" UV_NO_MODIFY_PATH=1 UV_PRINT_QUIET=1 sh
+    run_downloaded "https://astral.sh/uv/$UV_VERSION/install.sh" env UV_INSTALL_DIR="$uv_dir" UV_NO_MODIFY_PATH=1 UV_PRINT_QUIET=1 sh
     uv="$uv_dir/uv"
     [ -x "$uv" ] || die "uv did not install into $uv_dir"
   fi
@@ -117,7 +131,7 @@ main() {
     die "set DOCSGPT_VERSION or DOCSGPT_PACKAGE, not both"
   fi
   if [ -n "${DOCSGPT_PACKAGE:-}" ]; then
-    say "Installing docsgpt from $DOCSGPT_PACKAGE"
+    say "Installing docsgpt from DOCSGPT_PACKAGE"
     "$uv" tool install --reinstall --python 3.12 "$DOCSGPT_PACKAGE"
   elif [ -n "${DOCSGPT_VERSION:-}" ]; then
     say "Installing docsgpt $DOCSGPT_VERSION"
