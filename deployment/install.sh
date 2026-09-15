@@ -96,7 +96,9 @@ main() {
   # uv installs and upgrades the package, and brings Python 3.12 when the system has none.
   local uv="" candidate found
   for candidate in "$(command -v uv 2>/dev/null || true)" "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
-    [ -n "$candidate" ] && [ -x "$candidate" ] || continue
+    if [ -z "$candidate" ] || [ ! -x "$candidate" ]; then
+      continue
+    fi
     found="$("$candidate" --version 2>/dev/null | awk '{print $2}')" || continue
     if [ -n "$found" ] && version_ge "$found" "$UV_MIN_VERSION"; then
       uv="$candidate"
