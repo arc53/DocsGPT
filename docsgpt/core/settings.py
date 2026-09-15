@@ -57,7 +57,8 @@ class Settings(BaseSettings):
     # Intra-op threads for the local ONNX runner; None = every core. It scales sub-linearly,
     # so several single-threaded workers beat one many-threaded process on the same cores.
     EMBEDDINGS_THREADS: Optional[int] = None
-    EMBEDDINGS_CACHE_DIR: Optional[str] = None  # where FastEmbed caches model artifacts
+    # Embedding models and their tokenizers. Persistent by default: FastEmbed's own default is the temp dir.
+    EMBEDDINGS_CACHE_DIR: Optional[str] = Field(default_factory=lambda: str(home_dir() / "models"))
     # Pooling ("cls"/"mean") and L2 normalisation. Read from the model's own repository;
     # set these only for a repository that declares neither, or to override what it declares.
     EMBEDDINGS_POOLING: Optional[str] = None
@@ -360,9 +361,9 @@ class Settings(BaseSettings):
     # Encryption settings
     ENCRYPTION_SECRET_KEY: str = "default-docsgpt-encryption-key"
 
-    TTS_PROVIDER: str = "google_tts"  # google_tts or elevenlabs
+    TTS_PROVIDER: str = "google_tts"  # google_tts, elevenlabs, or none to switch text-to-speech off
     ELEVENLABS_API_KEY: Optional[str] = None
-    STT_PROVIDER: str = "openai"  # openai or faster_whisper
+    STT_PROVIDER: str = "openai"  # openai, faster_whisper, or none to switch speech-to-text off
     OPENAI_STT_MODEL: str = "gpt-4o-mini-transcribe"
     STT_LANGUAGE: Optional[str] = None
     STT_MAX_FILE_SIZE_MB: int = 50

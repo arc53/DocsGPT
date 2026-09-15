@@ -1,5 +1,7 @@
 """Local embeddings run through FastEmbed, configured from the model registry."""
 
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -8,6 +10,9 @@ import pytest
 from docsgpt.vectorstore import embeddings_local
 from docsgpt.vectorstore.embeddings_local import EmbeddingsWrapper
 from docsgpt.vectorstore.model_registry import GRANITE_97M, MPNET
+
+# The autouse fixture below replaces this for every test; keep the real one.
+_READ_REPO_JSON = embeddings_local._read_repo_json
 
 
 @pytest.fixture(autouse=True)
@@ -141,6 +146,23 @@ class TestSettingsPassthrough:
         with patch.object(embeddings_local.settings, "EMBEDDINGS_CACHE_DIR", "/models", create=True):
             EmbeddingsWrapper(MPNET.name)
         assert text_embedding.call_args.kwargs["cache_dir"] == "/models"
+
+    def test_repo_metadata_reads_the_embedding_model_cache(self, monkeypatch, tmp_path):
+        """Pooling metadata lives beside the model, not in a second hub cache."""
+        config = tmp_path / "config.json"
+        config.write_text('{"pooling_mode_cls_token": true}')
+        calls = []
+
+        def fake_download(repo_id, filename, local_files_only=False, cache_dir=None):
+            calls.append((local_files_only, cache_dir))
+            return str(config)
+
+        fake_hub = types.ModuleType("huggingface_hub")
+        fake_hub.hf_hub_download = fake_download
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+        monkeypatch.setattr(embeddings_local.settings, "EMBEDDINGS_CACHE_DIR", "/models")
+        assert _READ_REPO_JSON("org/model", "1_Pooling/config.json") == {"pooling_mode_cls_token": True}
+        assert calls == [(True, "/models")]
 
 
 class TestEmbedding:

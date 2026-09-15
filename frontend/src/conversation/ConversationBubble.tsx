@@ -27,6 +27,7 @@ import {
   selectChunks,
   selectSelectedDocs,
   selectToken,
+  selectTtsAvailable,
 } from '../preferences/preferenceSlice';
 import { isToolCallRunning } from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
@@ -110,6 +111,7 @@ const ConversationBubble = forwardRef<
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
+  const ttsAvailable = useSelector(selectTtsAvailable);
   const [isEditClicked, setIsEditClicked] = useState(false);
   const [editInputBox, setEditInputBox] = useState<string>('');
   const messageRef = useRef<HTMLDivElement>(null);
@@ -554,9 +556,11 @@ const ConversationBubble = forwardRef<
                         </Button>
                       </div>
                     )}
-                    <div className="relative block items-center justify-center">
-                      <SpeakButton text={message} />
-                    </div>
+                    {ttsAvailable && (
+                      <div className="relative block items-center justify-center">
+                        <SpeakButton text={message} />
+                      </div>
+                    )}
                     {handleFeedback && (
                       <>
                         <div className="relative flex items-center justify-center">

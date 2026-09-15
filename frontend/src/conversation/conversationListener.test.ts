@@ -81,6 +81,8 @@ const makeStore = (
     agentFolders: null,
     roles: [],
     rolesResolved: false,
+    ttsAvailable: true,
+    sttAvailable: true,
   };
   const conversation: ConversationState = {
     queries: [],

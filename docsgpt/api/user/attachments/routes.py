@@ -345,6 +345,15 @@ class StoreAttachment(Resource):
             return make_response(jsonify({"success": False, "error": "Failed to store attachment"}), 400)
 
 
+_STT_DISABLED_MESSAGE = "Speech-to-text is disabled on this server."
+_TTS_DISABLED_MESSAGE = "Text-to-speech is disabled on this server."
+
+
+def _feature_disabled(message: str):
+    """404 for a speech feature whose provider is set to ``none``."""
+    return make_response(jsonify({"success": False, "message": message}), 404)
+
+
 @attachments_ns.route("/stt")
 class SpeechToText(Resource):
     @api.expect(
@@ -368,6 +377,8 @@ class SpeechToText(Resource):
                 jsonify({"success": False, "message": "Authentication required"}),
                 401,
             )
+        if not STTCreator.is_enabled(settings.STT_PROVIDER):
+            return _feature_disabled(_STT_DISABLED_MESSAGE)
 
         file = request.files.get("file")
         if not file or file.filename == "":
@@ -440,6 +451,8 @@ class LiveSpeechToTextStart(Resource):
                 jsonify({"success": False, "message": "Authentication required"}),
                 401,
             )
+        if not STTCreator.is_enabled(settings.STT_PROVIDER):
+            return _feature_disabled(_STT_DISABLED_MESSAGE)
 
         redis_client = _require_live_stt_redis()
         if hasattr(redis_client, "status_code"):
@@ -501,6 +514,8 @@ class LiveSpeechToTextChunk(Resource):
                 jsonify({"success": False, "message": "Authentication required"}),
                 401,
             )
+        if not STTCreator.is_enabled(settings.STT_PROVIDER):
+            return _feature_disabled(_STT_DISABLED_MESSAGE)
 
         redis_client = _require_live_stt_redis()
         if hasattr(redis_client, "status_code"):
@@ -817,6 +832,8 @@ class TextToSpeech(Resource):
     @api.expect(tts_model)
     @api.doc(description="Synthesize audio speech from text")
     def post(self):
+        if not TTSCreator.is_enabled(settings.TTS_PROVIDER):
+            return _feature_disabled(_TTS_DISABLED_MESSAGE)
         data = request.get_json()
         text = data["text"]
         try:

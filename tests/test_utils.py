@@ -40,6 +40,47 @@ class TestGetEncoding:
         enc2 = get_encoding()
         assert enc1 is enc2
 
+    @pytest.mark.unit
+    def test_loads_the_packaged_encoding_without_network(self, monkeypatch):
+        """Token counting runs on every chat; it must never download the encoding."""
+        import tiktoken
+        import tiktoken.load
+
+        from docsgpt import utils
+
+        def no_download(*args, **kwargs):
+            raise AssertionError("tiktoken tried to fetch cl100k_base")
+
+        monkeypatch.setattr(utils, "_encoding", None)
+        monkeypatch.setattr(tiktoken.load, "read_file", no_download)
+        monkeypatch.setattr(tiktoken, "get_encoding", no_download)
+        assert utils.get_encoding().encode("hello world") == [15339, 1917]
+
+    @pytest.mark.unit
+    def test_packaged_encoding_matches_the_tiktoken_definition(self, monkeypatch):
+        from tiktoken_ext import openai_public
+
+        from docsgpt import utils
+
+        monkeypatch.setattr(utils, "_encoding", None)
+        monkeypatch.setattr(openai_public, "load_tiktoken_bpe", lambda *args, **kwargs: {})
+        reference = openai_public.cl100k_base()
+        encoding = utils.get_encoding()
+        assert encoding.name == reference["name"]
+        assert encoding._pat_str == reference["pat_str"]
+        assert encoding._special_tokens == reference["special_tokens"]
+
+    @pytest.mark.unit
+    def test_corrupt_packaged_encoding_is_rejected(self, monkeypatch, tmp_path):
+        from docsgpt import utils
+
+        corrupt = tmp_path / "cl100k_base.tiktoken"
+        corrupt.write_bytes(b"IQ== 0\n")
+        monkeypatch.setattr(utils, "_encoding", None)
+        monkeypatch.setattr(utils, "_CL100K_BASE_FILE", corrupt)
+        with pytest.raises(ValueError, match="cl100k_base"):
+            utils.get_encoding()
+
 
 class TestGetGptModel:
 

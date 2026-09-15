@@ -78,7 +78,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
 
 3.  **Embedding Model (no action needed):**
 
-    The embedding model is downloaded automatically the first time you ingest a document, and cached for subsequent runs. Set `EMBEDDINGS_CACHE_DIR` to control where.
+    The embedding model is downloaded automatically the first time you ingest a document, and cached under `models/` in the repository root for subsequent runs. Set `EMBEDDINGS_CACHE_DIR` to use another directory.
 
     For an offline or air-gapped machine, fetch it ahead of time instead:
 

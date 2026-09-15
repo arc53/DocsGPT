@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Dict, Union
 
 from docsgpt.core.settings import settings
-from docsgpt.parser.file.base_parser import BaseParser
+from docsgpt.parser.file.base_parser import BaseParser, DocumentParseError
 from docsgpt.stt.stt_creator import STTCreator
 from docsgpt.stt.upload_limits import enforce_audio_file_size_limit
 
@@ -17,6 +17,10 @@ class AudioParser(BaseParser):
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, list[str]]:
         _ = errors
+        if not STTCreator.is_enabled(settings.STT_PROVIDER):
+            raise DocumentParseError(
+                f"{file.name}: audio files need speech-to-text, which is disabled (STT_PROVIDER=none)."
+            )
         try:
             enforce_audio_file_size_limit(file.stat().st_size)
         except OSError:

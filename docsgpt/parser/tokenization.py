@@ -217,19 +217,21 @@ class HuggingFaceCounter(TokenCounter):
 
 
 def _tokenizer_file(repo: str) -> str:
-    """Path to ``repo``'s ``tokenizer.json``, from the hub cache when present.
+    """Path to ``repo``'s ``tokenizer.json``, from the embedding model cache when present.
 
-    A warmed cache (the Docker image bakes the default models) answers without
-    touching the network. ``hf_hub_download`` would otherwise revalidate the
-    revision with a HEAD request on every process start, and stall for the
-    etag timeout on a host that cannot reach huggingface.co.
+    FastEmbed's snapshot of the repository in ``EMBEDDINGS_CACHE_DIR`` already
+    holds the file, so a warmed cache answers without touching the network.
+    ``hf_hub_download`` would otherwise revalidate the revision with a HEAD
+    request on every process start, and stall for the etag timeout on a host
+    that cannot reach huggingface.co.
     """
     from huggingface_hub import hf_hub_download
 
+    cache_dir = settings.EMBEDDINGS_CACHE_DIR or None
     try:
-        return hf_hub_download(repo, "tokenizer.json", local_files_only=True)
+        return hf_hub_download(repo, "tokenizer.json", local_files_only=True, cache_dir=cache_dir)
     except Exception:  # noqa: BLE001 -- not cached: fetch it
-        return hf_hub_download(repo, "tokenizer.json")
+        return hf_hub_download(repo, "tokenizer.json", cache_dir=cache_dir)
 
 
 def _load_hf_counter(repo: str) -> Optional[HuggingFaceCounter]:
