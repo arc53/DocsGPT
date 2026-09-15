@@ -19,10 +19,24 @@ DEFAULT_PORT = 7091
 
 
 def _announce_home() -> None:
-    """Say where runtime data and the env file come from; the API and the worker must agree."""
-    from docsgpt.core.paths import env_file, home_dir
+    """Create the data home and say where data and the env file come from; the API and the worker must agree."""
+    from pathlib import Path
 
-    print(f"docsgpt: data home {home_dir()} (env file {env_file()})", file=sys.stderr)
+    from docsgpt.core import paths
+
+    home = paths.home_dir()
+    home.mkdir(parents=True, exist_ok=True)
+    env = paths.env_file()
+    print(f"docsgpt: data home {home} (env file {env})", file=sys.stderr)
+    # Up to 0.20 an installed package used the working directory as its home.
+    chosen = os.environ.get(paths.HOME_ENV) or os.environ.get(paths.ENV_FILE_ENV) or paths.checkout_root()
+    stray = Path.cwd() / ".env"
+    if not chosen and stray.is_file() and stray.resolve() != env.resolve():
+        print(
+            f"docsgpt: {stray} is not used; settings come from {env}. "
+            f"Move the file there, or set DOCSGPT_HOME={Path.cwd()} to keep using this directory.",
+            file=sys.stderr,
+        )
 
 
 def _gunicorn_options(host: str, port: int, workers: int) -> dict:

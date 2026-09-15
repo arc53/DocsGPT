@@ -34,6 +34,57 @@ class TestTopLevel:
         subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[1], check=True)
 
 
+class TestHome:
+    @staticmethod
+    def _installed(monkeypatch, tmp_path):
+        """An installed package (no checkout) with the default home under tmp_path."""
+        from docsgpt.core import paths
+
+        monkeypatch.delenv(paths.HOME_ENV, raising=False)
+        monkeypatch.delenv(paths.ENV_FILE_ENV, raising=False)
+        monkeypatch.setattr(paths, "checkout_root", lambda: None)
+        monkeypatch.setattr(paths, "default_home", lambda: tmp_path / "home")
+        return tmp_path / "home"
+
+    def test_the_home_is_created_and_announced(self, monkeypatch, tmp_path, capsys):
+        home = self._installed(monkeypatch, tmp_path)
+        monkeypatch.chdir(tmp_path)
+        cli._announce_home()
+        assert home.is_dir()
+        assert f"data home {home}" in capsys.readouterr().err
+
+    def test_an_env_file_left_in_the_working_directory_is_pointed_out(self, monkeypatch, tmp_path, capsys):
+        """Up to 0.20 an installed package read .env from the working directory."""
+        home = self._installed(monkeypatch, tmp_path)
+        work = tmp_path / "work"
+        work.mkdir()
+        (work / ".env").write_text("LLM_PROVIDER=openai\n")
+        monkeypatch.chdir(work)
+        cli._announce_home()
+        err = capsys.readouterr().err
+        assert f"{work / '.env'} is not used" in err
+        assert f"DOCSGPT_HOME={work}" in err
+        assert str(home) in err
+
+    def test_no_warning_when_the_home_is_chosen_explicitly(self, monkeypatch, tmp_path, capsys):
+        from docsgpt.core import paths
+
+        self._installed(monkeypatch, tmp_path)
+        (tmp_path / ".env").write_text("LLM_PROVIDER=openai\n")
+        monkeypatch.setenv(paths.HOME_ENV, str(tmp_path / "elsewhere"))
+        monkeypatch.chdir(tmp_path)
+        cli._announce_home()
+        assert "is not used" not in capsys.readouterr().err
+
+    def test_no_warning_when_the_working_directory_is_the_home(self, monkeypatch, tmp_path, capsys):
+        home = self._installed(monkeypatch, tmp_path)
+        home.mkdir()
+        (home / ".env").write_text("LLM_PROVIDER=openai\n")
+        monkeypatch.chdir(home)
+        cli._announce_home()
+        assert "is not used" not in capsys.readouterr().err
+
+
 class TestApi:
     def test_gunicorn_runs_with_the_image_settings_and_leaves_argv_alone(self, monkeypatch, capsys):
         application = MagicMock()
