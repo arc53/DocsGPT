@@ -13,6 +13,22 @@ request, and [Upgrading](/upgrading) covers the steps an existing deployment has
 
 ## Unreleased
 
+### `docsgpt up` runs DocsGPT on Docker
+
+The Python package now sets up and runs the Docker stack: `uv tool install docsgpt`, then
+`docsgpt up`. The first run asks who should reach DocsGPT (this computer, the network with an
+access token, or a domain with HTTPS) and which model provider to use, writes the settings and
+secrets to `~/.docsgpt/server/.env`, and starts the images of the installed version. `docsgpt status`,
+`logs`, `token`, `upgrade`, `down` and `uninstall` manage it afterwards. See
+[Run it with `docsgpt up`](/Deploying/Docker-Deploying#run-it-with-docsgpt-up).
+
+### An installed package keeps its data in `~/.docsgpt/server`
+
+Outside a source checkout, the data home (`.env`, uploads, indexes, models) was the directory
+the command ran from, so starting `docsgpt api` from another folder silently used other
+settings. It is now `~/.docsgpt/server`, or `/opt/docsgpt` for root on Linux; `DOCSGPT_HOME`
+still overrides it. See [Upgrading](/upgrading#pip-installs-data-home-moved).
+
 ### The standalone Docker stack runs on one port
 
 The `arc53/docsgpt` image now serves the web UI next to the API, the way `docsgpt api` does from
