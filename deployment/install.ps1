@@ -87,7 +87,8 @@ function Install-DocsGPT {
 
     & $docsgpt up @UpArguments
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "docsgpt up exited with code $LASTEXITCODE. Run it again after fixing the problem above: docsgpt up" -ErrorAction Continue
+        # throw, not Write-Error: the caller (and any automation) must see this fail.
+        throw "docsgpt up exited with code $LASTEXITCODE. Fix the problem above and run it again: docsgpt up"
     }
 }
 
