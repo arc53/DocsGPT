@@ -1,0 +1,384 @@
+---
+title: Agent Guardrails
+description: Scan user input, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection, groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, instance floor and API reference.
+---
+
+import { Callout, Tabs } from 'nextra/components';
+
+# Agent Guardrails 🛡️
+
+Guardrails are per-agent content controls that run **inside** an agent turn, at the points where text changes hands: when the user's question arrives, when retrieved documents are about to reach the model, when a tool returns, and when the answer is on its way out. Each control pairs a **check** (a detector) with a **stage** (where it runs) and an **action** (what happens on a match).
+
+They apply everywhere the agent runs — the chat UI, the [Agent API](/Agents/api), the [OpenAI-compatible API](/Agents/openai-compatible), [webhooks](/Agents/webhooks), scheduled runs and the embeddable widget — and every decision is written to an audit journal you can review from the agent's logs page.
+
+<Callout type="info" emoji="ℹ️">
+Guardrails are a defence-in-depth layer, not a replacement for a well-written prompt or for tool approvals. The pattern and heuristic checks are deterministic and fast; the LLM judge is semantic but costs a model call. Start in **monitor mode**, read the journal, then promote to enforcement.
+</Callout>
+
+## How a turn is scanned
+
+An agent turn passes through four intervention points. A control attached to a stage sees the text at that stage and can leave it alone, mask parts of it, or stop the turn.
+
+| Stage | What is scanned | `redact` does | `block` does |
+| --- | --- | --- | --- |
+| `input` | The user's question, before anything is sent to the model | The model and the stored conversation both receive the masked question | The turn ends immediately with the block message; nothing reaches the model |
+| `retrieval` | The retrieved document chunks, formatted as they will appear in the prompt | Masked in the prompt **and** in the sources shown to the user and stored with the conversation | The model is told the sources were withheld by policy; the user sees `[Withheld by a content policy.]` in place of each source |
+| `tool_result` | Each tool's result string, before it fans out to the model, the UI and the journal | The masked result is what the model and the user see | The result is replaced with a note telling the model it could not be used and must not speculate about its contents |
+| `output` | The answer as it streams from the model | Masked **before** the text leaves the server | The stream stops with the block message; any tokens already delivered are retracted from the client and the stored message |
+
+A few details worth knowing:
+
+- **Input redaction is what gets stored.** If a PII control redacts an email address in the question, the conversation history holds the redacted version. The raw text never lands in the database.
+- **Retrieval scanning covers custom prompts too.** If your prompt template interpolates documents itself (see [Customising prompts](/Guides/Customising-prompts)), the rendered documents are still scanned and the verdict is patched back into the prompt.
+- **Structured output is scanned whole.** When an agent has a JSON schema, redacting mid-token would produce invalid JSON, so the complete document is buffered and scanned once.
+- **Output blocks after streaming has begun are retractions.** Tokens on the wire cannot be recalled, so the server tells the client to clear the partial answer, replaces the persisted message with the block message, and clears any reasoning trace. On a reload the user sees only the block message.
+
+### Streaming without leaks
+
+Output controls run *before* a token is released. Deterministic checks hold a small lookback window (sized from the longest match any active check can produce, up to 8 KB for a PEM private key) and re-scan `held + new` on every chunk, so a card number or API key split across two stream deltas is still caught. Redacted spans are never cut in half: the release point is pulled back so a match is either fully masked or fully held.
+
+Remote checks (the LLM judge) cannot afford a call per token, so the guard accumulates text to a sentence boundary (around 400 characters) and evaluates whole segments. A stream that never produces a sentence boundary is force-released past a 16 KB ceiling so it cannot stall forever.
+
+The **groundedness** check only makes sense over a finished answer, so it is deferred to the end of the stream. A `block` from it is therefore always a retraction.
+
+## Actions
+
+| Action | Effect | Available for |
+| --- | --- | --- |
+| `flag` | Record the decision in the journal and the turn's activity log. Nothing about the answer changes. | Every check |
+| `redact` | Replace each matched span with a mask and continue. | Checks that report spans: `pii`, `secrets`, `denylist`, `url` |
+| `block` | Stop the turn and return the agent's block message. | Every check |
+
+Within one stage the **most restrictive outcome wins**: if two controls match and one says block, the stage blocks. If several redact, all of their spans are masked, and overlapping spans are unioned so a short match can never leave part of a longer one in the clear.
+
+Redaction masks are check-specific: PII uses the entity label (`[EMAIL]`, `[CREDIT_CARD]`), secrets use `[REDACTED]`, banned terms use `***`, and disallowed links use `<url redacted>`.
+
+## Enforcement modes
+
+| Mode | Behaviour |
+| --- | --- |
+| `monitor_only` (default) | Every control runs, but every action is downgraded to `flag`. Nothing is changed or blocked; the journal shows what *would* have happened. Streamed answers pass through untouched and are scanned once at the end. |
+| `scan_all` | Actions are enforced as configured. |
+
+Monitor mode is the supported rollout path. Turn on the checks you want, run real traffic for a few days, look at the **Guardrail activity** panel for the control that is over-triggering, tune its settings, then switch to `scan_all`.
+
+## Built-in checks
+
+| Key | Label | Stages | Redacts | Remote | Typical latency |
+| --- | --- | --- | --- | --- | --- |
+| `pii` | Personal information | input, retrieval, tool_result, output | Yes | No | ~2 ms |
+| `secrets` | Credentials and secrets | input, retrieval, tool_result, output | Yes | No | ~2 ms |
+| `denylist` | Banned terms | input, retrieval, tool_result, output | Yes | No | ~1 ms |
+| `url` | Link policy | input, retrieval, tool_result, output | Yes | No | ~2 ms |
+| `injection` | Prompt injection (heuristic) | input, retrieval, tool_result | No | No | ~3 ms |
+| `groundedness` | Grounding in sources | output | No | No | ~5 ms |
+| `policy` | Custom policy (LLM judge) | input, retrieval, tool_result, output | No | Yes | ~1 s |
+
+The live catalog for your instance, including which checks the operator has allowed, is served by `GET /api/guardrails/catalog`.
+
+### `pii` — Personal information
+
+Pattern matching for structured identifiers. Reliable for the formats below; it does **not** find names or free-text addresses.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `entities` | `["EMAIL", "PHONE", "US_SSN", "CREDIT_CARD"]` | Non-empty subset of `EMAIL`, `PHONE`, `US_SSN`, `CREDIT_CARD`, `IPV4`, `IBAN` |
+
+Card numbers must be 13–19 digits and pass a Luhn check before they count, which keeps order numbers and long IDs from matching. Each match is reported under its entity name, so the journal tells you *which* kind of PII appeared.
+
+### `secrets` — Credentials and secrets
+
+No settings. Detects by known formats: AWS access keys, GitHub tokens, OpenAI and Anthropic keys, Slack tokens, Google API keys, JWTs, PEM private-key blocks (the whole armored block, not just the header) and generic `password=` / `api_key:` style assignments where only the value is masked.
+
+### `denylist` — Banned terms
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `terms` | — (required) | 1–500 terms, each ≤ 128 characters |
+| `match` | `"word"` | `"word"` matches whole words only; `"substring"` matches anywhere |
+| `case_sensitive` | `false` | |
+
+Useful for competitor names, internal codenames, or phrases you never want an agent to repeat.
+
+### `url` — Link policy
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `allow_hosts` | `[]` | Up to 200 hosts. When non-empty, any link whose host is not in the list (or a subdomain of one) is disallowed |
+| `block_hosts` | `[]` | Up to 200 hosts. Links to these hosts (or their subdomains) are always disallowed |
+
+At least one of the two lists is required. Hosts are matched against the parsed URL authority, so `https://allowed.com@evil.tld/` resolves to `evil.tld`. A URL that cannot be parsed is treated as disallowed.
+
+### `injection` — Prompt injection (heuristic)
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `min_hits` | `1` | 1–10. Number of injection-like phrases needed before the check triggers |
+
+Matches the phrasings that appear in real indirect-injection payloads: instruction overrides ("ignore previous instructions"), role hijacks ("you are now…"), system-prompt exfiltration ("reveal your instructions"), fake conversation turns (`system:` at the start of a line) and tool coercion ("you must immediately call the tool…"). It is most valuable at the `retrieval` and `tool_result` stages, where text an attacker may have planted arrives with the user's authority.
+
+<Callout type="warning" emoji="⚠️">
+This check catches unobfuscated payloads only. A motivated attacker can evade it trivially. Pair it with the `policy` judge if you need semantic coverage.
+</Callout>
+
+### `groundedness` — Grounding in sources
+
+Output-only. Measures the lexical overlap between the answer and the retrieved sources using 4-word shingles and flags answers that fall below a threshold.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `min_overlap` | `0.3` | 0–1. Fraction of the answer's shingles that must appear in the sources |
+| `min_words` | `25` | 1–1000. Shorter answers are skipped |
+| `require_retrieval` | `true` | When `true`, an answer produced with **no** retrieved sources triggers with category `NO_SOURCES` |
+
+Lexical overlap is a proxy for support, not entailment. Keep this on `flag` until you have tuned the threshold against real traffic. When the sources contain no comparable text the check reports *not evaluated* rather than a verdict.
+
+### `policy` — Custom policy (LLM judge)
+
+Write a policy in plain language — a topic to stay off, a tone to hold, a rule to enforce — and a judge model decides whether the content breaks it.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `policy` | — (required) | 10–2500 characters of policy text |
+| `confidence_threshold` | `0.7` | 0–1. The judge must both report a violation **and** be at least this confident |
+| `max_chars` | `8000` | 200–100000. Only the first `max_chars` of the content are sent to the judge |
+| `model` | `null` | Optional model id override for this control |
+
+The judge is the instance's own model provider, so a self-hosted deployment gets a semantic guardrail with no extra vendor account. The model used is, in order: the control's `model`, then the instance-wide `GUARDRAILS_JUDGE_MODEL`, then the model the agent is answering with. Judge calls are tagged `guardrail` in token usage so their cost shows up separately from the agent's own generation.
+
+The content is passed to the judge as untrusted data inside a delimited envelope, with fences and the envelope's own tags neutralised, and the judge is instructed to ignore any directions it finds inside. If the judge times out, errors, or returns something unparsable, the control reports *not evaluated* and the fail-open policy below decides what happens.
+
+## When a check cannot run
+
+A timeout, a provider error, or a missing judge model is **not** a clean pass. The control reports `not_evaluated`, the journal records it, and the agent's failure policy applies:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `fail_open` | `true` | Let the turn continue when a check could not run. Set to `false` to block the turn instead whenever a `block` **or** `redact` control could not run — fail-closed exists so that unscanned text never reaches the user, and a broken PII detector would otherwise release exactly what it was there to remove |
+| `timeout_ms` | `2000` | 100–60000. Deadline for the remote checks at one stage. Local pattern checks run inline and are not subject to it |
+
+Remote controls at one stage run in parallel under a single deadline. At most 8 remote controls run per stage; any beyond that are reported as *not evaluated*.
+
+## Configuring guardrails in the UI
+
+Open the agent in the builder and expand the **Guardrails** section.
+
+1. **Enable guardrails.** Nothing runs until this is on.
+2. **Enforcement mode.** Leave it on *Monitor only* while you calibrate; switch to *Enforce everywhere* when the journal looks right.
+3. **Checks.** Each check is a card with one chip per supported stage. Turning a chip on adds a control with the `flag` action; use the action selector on the chip to promote it to `redact` or `block`, and **Configure** to edit its settings. The card shows the approximate latency the check adds.
+4. **Blocked-response message.** Up to 500 characters, shown to the user whenever a control blocks. Defaults to *"Sorry, I can't help with that request."*
+5. **Continue if a check fails** and **Check timeout (ms)** map to `fail_open` and `timeout_ms`.
+
+Checks that cannot run without settings (`denylist`, `url`, `policy`, and `pii` with no entities selected) are marked *Not configured* and block saving until they are filled in, so a half-configured control can never be published as if it were protecting you.
+
+<Callout type="info" emoji="ℹ️">
+Guardrails are the **agent owner's** policy. Team members with edit access can see the configuration but cannot change it — an editor who could clear a control would silently strip protection from everyone using the agent. Controls required by the instance floor (below) appear locked and cannot be removed.
+</Callout>
+
+Guardrails also apply to a **draft** agent in the builder preview, which is the natural place to try a control before publishing.
+
+## Configuring guardrails via the API
+
+Guardrails live under `guardrails` in the agent's `config` field. Pass `config` as a JSON string when creating or updating an agent through `POST /api/create_agent` or `PUT /api/update_agent/<agent_id>` (the same multipart form the builder uses). `update_agent` replaces the whole `config`; send the complete object each time.
+
+```json
+{
+  "guardrails": {
+    "enabled": true,
+    "mode": "scan_all",
+    "fail_open": true,
+    "timeout_ms": 2000,
+    "block_message": "Sorry, I can't help with that request.",
+    "controls": [
+      { "check": "secrets", "stage": "output", "action": "redact" },
+      { "check": "pii", "stage": "input", "action": "redact",
+        "settings": { "entities": ["EMAIL", "PHONE", "CREDIT_CARD"] } },
+      { "check": "injection", "stage": "retrieval", "action": "block",
+        "settings": { "min_hits": 1 } },
+      { "check": "denylist", "stage": "output", "action": "redact",
+        "settings": { "terms": ["Project Nimbus", "Acme Corp"], "match": "word" } },
+      { "check": "url", "stage": "output", "action": "redact",
+        "settings": { "allow_hosts": ["docs.example.com", "example.com"] } },
+      { "check": "policy", "stage": "output", "action": "block",
+        "settings": {
+          "policy": "Never give legal, medical or investment advice. Never quote pricing that is not in the retrieved sources.",
+          "confidence_threshold": 0.8
+        } },
+      { "check": "groundedness", "stage": "output", "action": "flag",
+        "settings": { "min_overlap": 0.3, "min_words": 25 } }
+    ]
+  }
+}
+```
+
+<Tabs items={['cURL', 'Python']}>
+  <Tabs.Tab>
+    ```bash
+    curl -X PUT http://localhost:7091/api/update_agent/<agent_id> \
+      -H "Authorization: Bearer <token>" \
+      -F 'config={"guardrails":{"enabled":true,"mode":"monitor_only","controls":[{"check":"secrets","stage":"output","action":"redact"}]}}'
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```python
+    import json, requests
+
+    config = {"guardrails": {
+        "enabled": True,
+        "mode": "monitor_only",
+        "controls": [{"check": "secrets", "stage": "output", "action": "redact"}],
+    }}
+    requests.put(
+        "http://localhost:7091/api/update_agent/<agent_id>",
+        headers={"Authorization": "Bearer <token>"},
+        data={"config": json.dumps(config)},
+    ).raise_for_status()
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+Each control accepts `check`, `stage`, `action` (default `flag`), `enabled` (default `true`) and `settings`. Omitted top-level fields take the defaults shown above; `enabled` defaults to `false`.
+
+Writes are validated **strictly**. The request is rejected with HTTP 400 and the message *"Invalid config: one or more guardrail controls failed validation."* when:
+
+- a `check` is unknown, or is not allowed by the instance's `GUARDRAILS_CHECKS_ENABLED`;
+- a check is attached to a stage it does not support (for example `groundedness` at `input`);
+- `redact` is requested on a check that reports no spans (`injection`, `groundedness`, `policy`);
+- a control's settings are out of range, or a required setting is missing;
+- the same `(check, stage)` pair appears twice, or there are more than 50 controls;
+- `mode`, `timeout_ms` or `block_message` is out of bounds.
+
+Reads are **lenient**: a stored control that has stopped validating (its check was disallowed by the operator, or removed in an upgrade) is dropped on its own and logged, and the remaining controls keep running. Agent export files carry `config`; on import an invalid guardrails block is dropped with a warning rather than failing the import.
+
+### What a blocked turn looks like to a client
+
+On the streaming endpoints, a block produces two final events. The first tells the client to retract anything it has rendered; the second carries the operator's block message as a user-facing error:
+
+```json
+{"type": "guardrail", "guardrail": {"stage": "output", "categories": ["AWS_ACCESS_KEY"], "checks": ["secrets"]}, "retract": true}
+{"type": "error", "error": "Sorry, I can't help with that request."}
+```
+
+The DocsGPT chat UI and the React widget handle both. For webhook and scheduled runs, the run is recorded with the block message and none of the blocked text is stored.
+
+## The audit journal
+
+Every control that **triggers**, and every control that **could not run**, writes a row to the `guardrail_events` table — in both enforcement modes, and for `flag` actions as well as `redact` and `block`. A streamed answer that re-matches the same span on every chunk produces one row, not one per chunk. Rows also flow into the turn's activity log under the `guardrail` component, so a decision is visible next to the tool calls and retrieval it belongs to.
+
+### Guardrail activity panel
+
+Open an agent's **Logs** page. Below the usage logs, the **Guardrail activity** panel shows, for a trailing window of 7, 30 or 90 days:
+
+- four totals — **Blocked**, **Redacted**, **Flagged** and **Not evaluated** — because "we refused to answer", "we masked something", "we noticed something" and "a check silently stopped working" are four different problems;
+- a per-check breakdown, so you can see which control is doing the firing;
+- the most recent 100 decisions, filterable by check and outcome, each with its stage, category (`EMAIL`, `INSTRUCTION_OVERRIDE`, `UNGROUNDED`, …) and the detector's one-line detail.
+
+### Journal API
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/guardrails/catalog` | Available checks (with stages, redaction support, latency hint and remote flag), stages, modes, allowed actions per stage, PII entity names, the default block message, and which `(check, stage)` pairs the instance floor claims. |
+| `GET /api/guardrails/events?agent_id=<id>&limit=100&offset=0` | Decisions for one agent, newest first. `limit` is capped at 500. |
+| `GET /api/guardrails/summary?days=30&agent_id=<id>` | Totals and a `breakdown` grouped by check, stage, action, outcome and category. `agent_id` is optional; `days` is capped at 365. |
+
+All three require a user token. Event rows are scoped to the **requesting user**: on a shared agent you see the decisions made on your own conversations, not other members'. Responses never include the agent's API key or the matched text.
+
+### What is stored, and for how long
+
+By default the journal records *that* something matched — check, stage, action, outcome, category, a score where the check produces one, a match count and a short detail string — but **not the text**. Pre-redaction text is exactly what a PII control exists to keep out of storage. Set `GUARDRAILS_STORE_SCANNED_TEXT=true` to persist a sample of the first matched value (up to 200 characters) alongside each row for forensic review; it is stored in the database but never returned by the API.
+
+Rows older than `GUARDRAILS_EVENTS_RETENTION_DAYS` (default 30) are purged by a daily Celery beat task. The `message_id` link is set to `NULL` rather than cascading when a conversation is deleted, so the compliance trail outlives the conversation it came from.
+
+## Instance settings
+
+Operators control guardrails deployment-wide with these settings:
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `GUARDRAILS_ENABLED` | `true` | Master switch. `false` disables every stage on every agent; the builder shows a notice explaining that nothing configured will run. |
+| `GUARDRAILS_CHECKS_ENABLED` | `[]` | Allowlist of check keys. Empty means every registered check. A disallowed check cannot be saved through the API, and existing controls that use it are dropped on read. |
+| `GUARDRAILS_FLOOR` | `{}` | A guardrails config fragment every agent inherits and cannot weaken. See below. |
+| `GUARDRAILS_JUDGE_MODEL` | unset | Model id for `policy` controls that do not set their own `model`. Unset reuses the agent's model. |
+| `GUARDRAILS_STORE_SCANNED_TEXT` | `false` | Persist a sample of matched text with each journal row. |
+| `GUARDRAILS_EVENTS_RETENTION_DAYS` | `30` | Journal retention. Minimum 1. |
+
+List and dict settings are read from the environment as JSON, for example:
+
+```bash
+GUARDRAILS_CHECKS_ENABLED='["pii", "secrets", "denylist", "url", "injection", "groundedness"]'
+```
+
+<Callout type="info" emoji="ℹ️">
+Leaving `policy` out of `GUARDRAILS_CHECKS_ENABLED` is how an air-gapped or privacy-sensitive deployment guarantees that no user text is sent to a judge model, regardless of what agent owners configure.
+</Callout>
+
+### The instance floor
+
+`GUARDRAILS_FLOOR` lets an operator impose a minimum policy on every agent. It uses the same shape as an agent's `guardrails` object and **must include `"enabled": true`** — without it the floor parses but applies to nothing, and a warning is logged.
+
+```bash
+GUARDRAILS_FLOOR='{
+  "enabled": true,
+  "mode": "scan_all",
+  "fail_open": false,
+  "controls": [
+    {"check": "secrets", "stage": "output", "action": "redact"},
+    {"check": "secrets", "stage": "tool_result", "action": "redact"},
+    {"check": "injection", "stage": "retrieval", "action": "block"}
+  ]
+}'
+```
+
+The floor is merged into each agent's own configuration at run time. An agent may tighten, never loosen:
+
+- Guardrails are forced on for every agent, even one whose owner never enabled them.
+- If the floor's mode is `scan_all`, the merged mode is `scan_all`. Otherwise the agent's mode stands.
+- If the floor sets `fail_open: false`, the agent is fail-closed. The merged `timeout_ms` is the larger of the two.
+- Floor controls the agent does not define are added.
+- Where both define the same `(check, stage)`, the floor's **settings** are authoritative and the **stricter action** wins (`block` > `redact` > `flag`). The two settings dicts are deliberately not merged: adding to `denylist.terms` tightens, but adding to `url.allow_hosts` loosens, so an agent that could edit floor settings could always find a loosening edit. An agent that needs different settings attaches its own control at a stage the floor does not claim.
+
+In the builder, floor controls appear as active and locked. The catalog exposes only which `(check, stage)` pairs the floor claims and their action — the floor's settings (banned-term lists, policy prompts) stay server-side so they cannot be read and evaded by any authenticated user.
+
+The floor also applies to the individual AI Agent nodes inside a workflow, which do not otherwise carry per-agent controls (see below).
+
+## Scope and limitations
+
+- **Workflow agents** run the `input` stage with their own controls, but the AI Agent nodes inside the workflow run only the instance floor, not the parent agent's controls. Aggregate output guarding across a workflow is not yet wired.
+- **Pattern checks match formats, not meaning.** `pii` does not find names; `injection` misses obfuscated payloads; `groundedness` measures word overlap, not truth. Use `policy` where you need a semantic judgement, and keep an eye on the *Not evaluated* count when you do.
+- **Redaction is best-effort against structured identifiers.** A value that does not match a known format passes through. Treat `redact` as a safety net, not as a data-loss-prevention guarantee.
+- **Latency.** Local checks add low single-digit milliseconds. A `policy` control adds a model round trip per scanned segment, and on the `output` stage it holds the stream until each sentence boundary has been judged.
+
+## Extending: writing your own check
+
+Checks are plain Python classes registered with a small registry, mirroring how chunkers and retrievers are pluggable. Subclass `GuardrailCheck` from `docsgpt.guardrails`, declare the stages you support, implement `scan`, and register it:
+
+```python
+from docsgpt.guardrails import GuardrailCheck, GuardrailCreator, Stage
+from docsgpt.guardrails.types import CheckOutcome, Span
+
+
+class TicketIdCheck(GuardrailCheck):
+    name = "ticket_id"
+    label = "Internal ticket ids"
+    description = "Masks references to internal tracker tickets."
+    supported_stages = {Stage.OUTPUT, Stage.TOOL_RESULT}
+    supports_redaction = True       # scan() reports spans
+    latency_hint_ms = 1
+    max_match_chars = 16            # longest match; sizes the streaming window
+
+    def scan(self, text, stage, context):
+        import re
+        spans = [
+            Span(m.start(), m.end(), "TICKET_ID", replacement="[TICKET]")
+            for m in re.finditer(r"\bOPS-\d{3,6}\b", text)
+        ]
+        if not spans:
+            return CheckOutcome.clean()
+        return CheckOutcome.hit(categories=["TICKET_ID"], spans=spans,
+                                detail=f"{len(spans)} ticket id(s)")
+
+
+GuardrailCreator.register(TicketIdCheck.name, TicketIdCheck)
+```
+
+Override `validate_settings` to strictly validate and normalise per-control settings on write, set `remote = True` for anything that makes a network call (so it runs under the stage deadline), and set `requires_complete_text = True` if the verdict is only meaningful over a finished answer. `max_match_chars` must cover the longest span the check can report, or the streaming guard may release the tail of a match before scanning it. Once registered, the check appears in the catalog and the builder automatically.

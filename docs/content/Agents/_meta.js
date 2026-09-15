@@ -3,6 +3,10 @@ export default {
     "title": "🤖 Agent Basics",
     "href": "/Agents/basics"
   },
+  "guardrails": {
+    "title": "🛡️ Guardrails",
+    "href": "/Agents/guardrails"
+  },
   "api": {
     "title": "🔌 Agent API",
     "href": "/Agents/api"
