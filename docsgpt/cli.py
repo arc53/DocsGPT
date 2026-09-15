@@ -1,4 +1,5 @@
-"""The ``docsgpt`` command: run the API, the worker and the maintenance scripts.
+"""The ``docsgpt`` command: run the API, the worker and the maintenance scripts,
+or run and manage DocsGPT on Docker (``docsgpt up``).
 
 Every subcommand imports what it needs when it runs, so ``docsgpt --help``
 stays instant and does not touch the database.
@@ -153,6 +154,17 @@ def _migrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _deploy(name: str):
+    """A subcommand handler that imports ``docsgpt.deploy.commands`` only when it runs."""
+
+    def handler(args: argparse.Namespace, context=None) -> int:
+        from docsgpt.deploy import commands
+
+        return getattr(commands, name)(args, context)
+
+    return handler
+
+
 # Maintenance scripts keep their own argument parsers; the command hands
 # everything after the script name to them untouched (argparse would try to
 # interpret the options itself).
@@ -169,10 +181,69 @@ def _run_script(module: str, argv: list[str]) -> int:
     return int(importlib.import_module(f"docsgpt.scripts.{module}").main(argv) or 0)
 
 
+def _add_deploy_commands(commands) -> None:
+    """``docsgpt up`` and the commands that manage the Docker stack it runs."""
+    from docsgpt.deploy.stack import EXPOSURES, PROVIDERS
+
+    def stack_command(name: str, handler: str, help_text: str) -> argparse.ArgumentParser:
+        parser = commands.add_parser(name, help=help_text)
+        parser.add_argument("--dir", help="stack directory (default: DOCSGPT_HOME, else ~/.docsgpt/server)")
+        parser.set_defaults(func=_deploy(handler), deploy=True)
+        return parser
+
+    up = stack_command("up", "up", "install or update DocsGPT on Docker and start it")
+    up.add_argument("--expose", choices=EXPOSURES, help="who can reach it: local (default), network or domain")
+    up.add_argument("--domain", help="public domain served over HTTPS by Caddy (implies --expose domain)")
+    up.add_argument("--port", type=int, help="host port for the UI and API (default: 7091)")
+    up.add_argument("--provider", choices=list(PROVIDERS), help="model provider (default: the DocsGPT public API)")
+    up.add_argument("--api-key", help="the provider's API key (or set DOCSGPT_API_KEY)")
+    up.add_argument("--model", help="model name (required for openai-compatible)")
+    up.add_argument("--base-url", help="base URL of an OpenAI-compatible server")
+    docling = up.add_mutually_exclusive_group()
+    docling.add_argument("--docling", dest="docling", action="store_const", const=True,
+                         help="run the image with the docling parser engine and OCR (several GB larger)")
+    docling.add_argument("--no-docling", dest="docling", action="store_const", const=False,
+                         help="go back to the default image")
+    up.set_defaults(docling=None)
+    up.add_argument("--image-tag", help="image tag to run instead of this package's version, e.g. develop")
+    up.add_argument("-y", "--yes", action="store_true", help="ask nothing: use the flags, then the defaults")
+    up.add_argument("--reconfigure", action="store_true", help="ask the setup questions again")
+    up.add_argument("--adopt", action="store_true", help="take over a DocsGPT stack started from another folder")
+    up.add_argument("--no-open", action="store_true", help="do not open the browser after the first install")
+    up.add_argument("--timeout", type=int, default=300, help="seconds to wait for the API to answer (default: 300)")
+
+    stack_command("down", "down", "stop the Docker stack (data and settings stay)")
+    stack_command("status", "status", "show the stack's version, address, containers and health")
+
+    logs = stack_command("logs", "logs", "show the stack's logs")
+    logs.add_argument("-f", "--follow", action="store_true", help="keep printing new lines")
+    logs.add_argument("--tail", type=int, help="only the last N lines of each service")
+    logs.add_argument("services", nargs="*", help="services to show, e.g. backend worker")
+
+    stack_command("token", "token", "print the access token (installs reachable beyond this computer)")
+    stack_command("open", "open_ui", "open DocsGPT in the browser")
+
+    upgrade = stack_command("upgrade", "upgrade", "upgrade the package and restart the stack on the new version")
+    upgrade.add_argument("--version", help="version to install (default: the latest release)")
+
+    uninstall = stack_command("uninstall", "uninstall", "remove the Docker stack")
+    uninstall.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
+    uninstall.add_argument("--purge", action="store_true", help="also delete the settings and all data")
+
+    env = stack_command("env", "env", "show, get or set the stack's settings")
+    env_actions = env.add_subparsers(dest="env_action", metavar="<action>")
+    get = env_actions.add_parser("get", help="print one setting")
+    get.add_argument("key")
+    set_ = env_actions.add_parser("set", help="set settings (KEY=VALUE ...); run `docsgpt up` to apply")
+    set_.add_argument("pairs", nargs="+", metavar="KEY=VALUE")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docsgpt", description="DocsGPT: private AI for agents, assistants and search.")
     parser.add_argument("--version", action="version", version=f"docsgpt {__version__}")
     commands = parser.add_subparsers(dest="command", metavar="<command>")
+
+    _add_deploy_commands(commands)
 
     api = commands.add_parser("api", help="serve the HTTP API")
     api.add_argument("--host", default=DEFAULT_HOST, help="interface to listen on (default: localhost; 0.0.0.0 for all)")
@@ -212,7 +283,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not args.command:
         parser.print_help()
         return 2
-    return args.func(args)
+    if not getattr(args, "deploy", False):
+        return args.func(args)
+    from docsgpt.deploy.docker import DeployError
+
+    try:
+        return args.func(args)
+    except DeployError as exc:
+        print(f"docsgpt: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

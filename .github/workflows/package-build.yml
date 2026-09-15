@@ -65,6 +65,8 @@ jobs:
           names = set(zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist())
           for required in (
               "docsgpt/cli.py",
+              "docsgpt/deploy/commands.py",
+              "docsgpt/deploy/docker-compose.yaml",
               "docsgpt/alembic.ini",
               "docsgpt/alembic/env.py",
               "docsgpt/alembic/script.py.mako",
