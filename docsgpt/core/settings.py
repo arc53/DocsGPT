@@ -251,6 +251,9 @@ class Settings(BaseSettings):
     CONNECTOR_REDIRECT_BASE_URI: Optional[str] = (
         "http://127.0.0.1:7091/api/connectors/callback"  ##add redirect url as it is to your provider's console(gcp)
     )
+    # Comma-separated frontend origins allowed to receive connector OAuth results, e.g. https://docsgpt.example.com.
+    # The callback origin and OIDC_FRONTEND_URL are always allowed; a loopback callback also allows localhost:5173.
+    CONNECTOR_ALLOWED_ORIGINS: Optional[str] = None
 
     # Microsoft Entra ID (Azure AD) integration
     MICROSOFT_CLIENT_ID: Optional[str] = None  # Azure AD Application (client) ID

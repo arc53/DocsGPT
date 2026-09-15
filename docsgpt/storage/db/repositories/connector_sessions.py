@@ -40,6 +40,16 @@ def _jsonb(value: Any) -> Any:
     return json.dumps(value, cls=PGNativeJSONEncoder)
 
 
+def owns_connector_session(session: Optional[dict], user_id: str, provider: Optional[str]) -> bool:
+    """Whether ``session`` belongs to ``user_id`` and was issued for ``provider`` (case-insensitive)."""
+    return bool(
+        session
+        and session.get("user_id") == user_id
+        and provider
+        and (session.get("provider") or "").lower() == provider.lower()
+    )
+
+
 class ConnectorSessionsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -307,11 +317,13 @@ class ConnectorSessionsRepository:
         result = self._conn.execute(text(sql), params)
         return result.rowcount > 0
 
-    def delete_by_session_token(self, session_token: str) -> bool:
+    def delete_by_session_token(self, session_token: str, user_id: str) -> bool:
+        """Delete the session behind ``session_token`` only if ``user_id`` owns it."""
         result = self._conn.execute(
             text(
-                "DELETE FROM connector_sessions WHERE session_token = :token"
+                "DELETE FROM connector_sessions "
+                "WHERE session_token = :token AND user_id = :user_id"
             ),
-            {"token": session_token},
+            {"token": session_token, "user_id": user_id},
         )
         return result.rowcount > 0

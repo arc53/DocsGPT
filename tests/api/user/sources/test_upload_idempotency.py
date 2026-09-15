@@ -597,6 +597,13 @@ class TestRemoteIdempotency:
             pytest.skip("no connectors registered in this build")
         connector_source = next(iter(supported))
 
+        from docsgpt.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+        repo = ConnectorSessionsRepository(pg_conn)
+        session = repo.upsert("u", connector_source, status="authorized")
+        repo.update(str(session["id"]), {"session_token": "tok"})
+
         with _patch_db(pg_conn), patch(
             "docsgpt.api.user.sources.upload.ingest_connector_task.apply_async",
             apply_mock,

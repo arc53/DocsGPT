@@ -45,6 +45,7 @@ MICROSOFT_TENANT_ID=your-azure-ad-tenant-id
 | `MICROSOFT_CLIENT_SECRET` | Client secret value | Yes | — |
 | `MICROSOFT_TENANT_ID` | Directory (tenant) ID | No | `common` |
 | `MICROSOFT_AUTHORITY` | Login endpoint override | No | Auto-constructed |
+| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com` | When the frontend is on its own origin | API origin; also `localhost:5173` when the callback is on `localhost`/`127.0.0.1` |
 
 <Callout type="warning">
 `MICROSOFT_TENANT_ID=common` (the default) allows any Microsoft account to authenticate. Set this to your specific tenant ID in production.
@@ -60,4 +61,5 @@ Restart your application, then go to the upload section in DocsGPT and select **
 
 - **Option not appearing** — Verify `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` are set, then restart.
 - **Authentication failed** — Check that the redirect URI matches exactly, including `?provider=share_point`.
+- **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
 - **Permission denied** — Ensure admin consent is granted and the user has access to the target files.
