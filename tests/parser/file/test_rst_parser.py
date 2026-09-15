@@ -90,6 +90,20 @@ def test_remove_directives():
     assert result == "Text with ` directive and more text"
 
 
+def test_remove_directives_standard_syntax():
+    """Test removal of standard reStructuredText directives (``.. name::``)."""
+    parser = RstParser()
+    content = "Text before\n.. note:: Important information\nText after"
+    assert parser.remove_directives(content) == "Text before\nImportant information\nText after"
+    assert parser.remove_directives(".. warning:: Be careful") == "Be careful"
+    assert parser.remove_directives(".. code-block:: python") == "python"
+    # Legacy backtick form keeps working.
+    assert (
+        parser.remove_directives("Text with `..note::` directive and more text")
+        == "Text with ` directive and more text"
+    )
+
+
 def test_remove_interpreters():
     """Test interpreter removal functionality."""
     parser = RstParser()
