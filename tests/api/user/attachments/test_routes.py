@@ -1929,6 +1929,21 @@ class TestSpeechToTextDisabled:
             assert _get_response_json(response) == self.DISABLED
         mock_create_stt.assert_not_called()
 
+    def test_live_stt_finish_returns_404_without_touching_redis(self, flask_app):
+        from docsgpt.api.user.attachments import routes
+
+        app = Flask(__name__)
+        with patch.object(routes.settings, "STT_PROVIDER", "none"), patch.object(
+            routes, "_require_live_stt_redis"
+        ) as require_redis, app.test_request_context(
+            "/api/stt/live/finish", method="POST", json={"session_id": "abc"}
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = routes.LiveSpeechToTextFinish().post()
+            assert _get_response_status(response) == 404
+            assert _get_response_json(response) == self.DISABLED
+        require_redis.assert_not_called()
+
 
 # =====================================================================
 # Coverage gap tests  (lines 136, 256, 330, 337, 443, 457, 560, 590)
