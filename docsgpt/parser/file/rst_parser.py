@@ -121,10 +121,9 @@ class RstParser(BaseParser):
         return content
 
     def remove_directives(self, content: str) -> str:
-        """Removes reStructuredText Directives"""
-        pattern = r"`\.\.([^:]+)::"
-        content = re.sub(pattern, "", content)
-        return content
+        """Remove standard reStructuredText directive markers."""
+        pattern = r"^[ \t]*\.\.[ \t]+[\w-]+::[ \t]*"
+        return re.sub(pattern, "", content, flags=re.MULTILINE)
 
     def remove_interpreters(self, content: str) -> str:
         """Removes reStructuredText Interpreted Text Roles"""
