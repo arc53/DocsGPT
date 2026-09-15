@@ -140,6 +140,18 @@ class TestUpFirstInstall:
         # A moving tag is pulled every time, not only when missing.
         assert (tmp_path, ["up", "-d", "--remove-orphans", "--pull", "always"]) in docker.calls
 
+    def test_network_mode_warns_about_plain_http_before_starting(self, tmp_path, capsys):
+        """The token travels as readable text, so say so before the stack is up, not only after."""
+        docker = FakeDocker()
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "network"], _context(docker)) == 0
+        err = capsys.readouterr().err
+        assert "plain HTTP" in err
+        assert "--domain" in err
+
+    def test_a_local_install_does_not_warn(self, tmp_path, capsys):
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], _context()) == 0
+        assert "plain HTTP" not in capsys.readouterr().err
+
     def test_an_unhealthy_start_points_at_the_logs(self, tmp_path, capsys):
         assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(healthy=False)) == 1
         assert "docsgpt logs" in capsys.readouterr().err

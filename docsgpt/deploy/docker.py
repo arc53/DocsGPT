@@ -138,6 +138,7 @@ def wait_healthy(
                 if 200 <= response.status < 300:
                     return True
         except (OSError, http.client.HTTPException):
+            # Not answering yet: refused, reset, timed out or a broken response. Keep polling.
             pass
         remaining = deadline - clock()
         if remaining <= 0:

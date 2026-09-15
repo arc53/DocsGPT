@@ -219,6 +219,12 @@ def up(args, context: Optional[Context] = None) -> int:
     if stack.exposure(existing) == "domain" and stack.exposure(env) != "domain":
         # With the https profile off, `up --remove-orphans` would leave Caddy running on ports 80 and 443.
         context.docker.compose(directory, *_EVERY_PROFILE, "rm", "--stop", "--force", "caddy", check=False)
+    if stack.exposure(env) == "network":
+        print(
+            "DocsGPT will listen on every interface over plain HTTP: its access token travels as "
+            "readable text. Use `docsgpt up --domain <name>` for HTTPS outside a trusted network.",
+            file=sys.stderr,
+        )
     up_args = ["up", "-d", "--remove-orphans", *recreate]
     if image_tag in _MOVING_TAGS:
         up_args += ["--pull", "always"]
@@ -246,9 +252,7 @@ def up(args, context: Optional[Context] = None) -> int:
     if env.get("AUTH_TYPE") == "simple_jwt" and env.get("JWT_SECRET_KEY"):
         print("Access token (the page asks for it; `docsgpt token` prints it again):")
         print(f"  {stack.simple_jwt_token(env['JWT_SECRET_KEY'])}")
-    if mode == "network":
-        print("Traffic is plain HTTP. Outside a trusted network, use a domain with HTTPS: docsgpt up --domain <name>")
-    elif mode == "domain":
+    if mode == "domain":
         print("Caddy gets the certificate when it starts: DNS must point at this machine and ports 80 and 443 be open.")
     print(f"Settings: {env_path}  (change the model provider or access with `docsgpt up --reconfigure`)")
     print("Manage it with: docsgpt status | logs | upgrade | down | uninstall")
