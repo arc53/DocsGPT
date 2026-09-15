@@ -59,7 +59,13 @@ class Docker:
         """Make sure Docker is installed and running and Compose is new enough, starting Docker Desktop on macOS."""
         if not self._which("docker"):
             raise DeployError("Docker is not installed. Get it from https://docs.docker.com/get-docker/ and run this again.")
-        if not self.daemon_running():
+        info = self._run(["docker", "info"], capture=True, check=False)
+        if info.returncode != 0:
+            if "permission denied" in (info.stderr or "").lower():
+                raise DeployError(
+                    "Your user cannot use Docker (permission denied on its socket). Add it to the docker group "
+                    "with `sudo usermod -aG docker $USER`, log out and back in, and run this again."
+                )
             self._start_daemon()
         result = self._run(["docker", "compose", "version", "--short"], capture=True, check=False)
         version = _parse_version(result.stdout) if result.returncode == 0 else None

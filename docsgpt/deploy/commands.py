@@ -23,6 +23,9 @@ PROJECT = "docsgpt"
 DATABASE_VOLUME = f"{PROJECT}_postgres_data"
 _MOVING_TAGS = ("latest", "develop")
 _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Commands that stop or remove services name every profile, so Caddy goes too
+# even when COMPOSE_PROFILES no longer enables it.
+_EVERY_PROFILE = ("--profile", "https")
 
 EXPOSURE_CHOICES = [
     ("local", "Only this computer"),
@@ -208,6 +211,9 @@ def up(args, context: Optional[Context] = None) -> int:
     envfile.update(env_path, updates)
     env = envfile.read(env_path)
 
+    if stack.exposure(existing) == "domain" and stack.exposure(env) != "domain":
+        # With the https profile off, `up --remove-orphans` would leave Caddy running on ports 80 and 443.
+        context.docker.compose(directory, *_EVERY_PROFILE, "rm", "--stop", "--force", "caddy", check=False)
     up_args = ["up", "-d", "--remove-orphans"]
     if image_tag in _MOVING_TAGS:
         up_args += ["--pull", "always"]
@@ -252,7 +258,7 @@ def down(args, context: Optional[Context] = None) -> int:
     directory = stack.stack_dir(args.dir)
     if _installed(directory) is None:
         return 1
-    context.docker.compose(directory, "down")
+    context.docker.compose(directory, *_EVERY_PROFILE, "down")
     return 0
 
 
@@ -369,7 +375,7 @@ def uninstall(args, context: Optional[Context] = None) -> int:
         if not context.prompter.confirm(f"Remove the DocsGPT {what} in {directory}?", default=False):
             print("Nothing removed.")
             return 1
-    context.docker.compose(directory, "down", "--remove-orphans", *(["-v"] if args.purge else []))
+    context.docker.compose(directory, *_EVERY_PROFILE, "down", "--remove-orphans", *(["-v"] if args.purge else []))
     if args.purge:
         shutil.rmtree(directory)
         print(f"Removed DocsGPT and its data from {directory}.")

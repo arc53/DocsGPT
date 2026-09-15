@@ -10,7 +10,7 @@ from docsgpt.deploy.docker import DeployError, Docker
 
 
 class FakeRunner:
-    """Answers docker commands from a table of (argv prefix -> result) and records every call."""
+    """Answers docker commands from a table of argv prefix -> (code, stdout[, stderr]) and records every call."""
 
     def __init__(self, answers=None):
         self.answers = list((answers or {}).items())
@@ -22,10 +22,10 @@ class FakeRunner:
             if list(args[: len(prefix)]) == list(prefix):
                 if callable(answer):
                     answer = answer()
-                code, out = answer
+                code, out, err = (*answer, "")[:3]
                 if check and code != 0:
                     raise DeployError(f"{' '.join(args)} failed")
-                return subprocess.CompletedProcess(args, code, stdout=out, stderr="")
+                return subprocess.CompletedProcess(args, code, stdout=out, stderr=err)
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
 
@@ -41,6 +41,13 @@ class TestPreflight:
     def test_daemon_down_on_linux_says_how_to_start_it(self):
         runner = FakeRunner({("docker", "info"): (1, "")})
         with pytest.raises(DeployError, match="systemctl start docker"):
+            _docker(runner).preflight()
+
+    def test_no_permission_on_the_socket_says_how_to_get_it(self):
+        """A user outside the docker group is not told that Docker is down."""
+        denied = "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock"
+        runner = FakeRunner({("docker", "info"): (1, "", denied)})
+        with pytest.raises(DeployError, match="docker group"):
             _docker(runner).preflight()
 
     def test_daemon_down_on_macos_starts_docker_desktop(self):
@@ -99,7 +106,7 @@ class TestQueries:
 
 
 class TestWaitHealthy:
-    def test_succeeds_once_the_api_answers(self, monkeypatch):
+    def test_succeeds_once_the_api_answers(self):
         attempts = {"n": 0}
 
         def opener(url, timeout):

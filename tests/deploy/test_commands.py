@@ -11,6 +11,8 @@ from docsgpt import cli
 from docsgpt.deploy import commands, envfile, stack
 from docsgpt.deploy.docker import DeployError
 
+EVERY_PROFILE = ["--profile", "https"]
+
 
 class FakeDocker:
     def __init__(self, volumes=(), project_dirs=()):
@@ -24,7 +26,7 @@ class FakeDocker:
 
     def compose(self, directory, *args, capture=False, check=True):
         self.calls.append((Path(directory), list(args)))
-        if args and args[0] == "down" and "-v" in args:
+        if "down" in args and "-v" in args:
             self.volumes.clear()
         return subprocess.CompletedProcess(["docker", "compose", *args], 0, stdout="", stderr="")
 
@@ -88,7 +90,7 @@ class TestUpFirstInstall:
         assert env["LLM_PROVIDER"] == "docsgpt"
         assert env["INTERNAL_KEY"] and env["JWT_SECRET_KEY"] and env["POSTGRES_PASSWORD"]
         assert docker.preflights == 1
-        assert (tmp_path, ["up", "-d", "--remove-orphans"]) in docker.calls
+        assert docker.calls == [(tmp_path, ["up", "-d", "--remove-orphans"])]
         record = json.loads((tmp_path / "install.json").read_text())
         assert record["version"] == "0.21.0"
         assert "http://localhost:7091" in capsys.readouterr().out
@@ -113,7 +115,8 @@ class TestUpFirstInstall:
         assert env["DOCSGPT_DOMAIN"] == "docs.example.com"
         assert env["LLM_PROVIDER"] == "openai"
 
-    def test_a_missing_api_key_is_an_error_without_a_terminal(self, tmp_path):
+    def test_a_missing_api_key_is_an_error_without_a_terminal(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("DOCSGPT_API_KEY", raising=False)
         with pytest.raises(DeployError, match="API key"):
             _run(["up", "--yes", "--dir", str(tmp_path), "--provider", "openai"], _context())
 
@@ -159,6 +162,22 @@ class TestUpAgain:
             assert after[key] == before[key]
         assert context.prompter.questions == [], "a configured install is not asked again"
 
+    def test_leaving_the_domain_removes_caddy_before_starting(self, tmp_path):
+        """With the https profile off, `up --remove-orphans` alone would leave Caddy on ports 80 and 443."""
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--domain", "docs.example.com"], _context()) == 0
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "local"], _context(docker)) == 0
+        assert docker.calls == [
+            (tmp_path, [*EVERY_PROFILE, "rm", "--stop", "--force", "caddy"]),
+            (tmp_path, ["up", "-d", "--remove-orphans"]),
+        ]
+
+    def test_staying_on_the_domain_leaves_caddy_alone(self, tmp_path):
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--domain", "docs.example.com"], _context()) == 0
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(docker)) == 0
+        assert docker.calls == [(tmp_path, ["up", "-d", "--remove-orphans"])]
+
     def test_another_projects_containers_need_consent(self, tmp_path):
         docker = FakeDocker(project_dirs={"/srv/old-docsgpt"})
         with pytest.raises(DeployError, match="--adopt"):
@@ -177,11 +196,11 @@ class TestManage:
     def _installed(tmp_path, *extra):
         assert _run(["up", "--yes", "--dir", str(tmp_path), *extra], _context()) == 0
 
-    def test_down(self, tmp_path):
+    def test_down_includes_caddy(self, tmp_path):
         self._installed(tmp_path)
         docker = FakeDocker()
         assert _run(["down", "--dir", str(tmp_path)], _context(docker)) == 0
-        assert docker.calls == [(tmp_path, ["down"])]
+        assert docker.calls == [(tmp_path, [*EVERY_PROFILE, "down"])]
 
     def test_commands_on_a_missing_install(self, tmp_path, capsys):
         assert _run(["status", "--dir", str(tmp_path)], _context()) == 1
@@ -228,7 +247,7 @@ class TestManage:
         self._installed(tmp_path)
         docker = FakeDocker()
         assert _run(["uninstall", "--yes", "--dir", str(tmp_path)], _context(docker, installer=lambda: "uv")) == 0
-        assert docker.calls == [(tmp_path, ["down", "--remove-orphans"])]
+        assert docker.calls == [(tmp_path, [*EVERY_PROFILE, "down", "--remove-orphans"])]
         assert (tmp_path / ".env").is_file(), "the database password lives there"
         assert not (tmp_path / "docker-compose.yaml").exists()
         assert not (tmp_path / "install.json").exists()
@@ -239,7 +258,7 @@ class TestManage:
         self._installed(directory)
         docker = FakeDocker()
         assert _run(["uninstall", "--yes", "--purge", "--dir", str(directory)], _context(docker)) == 0
-        assert docker.calls == [(directory, ["down", "--remove-orphans", "-v"])]
+        assert docker.calls == [(directory, [*EVERY_PROFILE, "down", "--remove-orphans", "-v"])]
         assert not directory.exists()
 
     def test_uninstall_asks_first(self, tmp_path):
