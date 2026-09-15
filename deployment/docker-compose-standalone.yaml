@@ -9,10 +9,11 @@
 # the API; without it every ingest fails with a 401 (setup.sh generates one).
 #
 # The backend image serves the web UI and the API on one port. Every release
-# also attaches this file as an asset. Settings come from .env next to this
-# file (any DocsGPT setting, VITE_* included; the compose-internal service URLs
-# below take precedence). Data lives in named volumes, so `docker compose down`
-# keeps it and `docker compose down -v` removes it.
+# also attaches this file as an asset, and `docsgpt up` runs it from the Python
+# package. Settings come from .env next to this file (any DocsGPT setting,
+# VITE_* included; the compose-internal service URLs below take precedence).
+# Data lives in named volumes, so `docker compose down` keeps it and
+# `docker compose down -v` removes it.
 #
 #   DOCSGPT_IMAGE_TAG      release to run, e.g. 0.20.0 (default: latest release);
 #                          develop follows the main branch
@@ -55,6 +56,10 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:${POSTGRES_PASSWORD:-docsgpt}@postgres:5432/docsgpt
       - EMBEDDINGS_NAME=${EMBEDDINGS_NAME:-ibm-granite/granite-embedding-311m-multilingual-r2}
+    # A model server on the host (Ollama, vLLM, ...) is reachable as
+    # host.docker.internal on Linux too, as it is on Docker Desktop.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${DOCSGPT_BIND:-127.0.0.1}:${DOCSGPT_PORT:-7091}:7091"
     volumes:
@@ -84,6 +89,8 @@ services:
       - POSTGRES_URI=postgresql://docsgpt:${POSTGRES_PASSWORD:-docsgpt}@postgres:5432/docsgpt
       - API_URL=http://backend:7091
       - EMBEDDINGS_NAME=${EMBEDDINGS_NAME:-ibm-granite/granite-embedding-311m-multilingual-r2}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - indexes:/app/indexes
       - inputs:/app/inputs

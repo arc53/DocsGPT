@@ -23,6 +23,10 @@ on:
       - 'frontend/**'
       - 'scripts/build_frontend.sh'
       - 'deployment/docker-compose-standalone.yaml'
+      - 'docsgpt/deploy/**'
+      - 'docsgpt/cli.py'
+      - 'docsgpt/core/paths.py'
+      - 'pyproject.toml'
       - '.github/workflows/docker-image-verify.yml'
 
 permissions:
@@ -93,6 +97,32 @@ jobs:
           # A client-side route falls back to the UI's index.html.
           curl -fsS "$base/settings" | grep -q 'src="/config.js"'
           echo "API and UI served on $base"
+
+      - name: Set up uv
+        if: matrix.variant == ''
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+
+      - name: docsgpt up runs the same image from the installed package
+        if: matrix.variant == ''
+        run: |
+          set -euo pipefail
+          # Same Compose project name as the step above; stop that stack first.
+          docker compose -f deployment/docker-compose-standalone.yaml down -v
+          uv build --wheel --out-dir "$RUNNER_TEMP/dist"
+          uv venv "$RUNNER_TEMP/venv"
+          uv pip install --python "$RUNNER_TEMP/venv/bin/python" "$RUNNER_TEMP"/dist/*.whl
+          docsgpt="$RUNNER_TEMP/venv/bin/docsgpt"
+          stack="$RUNNER_TEMP/stack"
+          "$docsgpt" up --yes --dir "$stack" --image-tag verify
+          "$docsgpt" status --dir "$stack"
+          curl -fsS http://127.0.0.1:7091/ | grep -q 'src="/config.js"'
+          grep -q '^POSTGRES_PASSWORD=' "$stack/.env"
+          # Running up again keeps the generated secrets.
+          before=$(grep '^JWT_SECRET_KEY=' "$stack/.env")
+          "$docsgpt" up --yes --dir "$stack" --image-tag verify
+          [ "$(grep '^JWT_SECRET_KEY=' "$stack/.env")" = "$before" ]
+          "$docsgpt" uninstall --yes --purge --dir "$stack"
+          test ! -e "$stack"
 
       - name: Stack logs
         if: failure()
