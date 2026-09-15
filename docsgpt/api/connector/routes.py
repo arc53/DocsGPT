@@ -104,14 +104,17 @@ def _render_callback_page(
     """Popup page that reports an OAuth result to the opener on allowed origins only."""
     status = status if status in ("success", "error", "cancelled") else "error"
     # The script only carries server-side values: the provider key comes from the
-    # supported-connector list rather than the request, and nothing posts without a token.
+    # supported-connector list rather than the request, and no request text is posted.
     provider_key = next(
         (key for key in ConnectorCreator.get_supported_connectors() if key == provider_raw.lower()), None,
     )
-    payload = (
-        {"type": f"{provider_key}_auth_success", "session_token": session_token, "user_email": user_email}
-        if status == "success" and session_token and provider_key else None
-    )
+    payload = None
+    if provider_key and status == "success" and session_token:
+        payload = {"type": f"{provider_key}_auth_success", "session_token": session_token, "user_email": user_email}
+    elif provider_key and status == "error":
+        # The frontend shows its own localized failure message; cancellations are
+        # reported when the popup closes.
+        payload = {"type": f"{provider_key}_auth_error"}
     target_origins = connector_allowed_origins(request.host_url) if payload else []
     provider = html.escape(provider_raw.replace("_", " ").title())
     connected_as = (

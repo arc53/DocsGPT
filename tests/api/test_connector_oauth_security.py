@@ -145,6 +145,31 @@ class TestCallbackStatusPage:
         script = body[body.index("<script>"):body.index("</script>")]
         assert "zz-injected-provider" not in script
 
+    def test_error_posts_fixed_auth_error_to_allowed_origins(self, app):
+        from docsgpt.api.connector.routes import ConnectorCallbackStatus
+        from docsgpt.core.settings import settings
+
+        with patch.object(settings, "CONNECTOR_ALLOWED_ORIGINS", "https://app.example.com"), app.test_request_context(
+            "/api/connectors/callback-status?status=error&provider=google_drive&message=zz-request-message"
+        ):
+            r = ConnectorCallbackStatus().get()
+        body = r.get_data(as_text=True)
+        script = body[body.index("<script>"):body.index("</script>")]
+        assert '{"type": "google_drive_auth_error"}' in script
+        assert '"https://app.example.com"' in script
+        assert "zz-request-message" not in script
+
+    def test_cancelled_posts_nothing(self, app):
+        from docsgpt.api.connector.routes import ConnectorCallbackStatus
+
+        with app.test_request_context(
+            "/api/connectors/callback-status?status=cancelled&provider=google_drive"
+        ):
+            r = ConnectorCallbackStatus().get()
+        body = r.get_data(as_text=True)
+        assert "const payload = null;" in body
+        assert "const targetOrigins = [];" in body
+
 
 class TestCallbackDeliversTokenSafely:
     def test_success_renders_page_without_redirecting_token(self, app, pg_conn):
@@ -358,6 +383,27 @@ class TestRemoteUploadSessionOwnership:
 
         assert r.status_code == 401
         apply_mock.assert_not_called()
+
+
+class TestValidateSessionOwnership:
+    def test_rejects_foreign_session_token(self, app, pg_conn):
+        from docsgpt.api.connector.routes import ConnectorValidateSession
+
+        _seed_session(pg_conn, "u-victim-val", "st-victim-val", token_info={"access_token": "victim-at"})
+        create_auth = MagicMock()
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.connector.routes.ConnectorCreator.create_auth", create_auth,
+        ), app.test_request_context(
+            "/api/connectors/validate-session", method="POST",
+            json={"provider": "google_drive", "session_token": "st-victim-val"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-attacker-val"}
+            r = ConnectorValidateSession().post()
+
+        assert r.status_code == 401
+        assert "victim-at" not in r.get_data(as_text=True)
+        create_auth.assert_not_called()
 
 
 class TestSessionProviderBinding:
