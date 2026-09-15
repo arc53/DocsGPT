@@ -23,6 +23,7 @@ on:
       - 'frontend/**'
       - 'scripts/build_frontend.sh'
       - 'deployment/docker-compose-standalone.yaml'
+      - 'deployment/install.sh'
       - 'docsgpt/deploy/**'
       - 'docsgpt/cli.py'
       - 'docsgpt/core/paths.py'
@@ -98,33 +99,29 @@ jobs:
           curl -fsS "$base/settings" | grep -q 'src="/config.js"'
           echo "API and UI served on $base"
 
-      - name: Set up uv
+      - name: The installer runs docsgpt up on the same image
         if: matrix.variant == ''
-        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-        with:
-          # No cache: a cache restored into a job that runs the built image is a poisoning risk.
-          enable-cache: false
-
-      - name: docsgpt up runs the same image from the installed package
-        if: matrix.variant == ''
+        env:
+          DOCSGPT_NO_MODIFY_PATH: "1"
         run: |
           set -euo pipefail
           # Same Compose project name as the step above; stop that stack first.
           docker compose -f deployment/docker-compose-standalone.yaml down -v
-          uv build --wheel --out-dir "$RUNNER_TEMP/dist"
-          uv venv "$RUNNER_TEMP/venv"
-          uv pip install --python "$RUNNER_TEMP/venv/bin/python" "$RUNNER_TEMP"/dist/*.whl
-          docsgpt="$RUNNER_TEMP/venv/bin/docsgpt"
-          stack="$RUNNER_TEMP/stack"
-          "$docsgpt" up --yes --dir "$stack" --image-tag verify
-          "$docsgpt" status --dir "$stack"
+          pipx run build --wheel --outdir "$RUNNER_TEMP/dist"
+          export DOCSGPT_PACKAGE="$(ls "$RUNNER_TEMP"/dist/docsgpt-*.whl)"
+          # No uv is set up beforehand, so the installer's pinned uv download runs too.
+          # Without a terminal the installer passes --yes to docsgpt up.
+          bash deployment/install.sh --image-tag verify </dev/null
+          docsgpt="$HOME/.local/bin/docsgpt"
+          stack="$HOME/.docsgpt/server"
+          "$docsgpt" status
           curl -fsS http://127.0.0.1:7091/ | grep -q 'src="/config.js"'
           grep -q '^POSTGRES_PASSWORD=' "$stack/.env"
-          # Running up again keeps the generated secrets.
+          # Running the installer again upgrades in place and keeps the generated secrets.
           before=$(grep '^JWT_SECRET_KEY=' "$stack/.env")
-          "$docsgpt" up --yes --dir "$stack" --image-tag verify
+          bash deployment/install.sh --image-tag verify </dev/null
           [ "$(grep '^JWT_SECRET_KEY=' "$stack/.env")" = "$before" ]
-          "$docsgpt" uninstall --yes --purge --dir "$stack"
+          "$docsgpt" uninstall --yes --purge
           test ! -e "$stack"
 
       - name: Stack logs
