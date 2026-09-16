@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from docsgpt.deploy import backup as backup_format
 from docsgpt.deploy import envfile, native, stack
@@ -205,16 +206,26 @@ def _redis_urls(base: str) -> dict[str, str]:
 
     They start at database 0, or at the one the URL names: ``redis://host:6379/5`` puts them on 5, 6
     and 7, which is how one Redis is shared with something that already uses the first databases.
+    Everything else in the URL is kept — TLS, credentials, and query parameters such as the
+    ``ssl_cert_reqs`` that a rediss:// endpoint usually needs.
     """
-    trimmed = base.rstrip("/")
-    first = 0
-    head, _, tail = trimmed.rpartition("/")
-    if tail.isdigit():
-        trimmed, first = head, int(tail)
+    parts = urlsplit(base)
+    if parts.scheme not in ("redis", "rediss"):
+        raise DeployError(
+            f"the Redis URL {base!r} should start with redis:// or rediss://, with any options as "
+            "query parameters, so the broker, the result backend and the cache can be given a "
+            "database each."
+        )
+    path = parts.path.rstrip("/").lstrip("/")
+    if path and not path.isdigit():
+        raise DeployError(
+            f"the Redis URL {base!r} has {path!r} where a database number would go. Pass a URL like "
+            "redis://host:6379 or redis://host:6379/5."
+        )
+    first = int(path) if path else 0
     return {
-        "CELERY_BROKER_URL": f"{trimmed}/{first}",
-        "CELERY_RESULT_BACKEND": f"{trimmed}/{first + 1}",
-        "CACHE_REDIS_URL": f"{trimmed}/{first + 2}",
+        key: urlunsplit((parts.scheme, parts.netloc, f"/{first + offset}", parts.query, parts.fragment))
+        for key, offset in (("CELERY_BROKER_URL", 0), ("CELERY_RESULT_BACKEND", 1), ("CACHE_REDIS_URL", 2))
     }
 
 

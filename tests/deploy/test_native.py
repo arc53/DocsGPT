@@ -180,6 +180,35 @@ class TestNativeUp:
                 "--expose", "local", "--no-docling"]
         assert _run(argv, _native_context()) == 0
 
+    def test_a_redis_url_keeps_its_credentials_tls_and_query(self, tmp_path):
+        """A rediss:// endpoint usually needs ssl_cert_reqs, and losing it breaks every connection."""
+        url = "rediss://user:pw@redis.example.com:6380/3?ssl_cert_reqs=required"
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes",
+                "--postgres-uri", "postgresql://localhost/d", "--redis-url", url]
+        assert _run(argv, _native_context()) == 0
+        env = envfile.read(tmp_path / ".env")
+        host = "rediss://user:pw@redis.example.com:6380"
+        assert env["CELERY_BROKER_URL"] == f"{host}/3?ssl_cert_reqs=required"
+        assert env["CELERY_RESULT_BACKEND"] == f"{host}/4?ssl_cert_reqs=required"
+        assert env["CACHE_REDIS_URL"] == f"{host}/5?ssl_cert_reqs=required"
+
+    def test_a_redis_url_with_a_query_and_no_database(self, tmp_path):
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d",
+                "--redis-url", "redis://localhost:6379?health_check_interval=30"]
+        assert _run(argv, _native_context()) == 0
+        env = envfile.read(tmp_path / ".env")
+        assert env["CELERY_BROKER_URL"] == "redis://localhost:6379/0?health_check_interval=30"
+        assert env["CACHE_REDIS_URL"] == "redis://localhost:6379/2?health_check_interval=30"
+
+    @pytest.mark.parametrize("url", ["localhost:6379", "redis+socket:///var/run/redis.sock",
+                                     "redis://localhost:6379/queue"])
+    def test_a_redis_url_that_cannot_be_numbered_is_refused(self, tmp_path, url):
+        """Silently turning it into something that looks like a URL is the worse failure."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes",
+                "--postgres-uri", "postgresql://localhost/d", "--redis-url", url]
+        with pytest.raises(DeployError, match="Redis URL"):
+            _run(argv, _native_context())
+
     def test_a_database_url_is_required(self, tmp_path):
         with pytest.raises(DeployError, match="--postgres-uri"):
             _run(["up", "--native", "--dir", str(tmp_path), "--yes"], _native_context())
