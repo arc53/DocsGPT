@@ -240,6 +240,16 @@ def _docsgpt_launcher() -> list[str]:
     )
 
 
+def _native_port(env: Mapping[str, str]) -> str:
+    """The port a native install listens on."""
+    return str(env.get("DOCSGPT_PORT") or stack.DEFAULT_PORT)
+
+
+def _native_address(env: Mapping[str, str]) -> str:
+    """Where a native install answers: its units bind 127.0.0.1, whatever DOCSGPT_BIND says."""
+    return f"http://localhost:{_native_port(env)}"
+
+
 def _native_up(args, context: Context, directory: Path) -> int:
     """Run the API and the worker as services on this machine, against an existing Postgres and Redis."""
     services = context.service_manager()
@@ -445,12 +455,11 @@ def status(args, context: Optional[Context] = None) -> int:
         return 1
     if _mode(directory) == "native":
         services = context.service_manager()
-        # The units bind 127.0.0.1 whatever DOCSGPT_BIND says, so that is what gets printed and checked:
-        # against a LAN bind, stack.url and stack.health_url would advertise and poll an address
+        # Against a LAN bind, stack.url and stack.health_url would advertise and poll an address
         # nothing listens on, and status would call a healthy install dead.
-        port = env.get("DOCSGPT_PORT") or stack.DEFAULT_PORT
+        port = _native_port(env)
         print(f"DocsGPT {_record(directory).get('version', 'unknown')} in {directory} (native, {services.name})")
-        print(f"Address: http://localhost:{port}")
+        print(f"Address: {_native_address(env)}")
         for name in native.SERVICES:
             print(f"  {name}: {'running' if services.is_running(name) else 'stopped'}")
         healthy = context.wait(f"http://127.0.0.1:{port}/api/health", 0)
@@ -510,7 +519,10 @@ def open_ui(args, context: Optional[Context] = None) -> int:
     env = _installed(directory)
     if env is None:
         return 1
-    address = stack.url(env, context.lan_ip())
+    # A native install answers on loopback only, so stack.url would hand the browser a LAN address
+    # or a domain that nothing behind this command is serving.
+    native_install = _mode(directory) == "native"
+    address = _native_address(env) if native_install else stack.url(env, context.lan_ip())
     print(address)
     context.open_browser(address)
     return 0

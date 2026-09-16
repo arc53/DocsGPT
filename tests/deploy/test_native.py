@@ -209,6 +209,18 @@ class TestNativeLifecycle:
         assert _run(["status", "--dir", str(tmp_path)], context) == 0
         assert checked == ["http://127.0.0.1:7091/api/health"]
 
+    def test_open_hands_the_browser_the_address_that_answers(self, tmp_path, capsys):
+        """stack.url would offer a LAN address, but the native units listen on loopback only."""
+        services = FakeServices()
+        self._installed(tmp_path, services)
+        envfile.update(tmp_path / ".env", {"DOCSGPT_BIND": "192.168.1.50"})
+        opened = []
+        context = _native_context(services)
+        context.open_browser = lambda url: opened.append(url)
+        assert _run(["open", "--dir", str(tmp_path)], context) == 0
+        assert opened == ["http://localhost:7091"]
+        assert "192.168.1.50" not in capsys.readouterr().out
+
     def test_down_stops_them_and_leaves_the_settings(self, tmp_path):
         services = FakeServices()
         self._installed(tmp_path, services)
