@@ -1,6 +1,7 @@
 import logging
 import os
 from bs4 import BeautifulSoup
+from docsgpt.parser.html_text import html_to_text
 from urllib.parse import urljoin, urlparse
 
 from docsgpt.parser.remote.base import BaseRemote
@@ -50,7 +51,7 @@ class CrawlerLoader(BaseRemote):
                         extra_info["title"] = title
                 loaded_content.append(
                     Document(
-                        soup.get_text(separator="\n", strip=True),
+                        html_to_text(soup),
                         extra_info=extra_info,
                     )
                 )

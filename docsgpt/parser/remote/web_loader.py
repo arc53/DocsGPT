@@ -1,6 +1,7 @@
 import logging
 
 from bs4 import BeautifulSoup
+from docsgpt.parser.html_text import html_to_text
 
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.parser.remote.base import BaseRemote
@@ -47,7 +48,7 @@ class WebLoader(BaseRemote):
                     metadata["language"] = html_tag.get("lang")
                 documents.append(
                     Document(
-                        soup.get_text(separator="\n", strip=True),
+                        html_to_text(soup),
                         extra_info=metadata,
                     )
                 )
