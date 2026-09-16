@@ -295,16 +295,33 @@ class TestNativeUp:
                 _run(argv, _native_context())
             assert not (tmp_path / ".env").exists(), "it refuses before writing anything"
 
-    def test_an_install_may_keep_the_port_its_own_services_hold(self, tmp_path):
-        """Re-running an install must not trip over the services it is about to replace."""
+    def test_an_install_may_keep_the_port_its_own_api_is_recorded_on(self, tmp_path):
+        """Re-running an install must not trip over the API it is about to replace."""
+        services = FakeServices()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--port", str(port),
+                "--postgres-uri", "postgresql://localhost/d"]
+        assert _run(argv, _native_context(services)) == 0
+        assert json.loads((tmp_path / "install.json").read_text())["port"] == port
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+            held.bind(("127.0.0.1", port))
+            held.listen(1)
+            assert _run(["up", "--dir", str(tmp_path), "--yes"], _native_context(services)) == 0
+
+    def test_moving_an_install_onto_a_busy_port_is_refused(self, tmp_path):
+        """Ownership is of one port, not of any port while some service of the install runs."""
         services = FakeServices()
         argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
         assert _run(argv, _native_context(services)) == 0
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
             held.bind(("127.0.0.1", 0))
             held.listen(1)
-            envfile.update(tmp_path / ".env", {"DOCSGPT_PORT": str(held.getsockname()[1])})
-            assert _run(["up", "--dir", str(tmp_path), "--yes"], _native_context(services)) == 0
+            elsewhere = held.getsockname()[1]
+            with pytest.raises(DeployError, match="already in use"):
+                _run(["up", "--dir", str(tmp_path), "--yes", "--port", str(elsewhere)], _native_context(services))
 
     def test_a_database_url_is_required(self, tmp_path):
         with pytest.raises(DeployError, match="--postgres-uri"):

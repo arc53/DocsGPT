@@ -298,17 +298,26 @@ def _port_is_free(port: int) -> bool:
 def _refuse_busy_port(directory: Path, port: int, services, names: tuple[str, str]) -> None:
     """Whatever holds the port would answer the health check while these services failed to bind.
 
-    An install re-running on its own port is the exception: its services are holding it, and
-    starting them again replaces them.
+    The one exception is this install's own API holding the port it is recorded on. Ownership is not
+    inferred from the install having some service running: asking for a different port that something
+    else holds is how a move to a new port would look, and the API would fail to bind it.
     """
     if _port_is_free(port):
         return
-    if _record(directory).get("mode") == "native" and any(services.is_running(name) for name in names):
+    record = _record(directory)
+    api_service = names[0]
+    owns_the_port = (
+        record.get("mode") == "native"
+        and str(record.get("port") or "") == str(port)
+        and services.is_running(api_service)
+    )
+    if owns_the_port:
         return
     raise DeployError(
-        f"port {port} is already in use by something other than this install. The API would fail to "
-        f"bind it while the health check answered from whatever holds it, so the install would look "
-        f"healthy and be dead. Free the port, or give this install another one with --port."
+        f"port {port} is already in use by something other than this install's API. It would fail to "
+        f"bind while the health check answered from whatever holds the port, so the install would "
+        f"look healthy and be dead. Free the port, stop this install first with `docsgpt down` if it "
+        f"is the one holding it on another port, or choose another port with --port."
     )
 
 
@@ -406,7 +415,7 @@ def _native_up(args, context: Context, directory: Path) -> int:
     # that status, down and uninstall can see and clean up, rather than orphaned units.
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     record = record or {"installed_at": now}
-    record.update(version=context.version, mode="native", updated_at=now)
+    record.update(version=context.version, mode="native", port=port, updated_at=now)
     (directory / stack.RECORD_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
     for unit in native.units_for(directory, launcher, port, directory, names):
