@@ -227,7 +227,15 @@ def _redis_urls(base: str) -> dict[str, str]:
             f"the Redis URL {base!r} has {path!r} where a database number would go. Pass a URL like "
             "redis://host:6379 or redis://host:6379/5."
         )
-    first = int(path) if path else 0
+    try:
+        first = int(path) if path else 0
+    except ValueError as exc:
+        # Python refuses to convert a digit string past its conversion limit, and that is a typo
+        # rather than a crash.
+        raise DeployError(
+            f"the Redis URL {base!r} has a database number too long to read. Pass a URL like "
+            "redis://host:6379 or redis://host:6379/5."
+        ) from exc
     return {
         key: urlunsplit((parts.scheme, parts.netloc, f"/{first + offset}", parts.query, parts.fragment))
         for key, offset in (("CELERY_BROKER_URL", 0), ("CELERY_RESULT_BACKEND", 1), ("CACHE_REDIS_URL", 2))

@@ -224,6 +224,13 @@ class TestNativeUp:
         assert env["CELERY_BROKER_URL"] == "redis://[::1]:6379/2"
         assert env["CACHE_REDIS_URL"] == "redis://[::1]:6379/4"
 
+    def test_a_redis_database_number_too_long_to_convert_is_reported(self, tmp_path):
+        """Since 3.11 int() refuses a digit string past its limit, which the digit check let through."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d",
+                "--redis-url", "redis://localhost:6379/" + "1" * 5000]
+        with pytest.raises(DeployError, match="too long to read"):
+            _run(argv, _native_context())
+
     @pytest.mark.parametrize("url", ["localhost:6379", "redis+socket:///var/run/redis.sock",
                                      "redis://localhost:6379/queue"])
     def test_a_redis_url_that_cannot_be_numbered_is_refused(self, tmp_path, url):
