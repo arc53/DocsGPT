@@ -350,6 +350,45 @@ class TestStrReplaceAction:
         )
         assert "File updated" in result
 
+    def test_replace_new_str_backslash_is_literal(self, memory_tool):
+        memory_tool.execute_action(
+            "create", path="/doc.txt", file_text="Path: PLACEHOLDER"
+        )
+        result = memory_tool.execute_action(
+            "str_replace",
+            path="/doc.txt",
+            old_str="PLACEHOLDER",
+            new_str=r"C:\new\table",
+        )
+        assert "File updated" in result
+
+        content = memory_tool.execute_action("view", path="/doc.txt")
+        assert r"C:\new\table" in content
+
+    def test_replace_new_str_group_reference_is_literal(self, memory_tool):
+        memory_tool.execute_action(
+            "create", path="/doc.txt", file_text="See PLACEHOLDER"
+        )
+        result = memory_tool.execute_action(
+            "str_replace", path="/doc.txt", old_str="PLACEHOLDER", new_str=r"\1"
+        )
+        assert "File updated" in result
+
+        content = memory_tool.execute_action("view", path="/doc.txt")
+        assert r"\1" in content
+
+    def test_replace_new_str_trailing_backslash(self, memory_tool):
+        memory_tool.execute_action(
+            "create", path="/doc.txt", file_text="Dir: PLACEHOLDER"
+        )
+        result = memory_tool.execute_action(
+            "str_replace", path="/doc.txt", old_str="PLACEHOLDER", new_str="C:\\"
+        )
+        assert "File updated" in result
+
+        content = memory_tool.execute_action("view", path="/doc.txt")
+        assert "C:\\" in content
+
 
 # =====================================================================
 # Insert Action
