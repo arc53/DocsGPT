@@ -218,8 +218,8 @@ def _redis_urls(base: str) -> dict[str, str]:
     }
 
 
-def _native_launcher() -> list[str]:
-    """How the service files start DocsGPT: the command on PATH, or this interpreter and the module.
+def _docsgpt_launcher() -> list[str]:
+    """How to start DocsGPT from another process: the command on PATH, or this interpreter and the module.
 
     A unit has to name something that can be executed, and ``sys.argv[0]`` often cannot be: under
     ``python -m docsgpt``, or pytest, it is a module file. Falling back to the running interpreter
@@ -285,7 +285,7 @@ def _native_up(args, context: Context, directory: Path) -> int:
     (directory / "logs").mkdir(exist_ok=True)
     envfile.update(env_path, updates)
 
-    launcher = _native_launcher()
+    launcher = _docsgpt_launcher()
     print("Applying database migrations ...")
     # The child reads the stack's settings, not a .env in whatever directory this was run from.
     stack_env = {"DOCSGPT_HOME": str(directory), "DOCSGPT_ENV_FILE": str(env_path)}
@@ -692,7 +692,8 @@ def upgrade(args, context: Optional[Context] = None) -> int:
     if installer == "uv":
         if context.run(["uv", "tool", "install", "--force", spec]) != 0:
             raise DeployError(f"uv could not install {spec}")
-        return context.exec_up(["docsgpt", "up", "--dir", str(stack.stack_dir(args.dir))])
+        # The same launcher the service units get: a bare name is not always on PATH to exec.
+        return context.exec_up([*_docsgpt_launcher(), "up", "--dir", str(stack.stack_dir(args.dir))])
     command = f"pipx install --force {spec}" if installer == "pipx" else f"pip install -U {spec}"
     print(f"Upgrade the package with `{command}`, then run `docsgpt up` to move the stack to it.", file=sys.stderr)
     return 1
