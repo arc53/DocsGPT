@@ -11,6 +11,20 @@ The notable changes in each release. Every release on GitHub also carries
 [auto-generated notes](https://github.com/arc53/DocsGPT/releases) listing every merged pull
 request, and [Upgrading](/upgrading) covers the steps an existing deployment has to take.
 
+## Unreleased
+
+### The standalone Docker stack runs on one port
+
+The `arc53/docsgpt` image now serves the web UI next to the API, the way `docsgpt api` does from
+the Python package. `docker-compose-standalone.yaml` no longer runs a frontend container: the UI
+and the API share port 7091, published on `127.0.0.1` by default. The UI takes its API address
+from the page it was loaded from, so opening the stack from another machine works without
+setting `VITE_API_HOST`. New Compose settings: `DOCSGPT_BIND` and `DOCSGPT_PORT` for where the
+port is published, `POSTGRES_PASSWORD`, and an `https` profile that puts Caddy with an automatic
+certificate in front of a public domain. The `arc53/docsgpt-fe` image is still published for the
+checkout Compose files and Kubernetes. See
+[Upgrading from an earlier standalone file](/Deploying/Docker-Deploying#upgrading-from-an-earlier-standalone-file).
+
 ## 0.20.0
 
 ### DocsGPT installs from PyPI

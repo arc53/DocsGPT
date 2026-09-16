@@ -3,6 +3,8 @@ name: Verify the Docker image works offline
 # Builds the backend image and runs its offline check with networking off, so
 # a change that reintroduces a first-request download (a tokenizer, tiktoken's
 # encoding, an embedding model) fails here instead of in an air-gapped install.
+# Then starts the standalone Compose stack on the image and checks that the one
+# published port serves both the API and the web UI.
 
 on:
   workflow_dispatch:
@@ -17,6 +19,10 @@ on:
       - 'docsgpt/vectorstore/model_registry.py'
       - 'docsgpt/parser/tokenization.py'
       - 'docsgpt/vectorstore/embeddings_local.py'
+      - 'docsgpt/ui.py'
+      - 'frontend/**'
+      - 'scripts/build_frontend.sh'
+      - 'deployment/docker-compose-standalone.yaml'
       - '.github/workflows/docker-image-verify.yml'
 
 permissions:
@@ -45,7 +51,8 @@ jobs:
           context: .
           platforms: linux/amd64
           load: true
-          tags: docsgpt:verify${{ matrix.variant }}
+          # The name the standalone Compose file runs, under a tag no registry has.
+          tags: arc53/docsgpt:verify${{ matrix.variant }}
           build-args: |
             EXTRAS=${{ matrix.variant == '-docling' && 'docling' || '' }}
             INSTALL_TESSERACT=${{ matrix.variant == '-docling' && 'true' || 'false' }}
@@ -54,14 +61,49 @@ jobs:
 
       - name: Image size
         env:
-          IMAGE: docsgpt:verify${{ matrix.variant }}
+          IMAGE: arc53/docsgpt:verify${{ matrix.variant }}
         run: |
           docker image inspect "$IMAGE" --format '{{.Size}}' | awk '{printf "uncompressed: %.2f GB\n", $1/1e9}'
           docker history "$IMAGE" --format '{{.Size}}\t{{.CreatedBy}}' | head -20
 
       - name: Offline verification (no network)
         env:
-          IMAGE: docsgpt:verify${{ matrix.variant }}
+          IMAGE: arc53/docsgpt:verify${{ matrix.variant }}
         run: |
           docker run --rm --network none "$IMAGE" \
             python -m docsgpt.scripts.verify_offline
+
+      - name: The standalone stack serves the API and the UI on one port
+        env:
+          DOCSGPT_IMAGE_TAG: verify
+          DOCSGPT_IMAGE_VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          # --pull missing keeps the image built above; postgres and redis are pulled.
+          docker compose -f deployment/docker-compose-standalone.yaml up -d --pull missing backend
+          base=http://127.0.0.1:7091
+          for _ in $(seq 1 90); do
+            if curl -fsS "$base/api/health" >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS "$base/api/health"
+          echo
+          curl -fsS "$base/" | grep -q 'src="/config.js"'
+          curl -fsS "$base/config.js" | grep -q 'window.__DOCSGPT_ENV__'
+          # A client-side route falls back to the UI's index.html.
+          curl -fsS "$base/settings" | grep -q 'src="/config.js"'
+          echo "API and UI served on $base"
+
+      - name: Stack logs
+        if: failure()
+        env:
+          DOCSGPT_IMAGE_TAG: verify
+          DOCSGPT_IMAGE_VARIANT: ${{ matrix.variant }}
+        run: docker compose -f deployment/docker-compose-standalone.yaml logs --no-color
+
+      - name: Stop the stack
+        if: always()
+        env:
+          DOCSGPT_IMAGE_TAG: verify
+          DOCSGPT_IMAGE_VARIANT: ${{ matrix.variant }}
+        run: docker compose -f deployment/docker-compose-standalone.yaml down -v
