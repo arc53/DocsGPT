@@ -1,40 +1,91 @@
 ---
 title: Quickstart - Launching DocsGPT Web App
-description: Get started with DocsGPT quickly by launching the web application using the setup script.
+description: Install and start DocsGPT with one command, or from a clone with the setup script.
 ---
+
+import { Callout } from 'nextra/components'
 
 # Quickstart
 
 **Prerequisites:**
 
-* **Docker:** Ensure you have Docker installed and running on your system.
+* **Docker:** DocsGPT runs on Docker, with Docker Compose 2.24 or newer. On macOS and Windows install [Docker Desktop](https://docs.docker.com/desktop/) (or [OrbStack](https://orbstack.dev) on macOS); on Linux, [Docker Engine](https://docs.docker.com/engine/install/). On Linux the installer offers to install Docker for you.
 
-## Launching DocsGPT (macOS and Linux)
+## Install with one command
 
-The easiest way to launch DocsGPT is using the provided `setup.sh` script. This script automates the configuration process and offers several setup options.
+**macOS and Linux:**
 
-**Steps:**
+```bash
+curl -fsSL https://docs.ac/install | bash
+```
 
-1. **Download the DocsGPT Repository:**
+**Windows (PowerShell):**
 
-   First, you need to download the DocsGPT repository to your local machine. You can do this using Git:
+```powershell
+irm https://docs.ac/install.ps1 | iex
+```
+
+The installer:
+
+1. Checks for Docker.
+2. Installs [uv](https://docs.astral.sh/uv/) if it is missing or too old. uv installs Python packages and brings its own Python when the system has none.
+3. Installs the `docsgpt` Python package with `uv tool install`.
+4. Runs `docsgpt up`, which asks two questions:
+   * **Who should reach DocsGPT:** only this computer; other machines on your network (plain HTTP, with an access token); or a domain name with HTTPS (a certificate from Let's Encrypt, with an access token).
+   * **Which model provider:** the DocsGPT public API (no key needed), OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, or an OpenAI-compatible server such as Ollama or vLLM.
+
+It then starts DocsGPT and prints its address, [http://localhost:7091](http://localhost:7091) for a local install. Settings and generated secrets are in `~/.docsgpt/server/.env`, or `/opt/docsgpt/.env` when the installer runs as root on Linux; `docsgpt up --dir` or `DOCSGPT_HOME` choose another folder.
+
+<Callout type="info">
+  To read the script before running it, download it first: `curl -fsSL https://docs.ac/install -o install.sh`, then `bash install.sh`. On Windows: `irm https://docs.ac/install.ps1 -OutFile install.ps1`, then `.\install.ps1`.
+</Callout>
+
+**Options.** Arguments after `bash -s --` go to `docsgpt up`, so a server can be set up without questions:
+
+```bash
+curl -fsSL https://docs.ac/install | bash -s -- --yes --domain docs.example.com --provider openai --api-key "$OPENAI_API_KEY"
+```
+
+`DOCSGPT_VERSION` installs a specific release, and `DOCSGPT_NO_MODIFY_PATH=1` leaves your shell profile alone. `docsgpt up --help` lists every option.
+
+**Afterwards:**
+
+| Command | What it does |
+| --- | --- |
+| `docsgpt status` | Version, address, and whether DocsGPT answers |
+| `docsgpt logs -f` | Follow the logs |
+| `docsgpt token` | The access token, for installs reachable beyond this computer |
+| `docsgpt up --reconfigure` | Ask the setup questions again |
+| `docsgpt upgrade` | Upgrade to the latest release, keeping your settings and data |
+| `docsgpt down` | Stop DocsGPT |
+| `docsgpt uninstall` | Remove it; `--purge` also deletes settings and data |
+
+Running the install command again also upgrades. See [Run it with `docsgpt up`](/Deploying/Docker-Deploying#run-it-with-docsgpt-up) for the details.
+
+## From a clone, with the setup script
+
+To work from the source tree, for example to build the images yourself, use `setup.sh` (macOS and Linux) or `setup.ps1` (Windows).
+
+1. **Clone the repository:**
 
    ```bash
    git clone https://github.com/arc53/DocsGPT.git
    cd DocsGPT
    ```
 
-2. **Run the `setup.sh` script:**
-
-   Navigate to the DocsGPT directory in your terminal and execute the `setup.sh` script:
+2. **Run the setup script:**
 
    ```bash
    ./setup.sh
    ```
 
-3. **Follow the interactive setup:**
+   On Windows:
 
-   The `setup.sh` script will guide you through an interactive menu with the following options:
+   ```powershell
+   PowerShell -ExecutionPolicy Bypass -File .\setup.ps1
+   ```
+
+3. **Follow the interactive setup:**
 
    ```
    Welcome to DocsGPT Setup!
@@ -47,73 +98,29 @@ The easiest way to launch DocsGPT is using the provided `setup.sh` script. This 
    Choose option (1-5):
    ```
 
-   Let's break down each option:
+   * **1) Use DocsGPT Public API Endpoint (simple and free):** This is the simplest option to get started. It utilizes the DocsGPT public API, requiring no API keys or local model downloads.
 
-   * **1) Use DocsGPT Public API Endpoint (simple and free):**  This is the simplest option to get started. It utilizes the DocsGPT public API, requiring no API keys or local model downloads. Choose this for a quick and easy setup.
+   * **2) Serve Local (with Ollama):** Runs a Large Language Model locally using [Ollama](https://ollama.com/). You'll be prompted to choose between CPU or GPU for Ollama and select a model to download.
 
-   * **2) Serve Local (with Ollama):** This option allows you to run a Large Language Model locally using [Ollama](https://ollama.com/).  You'll be prompted to choose between CPU or GPU for Ollama and select a model to download. This is a good option for local processing and experimentation.
+   * **3) Connect Local Inference Engine:** If you already run a local inference engine like Llama.cpp, Text Generation Inference (TGI), vLLM, or others, choose this option and provide the connection details.
 
-   * **3) Connect Local Inference Engine:**  If you are already running a local inference engine like Llama.cpp, Text Generation Inference (TGI), vLLM, or others, choose this option.  You'll be asked to select your engine and provide the necessary connection details. This is for users with existing local LLM infrastructure.
+   * **4) Connect Cloud API Provider:** Connect DocsGPT to a Cloud API provider such as OpenAI, Google (Vertex AI/Gemini), Anthropic (Claude), Groq, HuggingFace Inference API, or Azure OpenAI. You will need an API key from your chosen provider.
 
-   * **4) Connect Cloud API Provider:** This option lets you connect DocsGPT to a commercial Cloud API provider such as OpenAI, Google (Vertex AI/Gemini), Anthropic (Claude), Groq, HuggingFace Inference API, or Azure OpenAI. You will need an API key from your chosen provider. Select this if you prefer to use a powerful cloud-based LLM.
+   * **5) Modify DocsGPT's source code and rebuild the Docker images locally.** Instead of pulling prebuilt images from Docker Hub, you build the backend and frontend from source, to customize how DocsGPT works internally or to run it in an environment without internet access.
 
-   * **5) Modify DocsGPT's source code and rebuild the Docker images locally.** Instead of pulling prebuilt images from Docker Hub or using the hosted/public API, you build the entire backend and frontend from source, customizing how DocsGPT works internally, or run it in an environment without internet access.
+   After selecting an option and providing any required information (like API keys or model names), the script configures your `.env` file and starts DocsGPT using Docker Compose.
 
-   After selecting an option and providing any required information (like API keys or model names), the script will configure your `.env` file and start DocsGPT using Docker Compose.
+4. **Access DocsGPT in your browser:** open [http://localhost:5173/](http://localhost:5173/).
 
-4. **Access DocsGPT in your browser:**
-
-   Once the setup is complete and Docker containers are running, navigate to [http://localhost:5173/](http://localhost:5173/) in your web browser to access the DocsGPT web application.
-
-5. **Stopping DocsGPT:**
-
-   To stop DocsGPT, simply open a new terminal in the `DocsGPT` directory and run:
+5. **Stopping DocsGPT:** in the `DocsGPT` directory, run the `docker compose down` command the script printed at the end, for example:
 
    ```bash
    docker compose -f deployment/docker-compose-hub.yaml down
    ```
-   (or the specific `docker compose` command shown at the end of the `setup.sh` execution, which may include optional compose files depending on your choices).
 
-## Launching DocsGPT (Windows)
+**Important for Windows:** Ensure Docker Desktop is installed and running before you start. The script tries to start Docker if it is not running, but you may need to start it manually.
 
-For Windows users, we provide a PowerShell script that offers the same functionality as the macOS/Linux setup script.
-
-**Steps:**
-
-1. **Download the DocsGPT Repository:**
-
-   First, you need to download the DocsGPT repository to your local machine. You can do this using Git:
-
-   ```powershell
-   git clone https://github.com/arc53/DocsGPT.git
-   cd DocsGPT
-   ```
-
-2. **Run the `setup.ps1` script:**
-
-   Execute the PowerShell setup script:
-
-   ```powershell
-   PowerShell -ExecutionPolicy Bypass -File .\setup.ps1
-   ```
-
-3. **Follow the interactive setup:**
-
-   Just like the Linux/macOS script, the PowerShell script will guide you through setting DocsGPT.
-   The script will handle environment configuration and start DocsGPT based on your selections.
-
-4. **Access DocsGPT in your browser:**
-
-   Once the setup is complete and Docker containers are running, navigate to [http://localhost:5173/](http://localhost:5173/) in your web browser to access the DocsGPT web application.
-
-5. **Stopping DocsGPT:**
-
-   To stop DocsGPT run the Docker Compose down command displayed at the end of the setup script's execution.
-
-**Important for Windows:** Ensure Docker Desktop is installed and running correctly on your Windows system before proceeding. The script will attempt to start Docker if it's not running, but you may need to start it manually if there are issues.
-
-**Alternative Method:**
-If you prefer a more manual approach, you can follow our [Docker Deployment documentation](/Deploying/Docker-Deploying) for detailed instructions on setting up DocsGPT on Windows using Docker commands directly.
+**Alternative Method:** To run the pre-built images with Docker Compose yourself, follow the [Docker Deployment documentation](/Deploying/Docker-Deploying).
 
 ## Advanced Configuration
 

@@ -11,7 +11,14 @@ The notable changes in each release. Every release on GitHub also carries
 [auto-generated notes](https://github.com/arc53/DocsGPT/releases) listing every merged pull
 request, and [Upgrading](/upgrading) covers the steps an existing deployment has to take.
 
-## Unreleased
+## 0.21.0
+
+### Install with one command
+
+`curl -fsSL https://docs.ac/install | bash` on macOS and Linux, or `irm https://docs.ac/install.ps1 | iex`
+in Windows PowerShell, installs uv and the `docsgpt` package and runs `docsgpt up`. Running it again
+upgrades and keeps your settings. On Linux it offers to install Docker when it is missing. Both
+scripts are attached to every release. See the [Quickstart](/quickstart).
 
 ### `docsgpt up` runs DocsGPT on Docker
 
