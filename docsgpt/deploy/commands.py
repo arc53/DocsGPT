@@ -419,6 +419,32 @@ def _write_backup(args, context: Context, directory: Path, env, target: Path, im
         backup_format.write_archive(target, dump=dump, volume_tars=volume_tars, manifest=manifest, settings=settings)
 
 
+def _restore_data(context: Context, directory: Path, archive: Path, volumes: list, image: str) -> None:
+    """Put the archive's volumes and database back, with the stack stopped."""
+    with tempfile.TemporaryDirectory() as workspace:
+        work = Path(workspace)
+        backup_format.extract(archive, work)
+        for name in volumes:
+            tar_path = work / backup_format.volume_member(name)
+            if not tar_path.is_file():
+                raise DeployError(f"{archive} is missing the {name} volume it says it contains")
+            print(f"Restoring the {name} volume ...")
+            context.docker.import_volume(f"{PROJECT}_{name}", tar_path, image)
+
+        dump = work / backup_format.DUMP
+        if not dump.is_file():
+            raise DeployError(f"{archive} is missing its database dump")
+        print("Starting the database ...")
+        context.docker.compose(directory, "up", "-d", "--wait", "postgres")
+        print("Restoring the database ...")
+        with dump.open("r", encoding="utf-8") as handle:
+            context.docker.compose(
+                directory, "exec", "-T", "postgres",
+                "psql", "--quiet", "--set", "ON_ERROR_STOP=on", "-U", "docsgpt", "-d", "docsgpt",
+                stdin=handle,
+            )
+
+
 def restore(args, context: Optional[Context] = None) -> int:
     """Put a backup's database and data volumes back over this install."""
     context = context or Context.default(args)
@@ -446,28 +472,14 @@ def restore(args, context: Optional[Context] = None) -> int:
     print("Stopping the stack ...")
     context.docker.compose(directory, *_EVERY_PROFILE, "down")
 
-    with tempfile.TemporaryDirectory() as workspace:
-        work = Path(workspace)
-        backup_format.extract(archive, work)
-        for name in volumes:
-            tar_path = work / backup_format.volume_member(name)
-            if not tar_path.is_file():
-                raise DeployError(f"{archive} is missing the {name} volume it says it contains")
-            print(f"Restoring the {name} volume ...")
-            context.docker.import_volume(f"{PROJECT}_{name}", tar_path, image)
-
-        dump = work / backup_format.DUMP
-        if not dump.is_file():
-            raise DeployError(f"{archive} is missing its database dump")
-        print("Starting the database ...")
-        context.docker.compose(directory, "up", "-d", "--wait", "postgres")
-        print("Restoring the database ...")
-        with dump.open("r", encoding="utf-8") as handle:
-            context.docker.compose(
-                directory, "exec", "-T", "postgres",
-                "psql", "--quiet", "--set", "ON_ERROR_STOP=on", "-U", "docsgpt", "-d", "docsgpt",
-                stdin=handle,
-            )
+    try:
+        _restore_data(context, directory, archive, volumes, image)
+    except BaseException:
+        # The stack is down by now. A corrupt payload inside an otherwise well-formed archive, or a
+        # statement psql refuses, must not leave DocsGPT stopped: start it again, then report.
+        print("The restore failed. Starting DocsGPT again ...", file=sys.stderr)
+        context.docker.compose(directory, "up", "-d", "--remove-orphans", check=False)
+        raise
 
     print("Starting DocsGPT ...")
     context.docker.compose(directory, "up", "-d", "--remove-orphans")
