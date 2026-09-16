@@ -292,16 +292,18 @@ def _native_up(args, context: Context, directory: Path) -> int:
     if context.run([*launcher, "migrate"], stack_env) != 0:
         raise DeployError("`docsgpt migrate` failed; check the database URL and that the server is reachable.")
 
+    # The record goes in before the services: if one fails to start, this is still a native install
+    # that status, down and uninstall can see and clean up, rather than orphaned units.
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    record = record or {"installed_at": now}
+    record.update(version=context.version, mode="native", updated_at=now)
+    (directory / stack.RECORD_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
     for unit in native.units_for(directory, launcher, port, directory):
         services.install(unit)
     for name in native.SERVICES:
         print(f"Starting {name} ...")
         services.start(name)
-
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    record = record or {"installed_at": now}
-    record.update(version=context.version, mode="native", updated_at=now)
-    (directory / stack.RECORD_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
     health = f"http://127.0.0.1:{port}/api/health"
     print("Waiting for DocsGPT to answer ...")
@@ -443,11 +445,15 @@ def status(args, context: Optional[Context] = None) -> int:
         return 1
     if _mode(directory) == "native":
         services = context.service_manager()
+        # The units bind 127.0.0.1 whatever DOCSGPT_BIND says, so that is what gets printed and checked:
+        # against a LAN bind, stack.url and stack.health_url would advertise and poll an address
+        # nothing listens on, and status would call a healthy install dead.
+        port = env.get("DOCSGPT_PORT") or stack.DEFAULT_PORT
         print(f"DocsGPT {_record(directory).get('version', 'unknown')} in {directory} (native, {services.name})")
-        print(f"Address: {stack.url(env, context.lan_ip())}")
+        print(f"Address: http://localhost:{port}")
         for name in native.SERVICES:
             print(f"  {name}: {'running' if services.is_running(name) else 'stopped'}")
-        healthy = context.wait(stack.health_url(env), 0)
+        healthy = context.wait(f"http://127.0.0.1:{port}/api/health", 0)
         print("API: answering" if healthy else "API: not answering (see `docsgpt logs`)")
         return 0 if healthy else 1
 

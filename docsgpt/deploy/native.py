@@ -61,9 +61,17 @@ def launchd_plist(unit: Unit, label: Optional[str] = None) -> str:
     return plistlib.dumps(body).decode("utf-8")
 
 
+def _systemd_quote(value: str) -> str:
+    """A unit-file value, double-quoted with backslashes and quotes escaped, as systemd reads them."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def systemd_unit(unit: Unit) -> str:
-    """The systemd user unit for ``unit``; arguments are quoted, so a path with spaces survives."""
-    environment = "\n".join(f'Environment="{key}={value}"' for key, value in sorted(unit.environment.items()))
+    """The systemd user unit for ``unit``; values are quoted, so a path with spaces survives."""
+    environment = "\n".join(
+        f"Environment={_systemd_quote(f'{key}={value}')}" for key, value in sorted(unit.environment.items())
+    )
     command = " ".join(shlex.quote(argument) for argument in unit.arguments)
     return f"""[Unit]
 Description=DocsGPT ({unit.name})
@@ -72,7 +80,7 @@ After=network-online.target
 [Service]
 Type=simple
 ExecStart={command}
-WorkingDirectory={unit.working_directory}
+WorkingDirectory={_systemd_quote(unit.working_directory)}
 {environment}
 Restart=always
 RestartSec=5
@@ -181,12 +189,15 @@ class SystemdServices:
         self._systemctl("restart", f"{name}.service", check=True)
 
     def stop(self, name: str) -> None:
-        self._systemctl("stop", f"{name}.service")
+        self._systemctl("stop", f"{name}.service", check=True)
 
     def remove(self, name: str) -> None:
-        self._systemctl("disable", "--now", f"{name}.service")
+        # Only disable a unit systemd still knows about, so removing twice stays harmless; a real
+        # failure has to surface before the unit file and the install record are thrown away.
+        if self._unit_file(name).is_file():
+            self._systemctl("disable", "--now", f"{name}.service", check=True)
         self._unit_file(name).unlink(missing_ok=True)
-        self._systemctl("daemon-reload")
+        self._systemctl("daemon-reload", check=True)
 
     def is_running(self, name: str) -> bool:
         return self._systemctl("is-active", "--quiet", f"{name}.service").returncode == 0

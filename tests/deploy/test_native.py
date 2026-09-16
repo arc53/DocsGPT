@@ -148,6 +148,22 @@ class TestNativeUp:
         assert _run(argv, _native_context(services)) == 0
         assert services.units["docsgpt-api"].arguments[:3] == [sys.executable, "-m", "docsgpt"]
 
+    def test_a_failed_start_leaves_an_install_the_other_commands_can_clean_up(self, tmp_path):
+        """Without the record, half-started units are orphaned: status, down and uninstall refuse the dir."""
+        class FailingStart(FakeServices):
+            def start(self, name):
+                super().start(name)
+                if name == "docsgpt-worker":
+                    raise DeployError("systemctl could not start docsgpt-worker")
+
+        services = FailingStart()
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
+        with pytest.raises(DeployError, match="could not start"):
+            _run(argv, _native_context(services))
+        assert json.loads((tmp_path / "install.json").read_text())["mode"] == "native"
+        assert _run(["uninstall", "--yes", "--dir", str(tmp_path)], _native_context(services)) == 0
+        assert sorted(services.removed) == ["docsgpt-api", "docsgpt-worker"]
+
     def test_a_database_url_is_required(self, tmp_path):
         with pytest.raises(DeployError, match="--postgres-uri"):
             _run(["up", "--native", "--dir", str(tmp_path), "--yes"], _native_context())
@@ -181,6 +197,17 @@ class TestNativeLifecycle:
         out = capsys.readouterr().out
         assert "native" in out.lower()
         assert "docsgpt-api" in out
+
+    def test_status_checks_the_address_the_services_actually_listen_on(self, tmp_path):
+        """A LAN DOCSGPT_BIND would have status poll an address the native units never bind."""
+        services = FakeServices()
+        self._installed(tmp_path, services)
+        envfile.update(tmp_path / ".env", {"DOCSGPT_BIND": "192.168.1.50"})
+        checked = []
+        context = _native_context(services)
+        context.wait = lambda url, timeout: checked.append(url) or True
+        assert _run(["status", "--dir", str(tmp_path)], context) == 0
+        assert checked == ["http://127.0.0.1:7091/api/health"]
 
     def test_down_stops_them_and_leaves_the_settings(self, tmp_path):
         services = FakeServices()
@@ -321,6 +348,35 @@ class TestSystemd:
         assert self._services(FakeSystemctl(active=True), tmp_path).is_running("docsgpt-api") is True
         assert self._services(FakeSystemctl(active=False), tmp_path).is_running("docsgpt-api") is False
 
+    def test_a_stop_that_fails_is_not_reported_as_success(self, tmp_path):
+        """`down` saying it stopped while the service still runs is worse than an error."""
+        class Failing(FakeSystemctl):
+            def __call__(self, args, **kwargs):
+                self.calls.append(args)
+                return types.SimpleNamespace(returncode=1, stdout="", stderr="Failed to stop docsgpt-api")
+
+        with pytest.raises(DeployError, match="Failed to stop"):
+            self._services(Failing(), tmp_path).stop("docsgpt-api")
+
+    def test_a_removal_that_fails_keeps_the_unit_file(self, tmp_path):
+        """uninstall must not drop the unit file and the record while systemd still runs the service."""
+        class Failing(FakeSystemctl):
+            def __call__(self, args, **kwargs):
+                self.calls.append(args)
+                code = 1 if args[2] == "disable" else 0
+                return types.SimpleNamespace(returncode=code, stdout="", stderr="Failed to disable")
+
+        services = self._services(Failing(), tmp_path)
+        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path)[0])
+        with pytest.raises(DeployError, match="Failed to disable"):
+            services.remove("docsgpt-api")
+        assert (tmp_path / ".config" / "systemd" / "user" / "docsgpt-api.service").is_file()
+
+    def test_removing_a_unit_that_is_already_gone_is_harmless(self, tmp_path):
+        systemctl = FakeSystemctl()
+        self._services(systemctl, tmp_path).remove("docsgpt-api")
+        assert "disable" not in systemctl.verbs, "nothing to disable when the unit file is gone"
+
     def test_an_explicit_home_wins_over_xdg_config_home(self, tmp_path, monkeypatch):
         """home is how a caller redirects the unit directory; the environment must not override it."""
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
@@ -377,6 +433,20 @@ class TestUnitFiles:
         assert f'Environment="DOCSGPT_HOME={tmp_path}"' in body
         assert "ExecStart=/opt/venv/bin/docsgpt api --port 7091" in body
         assert "WantedBy=default.target" in body
+
+    def test_a_directory_with_spaces_and_quotes_survives_the_systemd_unit(self, tmp_path):
+        """--dir is free-form, and this repo itself lives under a path with a space in it."""
+        odd = '/srv/my "odd" dir'
+        unit = native.Unit(
+            name="docsgpt-api",
+            arguments=["/venv/bin/docsgpt", "api"],
+            environment={"DOCSGPT_HOME": odd},
+            working_directory=odd,
+            log_file="/srv/api.log",
+        )
+        body = native.systemd_unit(unit)
+        assert 'WorkingDirectory="/srv/my \\"odd\\" dir"' in body
+        assert 'Environment="DOCSGPT_HOME=/srv/my \\"odd\\" dir"' in body
 
     def test_an_argument_with_spaces_survives_the_systemd_unit(self, tmp_path):
         unit = self._unit(tmp_path)
