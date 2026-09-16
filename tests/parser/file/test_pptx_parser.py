@@ -115,6 +115,34 @@ def test_table_cells_are_extracted(tmp_path):
     assert "| CELL A | CELL B |" in text
 
 
+def test_a_cell_cannot_break_the_table_row(tmp_path):
+    """A pipe would add a column and a line break would end the row early."""
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    table = slide.shapes.add_table(2, 2, Inches(0.5), Inches(0.5), Inches(6), Inches(1.2)).table
+    table.cell(0, 0).text = "Step"
+    table.cell(0, 1).text = "Notes"
+    table.cell(1, 0).text = "a|b"
+    cell = table.cell(1, 1)
+    cell.text = "first line"
+    cell.text_frame.add_paragraph().text = "second line"
+
+    path = tmp_path / "cells.pptx"
+    presentation.save(str(path))
+
+    text = PPTXParser().parse_file(path)
+    rows = [row for row in text.split("\n") if row.startswith("|")]
+
+    assert rows == [
+        "| Step | Notes |",
+        "| --- | --- |",
+        "| a\\|b | first line second line |",
+    ]
+
+
 def test_text_inside_a_group_is_extracted(tmp_path):
     """A group carries no text of its own; its children do."""
     pytest.importorskip("pptx")

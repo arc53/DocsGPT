@@ -1,10 +1,17 @@
 """PPT parser.
 Contains parsers for presentation (.pptx) files to extract slide text.
 """
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
 from docsgpt.parser.file.base_parser import BaseParser
+
+# A GFM row ends at a line break and its columns are separated by pipes, so
+# neither can survive inside a cell.
+_CELL_BREAK = re.compile(r"\s*(?:\r\n|\r|\n)\s*")
+_CELL_PIPE = re.compile(r"(?<!\\)(\\*)\|")
+
 
 class PPTXParser(BaseParser):
     r"""PPTX (.pptx) parser for extracting text from PowerPoint slides.
@@ -94,9 +101,21 @@ class PPTXParser(BaseParser):
         return [text] if text else []
 
     @staticmethod
+    def _escape_cell(text: str) -> str:
+        """Make a cell's text safe between the pipes of a GFM row.
+
+        A cell with more than one paragraph carries a line break, which would end
+        the row in the middle of it, and a pipe would add a column. The backslash
+        run in front of a pipe is doubled first, so a backslash the cell already
+        contains cannot consume the escape.
+        """
+        text = _CELL_BREAK.sub(" ", text.strip())
+        return _CELL_PIPE.sub(lambda match: match.group(1) * 2 + r"\|", text)
+
+    @staticmethod
     def _table_to_markdown(table: Any) -> str:
         """Render a slide table as a GFM table, the form `tableize` also emits."""
-        rows = [[cell.text.strip().replace("|", "\\|") for cell in row.cells] for row in table.rows]
+        rows = [[PPTXParser._escape_cell(cell.text) for cell in row.cells] for row in table.rows]
         if not rows:
             return ""
         lines = ["| " + " | ".join(rows[0]) + " |", "|" + " --- |" * len(rows[0])]
