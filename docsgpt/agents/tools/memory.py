@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 import logging
+import re
 import uuid
 
 from .base import Tool
@@ -382,13 +383,14 @@ class MemoryTool(Tool):
             if old_str.lower() not in current_content.lower():
                 return f"Error: String '{old_str}' not found in file."
 
-            # Case-insensitive replace
-            import re as regex_module
-            updated_content = regex_module.sub(
-                regex_module.escape(old_str),
-                new_str,
+            # Case-insensitive replace. new_str is passed as a function so it
+            # is substituted literally; as a plain string, re.sub would read
+            # backslash escapes and group references inside it.
+            updated_content = re.sub(
+                re.escape(old_str),
+                lambda _match: new_str,
                 current_content,
-                flags=regex_module.IGNORECASE,
+                flags=re.IGNORECASE,
             )
 
             repo.upsert(self.user_id, self.tool_id, validated_path, updated_content)
