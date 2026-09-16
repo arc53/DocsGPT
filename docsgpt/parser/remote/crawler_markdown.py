@@ -4,7 +4,7 @@ from docsgpt.parser.remote.base import BaseRemote
 from docsgpt.core.url_validation import validate_url, SSRFError
 from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
 import re
-from markdownify import markdownify
+from docsgpt.parser.markdown_conversion import html_to_markdown_text
 from docsgpt.parser.schema.base import Document
 import tldextract
 import os
@@ -114,7 +114,7 @@ class CrawlerLoader(BaseRemote):
         language_tag = soup.find('html')
         language = language_tag.get('lang', 'en') if language_tag else "en"
 
-        markdownified = markdownify(html_content, heading_style="ATX", newline_style="BACKSLASH")
+        markdownified = html_to_markdown_text(html_content)
         # Collapse runs of blank lines to a single one — the same shape
         # ``html_to_markdown`` gives uploaded HTML files.
         markdownified = re.sub(r'\n{3,}', '\n\n', markdownified)

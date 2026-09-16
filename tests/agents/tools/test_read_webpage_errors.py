@@ -29,7 +29,7 @@ class TestReadWebpageErrors:
         response.headers = {"Content-Type": "text/html"}
         response.raise_for_status.return_value = None
         with patch(
-            "docsgpt.agents.tools.read_webpage.markdownify",
+            "docsgpt.agents.tools.read_webpage.html_to_markdown_text",
             side_effect=RuntimeError("boom"),
         ), patch(
             "docsgpt.agents.tools.read_webpage.pinned_fetch_bytes",
