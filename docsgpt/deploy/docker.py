@@ -117,13 +117,17 @@ class Docker:
 
     def import_volume(self, volume: str, source: Path, image: str) -> None:
         """Replace ``volume``'s contents with the tar at ``source``; the volume is created when missing."""
+        # Unpack into the container's own filesystem first, so a truncated or corrupt tar fails
+        # before the live volume is touched rather than halfway through emptying it. It goes under
+        # /tmp because the image does not run as root and cannot write to /.
+        staging = "/tmp/docsgpt-restore"
+        script = (
+            f"set -e; rm -rf {staging}; mkdir -p {staging}; tar xf - -C {staging}; "
+            f"find /data -mindepth 1 -delete; tar cf - -C {staging} . | tar xf - -C /data"
+        )
         with source.open("rb") as handle:
             self._run(
-                ["docker", "run", "--rm", "-i", "-v", f"{volume}:/data", image, "sh", "-c",
-                 # Unpack into the container's own filesystem first: a truncated or corrupt tar must
-                 # fail before the live volume is touched, not halfway through emptying it.
-                 "set -e; rm -rf /stage; mkdir /stage; tar xf - -C /stage; "
-                 "find /data -mindepth 1 -delete; tar cf - -C /stage . | tar xf - -C /data"],
+                ["docker", "run", "--rm", "-i", "-v", f"{volume}:/data", image, "sh", "-c", script],
                 stdin=handle,
             )
 
