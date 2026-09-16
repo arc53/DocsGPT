@@ -1,7 +1,10 @@
 import React from 'react';
-import styled, { ThemeProvider, createGlobalStyle } from 'styled-components';
+import styled, { ThemeProvider, keyframes } from 'styled-components';
 import { WidgetCore } from './DocsGPTWidget';
 import { DEFAULT_AVATAR } from './defaultAvatar';
+import { radii, themes } from './tokens';
+import { MicButton, VoiceWaveform } from './ComposerControls';
+import { useDictation } from '../hooks/useDictation';
 import { SearchBarProps } from '@/types';
 import { getSearchResults } from '../requests/searchAPI';
 import { Result } from '@/types';
@@ -15,135 +18,107 @@ import {
   ListBulletIcon,
   QuoteIcon,
 } from '@radix-ui/react-icons';
-const themes = {
-  dark: {
-    name: 'dark',
-    bg: '#202124',
-    text: '#EDEDED',
-    primary: {
-      text: '#FAFAFA',
-      bg: '#111111',
-    },
-    secondary: {
-      text: '#A1A1AA',
-      bg: '#38383b',
-    },
-  },
-  light: {
-    name: 'light',
-    bg: '#EAEAEA',
-    text: '#171717',
-    primary: {
-      text: '#222327',
-      bg: '#fff',
-    },
-    secondary: {
-      text: '#A1A1AA',
-      bg: '#F6F6F6',
-    },
-  },
-};
 
-const GlobalStyle = createGlobalStyle`
-  .highlight {
-    color: ${(props) => (props.theme.name === 'dark' ? '#4B9EFF' : '#0066CC')};
-    font-weight: 500;
+const spin = keyframes`
+  to {
+    transform: rotate(360deg);
   }
 `;
 
-const loadGeistFont = () => {
-  const link = document.createElement('link');
-  link.href =
-    'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap';
-  link.rel = 'stylesheet';
-  document.head.appendChild(link);
-};
-
 const Main = styled.div`
   all: initial;
-  font-family: 'Geist', sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 `;
+
 const SearchButton = styled.button<{ $inputWidth: string }>`
-  padding: 6px 6px;
-  font-family: inherit;
+  box-sizing: border-box;
   width: ${({ $inputWidth }) => $inputWidth};
-  border-radius: 8px;
-  display: inline;
-  color: ${(props) => props.theme.secondary.text};
-  outline: none;
-  border: none;
-  background-color: ${(props) => props.theme.secondary.bg};
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  transition: background-color 128ms linear;
+  height: 36px;
+  padding: 0 72px 0 12px;
+  font-family: inherit;
+  font-size: 14px;
   text-align: left;
+  color: ${(props) => props.theme.secondary.text};
+  background-color: ${(props) => props.theme.secondary.bg};
+  border: 1px solid ${(props) => props.theme.hairline};
+  border-radius: ${radii.sm};
+  outline: none;
   cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    color: ${(props) => props.theme.primary.text};
+  }
+
+  &:focus-visible {
+    border-color: ${(props) => props.theme.accent!.base};
+    box-shadow: 0 0 0 3px ${(props) => props.theme.accent!.soft};
+  }
 `;
 
 const Container = styled.div`
   position: relative;
   display: inline-block;
 `;
+
 const SearchOverlay = styled.div`
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: #0000001a;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   z-index: 99;
+  background-color: rgba(0, 0, 0, 0.5);
 `;
 
 const SearchResults = styled.div`
   position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 100;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  background-color: ${(props) =>
-    props.theme.name === 'dark'
-      ? 'rgba(0, 0, 0, 0.15)'
-      : 'rgba(255, 255, 255, 0.4)'};
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 15px;
-  padding: 8px 0px 8px 0px;
   width: 792px;
   max-width: 90vw;
   height: 396px;
-  z-index: 100;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  padding: 8px 0;
+  overflow: hidden;
   color: ${(props) => props.theme.primary.text};
-
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-  backdrop-filter: blur(82px);
-  -webkit-backdrop-filter: blur(82px);
-  border-radius: 10px;
-
-  box-sizing: border-box;
+  background-color: ${(props) => props.theme.primary.bg};
+  border: 1px solid ${(props) => props.theme.hairline};
+  border-radius: ${radii.panel};
+  box-shadow:
+    0 12px 44px rgba(0, 0, 0, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.1);
 
   @media only screen and (max-width: 768px) {
-    height: 80vh;
     width: 90vw;
+    height: 80vh;
   }
 `;
 
 const SearchResultsScroll = styled.div`
   flex: 1;
-  overflow-y: auto;
+  padding: 0 16px;
   overflow-x: hidden;
+  overflow-y: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: #383838 transparent;
-  padding: 0 16px;
+  scrollbar-color: ${(props) => props.theme.hairline} transparent;
 `;
 
 const IconTitleWrapper = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
+  color: ${(props) => props.theme.secondary.text};
 
   .element-icon {
     margin: 4px;
@@ -151,208 +126,199 @@ const IconTitleWrapper = styled.div`
 `;
 
 const Title = styled.h3`
-  font-size: 15px;
-  font-weight: 400;
-  color: ${(props) => props.theme.primary.text};
   margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: ${(props) => props.theme.primary.text};
   overflow-wrap: break-word;
-  white-space: normal;
-  overflow: hidden;
-  text-overflow: ellipsis;
 `;
+
 const ContentWrapper = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 `;
 
 const ResultWrapper = styled.div`
+  box-sizing: border-box;
   display: flex;
   align-items: flex-start;
   width: 100%;
-  box-sizing: border-box;
-  padding: 8px 16px;
-  cursor: pointer;
-  background-color: transparent;
-  font-family: 'Geist', sans-serif;
-  border-radius: 8px;
-
-  word-wrap: break-word;
+  padding: 10px 12px;
+  overflow: hidden;
   overflow-wrap: break-word;
   word-break: break-word;
-  white-space: normal;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  border-radius: ${radii.sm};
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 
   &:hover {
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background-color: ${(props) => props.theme.secondary.bg};
   }
 `;
 
 const Content = styled.div`
   display: flex;
-  margin-left: 8px;
   flex-direction: column;
-  gap: 8px;
-  padding: 4px 0px 0px 12px;
-  font-size: 15px;
-  color: ${(props) => props.theme.primary.text};
-  line-height: 1.6;
-  border-left: 2px solid ${(props) => props.theme.primary.text}CC;
+  gap: 6px;
+  margin-left: 7px;
+  padding: 2px 0 0 14px;
   overflow: hidden;
+  font-size: 14px;
+  line-height: 1.6;
+  color: ${(props) => props.theme.secondary.text};
+  border-left: 2px solid ${(props) => props.theme.hairline};
+
+  /* Scoped so the host page's own .highlight elements are untouched. */
+  .highlight {
+    padding: 1px 2px;
+    border-radius: 4px;
+    font-weight: 500;
+    color: ${(props) => props.theme.primary.text};
+    background-color: ${(props) => props.theme.accent!.mark};
+  }
+
+  /* Snippet HTML can contain raw links. */
+  a {
+    color: ${(props) => props.theme.accent!.link};
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  a:hover {
+    color: ${(props) => props.theme.accent!.base};
+  }
 `;
+
 const ContentSegment = styled.div`
   display: flex;
   align-items: flex-start;
   gap: 8px;
   padding-right: 16px;
-  overflow-wrap: break-word;
-  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 `;
 
 const Toolkit = styled.kbd`
   position: absolute;
-  right: 4px;
   top: 50%;
-  transform: translateY(-50%);
-  background-color: ${(props) => props.theme.primary.bg};
-  color: ${(props) => props.theme.secondary.text};
-  font-weight: 600;
-  font-size: 10px;
-  padding: 3px 6px;
-  border: 1px solid ${(props) => props.theme.secondary.text};
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  right: 8px;
   z-index: 1;
+  transform: translateY(-50%);
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+  color: ${(props) => props.theme.secondary.text};
+  background-color: ${(props) => props.theme.primary.bg};
+  border: 1px solid ${(props) => props.theme.hairline};
+  border-radius: ${radii.sm};
   pointer-events: none;
 `;
-const Loader = styled.div`
-  margin: 2rem auto;
-  border: 4px solid
-    ${(props) =>
-      props.theme.name === 'dark'
-        ? 'rgba(255, 255, 255, 0.2)'
-        : 'rgba(0, 0, 0, 0.1)'};
-  border-top: 4px solid
-    ${(props) =>
-      props.theme.name === 'dark' ? '#FFFFFF' : props.theme.primary.bg};
-  border-radius: 50%;
-  width: 12px;
-  height: 12px;
-  animation: spin 1s linear infinite;
 
-  @keyframes spin {
-    0% {
-      transform: rotate(0deg);
-    }
-    100% {
-      transform: rotate(360deg);
-    }
-  }
+const Loader = styled.div`
+  width: 16px;
+  height: 16px;
+  margin: 2rem auto;
+  border: 2px solid ${(props) => props.theme.hairline};
+  border-top-color: ${(props) => props.theme.accent!.base};
+  border-radius: 50%;
+  animation: ${spin} 0.8s linear infinite;
 `;
 
 const NoResults = styled.div`
   margin-top: 2rem;
-  text-align: center;
   font-size: 14px;
-  color: ${(props) => (props.theme.name === 'dark' ? '#E0E0E0' : '#505050')};
-  font-weight: 500;
+  text-align: center;
+  color: ${(props) => props.theme.secondary.text};
 `;
+
 const AskAIButton = styled.button`
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
   gap: 12px;
   width: calc(100% - 32px);
-  margin: 0 16px 16px 16px;
-  box-sizing: border-box;
-  height: 50px;
-  padding: 8px 24px;
-  border: none;
-  border-radius: 8px;
-  color: ${(props) => props.theme.text};
+  margin: 0 16px 12px;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  color: ${(props) => props.theme.primary.text};
+  background-color: ${(props) => props.theme.secondary.bg};
+  border: 1px solid ${(props) => props.theme.hairline};
+  border-radius: ${radii.md};
   cursor: pointer;
-  font-size: 16px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  background-color: ${(props) =>
-    props.theme.name === 'dark'
-      ? 'rgba(255, 255, 255, 0.05)'
-      : 'rgba(0, 0, 0, 0.03)'};
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
 
-  &:hover {
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    background-color: ${(props) =>
-      props.theme.name === 'dark'
-        ? 'rgba(255, 255, 255, 0.1)'
-        : 'rgba(0, 0, 0, 0.06)'};
+  &:hover:not(:disabled) {
+    background-color: ${(props) => props.theme.accent!.soft};
+    border-color: ${(props) => props.theme.accent!.soft};
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${(props) => props.theme.accent!.base};
+    outline-offset: 2px;
   }
 `;
 
 const SearchHeader = styled.div`
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid
-    ${(props) =>
-      props.theme.name === 'dark' ? '#FFFFFF24' : 'rgba(0, 0, 0, 0.14)'};
+  padding: 4px 16px 12px;
+  border-bottom: 1px solid ${(props) => props.theme.hairline};
 `;
 
-const TextField = styled.input`
-  width: calc(100% - 32px);
-  margin: 0 16px;
-  padding: 12px 16px;
-  border: none;
+const TextField = styled.input<{ $hidden?: boolean }>`
+  ${(props) => (props.$hidden ? 'display: none;' : '')}
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  font-family: inherit;
+  font-size: 18px;
+  color: ${(props) => props.theme.primary.text};
   background-color: transparent;
-  color: ${(props) => props.theme.text};
-  font-size: 20px;
-  font-weight: 400;
+  border: none;
   outline: none;
 
-  &:focus {
-    border-color: none;
-  }
-
   &::placeholder {
-    color: ${(props) =>
-      props.theme.name === 'dark'
-        ? 'rgba(255, 255, 255, 0.6)'
-        : 'rgba(0, 0, 0, 0.5)'} !important;
-    opacity: 100%; /* Force opacity to ensure placeholder is visible */
-    font-weight: 500;
+    color: ${(props) => props.theme.secondary.text};
+    opacity: 1;
   }
 `;
 
 const EscapeInstruction = styled.kbd`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 12px 16px 0;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background-color: transparent;
-  border: 1px solid
-    ${(props) =>
-      props.theme.name === 'dark'
-        ? 'rgba(237, 237, 237, 0.6)'
-        : 'rgba(23, 23, 23, 0.6)'};
-  color: ${(props) => (props.theme.name === 'dark' ? '#EDEDED' : '#171717')};
-  font-size: 12px;
-  font-family: 'Geist', sans-serif;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.6;
   white-space: nowrap;
+  color: ${(props) => props.theme.secondary.text};
+  background-color: ${(props) => props.theme.secondary.bg};
+  border: 1px solid ${(props) => props.theme.hairline};
+  border-radius: ${radii.sm};
   cursor: pointer;
-  width: fit-content;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
+`;
+
+const SearchNote = styled.div`
+  margin: -4px 16px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: ${(props) => props.theme.danger!.text};
 `;
 
 export const SearchBar = ({
@@ -362,6 +328,8 @@ export const SearchBar = ({
   placeholder = 'Search or Ask AI...',
   width = '256px',
   buttonText = 'Search here',
+  allowedFileExtensions,
+  showMicButton,
 }: SearchBarProps) => {
   const [input, setInput] = React.useState<string>('');
   const [loading, setLoading] = React.useState<boolean>(false);
@@ -374,6 +342,21 @@ export const SearchBar = ({
     null,
   );
   const abortControllerRef = React.useRef<AbortController | null>(null);
+  const getSearchDraft = React.useCallback(
+    () => inputRef.current?.value ?? '',
+    [],
+  );
+  // Deferred until the input is unhidden; hidden fields can't take focus.
+  const focusSearchInput = React.useCallback(() => {
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+  const dictation = useDictation({
+    enabled: Boolean(showMicButton),
+    getDraft: getSearchDraft,
+    onDraftChange: setInput,
+    separator: ' ',
+    onEnd: focusSearchInput,
+  });
   const browserOS = getOS();
   const isTouch = 'ontouchstart' in window;
 
@@ -383,7 +366,6 @@ export const SearchBar = ({
   };
 
   React.useEffect(() => {
-    loadGeistFont();
     const handleClickOutside = (event: MouseEvent) => {
       if (
         containerRef.current &&
@@ -446,6 +428,11 @@ export const SearchBar = ({
     };
   }, [input]);
 
+  // Stop recording if the palette closes mid-dictation.
+  React.useEffect(() => {
+    if (!isResultVisible && dictation.isDictating) dictation.stop();
+  }, [isResultVisible, dictation.isDictating, dictation.stop]);
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -464,9 +451,8 @@ export const SearchBar = ({
   };
 
   return (
-    <ThemeProvider theme={{ ...themes[theme] }}>
+    <ThemeProvider theme={themes[theme]}>
       <Main>
-        <GlobalStyle />
         <Container ref={containerRef}>
           <SearchButton
             onClick={() => setIsResultVisible(true)}
@@ -479,19 +465,47 @@ export const SearchBar = ({
               <SearchOverlay onClick={() => setIsResultVisible(false)} />
               <SearchResults>
                 <SearchHeader>
+                  {dictation.isDictating && (
+                    <VoiceWaveform
+                      analyserRef={dictation.analyserRef}
+                      label={
+                        dictation.state === 'recording'
+                          ? 'Listening…'
+                          : 'Finishing…'
+                      }
+                      minHeight="36px"
+                    />
+                  )}
                   <TextField
+                    $hidden={dictation.isDictating}
                     ref={inputRef}
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={(e) => {
+                      if (dictation.error) dictation.clearError();
+                      setInput(e.target.value);
+                    }}
                     onKeyDown={(e) => handleKeyDown(e)}
                     placeholder={placeholder}
                     autoFocus
                   />
+                  {dictation.available && (
+                    <MicButton
+                      variant="icon"
+                      state={dictation.state}
+                      onClick={dictation.toggle}
+                    />
+                  )}
                   <EscapeInstruction onClick={() => setIsResultVisible(false)}>
                     Esc
                   </EscapeInstruction>
                 </SearchHeader>
-                <AskAIButton onClick={openWidget}>
+                {dictation.error && (
+                  <SearchNote role="alert">{dictation.error}</SearchNote>
+                )}
+                <AskAIButton
+                  onClick={openWidget}
+                  disabled={dictation.isDictating}
+                >
                   <img src={DEFAULT_AVATAR} alt="" width={24} height={24} />
                   <span>Ask the AI</span>
                 </AskAIButton>
@@ -600,6 +614,8 @@ export const SearchBar = ({
           isOpen={isWidgetOpen}
           handleClose={handleClose}
           size={'large'}
+          allowedFileExtensions={allowedFileExtensions}
+          showMicButton={showMicButton}
         />
       </Main>
     </ThemeProvider>

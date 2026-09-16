@@ -172,6 +172,8 @@ import { SearchBar } from "docsgpt-react";
 | **`theme`**     | `"dark" \| "light"` | `"dark"`                            | The theme of the search bar. Accepts `"dark"` or `"light"`.                                     |
 | **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field.                                           |
 | **`width`**     | `string`  | `"256px"`                          | Width of the search bar. Accepts any valid CSS width value (e.g., `"300px"`, `"100%"`, `"20rem"`). |
+| **`allowedFileExtensions`** | `string[]` | _unset_ | Passed to the chat opened from "Ask the AI". File extensions its composer accepts, e.g. `['.pdf', '.md']`; attachments stay off while unset. |
+| **`showMicButton`** | `boolean` | `false` | Adds a microphone to the search field for dictating a query, and passes the same option to the chat opened from "Ask the AI". Uses the browser's Web Speech API. |
 
 
 Feel free to reach out if you need help customizing or extending the `SearchBar`!

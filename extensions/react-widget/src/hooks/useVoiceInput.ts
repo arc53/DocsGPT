@@ -39,13 +39,12 @@ const recognitionClass = (): SpeechRecognitionConstructor | undefined => {
 
 export const voiceInputSupported = (): boolean => {
   if (typeof window === 'undefined') return false;
-  // Gated on a secure origin, where the failure looks identical to the API
-  // being absent.
+  // The API is only exposed on secure origins.
   if (!window.isSecureContext) return false;
   return recognitionClass() !== undefined;
 };
 
-/** Message worth showing, or null for outcomes that are not errors. */
+/** User-facing message, or null for outcomes that are not errors. */
 const errorMessage = (code: string): string | null => {
   switch (code) {
     // The user pressed stop.
@@ -74,7 +73,7 @@ interface UseVoiceInputOptions {
   onEnd?: () => void;
 }
 
-/** The composer's microphone; one button toggles it. */
+/** Browser speech recognition with interim results. */
 export const useVoiceInput = ({
   onStart,
   onTranscript,
@@ -84,12 +83,12 @@ export const useVoiceInput = ({
     React.useState<RecordingState>('idle');
   const [error, setError] = React.useState<string | null>(null);
   const recognitionRef = React.useRef<SpeechRecognitionLike | null>(null);
-  // The Web Speech API exposes no audio, so the waveform needs a second
-  // capture of its own. Kept in a ref so the draw loop re-renders nothing.
+  // The Web Speech API exposes no audio, so the waveform uses a separate
+  // capture. Refs, so drawing does not re-render.
   const analyserRef = React.useRef<AnalyserNode | null>(null);
   const audioContextRef = React.useRef<AudioContext | null>(null);
   const levelStreamRef = React.useRef<MediaStream | null>(null);
-  // Finals accumulate; the interim tail is rebuilt each event, never kept.
+  // Final results accumulate; interim text is rebuilt on each event.
   const finalTranscriptRef = React.useRef('');
   const isMountedRef = React.useRef(true);
 
@@ -101,23 +100,21 @@ export const useVoiceInput = ({
     audioContextRef.current = null;
   }, []);
 
-  /** Best-effort: a browser that refuses this still transcribes fine. */
+  /** Best effort: recognition still works if this capture is refused. */
   const startLevelMeter = React.useCallback(async () => {
     const audioWindow = window as LegacyAudioWindow;
     const AudioContextClass =
       audioWindow.AudioContext ?? audioWindow.webkitAudioContext;
     if (!AudioContextClass || !navigator.mediaDevices?.getUserMedia) return;
 
-    // Never `await context.resume()`: without user activation that promise
-    // never settles at all, stranding everything below it, so no analyser is
-    // built. Constructed before the first await so it stays under the click's
-    // activation, which is insurance for browsers that do not treat a live
-    // capture as activation the way Chrome does.
+    // Never `await context.resume()`: without user activation the promise
+    // never settles and the analyser below is never built. Constructed before
+    // the first await so it is created within the click's activation.
     const context = new AudioContextClass();
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Recording may have ended while permission was granted.
+      // Recording may have ended while permission was pending.
       if (!isMountedRef.current || !recognitionRef.current) {
         stream.getTracks().forEach((track) => track.stop());
         void context.close().catch(() => undefined);
@@ -127,8 +124,7 @@ export const useVoiceInput = ({
       const analyser = context.createAnalyser();
       analyser.fftSize = LEVEL_FFT_SIZE;
       analyser.smoothingTimeConstant = LEVEL_SMOOTHING;
-      // Not connected to the destination: that would play the microphone
-      // back through the page's speakers.
+      // Left unconnected to the destination, which would play the mic back.
       context.createMediaStreamSource(stream).connect(analyser);
 
       levelStreamRef.current = stream;
@@ -143,8 +139,7 @@ export const useVoiceInput = ({
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      // `abort`, not `stop`: nothing left to deliver, and it frees the
-      // microphone at once.
+      // abort() releases the microphone immediately.
       recognitionRef.current?.abort();
       recognitionRef.current = null;
       stopLevelMeter();
@@ -175,8 +170,8 @@ export const useVoiceInput = ({
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interim = '';
-      // From `resultIndex`, not 0: the API returns the whole list every
-      // time, and earlier results are already banked.
+      // Start at resultIndex: the list also contains results already
+      // accumulated.
       for (
         let index = event.resultIndex;
         index < event.results.length;
@@ -199,8 +194,7 @@ export const useVoiceInput = ({
 
     recognition.onend = () => {
       recognitionRef.current = null;
-      // Not on stop(), so the bars stay live while the last utterance
-      // finalises.
+      // Here, so the waveform stays live until the final result arrives.
       stopLevelMeter();
       if (!isMountedRef.current) return;
       // An error already set its own state; do not overwrite it.
@@ -224,22 +218,26 @@ export const useVoiceInput = ({
     void startLevelMeter();
   }, [onEnd, onStart, onTranscript, startLevelMeter, stopLevelMeter]);
 
+  const stop = React.useCallback(() => {
+    if (recordingState !== 'recording') return;
+    // stop() lets the last utterance deliver its final result.
+    setRecordingState('transcribing');
+    recognitionRef.current?.stop();
+  }, [recordingState]);
+
   const toggle = React.useCallback(() => {
     if (recordingState === 'transcribing') return;
     if (recordingState === 'recording') {
-      // `stop`, not `abort`: the last utterance still has a final result
-      // to deliver.
-      setRecordingState('transcribing');
-      recognitionRef.current?.stop();
+      stop();
       return;
     }
     start();
-  }, [recordingState, start]);
+  }, [recordingState, start, stop]);
 
   const clearError = React.useCallback(() => {
     setError(null);
     setRecordingState((previous) => (previous === 'error' ? 'idle' : previous));
   }, []);
 
-  return { recordingState, error, toggle, clearError, analyserRef };
+  return { recordingState, error, toggle, stop, clearError, analyserRef };
 };
