@@ -4,6 +4,7 @@ import io
 import json
 import stat
 import tarfile
+from pathlib import Path
 
 import pytest
 
@@ -27,13 +28,16 @@ def _manifest(path):
         return json.loads(archive.extractfile(backup_module.MANIFEST).read())
 
 
-def _rewrite(archive, dest, *, volumes=None, drop=()):
-    """The same archive with other volumes in its manifest, or with members left out."""
+def _rewrite(archive, dest, *, volumes=None, drop=(), corrupt=()):
+    """The same archive with other volumes in its manifest, or with members left out or damaged."""
     with tarfile.open(archive, "r:gz") as source, tarfile.open(dest, "w:gz") as out:
         for member in source.getmembers():
             if member.name in drop:
                 continue
             body = source.extractfile(member).read() if member.isfile() else None
+            if member.name in corrupt:
+                body = body[:60]
+                member.size = len(body)
             if member.name == backup_module.MANIFEST and volumes is not None:
                 manifest = json.loads(body.decode())
                 manifest["volumes"] = volumes
@@ -116,6 +120,22 @@ class TestBackup:
         dumped = next(index for index, call in enumerate(joined) if "pg_dump" in call)
         started = next(index for index, call in enumerate(joined) if call.startswith("up -d backend worker"))
         assert stopped < dumped < started, joined
+
+    def test_the_writers_come_back_even_when_stopping_them_fails(self, tmp_path):
+        """A stop that fails partway must not leave the backend or the worker down."""
+        _installed(tmp_path)
+
+        class FailingStop(FakeDocker):
+            def compose(self, directory, *args, **kwargs):
+                if args[:1] == ("stop",):
+                    self.calls.append((Path(directory), list(args)))
+                    raise DeployError("compose stop exploded")
+                return super().compose(directory, *args, **kwargs)
+
+        docker = FailingStop()
+        with pytest.raises(DeployError, match="compose stop exploded"):
+            _run(["backup", "--dir", str(tmp_path), "--out", str(tmp_path / "b")], _context(docker))
+        assert any(" ".join(args).startswith("up -d backend worker") for _, args in docker.calls), docker.calls
 
     def test_the_writers_come_back_even_when_the_dump_fails(self, tmp_path):
         _installed(tmp_path)
@@ -212,6 +232,32 @@ class TestRestore:
         joined = [" ".join(args) for _, args in docker.calls]
         assert any(call.startswith("up -d --remove-orphans") for call in joined), joined
         assert "Starting DocsGPT again" in capsys.readouterr().err
+
+    def test_a_shutdown_that_fails_still_starts_the_stack_again(self, tmp_path):
+        """`compose down` can fail with containers already stopped; the stack must not stay down."""
+        archive = self._backup(tmp_path)
+
+        class FailingDown(FakeDocker):
+            def compose(self, directory, *args, **kwargs):
+                if "down" in args:
+                    self.calls.append((Path(directory), list(args)))
+                    raise DeployError("compose down exploded")
+                return super().compose(directory, *args, **kwargs)
+
+        docker = FailingDown(volumes={"docsgpt_postgres_data"})
+        with pytest.raises(DeployError, match="compose down exploded"):
+            _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker))
+        joined = [" ".join(args) for _, args in docker.calls]
+        assert any(call.startswith("up -d --remove-orphans") for call in joined), joined
+
+    def test_a_damaged_volume_tar_is_found_before_any_volume_is_replaced(self, tmp_path):
+        """vectors sorts last, so a per-volume check would already have swapped indexes and inputs."""
+        archive = _rewrite(self._backup(tmp_path), tmp_path / "bad-volume.tar.gz",
+                           corrupt=(backup_module.volume_member("vectors"),))
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        with pytest.raises(DeployError, match="damaged"):
+            _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker))
+        assert [op for op in docker.volume_ops if op[0] == "import"] == [], docker.volume_ops
 
     def test_a_newer_backup_is_refused_without_force(self, tmp_path):
         """Restoring a 0.22 backup into 0.21 would hand an older schema newer data."""

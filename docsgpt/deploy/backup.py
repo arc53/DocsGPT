@@ -113,6 +113,16 @@ def validate(path: Path, manifest: Mapping[str, object]) -> list[str]:
     return list(volumes)
 
 
+def check_volume_tar(name: str, path: Path) -> None:
+    """Read a volume tar through, so a damaged one is found before any volume is replaced."""
+    try:
+        with tarfile.open(path, "r:*") as archive:
+            for _ in archive:
+                pass
+    except (tarfile.TarError, OSError) as exc:
+        raise DeployError(f"the {name} volume in this backup is damaged: {exc}") from exc
+
+
 def extract(path: Path, destination: Path) -> None:
     """Unpack the archive into ``destination`` (data filter: no paths outside it, no devices)."""
     with tarfile.open(path, "r:gz") as archive:
