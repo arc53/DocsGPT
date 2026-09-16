@@ -143,10 +143,19 @@ class TestUpFirstInstall:
     def test_network_mode_warns_about_plain_http_before_starting(self, tmp_path, capsys):
         """The token travels as readable text, so say so before the stack is up, not only after."""
         docker = FakeDocker()
+        start = docker.compose
+        seen = {}
+
+        def recording(directory, *args, **kwargs):
+            # capsys hands over what was written so far, so the warning has to be in it already.
+            seen.setdefault("stderr", capsys.readouterr().err)
+            return start(directory, *args, **kwargs)
+
+        docker.compose = recording
         assert _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "network"], _context(docker)) == 0
-        err = capsys.readouterr().err
-        assert "plain HTTP" in err
-        assert "--domain" in err
+        assert docker.calls, "compose was called"
+        assert "plain HTTP" in seen["stderr"]
+        assert "--domain" in seen["stderr"]
 
     def test_a_local_install_does_not_warn(self, tmp_path, capsys):
         assert _run(["up", "--yes", "--dir", str(tmp_path)], _context()) == 0
