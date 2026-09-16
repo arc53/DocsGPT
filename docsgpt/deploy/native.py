@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 import shlex
 import subprocess
 import sys
@@ -47,6 +48,7 @@ def label_for(name: str) -> str:
 
 def launchd_plist(unit: Unit, label: Optional[str] = None) -> str:
     """The launchd agent for ``unit``: kept alive, with its output in the stack's log file."""
+    _check_unit_values(unit)
     body = {
         "Label": label or label_for(unit.name),
         "ProgramArguments": list(unit.arguments),
@@ -61,6 +63,26 @@ def launchd_plist(unit: Unit, label: Optional[str] = None) -> str:
     return plistlib.dumps(body).decode("utf-8")
 
 
+_CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _reject_control_characters(what: str, value: str) -> None:
+    """Service files are line-based, so a newline in a value adds a directive instead of text."""
+    if _CONTROL_CHARACTERS.search(value):
+        raise DeployError(f"{what} contains a control character, which a service file cannot carry: {value!r}")
+
+
+def _check_unit_values(unit: Unit) -> None:
+    """Everything bound for a service file, checked before any of it is rendered."""
+    _reject_control_characters("the working directory", unit.working_directory)
+    _reject_control_characters("the log file path", unit.log_file)
+    for key, value in unit.environment.items():
+        _reject_control_characters("an environment name", key)
+        _reject_control_characters(f"the environment value for {key}", value)
+    for argument in unit.arguments:
+        _reject_control_characters("a command argument", argument)
+
+
 def _systemd_quote(value: str) -> str:
     """A unit-file value, double-quoted with backslashes and quotes escaped, as systemd reads them."""
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
@@ -69,6 +91,7 @@ def _systemd_quote(value: str) -> str:
 
 def systemd_unit(unit: Unit) -> str:
     """The systemd user unit for ``unit``; values are quoted, so a path with spaces survives."""
+    _check_unit_values(unit)
     environment = "\n".join(
         f"Environment={_systemd_quote(f'{key}={value}')}" for key, value in sorted(unit.environment.items())
     )

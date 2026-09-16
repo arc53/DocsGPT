@@ -487,6 +487,31 @@ class TestUnitFiles:
         assert 'WorkingDirectory="/srv/my \\"odd\\" dir"' in body
         assert 'Environment="DOCSGPT_HOME=/srv/my \\"odd\\" dir"' in body
 
+    def test_a_newline_in_a_path_is_refused_rather_than_quoted(self, tmp_path):
+        """A service file is line-based: quoting cannot hold a newline, it would add a directive."""
+        unit = native.Unit(
+            name="docsgpt-api",
+            arguments=["/venv/bin/docsgpt", "api"],
+            environment={"DOCSGPT_HOME": str(tmp_path)},
+            working_directory="/srv/x\nExecStart=/bin/sh -c evil",
+            log_file="/srv/api.log",
+        )
+        with pytest.raises(DeployError, match="control character"):
+            native.systemd_unit(unit)
+        with pytest.raises(DeployError, match="control character"):
+            native.launchd_plist(unit)
+
+    def test_a_newline_in_the_environment_is_refused(self, tmp_path):
+        unit = native.Unit(
+            name="docsgpt-api",
+            arguments=["/venv/bin/docsgpt", "api"],
+            environment={"DOCSGPT_HOME": "/srv/x\nEnvironment=EVIL=1"},
+            working_directory=str(tmp_path),
+            log_file="/srv/api.log",
+        )
+        with pytest.raises(DeployError, match="control character"):
+            native.systemd_unit(unit)
+
     def test_an_argument_with_spaces_survives_the_systemd_unit(self, tmp_path):
         unit = self._unit(tmp_path)
         unit.arguments = ["/opt/my venv/bin/docsgpt", "api"]
