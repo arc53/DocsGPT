@@ -15,9 +15,11 @@ class FakeRunner:
     def __init__(self, answers=None):
         self.answers = list((answers or {}).items())
         self.calls = []
+        self.streams = []
 
-    def __call__(self, args, *, cwd=None, capture=False, check=True):
+    def __call__(self, args, *, cwd=None, capture=False, check=True, stdout=None, stdin=None):
         self.calls.append((list(args), cwd))
+        self.streams.append((stdout, stdin))
         for prefix, answer in self.answers:
             if list(args[: len(prefix)]) == list(prefix):
                 if callable(answer):
@@ -103,6 +105,32 @@ class TestQueries:
         assert _docker(runner).project_dirs("docsgpt") == {Path("/srv/old"), Path("/home/me/.docsgpt/server")}
         args = runner.calls[0][0]
         assert "label=com.docker.compose.project=docsgpt" in args
+
+
+class TestVolumes:
+    def test_export_writes_the_volume_through_the_stack_image(self, tmp_path):
+        runner = FakeRunner()
+        dest = tmp_path / "volumes" / "inputs.tar"
+        _docker(runner).export_volume("docsgpt_inputs", dest, "arc53/docsgpt:0.21.0")
+        args, _ = runner.calls[0]
+        assert args[:4] == ["docker", "run", "--rm", "-v"]
+        assert args[4] == "docsgpt_inputs:/data:ro"
+        assert args[5] == "arc53/docsgpt:0.21.0"
+        assert args[6:] == ["tar", "cf", "-", "-C", "/data", "."]
+        assert dest.is_file(), "the tar is written to the destination"
+        assert runner.streams[0][0] is not None, "stdout goes to the file, not through this process"
+
+    def test_import_replaces_the_volume_contents(self, tmp_path):
+        source = tmp_path / "inputs.tar"
+        source.write_bytes(b"tar")
+        runner = FakeRunner()
+        _docker(runner).import_volume("docsgpt_inputs", source, "arc53/docsgpt:0.21.0")
+        args, _ = runner.calls[0]
+        assert "docsgpt_inputs:/data" in args
+        assert args[-2] == "-c"
+        assert "tar xf - -C /data" in args[-1]
+        assert "find /data -mindepth 1 -delete" in args[-1], "old contents go first"
+        assert runner.streams[0][1] is not None, "the tar is fed in on stdin"
 
 
 class TestWaitHealthy:

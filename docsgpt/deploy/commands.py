@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import webbrowser
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from docsgpt.deploy import backup as backup_format
 from docsgpt.deploy import envfile, stack
 from docsgpt.deploy.docker import DeployError, Docker, lan_ip, wait_healthy
 
@@ -347,6 +349,119 @@ def env(args, context: Optional[Context] = None) -> int:
     except ValueError as exc:
         raise DeployError(str(exc)) from exc
     print(f"Saved to {env_path}. Run `docsgpt up` to apply.")
+    return 0
+
+
+def _stack_image(env: Mapping[str, str]) -> str:
+    """The image this install runs; the volume tars go through it, so nothing extra is pulled."""
+    tag = env.get("DOCSGPT_IMAGE_TAG") or "latest"
+    return f"arc53/docsgpt:{tag}{env.get('DOCSGPT_IMAGE_VARIANT', '')}"
+
+
+def backup(args, context: Optional[Context] = None) -> int:
+    """Write a dump of the database and a tar of each data volume into one archive."""
+    context = context or Context.default(args)
+    directory = stack.stack_dir(args.dir)
+    env = _installed(directory)
+    if env is None:
+        return 1
+
+    out_dir = Path(args.out).expanduser() if args.out else directory / "backups"
+    taken_at = datetime.now(timezone.utc)
+    target = out_dir / backup_format.archive_name(taken_at)
+    image = _stack_image(env)
+
+    with tempfile.TemporaryDirectory() as workspace:
+        work = Path(workspace)
+        dump = work / backup_format.DUMP
+        print("Dumping the database ...")
+        with dump.open("w", encoding="utf-8") as handle:
+            context.docker.compose(
+                directory, "exec", "-T", "postgres",
+                "pg_dump", "--clean", "--if-exists", "-U", "docsgpt", "-d", "docsgpt",
+                stdout=handle,
+            )
+        volume_tars = {}
+        for name in backup_format.DATA_VOLUMES:
+            print(f"Archiving the {name} volume ...")
+            tar_path = work / f"{name}.tar"
+            context.docker.export_volume(f"{PROJECT}_{name}", tar_path, image)
+            volume_tars[name] = tar_path
+        manifest = {
+            "format": backup_format.FORMAT,
+            "created_at": taken_at.isoformat(timespec="seconds"),
+            "version": context.version,
+            "image_tag": env.get("DOCSGPT_IMAGE_TAG", ""),
+            "volumes": list(backup_format.DATA_VOLUMES),
+            "settings_included": bool(args.with_settings),
+        }
+        settings = directory / ".env" if args.with_settings else None
+        backup_format.write_archive(target, dump=dump, volume_tars=volume_tars, manifest=manifest, settings=settings)
+
+    size = target.stat().st_size / 1_000_000
+    print(f"\nBackup written to {target} ({size:.1f} MB)")
+    if args.with_settings:
+        print("It contains .env, so it holds this install's secrets: keep it somewhere private.")
+    else:
+        print("Settings are not in it; `docsgpt backup --with-settings` includes .env, secrets and all.")
+    print(f"Restore it with: docsgpt restore {target}")
+    return 0
+
+
+def restore(args, context: Optional[Context] = None) -> int:
+    """Put a backup's database and data volumes back over this install."""
+    context = context or Context.default(args)
+    archive = Path(args.archive).expanduser()
+    manifest = backup_format.read_manifest(archive)
+    backup_format.check_version(manifest, context.version, args.force)
+
+    directory = stack.stack_dir(args.dir)
+    env = _installed(directory)
+    if env is None:
+        return 1
+
+    taken_at = manifest.get("created_at", "an unknown time")
+    if not args.yes:
+        if not context.interactive:
+            raise DeployError("restore needs --yes when there is no terminal to confirm on")
+        question = f"Replace the data in {directory} with the backup from {taken_at}? This cannot be undone."
+        if not context.prompter.confirm(question, default=False):
+            print("Nothing restored.")
+            return 1
+
+    image = _stack_image(env)
+    print("Stopping the stack ...")
+    context.docker.compose(directory, *_EVERY_PROFILE, "down")
+
+    with tempfile.TemporaryDirectory() as workspace:
+        work = Path(workspace)
+        backup_format.extract(archive, work)
+        for name in manifest.get("volumes", []):
+            tar_path = work / backup_format.volume_member(name)
+            if not tar_path.is_file():
+                raise DeployError(f"{archive} is missing the {name} volume it says it contains")
+            print(f"Restoring the {name} volume ...")
+            context.docker.import_volume(f"{PROJECT}_{name}", tar_path, image)
+
+        dump = work / backup_format.DUMP
+        if not dump.is_file():
+            raise DeployError(f"{archive} is missing its database dump")
+        print("Starting the database ...")
+        context.docker.compose(directory, "up", "-d", "--wait", "postgres")
+        print("Restoring the database ...")
+        with dump.open("r", encoding="utf-8") as handle:
+            context.docker.compose(
+                directory, "exec", "-T", "postgres",
+                "psql", "--quiet", "-U", "docsgpt", "-d", "docsgpt",
+                stdin=handle,
+            )
+
+    print("Starting DocsGPT ...")
+    context.docker.compose(directory, "up", "-d", "--remove-orphans")
+    if not context.wait(stack.health_url(env), args.timeout):
+        print("DocsGPT did not answer after the restore. See `docsgpt logs backend`.", file=sys.stderr)
+        return 1
+    print(f"\nRestored the backup from {taken_at}. DocsGPT is running at {stack.url(env, context.lan_ip())}")
     return 0
 
 
