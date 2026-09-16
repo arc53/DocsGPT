@@ -56,15 +56,13 @@ class PPTXParser(BaseParser):
 
             # Iterate over each slide in the presentation
             for slide in presentation.slides:
-                slide_text=""
+                blocks: List[str] = []
 
                 # Iterate over each shape in the slide
                 for shape in slide.shapes:
-                    # Check if the shape has a 'text' attribute and append that to the slide_text
-                    if hasattr(shape,"text"):
-                        slide_text+=shape.text
+                    blocks.extend(self._shape_text(shape))
 
-                slide_texts.append(slide_text.strip())
+                slide_texts.append("\n".join(blocks).strip())
 
             if self._concat_slides:
                 return self._slide_separator.join(slide_texts)
@@ -73,3 +71,34 @@ class PPTXParser(BaseParser):
 
         except Exception as e:
             raise e
+
+    def _shape_text(self, shape: Any) -> List[str]:
+        """Return the blocks of text a shape carries, in reading order.
+
+        A group carries no text of its own and neither does the graphic frame a
+        table lives on, so `shape.text` alone misses both entirely. A group is
+        the only shape with its own `shapes` collection, which is what
+        identifies it here without importing the enum.
+        """
+        if hasattr(shape, "shapes"):
+            grouped: List[str] = []
+            for grouped_shape in shape.shapes:
+                grouped.extend(self._shape_text(grouped_shape))
+            return grouped
+
+        if getattr(shape, "has_table", False):
+            return [self._table_to_markdown(shape.table)]
+
+        text = getattr(shape, "text", "") or ""
+        text = text.strip()
+        return [text] if text else []
+
+    @staticmethod
+    def _table_to_markdown(table: Any) -> str:
+        """Render a slide table as a GFM table, the form `tableize` also emits."""
+        rows = [[cell.text.strip().replace("|", "\\|") for cell in row.cells] for row in table.rows]
+        if not rows:
+            return ""
+        lines = ["| " + " | ".join(rows[0]) + " |", "|" + " --- |" * len(rows[0])]
+        lines.extend("| " + " | ".join(row) + " |" for row in rows[1:])
+        return "\n".join(lines)
