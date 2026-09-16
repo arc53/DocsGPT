@@ -240,6 +240,22 @@ def _docsgpt_launcher() -> list[str]:
     )
 
 
+def _refuse_docker_only_options(args) -> None:
+    """Options that only mean something to the Docker stack, refused rather than quietly ignored."""
+    if getattr(args, "domain", None) or getattr(args, "expose", None) in ("network", "domain"):
+        raise DeployError(
+            "a native install serves on 127.0.0.1 only, so --domain, --expose network and "
+            "--expose domain have nothing to act on here. Put a reverse proxy in front of it, or run "
+            "the Docker stack with `docsgpt up --expose ...`, which brings its own Caddy for a domain."
+        )
+    if getattr(args, "docling", None):
+        raise DeployError(
+            "--docling selects a Docker image variant, which a native install does not use. Install the "
+            'parser engine into this environment instead, with `uv tool install "docsgpt[docling]"` or '
+            '`pip install "docsgpt[docling]"`, then run `docsgpt up --native` again.'
+        )
+
+
 def _native_port(env: Mapping[str, str]) -> str:
     """The port a native install listens on."""
     return str(env.get("DOCSGPT_PORT") or stack.DEFAULT_PORT)
@@ -252,6 +268,7 @@ def _native_address(env: Mapping[str, str]) -> str:
 
 def _native_up(args, context: Context, directory: Path) -> int:
     """Run the API and the worker as services on this machine, against an existing Postgres and Redis."""
+    _refuse_docker_only_options(args)
     services = context.service_manager()
     env_path = directory / ".env"
     existing = envfile.read(env_path)

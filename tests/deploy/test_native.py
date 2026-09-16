@@ -164,6 +164,22 @@ class TestNativeUp:
         assert _run(["uninstall", "--yes", "--dir", str(tmp_path)], _native_context(services)) == 0
         assert sorted(services.removed) == ["docsgpt-api", "docsgpt-worker"]
 
+    def test_docker_only_options_are_refused_rather_than_ignored(self, tmp_path):
+        """Asking for network exposure and silently getting loopback is the worst of both."""
+        base = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
+        with pytest.raises(DeployError, match="127.0.0.1 only"):
+            _run([*base, "--expose", "network"], _native_context())
+        with pytest.raises(DeployError, match="127.0.0.1 only"):
+            _run([*base, "--domain", "docs.example.com"], _native_context())
+        with pytest.raises(DeployError, match=r"docsgpt\[docling\]"):
+            _run([*base, "--docling"], _native_context())
+        assert not (tmp_path / ".env").exists(), "it refuses before writing anything"
+
+    def test_the_options_that_describe_what_native_already_does_are_kept(self, tmp_path):
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d",
+                "--expose", "local", "--no-docling"]
+        assert _run(argv, _native_context()) == 0
+
     def test_a_database_url_is_required(self, tmp_path):
         with pytest.raises(DeployError, match="--postgres-uri"):
             _run(["up", "--native", "--dir", str(tmp_path), "--yes"], _native_context())
