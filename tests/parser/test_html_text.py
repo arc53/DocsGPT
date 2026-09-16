@@ -38,3 +38,16 @@ def test_script_and_style_contents_stay_out():
 
 def test_empty_blocks_leave_no_blank_lines():
     assert _text("<div></div><p>only this</p><div>   </div>") == "only this"
+
+
+def test_a_pre_block_keeps_its_indentation_and_blank_lines():
+    """In a <pre> the whitespace is the content, so it is not normalised."""
+    html = "<p>Run this:</p><pre>  if ready:\n    run()\n\n  done()</pre><p>after</p>"
+
+    assert _text(html) == "Run this:\n  if ready:\n    run()\n\n  done()\nafter"
+
+
+def test_a_pre_block_keeps_the_markup_inside_it_flat():
+    html = "<pre><code>def f():\n    return 1</code></pre>"
+
+    assert _text(html) == "def f():\n    return 1"
