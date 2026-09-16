@@ -238,6 +238,17 @@ class TestNativeLifecycle:
         self._installed(tmp_path, FakeServices())
         assert _run(["logs", "--dir", str(tmp_path)], _native_context()) == 0, "logs work in both modes"
 
+    def test_backup_says_why_there_is_nothing_to_archive(self, tmp_path):
+        """Its data is not in Docker volumes, so compose would fail with no configuration file."""
+        self._installed(tmp_path, FakeServices())
+        with pytest.raises(DeployError, match="native install"):
+            _run(["backup", "--dir", str(tmp_path)], _native_context())
+
+    def test_restore_refuses_before_it_touches_anything(self, tmp_path):
+        self._installed(tmp_path, FakeServices())
+        with pytest.raises(DeployError, match="native install"):
+            _run(["restore", str(tmp_path / "any.tar.gz"), "--dir", str(tmp_path), "--yes"], _native_context())
+
 
 class FakeLaunchctl:
     """launchctl, with a bootout that takes `unload_polls` polls to take effect."""

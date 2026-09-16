@@ -568,6 +568,10 @@ def backup(args, context: Optional[Context] = None) -> int:
     env = _installed(directory)
     if env is None:
         return 1
+    if _mode(directory) == "native":
+        raise DeployError(
+            f"{directory} is a native install: its database and its files are not in Docker volumes, so there is nothing here to archive. Back up the PostgreSQL that POSTGRES_URI points at with pg_dump, and copy the indexes, inputs and vectors folders from the data home."
+        )
 
     out_dir = Path(args.out).expanduser() if args.out else directory / "backups"
     taken_at = datetime.now(timezone.utc)
@@ -657,13 +661,17 @@ def _restore_data(context: Context, directory: Path, archive: Path, volumes: lis
 def restore(args, context: Optional[Context] = None) -> int:
     """Put a backup's database and data volumes back over this install."""
     context = context or Context.default(args)
+    directory = stack.stack_dir(args.dir)
+    if _mode(directory) == "native":
+        raise DeployError(
+            f"{directory} is a native install: its database and its files are not in Docker volumes, so there is nothing here to archive. Back up the PostgreSQL that POSTGRES_URI points at with pg_dump, and copy the indexes, inputs and vectors folders from the data home. `docsgpt restore` puts back what `docsgpt backup` wrote for a Docker install."
+        )
     archive = Path(args.archive).expanduser()
     manifest = backup_format.read_manifest(archive)
     backup_format.check_version(manifest, context.version, args.force)
     # Everything the archive declares is checked here, while DocsGPT is still up.
     volumes = backup_format.validate(archive, manifest)
 
-    directory = stack.stack_dir(args.dir)
     env = _installed(directory)
     if env is None:
         return 1
