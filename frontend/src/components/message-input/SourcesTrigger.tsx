@@ -61,7 +61,7 @@ export default function SourcesTrigger({
           <img
             src={SourceIcon}
             alt="Sources"
-            className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
+            className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4 dark:invert"
           />
           <span className="xs:text-xs dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs font-medium sm:text-sm">
             {selectedDocs && selectedDocs.length > 0

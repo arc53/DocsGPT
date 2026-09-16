@@ -1063,6 +1063,7 @@
     "share": "Compartir",
     "delete": "Eliminar",
     "rename": "Renombrar",
+    "save": "Guardar",
     "deleteWarning": "¿Está seguro de que desea eliminar esta conversación?"
   },
   "pagination": {

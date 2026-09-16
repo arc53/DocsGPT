@@ -1,4 +1,4 @@
-import { ExternalLink, Plus } from 'lucide-react';
+import { Plus, Share } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
@@ -73,11 +73,7 @@ export default function ActionButtons({
               onClick={() => setShareModalState(true)}
               className="text-muted-foreground hover:text-foreground rounded-full"
             >
-              <ExternalLink
-                className="size-5"
-                strokeWidth={1.75}
-                aria-label="share"
-              />
+              <Share className="size-5" strokeWidth={1.75} aria-label="share" />
             </Button>
             {isShareModalOpen && (
               <ShareConversationModal

@@ -1086,7 +1086,7 @@ function Upload({
                   <img
                     src={ChevronRight}
                     alt="back"
-                    className="h-3 w-3 rotate-180 transform"
+                    className="h-3 w-3 rotate-180 transform dark:invert"
                   />
                   <span>{t('modals.uploadDoc.back')}</span>
                 </Button>

@@ -1068,6 +1068,7 @@
     "share": "Share",
     "delete": "Delete",
     "rename": "Rename",
+    "save": "Save",
     "deleteWarning": "Are you sure you want to delete this conversation?"
   },
   "pagination": {

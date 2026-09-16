@@ -1,4 +1,4 @@
-import { ExternalLink, X } from 'lucide-react';
+import { Share, X } from 'lucide-react';
 import {
   SyntheticEvent,
   useCallback,
@@ -135,7 +135,7 @@ export default function ConversationTile({
 
   const menuOptions: ConversationMenuOption[] = [
     {
-      icon: <ExternalLink className="size-3.5" strokeWidth={1.75} />,
+      icon: <Share className="size-4" strokeWidth={1.75} />,
       label: t('convTile.share'),
       onClick: (event: SyntheticEvent) => {
         event.stopPropagation();
@@ -216,11 +216,13 @@ export default function ConversationTile({
           <div className="dark:text-muted-foreground flex text-white">
             {isEdit ? (
               <div className="flex gap-1">
-                <img
-                  src={CheckMark2}
-                  alt="Edit"
-                  className="mr-2 h-4 w-4 cursor-pointer text-white hover:opacity-50"
-                  id={`img-${conversation.id}`}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('convTile.save')}
+                  title={t('convTile.save')}
+                  className="mr-2 h-auto w-auto bg-transparent p-0 hover:bg-transparent hover:opacity-50"
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
                     handleSaveConversation({
@@ -228,12 +230,15 @@ export default function ConversationTile({
                       name: conversationName,
                     });
                   }}
-                />
+                >
+                  <img src={CheckMark2} alt="" className="h-4 w-4" />
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  aria-label="Exit"
+                  aria-label={t('cancel')}
+                  title={t('cancel')}
                   id={`img-${conversation.id}`}
                   className="mt-px mr-4 h-auto w-auto bg-transparent p-0 hover:bg-transparent hover:opacity-50"
                   onClick={(event: SyntheticEvent) => {
