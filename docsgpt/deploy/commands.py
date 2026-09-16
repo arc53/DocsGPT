@@ -527,6 +527,26 @@ def backup(args, context: Optional[Context] = None) -> int:
     target = out_dir / backup_format.archive_name(taken_at)
     image = _stack_image(env)
 
+    print("Pausing the backend and the worker so the database and the files match ...")
+    context.docker.compose(directory, "stop", "backend", "worker")
+    try:
+        _write_backup(args, context, directory, env, target, image, taken_at)
+    finally:
+        print("Starting the backend and the worker again ...")
+        context.docker.compose(directory, "up", "-d", "backend", "worker")
+
+    size = target.stat().st_size / 1_000_000
+    print(f"\nBackup written to {target} ({size:.1f} MB)")
+    if args.with_settings:
+        print("It contains .env, so it holds this install's secrets: keep it somewhere private.")
+    else:
+        print("Settings are not in it; `docsgpt backup --with-settings` includes .env, secrets and all.")
+    print(f"Restore it with: docsgpt restore {target}")
+    return 0
+
+
+def _write_backup(args, context: Context, directory: Path, env, target: Path, image: str, taken_at) -> None:
+    """Dump the database and the data volumes into ``target``, with the writers stopped."""
     with tempfile.TemporaryDirectory() as workspace:
         work = Path(workspace)
         dump = work / backup_format.DUMP
@@ -554,15 +574,6 @@ def backup(args, context: Optional[Context] = None) -> int:
         settings = directory / ".env" if args.with_settings else None
         backup_format.write_archive(target, dump=dump, volume_tars=volume_tars, manifest=manifest, settings=settings)
 
-    size = target.stat().st_size / 1_000_000
-    print(f"\nBackup written to {target} ({size:.1f} MB)")
-    if args.with_settings:
-        print("It contains .env, so it holds this install's secrets: keep it somewhere private.")
-    else:
-        print("Settings are not in it; `docsgpt backup --with-settings` includes .env, secrets and all.")
-    print(f"Restore it with: docsgpt restore {target}")
-    return 0
-
 
 def restore(args, context: Optional[Context] = None) -> int:
     """Put a backup's database and data volumes back over this install."""
@@ -570,6 +581,8 @@ def restore(args, context: Optional[Context] = None) -> int:
     archive = Path(args.archive).expanduser()
     manifest = backup_format.read_manifest(archive)
     backup_format.check_version(manifest, context.version, args.force)
+    # Everything the archive declares is checked here, while DocsGPT is still up.
+    volumes = backup_format.validate(archive, manifest)
 
     directory = stack.stack_dir(args.dir)
     env = _installed(directory)
@@ -592,7 +605,7 @@ def restore(args, context: Optional[Context] = None) -> int:
     with tempfile.TemporaryDirectory() as workspace:
         work = Path(workspace)
         backup_format.extract(archive, work)
-        for name in manifest.get("volumes", []):
+        for name in volumes:
             tar_path = work / backup_format.volume_member(name)
             if not tar_path.is_file():
                 raise DeployError(f"{archive} is missing the {name} volume it says it contains")
@@ -608,7 +621,7 @@ def restore(args, context: Optional[Context] = None) -> int:
         with dump.open("r", encoding="utf-8") as handle:
             context.docker.compose(
                 directory, "exec", "-T", "postgres",
-                "psql", "--quiet", "-U", "docsgpt", "-d", "docsgpt",
+                "psql", "--quiet", "--set", "ON_ERROR_STOP=on", "-U", "docsgpt", "-d", "docsgpt",
                 stdin=handle,
             )
 

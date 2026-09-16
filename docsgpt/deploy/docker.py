@@ -119,8 +119,11 @@ class Docker:
         """Replace ``volume``'s contents with the tar at ``source``; the volume is created when missing."""
         with source.open("rb") as handle:
             self._run(
-                ["docker", "run", "--rm", "-i", "-v", f"{volume}:/data", image,
-                 "sh", "-c", "find /data -mindepth 1 -delete && tar xf - -C /data"],
+                ["docker", "run", "--rm", "-i", "-v", f"{volume}:/data", image, "sh", "-c",
+                 # Unpack into the container's own filesystem first: a truncated or corrupt tar must
+                 # fail before the live volume is touched, not halfway through emptying it.
+                 "set -e; rm -rf /stage; mkdir /stage; tar xf - -C /stage; "
+                 "find /data -mindepth 1 -delete; tar cf - -C /stage . | tar xf - -C /data"],
                 stdin=handle,
             )
 

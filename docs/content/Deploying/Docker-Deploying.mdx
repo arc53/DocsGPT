@@ -89,6 +89,12 @@ docsgpt backup                      # into <stack>/backups
 docsgpt backup --out /mnt/backups   # somewhere else, e.g. a mounted disk
 ```
 
+While the archive is made, the backend and the worker stop and start again, so
+the database dump and the files in the volumes describe the same moment; Postgres
+itself keeps running. On a small install that pause is seconds, but count on it
+if you run `docsgpt backup` from cron. The archive is written readable only by
+the user who took it.
+
 The archive does **not** include `.env`, because that file holds the install's
 secrets. `docsgpt backup --with-settings` puts it in, for when the archive
 itself is stored somewhere private. Keep `.env` safe separately otherwise: the
