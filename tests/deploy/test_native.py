@@ -231,6 +231,15 @@ class TestNativeUp:
         with pytest.raises(DeployError, match="too long to read"):
             _run(argv, _native_context())
 
+    @pytest.mark.parametrize("url", ["redis://localhost:notaport/0", "redis://localhost:65536/0"])
+    def test_a_redis_url_with_an_unusable_port_is_refused(self, tmp_path, url):
+        """urlsplit accepts it and rebuilds it verbatim; only .port notices, and the worker dies later."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes",
+                "--postgres-uri", "postgresql://localhost/d", "--redis-url", url]
+        with pytest.raises(DeployError, match="unusable port"):
+            _run(argv, _native_context())
+        assert not (tmp_path / ".env").exists(), "it refuses before writing settings the worker would read"
+
     @pytest.mark.parametrize("url", ["localhost:6379", "redis+socket:///var/run/redis.sock",
                                      "redis://localhost:6379/queue"])
     def test_a_redis_url_that_cannot_be_numbered_is_refused(self, tmp_path, url):

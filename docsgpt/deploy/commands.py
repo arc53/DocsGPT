@@ -215,6 +215,13 @@ def _redis_urls(base: str) -> dict[str, str]:
     except ValueError as exc:
         # urlsplit raises on things like redis://[::1 ; that is a typo, not a crash.
         raise DeployError(f"the Redis URL {base!r} could not be read: {exc}") from exc
+    try:
+        _ = parts.port  # a non-numeric or out-of-range port raises here, not when the URL is split
+    except ValueError as exc:
+        raise DeployError(
+            f"the Redis URL {base!r} has an unusable port: {exc}. Pass a URL like "
+            "redis://host:6379 or redis://host:6379/5."
+        ) from exc
     if parts.scheme not in ("redis", "rediss"):
         raise DeployError(
             f"the Redis URL {base!r} should start with redis:// or rediss://, with any options as "
