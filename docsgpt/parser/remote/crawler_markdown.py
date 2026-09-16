@@ -114,7 +114,9 @@ class CrawlerLoader(BaseRemote):
         language_tag = soup.find('html')
         language = language_tag.get('lang', 'en') if language_tag else "en"
 
-        markdownified = markdownify(html_content, heading_style="ATX", newline_style="BACKSLASH")
+        markdownified = markdownify(
+            html_content, heading_style="ATX", newline_style="BACKSLASH", table_infer_header=True
+        )
         # Collapse runs of blank lines to a single one — the same shape
         # ``html_to_markdown`` gives uploaded HTML files.
         markdownified = re.sub(r'\n{3,}', '\n\n', markdownified)
