@@ -218,13 +218,24 @@ def _redis_urls(base: str) -> dict[str, str]:
     }
 
 
-def _own_executable() -> str:
-    """The docsgpt command to put in the service files, or a DeployError naming what to install."""
+def _native_launcher() -> list[str]:
+    """How the service files start DocsGPT: the command on PATH, or this interpreter and the module.
+
+    A unit has to name something that can be executed, and ``sys.argv[0]`` often cannot be: under
+    ``python -m docsgpt``, or pytest, it is a module file. Falling back to the running interpreter
+    works wherever the package is importable, which it must be to have got here.
+    """
+    found = shutil.which("docsgpt")
+    if found:
+        # Absolute: PATH can hold relative entries, and a unit file needs a program it can exec.
+        return [str(Path(found).resolve())]
     candidate = Path(sys.argv[0]).resolve()
     if candidate.is_file() and os.access(candidate, os.X_OK):
-        return str(candidate)
+        return [str(candidate)]
+    if sys.executable:
+        return [sys.executable, "-m", "docsgpt"]
     raise DeployError(
-        "the docsgpt command is not on PATH, so the services would have nothing to run. "
+        "could not work out how to start docsgpt for the services. "
         "Install it with `uv tool install docsgpt` (or `pip install docsgpt`) and run this again."
     )
 
@@ -274,14 +285,14 @@ def _native_up(args, context: Context, directory: Path) -> int:
     (directory / "logs").mkdir(exist_ok=True)
     envfile.update(env_path, updates)
 
-    executable = shutil.which("docsgpt") or _own_executable()
+    launcher = _native_launcher()
     print("Applying database migrations ...")
     # The child reads the stack's settings, not a .env in whatever directory this was run from.
     stack_env = {"DOCSGPT_HOME": str(directory), "DOCSGPT_ENV_FILE": str(env_path)}
-    if context.run([executable, "migrate"], stack_env) != 0:
+    if context.run([*launcher, "migrate"], stack_env) != 0:
         raise DeployError("`docsgpt migrate` failed; check the database URL and that the server is reachable.")
 
-    for unit in native.units_for(directory, executable, port, directory):
+    for unit in native.units_for(directory, launcher, port, directory):
         services.install(unit)
     for name in native.SERVICES:
         print(f"Starting {name} ...")

@@ -34,6 +34,16 @@ class TestTopLevel:
         subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[1], check=True)
 
 
+class TestModuleEntrypoint:
+    def test_python_m_docsgpt_runs_the_cli(self):
+        """`python -m docsgpt` is what a native service falls back to when the script is not on PATH."""
+        result = subprocess.run(
+            [sys.executable, "-m", "docsgpt", "--version"],
+            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True,
+        )
+        assert result.stdout.strip() == f"docsgpt {__version__}"
+
+
 class TestHome:
     @staticmethod
     def _installed(monkeypatch, tmp_path):

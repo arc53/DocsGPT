@@ -90,8 +90,8 @@ class TestNativeUp:
                      "--postgres-uri", "postgresql://localhost/docsgpt"], _native_context(services)) == 0
         api = services.units["docsgpt-api"]
         worker = services.units["docsgpt-worker"]
-        assert api.arguments[1:] == ["api", "--host", "127.0.0.1", "--port", "7091"]
-        assert worker.arguments[1:] == ["worker"]
+        assert api.arguments[-5:] == ["api", "--host", "127.0.0.1", "--port", "7091"]
+        assert worker.arguments[-1] == "worker"
         for unit in (api, worker):
             assert unit.environment["DOCSGPT_HOME"] == str(tmp_path)
             assert unit.working_directory == str(tmp_path)
@@ -105,7 +105,7 @@ class TestNativeUp:
         assert _run(["up", "--native", "--dir", str(tmp_path), "--yes",
                      "--postgres-uri", "postgresql://localhost/docsgpt"], context) == 0
         arguments, environment = calls[0]
-        assert arguments[1] == "migrate"
+        assert arguments[-1] == "migrate", "the launcher can be an interpreter and -m docsgpt"
         assert environment["DOCSGPT_HOME"] == str(tmp_path)
         assert environment["DOCSGPT_ENV_FILE"] == str(tmp_path / ".env")
 
@@ -139,13 +139,14 @@ class TestNativeUp:
         with pytest.raises(DeployError, match="holds a Docker install"):
             _run(argv, _native_context())
 
-    def test_services_are_not_written_without_a_docsgpt_command(self, tmp_path, monkeypatch):
-        """A unit pointing at something unexecutable would fail to exec with only a health check to show it."""
+    def test_without_the_command_on_path_the_services_run_the_module(self, tmp_path, monkeypatch):
+        """A unit must name something executable; argv[0] is a module file under `python -m`."""
         monkeypatch.setattr("docsgpt.deploy.commands.shutil.which", lambda name: None)
         monkeypatch.setattr(sys, "argv", [str(tmp_path / "not-a-program")])
+        services = FakeServices()
         argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
-        with pytest.raises(DeployError, match="not on PATH"):
-            _run(argv, _native_context())
+        assert _run(argv, _native_context(services)) == 0
+        assert services.units["docsgpt-api"].arguments[:3] == [sys.executable, "-m", "docsgpt"]
 
     def test_a_database_url_is_required(self, tmp_path):
         with pytest.raises(DeployError, match="--postgres-uri"):
@@ -292,7 +293,7 @@ class TestSystemd:
     def test_install_writes_the_unit_and_reloads(self, tmp_path):
         systemctl = FakeSystemctl()
         services = self._services(systemctl, tmp_path)
-        services.install(native.units_for(tmp_path, "/venv/bin/docsgpt", 7091, tmp_path)[0])
+        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path)[0])
         unit = tmp_path / ".config" / "systemd" / "user" / "docsgpt-api.service"
         assert "ExecStart=/venv/bin/docsgpt api" in unit.read_text()
         assert systemctl.verbs == ["daemon-reload"]
@@ -308,7 +309,7 @@ class TestSystemd:
     def test_stop_and_remove(self, tmp_path):
         systemctl = FakeSystemctl()
         services = self._services(systemctl, tmp_path)
-        services.install(native.units_for(tmp_path, "/venv/bin/docsgpt", 7091, tmp_path)[0])
+        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path)[0])
         unit = tmp_path / ".config" / "systemd" / "user" / "docsgpt-api.service"
         services.stop("docsgpt-api")
         assert unit.is_file(), "stopping keeps the unit"

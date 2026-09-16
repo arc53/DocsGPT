@@ -204,20 +204,23 @@ def services_for_platform(platform: str = sys.platform):
     )
 
 
-def units_for(stack_directory: Path, executable: str, port: int, home: Path) -> list[Unit]:
-    """The API and worker services for a native install in ``stack_directory``."""
+def units_for(stack_directory: Path, launcher: list[str], port: int, home: Path) -> list[Unit]:
+    """The API and worker services for a native install in ``stack_directory``.
+
+    ``launcher`` is how DocsGPT is started: the ``docsgpt`` command, or an interpreter and ``-m``.
+    """
     environment = {"DOCSGPT_HOME": str(home)}
     return [
         Unit(
             name=API_SERVICE,
-            arguments=[executable, "api", "--host", "127.0.0.1", "--port", str(port)],
+            arguments=[*launcher, "api", "--host", "127.0.0.1", "--port", str(port)],
             environment=dict(environment),
             working_directory=str(stack_directory),
             log_file=str(stack_directory / "logs" / "api.log"),
         ),
         Unit(
             name=WORKER_SERVICE,
-            arguments=[executable, "worker"],
+            arguments=[*launcher, "worker"],
             environment=dict(environment),
             working_directory=str(stack_directory),
             log_file=str(stack_directory / "logs" / "worker.log"),
