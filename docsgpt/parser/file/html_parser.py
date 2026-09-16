@@ -31,6 +31,53 @@ _DROP_TAGS = ("title", "script", "style", "noscript", "template")
 _URI_ATTRIBUTES = ("src", "href", "srcset", "poster", "data")
 
 
+def _span(cell, attribute: str) -> int:
+    """A cell's ``rowspan`` or ``colspan``, clamped the way markdownify clamps colspan."""
+    value = cell.get(attribute)
+    if isinstance(value, str) and value.isdigit():
+        return max(1, min(1000, int(value)))
+    return 1
+
+
+def _fill_row_spans(soup) -> None:
+    """Give every row the cells a ``rowspan`` from an earlier row takes up.
+
+    A GFM table cannot merge cells downwards, so a ``rowspan`` cell is written
+    once and the rows it reaches into come out one cell short. Every value in
+    those rows then reads under the wrong column: a table whose first column is
+    a region spanning several product rows puts the product under ``Region``
+    and the count under ``Product``.
+    """
+    for table in soup.find_all("table"):
+        rows = table.find_all("tr")
+        covered: Dict[int, set] = {}
+        placed: Dict[int, list] = {}
+
+        for index, row in enumerate(rows):
+            column = 0
+            taken = covered.get(index, set())
+            placed[index] = []
+            for cell in row.find_all(["td", "th"], recursive=False):
+                while column in taken:
+                    column += 1
+                placed[index].append((column, cell))
+                columns = _span(cell, "colspan")
+                for below in range(index + 1, index + _span(cell, "rowspan")):
+                    covered.setdefault(below, set()).update(range(column, column + columns))
+                column += columns
+
+        for index, row in enumerate(rows):
+            # Descending, so each placeholder lands directly in front of the first
+            # own cell at or after its column and the order comes out right.
+            for column in sorted(covered.get(index, ()), reverse=True):
+                anchor = next((cell for at, cell in placed[index] if at >= column), None)
+                placeholder = soup.new_tag("td")
+                if anchor is None:
+                    row.append(placeholder)
+                else:
+                    anchor.insert_before(placeholder)
+
+
 def html_to_markdown(html: Union[str, bytes]) -> str:
     """Convert an HTML/XHTML document to Markdown.
 
@@ -76,6 +123,7 @@ def soup_to_markdown(soup) -> str:
                 value = " ".join(value)
             if isinstance(value, str) and "data:" in value.lower():
                 del tag[attribute]
+    _fill_row_spans(soup)
     markdown = MarkdownConverter(**MARKDOWNIFY_OPTIONS).convert_soup(soup)
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
 
