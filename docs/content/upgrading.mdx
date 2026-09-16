@@ -11,6 +11,10 @@ import { Callout } from 'nextra/components'
   **Upgrading from 0.16.x?** User data moved from MongoDB to Postgres in 0.17.0. Follow the [Postgres Migration guide](/Deploying/Postgres-Migration) before running `docker compose pull` or `git pull` — existing deployments will not start cleanly without it.
 </Callout>
 
+## pip installs: data home moved
+
+An installed package (`pip install docsgpt`, pipx, `uv tool`) used to keep its data home, meaning `.env`, `inputs/`, `indexes/` and `models/`, in the directory you ran `docsgpt api` and `docsgpt worker` from. It is now `~/.docsgpt/server` (`/opt/docsgpt` for root on Linux). Either move those files there, or set `DOCSGPT_HOME` to the old directory in the environment of both commands. Both commands print the data home they use, and point out a `.env` in the working directory that they no longer read. Source checkouts and the Docker images are not affected.
+
 ## Standalone Compose file: one port
 
 The standalone Compose file (`docker-compose-standalone.yaml`) no longer runs a frontend container. The backend image serves the web UI on port 7091, and the port is published on `127.0.0.1` unless you set `DOCSGPT_BIND`. After downloading the new file, start it with `--remove-orphans` to remove the old frontend container, then open port 7091 instead of 5173. If you opened DocsGPT from other machines, see [Upgrading from an earlier standalone file](/Deploying/Docker-Deploying#upgrading-from-an-earlier-standalone-file). The checkout Compose files and the Kubernetes manifests are unchanged.
@@ -117,8 +121,9 @@ alias, so nothing breaks on upgrade, but update these before the alias goes:
   and vectors under `application/` in the checkout, where they already are.
 - The backend is also a package now (`pip install docsgpt`, see
   [Install with pip](/Deploying/Pip-Install)). Runtime data lives in a data
-  home: `DOCSGPT_HOME`, else the checkout, else the directory the process
-  starts in. One consequence for a source checkout: the embedded Milvus
+  home: `DOCSGPT_HOME`, else the checkout, else `~/.docsgpt/server`
+  (`/opt/docsgpt` for root on Linux; see
+  [pip installs: data home moved](#pip-installs-data-home-moved)). One consequence for a source checkout: the embedded Milvus
   (`MILVUS_URI`) and LanceDB (`LANCEDB_PATH`) default paths now resolve under
   the checkout instead of the start directory. If you use either store at its
   default path and start DocsGPT from another directory, the old data is at

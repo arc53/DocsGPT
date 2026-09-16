@@ -20,11 +20,31 @@ class TestHomeDir:
         monkeypatch.setenv(paths.HOME_ENV, str(tmp_path))
         assert paths.home_dir() == tmp_path.resolve()
 
-    def test_an_installed_package_falls_back_to_cwd(self, monkeypatch, tmp_path):
+    def test_an_installed_package_uses_the_default_home_not_cwd(self, monkeypatch, tmp_path):
+        """`docsgpt api` from any directory finds the same .env and data."""
         monkeypatch.delenv(paths.HOME_ENV, raising=False)
         monkeypatch.setattr(paths, "checkout_root", lambda: None)
+        monkeypatch.setattr(paths, "default_home", lambda: tmp_path / "home")
         monkeypatch.chdir(tmp_path)
-        assert paths.home_dir() == Path.cwd()
+        assert paths.home_dir() == tmp_path / "home"
+
+
+class TestDefaultHome:
+    def test_a_user_gets_a_folder_in_their_home(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths.sys, "platform", "darwin")
+        monkeypatch.setattr(paths.Path, "home", classmethod(lambda cls: tmp_path))
+        assert paths.default_home() == tmp_path / ".docsgpt" / "server"
+
+    def test_root_on_linux_gets_opt(self, monkeypatch):
+        monkeypatch.setattr(paths.sys, "platform", "linux")
+        monkeypatch.setattr(paths.os, "geteuid", lambda: 0, raising=False)
+        assert paths.default_home() == Path("/opt/docsgpt")
+
+    def test_a_normal_user_on_linux_stays_in_their_home(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths.sys, "platform", "linux")
+        monkeypatch.setattr(paths.os, "geteuid", lambda: 1000, raising=False)
+        monkeypatch.setattr(paths.Path, "home", classmethod(lambda cls: tmp_path))
+        assert paths.default_home() == tmp_path / ".docsgpt" / "server"
 
 
 class TestEnvFile:

@@ -17,6 +17,58 @@ Docker is the recommended method for deploying DocsGPT, providing a consistent a
 
 **Important Note for Windows Users:** Docker Desktop on Windows generally requires the WSL 2 backend to function correctly, especially when using features like host networking which are utilized in DocsGPT's Docker Compose setup. Ensure WSL 2 is enabled and configured in Docker Desktop settings.
 
+## Run it with `docsgpt up`
+
+The `docsgpt` Python package can set up and run the stack described below for
+you. It needs Docker with Compose 2.24 or newer, and Python 3.12 or newer (uv
+installs one when it is missing):
+
+```bash
+uv tool install docsgpt      # or: pipx install docsgpt
+docsgpt up
+```
+
+`docsgpt up` keeps the stack in `~/.docsgpt/server` (`/opt/docsgpt` when run as
+root on Linux; `--dir` or `DOCSGPT_HOME` choose another folder): the Compose
+file of the installed version, a `.env` with your settings and the generated
+secrets, and `install.json`. Data lives in named Docker volumes. The first run
+asks two questions:
+
+- **Who should reach DocsGPT:** only this computer; other machines on the
+  network (plain HTTP, with `AUTH_TYPE=simple_jwt` and an access token); or a
+  domain name with HTTPS (Caddy gets the certificate, access token as well).
+- **Which model provider:** the DocsGPT public API (no key needed), OpenAI,
+  Anthropic, Google Gemini, OpenRouter, Groq, or an OpenAI-compatible server
+  such as Ollama or vLLM.
+
+Flags answer the same questions, for scripts and servers:
+
+```bash
+docsgpt up --yes --domain docs.example.com --provider openai --api-key "$OPENAI_API_KEY"
+```
+
+Running `docsgpt up` again is safe: it keeps `.env` and the secrets and runs
+the images of the installed package version. `docsgpt up --reconfigure` asks
+the questions again.
+
+| Command | What it does |
+| --- | --- |
+| `docsgpt status` | Version, address, containers, and whether the API answers |
+| `docsgpt logs [-f] [service]` | Container logs |
+| `docsgpt token` | The access token, for installs reachable beyond this computer |
+| `docsgpt open` | Open DocsGPT in the browser |
+| `docsgpt env set KEY=VALUE` | Change a setting; `docsgpt up` applies it |
+| `docsgpt upgrade` | Upgrade the package (for `uv tool` installs) and restart on the new version |
+| `docsgpt down` | Stop the stack; data and settings stay |
+| `docsgpt uninstall [--purge]` | Remove the containers; `--purge` also deletes the settings and all data |
+
+More `docsgpt up` options: `--port`, `--docling` (the image with the docling
+parser engine and OCR), `--image-tag develop` (follow the `main` branch) and
+`--adopt` (manage a stack you started from the standalone Compose file in
+another folder; both use the same data volumes). For Ollama on the same
+machine, use the base URL `http://host.docker.internal:11434/v1`; on Linux,
+also make Ollama listen beyond localhost (`OLLAMA_HOST=0.0.0.0`).
+
 ## Quickest Setup: Pre-built Images, No Checkout
 
 Every release publishes ready-to-run images to Docker Hub (`arc53/docsgpt`,
