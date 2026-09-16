@@ -97,17 +97,18 @@ def _register(model: EmbeddingModel) -> None:
 def _read_repo_json(repo: str, filename: str) -> Optional[dict]:
     """Fetch one small JSON from ``repo``, or ``None`` when it is not there.
 
-    Reads through the Hugging Face hub cache, so a warmed image finds it
+    Reads through the embedding model cache, so a warmed install finds it
     offline. Every failure -- absent file, no network, malformed JSON -- is the
     same answer to the caller: this repository does not tell us.
     """
     try:
         from huggingface_hub import hf_hub_download
 
+        cache_dir = settings.EMBEDDINGS_CACHE_DIR or None
         try:
-            path = hf_hub_download(repo_id=repo, filename=filename, local_files_only=True)
+            path = hf_hub_download(repo_id=repo, filename=filename, local_files_only=True, cache_dir=cache_dir)
         except Exception:  # noqa: BLE001 -- not cached: fetch it
-            path = hf_hub_download(repo_id=repo, filename=filename)
+            path = hf_hub_download(repo_id=repo, filename=filename, cache_dir=cache_dir)
         with open(path, encoding="utf-8") as handle:
             return json.load(handle)
     except Exception as exc:

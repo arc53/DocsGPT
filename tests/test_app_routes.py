@@ -96,6 +96,28 @@ class TestConfigRoute:
         assert data["hybrid_available"] is False
 
     @pytest.mark.unit
+    def test_speech_features_available_by_default(self, client):
+        with patch("docsgpt.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            mock_settings.TTS_PROVIDER = "google_tts"
+            mock_settings.STT_PROVIDER = "openai"
+            response = client.get("/api/config")
+        data = json.loads(response.data)
+        assert data["tts_available"] is True
+        assert data["stt_available"] is True
+
+    @pytest.mark.unit
+    def test_speech_features_unavailable_when_disabled(self, client):
+        with patch("docsgpt.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            mock_settings.TTS_PROVIDER = "none"
+            mock_settings.STT_PROVIDER = "none"
+            response = client.get("/api/config")
+        data = json.loads(response.data)
+        assert data["tts_available"] is False
+        assert data["stt_available"] is False
+
+    @pytest.mark.unit
     def test_oidc_config_exposes_login_paths(self, client):
         with patch("docsgpt.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = "oidc"

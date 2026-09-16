@@ -44,6 +44,10 @@ export interface Preference {
   // not act before the first /me response (avoids a first-paint admin bounce).
   roles: string[];
   rolesResolved: boolean;
+  // Speech features the server has switched on (/api/config). True until the
+  // config loads, so a backend without these flags keeps showing the controls.
+  ttsAvailable: boolean;
+  sttAvailable: boolean;
 }
 
 const initialState: Preference = {
@@ -74,6 +78,8 @@ const initialState: Preference = {
   agentFolders: null,
   roles: [],
   rolesResolved: false,
+  ttsAvailable: true,
+  sttAvailable: true,
 };
 
 export const prefSlice = createSlice({
@@ -142,6 +148,13 @@ export const prefSlice = createSlice({
       state.roles = [];
       state.rolesResolved = false;
     },
+    setSpeechAvailability: (
+      state,
+      action: PayloadAction<{ tts: boolean; stt: boolean }>,
+    ) => {
+      state.ttsAvailable = action.payload.tts;
+      state.sttAvailable = action.payload.stt;
+    },
   },
 });
 
@@ -166,6 +179,7 @@ export const {
   setAgentFolders,
   setRoles,
   clearRoles,
+  setSpeechAvailability,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -314,3 +328,7 @@ export const selectRolesResolved = (state: RootState) =>
   state.preference.rolesResolved;
 export const selectIsAdmin = (state: RootState) =>
   state.preference.roles.includes('admin');
+export const selectTtsAvailable = (state: RootState) =>
+  state.preference.ttsAvailable;
+export const selectSttAvailable = (state: RootState) =>
+  state.preference.sttAvailable;

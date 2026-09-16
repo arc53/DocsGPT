@@ -309,7 +309,7 @@ class TestTokenizerFile:
     def test_cache_hit_makes_no_online_call(self, monkeypatch):
         calls = []
 
-        def fake_download(repo, filename, local_files_only=False):
+        def fake_download(repo, filename, local_files_only=False, cache_dir=None):
             calls.append(local_files_only)
             return "/cache/tokenizer.json"
 
@@ -322,7 +322,7 @@ class TestTokenizerFile:
     def test_cache_miss_falls_back_to_online(self, monkeypatch):
         calls = []
 
-        def fake_download(repo, filename, local_files_only=False):
+        def fake_download(repo, filename, local_files_only=False, cache_dir=None):
             calls.append(local_files_only)
             if local_files_only:
                 raise FileNotFoundError("not cached")
@@ -333,3 +333,20 @@ class TestTokenizerFile:
         monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
         assert tokenization._tokenizer_file("org/model") == "/downloaded/tokenizer.json"
         assert calls == [True, False]
+
+    def test_reads_the_embedding_model_cache(self, monkeypatch):
+        """FastEmbed's snapshot already holds tokenizer.json; a second cache downloads it again."""
+        cache_dirs = []
+
+        def fake_download(repo, filename, local_files_only=False, cache_dir=None):
+            cache_dirs.append(cache_dir)
+            if local_files_only:
+                raise FileNotFoundError("not cached")
+            return "/models/tokenizer.json"
+
+        fake_hub = types.ModuleType("huggingface_hub")
+        fake_hub.hf_hub_download = fake_download
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+        monkeypatch.setattr(tokenization.settings, "EMBEDDINGS_CACHE_DIR", "/models")
+        tokenization._tokenizer_file("org/model")
+        assert cache_dirs == ["/models", "/models"]

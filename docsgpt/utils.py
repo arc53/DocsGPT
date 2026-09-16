@@ -6,7 +6,7 @@ import logging
 import os
 import re
 import uuid
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import List
 
 import tiktoken
@@ -22,11 +22,44 @@ logger = logging.getLogger(__name__)
 
 _encoding = None
 
+# cl100k_base ships with the package; tiktoken would download it on first use.
+_CL100K_BASE_FILE = Path(__file__).resolve().parent / "core" / "encodings" / "cl100k_base.tiktoken"
+_CL100K_BASE_SHA256 = "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7"
+# Pattern and special tokens exactly as tiktoken_ext.openai_public defines cl100k_base.
+_CL100K_BASE_PAT_STR = (
+    r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}++|\p{N}{1,3}+| ?[^\s\p{L}\p{N}]++[\r\n]*+|\s++$|\s*[\r\n]|\s+(?!\S)|\s"""
+)
+_CL100K_BASE_SPECIAL_TOKENS = {
+    "<|endoftext|>": 100257,
+    "<|fim_prefix|>": 100258,
+    "<|fim_middle|>": 100259,
+    "<|fim_suffix|>": 100260,
+    "<|endofprompt|>": 100276,
+}
 
-def get_encoding():
+
+def _load_cl100k_base() -> tiktoken.Encoding:
+    """Build cl100k_base from the packaged ranks file."""
+    data = _CL100K_BASE_FILE.read_bytes()
+    if hashlib.sha256(data).hexdigest() != _CL100K_BASE_SHA256:
+        raise ValueError(f"{_CL100K_BASE_FILE} does not match the cl100k_base checksum")
+    ranks = {
+        base64.b64decode(token): int(rank)
+        for token, rank in (line.split() for line in data.splitlines() if line)
+    }
+    return tiktoken.Encoding(
+        name="cl100k_base",
+        pat_str=_CL100K_BASE_PAT_STR,
+        mergeable_ranks=ranks,
+        special_tokens=_CL100K_BASE_SPECIAL_TOKENS,
+    )
+
+
+def get_encoding() -> tiktoken.Encoding:
+    """The cl100k_base encoding, loaded once per process."""
     global _encoding
     if _encoding is None:
-        _encoding = tiktoken.get_encoding("cl100k_base")
+        _encoding = _load_cl100k_base()
     return _encoding
 
 

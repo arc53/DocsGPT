@@ -30,6 +30,7 @@ import {
   selectSelectedDocs,
   selectSelectedModel,
   selectSourceDocs,
+  selectSttAvailable,
   selectToken,
   setSelectedDocs,
 } from '../preferences/preferenceSlice';
@@ -348,6 +349,7 @@ export default function MessageInput({
   const token = useSelector(selectToken);
   const attachments = useSelector(selectAttachments);
   const selectedModel = useSelector(selectSelectedModel);
+  const sttAvailable = useSelector(selectSttAvailable);
   const unreadableAttachmentIds = useMemo(
     () =>
       new Set(
@@ -1771,7 +1773,7 @@ export default function MessageInput({
                 loading={toolsLoading}
               />
             )}
-            {ENABLE_VOICE_INPUT && (
+            {ENABLE_VOICE_INPUT && sttAvailable && (
               <MicButton
                 recordingState={recordingState}
                 loading={loading}

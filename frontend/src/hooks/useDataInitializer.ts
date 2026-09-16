@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
+import userService from '../api/services/userService';
 import {
   getDocs,
   getConversations,
@@ -12,6 +13,7 @@ import {
   setConversations,
   setPrompts,
   setSourceDocs,
+  setSpeechAvailability,
 } from '../preferences/preferenceSlice';
 
 /**
@@ -22,6 +24,7 @@ import {
  * - Fetching and setting up source documents
  * - Fetching and setting up prompts
  * - Fetching and setting up conversations
+ * - Reading which speech features the server has switched on
  *
  * @param isAuthLoading -
  */
@@ -29,6 +32,22 @@ export default function useDataInitializer(isAuthLoading: boolean) {
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const conversations = useSelector(selectConversations);
+
+  // Speech features; /api/config needs no auth.
+  useEffect(() => {
+    userService
+      .getConfig()
+      .then((response) => response.json())
+      .then((config) => {
+        dispatch(
+          setSpeechAvailability({
+            tts: config?.tts_available !== false,
+            stt: config?.stt_available !== false,
+          }),
+        );
+      })
+      .catch(() => undefined);
+  }, [dispatch]);
 
   // Initialize documents
   useEffect(() => {

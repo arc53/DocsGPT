@@ -56,6 +56,8 @@ const preloadedState: { preference: Preference } = {
     agentFolders: null,
     roles: [],
     rolesResolved: false,
+    ttsAvailable: true,
+    sttAvailable: true,
   },
 };
 const store = configureStore({

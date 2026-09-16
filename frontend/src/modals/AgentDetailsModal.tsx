@@ -120,7 +120,7 @@ export default function AgentDetailsModal({
             </div>
             {sharedToken ? (
               <div className="flex flex-col gap-2">
-                <p className="font-roboto dark:text-foreground inline text-sm leading-normal font-medium break-all text-gray-700">
+                <p className="dark:text-foreground inline text-sm leading-normal font-medium break-all text-gray-700">
                   <a
                     href={`${baseURL}/shared/agent/${sharedToken}`}
                     target="_blank"
@@ -172,7 +172,7 @@ export default function AgentDetailsModal({
             {apiKey ? (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <div className="font-roboto dark:text-foreground text-sm leading-normal font-medium break-all text-gray-700">
+                  <div className="dark:text-foreground text-sm leading-normal font-medium break-all text-gray-700">
                     {apiKey}
                     {!apiKey.includes('...') && (
                       <CopyButton
@@ -231,7 +231,7 @@ export default function AgentDetailsModal({
             </div>
             {webhookUrl ? (
               <div className="flex flex-col gap-2">
-                <p className="font-roboto dark:text-foreground text-sm leading-normal font-medium break-all text-gray-700">
+                <p className="dark:text-foreground text-sm leading-normal font-medium break-all text-gray-700">
                   <a href={webhookUrl} target="_blank" rel="noreferrer">
                     {webhookUrl}
                   </a>

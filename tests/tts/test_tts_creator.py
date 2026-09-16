@@ -53,6 +53,16 @@ def test_tts_type_case_insensitivity(tts_creator):
         assert result == instance
 
 
+@pytest.mark.parametrize("value", ["none", "NONE", " none ", "", None])
+def test_is_enabled_false_when_switched_off(value):
+    assert TTSCreator.is_enabled(value) is False
+
+
+@pytest.mark.parametrize("value", ["google_tts", "elevenlabs"])
+def test_is_enabled_for_a_provider(value):
+    assert TTSCreator.is_enabled(value) is True
+
+
 def test_tts_providers_integrity(tts_creator):
     providers = tts_creator.tts_providers
     assert "google_tts" in providers

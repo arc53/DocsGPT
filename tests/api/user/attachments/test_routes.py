@@ -1854,6 +1854,96 @@ class TestTextToSpeech:
             assert _get_response_status(response) == 400
             assert _get_response_json(response)["success"] is False
 
+    @patch("docsgpt.api.user.attachments.routes.TTSCreator.create_tts")
+    def test_tts_disabled_returns_404_without_a_provider(self, mock_create_tts, flask_app):
+        from docsgpt.api.user.attachments import routes
+
+        app = Flask(__name__)
+        with patch.object(routes.settings, "TTS_PROVIDER", "none"), app.test_request_context(
+            "/api/tts",
+            method="POST",
+            json={"text": "Hello world"},
+        ):
+            response = routes.TextToSpeech().post()
+            assert _get_response_status(response) == 404
+            assert _get_response_json(response) == {
+                "success": False,
+                "message": "Text-to-speech is disabled on this server.",
+            }
+        mock_create_tts.assert_not_called()
+
+
+@pytest.mark.unit
+class TestSpeechToTextDisabled:
+    """STT_PROVIDER=none turns every transcription endpoint off before any provider is built."""
+
+    DISABLED = {"success": False, "message": "Speech-to-text is disabled on this server."}
+
+    @patch("docsgpt.api.user.attachments.routes.STTCreator.create_stt")
+    def test_stt_returns_404(self, mock_create_stt, flask_app):
+        from docsgpt.api.user.attachments import routes
+
+        app = Flask(__name__)
+        with patch.object(routes.settings, "STT_PROVIDER", "none"), app.test_request_context(
+            "/api/stt",
+            method="POST",
+            data={"file": (io.BytesIO(b"audio-bytes"), "clip.wav")},
+            content_type="multipart/form-data",
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = routes.SpeechToText().post()
+            assert _get_response_status(response) == 404
+            assert _get_response_json(response) == self.DISABLED
+        mock_create_stt.assert_not_called()
+
+    def test_live_stt_start_returns_404(self, flask_app):
+        from docsgpt.api.user.attachments import routes
+
+        app = Flask(__name__)
+        with patch.object(routes.settings, "STT_PROVIDER", "none"), app.test_request_context(
+            "/api/stt/live/start", method="POST", json={}
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = routes.LiveSpeechToTextStart().post()
+            assert _get_response_status(response) == 404
+            assert _get_response_json(response) == self.DISABLED
+
+    @patch("docsgpt.api.user.attachments.routes.STTCreator.create_stt")
+    def test_live_stt_chunk_returns_404(self, mock_create_stt, flask_app):
+        from docsgpt.api.user.attachments import routes
+
+        app = Flask(__name__)
+        with patch.object(routes.settings, "STT_PROVIDER", "none"), app.test_request_context(
+            "/api/stt/live/chunk",
+            method="POST",
+            data={
+                "session_id": "abc",
+                "chunk_index": "0",
+                "file": (io.BytesIO(b"audio-bytes"), "chunk.wav"),
+            },
+            content_type="multipart/form-data",
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = routes.LiveSpeechToTextChunk().post()
+            assert _get_response_status(response) == 404
+            assert _get_response_json(response) == self.DISABLED
+        mock_create_stt.assert_not_called()
+
+    def test_live_stt_finish_returns_404_without_touching_redis(self, flask_app):
+        from docsgpt.api.user.attachments import routes
+
+        app = Flask(__name__)
+        with patch.object(routes.settings, "STT_PROVIDER", "none"), patch.object(
+            routes, "_require_live_stt_redis"
+        ) as require_redis, app.test_request_context(
+            "/api/stt/live/finish", method="POST", json={"session_id": "abc"}
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = routes.LiveSpeechToTextFinish().post()
+            assert _get_response_status(response) == 404
+            assert _get_response_json(response) == self.DISABLED
+        require_redis.assert_not_called()
+
 
 # =====================================================================
 # Coverage gap tests  (lines 136, 256, 330, 337, 443, 457, 560, 590)
