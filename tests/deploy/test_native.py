@@ -4,13 +4,14 @@ import json
 import plistlib
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
-from docsgpt.deploy import envfile, native
+from docsgpt.deploy import envfile, native, stack
 from docsgpt.deploy.docker import DeployError
 
-from .test_commands import FakePrompter, _context, _run
+from .test_commands import FakeDocker, FakePrompter, _context, _run
 
 
 class FakeServices:
@@ -42,6 +43,11 @@ class FakeServices:
 
     def is_running(self, name):
         return name in self.running
+
+
+def _names(directory):
+    """The two service names an install in ``directory`` gets; a second directory gets its own."""
+    return native.service_names(Path(directory), stack.stack_dir(None))
 
 
 def _native_context(services=None, migrated=None, **overrides):
@@ -82,14 +88,15 @@ class TestNativeUp:
         assert _run(["up", "--native", "--dir", str(tmp_path), "--yes",
                      "--postgres-uri", "postgresql://localhost/docsgpt"], context) == 0
         assert any("migrate" in " ".join(call) for call in migrated), migrated
-        assert services.started == ["docsgpt-api", "docsgpt-worker"]
+        assert services.started == list(_names(tmp_path))
 
     def test_the_units_run_this_interpreter_with_the_stack_as_its_home(self, tmp_path):
         services = FakeServices()
         assert _run(["up", "--native", "--dir", str(tmp_path), "--yes",
                      "--postgres-uri", "postgresql://localhost/docsgpt"], _native_context(services)) == 0
-        api = services.units["docsgpt-api"]
-        worker = services.units["docsgpt-worker"]
+        api_name, worker_name = _names(tmp_path)
+        api = services.units[api_name]
+        worker = services.units[worker_name]
         assert api.arguments[-5:] == ["api", "--host", "127.0.0.1", "--port", "7091"]
         assert worker.arguments[-1] == "worker"
         for unit in (api, worker):
@@ -130,7 +137,7 @@ class TestNativeUp:
         env = envfile.read(tmp_path / ".env")
         assert env["DOCSGPT_PORT"] == "7099"
         assert env["API_URL"] == "http://127.0.0.1:7099"
-        assert services.units["docsgpt-api"].arguments[-1] == "7099"
+        assert services.units[_names(tmp_path)[0]].arguments[-1] == "7099"
 
     def test_it_refuses_to_run_beside_a_docker_install(self, tmp_path):
         """Native services on the same port would orphan the containers from down/status/uninstall."""
@@ -146,14 +153,14 @@ class TestNativeUp:
         services = FakeServices()
         argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
         assert _run(argv, _native_context(services)) == 0
-        assert services.units["docsgpt-api"].arguments[:3] == [sys.executable, "-m", "docsgpt"]
+        assert services.units[_names(tmp_path)[0]].arguments[:3] == [sys.executable, "-m", "docsgpt"]
 
     def test_a_failed_start_leaves_an_install_the_other_commands_can_clean_up(self, tmp_path):
         """Without the record, half-started units are orphaned: status, down and uninstall refuse the dir."""
         class FailingStart(FakeServices):
             def start(self, name):
                 super().start(name)
-                if name == "docsgpt-worker":
+                if name == _names(tmp_path)[1]:
                     raise DeployError("systemctl could not start docsgpt-worker")
 
         services = FailingStart()
@@ -162,7 +169,7 @@ class TestNativeUp:
             _run(argv, _native_context(services))
         assert json.loads((tmp_path / "install.json").read_text())["mode"] == "native"
         assert _run(["uninstall", "--yes", "--dir", str(tmp_path)], _native_context(services)) == 0
-        assert sorted(services.removed) == ["docsgpt-api", "docsgpt-worker"]
+        assert sorted(services.removed) == sorted(_names(tmp_path))
 
     def test_docker_only_options_are_refused_rather_than_ignored(self, tmp_path):
         """Asking for network exposure and silently getting loopback is the worst of both."""
@@ -225,6 +232,51 @@ class TestNativeUp:
         with pytest.raises(DeployError, match="Redis URL"):
             _run(argv, _native_context())
 
+    def test_a_port_that_is_not_a_number_is_reported(self, tmp_path):
+        """A hand-edited DOCSGPT_PORT reached int() unchecked and came out as a traceback."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
+        assert _run([*argv, "--port", "7099"], _native_context()) == 0
+        envfile.update(tmp_path / ".env", {"DOCSGPT_PORT": "seven thousand"})
+        with pytest.raises(DeployError, match="not a port number"):
+            _run(["up", "--dir", str(tmp_path), "--yes"], _native_context())
+
+    def test_a_redis_database_that_int_would_reject_is_reported(self, tmp_path):
+        """str.isdigit() is true for a superscript two, which int() then refuses."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d",
+                "--redis-url", "redis://localhost:6379/\u00b2"]
+        with pytest.raises(DeployError, match="Redis URL"):
+            _run(argv, _native_context())
+
+    def test_two_installs_do_not_share_service_names(self, tmp_path):
+        """A service manager has one namespace per user, so the second install would overwrite the first."""
+        installed = {}
+        for name in ("one", "two"):
+            directory = tmp_path / name
+            services = FakeServices()
+            argv = ["up", "--native", "--dir", str(directory), "--yes",
+                    "--postgres-uri", "postgresql://localhost/d"]
+            assert _run(argv, _native_context(services)) == 0
+            installed[name] = set(services.units)
+        assert installed["one"].isdisjoint(installed["two"]), installed
+
+    def test_the_default_install_keeps_the_readable_names(self):
+        """They are what shows up in launchctl and systemctl, so the usual install is not a digest."""
+        default = Path("/opt/docsgpt")
+        assert native.service_names(default, default) == ("docsgpt-api", "docsgpt-worker")
+
+    def test_a_docker_stack_elsewhere_on_the_same_port_is_refused(self, tmp_path):
+        """Its API would answer the health check while these services quietly failed to bind."""
+        other = tmp_path / "docker-install"
+        other.mkdir()
+        (other / ".env").write_text("DOCSGPT_PORT=7099\n", encoding="utf-8")
+        context = _native_context(FakeServices(), docker=FakeDocker(project_dirs=[str(other)]))
+        directory = tmp_path / "native"
+        argv = ["up", "--native", "--dir", str(directory), "--yes", "--port", "7099",
+                "--postgres-uri", "postgresql://localhost/d"]
+        with pytest.raises(DeployError, match="already runs a DocsGPT stack"):
+            _run(argv, context)
+        assert not (directory / "install.json").exists(), "it refuses before recording the install"
+
     def test_a_database_url_is_required(self, tmp_path):
         with pytest.raises(DeployError, match="--postgres-uri"):
             _run(["up", "--native", "--dir", str(tmp_path), "--yes"], _native_context())
@@ -286,14 +338,14 @@ class TestNativeLifecycle:
         services = FakeServices()
         self._installed(tmp_path, services)
         assert _run(["down", "--dir", str(tmp_path)], _native_context(services)) == 0
-        assert services.stopped == ["docsgpt-worker", "docsgpt-api"], "the worker goes first"
+        assert services.stopped == list(reversed(_names(tmp_path))), "the worker goes first"
         assert (tmp_path / ".env").is_file()
 
     def test_uninstall_removes_the_services(self, tmp_path):
         services = FakeServices()
         self._installed(tmp_path, services)
         assert _run(["uninstall", "--yes", "--dir", str(tmp_path)], _native_context(services)) == 0
-        assert sorted(services.removed) == ["docsgpt-api", "docsgpt-worker"]
+        assert sorted(services.removed) == sorted(_names(tmp_path))
 
     def test_docker_commands_refuse_a_native_install(self, tmp_path, capsys):
         self._installed(tmp_path, FakeServices())
@@ -404,7 +456,8 @@ class TestSystemd:
     def test_install_writes_the_unit_and_reloads(self, tmp_path):
         systemctl = FakeSystemctl()
         services = self._services(systemctl, tmp_path)
-        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path)[0])
+        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path,
+                                       ("docsgpt-api", "docsgpt-worker"))[0])
         unit = tmp_path / ".config" / "systemd" / "user" / "docsgpt-api.service"
         assert "ExecStart=/venv/bin/docsgpt api" in unit.read_text()
         assert systemctl.verbs == ["daemon-reload"]
@@ -420,7 +473,8 @@ class TestSystemd:
     def test_stop_and_remove(self, tmp_path):
         systemctl = FakeSystemctl()
         services = self._services(systemctl, tmp_path)
-        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path)[0])
+        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path,
+                                       ("docsgpt-api", "docsgpt-worker"))[0])
         unit = tmp_path / ".config" / "systemd" / "user" / "docsgpt-api.service"
         services.stop("docsgpt-api")
         assert unit.is_file(), "stopping keeps the unit"
@@ -451,7 +505,8 @@ class TestSystemd:
                 return types.SimpleNamespace(returncode=code, stdout="", stderr="Failed to disable")
 
         services = self._services(Failing(), tmp_path)
-        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path)[0])
+        services.install(native.units_for(tmp_path, ["/venv/bin/docsgpt"], 7091, tmp_path,
+                                       ("docsgpt-api", "docsgpt-worker"))[0])
         with pytest.raises(DeployError, match="Failed to disable"):
             services.remove("docsgpt-api")
         assert (tmp_path / ".config" / "systemd" / "user" / "docsgpt-api.service").is_file()
@@ -556,6 +611,21 @@ class TestUnitFiles:
         )
         with pytest.raises(DeployError, match="control character"):
             native.systemd_unit(unit)
+
+    def test_a_percent_sign_is_doubled_for_systemd(self, tmp_path):
+        """systemd expands %h and friends, so a literal percent in a path has to be escaped."""
+        unit = native.Unit(
+            name="docsgpt-api",
+            arguments=["/venv/bin/docsgpt", "api", "--flag", "100%"],
+            environment={"DOCSGPT_HOME": "/srv/100% full"},
+            working_directory="/srv/100% full",
+            log_file="/srv/100% full/api.log",
+        )
+        body = native.systemd_unit(unit)
+        assert 'WorkingDirectory="/srv/100%% full"' in body
+        assert 'Environment="DOCSGPT_HOME=/srv/100%% full"' in body
+        assert "append:/srv/100%% full/api.log" in body
+        assert "100%%" in body.split("ExecStart=")[1].split("\n")[0]
 
     def test_an_argument_with_spaces_survives_the_systemd_unit(self, tmp_path):
         unit = self._unit(tmp_path)

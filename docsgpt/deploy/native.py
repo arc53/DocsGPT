@@ -11,6 +11,7 @@ already run (``--postgres-uri``, ``--redis-url``).
 
 from __future__ import annotations
 
+import hashlib
 import os
 import plistlib
 import re
@@ -26,7 +27,6 @@ from docsgpt.deploy.docker import DeployError
 
 API_SERVICE = "docsgpt-api"
 WORKER_SERVICE = "docsgpt-worker"
-SERVICES = (API_SERVICE, WORKER_SERVICE)
 LABEL_PREFIX = "cloud.docsgpt"
 
 
@@ -39,6 +39,20 @@ class Unit:
     environment: dict[str, str]
     working_directory: str
     log_file: str
+
+
+def service_names(stack_directory: Path, default_directory: Path) -> tuple[str, str]:
+    """This install's two service names: the plain pair for the default install, suffixed for others.
+
+    Service managers keep one namespace for the whole user, so two installs in different directories
+    would write over each other's units. These names show up in launchctl and systemctl output, so
+    the usual install keeps the readable ones and only a second install carries a digest.
+    """
+    resolved = stack_directory.expanduser().resolve()
+    if resolved == default_directory.expanduser().resolve():
+        return (API_SERVICE, WORKER_SERVICE)
+    digest = hashlib.sha256(str(resolved).encode("utf-8")).hexdigest()[:8]
+    return (f"{API_SERVICE}-{digest}", f"{WORKER_SERVICE}-{digest}")
 
 
 def label_for(name: str) -> str:
@@ -84,8 +98,8 @@ def _check_unit_values(unit: Unit) -> None:
 
 
 def _systemd_quote(value: str) -> str:
-    """A unit-file value, double-quoted with backslashes and quotes escaped, as systemd reads them."""
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    """A unit-file value: quoted, with backslashes, quotes and percent signs escaped for systemd."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
     return f'"{escaped}"'
 
 
@@ -95,7 +109,9 @@ def systemd_unit(unit: Unit) -> str:
     environment = "\n".join(
         f"Environment={_systemd_quote(f'{key}={value}')}" for key, value in sorted(unit.environment.items())
     )
-    command = " ".join(shlex.quote(argument) for argument in unit.arguments)
+    # systemd expands % specifiers such as %h, so a literal percent has to be doubled everywhere.
+    command = " ".join(shlex.quote(argument).replace("%", "%%") for argument in unit.arguments)
+    log_file = unit.log_file.replace("%", "%%")
     return f"""[Unit]
 Description=DocsGPT ({unit.name})
 After=network-online.target
@@ -107,8 +123,8 @@ WorkingDirectory={_systemd_quote(unit.working_directory)}
 {environment}
 Restart=always
 RestartSec=5
-StandardOutput=append:{unit.log_file}
-StandardError=append:{unit.log_file}
+StandardOutput=append:{log_file}
+StandardError=append:{log_file}
 
 [Install]
 WantedBy=default.target
@@ -238,22 +254,24 @@ def services_for_platform(platform: str = sys.platform):
     )
 
 
-def units_for(stack_directory: Path, launcher: list[str], port: int, home: Path) -> list[Unit]:
+def units_for(stack_directory: Path, launcher: list[str], port: int, home: Path,
+              names: tuple[str, str]) -> list[Unit]:
     """The API and worker services for a native install in ``stack_directory``.
 
     ``launcher`` is how DocsGPT is started: the ``docsgpt`` command, or an interpreter and ``-m``.
     """
     environment = {"DOCSGPT_HOME": str(home)}
+    api_name, worker_name = names
     return [
         Unit(
-            name=API_SERVICE,
+            name=api_name,
             arguments=[*launcher, "api", "--host", "127.0.0.1", "--port", str(port)],
             environment=dict(environment),
             working_directory=str(stack_directory),
             log_file=str(stack_directory / "logs" / "api.log"),
         ),
         Unit(
-            name=WORKER_SERVICE,
+            name=worker_name,
             arguments=[*launcher, "worker"],
             environment=dict(environment),
             working_directory=str(stack_directory),

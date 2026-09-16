@@ -221,7 +221,7 @@ def _redis_urls(base: str) -> dict[str, str]:
             "database each."
         )
     path = parts.path.rstrip("/").lstrip("/")
-    if path and not path.isdigit():
+    if path and not (path.isascii() and path.isdigit()):
         raise DeployError(
             f"the Redis URL {base!r} has {path!r} where a database number would go. Pass a URL like "
             "redis://host:6379 or redis://host:6379/5."
@@ -271,6 +271,36 @@ def _refuse_docker_only_options(args) -> None:
         )
 
 
+def _port_number(value: object, source: str) -> int:
+    """A port from the command line or a hand-edited .env, or a DeployError naming where it came from."""
+    text = str(value)
+    if not (text.isascii() and text.isdigit() and 0 < int(text) < 65536):
+        raise DeployError(f"{source} is {value!r}, which is not a port number between 1 and 65535.")
+    return int(text)
+
+
+def _service_names(directory: Path) -> tuple[str, str]:
+    """This install's service names; an install elsewhere gets its own, so the two cannot collide."""
+    return native.service_names(directory, stack.stack_dir(None))
+
+
+def _refuse_other_docker_stack(context: Context, directory: Path, port: int) -> None:
+    """A Docker stack elsewhere on this port would answer the health check the native API failed."""
+    try:
+        others = {path for path in context.docker.project_dirs(PROJECT) if path.resolve() != directory.resolve()}
+    except DeployError:
+        return  # No Docker on this machine to ask, which is a fair reason to run natively.
+    for other in sorted(others):
+        other_port = envfile.read(other / ".env").get("DOCSGPT_PORT") or str(stack.DEFAULT_PORT)
+        if str(other_port) == str(port):
+            raise DeployError(
+                f"Docker already runs a DocsGPT stack from {other} on port {port}, which a native "
+                f"install would try to bind as well: the health check here could answer from that "
+                f"stack while these services failed to start. Stop it with `docsgpt down --dir "
+                f"{other}`, or give this install another port with --port."
+            )
+
+
 def _native_port(env: Mapping[str, str]) -> str:
     """The port a native install listens on."""
     return str(env.get("DOCSGPT_PORT") or stack.DEFAULT_PORT)
@@ -304,7 +334,12 @@ def _native_up(args, context: Context, directory: Path) -> int:
         )
 
     # An install keeps the port it was given: a later `up` with no --port must not move it back to the default.
-    port = int(args.port or existing.get("DOCSGPT_PORT") or stack.DEFAULT_PORT)
+    if args.port:
+        port = _port_number(args.port, "--port")
+    elif existing.get("DOCSGPT_PORT"):
+        port = _port_number(existing["DOCSGPT_PORT"], f"DOCSGPT_PORT in {env_path}")
+    else:
+        port = stack.DEFAULT_PORT
     updates: dict[str, Optional[str]] = {
         "POSTGRES_URI": postgres,
         "API_URL": f"http://127.0.0.1:{port}",
@@ -334,6 +369,8 @@ def _native_up(args, context: Context, directory: Path) -> int:
     if context.run([*launcher, "migrate"], stack_env) != 0:
         raise DeployError("`docsgpt migrate` failed; check the database URL and that the server is reachable.")
 
+    _refuse_other_docker_stack(context, directory, port)
+
     # The record goes in before the services: if one fails to start, this is still a native install
     # that status, down and uninstall can see and clean up, rather than orphaned units.
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -341,9 +378,10 @@ def _native_up(args, context: Context, directory: Path) -> int:
     record.update(version=context.version, mode="native", updated_at=now)
     (directory / stack.RECORD_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
-    for unit in native.units_for(directory, launcher, port, directory):
+    names = _service_names(directory)
+    for unit in native.units_for(directory, launcher, port, directory, names):
         services.install(unit)
-    for name in native.SERVICES:
+    for name in names:
         print(f"Starting {name} ...")
         services.start(name)
 
@@ -358,7 +396,7 @@ def _native_up(args, context: Context, directory: Path) -> int:
         return 1
 
     print(f"\nDocsGPT is running at http://localhost:{port}")
-    print(f"Services: {', '.join(native.SERVICES)} under {services.name}")
+    print(f"Services: {', '.join(names)} under {services.name}")
     print(f"Settings: {env_path}")
     print("Manage it with: docsgpt status | logs | down | uninstall")
     return 0
@@ -471,7 +509,7 @@ def down(args, context: Optional[Context] = None) -> int:
     if _mode(directory) == "native":
         services = context.service_manager()
         # The worker goes first: it talks to the API, not the other way round.
-        for name in reversed(native.SERVICES):
+        for name in reversed(_service_names(directory)):
             services.stop(name)
         return 0
     context.docker.compose(directory, *_EVERY_PROFILE, "down")
@@ -492,7 +530,7 @@ def status(args, context: Optional[Context] = None) -> int:
         port = _native_port(env)
         print(f"DocsGPT {_record(directory).get('version', 'unknown')} in {directory} (native, {services.name})")
         print(f"Address: {_native_address(env)}")
-        for name in native.SERVICES:
+        for name in _service_names(directory):
             print(f"  {name}: {'running' if services.is_running(name) else 'stopped'}")
         healthy = context.wait(f"http://127.0.0.1:{port}/api/health", 0)
         print("API: answering" if healthy else "API: not answering (see `docsgpt logs`)")
@@ -515,7 +553,7 @@ def logs(args, context: Optional[Context] = None) -> int:
         return 1
     if _mode(directory) == "native":
         logs_dir = directory / "logs"
-        wanted = args.services or [name.removeprefix("docsgpt-") for name in native.SERVICES]
+        wanted = args.services or ["api", "worker"]
         for service in wanted:
             path = logs_dir / f"{service}.log"
             print(f"=== {path}")
@@ -775,9 +813,9 @@ def uninstall(args, context: Optional[Context] = None) -> int:
             return 1
     if _mode(directory) == "native":
         services = context.service_manager()
-        for name in reversed(native.SERVICES):
+        for name in reversed(_service_names(directory)):
             services.remove(name)
-        print(f"Removed the {', '.join(native.SERVICES)} services.")
+        print(f"Removed the {', '.join(_service_names(directory))} services.")
         if args.purge:
             shutil.rmtree(directory)
             print(f"Removed {directory}. The database and Redis it used are untouched.")
