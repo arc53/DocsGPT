@@ -527,9 +527,9 @@ def backup(args, context: Optional[Context] = None) -> int:
     target = out_dir / backup_format.archive_name(taken_at)
     image = _stack_image(env)
 
-    print("Pausing the backend and the worker so the database and the files match ...")
-    context.docker.compose(directory, "stop", "backend", "worker")
     try:
+        print("Pausing the backend and the worker so the database and the files match ...")
+        context.docker.compose(directory, "stop", "backend", "worker")
         _write_backup(args, context, directory, env, target, image, taken_at)
     finally:
         print("Starting the backend and the worker again ...")
@@ -580,10 +580,16 @@ def _restore_data(context: Context, directory: Path, archive: Path, volumes: lis
     with tempfile.TemporaryDirectory() as workspace:
         work = Path(workspace)
         backup_format.extract(archive, work)
+        # Read every volume tar through before replacing any of them: a damaged third tar must not
+        # be discovered with the first two already swapped in.
+        tars = {}
         for name in volumes:
             tar_path = work / backup_format.volume_member(name)
             if not tar_path.is_file():
                 raise DeployError(f"{archive} is missing the {name} volume it says it contains")
+            backup_format.check_volume_tar(name, tar_path)
+            tars[name] = tar_path
+        for name, tar_path in tars.items():
             print(f"Restoring the {name} volume ...")
             context.docker.import_volume(f"{PROJECT}_{name}", tar_path, image)
 
@@ -625,10 +631,9 @@ def restore(args, context: Optional[Context] = None) -> int:
             return 1
 
     image = _stack_image(env)
-    print("Stopping the stack ...")
-    context.docker.compose(directory, *_EVERY_PROFILE, "down")
-
     try:
+        print("Stopping the stack ...")
+        context.docker.compose(directory, *_EVERY_PROFILE, "down")
         _restore_data(context, directory, archive, volumes, image)
     except BaseException:
         # The stack is down by now. A corrupt payload inside an otherwise well-formed archive, or a
