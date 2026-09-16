@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -284,6 +285,33 @@ def _service_names(directory: Path) -> tuple[str, str]:
     return native.service_names(directory, stack.stack_dir(None))
 
 
+def _port_is_free(port: int) -> bool:
+    """Whether the loopback port can still be bound."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def _refuse_busy_port(directory: Path, port: int, services, names: tuple[str, str]) -> None:
+    """Whatever holds the port would answer the health check while these services failed to bind.
+
+    An install re-running on its own port is the exception: its services are holding it, and
+    starting them again replaces them.
+    """
+    if _port_is_free(port):
+        return
+    if _record(directory).get("mode") == "native" and any(services.is_running(name) for name in names):
+        return
+    raise DeployError(
+        f"port {port} is already in use by something other than this install. The API would fail to "
+        f"bind it while the health check answered from whatever holds it, so the install would look "
+        f"healthy and be dead. Free the port, or give this install another one with --port."
+    )
+
+
 def _refuse_other_docker_stack(context: Context, directory: Path, port: int) -> None:
     """A Docker stack elsewhere on this port would answer the health check the native API failed."""
     try:
@@ -340,6 +368,11 @@ def _native_up(args, context: Context, directory: Path) -> int:
         port = _port_number(existing["DOCSGPT_PORT"], f"DOCSGPT_PORT in {env_path}")
     else:
         port = stack.DEFAULT_PORT
+
+    names = _service_names(directory)
+    _refuse_other_docker_stack(context, directory, port)
+    _refuse_busy_port(directory, port, services, names)
+
     updates: dict[str, Optional[str]] = {
         "POSTGRES_URI": postgres,
         "API_URL": f"http://127.0.0.1:{port}",
@@ -369,8 +402,6 @@ def _native_up(args, context: Context, directory: Path) -> int:
     if context.run([*launcher, "migrate"], stack_env) != 0:
         raise DeployError("`docsgpt migrate` failed; check the database URL and that the server is reachable.")
 
-    _refuse_other_docker_stack(context, directory, port)
-
     # The record goes in before the services: if one fails to start, this is still a native install
     # that status, down and uninstall can see and clean up, rather than orphaned units.
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -378,7 +409,6 @@ def _native_up(args, context: Context, directory: Path) -> int:
     record.update(version=context.version, mode="native", updated_at=now)
     (directory / stack.RECORD_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
-    names = _service_names(directory)
     for unit in native.units_for(directory, launcher, port, directory, names):
         services.install(unit)
     for name in names:

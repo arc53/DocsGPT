@@ -2,6 +2,7 @@
 
 import json
 import plistlib
+import socket
 import sys
 import types
 from pathlib import Path
@@ -273,9 +274,37 @@ class TestNativeUp:
         directory = tmp_path / "native"
         argv = ["up", "--native", "--dir", str(directory), "--yes", "--port", "7099",
                 "--postgres-uri", "postgresql://localhost/d"]
+        migrated = []
+        context.run = lambda args, env=None: migrated.append(args) or 0
         with pytest.raises(DeployError, match="already runs a DocsGPT stack"):
             _run(argv, context)
         assert not (directory / "install.json").exists(), "it refuses before recording the install"
+        assert not (directory / ".env").exists(), "and before writing any settings"
+        assert not (directory / "logs").exists()
+        assert migrated == [], "and before touching the database"
+
+    def test_a_port_something_else_holds_is_refused(self, tmp_path):
+        """Nothing confirms the API bound its port, and a generic health check answers from the holder."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+            held.bind(("127.0.0.1", 0))
+            held.listen(1)
+            port = held.getsockname()[1]
+            argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--port", str(port),
+                    "--postgres-uri", "postgresql://localhost/d"]
+            with pytest.raises(DeployError, match="already in use"):
+                _run(argv, _native_context())
+            assert not (tmp_path / ".env").exists(), "it refuses before writing anything"
+
+    def test_an_install_may_keep_the_port_its_own_services_hold(self, tmp_path):
+        """Re-running an install must not trip over the services it is about to replace."""
+        services = FakeServices()
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
+        assert _run(argv, _native_context(services)) == 0
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+            held.bind(("127.0.0.1", 0))
+            held.listen(1)
+            envfile.update(tmp_path / ".env", {"DOCSGPT_PORT": str(held.getsockname()[1])})
+            assert _run(["up", "--dir", str(tmp_path), "--yes"], _native_context(services)) == 0
 
     def test_a_database_url_is_required(self, tmp_path):
         with pytest.raises(DeployError, match="--postgres-uri"):
