@@ -209,7 +209,11 @@ def _redis_urls(base: str) -> dict[str, str]:
     Everything else in the URL is kept — TLS, credentials, and query parameters such as the
     ``ssl_cert_reqs`` that a rediss:// endpoint usually needs.
     """
-    parts = urlsplit(base)
+    try:
+        parts = urlsplit(base)
+    except ValueError as exc:
+        # urlsplit raises on things like redis://[::1 ; that is a typo, not a crash.
+        raise DeployError(f"the Redis URL {base!r} could not be read: {exc}") from exc
     if parts.scheme not in ("redis", "rediss"):
         raise DeployError(
             f"the Redis URL {base!r} should start with redis:// or rediss://, with any options as "

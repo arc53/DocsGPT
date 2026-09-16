@@ -200,6 +200,22 @@ class TestNativeUp:
         assert env["CELERY_BROKER_URL"] == "redis://localhost:6379/0?health_check_interval=30"
         assert env["CACHE_REDIS_URL"] == "redis://localhost:6379/2?health_check_interval=30"
 
+    def test_a_malformed_redis_url_is_reported_not_raised(self, tmp_path):
+        """urlsplit raises ValueError on an unterminated IPv6 bracket; a typo is not a traceback."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes",
+                "--postgres-uri", "postgresql://localhost/d", "--redis-url", "redis://[::1"]
+        with pytest.raises(DeployError, match="could not be read"):
+            _run(argv, _native_context())
+
+    def test_an_ipv6_redis_url_still_works(self, tmp_path):
+        """Refusing the malformed form must not cost the valid one."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d",
+                "--redis-url", "redis://[::1]:6379/2"]
+        assert _run(argv, _native_context()) == 0
+        env = envfile.read(tmp_path / ".env")
+        assert env["CELERY_BROKER_URL"] == "redis://[::1]:6379/2"
+        assert env["CACHE_REDIS_URL"] == "redis://[::1]:6379/4"
+
     @pytest.mark.parametrize("url", ["localhost:6379", "redis+socket:///var/run/redis.sock",
                                      "redis://localhost:6379/queue"])
     def test_a_redis_url_that_cannot_be_numbered_is_refused(self, tmp_path, url):
