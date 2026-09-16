@@ -233,3 +233,69 @@ def test_excel_numeric_headers_do_not_crash(tmp_path):
 
     assert isinstance(out, str)
     assert len(out) > 0
+
+
+LITERAL_NA_VALUES = ["N/A", "NA", "n/a", "NULL", "None", "NaN", "nan"]
+
+
+@pytest.mark.parametrize("value", LITERAL_NA_VALUES)
+def test_pandas_csv_keeps_a_literal_na_value(tmp_path, value):
+    """pandas reads these strings as missing values, so the cell arrived blank.
+
+    "N/A" is how a person writes "not applicable" and "NULL" is what a database
+    export writes; either way the cell says something and the text lost it.
+    """
+    path = tmp_path / "status.csv"
+    path.write_text(f"Code,Status\nA1,{value}\nA2,ok\n")
+
+    text = PandasCSVParser().parse_file(path)
+
+    assert f"A1, {value}" in text
+
+
+@pytest.mark.parametrize("value", LITERAL_NA_VALUES)
+def test_excel_keeps_a_literal_na_value(tmp_path, value):
+    openpyxl = pytest.importorskip("openpyxl")
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.append(["Code", "Status"])
+    sheet.append(["A1", value])
+    sheet.append(["A2", "ok"])
+    path = tmp_path / "status.xlsx"
+    workbook.save(path)
+
+    text = ExcelParser().parse_file(path)
+
+    assert f"A1, {value}" in text
+
+
+def test_a_genuinely_empty_cell_is_still_empty(tmp_path):
+    """The control: keeping the literal strings must not make a blank visible."""
+    path = tmp_path / "gap.csv"
+    path.write_text("Code,Status,Units\nA1,,12\nA2,ok,7\n")
+
+    text = PandasCSVParser().parse_file(path)
+
+    assert "A1, , 12" in text
+
+
+def test_a_whole_number_next_to_a_gap_keeps_its_form(tmp_path):
+    """A blank used to upcast the column to float and write 12 as 12.0."""
+    path = tmp_path / "gap.csv"
+    path.write_text("Code,Units\nA1,12\nA2,\n")
+
+    text = PandasCSVParser().parse_file(path)
+
+    assert "A1, 12" in text
+    assert "12.0" not in text
+
+
+def test_the_caller_can_ask_for_the_default_na_list(tmp_path):
+    path = tmp_path / "status.csv"
+    path.write_text("Code,Status\nA1,N/A\nA2,ok\n")
+
+    text = PandasCSVParser(pandas_config={"keep_default_na": True}).parse_file(path)
+
+    assert text.splitlines()[1] == "A1, "
+
