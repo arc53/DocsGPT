@@ -2,6 +2,7 @@
 
 import json
 import plistlib
+import sys
 import types
 
 import pytest
@@ -131,6 +132,21 @@ class TestNativeUp:
         assert env["API_URL"] == "http://127.0.0.1:7099"
         assert services.units["docsgpt-api"].arguments[-1] == "7099"
 
+    def test_it_refuses_to_run_beside_a_docker_install(self, tmp_path):
+        """Native services on the same port would orphan the containers from down/status/uninstall."""
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], _context()) == 0
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
+        with pytest.raises(DeployError, match="holds a Docker install"):
+            _run(argv, _native_context())
+
+    def test_services_are_not_written_without_a_docsgpt_command(self, tmp_path, monkeypatch):
+        """A unit pointing at something unexecutable would fail to exec with only a health check to show it."""
+        monkeypatch.setattr("docsgpt.deploy.commands.shutil.which", lambda name: None)
+        monkeypatch.setattr(sys, "argv", [str(tmp_path / "not-a-program")])
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
+        with pytest.raises(DeployError, match="not on PATH"):
+            _run(argv, _native_context())
+
     def test_a_database_url_is_required(self, tmp_path):
         with pytest.raises(DeployError, match="--postgres-uri"):
             _run(["up", "--native", "--dir", str(tmp_path), "--yes"], _native_context())
@@ -250,6 +266,89 @@ class TestLaunchd:
         services = self._services(FakeLaunchctl(state="not running"), tmp_path)
         assert services.is_running("docsgpt-api") is False
         assert self._services(FakeLaunchctl(state="running"), tmp_path).is_running("docsgpt-api") is True
+
+
+class FakeSystemctl:
+    """systemctl, recording what it was asked to do."""
+
+    def __init__(self, active=True):
+        self.calls = []
+        self.active = active
+
+    def __call__(self, args, capture_output=False, text=False, check=False):
+        self.calls.append(args)
+        code = 0 if (args[2] != "is-active" or self.active) else 3
+        return types.SimpleNamespace(returncode=code, stdout="", stderr="")
+
+    @property
+    def verbs(self):
+        return [call[2] for call in self.calls]
+
+
+class TestSystemd:
+    def _services(self, systemctl, tmp_path):
+        return native.SystemdServices(runner=systemctl, home=tmp_path)
+
+    def test_install_writes_the_unit_and_reloads(self, tmp_path):
+        systemctl = FakeSystemctl()
+        services = self._services(systemctl, tmp_path)
+        services.install(native.units_for(tmp_path, "/venv/bin/docsgpt", 7091, tmp_path)[0])
+        unit = tmp_path / ".config" / "systemd" / "user" / "docsgpt-api.service"
+        assert "ExecStart=/venv/bin/docsgpt api" in unit.read_text()
+        assert systemctl.verbs == ["daemon-reload"]
+
+    def test_start_restarts_so_a_rewritten_unit_takes_effect(self, tmp_path):
+        """`enable --now` starts nothing when the unit is already active: it would keep the old ExecStart."""
+        systemctl = FakeSystemctl()
+        self._services(systemctl, tmp_path).start("docsgpt-api")
+        assert "restart" in systemctl.verbs, systemctl.verbs
+        assert systemctl.verbs.index("enable") < systemctl.verbs.index("restart")
+        assert "--now" not in [argument for call in systemctl.calls for argument in call]
+
+    def test_stop_and_remove(self, tmp_path):
+        systemctl = FakeSystemctl()
+        services = self._services(systemctl, tmp_path)
+        services.install(native.units_for(tmp_path, "/venv/bin/docsgpt", 7091, tmp_path)[0])
+        unit = tmp_path / ".config" / "systemd" / "user" / "docsgpt-api.service"
+        services.stop("docsgpt-api")
+        assert unit.is_file(), "stopping keeps the unit"
+        services.remove("docsgpt-api")
+        assert not unit.exists()
+        assert systemctl.verbs[-1] == "daemon-reload", "systemd is told the unit is gone"
+
+    def test_is_running_asks_systemd(self, tmp_path):
+        assert self._services(FakeSystemctl(active=True), tmp_path).is_running("docsgpt-api") is True
+        assert self._services(FakeSystemctl(active=False), tmp_path).is_running("docsgpt-api") is False
+
+    def test_an_explicit_home_wins_over_xdg_config_home(self, tmp_path, monkeypatch):
+        """home is how a caller redirects the unit directory; the environment must not override it."""
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        services = native.SystemdServices(runner=FakeSystemctl(), home=tmp_path)
+        assert services.directory == tmp_path / ".config" / "systemd" / "user"
+
+    def test_xdg_config_home_is_used_when_no_home_is_given(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        services = native.SystemdServices(runner=FakeSystemctl())
+        assert services.directory == tmp_path / "xdg" / "systemd" / "user"
+
+    def test_a_failing_systemctl_is_reported(self, tmp_path):
+        class Failing(FakeSystemctl):
+            def __call__(self, args, **kwargs):
+                self.calls.append(args)
+                return types.SimpleNamespace(returncode=1, stdout="", stderr="Failed to enable unit")
+
+        with pytest.raises(DeployError, match="Failed to enable unit"):
+            self._services(Failing(), tmp_path).start("docsgpt-api")
+
+
+class TestPlatformChoice:
+    def test_each_platform_gets_its_service_manager(self):
+        assert isinstance(native.services_for_platform("darwin"), native.LaunchdServices)
+        assert isinstance(native.services_for_platform("linux"), native.SystemdServices)
+
+    def test_windows_says_what_to_do_instead(self):
+        with pytest.raises(DeployError, match="Windows"):
+            native.services_for_platform("win32")
 
 
 class TestUnitFiles:

@@ -152,8 +152,12 @@ class SystemdServices:
 
     def __init__(self, runner=subprocess.run, home: Optional[Path] = None) -> None:
         self._run = runner
-        base = os.environ.get("XDG_CONFIG_HOME")
-        root = Path(base) if base else (home or Path.home()) / ".config"
+        # An explicit home wins: it is what a caller passes to redirect the unit directory.
+        if home is not None:
+            root = home / ".config"
+        else:
+            base = os.environ.get("XDG_CONFIG_HOME")
+            root = Path(base) if base else Path.home() / ".config"
         self.directory = root / "systemd" / "user"
 
     def _unit_file(self, name: str) -> Path:
@@ -171,7 +175,10 @@ class SystemdServices:
         self._systemctl("daemon-reload")
 
     def start(self, name: str) -> None:
-        self._systemctl("enable", "--now", f"{name}.service", check=True)
+        # restart, not `enable --now`: --now starts nothing when the unit is already active, so a
+        # reinstalled unit would keep running with the ExecStart and environment it started with.
+        self._systemctl("enable", f"{name}.service", check=True)
+        self._systemctl("restart", f"{name}.service", check=True)
 
     def stop(self, name: str) -> None:
         self._systemctl("stop", f"{name}.service")

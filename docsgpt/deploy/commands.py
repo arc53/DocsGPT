@@ -218,6 +218,17 @@ def _redis_urls(base: str) -> dict[str, str]:
     }
 
 
+def _own_executable() -> str:
+    """The docsgpt command to put in the service files, or a DeployError naming what to install."""
+    candidate = Path(sys.argv[0]).resolve()
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return str(candidate)
+    raise DeployError(
+        "the docsgpt command is not on PATH, so the services would have nothing to run. "
+        "Install it with `uv tool install docsgpt` (or `pip install docsgpt`) and run this again."
+    )
+
+
 def _native_up(args, context: Context, directory: Path) -> int:
     """Run the API and the worker as services on this machine, against an existing Postgres and Redis."""
     services = context.service_manager()
@@ -263,7 +274,7 @@ def _native_up(args, context: Context, directory: Path) -> int:
     (directory / "logs").mkdir(exist_ok=True)
     envfile.update(env_path, updates)
 
-    executable = shutil.which("docsgpt") or sys.argv[0]
+    executable = shutil.which("docsgpt") or _own_executable()
     print("Applying database migrations ...")
     # The child reads the stack's settings, not a .env in whatever directory this was run from.
     stack_env = {"DOCSGPT_HOME": str(directory), "DOCSGPT_ENV_FILE": str(env_path)}
@@ -303,6 +314,13 @@ def up(args, context: Optional[Context] = None) -> int:
     context = context or Context.default(args)
     directory = stack.stack_dir(args.dir)
     if getattr(args, "native", False) or _mode(directory) == "native":
+        if _mode(directory) != "native" and (directory / stack.COMPOSE_FILE).is_file():
+            raise DeployError(
+                f"{directory} holds a Docker install. Native services would run beside its containers "
+                "on the same port, and down, status and uninstall would stop seeing them. Stop it "
+                "first with `docsgpt down` (and `docsgpt uninstall` to remove it), or pass --dir to "
+                "put the native install somewhere else."
+            )
         return _native_up(args, context, directory)
     env_path = directory / ".env"
     record_path = directory / stack.RECORD_FILE
