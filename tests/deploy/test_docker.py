@@ -129,7 +129,10 @@ class TestVolumes:
         assert "docsgpt_inputs:/data" in args
         assert args[-2] == "-c"
         assert "tar xf - -C /data" in args[-1]
-        assert "find /data -mindepth 1 -delete" in args[-1], "old contents go first"
+        command = args[-1]
+        assert command.index("tar xf - -C /stage") < command.index("find /data -mindepth 1 -delete"), (
+            "the incoming tar is unpacked outside the volume first, so a corrupt one leaves it alone"
+        )
         assert runner.streams[0][1] is not None, "the tar is fed in on stdin"
 
 

@@ -2,6 +2,7 @@
 
 import io
 import json
+import stat
 import tarfile
 
 import pytest
@@ -24,6 +25,22 @@ def _archive_names(path):
 def _manifest(path):
     with tarfile.open(path, "r:gz") as archive:
         return json.loads(archive.extractfile(backup_module.MANIFEST).read())
+
+
+def _rewrite(archive, dest, *, volumes=None, drop=()):
+    """The same archive with other volumes in its manifest, or with members left out."""
+    with tarfile.open(archive, "r:gz") as source, tarfile.open(dest, "w:gz") as out:
+        for member in source.getmembers():
+            if member.name in drop:
+                continue
+            body = source.extractfile(member).read() if member.isfile() else None
+            if member.name == backup_module.MANIFEST and volumes is not None:
+                manifest = json.loads(body.decode())
+                manifest["volumes"] = volumes
+                body = json.dumps(manifest).encode()
+                member.size = len(body)
+            out.addfile(member, io.BytesIO(body) if body is not None else None)
+    return dest
 
 
 def _copy_with_version(archive, version, dest):
@@ -80,6 +97,40 @@ class TestBackup:
         assert dumps, docker.calls
         assert dumps[0][:3] == ["exec", "-T", "postgres"]
 
+    def test_the_archive_is_private_to_whoever_took_it(self, tmp_path):
+        """It can hold .env, and the dump is the install's data either way."""
+        _installed(tmp_path)
+        out = tmp_path / "backups"
+        argv = ["backup", "--dir", str(tmp_path), "--out", str(out), "--with-settings"]
+        assert _run(argv, _context()) == 0
+        archive = next(out.glob("*.tar.gz"))
+        assert stat.S_IMODE(archive.stat().st_mode) == 0o600
+
+    def test_the_writers_are_stopped_while_the_archive_is_made(self, tmp_path):
+        """Ingestion writes files and rows; a dump taken alongside live writes would not match them."""
+        _installed(tmp_path)
+        docker = FakeDocker()
+        assert _run(["backup", "--dir", str(tmp_path), "--out", str(tmp_path / "b")], _context(docker)) == 0
+        joined = [" ".join(args) for _, args in docker.calls]
+        stopped = next(index for index, call in enumerate(joined) if call.startswith("stop backend worker"))
+        dumped = next(index for index, call in enumerate(joined) if "pg_dump" in call)
+        started = next(index for index, call in enumerate(joined) if call.startswith("up -d backend worker"))
+        assert stopped < dumped < started, joined
+
+    def test_the_writers_come_back_even_when_the_dump_fails(self, tmp_path):
+        _installed(tmp_path)
+
+        class FailingDump(FakeDocker):
+            def compose(self, directory, *args, **kwargs):
+                if "pg_dump" in args:
+                    raise DeployError("pg_dump exploded")
+                return super().compose(directory, *args, **kwargs)
+
+        docker = FailingDump()
+        with pytest.raises(DeployError, match="pg_dump exploded"):
+            _run(["backup", "--dir", str(tmp_path), "--out", str(tmp_path / "b")], _context(docker))
+        assert any(" ".join(args).startswith("up -d backend worker") for _, args in docker.calls), docker.calls
+
     def test_without_an_install(self, tmp_path, capsys):
         assert _run(["backup", "--dir", str(tmp_path)], _context()) == 1
         assert "docsgpt up" in capsys.readouterr().err
@@ -121,6 +172,31 @@ class TestRestore:
     def test_a_missing_archive(self, tmp_path):
         with pytest.raises(DeployError, match="does not exist"):
             _run(["restore", str(tmp_path / "nope.tar.gz"), "--dir", str(tmp_path), "--yes"], _context())
+
+    def test_a_manifest_naming_another_volume_is_refused(self, tmp_path):
+        """import_volume empties what it is given, so a hand-made manifest must not name postgres_data."""
+        crafted = _rewrite(self._backup(tmp_path), tmp_path / "crafted.tar.gz", volumes=["postgres_data"])
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        with pytest.raises(DeployError, match="not part of a backup"):
+            _run(["restore", str(crafted), "--dir", str(tmp_path), "--yes"], _context(docker))
+        assert docker.calls == [], "nothing was stopped"
+        assert docker.volume_ops == [], "and nothing was touched"
+
+    def test_a_damaged_archive_fails_before_the_stack_is_stopped(self, tmp_path):
+        """Discovering a missing member after `compose down` would leave DocsGPT down for nothing."""
+        without_dump = _rewrite(self._backup(tmp_path), tmp_path / "nodump.tar.gz", drop=(backup_module.DUMP,))
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        with pytest.raises(DeployError, match="nothing to restore"):
+            _run(["restore", str(without_dump), "--dir", str(tmp_path), "--yes"], _context(docker))
+        assert docker.calls == [], "DocsGPT is still running"
+
+    def test_psql_stops_at_the_first_failing_statement(self, tmp_path):
+        """Without it psql runs on after an error and a half-restored database looks like success."""
+        archive = self._backup(tmp_path)
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        assert _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker)) == 0
+        psql = next(args for _, args in docker.calls if "psql" in args)
+        assert "ON_ERROR_STOP=on" in psql
 
     def test_a_newer_backup_is_refused_without_force(self, tmp_path):
         """Restoring a 0.22 backup into 0.21 would hand an older schema newer data."""

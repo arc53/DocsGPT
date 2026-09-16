@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import tarfile
 import time
 from collections.abc import Mapping
@@ -50,7 +51,10 @@ def write_archive(
 ) -> None:
     """Write the backup archive; the manifest is added last so a truncated file has none."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(path, "w:gz") as archive:
+    # 0600 from the start: the dump is the install's data, and --with-settings adds its secrets.
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(descriptor, 0o600)
+    with os.fdopen(descriptor, "wb") as handle, tarfile.open(fileobj=handle, mode="w:gz") as archive:
         archive.add(dump, arcname=DUMP)
         for name, tar_path in sorted(volume_tars.items()):
             archive.add(tar_path, arcname=volume_member(name))
@@ -79,6 +83,34 @@ def read_manifest(path: Path) -> dict:
     if not isinstance(manifest, dict) or "volumes" not in manifest:
         raise DeployError(f"{path} is not a DocsGPT backup: its manifest is missing what to restore")
     return manifest
+
+
+def validate(path: Path, manifest: Mapping[str, object]) -> list[str]:
+    """The volumes to restore, once the archive is known to hold everything it declares.
+
+    Checked before the stack is stopped: a damaged or hand-made archive must fail while DocsGPT is
+    still running, not after ``docker compose down``. Only the volumes a backup is made of are
+    accepted, so a manifest cannot name ``postgres_data`` and have it emptied on the way in.
+    """
+    volumes = manifest.get("volumes")
+    if not isinstance(volumes, list) or not all(isinstance(name, str) for name in volumes):
+        raise DeployError(f"{path} is not a DocsGPT backup: its manifest does not list the volumes it holds")
+    unsupported = sorted(set(volumes) - set(DATA_VOLUMES))
+    if unsupported:
+        raise DeployError(
+            f"{path} names volumes that are not part of a backup: {', '.join(unsupported)}. "
+            f"A DocsGPT backup holds {', '.join(DATA_VOLUMES)}."
+        )
+    required = [DUMP, *(volume_member(name) for name in volumes)]
+    try:
+        with tarfile.open(path, "r:gz") as archive:
+            present = {member.name for member in archive.getmembers() if member.isfile()}
+    except (tarfile.TarError, OSError) as exc:
+        raise DeployError(f"{path} is not a DocsGPT backup: {exc}") from exc
+    missing = [name for name in required if name not in present]
+    if missing:
+        raise DeployError(f"{path} is missing {', '.join(missing)}, so there is nothing to restore from")
+    return list(volumes)
 
 
 def extract(path: Path, destination: Path) -> None:
