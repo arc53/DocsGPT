@@ -13,6 +13,14 @@ request, and [Upgrading](/upgrading) covers the steps an existing deployment has
 
 ## Unreleased
 
+### Run DocsGPT without Docker
+
+`docsgpt up --native` runs the API and the worker as services on the machine itself, launchd on
+macOS and systemd user units on Linux, against a PostgreSQL and Redis you already have
+(`--postgres-uri`, `--redis-url`). `status`, `logs`, `down` and `uninstall` work on such an install
+the same way they do on a Docker one, and never touch the database or Redis. See
+[Run it as services, without Docker](/Deploying/Pip-Install#run-it-as-services-without-docker).
+
 ### Back up and restore an install
 
 `docsgpt backup` writes a dump of the database and a tar of each data volume into one archive, and

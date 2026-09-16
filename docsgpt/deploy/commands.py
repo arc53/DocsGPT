@@ -6,6 +6,7 @@ import getpass
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from docsgpt.deploy import backup as backup_format
-from docsgpt.deploy import envfile, stack
+from docsgpt.deploy import envfile, native, stack
 from docsgpt.deploy.docker import DeployError, Docker, lan_ip, wait_healthy
 
 PROJECT = "docsgpt"
@@ -78,9 +79,10 @@ def detect_installer() -> str:
     return "pip"
 
 
-def _run_command(args: list[str]) -> int:
+def _run_command(args: list[str], env: Optional[Mapping[str, str]] = None) -> int:
+    """Run ``args``; ``env`` adds to this process's environment rather than replacing it."""
     try:
-        return subprocess.call(args)
+        return subprocess.call(args, env={**os.environ, **env} if env else None)
     except FileNotFoundError as exc:
         raise DeployError(f"{args[0]} is not on PATH") from exc
 
@@ -106,8 +108,9 @@ class Context:
     wait: Callable[[str, float], bool] = wait_healthy
     open_browser: Callable[[str], Any] = webbrowser.open
     installer: Callable[[], str] = detect_installer
-    run: Callable[[list[str]], int] = _run_command
+    run: Callable[..., int] = _run_command
     exec_up: Callable[[list[str]], int] = _exec_command
+    services: Any = None
 
     @classmethod
     def default(cls, args) -> "Context":
@@ -116,10 +119,33 @@ class Context:
         interactive = sys.stdin.isatty() and not getattr(args, "yes", False)
         return cls(docker=Docker(), prompter=Prompter(), interactive=interactive, version=__version__)
 
+    def service_manager(self):
+        """The launchd or systemd wrapper, made on first use so Docker installs never touch it."""
+        if self.services is None:
+            self.services = native.services_for_platform()
+        return self.services
+
+
+def _record(directory: Path) -> dict:
+    """What ``install.json`` says about this install (empty when there is none)."""
+    path = directory / stack.RECORD_FILE
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return {}
+
+
+def _mode(directory: Path) -> str:
+    """``native`` or ``docker``, from the install record."""
+    return "native" if _record(directory).get("mode") == "native" else "docker"
+
 
 def _installed(directory: Path) -> Optional[dict[str, str]]:
     """The stack's settings, or None (with a message) when there is no install in ``directory``."""
-    if not (directory / stack.COMPOSE_FILE).is_file():
+    installed = (directory / stack.COMPOSE_FILE).is_file() or _mode(directory) == "native"
+    if not installed:
         print(f"No DocsGPT install in {directory}. Run `docsgpt up` first, or pass --dir.", file=sys.stderr)
         return None
     return envfile.read(directory / ".env")
@@ -174,10 +200,110 @@ def _choose_provider(args, context: Context, existing: Mapping[str, str], ask: b
         raise DeployError(str(exc)) from exc
 
 
+def _redis_urls(base: str) -> dict[str, str]:
+    """Celery's broker and result backend, and the cache, on three consecutive databases of one Redis.
+
+    They start at database 0, or at the one the URL names: ``redis://host:6379/5`` puts them on 5, 6
+    and 7, which is how one Redis is shared with something that already uses the first databases.
+    """
+    trimmed = base.rstrip("/")
+    first = 0
+    head, _, tail = trimmed.rpartition("/")
+    if tail.isdigit():
+        trimmed, first = head, int(tail)
+    return {
+        "CELERY_BROKER_URL": f"{trimmed}/{first}",
+        "CELERY_RESULT_BACKEND": f"{trimmed}/{first + 1}",
+        "CACHE_REDIS_URL": f"{trimmed}/{first + 2}",
+    }
+
+
+def _native_up(args, context: Context, directory: Path) -> int:
+    """Run the API and the worker as services on this machine, against an existing Postgres and Redis."""
+    services = context.service_manager()
+    env_path = directory / ".env"
+    existing = envfile.read(env_path)
+    record = _record(directory)
+    configured = bool(record)
+
+    postgres = args.postgres_uri or existing.get("POSTGRES_URI")
+    redis = args.redis_url or ""
+    ask = context.interactive and (not configured or args.reconfigure)
+    if not postgres and ask:
+        postgres = context.prompter.text("PostgreSQL URL (postgresql://user:password@host:5432/docsgpt)")
+    if not redis and ask:
+        redis = context.prompter.text("Redis URL", default="redis://localhost:6379")
+    if not postgres:
+        raise DeployError(
+            "native mode needs a database: pass --postgres-uri postgresql://user:password@host:5432/docsgpt "
+            "(Redis defaults to redis://localhost:6379)."
+        )
+
+    # An install keeps the port it was given: a later `up` with no --port must not move it back to the default.
+    port = int(args.port or existing.get("DOCSGPT_PORT") or stack.DEFAULT_PORT)
+    updates: dict[str, Optional[str]] = {
+        "POSTGRES_URI": postgres,
+        "API_URL": f"http://127.0.0.1:{port}",
+        "DOCSGPT_PORT": str(port),
+    }
+    if redis or "CELERY_BROKER_URL" not in existing:
+        updates.update(_redis_urls(redis or "redis://localhost:6379"))
+    for key in ("INTERNAL_KEY", "JWT_SECRET_KEY"):
+        if not existing.get(key):
+            updates[key] = secrets.token_hex(32)
+    if "VITE_API_STREAMING" not in existing:
+        updates["VITE_API_STREAMING"] = "true"
+    provider = _choose_provider(args, context, existing, ask)
+    if provider:
+        updates.update(provider)
+    elif "LLM_PROVIDER" not in existing:
+        updates.update(stack.provider_settings("docsgpt"))
+
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "logs").mkdir(exist_ok=True)
+    envfile.update(env_path, updates)
+
+    executable = shutil.which("docsgpt") or sys.argv[0]
+    print("Applying database migrations ...")
+    # The child reads the stack's settings, not a .env in whatever directory this was run from.
+    stack_env = {"DOCSGPT_HOME": str(directory), "DOCSGPT_ENV_FILE": str(env_path)}
+    if context.run([executable, "migrate"], stack_env) != 0:
+        raise DeployError("`docsgpt migrate` failed; check the database URL and that the server is reachable.")
+
+    for unit in native.units_for(directory, executable, port, directory):
+        services.install(unit)
+    for name in native.SERVICES:
+        print(f"Starting {name} ...")
+        services.start(name)
+
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    record = record or {"installed_at": now}
+    record.update(version=context.version, mode="native", updated_at=now)
+    (directory / stack.RECORD_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+    health = f"http://127.0.0.1:{port}/api/health"
+    print("Waiting for DocsGPT to answer ...")
+    if not context.wait(health, args.timeout):
+        print(
+            f"DocsGPT did not answer at {health} within {args.timeout} seconds. "
+            "See what happened with `docsgpt logs`.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"\nDocsGPT is running at http://localhost:{port}")
+    print(f"Services: {', '.join(native.SERVICES)} under {services.name}")
+    print(f"Settings: {env_path}")
+    print("Manage it with: docsgpt status | logs | down | uninstall")
+    return 0
+
+
 def up(args, context: Optional[Context] = None) -> int:
     """Install or update the stack in its directory and start it."""
     context = context or Context.default(args)
     directory = stack.stack_dir(args.dir)
+    if getattr(args, "native", False) or _mode(directory) == "native":
+        return _native_up(args, context, directory)
     env_path = directory / ".env"
     record_path = directory / stack.RECORD_FILE
     existing = envfile.read(env_path)
@@ -269,6 +395,12 @@ def down(args, context: Optional[Context] = None) -> int:
     directory = stack.stack_dir(args.dir)
     if _installed(directory) is None:
         return 1
+    if _mode(directory) == "native":
+        services = context.service_manager()
+        # The worker goes first: it talks to the API, not the other way round.
+        for name in reversed(native.SERVICES):
+            services.stop(name)
+        return 0
     context.docker.compose(directory, *_EVERY_PROFILE, "down")
     return 0
 
@@ -280,6 +412,16 @@ def status(args, context: Optional[Context] = None) -> int:
     env = _installed(directory)
     if env is None:
         return 1
+    if _mode(directory) == "native":
+        services = context.service_manager()
+        print(f"DocsGPT {_record(directory).get('version', 'unknown')} in {directory} (native, {services.name})")
+        print(f"Address: {stack.url(env, context.lan_ip())}")
+        for name in native.SERVICES:
+            print(f"  {name}: {'running' if services.is_running(name) else 'stopped'}")
+        healthy = context.wait(stack.health_url(env), 0)
+        print("API: answering" if healthy else "API: not answering (see `docsgpt logs`)")
+        return 0 if healthy else 1
+
     tag = env.get("DOCSGPT_IMAGE_TAG", "unknown") + env.get("DOCSGPT_IMAGE_VARIANT", "")
     print(f"DocsGPT {tag} in {directory}")
     print(f"Address: {stack.url(env, context.lan_ip())} ({stack.exposure(env)})")
@@ -295,6 +437,20 @@ def logs(args, context: Optional[Context] = None) -> int:
     directory = stack.stack_dir(args.dir)
     if _installed(directory) is None:
         return 1
+    if _mode(directory) == "native":
+        logs_dir = directory / "logs"
+        wanted = args.services or [name.removeprefix("docsgpt-") for name in native.SERVICES]
+        for service in wanted:
+            path = logs_dir / f"{service}.log"
+            print(f"=== {path}")
+            if path.is_file():
+                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                print("\n".join(lines[-args.tail:] if args.tail else lines))
+            else:
+                print("(nothing logged yet)")
+        if args.follow:
+            print("Following is not supported in native mode; use `tail -f` on the files above.", file=sys.stderr)
+        return 0
     options = (["--follow"] if args.follow else []) + (["--tail", str(args.tail)] if args.tail else [])
     return context.docker.compose(directory, "logs", *options, *args.services, check=False).returncode
 
@@ -499,6 +655,20 @@ def uninstall(args, context: Optional[Context] = None) -> int:
         if not context.prompter.confirm(f"Remove the DocsGPT {what} in {directory}?", default=False):
             print("Nothing removed.")
             return 1
+    if _mode(directory) == "native":
+        services = context.service_manager()
+        for name in reversed(native.SERVICES):
+            services.remove(name)
+        print(f"Removed the {', '.join(native.SERVICES)} services.")
+        if args.purge:
+            shutil.rmtree(directory)
+            print(f"Removed {directory}. The database and Redis it used are untouched.")
+        else:
+            (directory / stack.RECORD_FILE).unlink(missing_ok=True)
+            print(f"Settings stay in {directory / '.env'}; the database and Redis are untouched.")
+        print(f"To remove the docsgpt command too: {_uninstall_hint(context.installer())}")
+        return 0
+
     context.docker.compose(directory, *_EVERY_PROFILE, "down", "--remove-orphans", *(["-v"] if args.purge else []))
     if args.purge:
         shutil.rmtree(directory)
