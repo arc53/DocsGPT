@@ -198,6 +198,21 @@ class TestRestore:
         psql = next(args for _, args in docker.calls if "psql" in args)
         assert "ON_ERROR_STOP=on" in psql
 
+    def test_a_failure_after_the_stack_is_down_starts_it_again(self, tmp_path, capsys):
+        """A corrupt payload only shows up once the stack is down; it must not be left stopped."""
+        archive = self._backup(tmp_path)
+
+        class FailingImport(FakeDocker):
+            def import_volume(self, volume, source, image):
+                raise DeployError("tar: unexpected EOF in archive")
+
+        docker = FailingImport(volumes={"docsgpt_postgres_data"})
+        with pytest.raises(DeployError, match="unexpected EOF"):
+            _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker))
+        joined = [" ".join(args) for _, args in docker.calls]
+        assert any(call.startswith("up -d --remove-orphans") for call in joined), joined
+        assert "Starting DocsGPT again" in capsys.readouterr().err
+
     def test_a_newer_backup_is_refused_without_force(self, tmp_path):
         """Restoring a 0.22 backup into 0.21 would hand an older schema newer data."""
         newer = _copy_with_version(self._backup(tmp_path), "0.22.0", tmp_path / "newer.tar.gz")
