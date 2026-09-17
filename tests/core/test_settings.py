@@ -139,6 +139,15 @@ class TestReference:
         for name in Settings.model_fields:
             assert page.count(f"### `{name}`") == 1, name
 
+    def test_reference_prose_has_no_bare_angle_brackets_or_braces(self):
+        """MDX parses ``<`` and ``{`` in prose as JSX; only code spans may carry them raw."""
+        for lineno, line in enumerate(render_reference().splitlines(), 1):
+            if line.startswith(("{/*", "---")):
+                continue
+            prose = "".join(line.split("`")[::2])  # drop the inside of every code span
+            prose = prose.replace("\\{", "").replace("\\}", "")  # escaped braces are fine
+            assert "<" not in prose and "{" not in prose and "}" not in prose, f"line {lineno}: {line}"
+
     def test_checked_in_reference_is_current(self):
         path: Path = reference_path()
         if not path.exists():

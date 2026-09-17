@@ -86,7 +86,7 @@ Override for the callback URL; default is &lt;request host>/api/auth/oidc/callba
 
 ### `OIDC_SESSION_LIFETIME_SECONDS`
 
-Type `int`, default `28800`, must be > 0.
+Type `int`, default `28800`, must be `> 0`.
 
 Lifetime of the minted session JWT in seconds (8h).
 
@@ -354,13 +354,13 @@ Truncate each remote embed input to N tokens (overflow is lost).
 
 ### `EMBEDDINGS_BATCH_SIZE`
 
-Type `int`, default `32`, must be >= 1.
+Type `int`, default `32`, must be `>= 1`.
 
 Chunks per store transaction and per remote embed request.
 
 ### `EMBEDDINGS_MODEL_BATCH_SIZE`
 
-Type `int`, default `1`, must be >= 1.
+Type `int`, default `1`, must be `>= 1`.
 
 Documents per local ONNX forward pass. Each pass pads to its longest input, and that waste grows with the square of chunk length: at 1250 tokens, 32 peaked at 6.6 GB, 1 at 2.9 GB.
 
@@ -402,7 +402,7 @@ Celery queue the embed task is routed to.
 
 ### `EMBEDDINGS_DELEGATE_TIMEOUT`
 
-Type `int`, default `60`, must be > 0.
+Type `int`, default `60`, must be `> 0`.
 
 Seconds the API waits for the worker to return an embedding.
 
@@ -419,7 +419,7 @@ Vector store backend.
 
 ### `RETRIEVAL_MAX_PARALLEL_SOURCES`
 
-Type `int`, default `4`, must be >= 1.
+Type `int`, default `4`, must be `>= 1`.
 
 Concurrent per-source searches in one retrieval; the query is embedded once and shared.
 
@@ -443,7 +443,7 @@ Model for ingest-time graph extraction; unset reuses LLM_PROVIDER/LLM_NAME.
 
 ### `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`
 
-Type `int`, default `2000`, must be >= 0.
+Type `int`, default `2000`, must be `>= 0`.
 
 Hard cap on chunks extracted per source (cost control); 0 extracts nothing.
 
@@ -574,7 +574,7 @@ pgvector connection string. postgres://, postgresql:// and postgresql+psycopg://
 
 ### `PGVECTOR_POOL_MAX_SIZE`
 
-Type `int`, default `8`, must be >= 0.
+Type `int`, default `8`, must be `>= 0`.
 
 Per-process connection pool size; 0 uses one direct connection per store.
 
@@ -668,19 +668,19 @@ Tasks prefetched per worker process; 1 caps SIGKILL loss to one task.
 
 ### `CELERY_VISIBILITY_TIMEOUT`
 
-Type `int`, default `3600`, must be > 0.
+Type `int`, default `3600`, must be `> 0`.
 
 Broker visibility timeout in seconds. Must exceed the longest legitimate task runtime but stay short enough that SIGKILLed tasks redeliver promptly.
 
 ### `CELERY_WORKER_MAX_MEMORY_PER_CHILD`
 
-Type `int`, default `4194304`, must be >= 0.
+Type `int`, default `4194304`, must be `>= 0`.
 
 Recycle a prefork child past this resident size in KB; backstops docling/torch heap growth. Checked between tasks, so it does not bound the peak within one. 0 disables.
 
 ### `CELERY_WORKER_MAX_TASKS_PER_CHILD`
 
-Type `int`, default `0`, must be >= 0.
+Type `int`, default `0`, must be `>= 0`.
 
 Recycle a worker child after N tasks; 0 disables.
 
@@ -703,43 +703,43 @@ Directory under the data home for uploaded sources.
 
 ### `UPLOAD_MAX_REQUEST_BYTES`
 
-Type `int`, default `268435456`, must be > 0.
+Type `int`, default `268435456`, must be `> 0`.
 
 Cap on an upload request body; applied by Flask before multipart parsing.
 
 ### `UPLOAD_MAX_FILE_BYTES`
 
-Type `int`, default `104857600`, must be > 0.
+Type `int`, default `104857600`, must be `> 0`.
 
 Cap on a single uploaded file; also enforced while copying.
 
 ### `PARSE_SPEC_MAX_BYTES`
 
-Type `int`, default `10485760`, must be > 0.
+Type `int`, default `10485760`, must be `> 0`.
 
 Cap on an OpenAPI/tool spec file accepted for parsing.
 
 ### `UPLOAD_MAX_ARCHIVE_BYTES`
 
-Type `int`, default `262144000`, must be > 0.
+Type `int`, default `262144000`, must be `> 0`.
 
 Cap on total bytes extracted from one uploaded archive.
 
 ### `UPLOAD_MAX_ARCHIVE_FILES`
 
-Type `int`, default `10000`, must be > 0.
+Type `int`, default `10000`, must be `> 0`.
 
 Cap on files extracted from one uploaded archive.
 
 ### `UPLOAD_MAX_ARCHIVE_RATIO`
 
-Type `int`, default `1000`, must be > 0.
+Type `int`, default `1000`, must be `> 0`.
 
 Maximum decompressed-to-compressed ratio before an archive is rejected.
 
 ### `UPLOAD_MAX_ARCHIVE_DEPTH`
 
-Type `int`, default `3`, must be >= 0.
+Type `int`, default `3`, must be `>= 0`.
 
 Maximum nesting depth of archives inside archives.
 
@@ -787,7 +787,7 @@ Largest HTML/XML docling will parse, in bytes.
 
 ### `MARKUP_MAX_BYTES`
 
-Type `int`, default `8000000`, must be >= 0.
+Type `int`, default `8000000`, must be `>= 0`.
 
 HTML/XHTML larger than this (bytes) are head-truncated before the markdownify parser runs (the anydoc engine's HTML path). The tree that path builds costs ~50x the input (30 MB of HTML measured at 1.6 GB RSS) and the upload cap is 100 MB, so the gate is what keeps one upload from taking the ingest worker down. 0 disables it.
 
@@ -835,13 +835,13 @@ Cap on the pixel count of an image passed to an agent.
 
 ### `GITHUB_INGEST_MAX_FILE_BYTES`
 
-Type `int`, default `1048576`, must be >= 0.
+Type `int`, default `1048576`, must be `>= 0`.
 
 Skip GitHub repo blobs larger than this (0 = no cap).
 
 ### `GITHUB_INGEST_MAX_WORKERS`
 
-Type `int`, default `8`, must be >= 1.
+Type `int`, default `8`, must be `>= 1`.
 
 Parallel file fetches per GitHub repo ingest.
 
@@ -871,7 +871,7 @@ Absolute ceiling on the size-scaled parse window, in seconds.
 
 ### `DOCUMENT_PARSE_MAX_BYTES`
 
-Type `int`, default `0`, must be >= 0.
+Type `int`, default `0`, must be `>= 0`.
 
 Cap on a parsed document's bytes (0 = reuse SANDBOX_MAX_INPUT_BYTES).
 
@@ -948,7 +948,7 @@ Native backend only: resolution at which pages without a text layer are rendered
 
 ### `OCR_MIN_CHARS_PER_PAGE`
 
-Type `int`, default `20`, must be >= 0, also read from `DOCLING_OCR_MIN_CHARS_PER_PAGE`.
+Type `int`, default `20`, must be `>= 0`, also read from `DOCLING_OCR_MIN_CHARS_PER_PAGE`.
 
 Chars-per-page floor below which an OCR'd PDF/image parse is treated as an OCR dropout rather than as content (long-running docling workers were observed returning zero characters for every scanned page after a long scanned PDF, with no error). docling retries once on a fresh full-page-OCR converter; both backends then fail loudly instead of indexing an empty document. 0 disables the guard.
 
@@ -1149,7 +1149,7 @@ Bounds uvicorn's shutdown drain (uvicorn_worker doesn't forward --graceful-timeo
 
 ### `WSGI_THREADPOOL_WORKERS`
 
-Type `int`, default `96`, must be >= 1.
+Type `int`, default `96`, must be `>= 1`.
 
 Threads serving the WSGI (Flask) part of the app under the ASGI server.
 
@@ -1172,31 +1172,31 @@ Internal SSE push channel (notifications and durable replay journal). False make
 
 ### `EVENTS_STREAM_MAXLEN`
 
-Type `int`, default `1000`, must be >= 1.
+Type `int`, default `1000`, must be `>= 1`.
 
 Per-user durable backlog cap in entries; ~24h of replay at typical rates.
 
 ### `SSE_KEEPALIVE_SECONDS`
 
-Type `int`, default `15`, must be >= 1.
+Type `int`, default `15`, must be `>= 1`.
 
 Interval between SSE keepalive comments.
 
 ### `SSE_MAX_CONCURRENT_PER_USER`
 
-Type `int`, default `8`, must be >= 0.
+Type `int`, default `8`, must be `>= 0`.
 
 Simultaneous SSE connections per user; each holds a pooled async Redis connection for its lifetime. 8 covers multi-tab use without one user starving the pool. 0 disables.
 
 ### `ASYNC_REDIS_MAX_CONNECTIONS`
 
-Type `int`, default `2000`, must be >= 1.
+Type `int`, default `2000`, must be `>= 1`.
 
 Pool size of the async Redis client behind the event-loop routes, per process. Every open notification tab, chat reconnect and device session holds one connection, so this caps concurrent streams per worker (redis-py's own default is 100). Keep the total across workers below the Redis server's maxclients (10000 by default).
 
 ### `EVENTS_REPLAY_MAX_PER_REQUEST`
 
-Type `int`, default `200`, must be >= 1.
+Type `int`, default `200`, must be `>= 1`.
 
 Backlog entries XRANGE returns per /api/events snapshot. Bounds what one replay moves from Redis to the wire: a client looping Last-Event-ID reconnects enumerates at most this many per round-trip.
 
@@ -1220,13 +1220,13 @@ Length of the replay budget window.
 
 ### `MESSAGE_EVENTS_RETENTION_DAYS`
 
-Type `int`, default `14`, must be > 0.
+Type `int`, default `14`, must be `> 0`.
 
 Retention for the message_events journal, enforced by the cleanup_message_events beat task. Replay only needs streams a client could still be tailing.
 
 ### `REMOTE_DEVICE_SESSION_IDLE_SECONDS`
 
-Type `int`, default `60`, must be > 0.
+Type `int`, default `60`, must be `> 0`.
 
 Seconds without a heartbeat before a remote-device session is considered idle.
 
@@ -1238,19 +1238,19 @@ Require signed commands from remote devices.
 
 ### `REMOTE_DEVICE_PAIRING_TTL_SECONDS`
 
-Type `int`, default `600`, must be > 0.
+Type `int`, default `600`, must be `> 0`.
 
 Lifetime of a pairing code.
 
 ### `REMOTE_DEVICE_CMD_QUEUE_TTL_SECONDS`
 
-Type `int`, default `900`, must be > 605.
+Type `int`, default `900`, must be `> 605`.
 
 Redis TTL of the per-device command queue, routing invocations cross-process so a scheduled run reaches the web-held device session. Must exceed the max drain deadline (605s) so a command for a briefly-offline device isn't evicted before its own drain gives up.
 
 ### `REMOTE_DEVICE_INVOCATION_TTL_SECONDS`
 
-Type `int`, default `900`, must be > 0.
+Type `int`, default `900`, must be `> 0`.
 
 Redis TTL of a pending remote-device invocation.
 
@@ -1291,7 +1291,7 @@ Pre-fetch retrieval before the agent's first turn.
 
 ### `TOOL_RESULT_MAX_TOKENS`
 
-Type `int`, default `20000`, must be >= 0.
+Type `int`, default `20000`, must be `>= 0`.
 
 Cap on one tool result entering the LLM context (0 disables); journal and DB keep it whole.
 
@@ -1303,7 +1303,7 @@ Compress long conversations once they approach the context window.
 
 ### `COMPRESSION_THRESHOLD_PERCENTAGE`
 
-Type `float`, default `0.8`, must be > 0 and <= 1.
+Type `float`, default `0.8`, must be `> 0` and `<= 1`.
 
 Fraction of the context window at which compression triggers.
 
@@ -1327,7 +1327,7 @@ Keep only the last N compression points to prevent DB bloat.
 
 ### `COMPRESSION_RECENT_FIELD_MAX_TOKENS`
 
-Type `int`, default `8000`, must be >= 0.
+Type `int`, default `8000`, must be `>= 0`.
 
 Per-field cap on the verbatim tail kept after a compression point (0 disables).
 
@@ -1410,7 +1410,7 @@ Persist scanned text alongside guardrail_events. Off by default: pre-redaction t
 
 ### `GUARDRAILS_EVENTS_RETENTION_DAYS`
 
-Type `int`, default `30`, must be >= 1.
+Type `int`, default `30`, must be `>= 1`.
 
 Days guardrail events are kept before the cleanup task removes them.
 
@@ -1463,7 +1463,7 @@ How far ahead a one-off run may be scheduled, in seconds (one year).
 
 ### `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS`
 
-Type `int`, default `90`, must be > 0.
+Type `int`, default `90`, must be `> 0`.
 
 Days scheduled-run output is kept.
 
@@ -1582,13 +1582,13 @@ Default runtime language for created sandboxes.
 
 ### `DAYTONA_AUTO_STOP_INTERVAL`
 
-Type `int`, default `15`, must be >= 0.
+Type `int`, default `15`, must be `>= 0`.
 
 Minutes idle before Daytona auto-stops a sandbox (0 disables).
 
 ### `DAYTONA_AUTO_DELETE_INTERVAL`
 
-Type `int`, default `60`, must be >= -1.
+Type `int`, default `60`, must be `>= -1`.
 
 Minutes after stop before Daytona auto-deletes a sandbox (-1 disables).
 

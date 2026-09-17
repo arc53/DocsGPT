@@ -104,7 +104,8 @@ def _render_field(name: str, field: FieldInfo) -> str:
     facts = [f"Type `{_type_name(field.annotation)}`", f"default {_default_text(field)}"]
     constraints = _constraints(field)
     if constraints:
-        facts.append("must be " + " and ".join(constraints))
+        # Code spans: a bare ``<=`` in MDX prose is parsed as the start of a JSX tag.
+        facts.append("must be " + " and ".join(f"`{c}`" for c in constraints))
     aliases = _aliases(name, field)
     if aliases:
         facts.append("also read from " + ", ".join(f"`{a}`" for a in aliases))
