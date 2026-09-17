@@ -1,5 +1,7 @@
 """`docsgpt doctor`, `restart`, following native logs, and settings that apply themselves."""
 
+import socket
+
 import pytest
 
 from docsgpt.deploy import commands, envfile
@@ -12,6 +14,53 @@ from .test_native import FakeServices, _names, _native_context
 def _installed_native(tmp_path, services):
     argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
     assert _run(argv, _native_context(services)) == 0
+
+
+class TestDevCommand:
+    def _checkout(self, monkeypatch, tmp_path):
+        from docsgpt.core import paths
+
+        monkeypatch.setattr(paths, "checkout_root", lambda: tmp_path)
+
+    def _free_port(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            return probe.getsockname()[1]
+
+    def test_an_installed_package_is_pointed_at_native_mode(self, monkeypatch):
+        """`dev` runs the code you are editing; there is none to edit outside a checkout."""
+        from docsgpt.core import paths
+
+        monkeypatch.setattr(paths, "checkout_root", lambda: None)
+        with pytest.raises(DeployError, match="source checkout"):
+            _run(["dev"], _context())
+
+    def test_a_busy_port_is_refused_before_anything_starts(self, monkeypatch, tmp_path):
+        from docsgpt.deploy import dev as dev_module
+
+        self._checkout(monkeypatch, tmp_path)
+        started = []
+        monkeypatch.setattr(dev_module, "run", lambda children, **kwargs: started.append(children) or 0)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+            held.bind(("127.0.0.1", 0))
+            held.listen(1)
+            port = held.getsockname()[1]
+            with pytest.raises(DeployError, match="already in use"):
+                _run(["dev", "--port", str(port)], _context())
+        assert started == [], "nothing is spawned when the port is taken"
+
+    def test_it_runs_the_children_it_planned_and_says_where(self, monkeypatch, tmp_path, capsys):
+        from docsgpt.deploy import dev as dev_module
+
+        self._checkout(monkeypatch, tmp_path)
+        started = []
+        monkeypatch.setattr(dev_module, "run", lambda children, **kwargs: started.append(children) or 0)
+        port = self._free_port()
+        assert _run(["dev", "--port", str(port)], _context()) == 0
+        assert [child.name for child in started[0]] == ["api", "worker"]
+        printed = capsys.readouterr().out
+        assert f"http://127.0.0.1:{port}" in printed
+        assert "Ctrl-C" in printed
 
 
 class TestRestart:
