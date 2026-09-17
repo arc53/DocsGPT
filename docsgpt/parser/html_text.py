@@ -19,10 +19,7 @@ from bs4 import NavigableString
 if TYPE_CHECKING:  # pragma: no cover - import cost, and bs4 is loaded lazily
     from bs4 import BeautifulSoup
 
-# A <pre> is the one place the whitespace is the content, so its text is lifted
-# out before the rest is normalised and put back afterwards. A page that carries
-# this exact text is read as text: the lookup is bounds-checked.
-_PREFORMATTED_MARK = "\x00docsgpt-pre-{}\x00"
+_END_OF_CHILDREN = object()
 
 # Elements a browser lays out on a line of their own, plus the few that are not
 # laid out at all but still read as a line when the document is flattened
@@ -71,39 +68,64 @@ BLOCK_LEVEL_TAGS = (
 
 
 def html_to_text(soup: "BeautifulSoup") -> str:
-    """Return the visible text of ``soup``, one line per block."""
-    for line_break in soup.find_all("br"):
-        line_break.replace_with("\n")
+    """Return the visible text of ``soup``, one line per block.
 
-    preformatted = []
-    for block in soup.find_all("pre"):
-        if block.parent is None:  # a <pre> inside a <pre> that already went
+    A line break is written at the start and end of each block-level element
+    and at each ``<br>``; ordinary text is stripped line by line and blank
+    lines are dropped. A ``<pre>`` is the one place the whitespace is the
+    content, so its text is kept exactly as it is.
+
+    The tree is walked once and left unchanged. Replacing each ``<br>`` in
+    place scans its siblings on every call, which is quadratic on a page made
+    of tens of thousands of them.
+    """
+    # The strings get_text() joins: script, style and template text stays out
+    # exactly as it does there.
+    wanted = {id(string) for string in soup.strings}
+    lines: "list[str]" = []
+    text: "list[str]" = []
+    preformatted: "list[str]" = []
+    pre_depth = 0
+
+    def flush_text() -> None:
+        for line in "".join(text).splitlines():
+            if line.strip():
+                lines.append(line.strip())
+        text.clear()
+
+    children = [iter(soup.contents)]
+    open_tags: "list[str | None]" = [None]
+    while children:
+        node = next(children[-1], _END_OF_CHILDREN)
+        if node is _END_OF_CHILDREN:
+            children.pop()
+            name = open_tags.pop()
+            if name == "pre":
+                pre_depth -= 1
+                if not pre_depth:
+                    block = "".join(preformatted).strip("\n")
+                    preformatted.clear()
+                    if block:
+                        lines.append(block)
+            elif name in BLOCK_LEVEL_TAGS and not pre_depth:
+                text.append("\n")
             continue
-        mark = _PREFORMATTED_MARK.format(len(preformatted))
-        preformatted.append(block.get_text().strip("\n"))
-        block.replace_with(NavigableString(f"\n{mark}\n"))
 
-    for block in soup.find_all(BLOCK_LEVEL_TAGS):
-        block.append("\n")
+        sink = preformatted if pre_depth else text
+        if isinstance(node, NavigableString):
+            if id(node) in wanted:
+                sink.append(node)
+        elif node.name == "br":
+            sink.append("\n")
+        else:
+            if node.name == "pre":
+                if not pre_depth:
+                    flush_text()
+                pre_depth += 1
+            elif node.name in BLOCK_LEVEL_TAGS and not pre_depth:
+                text.append("\n")
+            children.append(iter(node.contents))
+            open_tags.append(node.name)
 
-    lines = []
-    for line in soup.get_text().splitlines():
-        stripped = line.strip()
-        block_text = _preformatted_at(stripped, preformatted)
-        if block_text is not None:
-            lines.append(block_text)
-        elif stripped:
-            lines.append(stripped)
+    flush_text()
     return "\n".join(lines)
-
-
-def _preformatted_at(line: str, blocks: "list[str]") -> "str | None":
-    """Return the lifted-out ``<pre>`` this line stands for, if it stands for one."""
-    prefix, suffix = _PREFORMATTED_MARK.split("{}")
-    if not (line.startswith(prefix) and line.endswith(suffix)):
-        return None
-    try:
-        index = int(line[len(prefix) : -len(suffix)])
-    except ValueError:
-        return None
-    return blocks[index] if 0 <= index < len(blocks) else None
