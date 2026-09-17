@@ -143,6 +143,8 @@ def _signal(process, number: int) -> None:
             return
         os.killpg(os.getpgid(process.pid), number)
     except (ProcessLookupError, PermissionError, OSError):
+        # The child has already gone, or its group is no longer ours to signal. Either way there is
+        # nothing left to stop, and shutdown must not fail on the thing it is trying to clean up.
         pass
 
 
