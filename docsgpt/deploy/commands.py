@@ -739,6 +739,12 @@ def dev(args, context: Optional[Context] = None) -> int:
             f"port {args.port} is already in use, so the API cannot bind it. Stop what is on it "
             f"(a previous `docsgpt dev`, or `docsgpt down` for an install), or pass --port."
         )
+    if getattr(args, "mock_llm", False) and args.port == dev_module.MOCK_LLM_PORT:
+        # Both checks below would pass: the port really is free, and then two children want it.
+        raise DeployError(
+            f"port {args.port} is where the mock LLM listens, so the API cannot have it too. "
+            "Give the API another port with --port."
+        )
     if getattr(args, "mock_llm", False) and not _port_is_free(dev_module.MOCK_LLM_PORT):
         # It starts first and the others are pointed at it, so a busy port here would surface as the
         # API talking to someone else's server, or as a child exiting once everything else is up.

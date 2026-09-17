@@ -66,6 +66,20 @@ class TestDevCommand:
                 _run(["dev", "--mock-llm", "--port", str(self._free_port())], _context())
         assert started == [], "nothing is spawned when the mock LLM has nowhere to listen"
 
+    def test_the_api_cannot_be_given_the_mock_llm_port(self, monkeypatch, tmp_path):
+        """Both free-port checks pass here: the port is free, and then two children want it."""
+        from docsgpt.deploy import dev as dev_module
+
+        self._checkout(monkeypatch, tmp_path)
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "mock_llm.py").write_text("", encoding="utf-8")
+        started = []
+        monkeypatch.setattr(dev_module, "run", lambda children, **kwargs: started.append(children) or 0)
+        monkeypatch.setattr(dev_module, "MOCK_LLM_PORT", self._free_port())
+        with pytest.raises(DeployError, match="mock LLM listens"):
+            _run(["dev", "--mock-llm", "--port", str(dev_module.MOCK_LLM_PORT)], _context())
+        assert started == [], "nothing is spawned when the two would collide"
+
     def test_it_runs_the_children_it_planned_and_says_where(self, monkeypatch, tmp_path, capsys):
         from docsgpt.deploy import dev as dev_module
 
