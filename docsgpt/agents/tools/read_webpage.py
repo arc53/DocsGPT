@@ -1,8 +1,8 @@
 import codecs
 
-from markdownify import markdownify
 
 from docsgpt.agents.tools.base import Tool
+from docsgpt.parser.markdown_conversion import html_to_markdown_text
 from docsgpt.security.safe_url import (
     ResponseTooLargeError,
     UnsafeUserUrlError,
@@ -168,7 +168,7 @@ class ReadWebpageTool(Tool):
                 )
 
             html_content = _decode_body(content, content_type)
-            markdown_content = markdownify(html_content, heading_style="ATX", newline_style="BACKSLASH")
+            markdown_content = html_to_markdown_text(html_content)
 
             return markdown_content
 
