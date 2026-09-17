@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import webbrowser
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -623,10 +624,34 @@ def logs(args, context: Optional[Context] = None) -> int:
             else:
                 print("(nothing logged yet)")
         if args.follow:
-            print("Following is not supported in native mode; use `tail -f` on the files above.", file=sys.stderr)
+            return _follow(logs_dir, wanted)
         return 0
     options = (["--follow"] if args.follow else []) + (["--tail", str(args.tail)] if args.tail else [])
     return context.docker.compose(directory, "logs", *options, *args.services, check=False).returncode
+
+
+def _follow(logs_dir: Path, services: list) -> int:
+    """Print new lines from each service's log until the terminal interrupts, prefixed by service."""
+    handles: dict = {}
+    try:
+        while True:
+            for service in services:
+                if service not in handles:
+                    path = logs_dir / f"{service}.log"
+                    if not path.is_file():
+                        continue
+                    handle = path.open("r", encoding="utf-8", errors="replace")
+                    handle.seek(0, os.SEEK_END)
+                    handles[service] = handle
+                for line in handles[service].readlines():
+                    print(f"{service:<6} | {line.rstrip()}")
+            sys.stdout.flush()
+            time.sleep(0.3)
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        for handle in handles.values():
+            handle.close()
 
 
 def token(args, context: Optional[Context] = None) -> int:
@@ -681,8 +706,213 @@ def env(args, context: Optional[Context] = None) -> int:
         envfile.update(env_path, updates)
     except ValueError as exc:
         raise DeployError(str(exc)) from exc
-    print(f"Saved to {env_path}. Run `docsgpt up` to apply.")
+    print(f"Saved to {env_path}.")
+    directory = stack.stack_dir(args.dir)
+    if _mode(directory) == "native" and getattr(args, "restart", True):
+        context = context or Context.default(args)
+        services = context.service_manager()
+        names = _service_names(directory)
+        if any(services.is_running(name) for name in names):
+            for name in reversed(names):
+                services.stop(name)
+            for name in names:
+                services.start(name)
+            print("Restarted the services, so the change is live.")
+            return 0
+    print("Run `docsgpt up` to apply.")
     return 0
+
+
+def dev(args, context: Optional[Context] = None) -> int:
+    """Run this checkout's API, worker and UI as children of this terminal."""
+    from docsgpt.core import paths
+    from docsgpt.deploy import dev as dev_module
+
+    checkout = paths.checkout_root()
+    if checkout is None:
+        raise DeployError(
+            "`docsgpt dev` runs the code in a source checkout, and this is an installed package. "
+            "Clone the repository and run it from there, or use `docsgpt up --native` to run this copy."
+        )
+    if not _port_is_free(args.port):
+        raise DeployError(
+            f"port {args.port} is already in use, so the API cannot bind it. Stop what is on it "
+            f"(a previous `docsgpt dev`, or `docsgpt down` for an install), or pass --port."
+        )
+    children = dev_module.plan(args, checkout)
+    print(f"DocsGPT from {checkout}")
+    for child in children:
+        print(f"  {child.name:<6} {' '.join(child.command)}")
+    print(f"\nAPI     http://{args.host}:{args.port}")
+    if getattr(args, "ui", False):
+        print(f"UI      http://localhost:{dev_module.UI_PORT}")
+    print("Ctrl-C stops everything.\n")
+    return dev_module.run(children)
+
+
+@dataclass
+class Check:
+    """One line of ``docsgpt doctor``: what was looked at and what came back."""
+
+    name: str
+    level: str
+    detail: str
+
+
+MARKS = {"ok": "ok  ", "warn": "warn", "fail": "FAIL"}
+
+
+def _migration_head() -> Optional[str]:
+    """The newest revision shipped with this package, or None when alembic cannot say."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+    except ImportError:
+        return None
+    ini = Path(__file__).resolve().parents[1] / "alembic.ini"
+    if not ini.is_file():
+        return None
+    config = Config(str(ini))
+    config.set_main_option("script_location", str(ini.parent / "alembic"))
+    try:
+        return ScriptDirectory.from_config(config).get_current_head()
+    except Exception:  # noqa: BLE001 - a broken script directory is a doctor finding, not a crash
+        return None
+
+
+def _check_postgres(uri: Optional[str]) -> Check:
+    """Connect, and say whether the schema is the one this version expects."""
+    if not uri:
+        return Check("postgres", "fail", "POSTGRES_URI is not set")
+    try:
+        import psycopg
+    except ImportError:
+        return Check("postgres", "fail", "the psycopg driver is not installed")
+    try:
+        with psycopg.connect(uri, connect_timeout=5) as connection, connection.cursor() as cursor:
+            cursor.execute("select current_setting('server_version')")
+            version = cursor.fetchone()[0]
+            cursor.execute("select to_regclass('public.alembic_version')")
+            applied = cursor.fetchone()[0] is not None
+            current = None
+            if applied:
+                cursor.execute("select version_num from alembic_version")
+                row = cursor.fetchone()
+                current = row[0] if row else None
+    except (psycopg.Error, OSError, ValueError) as exc:
+        return Check("postgres", "fail", f"cannot connect: {str(exc).strip()}")
+    head = _migration_head()
+    if not current:
+        return Check("postgres", "fail", f"PostgreSQL {version}, no schema yet; run `docsgpt migrate`")
+    if head and current != head:
+        return Check("postgres", "fail", f"PostgreSQL {version} at {current}, this version wants {head}; "
+                                         "run `docsgpt migrate`")
+    return Check("postgres", "ok", f"PostgreSQL {version}, schema at {current}")
+
+
+def _check_redis(urls: Mapping[str, str]) -> Check:
+    """Ping every Redis the settings name; they are usually one server, three databases."""
+    if not urls:
+        return Check("redis", "fail", "no Redis is configured (CELERY_BROKER_URL)")
+    try:
+        import redis
+    except ImportError:
+        return Check("redis", "fail", "the redis client is not installed")
+    for label, url in sorted(urls.items()):
+        try:
+            redis.Redis.from_url(url, socket_connect_timeout=3).ping()
+        except Exception as exc:  # noqa: BLE001 - every client error here is the same finding
+            return Check("redis", "fail", f"{label} ({url}) does not answer: {str(exc).strip()}")
+    return Check("redis", "ok", f"answering on {len(urls)} database(s)")
+
+
+def _check_provider(env: Mapping[str, str]) -> Check:
+    """Whether a model provider is set up well enough to answer a question."""
+    provider = env.get("LLM_PROVIDER") or "docsgpt"
+    if provider == "docsgpt":
+        return Check("provider", "ok", "the DocsGPT public API (no key needed)")
+    if not (env.get("API_KEY") or env.get("OPENAI_API_KEY")):
+        return Check("provider", "fail", f"{provider} is configured but no API_KEY is set")
+    return Check("provider", "ok", f"{provider}{' at ' + env['OPENAI_BASE_URL'] if env.get('OPENAI_BASE_URL') else ''}")
+
+
+def doctor(args, context: Optional[Context] = None) -> int:
+    """Check what DocsGPT needs on this machine, and say what is missing."""
+    from docsgpt.core import paths
+
+    if args.dir:
+        env_path = stack.stack_dir(args.dir) / ".env"
+    else:
+        try:
+            env_path = paths.env_file()
+        except FileNotFoundError as exc:
+            raise DeployError(str(exc)) from exc
+    env = envfile.read(env_path)
+    checks = [
+        Check("settings", "ok" if env_path.is_file() else "warn",
+              f"{env_path}" if env_path.is_file() else f"{env_path} does not exist yet; defaults are in use"),
+        _check_postgres(args.postgres_uri or env.get("POSTGRES_URI")),
+        _check_redis({
+            key: value for key, value in (
+                ("broker", args.redis_url or env.get("CELERY_BROKER_URL")),
+                ("results", env.get("CELERY_RESULT_BACKEND")),
+                ("cache", env.get("CACHE_REDIS_URL")),
+            ) if value
+        }),
+        _check_provider(env),
+    ]
+
+    port = int(env.get("DOCSGPT_PORT") or stack.DEFAULT_PORT)
+    if _port_is_free(port):
+        checks.append(Check("port", "ok", f"{port} is free"))
+    else:
+        checks.append(Check("port", "warn", f"{port} is in use, which is expected if DocsGPT is running"))
+
+    directory = stack.stack_dir(args.dir)
+    if _mode(directory) == "native":
+        services = context.service_manager() if context else native.services_for_platform()
+        names = _service_names(directory)
+        running = [name for name in names if services.is_running(name)]
+        level = "ok" if len(running) == len(names) else "warn"
+        checks.append(Check("services", level, f"{len(running)} of {len(names)} running ({', '.join(names)})"))
+
+    for check in checks:
+        print(f"[{MARKS[check.level]}] {check.name:<9} {check.detail}")
+    failed = [check for check in checks if check.level == "fail"]
+    if failed:
+        print(f"\n{len(failed)} problem(s) to fix before DocsGPT will work.", file=sys.stderr)
+    return 1 if failed else 0
+
+
+def _chosen_services(names: tuple[str, str], wanted: list) -> list:
+    """The services the user asked for, given either short names (api) or full ones."""
+    if not wanted:
+        return list(names)
+    chosen = []
+    for ask in wanted:
+        match = [name for name in names if name == ask or name.removeprefix("docsgpt-").startswith(ask)]
+        if not match:
+            raise DeployError(f"{ask!r} is not a service of this install; it has {', '.join(names)}.")
+        chosen.extend(match)
+    return chosen
+
+
+def restart(args, context: Optional[Context] = None) -> int:
+    """Restart the services, changing nothing else."""
+    context = context or Context.default(args)
+    directory = stack.stack_dir(args.dir)
+    if _installed(directory) is None:
+        return 1
+    if _mode(directory) == "native":
+        services = context.service_manager()
+        chosen = _chosen_services(_service_names(directory), list(args.services))
+        for name in reversed(chosen):
+            services.stop(name)
+        for name in chosen:
+            services.start(name)
+        print(f"Restarted {', '.join(chosen)}.")
+        return 0
+    return context.docker.compose(directory, "restart", *args.services, check=False).returncode
 
 
 def _stack_image(env: Mapping[str, str]) -> str:

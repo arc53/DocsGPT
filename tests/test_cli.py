@@ -10,6 +10,7 @@ import click
 import pytest
 
 from docsgpt import cli
+from docsgpt.core.paths import package_dir
 from docsgpt.version import __version__
 
 
@@ -126,7 +127,28 @@ class TestApi:
         uvicorn = types.SimpleNamespace(run=MagicMock())
         monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
         assert cli.main(["api", "--reload", "--host", "127.0.0.1"]) == 0
-        uvicorn.run.assert_called_once_with("docsgpt.asgi:asgi_app", host="127.0.0.1", port=7091, reload=True)
+        uvicorn.run.assert_called_once_with(
+            "docsgpt.asgi:asgi_app", host="127.0.0.1", port=7091, reload=True,
+            reload_dirs=[str(package_dir())],
+        )
+
+    def test_reload_watches_the_package_not_the_working_directory(self, monkeypatch, tmp_path):
+        """A checkout also holds .venv, node_modules and the indexes and inputs the app writes to,
+        so watching the working directory restarts the server mid-ingest."""
+        uvicorn = types.SimpleNamespace(run=MagicMock())
+        monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
+        monkeypatch.chdir(tmp_path)
+        assert cli.main(["api", "--reload"]) == 0
+        watched = uvicorn.run.call_args.kwargs["reload_dirs"]
+        assert watched == [str(package_dir())]
+        assert str(tmp_path) not in watched
+
+    def test_without_reload_nothing_is_watched(self, monkeypatch):
+        uvicorn = types.SimpleNamespace(run=MagicMock())
+        monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
+        monkeypatch.setattr(sys, "platform", "win32")
+        assert cli.main(["api"]) == 0
+        assert uvicorn.run.call_args.kwargs["reload_dirs"] is None
 
 
 class TestWorker:
