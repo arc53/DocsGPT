@@ -243,14 +243,14 @@ class TestChecks:
 
     def test_a_provider_base_url_is_printed_without_its_credentials(self):
         """An OpenAI-compatible endpoint can carry userinfo, and doctor prints its detail."""
-        check = commands._check_provider(
-            {"LLM_PROVIDER": "openai", "API_KEY": "x",
-             "OPENAI_BASE_URL": "https://someone:sEcReTtOkEn@models.example.com/v1"}
-        )
+        url = "https://someone:sEcReTtOkEn@models.example.com/v1"
+        check = commands._check_provider({"LLM_PROVIDER": "openai", "API_KEY": "x", "OPENAI_BASE_URL": url})
         assert check.level == "ok"
         assert "sEcReTtOkEn" not in check.detail
         assert "someone" not in check.detail
-        assert "models.example.com" in check.detail
+        # Compared with what the sanitiser produced rather than a host substring, which is both the
+        # real contract and the pattern CodeQL warns about.
+        assert check.detail == f"openai at {commands._endpoint(url)}"
 
     def test_services_are_named_for_the_install(self, tmp_path):
         names = _names(tmp_path)
@@ -394,9 +394,10 @@ class TestRedisCheck:
             return Client()
 
         monkeypatch.setattr(redis.Redis, "from_url", classmethod(from_url))
-        check = commands._check_redis({"cache": "redis://localhost:6379/2"})
+        url = "redis://localhost:6379/2"
+        check = commands._check_redis({"cache": url})
         assert check.level == "fail"
-        assert "cache" in check.detail and "6379/2" in check.detail
+        assert check.detail.startswith(f"cache ({commands._endpoint(url)}) does not answer")
 
     def test_a_password_in_the_url_is_never_printed(self, monkeypatch):
         """doctor output goes into terminals, CI logs and pasted issue reports."""
