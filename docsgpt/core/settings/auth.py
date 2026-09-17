@@ -6,7 +6,7 @@ from typing import Literal, Optional
 
 from pydantic import Field, field_validator, model_validator
 
-from docsgpt.core.settings._shared import SettingsGroup, normalize_choice, normalize_secret
+from docsgpt.core.settings._shared import SettingsGroup, normalize_choice
 
 
 #: Settings an OIDC deployment cannot run without; checked when AUTH_TYPE=oidc.
@@ -88,8 +88,8 @@ class AuthSettings(SettingsGroup):
     @field_validator("AUTH_TYPE", mode="before")
     @classmethod
     def _normalize_auth_type(cls, v):
-        # ``AUTH_TYPE=None`` and ``AUTH_TYPE=`` in .env both mean "no authentication".
-        return normalize_choice(normalize_secret(v))
+        # Unset spellings ("None", "") became None on the group base; this only case-folds a value.
+        return normalize_choice(v)
 
     @model_validator(mode="after")
     def _require_oidc_settings(self):

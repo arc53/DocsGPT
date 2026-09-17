@@ -18,15 +18,24 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _is_optional_str(annotation: Any) -> bool:
+    """``Optional[str]`` or ``Optional[Literal[...]]`` whose choices are all strings."""
     if typing.get_origin(annotation) not in (typing.Union, types.UnionType):
         return False
-    return set(typing.get_args(annotation)) == {str, type(None)}
+    members = set(typing.get_args(annotation))
+    if type(None) not in members or len(members) != 2:
+        return False
+    (member,) = members - {type(None)}
+    if member is str:
+        return True
+    return typing.get_origin(member) is typing.Literal and all(
+        isinstance(choice, str) for choice in typing.get_args(member)
+    )
 
 
 class SettingsGroup(BaseSettings):
     """Base for one domain's settings; groups are composed into ``Settings``.
 
-    Every ``Optional[str]`` field treats the spellings an unset value has in a
+    Every ``Optional[str]`` field (and optional string ``Literal``) treats the spellings an unset value has in a
     ``.env`` file (``KEY=``, ``KEY=None``, whitespace) as ``None``, so a check
     like ``if settings.OIDC_ISSUER`` or a fallback like ``settings.X or default``
     sees "unset" rather than a truthy placeholder string. Real values are

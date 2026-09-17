@@ -92,9 +92,11 @@ class TestValidators:
             name
             for name, field in Settings.model_fields.items()
             if typing.get_origin(field.annotation) in (typing.Union, types.UnionType)
-            and set(typing.get_args(field.annotation)) == {str, type(None)}
+            and type(None) in typing.get_args(field.annotation)
+            and all(a is str or typing.get_origin(a) is typing.Literal for a in typing.get_args(field.annotation) if a is not type(None))
         ]
         assert len(names) > 60
+        assert {"EMBEDDINGS_POOLING", "AUTH_TYPE", "OIDC_ISSUER"} <= set(names)
         loaded = Settings.model_validate({name: " None " for name in names})
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
@@ -171,9 +173,10 @@ class TestCrossFieldRules:
 class TestClosedChoices:
     """Enum-like settings are Literal types: a typo fails at startup instead of falling through."""
 
+    @pytest.mark.parametrize("name", ["AUTH_TYPE", "EMBEDDINGS_POOLING"])
     @pytest.mark.parametrize("raw", ["None", "none", "", "  "])
-    def test_auth_type_unset_spellings(self, raw):
-        assert Settings.model_validate({"AUTH_TYPE": raw}).AUTH_TYPE is None
+    def test_optional_choice_unset_spellings(self, name, raw):
+        assert getattr(Settings.model_validate({name: raw}), name) is None
 
     @pytest.mark.parametrize(
         ("name", "raw", "expected"),
