@@ -815,12 +815,13 @@ def _endpoint(url: str) -> str:
     """A URL without its credentials: this ends up on a terminal, in CI logs and in issues."""
     try:
         parts = urlsplit(url)
+        # .port is a property that parses on access, so it raises separately from the split itself.
+        host, port, scheme, path = parts.hostname or "", parts.port, parts.scheme, parts.path
     except ValueError:
         return "the configured URL"
-    host = parts.hostname or ""
-    if parts.port:
-        host = f"{host}:{parts.port}"
-    return f"{parts.scheme}://{host}{parts.path}" if host else "the configured URL"
+    if port:
+        host = f"{host}:{port}"
+    return f"{scheme}://{host}{path}" if host else "the configured URL"
 
 
 def _scrub(text: str, url: Optional[str]) -> str:

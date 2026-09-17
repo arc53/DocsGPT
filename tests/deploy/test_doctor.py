@@ -328,8 +328,26 @@ class TestRedisCheck:
         assert "default" not in check.detail
         assert "redis.example.com:6380/0" in check.detail, "the endpoint still has to be identifiable"
 
-    def test_a_malformed_url_is_not_echoed_either(self):
-        assert commands._endpoint("redis://[::1") == "the configured URL"
+    @pytest.mark.parametrize("url", ["redis://[::1", "redis://localhost:not-a-port/0"])
+    def test_a_malformed_url_is_not_echoed_either(self, url):
+        """urlsplit raises on the first; on the second it succeeds and .port raises on access."""
+        assert commands._endpoint(url) == "the configured URL"
+
+    def test_a_failure_on_a_url_with_an_unparsable_port_is_still_a_check(self, monkeypatch):
+        """The check catches the client error and then formats it, which is where this raised."""
+        import redis
+
+        def from_url(cls, url, **kwargs):
+            class Client:
+                def ping(self):
+                    raise ConnectionError(f"no route to {url}")
+
+            return Client()
+
+        monkeypatch.setattr(redis.Redis, "from_url", classmethod(from_url))
+        check = commands._check_redis({"broker": "redis://localhost:not-a-port/0"})
+        assert check.level == "fail", "a bad port is a finding, not a traceback"
+        assert "the configured URL" in check.detail
 
     def test_without_any_redis_configured(self):
         assert commands._check_redis({}).level == "fail"
