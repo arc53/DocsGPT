@@ -1587,7 +1587,7 @@ function WorkflowBuilderInner() {
                 size="icon-sm"
                 onClick={() => setShowWorkflowSettings(!showWorkflowSettings)}
                 className="text-muted-foreground hover:bg-accent hover:text-foreground size-auto p-1"
-                aria-label="Workflow settings"
+                aria-label="Edit workflow details"
                 title={
                   workflowDescription
                     ? `${workflowName || 'New Workflow'} — ${workflowDescription}`

@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import {
-  Building2,
   Check,
   ChevronsUpDown,
   Plus,
   Settings as SettingsIcon,
+  User,
   Users,
 } from 'lucide-react';
 
@@ -149,7 +149,7 @@ export default function TeamSwitcher({
             {currentTeam ? (
               <Users className="size-4" strokeWidth={1.75} />
             ) : (
-              <Building2 className="size-4" strokeWidth={1.75} />
+              <User className="size-4" strokeWidth={1.75} />
             )}
           </span>
           <span className="min-w-0 flex-1">
@@ -174,7 +174,7 @@ export default function TeamSwitcher({
         {/* Personal account entry */}
         {currentTeam && (
           <DropdownMenuItem onSelect={() => selectTeam(null)}>
-            <Building2 className="size-4" strokeWidth={1.75} />
+            <User className="size-4" strokeWidth={1.75} />
             <span className="min-w-0 flex-1 truncate">
               {t('teams.switcher.personal')}
             </span>

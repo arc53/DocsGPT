@@ -792,7 +792,7 @@ export default function RetrievalOptions({
         <img
           src={ChevronRight}
           alt=""
-          className={`h-3 w-3 transform transition-transform ${
+          className={`h-3 w-3 transform transition-transform dark:invert ${
             expanded ? 'rotate-90' : ''
           }`}
         />

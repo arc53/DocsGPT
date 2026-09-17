@@ -1063,6 +1063,7 @@
     "share": "共有",
     "delete": "削除",
     "rename": "名前変更",
+    "save": "保存",
     "deleteWarning": "この会話を削除してもよろしいですか？"
   },
   "pagination": {

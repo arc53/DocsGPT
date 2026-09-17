@@ -1063,6 +1063,7 @@
     "share": "分享",
     "delete": "刪除",
     "rename": "重新命名",
+    "save": "儲存",
     "deleteWarning": "您確定要刪除這個對話嗎？"
   },
   "pagination": {

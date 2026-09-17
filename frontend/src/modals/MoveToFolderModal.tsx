@@ -269,7 +269,7 @@ export default function MoveToFolderModal({
                       <img
                         src={ChevronRight}
                         alt="expand"
-                        className={`h-3 w-3 ${selectedFolderId === folder.id ? 'brightness-0 invert' : ''}`}
+                        className={`h-3 w-3 ${selectedFolderId === folder.id ? 'brightness-0 invert' : 'dark:invert'}`}
                       />
                     </span>
                   )}

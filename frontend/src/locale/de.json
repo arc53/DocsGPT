@@ -1063,6 +1063,7 @@
     "share": "Teilen",
     "delete": "Löschen",
     "rename": "Umbenennen",
+    "save": "Speichern",
     "deleteWarning": "Bist du sicher, dass du diese Konversation löschen möchtest?"
   },
   "pagination": {
