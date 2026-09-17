@@ -6,6 +6,7 @@ validators from every group applied) and that the generated reference page
 tracks the definitions.
 """
 
+import warnings
 from pathlib import Path
 
 import pytest
@@ -33,10 +34,16 @@ SECRET_FIELDS = (
 @pytest.mark.unit
 class TestComposition:
     def test_every_group_field_is_a_flat_settings_attribute(self):
-        for _, group in SETTINGS_GROUPS:
-            for name in group.model_fields:
-                assert name in Settings.model_fields, name
-                assert hasattr(settings, name), name
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)  # reading a deprecated field warns
+            for _, group in SETTINGS_GROUPS:
+                for name in group.model_fields:
+                    assert name in Settings.model_fields, name
+                    assert hasattr(settings, name), name
+
+    def test_deprecated_fields_warn_on_read(self):
+        with pytest.warns(DeprecationWarning, match="S3_REGION"):
+            _ = Settings(_env_file=None).SAGEMAKER_REGION
 
     def test_no_field_is_defined_in_two_groups(self):
         owners: dict[str, str] = {}

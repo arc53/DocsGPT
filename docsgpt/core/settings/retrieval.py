@@ -15,13 +15,6 @@ class RetrievalSettings(SettingsGroup):
     VECTOR_STORE: Literal["faiss", "elasticsearch", "mongodb", "qdrant", "milvus", "pgvector"] = Field(
         default="faiss", description="Vector store backend."
     )
-    RETRIEVERS_ENABLED: list[str] = Field(
-        default=["classic", "default"],
-        description=(
-            "Retriever keys an agent may use; must match RetrieverCreator.retrievers registry keys, NOT the "
-            "legacy classic_rag label which never matched the registry."
-        ),
-    )
     RETRIEVAL_MAX_PARALLEL_SOURCES: int = Field(
         default=4,
         ge=1,

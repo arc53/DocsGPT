@@ -34,14 +34,17 @@ class StorageSettings(SettingsGroup):
     # Legacy AWS credentials from the retired SageMaker provider.
     SAGEMAKER_REGION: Optional[str] = Field(
         default=None,
+        deprecated="Set S3_REGION instead; the SAGEMAKER_* fallback will be removed.",
         description="Legacy AWS region from the retired SageMaker provider; deprecated fallback for S3_REGION.",
     )
     SAGEMAKER_ACCESS_KEY: Optional[str] = Field(
         default=None,
+        deprecated="Set S3_ACCESS_KEY_ID instead; the SAGEMAKER_* fallback will be removed.",
         description="Legacy AWS access key from the retired SageMaker provider; deprecated fallback for S3_ACCESS_KEY_ID.",
     )
     SAGEMAKER_SECRET_KEY: Optional[str] = Field(
         default=None,
+        deprecated="Set S3_SECRET_ACCESS_KEY instead; the SAGEMAKER_* fallback will be removed.",
         description=(
             "Legacy AWS secret key from the retired SageMaker provider; deprecated fallback for "
             "S3_SECRET_ACCESS_KEY."

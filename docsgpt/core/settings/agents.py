@@ -13,7 +13,6 @@ class AgentSettings(SettingsGroup):
     """What an agent may do per turn and how its context is kept within budget."""
 
     AGENT_NAME: str = Field(default="classic", description="Default agent type for agentless chats.")
-    DEFAULT_MAX_HISTORY: int = Field(default=150, description="Default number of history messages kept.")
     DEFAULT_AGENT_LIMITS: dict[str, int] = Field(
         default={"token_limit": 50000, "request_limit": 500},
         description="Per-agent default quotas: tokens and requests.",

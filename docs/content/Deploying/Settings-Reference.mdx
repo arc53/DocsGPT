@@ -417,12 +417,6 @@ Type `"faiss" | "elasticsearch" | "mongodb" | "qdrant" | "milvus" | "pgvector"`,
 
 Vector store backend.
 
-### `RETRIEVERS_ENABLED`
-
-Type `list`, default `["classic", "default"]`.
-
-Retriever keys an agent may use; must match RetrieverCreator.retrievers registry keys, NOT the legacy classic_rag label which never matched the registry.
-
 ### `RETRIEVAL_MAX_PARALLEL_SOURCES`
 
 Type `int`, default `4`, must be >= 1.
@@ -1015,17 +1009,23 @@ Path-style addressing (required by most non-AWS services).
 
 Type `str`, default unset.
 
+**Deprecated.** Set S3_REGION instead; the SAGEMAKER_* fallback will be removed.
+
 Legacy AWS region from the retired SageMaker provider; deprecated fallback for S3_REGION.
 
 ### `SAGEMAKER_ACCESS_KEY`
 
 Type `str`, default unset.
 
+**Deprecated.** Set S3_ACCESS_KEY_ID instead; the SAGEMAKER_* fallback will be removed.
+
 Legacy AWS access key from the retired SageMaker provider; deprecated fallback for S3_ACCESS_KEY_ID.
 
 ### `SAGEMAKER_SECRET_KEY`
 
 Type `str`, default unset.
+
+**Deprecated.** Set S3_SECRET_ACCESS_KEY instead; the SAGEMAKER_* fallback will be removed.
 
 Legacy AWS secret key from the retired SageMaker provider; deprecated fallback for S3_SECRET_ACCESS_KEY.
 
@@ -1270,12 +1270,6 @@ What an agent may do per turn and how its context is kept within budget.
 Type `str`, default `classic`.
 
 Default agent type for agentless chats.
-
-### `DEFAULT_MAX_HISTORY`
-
-Type `int`, default `150`.
-
-Default number of history messages kept.
 
 ### `DEFAULT_AGENT_LIMITS`
 

@@ -461,7 +461,6 @@ These control how sources are retrieved and whether the advanced RAG features ar
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `RETRIEVERS_ENABLED` | `["classic", "default"]` | Allow-list of retrievers usable instance-wide. Valid keys: `classic`, `default`, `hybrid`, `graphrag`. A per-source `retriever` must be within this list. |
 | `PER_SOURCE_RETRIEVAL_ENABLED` | `true` | Master switch for per-source retrieval config. When `false`, all sources fall back to the classic retriever regardless of their stored config. |
 | `GRAPHRAG_ENABLED` | `false` | Enable [GraphRAG](/Sources/GraphRAG). Requires `VECTOR_STORE=pgvector`. |
 | `GRAPHRAG_EXTRACTION_MODEL` | unset | Model used for ingest-time graph extraction. Unset reuses the instance default model. |
