@@ -29,7 +29,7 @@ class RetrievalSettings(SettingsGroup):
         default=None, description="Model for ingest-time graph extraction; unset reuses LLM_PROVIDER/LLM_NAME."
     )
     GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION: int = Field(
-        default=2000, description="Hard cap on chunks extracted per source (cost control)."
+        default=2000, ge=0, description="Hard cap on chunks extracted per source (cost control); 0 extracts nothing."
     )
 
     @field_validator("VECTOR_STORE", mode="before")

@@ -58,6 +58,7 @@ class EventsSettings(SettingsGroup):
     EVENTS_REPLAY_BUDGET_WINDOW_SECONDS: int = Field(default=60, description="Length of the replay budget window.")
     MESSAGE_EVENTS_RETENTION_DAYS: int = Field(
         default=14,
+        gt=0,
         description=(
             "Retention for the message_events journal, enforced by the cleanup_message_events beat task. Replay "
             "only needs streams a client could still be tailing."
@@ -66,14 +67,15 @@ class EventsSettings(SettingsGroup):
 
     # Remote Device feature.
     REMOTE_DEVICE_SESSION_IDLE_SECONDS: int = Field(
-        default=60, description="Seconds without a heartbeat before a remote-device session is considered idle."
+        default=60, gt=0, description="Seconds without a heartbeat before a remote-device session is considered idle."
     )
     REMOTE_DEVICE_REQUIRE_SIGNATURE: bool = Field(
         default=False, description="Require signed commands from remote devices."
     )
-    REMOTE_DEVICE_PAIRING_TTL_SECONDS: int = Field(default=600, description="Lifetime of a pairing code.")
+    REMOTE_DEVICE_PAIRING_TTL_SECONDS: int = Field(default=600, gt=0, description="Lifetime of a pairing code.")
     REMOTE_DEVICE_CMD_QUEUE_TTL_SECONDS: int = Field(
         default=900,
+        gt=605,
         description=(
             "Redis TTL of the per-device command queue, routing invocations cross-process so a scheduled run "
             "reaches the web-held device session. Must exceed the max drain deadline (605s) so a command for a "
@@ -81,7 +83,7 @@ class EventsSettings(SettingsGroup):
         ),
     )
     REMOTE_DEVICE_INVOCATION_TTL_SECONDS: int = Field(
-        default=900, description="Redis TTL of a pending remote-device invocation."
+        default=900, gt=0, description="Redis TTL of a pending remote-device invocation."
     )
     REMOTE_DEVICE_OUTPUT_STREAM_MAXLEN: int = Field(
         default=10_000, description="Cap on buffered output entries per remote-device invocation stream."

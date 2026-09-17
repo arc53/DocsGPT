@@ -25,4 +25,4 @@ class SchedulerSettings(SettingsGroup):
     SCHEDULE_ONCE_MAX_HORIZON: int = Field(
         default=31_536_000, description="How far ahead a one-off run may be scheduled, in seconds (one year)."
     )
-    SCHEDULE_RUN_OUTPUT_RETENTION_DAYS: int = Field(default=90, description="Days scheduled-run output is kept.")
+    SCHEDULE_RUN_OUTPUT_RETENTION_DAYS: int = Field(default=90, gt=0, description="Days scheduled-run output is kept.")

@@ -85,11 +85,6 @@ class AuthSettings(SettingsGroup):
         default=None, description="Bearer token for IdP SCIM clients (required when SCIM is enabled)."
     )
 
-    @field_validator("INTERNAL_KEY", mode="before")
-    @classmethod
-    def _normalize_auth_secrets(cls, v):
-        return normalize_secret(v)
-
     @field_validator("AUTH_TYPE", mode="before")
     @classmethod
     def _normalize_auth_type(cls, v):

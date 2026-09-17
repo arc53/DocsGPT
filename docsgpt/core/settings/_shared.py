@@ -9,15 +9,42 @@ domain's definitions live in their own module.
 
 from __future__ import annotations
 
+import types
+import typing
 from typing import Any, Optional
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _is_optional_str(annotation: Any) -> bool:
+    if typing.get_origin(annotation) not in (typing.Union, types.UnionType):
+        return False
+    return set(typing.get_args(annotation)) == {str, type(None)}
+
+
 class SettingsGroup(BaseSettings):
-    """Base for one domain's settings; groups are composed into ``Settings``."""
+    """Base for one domain's settings; groups are composed into ``Settings``.
+
+    Every ``Optional[str]`` field treats the spellings an unset value has in a
+    ``.env`` file (``KEY=``, ``KEY=None``, whitespace) as ``None``, so a check
+    like ``if settings.OIDC_ISSUER`` or a fallback like ``settings.X or default``
+    sees "unset" rather than a truthy placeholder string. Real values are
+    stripped. Fields typed ``str`` keep whatever they are given.
+    """
 
     model_config = SettingsConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unset_optional_strings(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        for name, field in cls.model_fields.items():
+            if name in data and _is_optional_str(field.annotation):
+                data[name] = normalize_secret(data[name])
+        return data
 
 
 def normalize_choice(value: Any) -> Any:

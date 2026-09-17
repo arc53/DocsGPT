@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import Field, field_validator
 
 from docsgpt.core.paths import home_dir
-from docsgpt.core.settings._shared import SettingsGroup, normalize_secret
+from docsgpt.core.settings._shared import SettingsGroup, normalize_choice
 
 
 class EmbeddingsSettings(SettingsGroup):
@@ -56,7 +56,7 @@ class EmbeddingsSettings(SettingsGroup):
             "default is the temp dir."
         ),
     )
-    EMBEDDINGS_POOLING: Optional[str] = Field(
+    EMBEDDINGS_POOLING: Optional[Literal["cls", "mean"]] = Field(
         default=None,
         description=(
             'Pooling strategy ("cls" or "mean"). Read from the model\'s own repository; set only for a '
@@ -79,10 +79,10 @@ class EmbeddingsSettings(SettingsGroup):
     )
     EMBEDDINGS_QUEUE: str = Field(default="embeddings", description="Celery queue the embed task is routed to.")
     EMBEDDINGS_DELEGATE_TIMEOUT: int = Field(
-        default=60, description="Seconds the API waits for the worker to return an embedding."
+        default=60, gt=0, description="Seconds the API waits for the worker to return an embedding."
     )
 
-    @field_validator("EMBEDDINGS_KEY", mode="before")
+    @field_validator("EMBEDDINGS_POOLING", mode="before")
     @classmethod
-    def _normalize_embeddings_secrets(cls, v):
-        return normalize_secret(v)
+    def _normalize_pooling(cls, v):
+        return normalize_choice(v)

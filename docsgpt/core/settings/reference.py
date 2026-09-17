@@ -62,7 +62,9 @@ def _type_name(annotation: Any) -> str:
     if origin is Literal:
         return " | ".join(json.dumps(v) for v in typing.get_args(annotation))
     if origin is not None:
-        return getattr(origin, "__name__", str(origin))
+        name = getattr(origin, "__name__", str(origin))
+        args = typing.get_args(annotation)
+        return f"{name}[{', '.join(_type_name(arg) for arg in args)}]" if args else name
     return getattr(annotation, "__name__", str(annotation))
 
 

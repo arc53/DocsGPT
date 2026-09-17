@@ -5,10 +5,10 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from docsgpt.core.paths import home_dir
-from docsgpt.core.settings._shared import SettingsGroup, normalize_secret
+from docsgpt.core.settings._shared import SettingsGroup
 
 
 class LLMSettings(SettingsGroup):
@@ -104,18 +104,3 @@ class LLMSettings(SettingsGroup):
     OPENAI_REASONING_SUMMARY: str = Field(
         default="auto", description="Reasoning summary mode requested from the Responses API."
     )
-
-    @field_validator(
-        "API_KEY",
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "GOOGLE_API_KEY",
-        "GROQ_API_KEY",
-        "HUGGINGFACE_API_KEY",
-        "NOVITA_API_KEY",
-        "FALLBACK_LLM_API_KEY",
-        mode="before",
-    )
-    @classmethod
-    def _normalize_llm_secrets(cls, v):
-        return normalize_secret(v)

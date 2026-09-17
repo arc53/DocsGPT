@@ -8,7 +8,7 @@ from pydantic import Field, field_validator
 
 from docsgpt.core.db_uri import normalize_pgvector_connection_string
 from docsgpt.core.paths import home_dir
-from docsgpt.core.settings._shared import SettingsGroup, normalize_secret
+from docsgpt.core.settings._shared import SettingsGroup
 
 
 class VectorStoreSettings(SettingsGroup):
@@ -82,8 +82,3 @@ class VectorStoreSettings(SettingsGroup):
     @classmethod
     def _normalize_pgvector_connection_string(cls, v):
         return normalize_pgvector_connection_string(v)
-
-    @field_validator("QDRANT_API_KEY", mode="before")
-    @classmethod
-    def _normalize_vectorstore_secrets(cls, v):
-        return normalize_secret(v)

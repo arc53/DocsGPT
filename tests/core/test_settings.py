@@ -6,6 +6,8 @@ validators from every group applied) and that the generated reference page
 tracks the definitions.
 """
 
+import types
+import typing
 import warnings
 from pathlib import Path
 
@@ -23,11 +25,22 @@ SECRET_FIELDS = (
     "GROQ_API_KEY",
     "HUGGINGFACE_API_KEY",
     "NOVITA_API_KEY",
+    "OPEN_ROUTER_API_KEY",
     "EMBEDDINGS_KEY",
     "FALLBACK_LLM_API_KEY",
     "QDRANT_API_KEY",
+    "ELASTIC_PASSWORD",
     "ELEVENLABS_API_KEY",
     "INTERNAL_KEY",
+    "SCIM_TOKEN",
+    "OIDC_ISSUER",
+    "GITHUB_ACCESS_TOKEN",
+    "MICROSOFT_AUTHORITY",
+    "MCP_OAUTH_REDIRECT_URI",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+    "SANDBOX_GATEWAY_AUTH_TOKEN",
+    "DAYTONA_API_KEY",
 )
 
 
@@ -69,9 +82,26 @@ class TestComposition:
 class TestValidators:
     """Validators live on the group that owns the field; composition must keep all of them.
 
-    Two groups defining a validator under the same method name would silently
-    keep only one, so this checks every secret field, across every group.
+    Pydantic collects validators by method name across the MRO, so two groups
+    defining one under the same name would silently keep only one; the checks
+    below span every group.
     """
+
+    def test_every_optional_string_treats_unset_spellings_as_none(self):
+        names = [
+            name
+            for name, field in Settings.model_fields.items()
+            if typing.get_origin(field.annotation) in (typing.Union, types.UnionType)
+            and set(typing.get_args(field.annotation)) == {str, type(None)}
+        ]
+        assert len(names) > 60
+        loaded = Settings.model_validate({name: " None " for name in names})
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            assert [name for name in names if getattr(loaded, name) is not None] == []
+
+    def test_plain_strings_keep_empty_values(self):
+        assert Settings.model_validate({"MILVUS_TOKEN": "", "JWT_SECRET_KEY": ""}).MILVUS_TOKEN == ""
 
     @pytest.mark.parametrize("name", SECRET_FIELDS)
     @pytest.mark.parametrize("raw", ["None", "none", "", "   "])
@@ -125,6 +155,11 @@ class TestCrossFieldRules:
         with pytest.raises(ValidationError, match="AUTH_TYPE=oidc requires settings: OIDC_CLIENT_ID, OIDC_FRONTEND_URL"):
             Settings.model_validate({"AUTH_TYPE": "oidc", "OIDC_ISSUER": self.OIDC["OIDC_ISSUER"]})
 
+    @pytest.mark.parametrize("raw", ["", "None", "  "])
+    def test_oidc_unset_spellings_do_not_satisfy_the_requirement(self, raw):
+        with pytest.raises(ValidationError, match="OIDC_CLIENT_ID"):
+            Settings.model_validate({"AUTH_TYPE": "oidc", **self.OIDC, "OIDC_CLIENT_ID": raw})
+
     def test_oidc_with_required_settings_loads(self):
         assert Settings.model_validate({"AUTH_TYPE": "OIDC", **self.OIDC}).AUTH_TYPE == "oidc"
 
@@ -154,6 +189,7 @@ class TestClosedChoices:
             ("TTS_PROVIDER", "ElevenLabs", "elevenlabs"),
             ("STT_PROVIDER", "", "none"),
             ("TTS_PROVIDER", "NONE", "none"),
+            ("EMBEDDINGS_POOLING", "CLS", "cls"),
         ],
     )
     def test_choices_are_case_insensitive(self, name, raw, expected):
@@ -169,6 +205,7 @@ class TestClosedChoices:
             ("SANDBOX_BACKEND", "docker"),
             ("DOC_PARSER_ENGINE", "fast"),
             ("STT_PROVIDER", "whisper"),
+            ("EMBEDDINGS_POOLING", "max"),
         ],
     )
     def test_unknown_choice_is_rejected(self, name, raw):
@@ -177,7 +214,14 @@ class TestClosedChoices:
 
     @pytest.mark.parametrize(
         ("name", "raw"),
-        [("EMBEDDINGS_BATCH_SIZE", 0), ("COMPRESSION_THRESHOLD_PERCENTAGE", 1.5), ("UPLOAD_MAX_FILE_BYTES", 0)],
+        [
+            ("EMBEDDINGS_BATCH_SIZE", 0),
+            ("COMPRESSION_THRESHOLD_PERCENTAGE", 1.5),
+            ("UPLOAD_MAX_FILE_BYTES", 0),
+            ("MESSAGE_EVENTS_RETENTION_DAYS", 0),
+            ("REMOTE_DEVICE_CMD_QUEUE_TTL_SECONDS", 605),
+            ("GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION", -1),
+        ],
     )
     def test_out_of_range_numbers_are_rejected(self, name, raw):
         with pytest.raises(ValidationError):

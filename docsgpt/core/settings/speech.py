@@ -6,7 +6,7 @@ from typing import Literal, Optional
 
 from pydantic import Field, field_validator
 
-from docsgpt.core.settings._shared import SettingsGroup, normalize_choice, normalize_secret
+from docsgpt.core.settings._shared import SettingsGroup, normalize_choice
 
 
 class SpeechSettings(SettingsGroup):
@@ -24,11 +24,6 @@ class SpeechSettings(SettingsGroup):
     STT_MAX_FILE_SIZE_MB: int = Field(default=50, description="Cap on an audio file accepted for transcription.")
     STT_ENABLE_TIMESTAMPS: bool = Field(default=False, description="Return word/segment timestamps.")
     STT_ENABLE_DIARIZATION: bool = Field(default=False, description="Label speakers in the transcript.")
-
-    @field_validator("ELEVENLABS_API_KEY", mode="before")
-    @classmethod
-    def _normalize_speech_secrets(cls, v):
-        return normalize_secret(v)
 
     @field_validator("TTS_PROVIDER", "STT_PROVIDER", mode="before")
     @classmethod

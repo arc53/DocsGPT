@@ -271,7 +271,7 @@ Context window assumed when the model is not found in the registry.
 
 ### `RESERVED_TOKENS`
 
-Type `dict`, default `{"system_prompt": 500, "current_query": 500, "safety_buffer": 1000}`.
+Type `dict[str, int]`, default `{"system_prompt": 500, "current_query": 500, "safety_buffer": 1000}`.
 
 Tokens held back from the context window for the system prompt, the query and a safety buffer.
 
@@ -378,7 +378,7 @@ Where embedding models and their tokenizers are cached. Persistent by default: F
 
 ### `EMBEDDINGS_POOLING`
 
-Type `str`, default unset.
+Type `"cls" | "mean"`, default unset.
 
 Pooling strategy ("cls" or "mean"). Read from the model's own repository; set only for a repository that declares none, or to override what it declares.
 
@@ -402,7 +402,7 @@ Celery queue the embed task is routed to.
 
 ### `EMBEDDINGS_DELEGATE_TIMEOUT`
 
-Type `int`, default `60`.
+Type `int`, default `60`, must be > 0.
 
 Seconds the API waits for the worker to return an embedding.
 
@@ -443,9 +443,9 @@ Model for ingest-time graph extraction; unset reuses LLM_PROVIDER/LLM_NAME.
 
 ### `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`
 
-Type `int`, default `2000`.
+Type `int`, default `2000`, must be >= 0.
 
-Hard cap on chunks extracted per source (cost control).
+Hard cap on chunks extracted per source (cost control); 0 extracts nothing.
 
 
 ## Vector stores
@@ -668,7 +668,7 @@ Tasks prefetched per worker process; 1 caps SIGKILL loss to one task.
 
 ### `CELERY_VISIBILITY_TIMEOUT`
 
-Type `int`, default `3600`.
+Type `int`, default `3600`, must be > 0.
 
 Broker visibility timeout in seconds. Must exceed the longest legitimate task runtime but stay short enough that SIGKILLed tasks redeliver promptly.
 
@@ -1220,13 +1220,13 @@ Length of the replay budget window.
 
 ### `MESSAGE_EVENTS_RETENTION_DAYS`
 
-Type `int`, default `14`.
+Type `int`, default `14`, must be > 0.
 
 Retention for the message_events journal, enforced by the cleanup_message_events beat task. Replay only needs streams a client could still be tailing.
 
 ### `REMOTE_DEVICE_SESSION_IDLE_SECONDS`
 
-Type `int`, default `60`.
+Type `int`, default `60`, must be > 0.
 
 Seconds without a heartbeat before a remote-device session is considered idle.
 
@@ -1238,19 +1238,19 @@ Require signed commands from remote devices.
 
 ### `REMOTE_DEVICE_PAIRING_TTL_SECONDS`
 
-Type `int`, default `600`.
+Type `int`, default `600`, must be > 0.
 
 Lifetime of a pairing code.
 
 ### `REMOTE_DEVICE_CMD_QUEUE_TTL_SECONDS`
 
-Type `int`, default `900`.
+Type `int`, default `900`, must be > 605.
 
 Redis TTL of the per-device command queue, routing invocations cross-process so a scheduled run reaches the web-held device session. Must exceed the max drain deadline (605s) so a command for a briefly-offline device isn't evicted before its own drain gives up.
 
 ### `REMOTE_DEVICE_INVOCATION_TTL_SECONDS`
 
-Type `int`, default `900`.
+Type `int`, default `900`, must be > 0.
 
 Redis TTL of a pending remote-device invocation.
 
@@ -1273,13 +1273,13 @@ Default agent type for agentless chats.
 
 ### `DEFAULT_AGENT_LIMITS`
 
-Type `dict`, default `{"token_limit": 50000, "request_limit": 500}`.
+Type `dict[str, int]`, default `{"token_limit": 50000, "request_limit": 500}`.
 
 Per-agent default quotas: tokens and requests.
 
 ### `DEFAULT_CHAT_TOOLS`
 
-Type `list`, default `["memory", "read_webpage", "scheduler"]`.
+Type `list[str]`, default `["memory", "read_webpage", "scheduler"]`.
 
 Config-free tools on by default in agentless chats. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
 
@@ -1386,13 +1386,13 @@ Master switch; False disables every stage.
 
 ### `GUARDRAILS_CHECKS_ENABLED`
 
-Type `list`, default `[]`.
+Type `list[str]`, default `[]`.
 
 Allowlist of GuardrailCreator.checks keys; empty means every registered check.
 
 ### `GUARDRAILS_FLOOR`
 
-Type `dict`, default `{}`.
+Type `dict[str, Any]`, default `{}`.
 
 A GuardrailsConfig fragment every agent inherits and cannot weaken; agents may add controls or make an action stricter, never looser. "enabled" is required; without it the floor parses but applies to nothing. Example: \{"enabled": true, "mode": "scan_all", "controls": [\{"check": "secrets", "stage": "output", "action": "redact"\}]\}
 
@@ -1463,7 +1463,7 @@ How far ahead a one-off run may be scheduled, in seconds (one year).
 
 ### `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS`
 
-Type `int`, default `90`.
+Type `int`, default `90`, must be > 0.
 
 Days scheduled-run output is kept.
 

@@ -17,6 +17,7 @@ class WorkerSettings(SettingsGroup):
     )
     CELERY_VISIBILITY_TIMEOUT: int = Field(
         default=3600,
+        gt=0,
         description=(
             "Broker visibility timeout in seconds. Must exceed the longest legitimate task runtime but stay "
             "short enough that SIGKILLed tasks redeliver promptly."
