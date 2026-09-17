@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
-from docsgpt.core.settings._shared import SettingsGroup
+from docsgpt.core.settings._shared import SettingsGroup, normalize_choice
 
 
 class StorageSettings(SettingsGroup):
     """Local disk or an S3-compatible bucket, and how download URLs are produced."""
 
-    STORAGE_TYPE: str = Field(default="local", description="File storage backend: local or s3.")
-    URL_STRATEGY: str = Field(
+    STORAGE_TYPE: Literal["local", "s3"] = Field(default="local", description="File storage backend.")
+    URL_STRATEGY: Literal["backend", "s3"] = Field(
         default="backend",
         description="How download links are produced: backend (streamed through the API) or s3 (presigned URLs).",
     )
@@ -47,3 +47,8 @@ class StorageSettings(SettingsGroup):
             "S3_SECRET_ACCESS_KEY."
         ),
     )
+
+    @field_validator("STORAGE_TYPE", "URL_STRATEGY", mode="before")
+    @classmethod
+    def _normalize_storage_choices(cls, v):
+        return normalize_choice(v)

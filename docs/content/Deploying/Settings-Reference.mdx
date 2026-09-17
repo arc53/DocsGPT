@@ -20,9 +20,9 @@ How users authenticate: none, a shared token, per-session JWTs, or OIDC SSO.
 
 ### `AUTH_TYPE`
 
-Type `str`, default unset.
+Type `"simple_jwt" | "session_jwt" | "oidc"`, default unset.
 
-Authentication mode: simple_jwt, session_jwt, oidc, or unset for no authentication.
+Authentication mode: simple_jwt, session_jwt, oidc, or unset (None) for no authentication.
 
 ### `JWT_SECRET_KEY`
 
@@ -86,7 +86,7 @@ Override for the callback URL; default is &lt;request host>/api/auth/oidc/callba
 
 ### `OIDC_SESSION_LIFETIME_SECONDS`
 
-Type `int`, default `28800`.
+Type `int`, default `28800`, must be > 0.
 
 Lifetime of the minted session JWT in seconds (8h).
 
@@ -354,13 +354,13 @@ Truncate each remote embed input to N tokens (overflow is lost).
 
 ### `EMBEDDINGS_BATCH_SIZE`
 
-Type `int`, default `32`.
+Type `int`, default `32`, must be >= 1.
 
 Chunks per store transaction and per remote embed request.
 
 ### `EMBEDDINGS_MODEL_BATCH_SIZE`
 
-Type `int`, default `1`.
+Type `int`, default `1`, must be >= 1.
 
 Documents per local ONNX forward pass. Each pass pads to its longest input, and that waste grows with the square of chunk length: at 1250 tokens, 32 peaked at 6.6 GB, 1 at 2.9 GB.
 
@@ -413,9 +413,9 @@ Which vector store answers searches and how retrieval fans out across sources.
 
 ### `VECTOR_STORE`
 
-Type `str`, default `faiss`.
+Type `"faiss" | "elasticsearch" | "mongodb" | "qdrant" | "milvus" | "pgvector"`, default `faiss`.
 
-Vector store backend: faiss, elasticsearch, mongodb, qdrant, milvus or pgvector.
+Vector store backend.
 
 ### `RETRIEVERS_ENABLED`
 
@@ -425,7 +425,7 @@ Retriever keys an agent may use; must match RetrieverCreator.retrievers registry
 
 ### `RETRIEVAL_MAX_PARALLEL_SOURCES`
 
-Type `int`, default `4`.
+Type `int`, default `4`, must be >= 1.
 
 Concurrent per-source searches in one retrieval; the query is embedded once and shared.
 
@@ -580,7 +580,7 @@ pgvector connection string. postgres://, postgresql:// and postgresql+psycopg://
 
 ### `PGVECTOR_POOL_MAX_SIZE`
 
-Type `int`, default `8`.
+Type `int`, default `8`, must be >= 0.
 
 Per-process connection pool size; 0 uses one direct connection per store.
 
@@ -680,13 +680,13 @@ Broker visibility timeout in seconds. Must exceed the longest legitimate task ru
 
 ### `CELERY_WORKER_MAX_MEMORY_PER_CHILD`
 
-Type `int`, default `4194304`.
+Type `int`, default `4194304`, must be >= 0.
 
 Recycle a prefork child past this resident size in KB; backstops docling/torch heap growth. Checked between tasks, so it does not bound the peak within one. 0 disables.
 
 ### `CELERY_WORKER_MAX_TASKS_PER_CHILD`
 
-Type `int`, default `0`.
+Type `int`, default `0`, must be >= 0.
 
 Recycle a worker child after N tasks; 0 disables.
 
@@ -763,7 +763,7 @@ Send images to a remote parser.
 
 ### `DOC_PARSER_ENGINE`
 
-Type `str`, default `anydoc`.
+Type `"anydoc" | "docling"`, default `anydoc`.
 
 Document parser for source ingestion, chat attachments and the read_document tool. "anydoc" (default): firecrawl-anydoc, a Rust converter with no ML models; milliseconds per file, ~100 MB peak RSS. "docling": the layout/table-model pipeline (optional install; needed for read_document's structured output and the docling OCR backend). Files anydoc cannot convert (scanned PDFs, malformed input) fall back to docling when it is installed, otherwise to the native OCR parsers (OCR on) or the legacy parsers. Rollback to the previous behaviour is this one variable.
 
@@ -793,7 +793,7 @@ Largest HTML/XML docling will parse, in bytes.
 
 ### `MARKUP_MAX_BYTES`
 
-Type `int`, default `8000000`.
+Type `int`, default `8000000`, must be >= 0.
 
 HTML/XHTML larger than this (bytes) are head-truncated before the markdownify parser runs (the anydoc engine's HTML path). The tree that path builds costs ~50x the input (30 MB of HTML measured at 1.6 GB RSS) and the upload cap is 100 MB, so the gate is what keeps one upload from taking the ingest worker down. 0 disables it.
 
@@ -841,13 +841,13 @@ Cap on the pixel count of an image passed to an agent.
 
 ### `GITHUB_INGEST_MAX_FILE_BYTES`
 
-Type `int`, default `1048576`.
+Type `int`, default `1048576`, must be >= 0.
 
 Skip GitHub repo blobs larger than this (0 = no cap).
 
 ### `GITHUB_INGEST_MAX_WORKERS`
 
-Type `int`, default `8`.
+Type `int`, default `8`, must be >= 1.
 
 Parallel file fetches per GitHub repo ingest.
 
@@ -877,7 +877,7 @@ Absolute ceiling on the size-scaled parse window, in seconds.
 
 ### `DOCUMENT_PARSE_MAX_BYTES`
 
-Type `int`, default `0`.
+Type `int`, default `0`, must be >= 0.
 
 Cap on a parsed document's bytes (0 = reuse SANDBOX_MAX_INPUT_BYTES).
 
@@ -912,13 +912,13 @@ OCR scanned PDFs and images attached to a chat.
 
 ### `OCR_BACKEND`
 
-Type `str`, default `auto`.
+Type `"auto" | "docling" | "native"`, default `auto`.
 
 Which stack runs OCR when it is on. auto: docling when installed, otherwise native. docling: the layout-model pipeline (hybrid region OCR, reading order, table structure); needs the optional docling extra. native: pypdfium2/Pillow page rendering straight into tesseract or a DeepSeek-OCR endpoint (docsgpt/parser/file/ocr_parser.py); no ML models in the worker, tables come out as text lines under tesseract.
 
 ### `OCR_ENGINE`
 
-Type `str`, default `tesseract`.
+Type `"tesseract" | "deepseek" | "auto" | "ocrmac" | "rapidocr"`, default `tesseract`.
 
 OCR engine used when OCR is on. Benched 2026-08 on EN/ZH/table/degraded scans (docs/Guides/ocr has the menu). tesseract (recommended): best classic-engine accuracy (perfect EN word recall, 0.000 bilingual CER, 100% table cells), ~35 MB, CPU-only; needs the system binary and language packs, an optional install like every OCR dependency (build with INSTALL_TESSERACT=true, or apt/brew install tesseract-ocr for a local run); both backends. deepseek: DeepSeek-OCR against an Ollama/vLLM endpoint (OCR_DEEPSEEK_*); best table/CJK quality, the worker stays light (no layout models) but each page costs seconds on the model server; both backends. auto: docling's pick, ocrmac on macOS (excellent), rapidocr on Linux (silently shreds some long text lines; avoid as a server default). ocrmac | rapidocr: force one of those. auto/ocrmac/rapidocr exist only inside docling; the native backend runs tesseract for them. An engine that is not installed degrades (docling: to auto) with a warning instead of failing the parse.
 
@@ -954,7 +954,7 @@ Native backend only: resolution at which pages without a text layer are rendered
 
 ### `OCR_MIN_CHARS_PER_PAGE`
 
-Type `int`, default `20`, also read from `DOCLING_OCR_MIN_CHARS_PER_PAGE`.
+Type `int`, default `20`, must be >= 0, also read from `DOCLING_OCR_MIN_CHARS_PER_PAGE`.
 
 Chars-per-page floor below which an OCR'd PDF/image parse is treated as an OCR dropout rather than as content (long-running docling workers were observed returning zero characters for every scanned page after a long scanned PDF, with no error). docling retries once on a fresh full-page-OCR converter; both backends then fail loudly instead of indexing an empty document. 0 disables the guard.
 
@@ -965,13 +965,13 @@ Local disk or an S3-compatible bucket, and how download URLs are produced.
 
 ### `STORAGE_TYPE`
 
-Type `str`, default `local`.
+Type `"local" | "s3"`, default `local`.
 
-File storage backend: local or s3.
+File storage backend.
 
 ### `URL_STRATEGY`
 
-Type `str`, default `backend`.
+Type `"backend" | "s3"`, default `backend`.
 
 How download links are produced: backend (streamed through the API) or s3 (presigned URLs).
 
@@ -1143,7 +1143,7 @@ Bounds uvicorn's shutdown drain (uvicorn_worker doesn't forward --graceful-timeo
 
 ### `WSGI_THREADPOOL_WORKERS`
 
-Type `int`, default `96`.
+Type `int`, default `96`, must be >= 1.
 
 Threads serving the WSGI (Flask) part of the app under the ASGI server.
 
@@ -1166,7 +1166,7 @@ Internal SSE push channel (notifications and durable replay journal). False make
 
 ### `EVENTS_STREAM_MAXLEN`
 
-Type `int`, default `1000`.
+Type `int`, default `1000`, must be >= 1.
 
 Per-user durable backlog cap in entries; ~24h of replay at typical rates.
 
@@ -1178,7 +1178,7 @@ Interval between SSE keepalive comments.
 
 ### `SSE_MAX_CONCURRENT_PER_USER`
 
-Type `int`, default `8`.
+Type `int`, default `8`, must be >= 0.
 
 Simultaneous SSE connections per user; each holds a pooled async Redis connection for its lifetime. 8 covers multi-tab use without one user starving the pool. 0 disables.
 
@@ -1190,7 +1190,7 @@ Pool size of the async Redis client behind the event-loop routes, per process. E
 
 ### `EVENTS_REPLAY_MAX_PER_REQUEST`
 
-Type `int`, default `200`.
+Type `int`, default `200`, must be >= 1.
 
 Backlog entries XRANGE returns per /api/events snapshot. Bounds what one replay moves from Redis to the wire: a client looping Last-Event-ID reconnects enumerates at most this many per round-trip.
 
@@ -1291,7 +1291,7 @@ Pre-fetch retrieval before the agent's first turn.
 
 ### `TOOL_RESULT_MAX_TOKENS`
 
-Type `int`, default `20000`.
+Type `int`, default `20000`, must be >= 0.
 
 Cap on one tool result entering the LLM context (0 disables); journal and DB keep it whole.
 
@@ -1303,7 +1303,7 @@ Compress long conversations once they approach the context window.
 
 ### `COMPRESSION_THRESHOLD_PERCENTAGE`
 
-Type `float`, default `0.8`.
+Type `float`, default `0.8`, must be > 0 and <= 1.
 
 Fraction of the context window at which compression triggers.
 
@@ -1327,7 +1327,7 @@ Keep only the last N compression points to prevent DB bloat.
 
 ### `COMPRESSION_RECENT_FIELD_MAX_TOKENS`
 
-Type `int`, default `8000`.
+Type `int`, default `8000`, must be >= 0.
 
 Per-field cap on the verbatim tail kept after a compression point (0 disables).
 
@@ -1474,7 +1474,7 @@ The app is a CLIENT of an always-on runner; defaults are safe so app import neve
 
 ### `SANDBOX_BACKEND`
 
-Type `str`, default `jupyter`.
+Type `"jupyter" | "daytona"`, default `jupyter`.
 
 Sandbox backend: jupyter (self-host) or daytona (Daytona Cloud).
 
@@ -1582,13 +1582,13 @@ Default runtime language for created sandboxes.
 
 ### `DAYTONA_AUTO_STOP_INTERVAL`
 
-Type `int`, default `15`.
+Type `int`, default `15`, must be >= 0.
 
 Minutes idle before Daytona auto-stops a sandbox (0 disables).
 
 ### `DAYTONA_AUTO_DELETE_INTERVAL`
 
-Type `int`, default `60`.
+Type `int`, default `60`, must be >= -1.
 
 Minutes after stop before Daytona auto-deletes a sandbox (-1 disables).
 
@@ -1605,9 +1605,9 @@ Voice providers and transcription options.
 
 ### `TTS_PROVIDER`
 
-Type `str`, default `google_tts`.
+Type `"google_tts" | "elevenlabs" | "none"`, default `google_tts`.
 
-Text-to-speech provider: google_tts, elevenlabs, or none to switch it off.
+Text-to-speech provider; none switches it off.
 
 ### `ELEVENLABS_API_KEY`
 
@@ -1617,9 +1617,9 @@ ElevenLabs API key.
 
 ### `STT_PROVIDER`
 
-Type `str`, default `openai`.
+Type `"openai" | "faster_whisper" | "none"`, default `openai`.
 
-Speech-to-text provider: openai, faster_whisper, or none to switch it off.
+Speech-to-text provider; none switches it off.
 
 ### `OPENAI_STT_MODEL`
 

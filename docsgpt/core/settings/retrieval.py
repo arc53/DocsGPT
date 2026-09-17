@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
-from docsgpt.core.settings._shared import SettingsGroup
+from docsgpt.core.settings._shared import SettingsGroup, normalize_choice
 
 
 class RetrievalSettings(SettingsGroup):
     """Which vector store answers searches and how retrieval fans out across sources."""
 
-    VECTOR_STORE: str = Field(
-        default="faiss",
-        description="Vector store backend: faiss, elasticsearch, mongodb, qdrant, milvus or pgvector.",
+    VECTOR_STORE: Literal["faiss", "elasticsearch", "mongodb", "qdrant", "milvus", "pgvector"] = Field(
+        default="faiss", description="Vector store backend."
     )
-    RETRIEVERS_ENABLED: list = Field(
+    RETRIEVERS_ENABLED: list[str] = Field(
         default=["classic", "default"],
         description=(
             "Retriever keys an agent may use; must match RetrieverCreator.retrievers registry keys, NOT the "
@@ -25,6 +24,7 @@ class RetrievalSettings(SettingsGroup):
     )
     RETRIEVAL_MAX_PARALLEL_SOURCES: int = Field(
         default=4,
+        ge=1,
         description="Concurrent per-source searches in one retrieval; the query is embedded once and shared.",
     )
     PER_SOURCE_RETRIEVAL_ENABLED: bool = Field(
@@ -38,3 +38,8 @@ class RetrievalSettings(SettingsGroup):
     GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION: int = Field(
         default=2000, description="Hard cap on chunks extracted per source (cost control)."
     )
+
+    @field_validator("VECTOR_STORE", mode="before")
+    @classmethod
+    def _normalize_vector_store(cls, v):
+        return normalize_choice(v)

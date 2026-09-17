@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
-from docsgpt.core.settings._shared import SettingsGroup
+from docsgpt.core.settings._shared import SettingsGroup, normalize_choice
 
 
 class SandboxSettings(SettingsGroup):
     """The app is a CLIENT of an always-on runner; defaults are safe so app import never fails unconfigured."""
 
-    SANDBOX_BACKEND: str = Field(
+    SANDBOX_BACKEND: Literal["jupyter", "daytona"] = Field(
         default="jupyter", description="Sandbox backend: jupyter (self-host) or daytona (Daytona Cloud)."
     )
     SANDBOX_GATEWAY_URL: str = Field(
@@ -78,11 +78,16 @@ class SandboxSettings(SettingsGroup):
     )
     DAYTONA_LANGUAGE: str = Field(default="python", description="Default runtime language for created sandboxes.")
     DAYTONA_AUTO_STOP_INTERVAL: int = Field(
-        default=15, description="Minutes idle before Daytona auto-stops a sandbox (0 disables)."
+        default=15, ge=0, description="Minutes idle before Daytona auto-stops a sandbox (0 disables)."
     )
     DAYTONA_AUTO_DELETE_INTERVAL: int = Field(
-        default=60, description="Minutes after stop before Daytona auto-deletes a sandbox (-1 disables)."
+        default=60, ge=-1, description="Minutes after stop before Daytona auto-deletes a sandbox (-1 disables)."
     )
     DAYTONA_MAX_SANDBOXES: int = Field(
         default=50, description="Cap on concurrent live Daytona sandboxes (cost-DoS guard)."
     )
+
+    @field_validator("SANDBOX_BACKEND", mode="before")
+    @classmethod
+    def _normalize_sandbox_backend(cls, v):
+        return normalize_choice(v)

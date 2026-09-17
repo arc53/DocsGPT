@@ -18,11 +18,12 @@ class EventsSettings(SettingsGroup):
         ),
     )
     EVENTS_STREAM_MAXLEN: int = Field(
-        default=1000, description="Per-user durable backlog cap in entries; ~24h of replay at typical rates."
+        default=1000, ge=1, description="Per-user durable backlog cap in entries; ~24h of replay at typical rates."
     )
     SSE_KEEPALIVE_SECONDS: int = Field(default=15, ge=1, description="Interval between SSE keepalive comments.")
     SSE_MAX_CONCURRENT_PER_USER: int = Field(
         default=8,
+        ge=0,
         description=(
             "Simultaneous SSE connections per user; each holds a pooled async Redis connection for its lifetime. "
             "8 covers multi-tab use without one user starving the pool. 0 disables."
@@ -40,6 +41,7 @@ class EventsSettings(SettingsGroup):
     )
     EVENTS_REPLAY_MAX_PER_REQUEST: int = Field(
         default=200,
+        ge=1,
         description=(
             "Backlog entries XRANGE returns per /api/events snapshot. Bounds what one replay moves from Redis to "
             "the wire: a client looping Last-Event-ID reconnects enumerates at most this many per round-trip."

@@ -9,6 +9,7 @@ tracks the definitions.
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from docsgpt.core.settings import SETTINGS_GROUPS, Settings, settings
 from docsgpt.core.settings.reference import reference_path, render_reference
@@ -107,3 +108,55 @@ class TestReference:
             "docs/content/Deploying/Settings-Reference.mdx is stale; "
             "run: python -m docsgpt.core.settings.reference --write"
         )
+
+
+@pytest.mark.unit
+class TestClosedChoices:
+    """Enum-like settings are Literal types: a typo fails at startup instead of falling through."""
+
+    @pytest.mark.parametrize("raw", ["None", "none", "", "  "])
+    def test_auth_type_unset_spellings(self, raw):
+        assert Settings.model_validate({"AUTH_TYPE": raw}).AUTH_TYPE is None
+
+    @pytest.mark.parametrize(
+        ("name", "raw", "expected"),
+        [
+            ("AUTH_TYPE", " OIDC ", "oidc"),
+            ("VECTOR_STORE", "PGVector", "pgvector"),
+            ("STORAGE_TYPE", "S3", "s3"),
+            ("URL_STRATEGY", "Backend", "backend"),
+            ("OCR_BACKEND", "Native", "native"),
+            ("OCR_ENGINE", "Tesseract ", "tesseract"),
+            ("SANDBOX_BACKEND", "Daytona", "daytona"),
+            ("DOC_PARSER_ENGINE", "Docling", "docling"),
+            ("TTS_PROVIDER", "ElevenLabs", "elevenlabs"),
+            ("STT_PROVIDER", "", "none"),
+            ("TTS_PROVIDER", "NONE", "none"),
+        ],
+    )
+    def test_choices_are_case_insensitive(self, name, raw, expected):
+        assert getattr(Settings.model_validate({name: raw}), name) == expected
+
+    @pytest.mark.parametrize(
+        ("name", "raw"),
+        [
+            ("AUTH_TYPE", "basic"),
+            ("VECTOR_STORE", "lancedb"),
+            ("STORAGE_TYPE", "gcs"),
+            ("OCR_BACKEND", "paddle"),
+            ("SANDBOX_BACKEND", "docker"),
+            ("DOC_PARSER_ENGINE", "fast"),
+            ("STT_PROVIDER", "whisper"),
+        ],
+    )
+    def test_unknown_choice_is_rejected(self, name, raw):
+        with pytest.raises(ValidationError):
+            Settings.model_validate({name: raw})
+
+    @pytest.mark.parametrize(
+        ("name", "raw"),
+        [("EMBEDDINGS_BATCH_SIZE", 0), ("COMPRESSION_THRESHOLD_PERCENTAGE", 1.5), ("UPLOAD_MAX_FILE_BYTES", 0)],
+    )
+    def test_out_of_range_numbers_are_rejected(self, name, raw):
+        with pytest.raises(ValidationError):
+            Settings.model_validate({name: raw})

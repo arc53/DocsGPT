@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from pydantic import AliasChoices, Field
+from typing import Literal
 
-from docsgpt.core.settings._shared import SettingsGroup
+from pydantic import AliasChoices, Field, field_validator
+
+from docsgpt.core.settings._shared import SettingsGroup, normalize_choice
 
 
 class OCRSettings(SettingsGroup):
@@ -25,7 +27,7 @@ class OCRSettings(SettingsGroup):
         validation_alias=AliasChoices("OCR_ATTACHMENTS_ENABLED", "DOCLING_OCR_ATTACHMENTS_ENABLED"),
         description="OCR scanned PDFs and images attached to a chat.",
     )
-    OCR_BACKEND: str = Field(
+    OCR_BACKEND: Literal["auto", "docling", "native"] = Field(
         default="auto",
         description=(
             "Which stack runs OCR when it is on. auto: docling when installed, otherwise native. docling: the "
@@ -35,7 +37,7 @@ class OCRSettings(SettingsGroup):
             "lines under tesseract."
         ),
     )
-    OCR_ENGINE: str = Field(
+    OCR_ENGINE: Literal["tesseract", "deepseek", "auto", "ocrmac", "rapidocr"] = Field(
         default="tesseract",
         description=(
             "OCR engine used when OCR is on. Benched 2026-08 on EN/ZH/table/degraded scans (docs/Guides/ocr has "
@@ -80,6 +82,7 @@ class OCRSettings(SettingsGroup):
     )
     OCR_MIN_CHARS_PER_PAGE: int = Field(
         default=20,
+        ge=0,
         validation_alias=AliasChoices("OCR_MIN_CHARS_PER_PAGE", "DOCLING_OCR_MIN_CHARS_PER_PAGE"),
         description=(
             "Chars-per-page floor below which an OCR'd PDF/image parse is treated as an OCR dropout rather than "
@@ -89,3 +92,8 @@ class OCRSettings(SettingsGroup):
             "guard."
         ),
     )
+
+    @field_validator("OCR_BACKEND", "OCR_ENGINE", mode="before")
+    @classmethod
+    def _normalize_ocr_choices(cls, v):
+        return normalize_choice(v)

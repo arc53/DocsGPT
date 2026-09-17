@@ -15,7 +15,7 @@ class ConnectorSettings(SettingsGroup):
     # Google Drive integration.
     GOOGLE_CLIENT_ID: Optional[str] = Field(default=None, description="Google OAuth client id.")
     GOOGLE_CLIENT_SECRET: Optional[str] = Field(default=None, description="Google OAuth client secret.")
-    CONNECTOR_REDIRECT_BASE_URI: Optional[str] = Field(
+    CONNECTOR_REDIRECT_BASE_URI: str = Field(
         default="http://127.0.0.1:7091/api/connectors/callback",
         description="OAuth callback URL; register it as-is in your provider's console (e.g. GCP).",
     )
@@ -31,7 +31,7 @@ class ConnectorSettings(SettingsGroup):
     # Microsoft Entra ID (Azure AD) integration.
     MICROSOFT_CLIENT_ID: Optional[str] = Field(default=None, description="Azure AD application (client) id.")
     MICROSOFT_CLIENT_SECRET: Optional[str] = Field(default=None, description="Azure AD application client secret.")
-    MICROSOFT_TENANT_ID: Optional[str] = Field(
+    MICROSOFT_TENANT_ID: str = Field(
         default="common", description="Azure AD tenant id, or 'common' for multi-tenant."
     )
     MICROSOFT_AUTHORITY: Optional[str] = Field(

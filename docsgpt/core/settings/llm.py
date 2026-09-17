@@ -59,7 +59,7 @@ class LLMSettings(SettingsGroup):
     DEFAULT_LLM_TOKEN_LIMIT: int = Field(
         default=128000, description="Context window assumed when the model is not found in the registry."
     )
-    RESERVED_TOKENS: dict = Field(
+    RESERVED_TOKENS: dict[str, int] = Field(
         default={"system_prompt": 500, "current_query": 500, "safety_buffer": 1000},
         description="Tokens held back from the context window for the system prompt, the query and a safety buffer.",
     )

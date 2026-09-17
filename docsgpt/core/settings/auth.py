@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import Field, field_validator
 
-from docsgpt.core.settings._shared import SettingsGroup, normalize_secret
+from docsgpt.core.settings._shared import SettingsGroup, normalize_choice, normalize_secret
 
 
 class AuthSettings(SettingsGroup):
     """How users authenticate: none, a shared token, per-session JWTs, or OIDC SSO."""
 
-    AUTH_TYPE: Optional[str] = Field(
+    AUTH_TYPE: Optional[Literal["simple_jwt", "session_jwt", "oidc"]] = Field(
         default=None,
-        description="Authentication mode: simple_jwt, session_jwt, oidc, or unset for no authentication.",
+        description="Authentication mode: simple_jwt, session_jwt, oidc, or unset (None) for no authentication.",
     )
     JWT_SECRET_KEY: str = Field(
         default="",
@@ -51,7 +51,7 @@ class AuthSettings(SettingsGroup):
         default=None, description="Override for the callback URL; default is <request host>/api/auth/oidc/callback."
     )
     OIDC_SESSION_LIFETIME_SECONDS: int = Field(
-        default=28800, description="Lifetime of the minted session JWT in seconds (8h)."
+        default=28800, gt=0, description="Lifetime of the minted session JWT in seconds (8h)."
     )
     OIDC_PROVIDER_NAME: Optional[str] = Field(
         default=None, description='Sign-in button label, e.g. "Acme SSO".'
@@ -85,3 +85,9 @@ class AuthSettings(SettingsGroup):
     @classmethod
     def _normalize_auth_secrets(cls, v):
         return normalize_secret(v)
+
+    @field_validator("AUTH_TYPE", mode="before")
+    @classmethod
+    def _normalize_auth_type(cls, v):
+        # ``AUTH_TYPE=None`` and ``AUTH_TYPE=`` in .env both mean "no authentication".
+        return normalize_choice(normalize_secret(v))

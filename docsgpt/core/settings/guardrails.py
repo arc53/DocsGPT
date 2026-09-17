@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import Field
 
@@ -13,10 +13,10 @@ class GuardrailSettings(SettingsGroup):
     """Input/output checks every agent runs, and the floor no agent may weaken."""
 
     GUARDRAILS_ENABLED: bool = Field(default=True, description="Master switch; False disables every stage.")
-    GUARDRAILS_CHECKS_ENABLED: list = Field(
+    GUARDRAILS_CHECKS_ENABLED: list[str] = Field(
         default=[], description="Allowlist of GuardrailCreator.checks keys; empty means every registered check."
     )
-    GUARDRAILS_FLOOR: dict = Field(
+    GUARDRAILS_FLOOR: dict[str, Any] = Field(
         default={},
         description=(
             "A GuardrailsConfig fragment every agent inherits and cannot weaken; agents may add controls or "

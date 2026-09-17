@@ -24,13 +24,14 @@ class WorkerSettings(SettingsGroup):
     )
     CELERY_WORKER_MAX_MEMORY_PER_CHILD: int = Field(
         default=4194304,
+        ge=0,
         description=(
             "Recycle a prefork child past this resident size in KB; backstops docling/torch heap growth. "
             "Checked between tasks, so it does not bound the peak within one. 0 disables."
         ),
     )
     CELERY_WORKER_MAX_TASKS_PER_CHILD: int = Field(
-        default=0, description="Recycle a worker child after N tasks; 0 disables."
+        default=0, ge=0, description="Recycle a worker child after N tasks; 0 disables."
     )
     API_URL: str = Field(
         default="http://localhost:7091", description="Backend URL the Celery worker calls back into."

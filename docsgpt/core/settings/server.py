@@ -28,7 +28,7 @@ class ServerSettings(SettingsGroup):
         ),
     )
     WSGI_THREADPOOL_WORKERS: int = Field(
-        default=96, description="Threads serving the WSGI (Flask) part of the app under the ASGI server."
+        default=96, ge=1, description="Threads serving the WSGI (Flask) part of the app under the ASGI server."
     )
     V1_SESSION_TTL_SECONDS: int = Field(
         default=24 * 60 * 60,

@@ -32,10 +32,11 @@ class EmbeddingsSettings(SettingsGroup):
         default=None, description="Truncate each remote embed input to N tokens (overflow is lost)."
     )
     EMBEDDINGS_BATCH_SIZE: int = Field(
-        default=32, description="Chunks per store transaction and per remote embed request."
+        default=32, ge=1, description="Chunks per store transaction and per remote embed request."
     )
     EMBEDDINGS_MODEL_BATCH_SIZE: int = Field(
         default=1,
+        ge=1,
         description=(
             "Documents per local ONNX forward pass. Each pass pads to its longest input, and that waste grows "
             "with the square of chunk length: at 1250 tokens, 32 peaked at 6.6 GB, 1 at 2.9 GB."

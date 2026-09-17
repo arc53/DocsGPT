@@ -14,11 +14,11 @@ class AgentSettings(SettingsGroup):
 
     AGENT_NAME: str = Field(default="classic", description="Default agent type for agentless chats.")
     DEFAULT_MAX_HISTORY: int = Field(default=150, description="Default number of history messages kept.")
-    DEFAULT_AGENT_LIMITS: dict = Field(
+    DEFAULT_AGENT_LIMITS: dict[str, int] = Field(
         default={"token_limit": 50000, "request_limit": 500},
         description="Per-agent default quotas: tokens and requests.",
     )
-    DEFAULT_CHAT_TOOLS: list = Field(
+    DEFAULT_CHAT_TOOLS: list[str] = Field(
         default=["memory", "read_webpage", "scheduler"],
         description=(
             "Config-free tools on by default in agentless chats. scheduler is dual-registered in "
@@ -30,6 +30,7 @@ class AgentSettings(SettingsGroup):
     ENABLE_TOOL_PREFETCH: bool = Field(default=True, description="Pre-fetch retrieval before the agent's first turn.")
     TOOL_RESULT_MAX_TOKENS: int = Field(
         default=20000,
+        ge=0,
         description="Cap on one tool result entering the LLM context (0 disables); journal and DB keep it whole.",
     )
 
@@ -38,7 +39,7 @@ class AgentSettings(SettingsGroup):
         default=True, description="Compress long conversations once they approach the context window."
     )
     COMPRESSION_THRESHOLD_PERCENTAGE: float = Field(
-        default=0.8, description="Fraction of the context window at which compression triggers."
+        default=0.8, gt=0, le=1, description="Fraction of the context window at which compression triggers."
     )
     COMPRESSION_MODEL_OVERRIDE: Optional[str] = Field(
         default=None, description="Use a different model for compression; unset reuses the answer model."
@@ -48,7 +49,7 @@ class AgentSettings(SettingsGroup):
         default=3, description="Keep only the last N compression points to prevent DB bloat."
     )
     COMPRESSION_RECENT_FIELD_MAX_TOKENS: int = Field(
-        default=8000, description="Per-field cap on the verbatim tail kept after a compression point (0 disables)."
+        default=8000, ge=0, description="Per-field cap on the verbatim tail kept after a compression point (0 disables)."
     )
 
     # Workflows.

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from pydantic import Field
+from typing import Literal
 
-from docsgpt.core.settings._shared import SettingsGroup
+from pydantic import Field, field_validator
+
+from docsgpt.core.settings._shared import SettingsGroup, normalize_choice
 
 
 class IngestionSettings(SettingsGroup):
@@ -37,7 +39,7 @@ class IngestionSettings(SettingsGroup):
     )
     PARSE_PDF_AS_IMAGE: bool = Field(default=False, description="Render PDF pages to images before parsing.")
     PARSE_IMAGE_REMOTE: bool = Field(default=False, description="Send images to a remote parser.")
-    DOC_PARSER_ENGINE: str = Field(
+    DOC_PARSER_ENGINE: Literal["anydoc", "docling"] = Field(
         default="anydoc",
         description=(
             'Document parser for source ingestion, chat attachments and the read_document tool. "anydoc" '
@@ -66,6 +68,7 @@ class IngestionSettings(SettingsGroup):
     )
     MARKUP_MAX_BYTES: int = Field(
         default=8_000_000,
+        ge=0,
         description=(
             "HTML/XHTML larger than this (bytes) are head-truncated before the markdownify parser runs (the "
             "anydoc engine's HTML path). The tree that path builds costs ~50x the input (30 MB of HTML measured "
@@ -113,9 +116,9 @@ class IngestionSettings(SettingsGroup):
         default=16_777_216, description="Cap on the pixel count of an image passed to an agent."
     )
     GITHUB_INGEST_MAX_FILE_BYTES: int = Field(
-        default=1048576, description="Skip GitHub repo blobs larger than this (0 = no cap)."
+        default=1048576, ge=0, description="Skip GitHub repo blobs larger than this (0 = no cap)."
     )
-    GITHUB_INGEST_MAX_WORKERS: int = Field(default=8, description="Parallel file fetches per GitHub repo ingest.")
+    GITHUB_INGEST_MAX_WORKERS: int = Field(default=8, ge=1, description="Parallel file fetches per GitHub repo ingest.")
 
     # read_document parsing on a dedicated Celery queue (backend parser).
     DOCUMENT_PARSE_QUEUE: str = Field(default="parsing", description="Celery queue the parse_document task is routed to.")
@@ -134,7 +137,7 @@ class IngestionSettings(SettingsGroup):
         default=900, description="Absolute ceiling on the size-scaled parse window, in seconds."
     )
     DOCUMENT_PARSE_MAX_BYTES: int = Field(
-        default=0, description="Cap on a parsed document's bytes (0 = reuse SANDBOX_MAX_INPUT_BYTES)."
+        default=0, ge=0, description="Cap on a parsed document's bytes (0 = reuse SANDBOX_MAX_INPUT_BYTES)."
     )
     DOCUMENT_MAX_DECOMPRESSED_BYTES: int = Field(
         default=300 * 1024 * 1024, description="Cap on bytes decompressed from an archive handed to read_document."
@@ -142,3 +145,8 @@ class IngestionSettings(SettingsGroup):
     DOCUMENT_MAX_ARCHIVE_ENTRIES: int = Field(
         default=10000, description="Cap on entries in an archive handed to read_document."
     )
+
+    @field_validator("DOC_PARSER_ENGINE", mode="before")
+    @classmethod
+    def _normalize_parser_engine(cls, v):
+        return normalize_choice(v)

@@ -27,13 +27,13 @@ class VectorStoreSettings(SettingsGroup):
     ELASTIC_USERNAME: Optional[str] = Field(default=None, description="Elasticsearch username.")
     ELASTIC_PASSWORD: Optional[str] = Field(default=None, description="Elasticsearch password.")
     ELASTIC_URL: Optional[str] = Field(default=None, description="Elasticsearch URL.")
-    ELASTIC_INDEX: Optional[str] = Field(default="docsgpt", description="Elasticsearch index name.")
+    ELASTIC_INDEX: str = Field(default="docsgpt", description="Elasticsearch index name.")
 
     # Qdrant.
-    QDRANT_COLLECTION_NAME: Optional[str] = Field(default="docsgpt", description="Qdrant collection name.")
+    QDRANT_COLLECTION_NAME: str = Field(default="docsgpt", description="Qdrant collection name.")
     QDRANT_LOCATION: Optional[str] = Field(default=None, description="Qdrant location (':memory:' or a URL).")
     QDRANT_URL: Optional[str] = Field(default=None, description="Qdrant server URL.")
-    QDRANT_PORT: Optional[int] = Field(default=6333, description="Qdrant REST port.")
+    QDRANT_PORT: int = Field(default=6333, description="Qdrant REST port.")
     QDRANT_GRPC_PORT: int = Field(default=6334, description="Qdrant gRPC port.")
     QDRANT_PREFER_GRPC: bool = Field(default=False, description="Use gRPC instead of REST where possible.")
     QDRANT_HTTPS: Optional[bool] = Field(default=None, description="Use HTTPS for the Qdrant connection.")
@@ -53,7 +53,7 @@ class VectorStoreSettings(SettingsGroup):
         ),
     )
     PGVECTOR_POOL_MAX_SIZE: int = Field(
-        default=8, description="Per-process connection pool size; 0 uses one direct connection per store."
+        default=8, ge=0, description="Per-process connection pool size; 0 uses one direct connection per store."
     )
     PGVECTOR_IVFFLAT_PROBES: Optional[int] = Field(
         default=None,
@@ -61,7 +61,7 @@ class VectorStoreSettings(SettingsGroup):
     )
 
     # Milvus.
-    MILVUS_COLLECTION_NAME: Optional[str] = Field(default="docsgpt", description="Milvus collection name.")
+    MILVUS_COLLECTION_NAME: str = Field(default="docsgpt", description="Milvus collection name.")
     MILVUS_URI: Optional[str] = Field(
         default_factory=lambda: str(home_dir() / "milvus_local.db"),
         description=(
@@ -69,14 +69,14 @@ class VectorStoreSettings(SettingsGroup):
             "like the other local stores."
         ),
     )
-    MILVUS_TOKEN: Optional[str] = Field(default="", description="Milvus auth token.")
+    MILVUS_TOKEN: str = Field(default="", description="Milvus auth token.")
 
     # LanceDB.
     LANCEDB_PATH: str = Field(
         default_factory=lambda: str(home_dir() / "data" / "lancedb"),
         description="LanceDB local data directory.",
     )
-    LANCEDB_TABLE_NAME: Optional[str] = Field(default="docsgpts", description="LanceDB table for stored vectors.")
+    LANCEDB_TABLE_NAME: str = Field(default="docsgpts", description="LanceDB table for stored vectors.")
 
     @field_validator("PGVECTOR_CONNECTION_STRING", mode="before")
     @classmethod

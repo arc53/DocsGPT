@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import Field, field_validator
 
-from docsgpt.core.settings._shared import SettingsGroup, normalize_secret
+from docsgpt.core.settings._shared import SettingsGroup, normalize_choice, normalize_secret
 
 
 class SpeechSettings(SettingsGroup):
     """Voice providers and transcription options."""
 
-    TTS_PROVIDER: str = Field(
-        default="google_tts", description="Text-to-speech provider: google_tts, elevenlabs, or none to switch it off."
+    TTS_PROVIDER: Literal["google_tts", "elevenlabs", "none"] = Field(
+        default="google_tts", description="Text-to-speech provider; none switches it off."
     )
     ELEVENLABS_API_KEY: Optional[str] = Field(default=None, description="ElevenLabs API key.")
-    STT_PROVIDER: str = Field(
-        default="openai", description="Speech-to-text provider: openai, faster_whisper, or none to switch it off."
+    STT_PROVIDER: Literal["openai", "faster_whisper", "none"] = Field(
+        default="openai", description="Speech-to-text provider; none switches it off."
     )
     OPENAI_STT_MODEL: str = Field(default="gpt-4o-mini-transcribe", description="OpenAI transcription model.")
     STT_LANGUAGE: Optional[str] = Field(default=None, description="Language hint for transcription; unset auto-detects.")
@@ -29,3 +29,10 @@ class SpeechSettings(SettingsGroup):
     @classmethod
     def _normalize_speech_secrets(cls, v):
         return normalize_secret(v)
+
+    @field_validator("TTS_PROVIDER", "STT_PROVIDER", mode="before")
+    @classmethod
+    def _normalize_speech_providers(cls, v):
+        # An empty value has always meant "off"; keep that spelling working.
+        v = normalize_choice(v)
+        return "none" if v == "" else v

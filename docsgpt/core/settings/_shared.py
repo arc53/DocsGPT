@@ -9,7 +9,7 @@ domain's definitions live in their own module.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,6 +18,13 @@ class SettingsGroup(BaseSettings):
     """Base for one domain's settings; groups are composed into ``Settings``."""
 
     model_config = SettingsConfigDict(extra="ignore")
+
+
+def normalize_choice(value: Any) -> Any:
+    """Case-fold a closed-choice setting so ``PGVector`` and ``pgvector`` are the same choice."""
+    if isinstance(value, str):
+        return value.strip().lower()
+    return value
 
 
 def normalize_secret(value: Optional[str]) -> Optional[str]:
