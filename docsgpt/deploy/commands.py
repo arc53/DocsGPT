@@ -796,7 +796,8 @@ def _check_postgres(uri: Optional[str]) -> Check:
             applied = cursor.fetchone()[0] is not None
             current = None
             if applied:
-                cursor.execute("select version_num from alembic_version")
+                # public, like the to_regclass check above: search_path could resolve another one.
+                cursor.execute("select version_num from public.alembic_version")
                 row = cursor.fetchone()
                 current = row[0] if row else None
     except (psycopg.Error, OSError, ValueError) as exc:
@@ -808,6 +809,18 @@ def _check_postgres(uri: Optional[str]) -> Check:
         return Check("postgres", "fail", f"PostgreSQL {version} at {current}, this version wants {head}; "
                                          "run `docsgpt migrate`")
     return Check("postgres", "ok", f"PostgreSQL {version}, schema at {current}")
+
+
+def _redis_endpoint(url: str) -> str:
+    """A Redis URL without its credentials: this ends up on a terminal, in CI logs and in issues."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "the configured URL"
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return f"{parts.scheme}://{host}{parts.path}" if host else "the configured URL"
 
 
 def _check_redis(urls: Mapping[str, str]) -> Check:
@@ -822,7 +835,7 @@ def _check_redis(urls: Mapping[str, str]) -> Check:
         try:
             redis.Redis.from_url(url, socket_connect_timeout=3).ping()
         except Exception as exc:  # noqa: BLE001 - every client error here is the same finding
-            return Check("redis", "fail", f"{label} ({url}) does not answer: {str(exc).strip()}")
+            return Check("redis", "fail", f"{label} ({_redis_endpoint(url)}) does not answer: {str(exc).strip()}")
     return Check("redis", "ok", f"answering on {len(urls)} database(s)")
 
 

@@ -134,9 +134,10 @@ class FakeCursor:
     def __init__(self, version, table, revision):
         self.answers = [(version,), (table,), (revision,) if revision else None]
         self.given = 0
+        self.statements = []
 
     def execute(self, statement):
-        self.statement = statement
+        self.statements.append(statement)
 
     def fetchone(self):
         answer = self.answers[self.given]
@@ -167,8 +168,10 @@ class FakeConnection:
 def _postgres_answering(monkeypatch, version="16.2", table="alembic_version", revision="0031_x", head="0031_x"):
     import psycopg
 
-    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: FakeConnection(FakeCursor(version, table, revision)))
+    cursor = FakeCursor(version, table, revision)
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: FakeConnection(cursor))
     monkeypatch.setattr(commands, "_migration_head", lambda: head)
+    return cursor
 
 
 class TestPostgresCheck:
@@ -177,6 +180,13 @@ class TestPostgresCheck:
         check = commands._check_postgres("postgresql://localhost/d")
         assert check.level == "ok"
         assert "16.2" in check.detail and "0031_x" in check.detail
+
+    def test_the_revision_comes_from_the_schema_that_was_checked(self, monkeypatch):
+        """to_regclass looks in public, so the second query must not resolve through search_path."""
+        cursor = _postgres_answering(monkeypatch)
+        commands._check_postgres("postgresql://localhost/d")
+        revision_query = [statement for statement in cursor.statements if "version_num" in statement]
+        assert revision_query and all("public.alembic_version" in statement for statement in revision_query)
 
     def test_a_database_with_no_schema_yet(self, monkeypatch):
         """The commonest first-run state: the database exists, nothing has been migrated into it."""
@@ -233,6 +243,27 @@ class TestRedisCheck:
         check = commands._check_redis({"cache": "redis://localhost:6379/2"})
         assert check.level == "fail"
         assert "cache" in check.detail and "6379/2" in check.detail
+
+    def test_a_password_in_the_url_is_never_printed(self, monkeypatch):
+        """doctor output goes into terminals, CI logs and pasted issue reports."""
+        import redis
+
+        def from_url(cls, url, **kwargs):
+            class Client:
+                def ping(self):
+                    raise ConnectionError("connection refused")
+
+            return Client()
+
+        monkeypatch.setattr(redis.Redis, "from_url", classmethod(from_url))
+        check = commands._check_redis({"broker": "rediss://default:sUpErSeCrEt@redis.example.com:6380/0"})
+        assert check.level == "fail"
+        assert "sUpErSeCrEt" not in check.detail
+        assert "default" not in check.detail
+        assert "redis.example.com:6380/0" in check.detail, "the endpoint still has to be identifiable"
+
+    def test_a_malformed_url_is_not_echoed_either(self):
+        assert commands._redis_endpoint("redis://[::1") == "the configured URL"
 
     def test_without_any_redis_configured(self):
         assert commands._check_redis({}).level == "fail"
