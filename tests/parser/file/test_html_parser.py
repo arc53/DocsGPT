@@ -356,3 +356,48 @@ def test_a_table_without_a_rowspan_is_unchanged(html, expected):
 
     assert _table_rows(html_to_markdown(html)) == expected
 
+
+
+def test_a_span_attribute_does_not_blow_up_the_output():
+    """One cell spanning 1000 rows and 1000 columns asked for a million
+    placeholders. Past a few placeholders per real cell the table is converted
+    without the padding, so the output stays the size of the page."""
+    import time
+
+    from docsgpt.parser.file.html_parser import html_to_markdown
+
+    html = (
+        "<table><tr><td rowspan='1000' colspan='1000'>x</td></tr>"
+        + "<tr><td>a</td></tr>" * 999
+        + "</table><p>after</p>"
+    )
+
+    started = time.perf_counter()
+    markdown = html_to_markdown(html)
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < 5
+    assert len(markdown) < 10 * len(html)
+    assert markdown.rstrip().endswith("after")
+
+
+def test_many_rowspans_are_filled_in_linear_time():
+    """Inserting each placeholder with insert_before scanned its siblings, so
+    30,000 of them in front of one cell took quadratic time."""
+    import time
+
+    from docsgpt.parser.file.html_parser import html_to_markdown
+
+    spans = 30_000
+    html = (
+        "<table><tr>"
+        + "<td rowspan='2'>h</td>" * spans
+        + "</tr><tr><td>last</td></tr></table>"
+    )
+
+    started = time.perf_counter()
+    rows = _table_rows(html_to_markdown(html))
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < 5
+    assert rows[-1] == [""] * spans + ["last"]
