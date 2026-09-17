@@ -277,7 +277,7 @@ def _delegation_enabled() -> bool:
     with a ``MagicMock``, whose every attribute is a truthy object, and
     ``bool()`` on that would silently route them through the broker.
     """
-    return getattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False) is True
+    return settings.EMBEDDINGS_DELEGATE_TO_WORKER is True
 
 
 def get_embeddings(

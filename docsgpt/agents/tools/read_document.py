@@ -255,7 +255,7 @@ class ReadDocumentTool(Tool):
         # The task's per-call time limits are raised to match the awaited window: bound to
         # the base timeout at import, the worker would otherwise self-terminate a large
         # parse long before this await gives up.
-        queue = getattr(settings, "DOCUMENT_PARSE_QUEUE", "parsing")
+        queue = settings.DOCUMENT_PARSE_QUEUE
         try:
             async_result = parse_document.apply_async(
                 args=[artifact_id, parent, self.user_id, options],

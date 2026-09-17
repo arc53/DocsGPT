@@ -24,18 +24,19 @@ def _make_llm(monkeypatch, store_responses=True, **extra_settings):
         "docsgpt.llm.openai.StorageCreator",
         types.SimpleNamespace(get_storage=lambda: None),
     )
-    monkeypatch.setattr(
-        "docsgpt.llm.openai.settings",
-        types.SimpleNamespace(
-            OPENAI_API_KEY="k",
-            API_KEY="k",
-            OPENAI_BASE_URL="",
-            AZURE_DEPLOYMENT_NAME="dep",
-            OPENAI_RESPONSES_STORE=store_responses,
-            OPENAI_REASONING_SUMMARY="auto",
-            **extra_settings,
-        ),
-    )
+    # Every setting the Responses path reads, with the hints off; tests opt in per case.
+    stub = {
+        "OPENAI_API_KEY": "k",
+        "API_KEY": "k",
+        "OPENAI_BASE_URL": "",
+        "AZURE_DEPLOYMENT_NAME": "dep",
+        "OPENAI_RESPONSES_STORE": store_responses,
+        "OPENAI_REASONING_SUMMARY": "auto",
+        "OPENAI_RESPONSES_TRUNCATION_AUTO": False,
+        "OPENAI_PROMPT_CACHE_KEY": False,
+        "OPENAI_PROMPT_CACHE_RETENTION": None,
+    }
+    monkeypatch.setattr("docsgpt.llm.openai.settings", types.SimpleNamespace(**{**stub, **extra_settings}))
     from docsgpt.llm.openai import OpenAILLM
 
     llm = OpenAILLM(api_key="k")
@@ -142,7 +143,7 @@ def _params(llm, **kwargs):
 
 
 @pytest.mark.unit
-def test_build_responses_params_defaults_omit_truncation_and_cache_hints(monkeypatch):
+def test_build_responses_params_omits_truncation_and_cache_hints_when_off(monkeypatch):
     llm = _make_llm(monkeypatch)
     llm._prompt_cache_key = "conv-123"
     params = _params(llm)

@@ -309,7 +309,7 @@ def reembed_pgvector(source_id: str, batch_size: int, dry_run: bool) -> Tuple[in
         # The graph seeds every traversal from its own vectors, so leaving them
         # in the old model's space is the same silent mismatch this script
         # exists to remove -- and at equal widths nothing would report it.
-        if getattr(settings, "GRAPHRAG_ENABLED", False):
+        if settings.GRAPHRAG_ENABLED:
             nodes = reembed_graph_nodes(store, conn, source_id, batch_size, dry_run)
             if nodes:
                 logger.info(
@@ -512,7 +512,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # latency and a dependency on a worker running. Loading the model here also
     # means the script reports a real failure for a model it cannot load,
     # instead of timing out against an empty queue.
-    if getattr(settings, "EMBEDDINGS_DELEGATE_TO_WORKER", False):
+    if settings.EMBEDDINGS_DELEGATE_TO_WORKER:
         logger.info("Embedding in-process; worker delegation does not apply here.")
         settings.EMBEDDINGS_DELEGATE_TO_WORKER = False
 

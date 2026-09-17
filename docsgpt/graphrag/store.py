@@ -77,11 +77,9 @@ class GraphStore:
     """Stores and queries a per-source knowledge graph in the pgvector DB."""
 
     def __init__(self, connection_string: Optional[str] = None):
-        self._connection_string = connection_string or getattr(
-            settings, "PGVECTOR_CONNECTION_STRING", None
-        )
+        self._connection_string = connection_string or settings.PGVECTOR_CONNECTION_STRING
 
-        if not self._connection_string and getattr(settings, "POSTGRES_URI", None):
+        if not self._connection_string and settings.POSTGRES_URI:
             from docsgpt.core.db_uri import normalize_pgvector_connection_string
 
             self._connection_string = normalize_pgvector_connection_string(

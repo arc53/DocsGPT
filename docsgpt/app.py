@@ -1,5 +1,4 @@
 import logging
-import os
 import platform
 import uuid
 
@@ -170,16 +169,8 @@ def enforce_document_upload_request_size_limit():
 # only local development may use the atomic filesystem fallback.
 settings.JWT_SECRET_KEY = resolve_jwt_secret_key(
     settings.JWT_SECRET_KEY,
-    os.getenv("DEPLOYMENT_TYPE"),
+    settings.DEPLOYMENT_TYPE,
 )
-if settings.AUTH_TYPE == "oidc":
-    _missing_oidc = [
-        name
-        for name in ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_FRONTEND_URL")
-        if not getattr(settings, name)
-    ]
-    if _missing_oidc:
-        raise RuntimeError(f"AUTH_TYPE=oidc requires settings: {', '.join(_missing_oidc)}")
 SIMPLE_JWT_TOKEN = None
 if settings.AUTH_TYPE == "simple_jwt":
     payload = {"sub": "local"}

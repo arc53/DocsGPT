@@ -113,7 +113,7 @@ def bridge_attachment(
     # Reject oversize attachments BEFORE buffering them: the authoritative ``size``
     # column lets us avoid pulling a multi-hundred-MB file fully into worker memory,
     # and the bounded read below backstops a missing/lying ``size``.
-    max_bytes = int(getattr(settings, "ARTIFACT_MAX_BYTES", 0) or 0)
+    max_bytes = int(settings.ARTIFACT_MAX_BYTES or 0)
     declared_size = attachment.get("size")
     if max_bytes and isinstance(declared_size, (int, float)) and declared_size > max_bytes:
         raise AttachmentBridgeError(

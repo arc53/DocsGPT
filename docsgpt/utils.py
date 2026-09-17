@@ -347,7 +347,7 @@ def generate_agent_image_capability(
     agent_id: object, image_path: object, user_id: object
 ) -> str:
     """Create an HMAC capability for one agent's current internal image."""
-    secret = getattr(settings, "JWT_SECRET_KEY", "")
+    secret = settings.JWT_SECRET_KEY
     if not isinstance(secret, str) or not secret:
         return ""
     try:
@@ -389,7 +389,7 @@ def generate_image_url(image_path, agent_id=None, user_id=None):
     if not capability:
         return ""
     canonical_agent_id = str(uuid.UUID(str(agent_id)))
-    base_url = getattr(settings, "API_URL", "http://localhost:7091").rstrip("/")
+    base_url = settings.API_URL.rstrip("/")
     return f"{base_url}/api/images/{canonical_agent_id}/{capability}"
 
 

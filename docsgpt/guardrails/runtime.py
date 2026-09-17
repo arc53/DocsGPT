@@ -38,7 +38,7 @@ def _merge_mode(agent_mode: str, floor_mode: str) -> str:
 
 def instance_floor() -> Optional[GuardrailsConfig]:
     """The operator-set minimum, or None when unset/invalid."""
-    raw = getattr(settings, "GUARDRAILS_FLOOR", None)
+    raw = settings.GUARDRAILS_FLOOR
     if not raw:
         return None
     try:
@@ -104,7 +104,7 @@ def floor_keys() -> set:
 
 def resolve_config(raw_agent_config: Optional[dict]) -> GuardrailsConfig:
     """Parse ``agents.config`` and apply the instance floor."""
-    if not getattr(settings, "GUARDRAILS_ENABLED", True):
+    if not settings.GUARDRAILS_ENABLED:
         return GuardrailsConfig()
     agent = AgentConfig.parse(raw_agent_config).guardrails
     return merge_floor(agent, instance_floor())
@@ -123,7 +123,7 @@ def _judge_factory(agent):
             decoded_token=agent.decoded_token,
             model_id=(
                 model_override
-                or getattr(settings, "GUARDRAILS_JUDGE_MODEL", None)
+                or settings.GUARDRAILS_JUDGE_MODEL
                 or agent.upstream_model_id
             ),
             agent_id=agent.agent_id,
@@ -169,7 +169,7 @@ class GuardrailRecorder:
         self._seen: set = set()
 
     def __call__(self, decision: StageDecision) -> None:
-        store_text = bool(getattr(settings, "GUARDRAILS_STORE_SCANNED_TEXT", False))
+        store_text = bool(settings.GUARDRAILS_STORE_SCANNED_TEXT)
         for verdict in decision.verdicts:
             if not verdict.outcome.triggered and verdict.outcome.evaluated:
                 continue

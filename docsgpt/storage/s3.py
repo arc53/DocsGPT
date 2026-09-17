@@ -4,6 +4,7 @@ import io
 import logging
 import os
 import posixpath
+import warnings
 from typing import BinaryIO, Callable, List, Optional, Tuple
 
 import boto3
@@ -30,9 +31,13 @@ class S3Storage(BaseStorage):
         secret_key = settings.S3_SECRET_ACCESS_KEY
         region = settings.S3_REGION
 
-        legacy_access = getattr(settings, "SAGEMAKER_ACCESS_KEY", None)
-        legacy_secret = getattr(settings, "SAGEMAKER_SECRET_KEY", None)
-        legacy_region = getattr(settings, "SAGEMAKER_REGION", None)
+        # The SAGEMAKER_* fields are marked deprecated on the model and warn on every read;
+        # this is the one sanctioned reader, and it raises its own operator-facing warning.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            legacy_access = settings.SAGEMAKER_ACCESS_KEY
+            legacy_secret = settings.SAGEMAKER_SECRET_KEY
+            legacy_region = settings.SAGEMAKER_REGION
 
         used_legacy = (
             (not access_key and legacy_access)

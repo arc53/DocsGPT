@@ -421,7 +421,7 @@ class TestBaseLLMAbstractRawGen:
 
 
 # ---------------------------------------------------------------------------
-# docsgpt/core/settings.py  (line 184 - clean_none_string)
+# docsgpt/core/settings  (normalize_api_key)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestSettingsNormalizeApiKey:

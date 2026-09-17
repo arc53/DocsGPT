@@ -1,0 +1,1652 @@
+---
+title: Settings Reference
+description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
+---
+
+{/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
+
+# Settings Reference
+
+Every setting DocsGPT reads, generated from `docsgpt/core/settings/`. Each one is
+an environment variable of the same name, set in `.env` or the process
+environment; see [App Configuration](/Deploying/DocsGPT-Settings) for how the
+file is found and for worked examples. `<DOCSGPT_HOME>` below is the data home
+described there.
+
+
+## Authentication
+
+How users authenticate: none, a shared token, per-session JWTs, or OIDC SSO.
+
+### `AUTH_TYPE`
+
+Type `"simple_jwt" | "session_jwt" | "oidc"`, default unset.
+
+Authentication mode: simple_jwt, session_jwt, oidc, or unset (None) for no authentication.
+
+### `JWT_SECRET_KEY`
+
+Type `str`, default `""`.
+
+Signing key for session tokens and other signed capabilities. Required on every replica in production; local development may fall back to a key generated on disk.
+
+### `ENCRYPTION_SECRET_KEY`
+
+Type `str`, default `default-docsgpt-encryption-key`.
+
+Key used to encrypt stored credentials such as tool and connector secrets.
+
+### `INTERNAL_KEY`
+
+Type `str`, default unset.
+
+Internal API key for worker-to-backend authentication.
+
+### `OIDC_ISSUER`
+
+Type `str`, default unset.
+
+OIDC issuer URL with discovery, e.g. https://auth.example.com/application/o/docsgpt/.
+
+### `OIDC_CLIENT_ID`
+
+Type `str`, default unset.
+
+OIDC client id.
+
+### `OIDC_CLIENT_SECRET`
+
+Type `str`, default unset.
+
+OIDC client secret. Optional; PKCE is always used.
+
+### `OIDC_SCOPES`
+
+Type `str`, default `openid profile email`.
+
+Scopes requested from the IdP.
+
+### `OIDC_USER_ID_CLAIM`
+
+Type `str`, default `sub`.
+
+ID-token claim mapped to the DocsGPT user id.
+
+### `OIDC_FRONTEND_URL`
+
+Type `str`, default unset.
+
+Browser-facing app origin, e.g. http://localhost:5173.
+
+### `OIDC_REDIRECT_URI`
+
+Type `str`, default unset.
+
+Override for the callback URL; default is &lt;request host>/api/auth/oidc/callback.
+
+### `OIDC_SESSION_LIFETIME_SECONDS`
+
+Type `int`, default `28800`, must be `> 0`.
+
+Lifetime of the minted session JWT in seconds (8h).
+
+### `OIDC_PROVIDER_NAME`
+
+Type `str`, default unset.
+
+Sign-in button label, e.g. "Acme SSO".
+
+### `OIDC_ALLOWED_GROUPS`
+
+Type `str`, default unset.
+
+Comma-separated group allowlist; unset admits any authenticated user.
+
+### `OIDC_GROUPS_CLAIM`
+
+Type `str`, default `groups`.
+
+ID-token/userinfo claim carrying group membership.
+
+### `OIDC_ADMIN_GROUPS`
+
+Type `str`, default unset.
+
+Comma-separated groups granted admin; unset means no OIDC admin mapping.
+
+### `LOCAL_MODE_ADMIN`
+
+Type `bool`, default `false`.
+
+Grant admin without a database role. Persisted admin grants live in user_roles (AUTH_TYPE=oidc only); this is the only non-DB admin path, for AUTH_TYPE=None self-host. MUST stay False if networked.
+
+### `SCIM_ENABLED`
+
+Type `bool`, default `false`.
+
+Enable SCIM 2.0 provisioning at /scim/v2.
+
+### `SCIM_TOKEN`
+
+Type `str`, default unset.
+
+Bearer token for IdP SCIM clients (required when SCIM is enabled).
+
+
+## LLM providers
+
+Which model answers, how it is reached, and provider-specific behaviour.
+
+### `LLM_PROVIDER`
+
+Type `str`, default `docsgpt`.
+
+LLM provider key, e.g. openai, anthropic, docsgpt.
+
+### `LLM_NAME`
+
+Type `str`, default unset.
+
+Model name for the provider; with openai, e.g. gpt-4 or gpt-3.5-turbo.
+
+### `API_KEY`
+
+Type `str`, default unset.
+
+LLM API key used by LLM_PROVIDER.
+
+### `OPENAI_API_KEY`
+
+Type `str`, default unset.
+
+OpenAI API key.
+
+### `ANTHROPIC_API_KEY`
+
+Type `str`, default unset.
+
+Anthropic API key.
+
+### `GOOGLE_API_KEY`
+
+Type `str`, default unset.
+
+Google AI API key.
+
+### `GROQ_API_KEY`
+
+Type `str`, default unset.
+
+Groq API key.
+
+### `HUGGINGFACE_API_KEY`
+
+Type `str`, default unset.
+
+Hugging Face API key.
+
+### `OPEN_ROUTER_API_KEY`
+
+Type `str`, default unset.
+
+OpenRouter API key.
+
+### `NOVITA_API_KEY`
+
+Type `str`, default unset.
+
+Novita API key.
+
+### `OPENAI_API_BASE`
+
+Type `str`, default unset.
+
+Azure OpenAI API base URL.
+
+### `OPENAI_API_VERSION`
+
+Type `str`, default unset.
+
+Azure OpenAI API version.
+
+### `AZURE_DEPLOYMENT_NAME`
+
+Type `str`, default unset.
+
+Azure deployment name for answering.
+
+### `AZURE_EMBEDDINGS_DEPLOYMENT_NAME`
+
+Type `str`, default unset.
+
+Azure deployment name for embeddings.
+
+### `OPENAI_BASE_URL`
+
+Type `str`, default unset.
+
+Base URL for OpenAI-compatible model servers.
+
+### `LLM_PATH`
+
+Type `str`, default `<DOCSGPT_HOME>/models/docsgpt-7b-f16.gguf`.
+
+Path to the local GGUF model used by the llama.cpp provider.
+
+### `FALLBACK_LLM_PROVIDER`
+
+Type `str`, default unset.
+
+Provider for the fallback LLM.
+
+### `FALLBACK_LLM_NAME`
+
+Type `str`, default unset.
+
+Model name for the fallback LLM.
+
+### `FALLBACK_LLM_API_KEY`
+
+Type `str`, default unset.
+
+API key for the fallback LLM.
+
+### `TITLE_MODEL_ID`
+
+Type `str`, default unset.
+
+Optional cheaper model for conversation titles; unset reuses the answer model.
+
+### `MODELS_CONFIG_DIR`
+
+Type `str`, default unset.
+
+Directory of operator-supplied model YAMLs, loaded after the built-in catalog; later wins on duplicate model id. See docsgpt/core/models/README.md.
+
+### `DEFAULT_LLM_TOKEN_LIMIT`
+
+Type `int`, default `128000`.
+
+Context window assumed when the model is not found in the registry.
+
+### `RESERVED_TOKENS`
+
+Type `dict[str, int]`, default `{"system_prompt": 500, "current_query": 500, "safety_buffer": 1000}`.
+
+Tokens held back from the context window for the system prompt, the query and a safety buffer.
+
+### `CACHE_REDIS_URL`
+
+Type `str`, default `redis://localhost:6379/2`.
+
+Redis URL for the LLM cache.
+
+### `OPENAI_RESPONSES_STORE`
+
+Type `bool`, default `false`.
+
+True persists Responses API calls server-side so previous_response_id can chain turns. False keeps them stateless, carrying reasoning across the tool loop as encrypted items.
+
+### `OPENAI_RESPONSES_CHAIN_ACROSS_TURNS`
+
+Type `bool`, default `true`.
+
+Cross-turn previous_response_id chaining (store mode only). The chained transcript lives on the provider and is invisible to every local guard, so it is bounded: a turn starts from the local history when the previous turn's reported prompt already reached the budget (default: the model's context window) or when the conversation was compressed after that turn was produced.
+
+### `OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS`
+
+Type `int`, default unset.
+
+Prompt-token budget for cross-turn chaining; unset uses the model's context window.
+
+### `OPENAI_RESPONSES_TRUNCATION_AUTO`
+
+Type `bool`, default `false`.
+
+Send truncation: "auto" so the provider drops the oldest input items instead of failing every request once a chain exceeds the model's window.
+
+### `OPENAI_PROMPT_CACHE_KEY`
+
+Type `bool`, default `true`.
+
+Route a user's Responses API calls to the same prompt-cache shard with an opaque per-user key.
+
+### `OPENAI_PROMPT_CACHE_RETENTION`
+
+Type `str`, default unset.
+
+Request extended prompt-cache retention where the provider offers it.
+
+### `OPENAI_REASONING_SUMMARY`
+
+Type `str`, default `auto`.
+
+Reasoning summary mode requested from the Responses API.
+
+
+## Embeddings
+
+The embedding model, remote or local, and the batching around it.
+
+### `EMBEDDINGS_NAME`
+
+Type `str`, default `huggingface_sentence-transformers/all-mpnet-base-v2`.
+
+Embedding model. The legacy model is the default on purpose: an install that never pinned this has vectors from it, and granite is the same width so a swap would fail silently. New installs get granite from .env-template; existing ones switch by setting this and running docsgpt.scripts.reembed.
+
+### `EMBEDDINGS_BASE_URL`
+
+Type `str`, default unset.
+
+Remote embeddings API URL (OpenAI-compatible).
+
+### `EMBEDDINGS_KEY`
+
+Type `str`, default unset.
+
+API key for embeddings (with OpenAI, the same value as API_KEY).
+
+### `EMBEDDINGS_MAX_INPUT_TOKENS`
+
+Type `int`, default unset.
+
+Truncate each remote embed input to N tokens (overflow is lost).
+
+### `EMBEDDINGS_BATCH_SIZE`
+
+Type `int`, default `32`, must be `>= 1`.
+
+Chunks per store transaction and per remote embed request.
+
+### `EMBEDDINGS_MODEL_BATCH_SIZE`
+
+Type `int`, default `1`, must be `>= 1`.
+
+Documents per local ONNX forward pass. Each pass pads to its longest input, and that waste grows with the square of chunk length: at 1250 tokens, 32 peaked at 6.6 GB, 1 at 2.9 GB.
+
+### `EMBEDDINGS_THREADS`
+
+Type `int`, default unset.
+
+Intra-op threads for the local ONNX runner; unset uses every core. It scales sub-linearly, so several single-threaded workers beat one many-threaded process on the same cores.
+
+### `EMBEDDINGS_CACHE_DIR`
+
+Type `str`, default `<DOCSGPT_HOME>/models`.
+
+Where embedding models and their tokenizers are cached. Persistent by default: FastEmbed's own default is the temp dir.
+
+### `EMBEDDINGS_POOLING`
+
+Type `"cls" | "mean"`, default unset.
+
+Pooling strategy ("cls" or "mean"). Read from the model's own repository; set only for a repository that declares none, or to override what it declares.
+
+### `EMBEDDINGS_NORMALIZE`
+
+Type `bool`, default unset.
+
+L2-normalise embeddings. Read from the model's own repository; set only for a repository that declares nothing, or to override what it declares.
+
+### `EMBEDDINGS_DELEGATE_TO_WORKER`
+
+Type `bool`, default `true`.
+
+Embed on the worker so the API holds no model (~890 MB), at one broker round trip per query. Ignored when EMBEDDINGS_BASE_URL is set, which is the better answer for production.
+
+### `EMBEDDINGS_QUEUE`
+
+Type `str`, default `embeddings`.
+
+Celery queue the embed task is routed to.
+
+### `EMBEDDINGS_DELEGATE_TIMEOUT`
+
+Type `int`, default `60`, must be `> 0`.
+
+Seconds the API waits for the worker to return an embedding.
+
+
+## Retrieval
+
+Which vector store answers searches and how retrieval fans out across sources.
+
+### `VECTOR_STORE`
+
+Type `"faiss" | "elasticsearch" | "mongodb" | "qdrant" | "milvus" | "pgvector"`, default `faiss`.
+
+Vector store backend.
+
+### `RETRIEVAL_MAX_PARALLEL_SOURCES`
+
+Type `int`, default `4`, must be `>= 1`.
+
+Concurrent per-source searches in one retrieval; the query is embedded once and shared.
+
+### `PER_SOURCE_RETRIEVAL_ENABLED`
+
+Type `bool`, default `true`.
+
+Kill-switch for per-source retrieval dispatch; False collapses to a single retriever.
+
+### `GRAPHRAG_ENABLED`
+
+Type `bool`, default `false`.
+
+Gates graph-aware ingestion and retrieval.
+
+### `GRAPHRAG_EXTRACTION_MODEL`
+
+Type `str`, default unset.
+
+Model for ingest-time graph extraction; unset reuses LLM_PROVIDER/LLM_NAME.
+
+### `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`
+
+Type `int`, default `2000`, must be `>= 0`.
+
+Hard cap on chunks extracted per source (cost control); 0 extracts nothing.
+
+
+## Vector stores
+
+Per-backend connection details; only the backend named by VECTOR_STORE is read.
+
+### `MONGO_URI`
+
+Type `str`, default unset.
+
+Only consulted when VECTOR_STORE=mongodb or when running scripts/db/backfill.py; user data lives in Postgres.
+
+### `ELASTIC_CLOUD_ID`
+
+Type `str`, default unset.
+
+Elastic Cloud id.
+
+### `ELASTIC_USERNAME`
+
+Type `str`, default unset.
+
+Elasticsearch username.
+
+### `ELASTIC_PASSWORD`
+
+Type `str`, default unset.
+
+Elasticsearch password.
+
+### `ELASTIC_URL`
+
+Type `str`, default unset.
+
+Elasticsearch URL.
+
+### `ELASTIC_INDEX`
+
+Type `str`, default `docsgpt`.
+
+Elasticsearch index name.
+
+### `QDRANT_COLLECTION_NAME`
+
+Type `str`, default `docsgpt`.
+
+Qdrant collection name.
+
+### `QDRANT_LOCATION`
+
+Type `str`, default unset.
+
+Qdrant location (':memory:' or a URL).
+
+### `QDRANT_URL`
+
+Type `str`, default unset.
+
+Qdrant server URL.
+
+### `QDRANT_PORT`
+
+Type `int`, default `6333`.
+
+Qdrant REST port.
+
+### `QDRANT_GRPC_PORT`
+
+Type `int`, default `6334`.
+
+Qdrant gRPC port.
+
+### `QDRANT_PREFER_GRPC`
+
+Type `bool`, default `false`.
+
+Use gRPC instead of REST where possible.
+
+### `QDRANT_HTTPS`
+
+Type `bool`, default unset.
+
+Use HTTPS for the Qdrant connection.
+
+### `QDRANT_API_KEY`
+
+Type `str`, default unset.
+
+Qdrant API key.
+
+### `QDRANT_PREFIX`
+
+Type `str`, default unset.
+
+URL prefix for a Qdrant behind a proxy.
+
+### `QDRANT_TIMEOUT`
+
+Type `float`, default unset.
+
+Qdrant request timeout in seconds.
+
+### `QDRANT_HOST`
+
+Type `str`, default unset.
+
+Qdrant host (alternative to QDRANT_URL).
+
+### `QDRANT_PATH`
+
+Type `str`, default unset.
+
+Path for an embedded on-disk Qdrant.
+
+### `QDRANT_DISTANCE_FUNC`
+
+Type `str`, default `Cosine`.
+
+Qdrant distance function.
+
+### `PGVECTOR_CONNECTION_STRING`
+
+Type `str`, default unset.
+
+pgvector connection string. postgres://, postgresql:// and postgresql+psycopg:// are all accepted and normalized internally for psycopg.connect(). Unset falls back to POSTGRES_URI.
+
+### `PGVECTOR_POOL_MAX_SIZE`
+
+Type `int`, default `8`, must be `>= 0`.
+
+Per-process connection pool size; 0 uses one direct connection per store.
+
+### `PGVECTOR_IVFFLAT_PROBES`
+
+Type `int`, default unset.
+
+IVFFlat probes; unset derives sqrt(lists) from the index. Higher means better recall, more scan.
+
+### `MILVUS_COLLECTION_NAME`
+
+Type `str`, default `docsgpt`.
+
+Milvus collection name.
+
+### `MILVUS_URI`
+
+Type `str`, default `<DOCSGPT_HOME>/milvus_local.db`.
+
+Milvus server URI. The default is a milvus-lite (embedded) database file under the data home, like the other local stores.
+
+### `MILVUS_TOKEN`
+
+Type `str`, default `""`.
+
+Milvus auth token.
+
+### `LANCEDB_PATH`
+
+Type `str`, default `<DOCSGPT_HOME>/data/lancedb`.
+
+LanceDB local data directory.
+
+### `LANCEDB_TABLE_NAME`
+
+Type `str`, default `docsgpts`.
+
+LanceDB table for stored vectors.
+
+
+## User-data database
+
+The Postgres database holding users, conversations and sources, and what startup may do to it.
+
+### `POSTGRES_URI`
+
+Type `str`, default unset.
+
+User-data Postgres connection URI.
+
+### `AUTO_MIGRATE`
+
+Type `bool`, default `true`.
+
+On startup, apply pending Alembic migrations. Disable if you manage schema out-of-band.
+
+### `AUTO_CREATE_DB`
+
+Type `bool`, default `true`.
+
+On startup, create the target Postgres database if missing (needs CREATEDB privilege).
+
+### `AUTO_VECTOR_SCHEMA`
+
+Type `bool`, default `true`.
+
+On startup, create the pgvector/graph tables and verify the embedding dimension. No Alembic migration covers the vector DB (it may be a separate cluster); set False to manage it yourself.
+
+
+## Workers
+
+How background tasks are queued and how worker processes are recycled.
+
+### `CELERY_BROKER_URL`
+
+Type `str`, default `redis://localhost:6379/0`.
+
+Celery broker URL.
+
+### `CELERY_RESULT_BACKEND`
+
+Type `str`, default `redis://localhost:6379/1`.
+
+Celery result backend URL.
+
+### `CELERY_WORKER_PREFETCH_MULTIPLIER`
+
+Type `int`, default `1`.
+
+Tasks prefetched per worker process; 1 caps SIGKILL loss to one task.
+
+### `CELERY_VISIBILITY_TIMEOUT`
+
+Type `int`, default `3600`, must be `> 0`.
+
+Broker visibility timeout in seconds. Must exceed the longest legitimate task runtime but stay short enough that SIGKILLed tasks redeliver promptly.
+
+### `CELERY_WORKER_MAX_MEMORY_PER_CHILD`
+
+Type `int`, default `4194304`, must be `>= 0`.
+
+Recycle a prefork child past this resident size in KB; backstops docling/torch heap growth. Checked between tasks, so it does not bound the peak within one. 0 disables.
+
+### `CELERY_WORKER_MAX_TASKS_PER_CHILD`
+
+Type `int`, default `0`, must be `>= 0`.
+
+Recycle a worker child after N tasks; 0 disables.
+
+### `API_URL`
+
+Type `str`, default `http://localhost:7091`.
+
+Backend URL the Celery worker calls back into.
+
+
+## Ingestion and parsing
+
+Upload limits, the parser engine, and per-format byte caps for ingestion and attachments.
+
+### `UPLOAD_FOLDER`
+
+Type `str`, default `inputs`.
+
+Directory under the data home for uploaded sources.
+
+### `UPLOAD_MAX_REQUEST_BYTES`
+
+Type `int`, default `268435456`, must be `> 0`.
+
+Cap on an upload request body; applied by Flask before multipart parsing.
+
+### `UPLOAD_MAX_FILE_BYTES`
+
+Type `int`, default `104857600`, must be `> 0`.
+
+Cap on a single uploaded file; also enforced while copying.
+
+### `PARSE_SPEC_MAX_BYTES`
+
+Type `int`, default `10485760`, must be `> 0`.
+
+Cap on an OpenAPI/tool spec file accepted for parsing.
+
+### `UPLOAD_MAX_ARCHIVE_BYTES`
+
+Type `int`, default `262144000`, must be `> 0`.
+
+Cap on total bytes extracted from one uploaded archive.
+
+### `UPLOAD_MAX_ARCHIVE_FILES`
+
+Type `int`, default `10000`, must be `> 0`.
+
+Cap on files extracted from one uploaded archive.
+
+### `UPLOAD_MAX_ARCHIVE_RATIO`
+
+Type `int`, default `1000`, must be `> 0`.
+
+Maximum decompressed-to-compressed ratio before an archive is rejected.
+
+### `UPLOAD_MAX_ARCHIVE_DEPTH`
+
+Type `int`, default `3`, must be `>= 0`.
+
+Maximum nesting depth of archives inside archives.
+
+### `PARSE_PDF_AS_IMAGE`
+
+Type `bool`, default `false`.
+
+Render PDF pages to images before parsing.
+
+### `PARSE_IMAGE_REMOTE`
+
+Type `bool`, default `false`.
+
+Send images to a remote parser.
+
+### `DOC_PARSER_ENGINE`
+
+Type `"anydoc" | "docling"`, default `anydoc`.
+
+Document parser for source ingestion, chat attachments and the read_document tool. "anydoc" (default): firecrawl-anydoc, a Rust converter with no ML models; milliseconds per file, ~100 MB peak RSS. "docling": the layout/table-model pipeline (optional install; needed for read_document's structured output and the docling OCR backend). Files anydoc cannot convert (scanned PDFs, malformed input) fall back to docling when it is installed, otherwise to the native OCR parsers (OCR on) or the legacy parsers. Rollback to the previous behaviour is this one variable.
+
+### `DOCLING_PIPELINE_QUEUE_MAX_SIZE`
+
+Type `int`, default `2`.
+
+Pages docling's threaded pipeline buffers in flight; the library default (100) drives worker RSS to ~3 GB on a mid-size PDF.
+
+### `DOCLING_COMPILE_TORCH_MODELS`
+
+Type `bool`, default `false`.
+
+Let docling torch.compile its models (slower start, faster pages).
+
+### `DOCLING_TABULAR_MAX_BYTES`
+
+Type `int`, default `2000000`.
+
+Largest CSV/XLSX docling will parse, in bytes.
+
+### `DOCLING_MARKUP_MAX_BYTES`
+
+Type `int`, default `8000000`.
+
+Largest HTML/XML docling will parse, in bytes.
+
+### `MARKUP_MAX_BYTES`
+
+Type `int`, default `8000000`, must be `>= 0`.
+
+HTML/XHTML larger than this (bytes) are head-truncated before the markdownify parser runs (the anydoc engine's HTML path). The tree that path builds costs ~50x the input (30 MB of HTML measured at 1.6 GB RSS) and the upload cap is 100 MB, so the gate is what keeps one upload from taking the ingest worker down. 0 disables it.
+
+### `PDF_TRUST_CHECK`
+
+Type `bool`, default `true`.
+
+Trust-check anydoc's PDF output (docsgpt/parser/file/pdf_trust.py): flag composite (Type0) fonts without a ToUnicode map, and CJK-declaring PDFs whose extracted text has almost no CJK, the two classes where anydoc drops text silently. A flagged file re-parses on the docling fallback when docling is installed; otherwise the anydoc output is kept and the document gets extra_info["parse_warnings"]. ~30 ms per scanned MB.
+
+### `ANYDOC_TABLEIZE`
+
+Type `bool`, default `false`.
+
+Rewrite dot-leader / whitespace-aligned table runs in anydoc's PDF markdown into GFM tables (docsgpt/parser/file/tableize.py). Off by default: it rewrites content on a heuristic (>=3 uniform label+numbers lines) validated only on a small corpus so far.
+
+### `ATTACHMENT_PDF_TEXT_FAST_PATH`
+
+Type `bool`, default `true`.
+
+Read PDF attachments via their embedded text layer (pypdfium2) instead of docling, falling back to docling when there is no text layer. Attachments go into a prompt, so docling's structural markdown earns far less than the tens of seconds per file it costs; source ingestion is unaffected because chunking and retrieval do depend on that structure.
+
+### `ATTACHMENT_PDF_TEXT_MIN_MEDIAN_CHARS`
+
+Type `int`, default `32`.
+
+Median chars per sampled page below which a PDF attachment is treated as a scan and handed to docling. Measured on real uploads: scans at 0-17 chars/page, text-layer documents at 433-6834.
+
+### `ATTACHMENT_TEXT_MAX_BYTES`
+
+Type `int`, default `5000000`.
+
+Cap on extracted attachment text.
+
+### `AGENT_IMAGE_MAX_BYTES`
+
+Type `int`, default `5000000`.
+
+Cap on an image passed to an agent.
+
+### `AGENT_IMAGE_MAX_PIXELS`
+
+Type `int`, default `16777216`.
+
+Cap on the pixel count of an image passed to an agent.
+
+### `GITHUB_INGEST_MAX_FILE_BYTES`
+
+Type `int`, default `1048576`, must be `>= 0`.
+
+Skip GitHub repo blobs larger than this (0 = no cap).
+
+### `GITHUB_INGEST_MAX_WORKERS`
+
+Type `int`, default `8`, must be `>= 1`.
+
+Parallel file fetches per GitHub repo ingest.
+
+### `DOCUMENT_PARSE_QUEUE`
+
+Type `str`, default `parsing`.
+
+Celery queue the parse_document task is routed to.
+
+### `DOCUMENT_PARSE_TIMEOUT`
+
+Type `int`, default `120`.
+
+Seconds the read_document tool awaits the enqueued parse before degrading.
+
+### `DOCUMENT_PARSE_TIMEOUT_PER_MB`
+
+Type `int`, default `60`.
+
+Extra seconds of parse window per MiB of input. The base timeout is a FLOOR: the window grows with document size because OCR cost scales with pages. Without this a large scan is silently dropped at the base window.
+
+### `DOCUMENT_PARSE_TIMEOUT_MAX`
+
+Type `int`, default `900`.
+
+Absolute ceiling on the size-scaled parse window, in seconds.
+
+### `DOCUMENT_PARSE_MAX_BYTES`
+
+Type `int`, default `0`, must be `>= 0`.
+
+Cap on a parsed document's bytes (0 = reuse SANDBOX_MAX_INPUT_BYTES).
+
+### `DOCUMENT_MAX_DECOMPRESSED_BYTES`
+
+Type `int`, default `314572800`.
+
+Cap on bytes decompressed from an archive handed to read_document.
+
+### `DOCUMENT_MAX_ARCHIVE_ENTRIES`
+
+Type `int`, default `10000`.
+
+Cap on entries in an archive handed to read_document.
+
+
+## OCR
+
+Whether OCR runs, which stack performs it, and which engine it uses.
+
+### `OCR_ENABLED`
+
+Type `bool`, default `false`, also read from `DOCLING_OCR_ENABLED`.
+
+OCR scanned PDFs and images during source ingestion.
+
+### `OCR_ATTACHMENTS_ENABLED`
+
+Type `bool`, default `false`, also read from `DOCLING_OCR_ATTACHMENTS_ENABLED`.
+
+OCR scanned PDFs and images attached to a chat.
+
+### `OCR_BACKEND`
+
+Type `"auto" | "docling" | "native"`, default `auto`.
+
+Which stack runs OCR when it is on. auto: docling when installed, otherwise native. docling: the layout-model pipeline (hybrid region OCR, reading order, table structure); needs the optional docling extra. native: pypdfium2/Pillow page rendering straight into tesseract or a DeepSeek-OCR endpoint (docsgpt/parser/file/ocr_parser.py); no ML models in the worker, tables come out as text lines under tesseract.
+
+### `OCR_ENGINE`
+
+Type `"tesseract" | "deepseek" | "auto" | "ocrmac" | "rapidocr"`, default `tesseract`.
+
+OCR engine used when OCR is on. Benched 2026-08 on EN/ZH/table/degraded scans (docs/Guides/ocr has the menu). tesseract (recommended): best classic-engine accuracy (perfect EN word recall, 0.000 bilingual CER, 100% table cells), ~35 MB, CPU-only; needs the system binary and language packs, an optional install like every OCR dependency (build with INSTALL_TESSERACT=true, or apt/brew install tesseract-ocr for a local run); both backends. deepseek: DeepSeek-OCR against an Ollama/vLLM endpoint (OCR_DEEPSEEK_*); best table/CJK quality, the worker stays light (no layout models) but each page costs seconds on the model server; both backends. auto: docling's pick, ocrmac on macOS (excellent), rapidocr on Linux (silently shreds some long text lines; avoid as a server default). ocrmac | rapidocr: force one of those. auto/ocrmac/rapidocr exist only inside docling; the native backend runs tesseract for them. An engine that is not installed degrades (docling: to auto) with a warning instead of failing the parse.
+
+### `OCR_LANGS`
+
+Type `str`, default `eng`.
+
+Tesseract language packs, "+"-separated (e.g. "eng+chi_sim+deu"). Other engines keep their own defaults; their language codes differ.
+
+### `OCR_DEEPSEEK_URL`
+
+Type `str`, default `http://localhost:11434/v1/chat/completions`.
+
+Chat-completions URL of the DeepSeek-OCR endpoint (Ollama or vLLM).
+
+### `OCR_DEEPSEEK_MODEL`
+
+Type `str`, default `deepseek-ocr:3b`.
+
+Model name at the DeepSeek-OCR endpoint.
+
+### `OCR_DEEPSEEK_TIMEOUT`
+
+Type `float`, default `300.0`.
+
+Seconds allowed per page request to the DeepSeek endpoint, on both backends (native sends pages one at a time; docling's VLM pipeline keeps its own concurrency). A 3B model on a laptop needs minutes; a vLLM GPU deployment, seconds.
+
+### `OCR_RENDER_DPI`
+
+Type `int`, default `200`.
+
+Native backend only: resolution at which pages without a text layer are rendered before OCR. 200 suits tesseract; clamped to 72-600.
+
+### `OCR_MIN_CHARS_PER_PAGE`
+
+Type `int`, default `20`, must be `>= 0`, also read from `DOCLING_OCR_MIN_CHARS_PER_PAGE`.
+
+Chars-per-page floor below which an OCR'd PDF/image parse is treated as an OCR dropout rather than as content (long-running docling workers were observed returning zero characters for every scanned page after a long scanned PDF, with no error). docling retries once on a fresh full-page-OCR converter; both backends then fail loudly instead of indexing an empty document. 0 disables the guard.
+
+
+## File storage
+
+Local disk or an S3-compatible bucket, and how download URLs are produced.
+
+### `STORAGE_TYPE`
+
+Type `"local" | "s3"`, default `local`.
+
+File storage backend.
+
+### `URL_STRATEGY`
+
+Type `"backend" | "s3"`, default `backend`.
+
+How download links are produced: backend (streamed through the API) or s3 (presigned URLs).
+
+### `S3_BUCKET_NAME`
+
+Type `str`, default `docsgpt-test-bucket`.
+
+Bucket name.
+
+### `S3_ENDPOINT_URL`
+
+Type `str`, default unset.
+
+Custom endpoint for S3-compatible services (MinIO, R2, B2, Spaces); omit for AWS.
+
+### `S3_ACCESS_KEY_ID`
+
+Type `str`, default unset.
+
+Access key id.
+
+### `S3_SECRET_ACCESS_KEY`
+
+Type `str`, default unset.
+
+Secret access key.
+
+### `S3_REGION`
+
+Type `str`, default unset.
+
+AWS region; use "auto" for Cloudflare R2.
+
+### `S3_PATH_STYLE`
+
+Type `bool`, default `false`.
+
+Path-style addressing (required by most non-AWS services).
+
+### `SAGEMAKER_REGION`
+
+Type `str`, default unset.
+
+**Deprecated.** Set S3_REGION instead; the SAGEMAKER_* fallback will be removed.
+
+Legacy AWS region from the retired SageMaker provider; deprecated fallback for S3_REGION.
+
+### `SAGEMAKER_ACCESS_KEY`
+
+Type `str`, default unset.
+
+**Deprecated.** Set S3_ACCESS_KEY_ID instead; the SAGEMAKER_* fallback will be removed.
+
+Legacy AWS access key from the retired SageMaker provider; deprecated fallback for S3_ACCESS_KEY_ID.
+
+### `SAGEMAKER_SECRET_KEY`
+
+Type `str`, default unset.
+
+**Deprecated.** Set S3_SECRET_ACCESS_KEY instead; the SAGEMAKER_* fallback will be removed.
+
+Legacy AWS secret key from the retired SageMaker provider; deprecated fallback for S3_SECRET_ACCESS_KEY.
+
+
+## Connectors
+
+Client credentials and callback URLs for Google Drive, Microsoft, Confluence, GitHub and MCP.
+
+### `GOOGLE_CLIENT_ID`
+
+Type `str`, default unset.
+
+Google OAuth client id.
+
+### `GOOGLE_CLIENT_SECRET`
+
+Type `str`, default unset.
+
+Google OAuth client secret.
+
+### `CONNECTOR_REDIRECT_BASE_URI`
+
+Type `str`, default `http://127.0.0.1:7091/api/connectors/callback`.
+
+OAuth callback URL; register it as-is in your provider's console (e.g. GCP).
+
+### `CONNECTOR_ALLOWED_ORIGINS`
+
+Type `str`, default unset.
+
+Comma-separated frontend origins allowed to receive connector OAuth results, e.g. https://docsgpt.example.com. The callback origin and OIDC_FRONTEND_URL are always allowed; a loopback callback also allows localhost:5173.
+
+### `MICROSOFT_CLIENT_ID`
+
+Type `str`, default unset.
+
+Azure AD application (client) id.
+
+### `MICROSOFT_CLIENT_SECRET`
+
+Type `str`, default unset.
+
+Azure AD application client secret.
+
+### `MICROSOFT_TENANT_ID`
+
+Type `str`, default `common`.
+
+Azure AD tenant id, or 'common' for multi-tenant.
+
+### `MICROSOFT_AUTHORITY`
+
+Type `str`, default unset.
+
+Authority URL override; unset derives https://login.microsoftonline.com/&lt;MICROSOFT_TENANT_ID>.
+
+### `CONFLUENCE_CLIENT_ID`
+
+Type `str`, default unset.
+
+Confluence Cloud OAuth client id.
+
+### `CONFLUENCE_CLIENT_SECRET`
+
+Type `str`, default unset.
+
+Confluence Cloud OAuth client secret.
+
+### `GITHUB_ACCESS_TOKEN`
+
+Type `str`, default unset.
+
+GitHub PAT with read access to repositories.
+
+### `MCP_OAUTH_REDIRECT_URI`
+
+Type `str`, default unset.
+
+Public callback URL for MCP OAuth; unset derives it from CONNECTOR_REDIRECT_BASE_URI.
+
+
+## Server
+
+Serving the UI, public URLs, and process-level knobs of the API server.
+
+### `DEPLOYMENT_TYPE`
+
+Type `str`, default unset.
+
+Deployment class, e.g. cloud or production. A production class refuses to run without a configured JWT_SECRET_KEY instead of generating a local one on disk.
+
+### `SERVE_UI`
+
+Type `bool`, default `true`.
+
+Serve the web UI shipped in the package (docsgpt/static) from the API process.
+
+### `FLASK_DEBUG_MODE`
+
+Type `bool`, default `false`.
+
+Run Flask in debug mode.
+
+### `VERSION_CHECK`
+
+Type `bool`, default `true`.
+
+Anonymous startup version check for security issues.
+
+### `PUBLIC_API_BASE_URL`
+
+Type `str`, default unset.
+
+Public base URL for user-facing endpoint references in prompts.
+
+### `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`
+
+Type `int`, default `30`.
+
+Bounds uvicorn's shutdown drain (uvicorn_worker doesn't forward --graceful-timeout). Keep below the gunicorn --timeout (180) watchdog. Used by BoundedDrainUvicornWorker.
+
+### `WSGI_THREADPOOL_WORKERS`
+
+Type `int`, default `96`, must be `>= 1`.
+
+Threads serving the WSGI (Flask) part of the app under the ASGI server.
+
+### `V1_SESSION_TTL_SECONDS`
+
+Type `int`, default `86400`.
+
+Lets OpenAI-compatible clients identify a logical chat by session header, which chat-completions itself has no field for; TTL of that session mapping.
+
+
+## Events and devices
+
+The internal push channel (notifications and durable replay) and the Redis pool behind it.
+
+### `ENABLE_SSE_PUSH`
+
+Type `bool`, default `true`.
+
+Internal SSE push channel (notifications and durable replay journal). False makes /api/events emit "push_disabled" and return; clients fall back to polling.
+
+### `EVENTS_STREAM_MAXLEN`
+
+Type `int`, default `1000`, must be `>= 1`.
+
+Per-user durable backlog cap in entries; ~24h of replay at typical rates.
+
+### `SSE_KEEPALIVE_SECONDS`
+
+Type `int`, default `15`, must be `>= 1`.
+
+Interval between SSE keepalive comments.
+
+### `SSE_MAX_CONCURRENT_PER_USER`
+
+Type `int`, default `8`, must be `>= 0`.
+
+Simultaneous SSE connections per user; each holds a pooled async Redis connection for its lifetime. 8 covers multi-tab use without one user starving the pool. 0 disables.
+
+### `ASYNC_REDIS_MAX_CONNECTIONS`
+
+Type `int`, default `2000`, must be `>= 1`.
+
+Pool size of the async Redis client behind the event-loop routes, per process. Every open notification tab, chat reconnect and device session holds one connection, so this caps concurrent streams per worker (redis-py's own default is 100). Keep the total across workers below the Redis server's maxclients (10000 by default).
+
+### `EVENTS_REPLAY_MAX_PER_REQUEST`
+
+Type `int`, default `200`, must be `>= 1`.
+
+Backlog entries XRANGE returns per /api/events snapshot. Bounds what one replay moves from Redis to the wire: a client looping Last-Event-ID reconnects enumerates at most this many per round-trip.
+
+### `EVENTS_REPLAY_MAX_AGE_HOURS`
+
+Type `int`, default `48`.
+
+Oldest backlog entry a replay will return.
+
+### `EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW`
+
+Type `int`, default `30`.
+
+Sliding-window cap on snapshot replays per user; exhausting it returns 429 with the cursor pinned so the client backs off until the window rolls over.
+
+### `EVENTS_REPLAY_BUDGET_WINDOW_SECONDS`
+
+Type `int`, default `60`.
+
+Length of the replay budget window.
+
+### `MESSAGE_EVENTS_RETENTION_DAYS`
+
+Type `int`, default `14`, must be `> 0`.
+
+Retention for the message_events journal, enforced by the cleanup_message_events beat task. Replay only needs streams a client could still be tailing.
+
+### `REMOTE_DEVICE_SESSION_IDLE_SECONDS`
+
+Type `int`, default `60`, must be `> 0`.
+
+Seconds without a heartbeat before a remote-device session is considered idle.
+
+### `REMOTE_DEVICE_REQUIRE_SIGNATURE`
+
+Type `bool`, default `false`.
+
+Require signed commands from remote devices.
+
+### `REMOTE_DEVICE_PAIRING_TTL_SECONDS`
+
+Type `int`, default `600`, must be `> 0`.
+
+Lifetime of a pairing code.
+
+### `REMOTE_DEVICE_CMD_QUEUE_TTL_SECONDS`
+
+Type `int`, default `900`, must be `> 605`.
+
+Redis TTL of the per-device command queue, routing invocations cross-process so a scheduled run reaches the web-held device session. Must exceed the max drain deadline (605s) so a command for a briefly-offline device isn't evicted before its own drain gives up.
+
+### `REMOTE_DEVICE_INVOCATION_TTL_SECONDS`
+
+Type `int`, default `900`, must be `> 0`.
+
+Redis TTL of a pending remote-device invocation.
+
+### `REMOTE_DEVICE_OUTPUT_STREAM_MAXLEN`
+
+Type `int`, default `10000`.
+
+Cap on buffered output entries per remote-device invocation stream.
+
+
+## Agents
+
+What an agent may do per turn and how its context is kept within budget.
+
+### `AGENT_NAME`
+
+Type `str`, default `classic`.
+
+Default agent type for agentless chats.
+
+### `DEFAULT_AGENT_LIMITS`
+
+Type `dict[str, int]`, default `{"token_limit": 50000, "request_limit": 500}`.
+
+Per-agent default quotas: tokens and requests.
+
+### `DEFAULT_CHAT_TOOLS`
+
+Type `list[str]`, default `["memory", "read_webpage", "scheduler"]`.
+
+Config-free tools on by default in agentless chats. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
+
+### `ENABLE_TOOL_PREFETCH`
+
+Type `bool`, default `true`.
+
+Pre-fetch retrieval before the agent's first turn.
+
+### `TOOL_RESULT_MAX_TOKENS`
+
+Type `int`, default `20000`, must be `>= 0`.
+
+Cap on one tool result entering the LLM context (0 disables); journal and DB keep it whole.
+
+### `ENABLE_CONVERSATION_COMPRESSION`
+
+Type `bool`, default `true`.
+
+Compress long conversations once they approach the context window.
+
+### `COMPRESSION_THRESHOLD_PERCENTAGE`
+
+Type `float`, default `0.8`, must be `> 0` and `<= 1`.
+
+Fraction of the context window at which compression triggers.
+
+### `COMPRESSION_MODEL_OVERRIDE`
+
+Type `str`, default unset.
+
+Use a different model for compression; unset reuses the answer model.
+
+### `COMPRESSION_PROMPT_VERSION`
+
+Type `str`, default `v1.0`.
+
+Tracks compression prompt iterations.
+
+### `COMPRESSION_MAX_HISTORY_POINTS`
+
+Type `int`, default `3`.
+
+Keep only the last N compression points to prevent DB bloat.
+
+### `COMPRESSION_RECENT_FIELD_MAX_TOKENS`
+
+Type `int`, default `8000`, must be `>= 0`.
+
+Per-field cap on the verbatim tail kept after a compression point (0 disables).
+
+### `WORKFLOW_NODE_NATIVE_MAX_FILES`
+
+Type `int`, default `5`.
+
+Files per node passed natively to the LLM; past the cap they are extracted to text or dropped, to bound context and cost. Re-uses SANDBOX_MAX_INPUT_BYTES per file.
+
+### `WORKFLOW_NODE_EXTRACT_MAX_FILES`
+
+Type `int`, default `5`.
+
+Documents per node extracted via the parsing worker. Each issues a separate blocking parse; past the cap they are skipped with a truncation note.
+
+### `WORKFLOW_NODE_EXTRACT_BUDGET_SECONDS`
+
+Type `int`, default `900`.
+
+Wall clock one node may spend on blocking parses, shared across all of them. Without it a node could serialize WORKFLOW_NODE_EXTRACT_MAX_FILES full windows on a web threadpool slot.
+
+### `WORKFLOW_RUN_STALE_SECONDS`
+
+Type `int`, default `3600`.
+
+A run row is pre-created as running; a disconnect or crash can strand it there. The beat reaper fails runs still running past this. Generous so a long run is never cut off.
+
+### `ARTIFACT_MAX_BYTES`
+
+Type `int`, default `52428800`.
+
+Cap on a single stored artifact version's bytes (0 disables).
+
+### `ARTIFACT_MAX_COUNT_PER_USER`
+
+Type `int`, default `5000`.
+
+Cap on artifacts a user may own (0 disables).
+
+### `ARTIFACT_MAX_TOTAL_BYTES_PER_USER`
+
+Type `int`, default `5368709120`.
+
+Cap on a user's total stored artifact bytes (0 disables).
+
+
+## Guardrails
+
+Input/output checks every agent runs, and the floor no agent may weaken.
+
+### `GUARDRAILS_ENABLED`
+
+Type `bool`, default `true`.
+
+Master switch; False disables every stage.
+
+### `GUARDRAILS_CHECKS_ENABLED`
+
+Type `list[str]`, default `[]`.
+
+Allowlist of GuardrailCreator.checks keys; empty means every registered check.
+
+### `GUARDRAILS_FLOOR`
+
+Type `dict[str, Any]`, default `{}`.
+
+A GuardrailsConfig fragment every agent inherits and cannot weaken; agents may add controls or make an action stricter, never looser. "enabled" is required; without it the floor parses but applies to nothing. Example: \{"enabled": true, "mode": "scan_all", "controls": [\{"check": "secrets", "stage": "output", "action": "redact"\}]\}
+
+### `GUARDRAILS_JUDGE_MODEL`
+
+Type `str`, default unset.
+
+Judge model for the topic/policy checks; unset reuses the request's model.
+
+### `GUARDRAILS_STORE_SCANNED_TEXT`
+
+Type `bool`, default `false`.
+
+Persist scanned text alongside guardrail_events. Off by default: pre-redaction text is exactly the material a PII control exists to keep out of storage.
+
+### `GUARDRAILS_EVENTS_RETENTION_DAYS`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Days guardrail events are kept before the cleanup task removes them.
+
+
+## Scheduler
+
+Cadence, quotas and timeouts of scheduled runs.
+
+### `SCHEDULE_DISPATCHER_INTERVAL`
+
+Type `int`, default `30`.
+
+Seconds between dispatcher passes that enqueue due schedules.
+
+### `SCHEDULE_MIN_INTERVAL`
+
+Type `int`, default `900`.
+
+Smallest allowed recurrence interval in seconds.
+
+### `SCHEDULE_MAX_PER_USER`
+
+Type `int`, default `50`.
+
+Cap on schedules a user may own.
+
+### `SCHEDULE_RUN_TIMEOUT`
+
+Type `int`, default `600`.
+
+Wall-clock cap on one scheduled run, in seconds.
+
+### `SCHEDULE_MISFIRE_GRACE`
+
+Type `int`, default `60`.
+
+Seconds past the due time within which a missed run still fires.
+
+### `SCHEDULE_AUTOPAUSE_FAILURES`
+
+Type `int`, default `3`.
+
+Consecutive failures after which a schedule is paused automatically.
+
+### `SCHEDULE_ONCE_MAX_HORIZON`
+
+Type `int`, default `31536000`.
+
+How far ahead a one-off run may be scheduled, in seconds (one year).
+
+### `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS`
+
+Type `int`, default `90`, must be `> 0`.
+
+Days scheduled-run output is kept.
+
+
+## Sandbox
+
+The app is a CLIENT of an always-on runner; defaults are safe so app import never fails unconfigured.
+
+### `SANDBOX_BACKEND`
+
+Type `"jupyter" | "daytona"`, default `jupyter`.
+
+Sandbox backend: jupyter (self-host) or daytona (Daytona Cloud).
+
+### `SANDBOX_GATEWAY_URL`
+
+Type `str`, default `http://localhost:8888`.
+
+URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service).
+
+### `SANDBOX_GATEWAY_AUTH_TOKEN`
+
+Type `str`, default unset.
+
+Gateway auth token, if set.
+
+### `SANDBOX_KERNEL_NAME`
+
+Type `str`, default `docsgpt-python`.
+
+Kernelspec per session. The env-scrubbing docsgpt-python spec keeps kernel code from reading the gateway token or operator secrets from os.environ; the stock python3 spec inherits the gateway env verbatim and must not be used with untrusted code.
+
+### `SANDBOX_MAX_TTL`
+
+Type `int`, default `1200`.
+
+Hard cap (s) on agent-selectable keep-alive TTL.
+
+### `SANDBOX_MAX_SESSIONS`
+
+Type `int`, default `32`.
+
+Concurrent live sessions per process, backend-agnostic; at the cap an LRU-idle session is evicted. 0 or negative disables the cap.
+
+### `SANDBOX_EXEC_TIMEOUT`
+
+Type `int`, default `60`.
+
+Default wall-clock cap (s) per exec call.
+
+### `SANDBOX_HTTP_TIMEOUT`
+
+Type `int`, default `10`.
+
+Fixed cap (s) for REST control calls (create/delete/alive/interrupt).
+
+### `SANDBOX_MAX_OUTPUT_BYTES`
+
+Type `int`, default `8388608`.
+
+Cap on buffered stdout+stderr per exec.
+
+### `SANDBOX_MAX_FILE_BYTES`
+
+Type `int`, default `10485760`.
+
+Cap on get_file size routed through stdout.
+
+### `SANDBOX_MAX_INPUT_BYTES`
+
+Type `int`, default `26214400`.
+
+Cap on an input document staged into a sandbox session.
+
+### `SANDBOX_MEMORY`
+
+Type `str`, default `1g`.
+
+Docker mem_limit for the runner container. Consumed by the docsgpt-sandbox compose service, not the app; part of the untrusted-code security boundary.
+
+### `SANDBOX_CPUS`
+
+Type `str`, default `1.0`.
+
+Docker CPU quota for the runner container. Consumed by the docsgpt-sandbox compose service, not the app; part of the untrusted-code security boundary.
+
+### `DAYTONA_API_KEY`
+
+Type `str`, default unset.
+
+Daytona Cloud API key (secret).
+
+### `DAYTONA_API_URL`
+
+Type `str`, default unset.
+
+Override for the Daytona API base URL, if self-targeting.
+
+### `DAYTONA_TARGET`
+
+Type `str`, default unset.
+
+Daytona region/target, e.g. "us".
+
+### `DAYTONA_SNAPSHOT`
+
+Type `str`, default unset.
+
+Image for new sandboxes; render libs via scripts/build_daytona_snapshot.py.
+
+### `DAYTONA_LANGUAGE`
+
+Type `str`, default `python`.
+
+Default runtime language for created sandboxes.
+
+### `DAYTONA_AUTO_STOP_INTERVAL`
+
+Type `int`, default `15`, must be `>= 0`.
+
+Minutes idle before Daytona auto-stops a sandbox (0 disables).
+
+### `DAYTONA_AUTO_DELETE_INTERVAL`
+
+Type `int`, default `60`, must be `>= -1`.
+
+Minutes after stop before Daytona auto-deletes a sandbox (-1 disables).
+
+### `DAYTONA_MAX_SANDBOXES`
+
+Type `int`, default `50`.
+
+Cap on concurrent live Daytona sandboxes (cost-DoS guard).
+
+
+## Speech
+
+Voice providers and transcription options.
+
+### `TTS_PROVIDER`
+
+Type `"google_tts" | "elevenlabs" | "none"`, default `google_tts`.
+
+Text-to-speech provider; none switches it off.
+
+### `ELEVENLABS_API_KEY`
+
+Type `str`, default unset.
+
+ElevenLabs API key.
+
+### `STT_PROVIDER`
+
+Type `"openai" | "faster_whisper" | "none"`, default `openai`.
+
+Speech-to-text provider; none switches it off.
+
+### `OPENAI_STT_MODEL`
+
+Type `str`, default `gpt-4o-mini-transcribe`.
+
+OpenAI transcription model.
+
+### `STT_LANGUAGE`
+
+Type `str`, default unset.
+
+Language hint for transcription; unset auto-detects.
+
+### `STT_MAX_FILE_SIZE_MB`
+
+Type `int`, default `50`.
+
+Cap on an audio file accepted for transcription.
+
+### `STT_ENABLE_TIMESTAMPS`
+
+Type `bool`, default `false`.
+
+Return word/segment timestamps.
+
+### `STT_ENABLE_DIARIZATION`
+
+Type `bool`, default `false`.
+
+Label speakers in the transcript.

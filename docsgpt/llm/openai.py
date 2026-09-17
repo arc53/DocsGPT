@@ -1307,14 +1307,14 @@ class OpenAILLM(BaseLLM):
         params["include"] = ["reasoning.encrypted_content"]
         # Backstop against a chain that outgrows the model's native window:
         # the provider drops the oldest input items instead of failing.
-        if getattr(settings, "OPENAI_RESPONSES_TRUNCATION_AUTO", False):
+        if settings.OPENAI_RESPONSES_TRUNCATION_AUTO:
             params["truncation"] = "auto"
         # Prompt-cache hints. The key pins a conversation to one cache shard;
         # retention asks for the extended tier where the deployment offers it.
         cache_key = getattr(self, "_prompt_cache_key", None)
-        if cache_key and getattr(settings, "OPENAI_PROMPT_CACHE_KEY", False):
+        if cache_key and settings.OPENAI_PROMPT_CACHE_KEY:
             params["prompt_cache_key"] = str(cache_key)
-        retention = getattr(settings, "OPENAI_PROMPT_CACHE_RETENTION", None)
+        retention = settings.OPENAI_PROMPT_CACHE_RETENTION
         if retention:
             params["prompt_cache_retention"] = retention
         return params

@@ -3,6 +3,10 @@ export default {
     "title": "⚙️ App Configuration",
     "href": "/Deploying/DocsGPT-Settings"
   },
+  "Settings-Reference": {
+    "title": "📖 Settings Reference",
+    "href": "/Deploying/Settings-Reference"
+  },
   "OIDC-SSO": {
     "title": "🔐 SSO with OIDC",
     "href": "/Deploying/OIDC-SSO"

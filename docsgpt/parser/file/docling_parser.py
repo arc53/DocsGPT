@@ -335,11 +335,7 @@ def _ocr_min_chars_per_page() -> int:
 
     try:
         return int(
-            getattr(
-                settings,
-                "OCR_MIN_CHARS_PER_PAGE",
-                _DEFAULT_OCR_MIN_CHARS_PER_PAGE,
-            )
+            settings.OCR_MIN_CHARS_PER_PAGE
         )
     except (TypeError, ValueError):
         return _DEFAULT_OCR_MIN_CHARS_PER_PAGE

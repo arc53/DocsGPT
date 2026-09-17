@@ -320,7 +320,7 @@ redis-cli -n 2 DEL user:<id>:stream
 
 ## Settings reference
 
-Everything in `docsgpt/core/settings.py`:
+Everything in `docsgpt/core/settings/events.py`:
 
 | Setting                                       | Default | Purpose                                       |
 | --------------------------------------------- | ------- | --------------------------------------------- |
