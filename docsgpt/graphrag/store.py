@@ -175,19 +175,24 @@ class GraphStore:
 
         Returns:
             Whatever ``operation`` returns.
+
+        Raises:
+            Exception: Anything ``operation`` raises that is not connection
+                loss, and anything the single retry raises.
         """
-        for attempt in (1, 2):
-            conn = self._get_connection()
-            try:
-                return operation(conn)
-            except Exception as exc:
-                if attempt == 2 or not _is_connection_lost(exc):
-                    raise
-                logging.warning(
-                    "Graph write lost its connection (%s); reconnecting and retrying once.",
-                    exc,
-                )
-                self.close()
+        try:
+            return operation(self._get_connection())
+        except Exception as exc:
+            if not _is_connection_lost(exc):
+                raise
+            logging.warning(
+                "Graph write lost its connection (%s); reconnecting and retrying once.",
+                exc,
+            )
+            self.close()
+        # Second and final attempt, on a connection freshly checked out by
+        # ``_get_connection``. A failure here belongs to the caller.
+        return operation(self._get_connection())
 
     def _register_pgvector_types(self, conn) -> None:
         """Register pgvector's adapters, tolerating a not-yet-created extension.

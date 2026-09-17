@@ -103,7 +103,7 @@ def _personalized_pagerank(
 
     # Row-normalized transitions. An undirected edge is traversable from both
     # endpoints, so each node normalizes over its own incident weights.
-    transitions: Dict[Any, List[Any]] = {}
+    transitions: Dict[Any, List[tuple[Any, float]]] = {}
     for node in nodes:
         neighbors = []
         total = 0.0
@@ -134,6 +134,13 @@ def _personalized_pagerank(
             ranks[node] += (leaked + 1.0 - alpha) * restart[node]
         if sum(abs(ranks[node] - previous[node]) for node in nodes) < node_count * tol:
             break
+    else:
+        logging.debug(
+            "Personalized PageRank hit its %s-iteration cap on a %s-node "
+            "subgraph; ranking with the last iterate.",
+            max_iter,
+            node_count,
+        )
     return ranks
 
 
