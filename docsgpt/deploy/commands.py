@@ -862,7 +862,9 @@ def doctor(args, context: Optional[Context] = None) -> int:
         _check_provider(env),
     ]
 
-    port = int(env.get("DOCSGPT_PORT") or stack.DEFAULT_PORT)
+    # The one command that exists to explain a broken setup must not fall over on one.
+    port = _port_number(env["DOCSGPT_PORT"], f"DOCSGPT_PORT in {env_path}") if env.get("DOCSGPT_PORT") \
+        else stack.DEFAULT_PORT
     if _port_is_free(port):
         checks.append(Check("port", "ok", f"{port} is free"))
     else:

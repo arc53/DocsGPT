@@ -274,6 +274,17 @@ class TestDoctor:
         assert "FAIL" in captured.out
         assert "1 problem" in captured.err
 
+    def test_a_hand_edited_port_is_reported_not_raised(self, tmp_path, monkeypatch):
+        """Doctor exists to explain a broken setup, so it must not traceback on one."""
+        self._only(
+            monkeypatch,
+            commands.Check("postgres", "ok", "fine"),
+            commands.Check("redis", "ok", "fine"),
+        )
+        (tmp_path / ".env").write_text("DOCSGPT_PORT=seven thousand\n", encoding="utf-8")
+        with pytest.raises(DeployError, match="not a port number"):
+            _run(["doctor", "--dir", str(tmp_path)], _context())
+
     def test_it_says_which_settings_file_it_read(self, tmp_path, capsys, monkeypatch):
         self._only(
             monkeypatch,
