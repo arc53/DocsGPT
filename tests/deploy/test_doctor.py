@@ -213,6 +213,22 @@ class TestPostgresCheck:
         assert check.level == "fail"
         assert "connection refused" in check.detail
 
+    def test_a_database_password_is_never_printed(self, monkeypatch):
+        """psycopg quotes the connection string it was given, which carries the password."""
+        import psycopg
+
+        uri = "postgresql://docsgpt:hunter2@db.example.com:5432/docsgpt"
+
+        def refuse(*args, **kwargs):
+            raise psycopg.OperationalError(f'connection to "{uri}" failed: timeout expired')
+
+        monkeypatch.setattr(psycopg, "connect", refuse)
+        check = commands._check_postgres(uri)
+        assert check.level == "fail"
+        assert "hunter2" not in check.detail
+        assert "db.example.com:5432" in check.detail, "the endpoint still has to be identifiable"
+        assert "timeout expired" in check.detail, "and the reason has to survive the scrubbing"
+
     def test_without_a_uri_at_all(self):
         check = commands._check_postgres(None)
         assert check.level == "fail"
@@ -251,7 +267,8 @@ class TestRedisCheck:
         def from_url(cls, url, **kwargs):
             class Client:
                 def ping(self):
-                    raise ConnectionError("connection refused")
+                    # redis-py quotes the URL it was handed, which is how the credentials got out.
+                    raise ConnectionError(f"no route to {url}")
 
             return Client()
 
@@ -263,7 +280,7 @@ class TestRedisCheck:
         assert "redis.example.com:6380/0" in check.detail, "the endpoint still has to be identifiable"
 
     def test_a_malformed_url_is_not_echoed_either(self):
-        assert commands._redis_endpoint("redis://[::1") == "the configured URL"
+        assert commands._endpoint("redis://[::1") == "the configured URL"
 
     def test_without_any_redis_configured(self):
         assert commands._check_redis({}).level == "fail"

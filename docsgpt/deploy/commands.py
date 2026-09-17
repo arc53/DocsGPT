@@ -801,7 +801,7 @@ def _check_postgres(uri: Optional[str]) -> Check:
                 row = cursor.fetchone()
                 current = row[0] if row else None
     except (psycopg.Error, OSError, ValueError) as exc:
-        return Check("postgres", "fail", f"cannot connect: {str(exc).strip()}")
+        return Check("postgres", "fail", f"cannot connect to {_endpoint(uri)}: {_scrub(str(exc).strip(), uri)}")
     head = _migration_head()
     if not current:
         return Check("postgres", "fail", f"PostgreSQL {version}, no schema yet; run `docsgpt migrate`")
@@ -811,8 +811,8 @@ def _check_postgres(uri: Optional[str]) -> Check:
     return Check("postgres", "ok", f"PostgreSQL {version}, schema at {current}")
 
 
-def _redis_endpoint(url: str) -> str:
-    """A Redis URL without its credentials: this ends up on a terminal, in CI logs and in issues."""
+def _endpoint(url: str) -> str:
+    """A URL without its credentials: this ends up on a terminal, in CI logs and in issues."""
     try:
         parts = urlsplit(url)
     except ValueError:
@@ -821,6 +821,21 @@ def _redis_endpoint(url: str) -> str:
     if parts.port:
         host = f"{host}:{parts.port}"
     return f"{parts.scheme}://{host}{parts.path}" if host else "the configured URL"
+
+
+def _scrub(text: str, url: Optional[str]) -> str:
+    """Client errors quote the URL they were handed, credentials and all, so take them back out."""
+    if not url:
+        return text
+    text = text.replace(url, _endpoint(url))
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return text
+    for secret in (parts.password, parts.username):
+        if secret:
+            text = text.replace(secret, "...")
+    return text
 
 
 def _check_redis(urls: Mapping[str, str]) -> Check:
@@ -835,7 +850,9 @@ def _check_redis(urls: Mapping[str, str]) -> Check:
         try:
             redis.Redis.from_url(url, socket_connect_timeout=3).ping()
         except Exception as exc:  # noqa: BLE001 - every client error here is the same finding
-            return Check("redis", "fail", f"{label} ({_redis_endpoint(url)}) does not answer: {str(exc).strip()}")
+            return Check(
+                "redis", "fail", f"{label} ({_endpoint(url)}) does not answer: {_scrub(str(exc).strip(), url)}"
+            )
     return Check("redis", "ok", f"answering on {len(urls)} database(s)")
 
 
