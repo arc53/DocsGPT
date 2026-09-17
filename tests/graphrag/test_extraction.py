@@ -625,6 +625,42 @@ class TestSummaryNodeCount:
 
 
 @pytest.mark.unit
+class TestSummaryCountFailure:
+    """A broken count query must not be reported as an empty graph."""
+
+    def test_a_failed_count_reports_the_write_count(
+        self, monkeypatch, stub_embedding
+    ):
+        from unittest.mock import MagicMock
+
+        store = MagicMock(name="GraphStore")
+        store.pending_chunks.return_value = ["c1"]
+        store.apply_chunk.return_value = (2, 1)
+        store.count_nodes.side_effect = RuntimeError("count query failed")
+        monkeypatch.setattr(
+            "docsgpt.graphrag.store.GraphStore", lambda *a, **k: store
+        )
+        _install_stub_llm(
+            monkeypatch,
+            _StubLLM([_extraction_json([{"name": "Ada"}], [])]),
+        )
+
+        summary = extract_graph_for_source(
+            str(uuid.uuid4()),
+            user="owner-1",
+            chunks=[_chunk("c1", "Ada.")],
+            config=SourceConfig(),
+            request_id="req-1",
+        )
+
+        # Falls back to what was actually written, not to zero.
+        assert summary["nodes"] == 2
+        # And it asked for a count that raises rather than one that returns 0,
+        # or the fallback above could never run.
+        assert store.count_nodes.call_args.kwargs.get("strict") is True
+
+
+@pytest.mark.unit
 class TestParsing:
     def test_parses_embedded_json(self):
         raw = 'sure!\n{"entities": [{"name": "A"}], "relationships": []}\nthanks'

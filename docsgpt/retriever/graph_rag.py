@@ -108,7 +108,11 @@ def _personalized_pagerank(
         neighbors = []
         total = 0.0
         for neighbor, data in graph[node].items():
-            edge_weight = float(data.get(weight, 1.0) or 1.0)
+            raw_weight = data.get(weight, 1.0)
+            # Default only a missing or null weight. ``or 1.0`` would also
+            # rewrite an explicit 0 — "these entities are not related" — into a
+            # full-strength transition, which changes the ranking.
+            edge_weight = 1.0 if raw_weight is None else float(raw_weight)
             if edge_weight <= 0:
                 continue
             neighbors.append((neighbor, edge_weight))
@@ -212,8 +216,12 @@ class GraphRAGRetriever(BaseRetriever):
         for edge in subgraph.get("edges", []):
             src, dst = edge["src_node_id"], edge["dst_node_id"]
             if src in graph and dst in graph:
-                weight = float(edge.get("weight") or 1.0)
-                graph.add_edge(src, dst, weight=weight)
+                raw_weight = edge.get("weight")
+                # Same rule the ranker applies: default only a missing or null
+                # weight. Coercing an explicit 0 to 1.0 here would make "these
+                # entities are not related" the strongest possible link.
+                edge_weight = 1.0 if raw_weight is None else float(raw_weight)
+                graph.add_edge(src, dst, weight=edge_weight)
         if graph.number_of_nodes() == 0:
             return {}
 

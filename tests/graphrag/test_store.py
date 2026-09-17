@@ -1002,3 +1002,115 @@ class TestWritesSurviveALostConnection:
 
         assert handed == [broken]
         broken.rollback.assert_called_once()
+
+
+@pytest.mark.unit
+class TestCountNodesFailureModes:
+    """Retrieval wants a swallowed count; extraction wants to hear about it."""
+
+    def _store_with_failing_cursor(self):
+        store = GraphStore.__new__(GraphStore)
+        store._tables_ensured = True
+        cursor = MagicMock()
+        cursor.execute.side_effect = RuntimeError("relation does not exist")
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        store._connection = conn
+        store._get_connection = lambda: conn
+        return store
+
+    def test_default_reports_zero_to_drive_the_classic_fallback(self):
+        store = self._store_with_failing_cursor()
+
+        assert store.count_nodes(str(uuid.uuid4())) == 0
+
+    def test_strict_surfaces_the_query_failure(self):
+        """A caller reporting graph size must not read a broken query as empty."""
+        store = self._store_with_failing_cursor()
+
+        with pytest.raises(RuntimeError):
+            store.count_nodes(str(uuid.uuid4()), strict=True)
+
+
+@pytest.mark.integration
+class TestApplyChunkIsReplaySafe:
+    """A retry after an ambiguous commit must not apply a chunk twice.
+
+    ``_write_with_reconnect`` replays the write when the connection dies, and
+    ``commit()`` itself can raise connection loss *after* the server committed.
+    Replaying then bumps ``doc_freq`` a second time and inserts a second
+    logical edge (``graph_edges`` has no uniqueness constraint), so the chunk's
+    own progress row is written in the same transaction and short-circuits it.
+    """
+
+    @pytest.fixture
+    def store(self, postgresql):
+        store = GraphStore(connection_string=_ephemeral_dsn(postgresql.info))
+        try:
+            store._ensure_tables()
+        except Exception as exc:
+            pytest.skip(f"pgvector extension unavailable: {exc}")
+        yield store
+        store.close()
+
+    def test_a_replayed_chunk_is_not_applied_twice(self, store):
+        source_id = str(uuid.uuid4())
+        entities = [
+            {
+                "name": "Ada",
+                "normalized_name": "ada",
+                "type": "person",
+                "description": "d",
+            }
+        ]
+        relationships = [
+            {
+                "source": "Ada",
+                "target": "Engine",
+                "type": "worked_on",
+                "description": "x",
+                "weight": 2.0,
+            }
+        ]
+        embeddings = {"ada": _embedding(0.1), "engine": _embedding(0.2)}
+        try:
+            first = store.apply_chunk(
+                source_id, "c1", entities, relationships, embeddings
+            )
+            replay = store.apply_chunk(
+                source_id, "c1", entities, relationships, embeddings
+            )
+
+            assert first == (1, 1)
+            assert replay == (0, 0)
+            node = store.get_node_by_normalized(source_id, "ada")
+            assert node["doc_freq"] == 1
+            overview = store.get_graph_overview(source_id)
+            assert len(overview["edges"]) == 1
+            # The write records its own progress, so the caller's checkpoint
+            # and the rows it describes commit together.
+            assert store.get_progress(source_id)["c1"] == "done"
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_a_different_chunk_still_applies(self, store):
+        """The guard is per chunk, not a blanket 'already saw this source'."""
+        source_id = str(uuid.uuid4())
+        entities = [
+            {
+                "name": "Ada",
+                "normalized_name": "ada",
+                "type": "person",
+                "description": "d",
+            }
+        ]
+        embeddings = {"ada": _embedding(0.1)}
+        try:
+            store.apply_chunk(source_id, "c1", entities, [], embeddings)
+            second = store.apply_chunk(source_id, "c2", entities, [], embeddings)
+
+            assert second == (1, 0)
+            node = store.get_node_by_normalized(source_id, "ada")
+            assert node["doc_freq"] == 2
+        finally:
+            store.delete_by_source(source_id)

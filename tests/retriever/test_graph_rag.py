@@ -901,6 +901,66 @@ class TestPersonalizedPageRankWithoutScipy:
 
         assert _personalized_pagerank(nx.Graph(), personalization=None) == {}
 
+    def test_a_zero_weight_edge_is_not_traversable(self):
+        """Zero means "not related", not "use the default weight"."""
+        import networkx as nx
+
+        from docsgpt.retriever.graph_rag import _personalized_pagerank
+
+        graph = nx.Graph()
+        graph.add_edge("seed", "zero", weight=0.0)
+        graph.add_edge("seed", "real", weight=1.0)
+
+        ranks = _personalized_pagerank(
+            graph, personalization={"seed": 1.0, "zero": 0.0, "real": 0.0}
+        )
+
+        # ``zero`` is reachable only across the zero-weight edge, so no mass
+        # walks to it; ``real`` is on a live edge and must outrank it.
+        assert ranks["real"] > ranks["zero"]
+        assert ranks["zero"] == pytest.approx(0.0, abs=1e-9)
+        assert sum(ranks.values()) == pytest.approx(1.0, abs=1e-6)
+
+    def test_stored_zero_weights_reach_the_ranker_intact(self):
+        """The subgraph builder must not coerce a stored 0 into a real edge.
+
+        Without this the ranker's zero-weight rule is unreachable in
+        production: every 0 from ``graph_edges`` arrives as 1.0.
+        """
+        subgraph = {
+            "nodes": [
+                {"id": "seed", "doc_freq": 1},
+                {"id": "zero", "doc_freq": 1},
+                {"id": "real", "doc_freq": 1},
+            ],
+            "edges": [
+                {"src_node_id": "seed", "dst_node_id": "zero", "weight": 0},
+                {"src_node_id": "seed", "dst_node_id": "real", "weight": 1.0},
+            ],
+        }
+        # Called unbound with ``None`` for self: _ppr_scores reads no state.
+        scores = GraphRAGRetriever._ppr_scores(None, subgraph, {"seed": 1.0})
+
+        assert scores["real"] > scores["zero"]
+        assert scores["zero"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_missing_and_null_weights_default_to_one(self):
+        import networkx as nx
+
+        from docsgpt.retriever.graph_rag import _personalized_pagerank
+
+        absent = nx.Graph()
+        absent.add_edge("a", "b")  # no weight attribute at all
+        null = nx.Graph()
+        null.add_edge("a", "b", weight=None)
+
+        personalization = {"a": 1.0, "b": 0.0}
+        from_absent = _personalized_pagerank(absent, personalization=personalization)
+        from_null = _personalized_pagerank(null, personalization=personalization)
+
+        assert from_absent["b"] == pytest.approx(from_null["b"], abs=1e-9)
+        assert from_absent["b"] > 0
+
     @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
     @patch("docsgpt.retriever.graph_rag.GraphStore")
     @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)

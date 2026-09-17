@@ -290,7 +290,9 @@ def extract_graph_for_source(
             )
             node_upserts += chunk_nodes
             edges += chunk_edges
-            store.mark_chunk(source_id, chunk_id, "done")
+            # ``apply_chunk`` marks the chunk done inside the transaction that
+            # writes its rows, so the checkpoint cannot disagree with the graph
+            # and a replayed write cannot apply the chunk twice.
             chunks_processed += 1
         except Exception as exc:
             logger.warning(
@@ -311,9 +313,12 @@ def extract_graph_for_source(
     # upserts and a single node, so the old count overstated every graph whose
     # entities recur. Report what the graph holds, falling back to the write
     # count only if the count query itself fails.
+    # ``strict`` is what makes the fallback below reachable: the default
+    # count swallows query failures and answers 0, which would report a
+    # successful build as an empty graph.
     nodes = node_upserts
     try:
-        nodes = store.count_nodes(source_id)
+        nodes = store.count_nodes(source_id, strict=True)
     except Exception as exc:
         logger.warning(
             "count_nodes failed for source %s; reporting upserts instead: %s",

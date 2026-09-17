@@ -556,8 +556,12 @@ class GraphStore:
         ``name_embeddings`` maps ``normalized_name`` to its embedding. Degrees
         are not bumped here — the caller runs ``set_node_degrees`` once at the
         end. Reconnects and retries once if the connection died while the
-        extraction was waiting on the model. Returns
-        ``(nodes_upserted, edges_added)``.
+        extraction was waiting on the model.
+
+        The chunk's ``graph_ingest_progress`` row is written in this same
+        transaction, so the checkpoint and the rows it describes commit
+        together and a replay of an already-applied chunk returns ``(0, 0)``
+        without touching the graph. Returns ``(nodes_upserted, edges_added)``.
         """
         self._ensure_tables_once()
 
@@ -566,6 +570,21 @@ class GraphStore:
             node_ids: Dict[str, str] = {}
             edges_added = 0
             try:
+                # ``commit()`` can report connection loss *after* the server
+                # committed, and the retry then replays this write: doc_freq
+                # would be bumped twice and a second logical edge inserted
+                # (graph_edges has no uniqueness constraint). The progress row
+                # below is written in this transaction, so a replay sees it.
+                cursor.execute(
+                    "SELECT status FROM graph_ingest_progress "
+                    "WHERE source_id = %s AND chunk_id = %s;",
+                    (source_id, str(chunk_id)),
+                )
+                applied = cursor.fetchone()
+                if applied is not None and applied[0] == "done":
+                    conn.rollback()
+                    return 0, 0
+
                 for entity in entities:
                     normalized_name = entity["normalized_name"]
                     node_id = self._upsert_node(
@@ -601,6 +620,15 @@ class GraphStore:
                     )
                     edges_added += 1
 
+                cursor.execute(
+                    """
+                    INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
+                    VALUES (%s, %s, 'done')
+                    ON CONFLICT (source_id, chunk_id)
+                    DO UPDATE SET status = EXCLUDED.status;
+                    """,
+                    (source_id, str(chunk_id)),
+                )
                 conn.commit()
                 return len(entities), edges_added
             except Exception:
@@ -671,8 +699,22 @@ class GraphStore:
             cursor.close()
             conn.rollback()
 
-    def count_nodes(self, source_id: str) -> int:
-        """Number of nodes for a source. Zero drives the ClassicRAG fallback."""
+    def count_nodes(self, source_id: str, strict: bool = False) -> int:
+        """Number of nodes for a source. Zero drives the ClassicRAG fallback.
+
+        Args:
+            source_id: Source whose nodes to count.
+            strict: Re-raise a query failure instead of reporting ``0``.
+                Retrieval wants the swallow — a broken count there just routes
+                the source to ClassicRAG — but a caller reporting how big a
+                graph is must not read a failed query as "the graph is empty".
+
+        Returns:
+            int: The node count, or ``0`` when a query failure is swallowed.
+
+        Raises:
+            Exception: The underlying query failure, when ``strict`` is set.
+        """
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
@@ -683,6 +725,8 @@ class GraphStore:
             return int(cursor.fetchone()[0])
         except Exception as e:
             logging.error(f"Error counting nodes: {e}")
+            if strict:
+                raise
             return 0
         finally:
             cursor.close()
