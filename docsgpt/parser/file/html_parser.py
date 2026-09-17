@@ -39,6 +39,24 @@ def _span(cell, attribute: str) -> int:
     return 1
 
 
+def _spans_row_group(cell) -> bool:
+    """Whether the cell carries ``rowspan="0"``: the rest of its row group.
+
+    HTML keeps ``rowspan="0"`` (``colspan="0"`` was dropped in HTML5 and is
+    one column): a browser reports ``rowSpan === 0`` and lays the cell out to
+    the last row of its ``thead``/``tbody``/``tfoot``, so the rows below it
+    are short a cell exactly as they are under a numeric ``rowspan``.
+
+    Args:
+        cell: A ``td``/``th`` tag.
+
+    Returns:
+        True when ``rowspan`` reads as zero.
+    """
+    value = cell.get("rowspan")
+    return isinstance(value, str) and value.isdigit() and int(value) == 0
+
+
 # A span attribute must not be able to make the output, or the conversion, much
 # larger than the page: a table gets its placeholders only while they stay within
 # a few per real cell, and is otherwise converted as markdownify converts it.
@@ -58,7 +76,7 @@ def _fill_row_spans(soup) -> None:
     for table in soup.find_all("table"):
         rows = table.find_all("tr")
         cells = [row.find_all(["td", "th"], recursive=False) for row in rows]
-        layout = _row_span_layout(cells)
+        layout = _row_span_layout(cells, _row_group_ends(rows))
         if layout is None:
             continue
         placed, covered = layout
@@ -67,7 +85,29 @@ def _fill_row_spans(soup) -> None:
                 _pad_row(soup, row, row_placed, sorted(row_covered))
 
 
-def _row_span_layout(cells: List[list]) -> Optional[Tuple[List[list], List[set]]]:
+def _row_group_ends(rows: list) -> List[int]:
+    """For each row, the index of the last row of the row group it sits in.
+
+    A row group is the row's ``thead``/``tbody``/``tfoot``; rows written
+    directly under the table are grouped by the table itself. Only
+    ``rowspan="0"`` needs this, as the one span that ends with its group.
+
+    Args:
+        rows: The table's ``tr`` tags, in document order.
+
+    Returns:
+        One index per row, positional with ``rows``.
+    """
+    groups: List[int] = []
+    last: Dict[int, int] = {}
+    for index, row in enumerate(rows):
+        group = row.find_parent(["thead", "tbody", "tfoot", "table"])
+        groups.append(id(group))
+        last[id(group)] = index
+    return [last[group] for group in groups]
+
+
+def _row_span_layout(cells: List[list], group_ends: List[int]) -> Optional[Tuple[List[list], List[set]]]:
     """Where each row's own cells sit, and which columns earlier rowspans take.
 
     Returns ``None`` once the placeholders would pass the table's budget.
@@ -84,8 +124,12 @@ def _row_span_layout(cells: List[list]) -> Optional[Tuple[List[list], List[set]]
                 column += 1
             row_placed.append((column, cell))
             columns = _span(cell, "colspan")
-            # A rowspan never reaches past the table.
-            rows_below = min(_span(cell, "rowspan"), len(cells) - index) - 1
+            if _spans_row_group(cell):
+                # ``rowspan="0"``: down to the last row of the row group.
+                rows_below = group_ends[index] - index
+            else:
+                # A rowspan never reaches past the table.
+                rows_below = min(_span(cell, "rowspan"), len(cells) - index) - 1
             needed += columns * rows_below
             if needed > budget:
                 return None

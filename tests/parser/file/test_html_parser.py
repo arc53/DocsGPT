@@ -401,3 +401,71 @@ def test_many_rowspans_are_filled_in_linear_time():
 
     assert elapsed < 5
     assert rows[-1] == [""] * spans + ["last"]
+
+
+def test_a_rowspan_of_zero_covers_the_rest_of_its_row_group():
+    """``rowspan="0"`` reaches the end of the row group, not one row.
+
+    A browser reports ``rowSpan === 0`` and makes the cell as tall as the
+    whole ``tbody``, so ``Hub`` reads under ``Region`` and ``7`` under
+    ``Product`` unless every remaining row of the group gets the column.
+    """
+    from docsgpt.parser.file.html_parser import html_to_markdown
+
+    html = (
+        "<table><thead><tr><th>Region</th><th>Product</th><th>Units</th></tr></thead>"
+        "<tbody><tr><td rowspan='0'>EU</td><td>Cable</td><td>12</td></tr>"
+        "<tr><td>Hub</td><td>7</td></tr>"
+        "<tr><td>Dock</td><td>3</td></tr></tbody></table>"
+    )
+
+    assert _table_rows(html_to_markdown(html)) == [
+        ["Region", "Product", "Units"],
+        ["---", "---", "---"],
+        ["EU", "Cable", "12"],
+        ["", "Hub", "7"],
+        ["", "Dock", "3"],
+    ]
+
+
+def test_a_rowspan_of_zero_stops_at_the_end_of_its_row_group():
+    """The next group starts a fresh grid, so its rows keep the first column."""
+    from docsgpt.parser.file.html_parser import html_to_markdown
+
+    html = (
+        "<table><thead><tr><th>Region</th><th>Units</th></tr></thead>"
+        "<tbody><tr><td rowspan='0'>EU</td><td>12</td></tr><tr><td>7</td></tr></tbody>"
+        "<tfoot><tr><td>Total</td><td>19</td></tr></tfoot></table>"
+    )
+
+    rows = _table_rows(html_to_markdown(html))
+
+    assert rows[2:4] == [["EU", "12"], ["", "7"]]
+    assert rows[-1] == ["Total", "19"]
+
+
+def test_a_rowspan_of_zero_without_a_row_group_covers_the_table():
+    from docsgpt.parser.file.html_parser import html_to_markdown
+
+    html = (
+        "<table><tr><th>A</th><th>B</th></tr>"
+        "<tr><td rowspan='0'>x</td><td>1</td></tr><tr><td>2</td></tr></table>"
+    )
+
+    assert _table_rows(html_to_markdown(html))[3] == ["", "2"]
+
+
+def test_a_rowspan_of_zero_stays_inside_the_span_budget():
+    """The budget bounds ``rowspan="0"`` the way it bounds a numeric span."""
+    from docsgpt.parser.file.html_parser import html_to_markdown
+
+    html = (
+        "<table><tr><td rowspan='0' colspan='1000'>x</td></tr>"
+        + "<tr><td>a</td></tr>" * 999
+        + "</table><p>after</p>"
+    )
+
+    markdown = html_to_markdown(html)
+
+    assert len(markdown) < 10 * len(html)
+    assert markdown.rstrip().endswith("after")
