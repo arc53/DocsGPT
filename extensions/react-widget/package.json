@@ -99,7 +99,7 @@
     "widget"
   ],
   "author": "Arc53",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/arc53/DocsGPT/issues"
   },
