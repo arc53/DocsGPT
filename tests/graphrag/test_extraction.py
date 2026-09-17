@@ -404,6 +404,124 @@ class TestModelResolution:
 
 
 @pytest.mark.unit
+class TestExtractionProviderResolution:
+    """The extraction model decides the provider, not ``LLM_PROVIDER``.
+
+    ``settings.LLM_PROVIDER`` is the deployment default (``docsgpt`` out of the
+    box, i.e. the hosted public endpoint). Dispatching the resolved extraction
+    model through it sends the call to a provider that never serves that model:
+    the request is rejected, the shared fallback answers instead, and the graph
+    is quietly built by a different model than the one configured.
+    """
+
+    def _capture_create_llm(self, monkeypatch, llm=None):
+        captured = {}
+
+        def _create(provider, *args, **kwargs):
+            captured["provider"] = provider
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return llm or _StubLLM([])
+
+        monkeypatch.setattr(
+            extraction_module.LLMCreator, "create_llm", staticmethod(_create)
+        )
+        return captured
+
+    def test_provider_comes_from_the_model_registry(self, monkeypatch):
+        monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "docsgpt")
+        monkeypatch.setattr(
+            extraction_module, "get_provider_from_model_id", lambda *a, **k: "openai"
+        )
+        monkeypatch.setattr(
+            extraction_module, "get_api_key_for_provider", lambda provider: "sk-openai"
+        )
+        captured = self._capture_create_llm(monkeypatch)
+
+        extraction_module._build_extraction_llm("gpt-4o-mini", "owner-1", "req-1")
+
+        assert captured["provider"] == "openai"
+        assert captured["kwargs"]["api_key"] == "sk-openai"
+        assert captured["kwargs"]["model_id"] == "gpt-4o-mini"
+
+    def test_owner_scopes_the_registry_lookup(self, monkeypatch):
+        """A per-user (BYOM) model only resolves when the owner is passed."""
+        seen = {}
+
+        def _resolve(model_id, user_id=None):
+            seen["model_id"] = model_id
+            seen["user_id"] = user_id
+            return "anthropic"
+
+        monkeypatch.setattr(
+            extraction_module, "get_provider_from_model_id", _resolve
+        )
+        monkeypatch.setattr(
+            extraction_module, "get_api_key_for_provider", lambda provider: "k"
+        )
+        self._capture_create_llm(monkeypatch)
+
+        extraction_module._build_extraction_llm("byom-uuid", "owner-7", "req-1")
+
+        assert seen == {"model_id": "byom-uuid", "user_id": "owner-7"}
+
+    def test_unknown_model_falls_back_to_the_configured_provider(self, monkeypatch):
+        monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "docsgpt")
+        monkeypatch.setattr(
+            extraction_module, "get_provider_from_model_id", lambda *a, **k: None
+        )
+        monkeypatch.setattr(
+            extraction_module, "get_api_key_for_provider", lambda provider: "fallback-key"
+        )
+        captured = self._capture_create_llm(monkeypatch)
+
+        extraction_module._build_extraction_llm("mystery-model", "owner-1", "req-1")
+
+        assert captured["provider"] == "docsgpt"
+        assert captured["kwargs"]["api_key"] == "fallback-key"
+
+    def test_no_model_id_skips_the_lookup(self, monkeypatch):
+        monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "openai")
+        calls = []
+        monkeypatch.setattr(
+            extraction_module,
+            "get_provider_from_model_id",
+            lambda *a, **k: calls.append(a) or "anthropic",
+        )
+        monkeypatch.setattr(
+            extraction_module, "get_api_key_for_provider", lambda provider: "k"
+        )
+        captured = self._capture_create_llm(monkeypatch)
+
+        extraction_module._build_extraction_llm(None, "owner-1", "req-1")
+
+        assert calls == []
+        assert captured["provider"] == "openai"
+
+    def test_api_key_follows_the_resolved_provider(self, monkeypatch):
+        """The key must match the provider actually dispatched to."""
+        monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "docsgpt")
+        monkeypatch.setattr(extraction_module.settings, "API_KEY", "generic-key")
+        monkeypatch.setattr(
+            extraction_module, "get_provider_from_model_id", lambda *a, **k: "anthropic"
+        )
+        keyed_for = {}
+
+        def _key(provider):
+            keyed_for["provider"] = provider
+            return "sk-anthropic"
+
+        monkeypatch.setattr(extraction_module, "get_api_key_for_provider", _key)
+        captured = self._capture_create_llm(monkeypatch)
+
+        extraction_module._build_extraction_llm("claude-x", "owner-1", "req-1")
+
+        assert keyed_for["provider"] == "anthropic"
+        assert captured["kwargs"]["api_key"] == "sk-anthropic"
+        assert captured["kwargs"]["api_key"] != "generic-key"
+
+
+@pytest.mark.unit
 class TestParsing:
     def test_parses_embedded_json(self):
         raw = 'sure!\n{"entities": [{"name": "A"}], "relationships": []}\nthanks'

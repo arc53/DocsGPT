@@ -23,6 +23,10 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Optional
 
+from docsgpt.core.model_utils import (
+    get_api_key_for_provider,
+    get_provider_from_model_id,
+)
 from docsgpt.core.settings import settings
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.storage.db.source_config import SourceConfig
@@ -63,14 +67,37 @@ def _resolve_max_chunks(config: SourceConfig) -> int:
     return config.graph.max_chunks or settings.GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION
 
 
+def _resolve_extraction_provider(
+    model_id: Optional[str], user: Optional[str]
+) -> str:
+    """The provider that serves ``model_id``, else the deployment default.
+
+    ``settings.LLM_PROVIDER`` is only a default (``docsgpt``, the hosted public
+    endpoint, out of the box). Dispatching the resolved extraction model
+    through it sends the request to a provider that does not serve that model:
+    the call is rejected, the shared fallback answers instead, and the graph is
+    built by a different model than the one configured — with nothing in the
+    summary to say so. ``user`` scopes the lookup so a per-user (BYOM) model id
+    resolves as well.
+    """
+    provider = (
+        get_provider_from_model_id(model_id, user_id=user) if model_id else None
+    )
+    return provider or settings.LLM_PROVIDER
+
+
 def _build_extraction_llm(
     model_id: Optional[str], user: Optional[str], request_id: Optional[str]
 ):
     """Build the extraction LLM tagged for token-usage attribution to the owner."""
     decoded_token = {"sub": user} if user else None
+    provider = _resolve_extraction_provider(model_id, user)
+    logger.info(
+        "Graph extraction dispatching model=%s via provider=%s", model_id, provider
+    )
     llm = LLMCreator.create_llm(
-        settings.LLM_PROVIDER,
-        api_key=settings.API_KEY,
+        provider,
+        api_key=get_api_key_for_provider(provider),
         user_api_key=None,
         decoded_token=decoded_token,
         model_id=model_id,
