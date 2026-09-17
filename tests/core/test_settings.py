@@ -177,6 +177,14 @@ class TestCrossFieldRules:
     def test_oidc_settings_are_not_required_for_other_modes(self):
         assert Settings.model_validate({"AUTH_TYPE": "session_jwt"}).OIDC_ISSUER is None
 
+    @pytest.mark.parametrize("raw", [None, "", "None"])
+    def test_scim_enabled_requires_a_token(self, raw):
+        with pytest.raises(ValidationError, match="SCIM_ENABLED requires settings: SCIM_TOKEN"):
+            Settings.model_validate({"SCIM_ENABLED": True, "SCIM_TOKEN": raw})
+
+    def test_scim_disabled_needs_no_token(self):
+        assert Settings.model_validate({"SCIM_ENABLED": False}).SCIM_TOKEN is None
+
 
 @pytest.mark.unit
 class TestClosedChoices:

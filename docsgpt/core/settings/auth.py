@@ -92,9 +92,11 @@ class AuthSettings(SettingsGroup):
         return normalize_choice(v)
 
     @model_validator(mode="after")
-    def _require_oidc_settings(self):
+    def _require_dependent_settings(self):
         if self.AUTH_TYPE == "oidc":
             missing = [name for name in OIDC_REQUIRED if not getattr(self, name)]
             if missing:
                 raise ValueError(f"AUTH_TYPE=oidc requires settings: {', '.join(missing)}")
+        if self.SCIM_ENABLED and not self.SCIM_TOKEN:
+            raise ValueError("SCIM_ENABLED requires settings: SCIM_TOKEN")
         return self
