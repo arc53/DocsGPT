@@ -53,7 +53,7 @@ def _dedupable_tool_names() -> frozenset:
     """
     from docsgpt.core.settings import settings
 
-    return frozenset(BUILTIN_AGENT_TOOLS) | frozenset(getattr(settings, "DEFAULT_CHAT_TOOLS", None) or [])
+    return frozenset(BUILTIN_AGENT_TOOLS) | frozenset(settings.DEFAULT_CHAT_TOOLS or [])
 
 
 def _requires_approval(tool: Dict, action: Dict) -> bool:

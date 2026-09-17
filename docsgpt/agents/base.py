@@ -382,7 +382,7 @@ class BaseAgent(ABC):
         when the conversation was compressed after that turn was produced —
         the compressed local history is the context then, not the server's.
         """
-        if not getattr(settings, "OPENAI_RESPONSES_CHAIN_ACROSS_TURNS", True):
+        if not settings.OPENAI_RESPONSES_CHAIN_ACROSS_TURNS:
             return None
         if not self.chat_history:
             return None
@@ -422,7 +422,7 @@ class BaseAgent(ABC):
             # No provider-reported usage on the previous turn (older rows,
             # estimate-only providers): nothing to bound against.
             return meta["response_id"]
-        budget = getattr(settings, "OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS", None)
+        budget = settings.OPENAI_RESPONSES_CHAIN_BUDGET_TOKENS
         if not budget:
             from docsgpt.core.model_utils import get_token_limit
 

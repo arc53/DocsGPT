@@ -35,7 +35,8 @@ class ConnectorSettings(SettingsGroup):
         default="common", description="Azure AD tenant id, or 'common' for multi-tenant."
     )
     MICROSOFT_AUTHORITY: Optional[str] = Field(
-        default=None, description='Authority URL override, e.g. "https://login.microsoftonline.com/{tenant_id}".'
+        default=None,
+        description="Authority URL override; unset derives https://login.microsoftonline.com/<MICROSOFT_TENANT_ID>.",
     )
 
     # Confluence Cloud integration.

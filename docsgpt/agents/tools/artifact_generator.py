@@ -829,7 +829,7 @@ class ArtifactGeneratorTool(Tool):
         spec_path = f"{token_dir}/spec.json"
         out_path = f"{token_dir}/out.{_KIND_INFO[kind]['ext']}"
         program = _RENDERERS[kind].format(spec_path=spec_path, out_path=out_path)
-        timeout = float(getattr(settings, "SANDBOX_EXEC_TIMEOUT", 60))
+        timeout = float(settings.SANDBOX_EXEC_TIMEOUT)
 
         manager = SandboxCreator.get_manager()
         try:

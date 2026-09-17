@@ -108,11 +108,11 @@ class MCPTool(Tool):
         if configured_redirect_uri:
             return configured_redirect_uri.rstrip("/")
 
-        explicit = getattr(settings, "MCP_OAUTH_REDIRECT_URI", None)
+        explicit = settings.MCP_OAUTH_REDIRECT_URI
         if explicit:
             return explicit.rstrip("/")
 
-        connector_base = getattr(settings, "CONNECTOR_REDIRECT_BASE_URI", None)
+        connector_base = settings.CONNECTOR_REDIRECT_BASE_URI
         if connector_base:
             parsed = urlparse(connector_base)
             if parsed.scheme and parsed.netloc:

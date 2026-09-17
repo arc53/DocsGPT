@@ -344,6 +344,6 @@ def build_dispatcher(create_classic: Callable[[], BaseRetriever], **kwargs):
     Returns:
         A ``Dispatcher`` or the legacy retriever from ``create_classic``.
     """
-    if not getattr(settings, "PER_SOURCE_RETRIEVAL_ENABLED", True):
+    if not settings.PER_SOURCE_RETRIEVAL_ENABLED:
         return create_classic()
     return Dispatcher(**kwargs)

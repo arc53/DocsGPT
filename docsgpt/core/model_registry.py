@@ -140,7 +140,7 @@ class ModelRegistry:
         from docsgpt.llm.providers import ALL_PROVIDERS
 
         directories = [BUILTIN_MODELS_DIR]
-        operator_dir = getattr(settings, "MODELS_CONFIG_DIR", None)
+        operator_dir = settings.MODELS_CONFIG_DIR
         if operator_dir:
             op_path = Path(operator_dir)
             if not op_path.exists():

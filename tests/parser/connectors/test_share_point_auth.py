@@ -14,8 +14,8 @@ def mock_settings():
     s.MICROSOFT_TENANT_ID = "tenant-id-123"
     s.CONNECTOR_REDIRECT_BASE_URI = "https://redirect.example.com/callback"
     s.MONGO_DB_NAME = "test_db"
-    # Delete MICROSOFT_AUTHORITY so getattr falls back to default
-    del s.MICROSOFT_AUTHORITY
+    # Unset, as in a real Settings object, so the tenant-derived authority is used.
+    s.MICROSOFT_AUTHORITY = None
     return s
 
 

@@ -639,7 +639,7 @@ class WorkflowEngine:
         raw_ids = self._resolve_input_artifact_ids(inputs)
         if not raw_ids:
             return loaded
-        max_bytes = int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 0) or 0)
+        max_bytes = int(settings.SANDBOX_MAX_INPUT_BYTES or 0)
         storage = StorageCreator.get_storage()
         # Two inputs whose current versions share a filename would clobber each other at the
         # same ``inputs/{name}`` path; track used paths and disambiguate deterministically.
@@ -749,15 +749,15 @@ class WorkflowEngine:
 
         supported = set(supported_types)
         supports_images = any(t.startswith("image/") for t in supported)
-        max_files = int(getattr(settings, "WORKFLOW_NODE_NATIVE_MAX_FILES", 5))
-        extract_max = int(getattr(settings, "WORKFLOW_NODE_EXTRACT_MAX_FILES", 5))
+        max_files = int(settings.WORKFLOW_NODE_NATIVE_MAX_FILES)
+        extract_max = int(settings.WORKFLOW_NODE_EXTRACT_MAX_FILES)
         # One wall clock for every blocking parse this node issues. The cap
         # above bounds how MANY parses run; this bounds how LONG they take in
         # total, so N documents cannot serialize N size-scaled windows.
         parse_deadline = time.monotonic() + float(
-            getattr(settings, "WORKFLOW_NODE_EXTRACT_BUDGET_SECONDS", 900)
+            settings.WORKFLOW_NODE_EXTRACT_BUDGET_SECONDS
         )
-        max_bytes = int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 25 * 1024 * 1024))
+        max_bytes = int(settings.SANDBOX_MAX_INPUT_BYTES)
 
         # One read-only connection for the whole batch; the resolved-version
         # rows are collected, then storage reads happen outside the DB context.
@@ -976,7 +976,7 @@ class WorkflowEngine:
         if not user_id:
             return None
         options = {"output": "markdown", "include_tables": False, "persist": False}
-        queue = getattr(settings, "DOCUMENT_PARSE_QUEUE", "parsing")
+        queue = settings.DOCUMENT_PARSE_QUEUE
         # OCR cost scales with pages, so the window grows with the document's size
         # (floored at DOCUMENT_PARSE_TIMEOUT); the task's per-call time limits are
         # raised to match, else the worker would self-terminate mid-parse.
@@ -1084,7 +1084,7 @@ class WorkflowEngine:
         """Return the stricter of the node's requested timeout and the sandbox cap."""
         from docsgpt.core.settings import settings
 
-        cap = float(getattr(settings, "SANDBOX_EXEC_TIMEOUT", 60))
+        cap = float(settings.SANDBOX_EXEC_TIMEOUT)
         if requested is None:
             return cap
         try:

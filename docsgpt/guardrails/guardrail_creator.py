@@ -52,7 +52,7 @@ class GuardrailCreator:
         does not require an operator to also edit their env.
         """
         cls._ensure_builtin()
-        allowlist = getattr(settings, "GUARDRAILS_CHECKS_ENABLED", None) or []
+        allowlist = settings.GUARDRAILS_CHECKS_ENABLED or []
         if not allowlist:
             return sorted(cls.checks)
         return sorted(k for k in cls.checks if k in set(allowlist))

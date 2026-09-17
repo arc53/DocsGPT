@@ -331,7 +331,7 @@ class WorkflowAgent(BaseAgent):
         from docsgpt.storage.storage_creator import StorageCreator
 
         storage = StorageCreator.get_storage()
-        max_bytes = int(getattr(settings, "ARTIFACT_MAX_BYTES", 0) or 0)
+        max_bytes = int(settings.ARTIFACT_MAX_BYTES or 0)
         dropped: List[str] = []
         if len(self.attachments) > _MAX_INPUT_DOCUMENTS:
             over = len(self.attachments) - _MAX_INPUT_DOCUMENTS

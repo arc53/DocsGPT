@@ -33,7 +33,6 @@ from docsgpt.streaming.async_event_replay import (
 )
 from docsgpt.streaming.async_redis import get_async_redis_instance
 from docsgpt.streaming.event_replay import (
-    DEFAULT_KEEPALIVE_SECONDS,
     DEFAULT_POLL_TIMEOUT_SECONDS,
 )
 from docsgpt.streaming.sse_leases import StreamCapExceeded, acquire_stream_lease
@@ -127,7 +126,7 @@ async def stream_message_events(request: Request) -> Response:
     )
     last_event_id = _normalise_last_event_id(raw_cursor)
     keepalive_seconds = float(
-        getattr(settings, "SSE_KEEPALIVE_SECONDS", DEFAULT_KEEPALIVE_SECONDS)
+        settings.SSE_KEEPALIVE_SECONDS
     )
 
     logger.info(

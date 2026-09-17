@@ -87,9 +87,9 @@ class CodeExecutorTool(Tool):
         baked in. Keep the package lists in sync with deployment/sandbox/Dockerfile
         (jupyter) and scripts/build_daytona_snapshot.py (daytona snapshot).
         """
-        backend = str(getattr(settings, "SANDBOX_BACKEND", "jupyter") or "jupyter").lower()
+        backend = str(settings.SANDBOX_BACKEND or "jupyter").lower()
         if backend == "daytona":
-            if getattr(settings, "DAYTONA_SNAPSHOT", None):
+            if settings.DAYTONA_SNAPSHOT:
                 return (
                     "Preinstalled beyond the stdlib: python-pptx, python-docx, openpyxl, "
                     "reportlab, lxml, pillow. pip install anything else from within the code "
@@ -330,7 +330,7 @@ class CodeExecutorTool(Tool):
             # Reject an oversize input BEFORE buffering it: the declared ``size``
             # avoids pulling a huge file into worker memory, and the bounded read
             # below backstops a missing/lying size column.
-            max_bytes = int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 0) or 0)
+            max_bytes = int(settings.SANDBOX_MAX_INPUT_BYTES or 0)
             declared_size = version.get("size")
             if max_bytes and isinstance(declared_size, (int, float)) and declared_size > max_bytes:
                 return {"error": f"input artifact {artifact_id} exceeds the {max_bytes}-byte sandbox input limit."}
@@ -484,7 +484,7 @@ class CodeExecutorTool(Tool):
     @staticmethod
     def _exec_timeout() -> float:
         """Return the fixed per-run wall-clock cap (SANDBOX_EXEC_TIMEOUT; not caller-adjustable)."""
-        return float(getattr(settings, "SANDBOX_EXEC_TIMEOUT", 60))
+        return float(settings.SANDBOX_EXEC_TIMEOUT)
 
     @staticmethod
     def _is_timeout(result: ExecResult) -> bool:

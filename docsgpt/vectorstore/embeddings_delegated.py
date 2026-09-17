@@ -173,8 +173,8 @@ class DelegatedEmbeddings:
         the full timeout at once -- at the shipped 60s and 96 WSGI threads, an
         API that serves nothing at all, health checks included.
         """
-        queue = getattr(settings, "EMBEDDINGS_QUEUE", "embeddings")
-        timeout = getattr(settings, "EMBEDDINGS_DELEGATE_TIMEOUT", 60)
+        queue = settings.EMBEDDINGS_QUEUE
+        timeout = settings.EMBEDDINGS_DELEGATE_TIMEOUT
 
         remaining = self._cooldown_remaining()
         if remaining > 0:

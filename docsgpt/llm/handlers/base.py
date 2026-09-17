@@ -35,7 +35,7 @@ def _bound_tool_response_for_llm(tool_response: Any) -> Any:
     from docsgpt.core.settings import settings
     from docsgpt.utils import num_tokens_from_string
 
-    max_tokens = int(getattr(settings, "TOOL_RESULT_MAX_TOKENS", 20000) or 0)
+    max_tokens = int(settings.TOOL_RESULT_MAX_TOKENS or 0)
     if max_tokens <= 0:
         return tool_response
     text = tool_response if isinstance(tool_response, str) else str(tool_response)

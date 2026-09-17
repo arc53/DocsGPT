@@ -631,15 +631,15 @@ class DeviceBroker:
 
     @staticmethod
     def _inv_ttl() -> int:
-        return int(getattr(settings, "REMOTE_DEVICE_INVOCATION_TTL_SECONDS", 900))
+        return int(settings.REMOTE_DEVICE_INVOCATION_TTL_SECONDS)
 
     @staticmethod
     def _cmd_ttl() -> int:
-        return int(getattr(settings, "REMOTE_DEVICE_CMD_QUEUE_TTL_SECONDS", 900))
+        return int(settings.REMOTE_DEVICE_CMD_QUEUE_TTL_SECONDS)
 
     @staticmethod
     def _out_maxlen() -> int:
-        return int(getattr(settings, "REMOTE_DEVICE_OUTPUT_STREAM_MAXLEN", 10_000))
+        return int(settings.REMOTE_DEVICE_OUTPUT_STREAM_MAXLEN)
 
 
 def _to_int(value: Optional[str]) -> Optional[int]:
