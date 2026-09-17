@@ -49,6 +49,23 @@ class TestDevCommand:
                 _run(["dev", "--port", str(port)], _context())
         assert started == [], "nothing is spawned when the port is taken"
 
+    def test_a_busy_mock_llm_port_is_refused_before_anything_starts(self, monkeypatch, tmp_path):
+        """It starts first and the rest are pointed at it, so a clash cannot wait until spawn time."""
+        from docsgpt.deploy import dev as dev_module
+
+        self._checkout(monkeypatch, tmp_path)
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "mock_llm.py").write_text("", encoding="utf-8")
+        started = []
+        monkeypatch.setattr(dev_module, "run", lambda children, **kwargs: started.append(children) or 0)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+            held.bind(("127.0.0.1", 0))
+            held.listen(1)
+            monkeypatch.setattr(dev_module, "MOCK_LLM_PORT", held.getsockname()[1])
+            with pytest.raises(DeployError, match="mock LLM cannot bind"):
+                _run(["dev", "--mock-llm", "--port", str(self._free_port())], _context())
+        assert started == [], "nothing is spawned when the mock LLM has nowhere to listen"
+
     def test_it_runs_the_children_it_planned_and_says_where(self, monkeypatch, tmp_path, capsys):
         from docsgpt.deploy import dev as dev_module
 
