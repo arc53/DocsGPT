@@ -1,9 +1,13 @@
 """GraphRAG local retriever — Personalized PageRank over a per-source graph.
 
-Rephrased query -> entity-name NN seeds -> bounded 1-2-hop fetch -> networkx
-Personalized PageRank (IDF-down-weighted hubs) -> chunks ranked by landed PPR
-mass -> shared token budget. No LLM call at query time beyond the (optional,
-reused) rephrase.
+Rephrased query -> entity-name NN seeds -> bounded 1-2-hop fetch -> Personalized
+PageRank (IDF-down-weighted hubs) -> chunks ranked by landed PPR mass -> shared
+token budget. No LLM call at query time beyond the (optional, reused) rephrase.
+
+``networkx`` supplies the graph structure, but the ranking is the local power
+iteration in :func:`_personalized_pagerank`: ``nx.pagerank`` delegates to scipy,
+which DocsGPT does not depend on, so calling it turned every graph retrieval
+into a silent ClassicRAG fallback.
 
 Composes :class:`ClassicRAG` rather than subclassing: PPR doesn't fit the
 ``_fetch_candidates`` hook, but the composed instance supplies the rephrase, the
@@ -38,6 +42,99 @@ SUBGRAPH_HOPS = 1
 def _idf(doc_freq: Any) -> float:
     """Node-specificity weight: rarer entities (low ``doc_freq``) score higher."""
     return 1.0 / math.log(1.0 + max(int(doc_freq or 0), 0) + 1.0)
+
+
+def _restart_vector(nodes: List[Any], personalization: Dict[Any, float] | None) -> Dict[Any, float]:
+    """Normalized restart distribution over ``nodes``.
+
+    Weights are clamped at zero (a cosine distance above 1 yields a negative
+    seed weight) and normalized across the nodes actually present in the graph,
+    so restart mass can never leak to a node the subgraph does not contain. An
+    absent or all-zero personalization collapses to a uniform restart.
+    """
+    if personalization:
+        weights = {
+            node: max(float(personalization.get(node, 0.0) or 0.0), 0.0)
+            for node in nodes
+        }
+        total = sum(weights.values())
+        if total > 0:
+            return {node: weight / total for node, weight in weights.items()}
+    uniform = 1.0 / len(nodes)
+    return {node: uniform for node in nodes}
+
+
+def _personalized_pagerank(
+    graph: nx.Graph,
+    personalization: Dict[Any, float] | None = None,
+    *,
+    weight: str = "weight",
+    alpha: float = 0.85,
+    max_iter: int = 100,
+    tol: float = 1.0e-6,
+) -> Dict[Any, float]:
+    """Personalized PageRank by power iteration — no scipy.
+
+    ``networkx.pagerank`` delegates to a scipy implementation, and scipy is not
+    a DocsGPT dependency: in a default install the import raises and every graph
+    retrieval silently degrades to the ClassicRAG fallback. This is the same
+    algorithm over the same row-normalized transition matrix, so the ranking is
+    unchanged where scipy happens to be installed.
+
+    Args:
+        graph: Undirected graph whose edges may carry a ``weight`` attribute.
+        personalization: Node -> restart weight; ``None`` means uniform.
+        weight: Edge attribute holding the weight.
+        alpha: Damping factor.
+        max_iter: Iteration cap. The last iterate is returned if it is hit —
+            retrieval degrades to a slightly less converged ranking rather than
+            raising, which is what the library does.
+        tol: Convergence tolerance; iteration stops below ``len(graph) * tol``.
+
+    Returns:
+        Node -> PageRank mass, summing to ~1.0. Empty dict for an empty graph.
+    """
+    nodes = list(graph.nodes)
+    node_count = len(nodes)
+    if node_count == 0:
+        return {}
+
+    restart = _restart_vector(nodes, personalization)
+
+    # Row-normalized transitions. An undirected edge is traversable from both
+    # endpoints, so each node normalizes over its own incident weights.
+    transitions: Dict[Any, List[Any]] = {}
+    for node in nodes:
+        neighbors = []
+        total = 0.0
+        for neighbor, data in graph[node].items():
+            edge_weight = float(data.get(weight, 1.0) or 1.0)
+            if edge_weight <= 0:
+                continue
+            neighbors.append((neighbor, edge_weight))
+            total += edge_weight
+        transitions[node] = (
+            [(n, w / total) for n, w in neighbors] if total > 0 else []
+        )
+
+    # A node with no usable edge is dangling: its mass would vanish each pass,
+    # so it is redistributed along the restart vector instead.
+    dangling = [node for node in nodes if not transitions[node]]
+
+    ranks = {node: 1.0 / node_count for node in nodes}
+    for _ in range(max_iter):
+        previous = ranks
+        ranks = dict.fromkeys(nodes, 0.0)
+        leaked = alpha * sum(previous[node] for node in dangling)
+        for node in nodes:
+            share = alpha * previous[node]
+            for neighbor, transition in transitions[node]:
+                ranks[neighbor] += share * transition
+        for node in nodes:
+            ranks[node] += (leaked + 1.0 - alpha) * restart[node]
+        if sum(abs(ranks[node] - previous[node]) for node in nodes) < node_count * tol:
+            break
+    return ranks
 
 
 class GraphRAGRetriever(BaseRetriever):
@@ -117,7 +214,9 @@ class GraphRAGRetriever(BaseRetriever):
         if not any(personalization.values()):
             personalization = None
 
-        ranks = nx.pagerank(graph, personalization=personalization, weight="weight")
+        ranks = _personalized_pagerank(
+            graph, personalization=personalization, weight="weight"
+        )
         return {
             node: rank * _idf(graph.nodes[node].get("doc_freq", 0))
             for node, rank in ranks.items()
