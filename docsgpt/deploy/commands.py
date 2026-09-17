@@ -615,24 +615,35 @@ def logs(args, context: Optional[Context] = None) -> int:
     if _mode(directory) == "native":
         logs_dir = directory / "logs"
         wanted = args.services or ["api", "worker"]
+        # Opened before the first read and kept: a line written between printing what is there and
+        # starting to follow would otherwise appear in neither.
+        handles = {}
         for service in wanted:
             path = logs_dir / f"{service}.log"
             print(f"=== {path}")
-            if path.is_file():
-                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-                print("\n".join(lines[-args.tail:] if args.tail else lines))
-            else:
+            if not path.is_file():
                 print("(nothing logged yet)")
+                continue
+            handle = path.open("r", encoding="utf-8", errors="replace")
+            lines = handle.read().splitlines()
+            print("\n".join(lines[-args.tail:] if args.tail else lines))
+            handles[service] = handle
         if args.follow:
-            return _follow(logs_dir, wanted)
+            return _follow(logs_dir, wanted, handles)
+        for handle in handles.values():
+            handle.close()
         return 0
     options = (["--follow"] if args.follow else []) + (["--tail", str(args.tail)] if args.tail else [])
     return context.docker.compose(directory, "logs", *options, *args.services, check=False).returncode
 
 
-def _follow(logs_dir: Path, services: list) -> int:
-    """Print new lines from each service's log until the terminal interrupts, prefixed by service."""
-    handles: dict = {}
+def _follow(logs_dir: Path, services: list, handles: Optional[dict] = None) -> int:
+    """Print new lines from each service's log until the terminal interrupts, prefixed by service.
+
+    ``handles`` are the files already read, positioned where that read left off, so nothing written
+    in between is skipped. Files that did not exist yet are opened as they appear.
+    """
+    handles = dict(handles or {})
     try:
         while True:
             for service in services:
@@ -734,7 +745,8 @@ def dev(args, context: Optional[Context] = None) -> int:
             "`docsgpt dev` runs the code in a source checkout, and this is an installed package. "
             "Clone the repository and run it from there, or use `docsgpt up --native` to run this copy."
         )
-    if not _port_is_free(args.port):
+    port = _port_number(args.port, "--port")
+    if not _port_is_free(port):
         raise DeployError(
             f"port {args.port} is already in use, so the API cannot bind it. Stop what is on it "
             f"(a previous `docsgpt dev`, or `docsgpt down` for an install), or pass --port."
@@ -879,7 +891,25 @@ def _check_provider(env: Mapping[str, str]) -> Check:
         return Check("provider", "ok", "the DocsGPT public API (no key needed)")
     if not (env.get("API_KEY") or env.get("OPENAI_API_KEY")):
         return Check("provider", "fail", f"{provider} is configured but no API_KEY is set")
-    return Check("provider", "ok", f"{provider}{' at ' + env['OPENAI_BASE_URL'] if env.get('OPENAI_BASE_URL') else ''}")
+    endpoint = _endpoint(env["OPENAI_BASE_URL"]) if env.get("OPENAI_BASE_URL") else ""
+    return Check("provider", "ok", f"{provider}{' at ' + endpoint if endpoint else ''}")
+
+
+def _redis_to_check(args, env: Mapping[str, str]) -> dict:
+    """The Redis endpoints to ping: all three from --redis-url when given, else what .env holds.
+
+    Overriding only the broker would still ping a stale result backend or cache, and the check
+    fails on the first endpoint that does not answer -- so --redis-url would appear not to work.
+    """
+    if args.redis_url:
+        names = {"CELERY_BROKER_URL": "broker", "CELERY_RESULT_BACKEND": "results", "CACHE_REDIS_URL": "cache"}
+        return {names[key]: value for key, value in _redis_urls(args.redis_url).items()}
+    pairs = (
+        ("broker", env.get("CELERY_BROKER_URL")),
+        ("results", env.get("CELERY_RESULT_BACKEND")),
+        ("cache", env.get("CACHE_REDIS_URL")),
+    )
+    return {key: value for key, value in pairs if value}
 
 
 def doctor(args, context: Optional[Context] = None) -> int:
@@ -898,13 +928,7 @@ def doctor(args, context: Optional[Context] = None) -> int:
         Check("settings", "ok" if env_path.is_file() else "warn",
               f"{env_path}" if env_path.is_file() else f"{env_path} does not exist yet; defaults are in use"),
         _check_postgres(args.postgres_uri or env.get("POSTGRES_URI")),
-        _check_redis({
-            key: value for key, value in (
-                ("broker", args.redis_url or env.get("CELERY_BROKER_URL")),
-                ("results", env.get("CELERY_RESULT_BACKEND")),
-                ("cache", env.get("CACHE_REDIS_URL")),
-            ) if value
-        }),
+        _check_redis(_redis_to_check(args, env)),
         _check_provider(env),
     ]
 

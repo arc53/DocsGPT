@@ -1,5 +1,6 @@
 """`docsgpt doctor`, `restart`, following native logs, and settings that apply themselves."""
 
+import argparse
 import socket
 
 import pytest
@@ -48,6 +49,18 @@ class TestDevCommand:
             with pytest.raises(DeployError, match="already in use"):
                 _run(["dev", "--port", str(port)], _context())
         assert started == [], "nothing is spawned when the port is taken"
+
+    @pytest.mark.parametrize("port", ["0", "-1", "70000"])
+    def test_a_port_argparse_accepts_but_a_socket_cannot_use(self, monkeypatch, tmp_path, port):
+        """argparse takes any integer: 0 would serve on an ephemeral port while printing 0."""
+        from docsgpt.deploy import dev as dev_module
+
+        self._checkout(monkeypatch, tmp_path)
+        started = []
+        monkeypatch.setattr(dev_module, "run", lambda children, **kwargs: started.append(children) or 0)
+        with pytest.raises(DeployError, match="not a port number"):
+            _run(["dev", "--port", port], _context())
+        assert started == []
 
     def test_a_busy_mock_llm_port_is_refused_before_anything_starts(self, monkeypatch, tmp_path):
         """It starts first and the rest are pointed at it, so a clash cannot wait until spawn time."""
@@ -184,6 +197,33 @@ class TestFollowLogs:
         assert "old line" not in printed, "it starts at the end, like tail -f"
 
 
+class TestLogsTransition:
+    def test_a_line_written_between_the_read_and_the_follow_is_not_lost(self, tmp_path, capsys, monkeypatch):
+        """The read and the follow used to open the file twice, and whatever landed between was gone."""
+        services = FakeServices()
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/d"]
+        assert _run(argv, _native_context(services)) == 0
+        logs = tmp_path / "logs"
+        (logs / "api.log").write_text("first\n", encoding="utf-8")
+
+        def sleep(_):
+            raise KeyboardInterrupt
+
+        original = commands._follow
+
+        def follow(logs_dir, wanted, handles=None):
+            # Written after the read, before following starts.
+            (logs / "api.log").open("a", encoding="utf-8").write("during\n")
+            monkeypatch.setattr(commands.time, "sleep", sleep)
+            return original(logs_dir, wanted, handles)
+
+        monkeypatch.setattr(commands, "_follow", follow)
+        assert _run(["logs", "-f", "api", "--dir", str(tmp_path)], _native_context(services)) == 0
+        printed = capsys.readouterr().out
+        assert "first" in printed
+        assert "during" in printed, "the line written during the handover has to appear"
+
+
 class TestChecks:
     def test_the_public_api_needs_no_key(self):
         check = commands._check_provider({"LLM_PROVIDER": "docsgpt"})
@@ -200,6 +240,17 @@ class TestChecks:
         )
         assert check.level == "ok"
         assert "8090" in check.detail
+
+    def test_a_provider_base_url_is_printed_without_its_credentials(self):
+        """An OpenAI-compatible endpoint can carry userinfo, and doctor prints its detail."""
+        check = commands._check_provider(
+            {"LLM_PROVIDER": "openai", "API_KEY": "x",
+             "OPENAI_BASE_URL": "https://someone:sEcReTtOkEn@models.example.com/v1"}
+        )
+        assert check.level == "ok"
+        assert "sEcReTtOkEn" not in check.detail
+        assert "someone" not in check.detail
+        assert "models.example.com" in check.detail
 
     def test_services_are_named_for_the_install(self, tmp_path):
         names = _names(tmp_path)
@@ -398,6 +449,26 @@ class TestMigrationHead:
         head = commands._migration_head()
         assert head, "the packaged alembic.ini should resolve to a revision"
         assert head[0].isdigit(), head
+
+
+class TestRedisSelection:
+    def test_redis_url_replaces_every_endpoint(self):
+        """Overriding only the broker would still ping a stale backend, and one failure fails all."""
+        args = argparse.Namespace(redis_url="redis://given:6379/5")
+        stale = {
+            "CELERY_BROKER_URL": "redis://old:6379/0",
+            "CELERY_RESULT_BACKEND": "redis://old:6379/1",
+            "CACHE_REDIS_URL": "redis://old:6379/2",
+        }
+        chosen = commands._redis_to_check(args, stale)
+        assert set(chosen) == {"broker", "results", "cache"}
+        assert all("old" not in url for url in chosen.values()), chosen
+        assert chosen["broker"].endswith("/5") and chosen["cache"].endswith("/7")
+
+    def test_without_the_flag_the_settings_are_used(self):
+        args = argparse.Namespace(redis_url=None)
+        chosen = commands._redis_to_check(args, {"CELERY_BROKER_URL": "redis://localhost:6379/0"})
+        assert chosen == {"broker": "redis://localhost:6379/0"}
 
 
 class TestDoctor:

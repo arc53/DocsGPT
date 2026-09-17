@@ -123,6 +123,17 @@ class TestRun:
         assert "api    | hello" in out.getvalue()
         assert code == 1, "a child that ends by itself ends the session, however it exited"
 
+    def test_output_in_flight_is_not_lost_when_run_returns(self, tmp_path):
+        """The reader is a thread: without joining it, a child's last lines can never be printed."""
+        out = io.StringIO()
+        lines = [f"line {number}\n" for number in range(200)]
+        children = [dev.Child(name="api", command=["x"], cwd=tmp_path)]
+        code = dev.run(children, out=out, spawn=self._spawn([FakeProcess(lines, code=0)]),
+                       sleep=lambda _: None, colour=False)
+        assert code == 1
+        printed = out.getvalue()
+        assert "line 0" in printed and "line 199" in printed, "every line the child wrote is printed"
+
     def test_a_failing_child_returns_its_code(self, tmp_path):
         out = io.StringIO()
         children = [dev.Child(name="api", command=["false"], cwd=tmp_path)]

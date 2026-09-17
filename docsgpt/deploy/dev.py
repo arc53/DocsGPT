@@ -181,6 +181,7 @@ def run(
     colour = out.isatty() if colour is None else colour
     lock = threading.Lock()
     running: list[tuple[Child, object]] = []
+    pumps: list[threading.Thread] = []
     try:
         for child in children:
             process = spawn(
@@ -195,7 +196,9 @@ def run(
                 start_new_session=os.name != "nt",
             )
             running.append((child, process))
-            threading.Thread(target=_pump, args=(child, process, out, lock, colour), daemon=True).start()
+            pump = threading.Thread(target=_pump, args=(child, process, out, lock, colour), daemon=True)
+            pump.start()
+            pumps.append(pump)
 
         while True:
             for child, process in running:
@@ -214,3 +217,7 @@ def run(
         return 0
     finally:
         _stop(running, grace, sleep)
+        # Join the readers: a child's last lines are still in flight when it exits, and dropping
+        # them loses exactly the output that says why it stopped.
+        for pump in pumps:
+            pump.join(timeout=grace)
