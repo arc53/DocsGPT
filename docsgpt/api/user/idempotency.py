@@ -9,6 +9,8 @@ import threading
 import uuid
 from typing import Any, Callable, Optional
 
+from celery.exceptions import MaxRetriesExceededError
+
 from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
@@ -81,10 +83,28 @@ def with_idempotency(
                     "idempotency: live lease held; deferring task=%s key=%s",
                     task_name, key,
                 )
-                raise self.retry(
-                    countdown=LEASE_TTL_SECONDS,
-                    max_retries=LEASE_RETRY_MAX,
-                )
+                try:
+                    raise self.retry(
+                        countdown=LEASE_TTL_SECONDS,
+                        max_retries=LEASE_RETRY_MAX,
+                    )
+                except MaxRetriesExceededError:
+                    # The holder is simply slower than LEASE_RETRY_MAX
+                    # deferrals — a task that outruns the broker's visibility
+                    # timeout is redelivered while its first run is still
+                    # going. Standing down is the correct end state for the
+                    # duplicate; raising here would report a failure for a
+                    # task that is running normally somewhere else.
+                    logger.info(
+                        "idempotency: lease still held after %s deferrals; "
+                        "leaving task=%s key=%s to its holder",
+                        LEASE_RETRY_MAX, task_name, key,
+                    )
+                    return {
+                        "status": "deferred",
+                        "reason": "another worker holds the lease",
+                        "idempotency_key": key,
+                    }
 
             if attempt > MAX_TASK_ATTEMPTS:
                 logger.error(
