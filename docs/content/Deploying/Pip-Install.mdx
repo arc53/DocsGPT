@@ -99,6 +99,35 @@ Other commands:
 - `docsgpt verify-offline`: check that a prepared install starts with networking off.
 - `docsgpt reembed`: re-embed every index after changing `EMBEDDINGS_NAME` (see [Upgrading](/upgrading)).
 
+## Run it as services, without Docker
+
+`docsgpt up --native` runs the API and the worker as services on the machine itself: launchd agents on macOS, systemd user units on Linux. It does not start PostgreSQL or Redis; point it at ones you already run.
+
+```bash
+docsgpt up --native \
+  --postgres-uri postgresql://docsgpt:<password>@localhost:5432/docsgpt \
+  --redis-url redis://localhost:6379
+```
+
+Without a terminal only `--postgres-uri` is required, since Redis defaults to `redis://localhost:6379`; with one, it asks for both and for the model provider. It writes the same `.env` a Docker install uses (minus the image settings), generates `INTERNAL_KEY` and `JWT_SECRET_KEY` on the first run, applies the migrations, then starts `docsgpt-api` and `docsgpt-worker` and waits for the API to answer.
+
+One Redis URL covers all three uses: the Celery broker, its result backend and the cache go on databases 0, 1 and 2 of it. Name a database in the URL and the three start there instead, so `redis://localhost:6379/5` puts them on 5, 6 and 7 — that is how you share a Redis that already holds something else.
+
+The same commands manage it:
+
+| Command | In native mode |
+| --- | --- |
+| `docsgpt status` | Which services run, the address, and whether the API answers |
+| `docsgpt logs [api\|worker]` | The service log files under `<stack>/logs` |
+| `docsgpt down` | Stops both services; settings stay |
+| `docsgpt uninstall [--purge]` | Removes the services; `--purge` also deletes the stack directory |
+
+`uninstall` never touches the database or Redis: they were yours to begin with.
+
+<Callout type="info">
+  Windows has neither launchd nor systemd, so native mode is macOS and Linux only. On Windows, run DocsGPT on Docker with `docsgpt up`, or start `docsgpt api`, `docsgpt worker` and `docsgpt beat` yourself — the worker cannot run the scheduler in-process there, so `docsgpt beat` has to run alongside it for scheduled tasks to fire.
+</Callout>
+
 ## Upgrade
 
 ```bash

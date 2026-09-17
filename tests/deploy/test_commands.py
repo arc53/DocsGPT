@@ -334,7 +334,8 @@ class TestUpgrade:
         )
         assert _run(["upgrade", "--dir", str(tmp_path), "--version", "0.22.0"], context) == 0
         assert self_calls[0] == ["uv", "tool", "install", "--force", "docsgpt==0.22.0"]
-        assert self_calls[1] == ["exec", "docsgpt", "up", "--dir", str(tmp_path)]
+        assert self_calls[1][0] == "exec"
+        assert self_calls[1][-3:] == ["up", "--dir", str(tmp_path)], "the launcher can be an interpreter and -m"
 
     def test_latest_when_no_version_is_given(self, tmp_path):
         self_calls = []
@@ -342,6 +343,16 @@ class TestUpgrade:
                            exec_up=lambda argv: 0)
         assert _run(["upgrade", "--dir", str(tmp_path)], context) == 0
         assert self_calls[0] == ["uv", "tool", "install", "--force", "docsgpt"]
+
+    def test_without_the_command_on_path_it_re_execs_the_module(self, tmp_path, monkeypatch):
+        """After `python -m docsgpt upgrade` there may be no docsgpt on PATH for execv to find."""
+        monkeypatch.setattr("docsgpt.deploy.commands.shutil.which", lambda name: None)
+        monkeypatch.setattr(sys, "argv", [str(tmp_path / "not-a-program")])
+        self_calls = []
+        context = _context(installer=lambda: "uv", run=lambda args: 0,
+                           exec_up=lambda argv: self_calls.append(argv) or 0)
+        assert _run(["upgrade", "--dir", str(tmp_path)], context) == 0
+        assert self_calls[0][:3] == [sys.executable, "-m", "docsgpt"]
 
     def test_a_pip_install_is_told_what_to_run(self, tmp_path, capsys):
         context = _context(installer=lambda: "pip", run=lambda args: pytest.fail("must not run"))

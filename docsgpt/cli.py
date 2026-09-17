@@ -206,6 +206,10 @@ def _add_deploy_commands(commands) -> None:
                          help="go back to the default image")
     up.set_defaults(docling=None)
     up.add_argument("--image-tag", help="image tag to run instead of this package's version, e.g. develop")
+    up.add_argument("--native", action="store_true",
+                    help="run the API and worker as services on this machine instead of on Docker")
+    up.add_argument("--postgres-uri", help="native mode: the PostgreSQL DocsGPT should use")
+    up.add_argument("--redis-url", help="native mode: the Redis for the queue and the cache (default: localhost:6379)")
     up.add_argument("-y", "--yes", action="store_true", help="ask nothing: use the flags, then the defaults")
     up.add_argument("--reconfigure", action="store_true", help="ask the setup questions again")
     up.add_argument("--adopt", action="store_true", help="take over a DocsGPT stack started from another folder")
