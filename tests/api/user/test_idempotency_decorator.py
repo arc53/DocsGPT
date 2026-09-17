@@ -357,8 +357,8 @@ class TestLeaseDeferralGivesUpQuietly:
             task_id="t-worker-1", owner_id="worker-1",
         )
 
-    def test_exhausted_retries_return_deferred_instead_of_raising(self, pg_conn):
-        from celery.exceptions import MaxRetriesExceededError
+    def test_exhausted_retries_stand_down_without_recording_a_result(self, pg_conn):
+        from celery.exceptions import Ignore, MaxRetriesExceededError
 
         from docsgpt.api.user.idempotency import with_idempotency
 
@@ -374,10 +374,14 @@ class TestLeaseDeferralGivesUpQuietly:
         worker2 = _fake_celery_self("t-worker-2")
         worker2.retry.side_effect = MaxRetriesExceededError("out of retries")
 
-        with _patch_decorator_db(pg_conn):
-            result = task(worker2, idempotency_key="k-long-run")
+        # Ignore rather than a return value: a redelivery reuses the original
+        # task id, so returning would mark the id the client is polling
+        # SUCCESS — /api/task_status hands that straight to the UI, which
+        # would announce a finished (empty) build while the holder is still
+        # working. Ignore leaves the id's state to the holder.
+        with _patch_decorator_db(pg_conn), pytest.raises(Ignore):
+            task(worker2, idempotency_key="k-long-run")
 
-        assert result["status"] == "deferred"
         # The lease holder is still running it; the duplicate did not.
         assert invocations["count"] == 0
         # The holder's row is untouched — not failed, not completed.

@@ -9,7 +9,7 @@ import threading
 import uuid
 from typing import Any, Callable, Optional
 
-from celery.exceptions import MaxRetriesExceededError
+from celery.exceptions import Ignore, MaxRetriesExceededError
 
 from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -90,21 +90,23 @@ def with_idempotency(
                     )
                 except MaxRetriesExceededError:
                     # The holder is simply slower than LEASE_RETRY_MAX
-                    # deferrals — a task that outruns the broker's visibility
+                    # deferrals: a task that outruns the broker's visibility
                     # timeout is redelivered while its first run is still
-                    # going. Standing down is the correct end state for the
-                    # duplicate; raising here would report a failure for a
-                    # task that is running normally somewhere else.
+                    # going. Letting the exhaustion propagate would report a
+                    # failure for a task that is running normally — but so
+                    # would returning a value, only less visibly. A redelivery
+                    # reuses the original task id (``Context`` carries
+                    # ``task_id`` into the retry), so a return marks the very
+                    # id the client polls SUCCESS, and ``/api/task_status``
+                    # hands that to the UI as a finished build. ``Ignore``
+                    # records no state at all, leaving the outcome to the run
+                    # that actually holds the lease.
                     logger.info(
                         "idempotency: lease still held after %s deferrals; "
                         "leaving task=%s key=%s to its holder",
                         LEASE_RETRY_MAX, task_name, key,
                     )
-                    return {
-                        "status": "deferred",
-                        "reason": "another worker holds the lease",
-                        "idempotency_key": key,
-                    }
+                    raise Ignore() from None
 
             if attempt > MAX_TASK_ATTEMPTS:
                 logger.error(
