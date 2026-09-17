@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import webbrowser
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -214,30 +215,32 @@ def _redis_urls(base: str) -> dict[str, str]:
         parts = urlsplit(base)
     except ValueError as exc:
         # urlsplit raises on things like redis://[::1 ; that is a typo, not a crash.
-        raise DeployError(f"the Redis URL {base!r} could not be read: {exc}") from exc
+        raise DeployError(f"the Redis URL could not be read: {_scrub(str(exc), base)}") from exc
     try:
         port = parts.port  # a non-numeric or out-of-range port raises here, not when the URL is split
     except ValueError as exc:
         raise DeployError(
-            f"the Redis URL {base!r} has an unusable port: {exc}. Pass a URL like "
+            f"the Redis URL ({_endpoint(base)}) has an unusable port: {_scrub(str(exc), base)}. "
+            "Pass a URL like "
             "redis://host:6379 or redis://host:6379/5."
         ) from exc
     if port == 0:
         # urlsplit is happy with it, since 0 is inside the range, but nothing can connect to it.
         raise DeployError(
-            f"the Redis URL {base!r} has an unusable port: 0. Pass a URL like "
+            f"the Redis URL ({_endpoint(base)}) has an unusable port: 0. Pass a URL like "
             "redis://host:6379 or redis://host:6379/5."
         )
     if parts.scheme not in ("redis", "rediss"):
         raise DeployError(
-            f"the Redis URL {base!r} should start with redis:// or rediss://, with any options as "
+            f"the Redis URL ({_endpoint(base)}) should start with redis:// or rediss://, with any options as "
             "query parameters, so the broker, the result backend and the cache can be given a "
             "database each."
         )
     path = parts.path.rstrip("/").lstrip("/")
     if path and not (path.isascii() and path.isdigit()):
         raise DeployError(
-            f"the Redis URL {base!r} has {path!r} where a database number would go. Pass a URL like "
+            f"the Redis URL ({_endpoint(base)}) has {path[:20]!r} where a database number would go. "
+            "Pass a URL like "
             "redis://host:6379 or redis://host:6379/5."
         )
     try:
@@ -246,7 +249,7 @@ def _redis_urls(base: str) -> dict[str, str]:
         # Python refuses to convert a digit string past its conversion limit, and that is a typo
         # rather than a crash.
         raise DeployError(
-            f"the Redis URL {base!r} has a database number too long to read. Pass a URL like "
+            f"the Redis URL ({_endpoint(base)}) has a database number too long to read. Pass a URL like "
             "redis://host:6379 or redis://host:6379/5."
         ) from exc
     return {
@@ -614,19 +617,54 @@ def logs(args, context: Optional[Context] = None) -> int:
     if _mode(directory) == "native":
         logs_dir = directory / "logs"
         wanted = args.services or ["api", "worker"]
+        # Opened before the first read and kept: a line written between printing what is there and
+        # starting to follow would otherwise appear in neither.
+        handles = {}
         for service in wanted:
             path = logs_dir / f"{service}.log"
             print(f"=== {path}")
-            if path.is_file():
-                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-                print("\n".join(lines[-args.tail:] if args.tail else lines))
-            else:
+            if not path.is_file():
                 print("(nothing logged yet)")
+                continue
+            handle = path.open("r", encoding="utf-8", errors="replace")
+            lines = handle.read().splitlines()
+            print("\n".join(lines[-args.tail:] if args.tail else lines))
+            handles[service] = handle
         if args.follow:
-            print("Following is not supported in native mode; use `tail -f` on the files above.", file=sys.stderr)
+            return _follow(logs_dir, wanted, handles)
+        for handle in handles.values():
+            handle.close()
         return 0
     options = (["--follow"] if args.follow else []) + (["--tail", str(args.tail)] if args.tail else [])
     return context.docker.compose(directory, "logs", *options, *args.services, check=False).returncode
+
+
+def _follow(logs_dir: Path, services: list, handles: Optional[dict] = None) -> int:
+    """Print new lines from each service's log until the terminal interrupts, prefixed by service.
+
+    ``handles`` are the files already read, positioned where that read left off, so nothing written
+    in between is skipped. Files that did not exist yet are opened as they appear.
+    """
+    handles = dict(handles or {})
+    try:
+        while True:
+            for service in services:
+                if service not in handles:
+                    path = logs_dir / f"{service}.log"
+                    if not path.is_file():
+                        continue
+                    handle = path.open("r", encoding="utf-8", errors="replace")
+                    handle.seek(0, os.SEEK_END)
+                    handles[service] = handle
+                for line in handles[service].readlines():
+                    print(f"{service:<6} | {line.rstrip()}")
+            sys.stdout.flush()
+            time.sleep(0.3)
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        for handle in handles.values():
+            handle.close()
 
 
 def token(args, context: Optional[Context] = None) -> int:
@@ -681,8 +719,278 @@ def env(args, context: Optional[Context] = None) -> int:
         envfile.update(env_path, updates)
     except ValueError as exc:
         raise DeployError(str(exc)) from exc
-    print(f"Saved to {env_path}. Run `docsgpt up` to apply.")
+    print(f"Saved to {env_path}.")
+    directory = stack.stack_dir(args.dir)
+    if _mode(directory) == "native" and getattr(args, "restart", True):
+        context = context or Context.default(args)
+        services = context.service_manager()
+        names = _service_names(directory)
+        if any(services.is_running(name) for name in names):
+            for name in reversed(names):
+                services.stop(name)
+            for name in names:
+                services.start(name)
+            print("Restarted the services, so the change is live.")
+            return 0
+    print("Run `docsgpt up` to apply.")
     return 0
+
+
+def dev(args, context: Optional[Context] = None) -> int:
+    """Run this checkout's API, worker and UI as children of this terminal."""
+    from docsgpt.core import paths
+    from docsgpt.deploy import dev as dev_module
+
+    checkout = paths.checkout_root()
+    if checkout is None:
+        raise DeployError(
+            "`docsgpt dev` runs the code in a source checkout, and this is an installed package. "
+            "Clone the repository and run it from there, or use `docsgpt up --native` to run this copy."
+        )
+    port = _port_number(args.port, "--port")
+    if not _port_is_free(port):
+        raise DeployError(
+            f"port {args.port} is already in use, so the API cannot bind it. Stop what is on it "
+            f"(a previous `docsgpt dev`, or `docsgpt down` for an install), or pass --port."
+        )
+    if getattr(args, "mock_llm", False) and args.port == dev_module.MOCK_LLM_PORT:
+        # Both checks below would pass: the port really is free, and then two children want it.
+        raise DeployError(
+            f"port {args.port} is where the mock LLM listens, so the API cannot have it too. "
+            "Give the API another port with --port."
+        )
+    if getattr(args, "mock_llm", False) and not _port_is_free(dev_module.MOCK_LLM_PORT):
+        # It starts first and the others are pointed at it, so a busy port here would surface as the
+        # API talking to someone else's server, or as a child exiting once everything else is up.
+        raise DeployError(
+            f"port {dev_module.MOCK_LLM_PORT} is already in use, so the mock LLM cannot bind it. "
+            "Stop what is on it, or leave --mock-llm off and point DocsGPT at a real provider."
+        )
+    children = dev_module.plan(args, checkout)
+    print(f"DocsGPT from {checkout}")
+    for child in children:
+        print(f"  {child.name:<6} {' '.join(child.command)}")
+    print(f"\nAPI     http://{args.host}:{args.port}")
+    if getattr(args, "ui", False):
+        print(f"UI      http://localhost:{dev_module.UI_PORT}")
+    print("Ctrl-C stops everything.\n")
+    return dev_module.run(children)
+
+
+@dataclass
+class Check:
+    """One line of ``docsgpt doctor``: what was looked at and what came back."""
+
+    name: str
+    level: str
+    detail: str
+
+
+MARKS = {"ok": "ok  ", "warn": "warn", "fail": "FAIL"}
+
+
+def _migration_head() -> Optional[str]:
+    """The newest revision shipped with this package, or None when alembic cannot say."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+    except ImportError:
+        return None
+    ini = Path(__file__).resolve().parents[1] / "alembic.ini"
+    if not ini.is_file():
+        return None
+    config = Config(str(ini))
+    config.set_main_option("script_location", str(ini.parent / "alembic"))
+    try:
+        return ScriptDirectory.from_config(config).get_current_head()
+    except Exception:  # noqa: BLE001 - a broken script directory is a doctor finding, not a crash
+        return None
+
+
+def _check_postgres(uri: Optional[str]) -> Check:
+    """Connect, and say whether the schema is the one this version expects."""
+    if not uri:
+        return Check("postgres", "fail", "POSTGRES_URI is not set")
+    try:
+        import psycopg
+    except ImportError:
+        return Check("postgres", "fail", "the psycopg driver is not installed")
+    try:
+        with psycopg.connect(uri, connect_timeout=5) as connection, connection.cursor() as cursor:
+            cursor.execute("select current_setting('server_version')")
+            version = cursor.fetchone()[0]
+            # Unqualified, like alembic itself: env.py sets no version_table_schema, so the table
+            # lives wherever search_path puts it. Asserting public would call a migrated database empty.
+            cursor.execute("select to_regclass('alembic_version')")
+            applied = cursor.fetchone()[0] is not None
+            current = None
+            if applied:
+                # The same relation the check above resolved, by the same rules.
+                cursor.execute("select version_num from alembic_version")
+                row = cursor.fetchone()
+                current = row[0] if row else None
+    except (psycopg.Error, OSError, ValueError) as exc:
+        return Check("postgres", "fail", f"cannot connect to {_endpoint(uri)}: {_scrub(str(exc).strip(), uri)}")
+    head = _migration_head()
+    if not current:
+        return Check("postgres", "fail", f"PostgreSQL {version}, no schema yet; run `docsgpt migrate`")
+    if head and current != head:
+        return Check("postgres", "fail", f"PostgreSQL {version} at {current}, this version wants {head}; "
+                                         "run `docsgpt migrate`")
+    return Check("postgres", "ok", f"PostgreSQL {version}, schema at {current}")
+
+
+def _endpoint(url: str) -> str:
+    """A URL without its credentials: this ends up on a terminal, in CI logs and in issues."""
+    try:
+        parts = urlsplit(url)
+        # .port is a property that parses on access, so it raises separately from the split itself.
+        host, port, scheme, path = parts.hostname or "", parts.port, parts.scheme, parts.path
+    except ValueError:
+        return "the configured URL"
+    if port:
+        host = f"{host}:{port}"
+    # The path is capped: this string is for a person to read, and it goes into terminals, CI logs
+    # and error messages. A 5000-digit database number would otherwise flood all three.
+    if len(path) > 40:
+        path = f"{path[:40]}..."
+    return f"{scheme}://{host}{path}" if host else "the configured URL"
+
+
+def _scrub(text: str, url: Optional[str]) -> str:
+    """Client errors quote the URL they were handed, credentials and all, so take them back out."""
+    if not url:
+        return text
+    text = text.replace(url, _endpoint(url))
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return text
+    for secret in (parts.password, parts.username):
+        if secret:
+            text = text.replace(secret, "...")
+    return text
+
+
+def _check_redis(urls: Mapping[str, str]) -> Check:
+    """Ping every Redis the settings name; they are usually one server, three databases."""
+    if not urls:
+        return Check("redis", "fail", "no Redis is configured (CELERY_BROKER_URL)")
+    try:
+        import redis
+    except ImportError:
+        return Check("redis", "fail", "the redis client is not installed")
+    for label, url in sorted(urls.items()):
+        try:
+            redis.Redis.from_url(url, socket_connect_timeout=3).ping()
+        except Exception as exc:  # noqa: BLE001 - every client error here is the same finding
+            return Check(
+                "redis", "fail", f"{label} ({_endpoint(url)}) does not answer: {_scrub(str(exc).strip(), url)}"
+            )
+    return Check("redis", "ok", f"answering on {len(urls)} database(s)")
+
+
+def _check_provider(env: Mapping[str, str]) -> Check:
+    """Whether a model provider is set up well enough to answer a question."""
+    provider = env.get("LLM_PROVIDER") or "docsgpt"
+    if provider == "docsgpt":
+        return Check("provider", "ok", "the DocsGPT public API (no key needed)")
+    if not (env.get("API_KEY") or env.get("OPENAI_API_KEY")):
+        return Check("provider", "fail", f"{provider} is configured but no API_KEY is set")
+    endpoint = _endpoint(env["OPENAI_BASE_URL"]) if env.get("OPENAI_BASE_URL") else ""
+    return Check("provider", "ok", f"{provider}{' at ' + endpoint if endpoint else ''}")
+
+
+def _redis_to_check(args, env: Mapping[str, str]) -> dict:
+    """The Redis endpoints to ping: all three from --redis-url when given, else what .env holds.
+
+    Overriding only the broker would still ping a stale result backend or cache, and the check
+    fails on the first endpoint that does not answer -- so --redis-url would appear not to work.
+    """
+    if args.redis_url:
+        names = {"CELERY_BROKER_URL": "broker", "CELERY_RESULT_BACKEND": "results", "CACHE_REDIS_URL": "cache"}
+        return {names[key]: value for key, value in _redis_urls(args.redis_url).items()}
+    pairs = (
+        ("broker", env.get("CELERY_BROKER_URL")),
+        ("results", env.get("CELERY_RESULT_BACKEND")),
+        ("cache", env.get("CACHE_REDIS_URL")),
+    )
+    return {key: value for key, value in pairs if value}
+
+
+def doctor(args, context: Optional[Context] = None) -> int:
+    """Check what DocsGPT needs on this machine, and say what is missing."""
+    from docsgpt.core import paths
+
+    if args.dir:
+        env_path = stack.stack_dir(args.dir) / ".env"
+    else:
+        try:
+            env_path = paths.env_file()
+        except FileNotFoundError as exc:
+            raise DeployError(str(exc)) from exc
+    env = envfile.read(env_path)
+    checks = [
+        Check("settings", "ok" if env_path.is_file() else "warn",
+              f"{env_path}" if env_path.is_file() else f"{env_path} does not exist yet; defaults are in use"),
+        _check_postgres(args.postgres_uri or env.get("POSTGRES_URI")),
+        _check_redis(_redis_to_check(args, env)),
+        _check_provider(env),
+    ]
+
+    # The one command that exists to explain a broken setup must not fall over on one.
+    port = _port_number(env["DOCSGPT_PORT"], f"DOCSGPT_PORT in {env_path}") if env.get("DOCSGPT_PORT") \
+        else stack.DEFAULT_PORT
+    if _port_is_free(port):
+        checks.append(Check("port", "ok", f"{port} is free"))
+    else:
+        checks.append(Check("port", "warn", f"{port} is in use, which is expected if DocsGPT is running"))
+
+    directory = stack.stack_dir(args.dir)
+    if _mode(directory) == "native":
+        services = context.service_manager() if context else native.services_for_platform()
+        names = _service_names(directory)
+        running = [name for name in names if services.is_running(name)]
+        level = "ok" if len(running) == len(names) else "warn"
+        checks.append(Check("services", level, f"{len(running)} of {len(names)} running ({', '.join(names)})"))
+
+    for check in checks:
+        print(f"[{MARKS[check.level]}] {check.name:<9} {check.detail}")
+    failed = [check for check in checks if check.level == "fail"]
+    if failed:
+        print(f"\n{len(failed)} problem(s) to fix before DocsGPT will work.", file=sys.stderr)
+    return 1 if failed else 0
+
+
+def _chosen_services(names: tuple[str, str], wanted: list) -> list:
+    """The services the user asked for, given either short names (api) or full ones."""
+    if not wanted:
+        return list(names)
+    chosen = []
+    for ask in wanted:
+        match = [name for name in names if name == ask or name.removeprefix("docsgpt-").startswith(ask)]
+        if not match:
+            raise DeployError(f"{ask!r} is not a service of this install; it has {', '.join(names)}.")
+        chosen.extend(match)
+    return chosen
+
+
+def restart(args, context: Optional[Context] = None) -> int:
+    """Restart the services, changing nothing else."""
+    context = context or Context.default(args)
+    directory = stack.stack_dir(args.dir)
+    if _installed(directory) is None:
+        return 1
+    if _mode(directory) == "native":
+        services = context.service_manager()
+        chosen = _chosen_services(_service_names(directory), list(args.services))
+        for name in reversed(chosen):
+            services.stop(name)
+        for name in chosen:
+            services.start(name)
+        print(f"Restarted {', '.join(chosen)}.")
+        return 0
+    return context.docker.compose(directory, "restart", *args.services, check=False).returncode
 
 
 def _stack_image(env: Mapping[str, str]) -> str:

@@ -13,6 +13,17 @@ request, and [Upgrading](/upgrading) covers the steps an existing deployment has
 
 ## Unreleased
 
+### A development loop in one command
+
+`docsgpt dev` runs this checkout's API and worker as children of one terminal, both restarting when
+you save, with their output interleaved and Ctrl-C stopping them together. `--ui` adds the Vite dev
+server and `--mock-llm` runs the bundled mock model, so a working loop needs no API key.
+`docsgpt doctor` checks PostgreSQL, its schema version, Redis, the model provider and the port;
+`docsgpt restart` bounces the services without touching settings; `docsgpt logs -f` now follows a
+native install; and `docsgpt env set` applies itself to a running native install instead of asking
+you to run `docsgpt up` again. See
+[Setting up a development environment](/Deploying/Development-Environment).
+
 ### Run DocsGPT without Docker
 
 `docsgpt up --native` runs the API and the worker as services on the machine itself, launchd on

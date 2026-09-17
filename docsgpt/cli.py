@@ -89,7 +89,17 @@ def _api(args: argparse.Namespace) -> int:
     if args.reload or sys.platform == "win32":
         import uvicorn
 
-        uvicorn.run("docsgpt.asgi:asgi_app", host=args.host, port=args.port, reload=args.reload)
+        from docsgpt.core.paths import package_dir
+
+        # Watch the package, not the working directory: a checkout also holds .venv, node_modules
+        # and the data the app writes (indexes/, inputs/), which restarts the server mid-ingest.
+        uvicorn.run(
+            "docsgpt.asgi:asgi_app",
+            host=args.host,
+            port=args.port,
+            reload=args.reload,
+            reload_dirs=[str(package_dir())] if args.reload else None,
+        )
         return 0
 
     _gunicorn_application(_gunicorn_options(args.host, args.port, args.workers)).run()
@@ -246,12 +256,33 @@ def _add_deploy_commands(commands) -> None:
     restore.add_argument("--timeout", type=int, default=300,
                          help="seconds to wait for the API afterwards (default: 300)")
 
+    doctor = stack_command("doctor", "doctor", "check what this machine needs to run DocsGPT")
+    doctor.add_argument("--postgres-uri", help="check this database instead of the one in .env")
+    doctor.add_argument("--redis-url", help="check this Redis instead of the one in .env")
+
+    restart = stack_command("restart", "restart", "restart the services, changing nothing else")
+    restart.add_argument("services", nargs="*", help="services to restart, e.g. api worker")
+
     env = stack_command("env", "env", "show, get or set the stack's settings")
     env_actions = env.add_subparsers(dest="env_action", metavar="<action>")
     get = env_actions.add_parser("get", help="print one setting")
     get.add_argument("key")
-    set_ = env_actions.add_parser("set", help="set settings (KEY=VALUE ...); run `docsgpt up` to apply")
+    set_ = env_actions.add_parser("set", help="set settings (KEY=VALUE ...)")
     set_.add_argument("pairs", nargs="+", metavar="KEY=VALUE")
+    set_.add_argument("--no-restart", dest="restart", action="store_false",
+                      help="do not restart a running native install afterwards")
+
+    dev = commands.add_parser("dev", help="run this checkout's API, worker and UI with reload")
+    dev.add_argument("--host", default=DEFAULT_HOST, help="interface for the API (default: localhost)")
+    dev.add_argument("--port", type=int, default=DEFAULT_PORT, help="port for the API (default: 7091)")
+    dev.add_argument("--ui", action="store_true", help="also run the frontend dev server")
+    dev.add_argument("--mock-llm", action="store_true",
+                     help="run the mock LLM and point DocsGPT at it, so no API key is needed")
+    dev.add_argument("--no-worker", dest="worker", action="store_false", help="do not run the Celery worker")
+    dev.add_argument("--no-reload", dest="reload", action="store_false",
+                     help="do not restart the API and worker when a file changes")
+    dev.add_argument("-l", "--loglevel", default="INFO", help="worker log level (default: INFO)")
+    dev.set_defaults(func=_deploy("dev"), deploy=True)
 
 
 def build_parser() -> argparse.ArgumentParser:

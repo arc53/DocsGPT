@@ -2,39 +2,36 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Frontend Debug (npm)",
+      "name": "Frontend (npm)",
       "type": "node-terminal",
       "request": "launch",
       "command": "npm run dev",
       "cwd": "${workspaceFolder}/frontend"
     },
     {
-        "name": "Flask Debugger",
-        "type": "debugpy",
-        "request": "launch",
-        "module": "flask",
-        "env": {
-            "FLASK_APP": "docsgpt/app.py",
-            "PYTHONPATH": "${workspaceFolder}",
-            "FLASK_ENV": "development",
-            "FLASK_DEBUG": "1",
-            "FLASK_RUN_PORT": "7091",
-            "FLASK_RUN_HOST": "0.0.0.0"
-
-        },
-        "args": [
-            "run",
-            "--no-debugger"
-        ],
-        "cwd": "${workspaceFolder}",
+      "name": "API (uvicorn)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "args": [
+        "docsgpt.asgi:asgi_app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "7091"
+      ],
+      "cwd": "${workspaceFolder}"
     },
     {
-      "name": "Celery Debugger",
+      "name": "Celery worker",
       "type": "debugpy",
       "request": "launch",
       "module": "celery",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}",
+        "PYTHONPATH": "${workspaceFolder}"
       },
       "args": [
         "-A",
@@ -47,10 +44,10 @@
       "cwd": "${workspaceFolder}"
     },
     {
-      "name": "Dev Containers (Mongo + Redis)",
+      "name": "Dev services (Postgres + Redis)",
       "type": "node-terminal",
       "request": "launch",
-      "command": "docker compose -f deployment/docker-compose-dev.yaml up --build",
+      "command": "docker compose -f deployment/docker-compose-dev.yaml up",
       "cwd": "${workspaceFolder}"
     }
   ],
@@ -58,9 +55,9 @@
     {
       "name": "DocsGPT: Full Stack",
       "configurations": [
-        "Frontend Debug (npm)",
-        "Flask Debugger",
-        "Celery Debugger"
+        "Frontend (npm)",
+        "API (uvicorn)",
+        "Celery worker"
       ],
       "presentation": {
         "group": "DocsGPT",
