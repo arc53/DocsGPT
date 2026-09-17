@@ -14,6 +14,7 @@ from typing import Dict, Optional, Tuple, Union
 
 from docsgpt.core.settings import settings
 from docsgpt.parser.file.base_parser import BaseParser
+from docsgpt.parser.html_text import html_to_text
 from docsgpt.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
@@ -174,7 +175,7 @@ class HTMLParser(BaseParser):
 
         with open(file, "r", errors=errors) as f:
             soup = BeautifulSoup(f, "html.parser")
-        return soup.get_text("\n")
+        return html_to_text(soup)
 
     def get_file_metadata(self, file: Path) -> Dict:
         """Return the document title, when the markup carries one."""
