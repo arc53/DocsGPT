@@ -17,6 +17,7 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
+import psycopg
 from psycopg.types.json import Jsonb
 
 from docsgpt.core.settings import settings
@@ -71,6 +72,25 @@ def _pgvector_identifiers() -> tuple[str, str, str, str]:
         _safe_identifier(metadata_col),
         _safe_identifier(PGVECTOR_SOURCE_COLUMN),
     )
+
+
+def _is_connection_lost(exc: BaseException) -> bool:
+    """True when ``exc`` says the server connection went away, not that the SQL was bad.
+
+    psycopg raises ``OperationalError`` ("the connection is lost") when the
+    socket dies under a statement and ``InterfaceError`` when the connection
+    object is already closed. Everything else — a bad statement, a constraint
+    violation — is a real failure that a retry would only repeat.
+    """
+    return isinstance(exc, (psycopg.OperationalError, psycopg.InterfaceError))
+
+
+def _safe_rollback(conn) -> None:
+    """Roll back, tolerating a connection too broken to roll back."""
+    try:
+        conn.rollback()
+    except Exception as exc:
+        logging.debug("Rollback on a broken connection failed: %s", exc)
 
 
 class GraphStore:
@@ -137,6 +157,37 @@ class GraphStore:
                 self._register_pgvector_types(self._connection)
                 self._pooled = False
         return self._connection
+
+    def _write_with_reconnect(self, operation):
+        """Run ``operation(conn)``, once more on a fresh connection if it was dead.
+
+        A graph build holds one checked-out connection for the length of the
+        whole extraction and spends minutes per chunk waiting on the model, so
+        the connection idles long enough for the server (or a pooler) to drop
+        it. The pool only validates a connection when it is handed out, and
+        this one was handed out at the start of the build, so the next write
+        raises and its chunk is lost from the graph. Every statement here is an
+        idempotent upsert, so replaying one on a new connection cannot
+        double-write.
+
+        Args:
+            operation: Callable taking the connection and doing one write.
+
+        Returns:
+            Whatever ``operation`` returns.
+        """
+        for attempt in (1, 2):
+            conn = self._get_connection()
+            try:
+                return operation(conn)
+            except Exception as exc:
+                if attempt == 2 or not _is_connection_lost(exc):
+                    raise
+                logging.warning(
+                    "Graph write lost its connection (%s); reconnecting and retrying once.",
+                    exc,
+                )
+                self.close()
 
     def _register_pgvector_types(self, conn) -> None:
         """Register pgvector's adapters, tolerating a not-yet-created extension.
@@ -499,56 +550,61 @@ class GraphStore:
         (not linked to the chunk), mirroring the per-call path.
         ``name_embeddings`` maps ``normalized_name`` to its embedding. Degrees
         are not bumped here — the caller runs ``set_node_degrees`` once at the
-        end. Returns ``(nodes_upserted, edges_added)``.
+        end. Reconnects and retries once if the connection died while the
+        extraction was waiting on the model. Returns
+        ``(nodes_upserted, edges_added)``.
         """
         self._ensure_tables_once()
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        node_ids: Dict[str, str] = {}
-        edges_added = 0
-        try:
-            for entity in entities:
-                normalized_name = entity["normalized_name"]
-                node_id = self._upsert_node(
-                    cursor,
-                    source_id,
-                    entity["name"],
-                    normalized_name,
-                    entity.get("type"),
-                    entity.get("description"),
-                    name_embeddings.get(normalized_name),
-                )
-                node_ids[normalized_name] = node_id
-                self._link_node_chunk(cursor, source_id, node_id, chunk_id)
 
-            for rel in relationships:
-                src_id = self._resolve_endpoint(
-                    cursor, source_id, rel.get("source"), node_ids, name_embeddings
-                )
-                dst_id = self._resolve_endpoint(
-                    cursor, source_id, rel.get("target"), node_ids, name_embeddings
-                )
-                if src_id is None or dst_id is None:
-                    continue
-                self._add_edge(
-                    cursor,
-                    source_id,
-                    src_id,
-                    dst_id,
-                    type=rel.get("type"),
-                    description=rel.get("description"),
-                    weight=float(rel.get("weight") or 1.0),
-                    source_chunk_ids=[chunk_id],
-                )
-                edges_added += 1
+        def _write(conn):
+            cursor = conn.cursor()
+            node_ids: Dict[str, str] = {}
+            edges_added = 0
+            try:
+                for entity in entities:
+                    normalized_name = entity["normalized_name"]
+                    node_id = self._upsert_node(
+                        cursor,
+                        source_id,
+                        entity["name"],
+                        normalized_name,
+                        entity.get("type"),
+                        entity.get("description"),
+                        name_embeddings.get(normalized_name),
+                    )
+                    node_ids[normalized_name] = node_id
+                    self._link_node_chunk(cursor, source_id, node_id, chunk_id)
 
-            conn.commit()
-            return len(entities), edges_added
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            cursor.close()
+                for rel in relationships:
+                    src_id = self._resolve_endpoint(
+                        cursor, source_id, rel.get("source"), node_ids, name_embeddings
+                    )
+                    dst_id = self._resolve_endpoint(
+                        cursor, source_id, rel.get("target"), node_ids, name_embeddings
+                    )
+                    if src_id is None or dst_id is None:
+                        continue
+                    self._add_edge(
+                        cursor,
+                        source_id,
+                        src_id,
+                        dst_id,
+                        type=rel.get("type"),
+                        description=rel.get("description"),
+                        weight=float(rel.get("weight") or 1.0),
+                        source_chunk_ids=[chunk_id],
+                    )
+                    edges_added += 1
+
+                conn.commit()
+                return len(entities), edges_added
+            except Exception:
+                _safe_rollback(conn)
+                raise
+            finally:
+                cursor.close()
+
+        return self._write_with_reconnect(_write)
 
     def _resolve_endpoint(
         self,
@@ -1026,25 +1082,29 @@ class GraphStore:
             cursor.close()
 
     def mark_chunk(self, source_id: str, chunk_id: str, status: str):
+        """Record a chunk's extraction status, reconnecting once if the connection died."""
         self._ensure_tables_once()
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                """
-                INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = EXCLUDED.status;
-                """,
-                (source_id, str(chunk_id), status),
-            )
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            logging.error(f"Error marking chunk: {e}")
-            raise
-        finally:
-            cursor.close()
+
+        def _write(conn):
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = EXCLUDED.status;
+                    """,
+                    (source_id, str(chunk_id), status),
+                )
+                conn.commit()
+            except Exception as e:
+                _safe_rollback(conn)
+                logging.error(f"Error marking chunk: {e}")
+                raise
+            finally:
+                cursor.close()
+
+        return self._write_with_reconnect(_write)
 
     def pending_chunks(self, source_id: str, all_chunk_ids: List[str]) -> List[str]:
         """Chunk ids from ``all_chunk_ids`` not yet marked ``done`` for the source."""

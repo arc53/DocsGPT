@@ -522,6 +522,109 @@ class TestExtractionProviderResolution:
 
 
 @pytest.mark.unit
+class TestFailedChunksAreReported:
+    """Every dropped chunk has to leave a trace.
+
+    A chunk whose extraction cannot be parsed is marked ``failed`` and skipped.
+    That path logged nothing at all, so a graph could come back short with the
+    summary's ``failed_chunks`` count as the only hint and no way to tell which
+    chunk, or why, from the logs.
+    """
+
+    def _fake_store(self, monkeypatch, chunk_ids):
+        from unittest.mock import MagicMock
+
+        store = MagicMock(name="GraphStore")
+        store.pending_chunks.return_value = list(chunk_ids)
+        store.apply_chunk.return_value = (1, 0)
+        store.count_nodes.return_value = 1
+        monkeypatch.setattr(
+            "docsgpt.graphrag.store.GraphStore", lambda *a, **k: store
+        )
+        return store
+
+    def test_unparseable_output_is_logged_with_the_chunk_id(
+        self, monkeypatch, caplog, stub_embedding
+    ):
+        import logging
+
+        store = self._fake_store(monkeypatch, ["c1"])
+        _install_stub_llm(monkeypatch, _StubLLM(["not json at all"]))
+
+        with caplog.at_level(logging.WARNING, logger="docsgpt.graphrag.extraction"):
+            summary = extract_graph_for_source(
+                str(uuid.uuid4()),
+                user="owner-1",
+                chunks=[_chunk("c1", "some text")],
+                config=SourceConfig(),
+                request_id="req-1",
+            )
+
+        assert summary["failed_chunks"] == 1
+        store.mark_chunk.assert_called_once()
+        assert store.mark_chunk.call_args.args[2] == "failed"
+        messages = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("c1" in message for message in messages), messages
+
+    def test_llm_errors_still_name_the_chunk(
+        self, monkeypatch, caplog, stub_embedding
+    ):
+        import logging
+
+        self._fake_store(monkeypatch, ["c7"])
+        _install_stub_llm(monkeypatch, _StubLLM([RuntimeError("model exploded")]))
+
+        with caplog.at_level(logging.WARNING, logger="docsgpt.graphrag.extraction"):
+            extract_graph_for_source(
+                str(uuid.uuid4()),
+                user="owner-1",
+                chunks=[_chunk("c7", "some text")],
+                config=SourceConfig(),
+                request_id="req-1",
+            )
+
+        messages = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("c7" in message for message in messages), messages
+
+
+@pytest.mark.integration
+class TestSummaryNodeCount:
+    """``nodes`` must describe the graph, not the number of upserts."""
+
+    @pytest.fixture
+    def store(self, monkeypatch, postgresql):
+        store = _live_store(monkeypatch, postgresql.info)
+        yield store
+        store.close()
+
+    def test_repeated_entity_counts_once(
+        self, store, monkeypatch, stub_embedding
+    ):
+        source_id = str(uuid.uuid4())
+        try:
+            payload = _extraction_json(
+                entities=[{"name": "Ada", "type": "person", "description": "d"}],
+                relationships=[],
+            )
+            _install_stub_llm(monkeypatch, _StubLLM([payload, payload]))
+
+            summary = extract_graph_for_source(
+                source_id,
+                user="owner-1",
+                chunks=[_chunk("c1", "Ada one."), _chunk("c2", "Ada two.")],
+                config=SourceConfig(),
+                request_id="req-1",
+            )
+
+            # Two chunks upserted the same entity: one node in the graph.
+            assert store.count_nodes(source_id) == 1
+            assert summary["nodes"] == 1
+            assert summary["chunks_processed"] == 2
+        finally:
+            store.delete_by_source(source_id)
+
+
+@pytest.mark.unit
 class TestParsing:
     def test_parses_embedded_json(self):
         raw = 'sure!\n{"entities": [{"name": "A"}], "relationships": []}\nthanks'

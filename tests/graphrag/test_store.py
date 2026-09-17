@@ -890,3 +890,115 @@ class TestCountNodesMany:
         store, _, _ = self._store_with_mock_conn([(source_id.lower(), 3)])
 
         assert store.count_nodes_many([source_id]) == {source_id: 3}
+
+
+@pytest.mark.unit
+class TestWritesSurviveALostConnection:
+    """A graph build holds one pooled connection across its LLM calls.
+
+    Extraction spends minutes per chunk waiting on a model, so the connection
+    sits idle between writes and the server (or a pooler) can drop it. The pool
+    only validates a connection at checkout, and this one was checked out once
+    at the start of the build, so the next write raises and the chunk is marked
+    ``failed`` — silently losing it from the graph. The write reconnects and
+    retries once instead; the statements are idempotent upserts, so a retry
+    cannot double-write.
+    """
+
+    def _store_with_connections(self, conns):
+        """Store that hands out ``conns`` in order, one per (re)connect."""
+        store = GraphStore.__new__(GraphStore)
+        store._tables_ensured = True
+        store._connection = None
+        handed = []
+        closed = []
+
+        def _get_connection():
+            if store._connection is None:
+                store._connection = conns[len(handed)]
+                handed.append(store._connection)
+            return store._connection
+
+        def _close():
+            if store._connection is not None:
+                closed.append(store._connection)
+                store._connection = None
+
+        store._get_connection = _get_connection
+        store.close = _close
+        return store, handed, closed
+
+    @staticmethod
+    def _conn(execute_error=None):
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [str(uuid.uuid4())]
+        cursor.fetchall.return_value = []
+        if execute_error is not None:
+            cursor.execute.side_effect = execute_error
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        return conn
+
+    def test_mark_chunk_retries_on_a_dropped_connection(self):
+        import psycopg
+
+        dead = self._conn(psycopg.OperationalError("the connection is lost"))
+        alive = self._conn()
+        store, handed, closed = self._store_with_connections([dead, alive])
+
+        store.mark_chunk(str(uuid.uuid4()), "c1", "done")
+
+        assert handed == [dead, alive]
+        assert closed == [dead]
+        alive.commit.assert_called_once()
+
+    def test_apply_chunk_retries_on_a_dropped_connection(self):
+        import psycopg
+
+        dead = self._conn(psycopg.OperationalError("the connection is lost"))
+        alive = self._conn()
+        store, handed, closed = self._store_with_connections([dead, alive])
+        entities = [
+            {
+                "name": "Ada",
+                "normalized_name": "ada",
+                "type": "person",
+                "description": "d",
+            }
+        ]
+
+        nodes, edges = store.apply_chunk(
+            str(uuid.uuid4()), "c1", entities, [], {"ada": _embedding(0.5)}
+        )
+
+        assert (nodes, edges) == (1, 0)
+        assert handed == [dead, alive]
+        assert closed == [dead]
+        alive.commit.assert_called_once()
+
+    def test_a_second_connection_failure_is_not_retried_again(self):
+        """One retry, not a loop: a genuinely unreachable DB still fails."""
+        import psycopg
+
+        dead = self._conn(psycopg.OperationalError("the connection is lost"))
+        also_dead = self._conn(psycopg.OperationalError("the connection is lost"))
+        store, handed, _ = self._store_with_connections([dead, also_dead])
+
+        with pytest.raises(psycopg.OperationalError):
+            store.mark_chunk(str(uuid.uuid4()), "c1", "done")
+
+        assert handed == [dead, also_dead]
+
+    def test_a_query_error_is_not_retried(self):
+        """Only connection loss is retryable; a bad statement must surface."""
+        import psycopg
+
+        broken = self._conn(psycopg.ProgrammingError("syntax error"))
+        spare = self._conn()
+        store, handed, _ = self._store_with_connections([broken, spare])
+
+        with pytest.raises(psycopg.ProgrammingError):
+            store.mark_chunk(str(uuid.uuid4()), "c1", "done")
+
+        assert handed == [broken]
+        broken.rollback.assert_called_once()

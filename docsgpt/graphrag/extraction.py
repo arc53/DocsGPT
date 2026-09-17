@@ -149,8 +149,15 @@ def _parse_extraction(raw: Any) -> Optional[Dict[str, List[Dict[str, Any]]]]:
     }
 
 
-def _extract_chunk(llm, text: str) -> Optional[Dict[str, List[Dict[str, Any]]]]:
-    """Run exactly one extraction call for a chunk (gleanings off)."""
+def _extract_chunk(
+    llm, text: str, chunk_id: Optional[str] = None
+) -> Optional[Dict[str, List[Dict[str, Any]]]]:
+    """Run exactly one extraction call for a chunk (gleanings off).
+
+    Both failure modes name the chunk: an unparseable response used to return
+    ``None`` silently, so a graph could come back short with nothing in the
+    logs to say which chunk was dropped or why.
+    """
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": f"<chunk>\n{text}\n</chunk>"},
@@ -161,9 +168,17 @@ def _extract_chunk(llm, text: str) -> Optional[Dict[str, List[Dict[str, Any]]]]:
             messages=messages,
         )
     except Exception as exc:
-        logger.warning("Graph extraction call failed, skipping chunk: %s", exc)
+        logger.warning(
+            "Graph extraction call failed for chunk %s, skipping: %s", chunk_id, exc
+        )
         return None
-    return _parse_extraction(response)
+    parsed = _parse_extraction(response)
+    if parsed is None:
+        logger.warning(
+            "Graph extraction returned unparseable output for chunk %s; marking it failed.",
+            chunk_id,
+        )
+    return parsed
 
 
 def _coerce_weight(value: Any) -> float:
@@ -205,7 +220,9 @@ def extract_graph_for_source(
 
     Returns:
         A summary ``{nodes, edges, chunks_processed, skipped_over_cap,
-        failed_chunks}``.
+        failed_chunks}``, where ``nodes`` is how many distinct nodes the
+        source's graph holds after the run — not how many upserts ran, which
+        counts the same entity once per chunk it appears in.
     """
     from docsgpt.graphrag.store import GraphStore
 
@@ -228,7 +245,7 @@ def extract_graph_for_source(
         _resolve_extraction_model(config), user, request_id
     )
 
-    nodes = 0
+    node_upserts = 0
     edges = 0
     chunks_processed = 0
     failed_chunks = 0
@@ -242,7 +259,7 @@ def extract_graph_for_source(
                 {
                     "current": chunks_processed + failed_chunks,
                     "total": total,
-                    "nodes": nodes,
+                    "nodes": node_upserts,
                     "edges": edges,
                 }
             )
@@ -257,7 +274,7 @@ def extract_graph_for_source(
             _report()
             continue
 
-        extracted = _extract_chunk(llm, text)
+        extracted = _extract_chunk(llm, text, chunk_id)
         if extracted is None:
             store.mark_chunk(source_id, chunk_id, "failed")
             failed_chunks += 1
@@ -271,7 +288,7 @@ def extract_graph_for_source(
             chunk_nodes, chunk_edges = store.apply_chunk(
                 source_id, chunk_id, entities, relationships, name_embeddings
             )
-            nodes += chunk_nodes
+            node_upserts += chunk_nodes
             edges += chunk_edges
             store.mark_chunk(source_id, chunk_id, "done")
             chunks_processed += 1
@@ -289,6 +306,20 @@ def extract_graph_for_source(
         store.set_node_degrees(source_id)
     except Exception as exc:
         logger.warning("set_node_degrees failed for source %s: %s", source_id, exc)
+
+    # Upserts are writes, not nodes: one entity seen in ten chunks is ten
+    # upserts and a single node, so the old count overstated every graph whose
+    # entities recur. Report what the graph holds, falling back to the write
+    # count only if the count query itself fails.
+    nodes = node_upserts
+    try:
+        nodes = store.count_nodes(source_id)
+    except Exception as exc:
+        logger.warning(
+            "count_nodes failed for source %s; reporting upserts instead: %s",
+            source_id,
+            exc,
+        )
 
     return {
         "nodes": nodes,
