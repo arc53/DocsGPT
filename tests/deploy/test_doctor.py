@@ -472,6 +472,28 @@ class TestRedisSelection:
         assert chosen == {"broker": "redis://localhost:6379/0"}
 
 
+class TestRedisUrlErrors:
+    """The validator raises before any check runs, and cli.main prints what it raises."""
+
+    SECRET = "sUpErSeCrEt"
+
+    @pytest.mark.parametrize("url", [
+        "redis://user:sUpErSeCrEt@host:not-a-port/0",
+        "redis://user:sUpErSeCrEt@host:0/0",
+        "redis://user:sUpErSeCrEt@host:6379/queue",
+        "postgres://user:sUpErSeCrEt@host:6379/0",
+        "redis://user:sUpErSeCrEt@host:6379/" + "1" * 5000,
+    ])
+    def test_a_rejected_url_never_carries_its_password_into_the_error(self, tmp_path, url):
+        (tmp_path / ".env").write_text("LLM_PROVIDER=docsgpt\n", encoding="utf-8")
+        with pytest.raises(DeployError) as raised:
+            _run(["doctor", "--dir", str(tmp_path), "--redis-url", url], _context())
+        message = str(raised.value)
+        assert self.SECRET not in message
+        assert "user" not in message
+        assert len(message) < 400, "an over-long database number must not come back in the message"
+
+
 class TestDoctor:
     def _only(self, monkeypatch, postgres, redis):
         monkeypatch.setattr(commands, "_check_postgres", lambda uri: postgres)

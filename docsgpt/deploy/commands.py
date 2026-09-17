@@ -215,30 +215,32 @@ def _redis_urls(base: str) -> dict[str, str]:
         parts = urlsplit(base)
     except ValueError as exc:
         # urlsplit raises on things like redis://[::1 ; that is a typo, not a crash.
-        raise DeployError(f"the Redis URL {base!r} could not be read: {exc}") from exc
+        raise DeployError(f"the Redis URL could not be read: {_scrub(str(exc), base)}") from exc
     try:
         port = parts.port  # a non-numeric or out-of-range port raises here, not when the URL is split
     except ValueError as exc:
         raise DeployError(
-            f"the Redis URL {base!r} has an unusable port: {exc}. Pass a URL like "
+            f"the Redis URL ({_endpoint(base)}) has an unusable port: {_scrub(str(exc), base)}. "
+            "Pass a URL like "
             "redis://host:6379 or redis://host:6379/5."
         ) from exc
     if port == 0:
         # urlsplit is happy with it, since 0 is inside the range, but nothing can connect to it.
         raise DeployError(
-            f"the Redis URL {base!r} has an unusable port: 0. Pass a URL like "
+            f"the Redis URL ({_endpoint(base)}) has an unusable port: 0. Pass a URL like "
             "redis://host:6379 or redis://host:6379/5."
         )
     if parts.scheme not in ("redis", "rediss"):
         raise DeployError(
-            f"the Redis URL {base!r} should start with redis:// or rediss://, with any options as "
+            f"the Redis URL ({_endpoint(base)}) should start with redis:// or rediss://, with any options as "
             "query parameters, so the broker, the result backend and the cache can be given a "
             "database each."
         )
     path = parts.path.rstrip("/").lstrip("/")
     if path and not (path.isascii() and path.isdigit()):
         raise DeployError(
-            f"the Redis URL {base!r} has {path!r} where a database number would go. Pass a URL like "
+            f"the Redis URL ({_endpoint(base)}) has {path[:20]!r} where a database number would go. "
+            "Pass a URL like "
             "redis://host:6379 or redis://host:6379/5."
         )
     try:
@@ -247,7 +249,7 @@ def _redis_urls(base: str) -> dict[str, str]:
         # Python refuses to convert a digit string past its conversion limit, and that is a typo
         # rather than a crash.
         raise DeployError(
-            f"the Redis URL {base!r} has a database number too long to read. Pass a URL like "
+            f"the Redis URL ({_endpoint(base)}) has a database number too long to read. Pass a URL like "
             "redis://host:6379 or redis://host:6379/5."
         ) from exc
     return {
@@ -848,6 +850,10 @@ def _endpoint(url: str) -> str:
         return "the configured URL"
     if port:
         host = f"{host}:{port}"
+    # The path is capped: this string is for a person to read, and it goes into terminals, CI logs
+    # and error messages. A 5000-digit database number would otherwise flood all three.
+    if len(path) > 40:
+        path = f"{path[:40]}..."
     return f"{scheme}://{host}{path}" if host else "the configured URL"
 
 
