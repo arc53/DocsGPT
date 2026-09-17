@@ -128,6 +128,124 @@ class TestChecks:
         assert commands._chosen_services(names, [names[0]]) == [names[0]]
 
 
+class FakeCursor:
+    """Answers doctor's three queries in order: server version, whether the table is there, the revision."""
+
+    def __init__(self, version, table, revision):
+        self.answers = [(version,), (table,), (revision,) if revision else None]
+        self.given = 0
+
+    def execute(self, statement):
+        self.statement = statement
+
+    def fetchone(self):
+        answer = self.answers[self.given]
+        self.given += 1
+        return answer
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exception):
+        return False
+
+
+class FakeConnection:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def cursor(self):
+        return self._cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exception):
+        return False
+
+
+def _postgres_answering(monkeypatch, version="16.2", table="alembic_version", revision="0031_x", head="0031_x"):
+    import psycopg
+
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: FakeConnection(FakeCursor(version, table, revision)))
+    monkeypatch.setattr(commands, "_migration_head", lambda: head)
+
+
+class TestPostgresCheck:
+    def test_at_head(self, monkeypatch):
+        _postgres_answering(monkeypatch)
+        check = commands._check_postgres("postgresql://localhost/d")
+        assert check.level == "ok"
+        assert "16.2" in check.detail and "0031_x" in check.detail
+
+    def test_a_database_with_no_schema_yet(self, monkeypatch):
+        """The commonest first-run state: the database exists, nothing has been migrated into it."""
+        _postgres_answering(monkeypatch, table=None, revision=None)
+        check = commands._check_postgres("postgresql://localhost/d")
+        assert check.level == "fail"
+        assert "docsgpt migrate" in check.detail
+
+    def test_a_schema_behind_this_version(self, monkeypatch):
+        _postgres_answering(monkeypatch, revision="0029_old", head="0031_x")
+        check = commands._check_postgres("postgresql://localhost/d")
+        assert check.level == "fail"
+        assert "0029_old" in check.detail and "0031_x" in check.detail
+        assert "docsgpt migrate" in check.detail
+
+    def test_a_database_that_does_not_answer(self, monkeypatch):
+        import psycopg
+
+        def refuse(*args, **kwargs):
+            raise psycopg.OperationalError("connection refused")
+
+        monkeypatch.setattr(psycopg, "connect", refuse)
+        check = commands._check_postgres("postgresql://localhost/d")
+        assert check.level == "fail"
+        assert "connection refused" in check.detail
+
+    def test_without_a_uri_at_all(self):
+        check = commands._check_postgres(None)
+        assert check.level == "fail"
+        assert "POSTGRES_URI" in check.detail
+
+
+class TestRedisCheck:
+    def test_every_database_answering(self, monkeypatch):
+        import redis
+
+        monkeypatch.setattr(redis.Redis, "from_url", classmethod(lambda cls, url, **k: type("R", (), {"ping": lambda self: True})()))
+        check = commands._check_redis({"broker": "redis://localhost:6379/0", "cache": "redis://localhost:6379/2"})
+        assert check.level == "ok"
+        assert "2" in check.detail
+
+    def test_the_one_that_does_not_answer_is_named(self, monkeypatch):
+        """Three URLs usually differ only by database number, so the message has to say which."""
+        import redis
+
+        def from_url(cls, url, **kwargs):
+            class Client:
+                def ping(self):
+                    raise ConnectionError(f"no route to {url}")
+
+            return Client()
+
+        monkeypatch.setattr(redis.Redis, "from_url", classmethod(from_url))
+        check = commands._check_redis({"cache": "redis://localhost:6379/2"})
+        assert check.level == "fail"
+        assert "cache" in check.detail and "6379/2" in check.detail
+
+    def test_without_any_redis_configured(self):
+        assert commands._check_redis({}).level == "fail"
+
+
+class TestMigrationHead:
+    def test_it_finds_the_revision_this_package_ships(self):
+        """No database needed: this is the alembic.ini path resolution, which breaks silently."""
+        head = commands._migration_head()
+        assert head, "the packaged alembic.ini should resolve to a revision"
+        assert head[0].isdigit(), head
+
+
 class TestDoctor:
     def _only(self, monkeypatch, postgres, redis):
         monkeypatch.setattr(commands, "_check_postgres", lambda uri: postgres)
