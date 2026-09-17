@@ -27,13 +27,13 @@ API_KEY=YOUR_OPENAI_API_KEY
 LLM_NAME=gpt-4o
 ```
 
-### 2. Configuration via `settings.py` file (Advanced)
+### 2. Configuration in code (Advanced)
 
-For more advanced configurations or if you prefer to manage settings directly in code, you can modify the `settings.py` file. This file is located in the `docsgpt/core` directory of your DocsGPT project.
+Every setting is defined in the `docsgpt/core/settings/` package, one module per domain (`auth.py`, `llm.py`, `embeddings.py`, ...). If you prefer to manage defaults directly in code, change them there; the `.env` file and the process environment still override whatever the code says.
 
-While modifying `settings.py` offers more flexibility, it's generally recommended to use the `.env` file for basic settings and reserve `settings.py` for more complex adjustments or when you need to configure settings programmatically.
+Using the `.env` file is recommended for day-to-day configuration. Reserve code changes for new settings or for defaults you want every deployment of your fork to share.
 
-**Location of `settings.py`:** `docsgpt/core/settings.py`
+The [Settings Reference](/Deploying/Settings-Reference) lists every setting with its type, default and description, generated from those definitions.
 
 ## Basic Settings Explained
 
@@ -289,7 +289,7 @@ DocsGPT includes a JWT (JSON Web Token) based authentication feature for managin
 
 ### `AUTH_TYPE` Overview
 
-The `AUTH_TYPE` setting in your `.env` file or `settings.py` determines the authentication method used by DocsGPT. This allows you to control how users authenticate with your DocsGPT instance.
+The `AUTH_TYPE` setting in your `.env` file determines the authentication method used by DocsGPT. This allows you to control how users authenticate with your DocsGPT instance.
 
 | Value         | Description                                                                                 |
 | ------------- | ------------------------------------------------------------------------------------------- |
@@ -300,7 +300,7 @@ The `AUTH_TYPE` setting in your `.env` file or `settings.py` determines the auth
 
 #### How to Configure
 
-Add the following to your `.env` file (or set in `settings.py`):
+Add the following to your `.env` file:
 
 ```env
 # Shared signing key (required in production for every authentication mode)
@@ -547,11 +547,10 @@ recovers.
 
 ## Exploring More Settings
 
-These are just the basic settings to get you started. The `settings.py` file contains many more advanced options that you can explore to further customize DocsGPT, such as:
+These are just the basic settings to get you started. DocsGPT has many more advanced options, such as:
 
 - Vector store configuration (`VECTOR_STORE`, Qdrant, Milvus, LanceDB settings) If you're looking for an easy way to set up a vector store with pgvector, try [Neon](https://get.neon.com/docsgpt).
-- Retriever settings (`RETRIEVERS_ENABLED`)
 - Cache settings (`CACHE_REDIS_URL`)
-- And many more!
+- Sandbox, scheduler, guardrails and event-stream tuning
 
-For a complete list of available settings and their descriptions, refer to the `settings.py` file in `docsgpt/core`. Remember to restart your Docker containers after making changes to your `.env` file or `settings.py` for the changes to take effect.
+The [Settings Reference](/Deploying/Settings-Reference) lists every setting with its type, default and description. Remember to restart your Docker containers after making changes to your `.env` file for the changes to take effect.
