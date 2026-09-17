@@ -111,6 +111,21 @@ class TestReference:
 
 
 @pytest.mark.unit
+class TestCrossFieldRules:
+    OIDC = {"OIDC_ISSUER": "https://idp.example/", "OIDC_CLIENT_ID": "docsgpt", "OIDC_FRONTEND_URL": "http://app"}
+
+    def test_oidc_requires_issuer_client_and_frontend(self):
+        with pytest.raises(ValidationError, match="AUTH_TYPE=oidc requires settings: OIDC_CLIENT_ID, OIDC_FRONTEND_URL"):
+            Settings.model_validate({"AUTH_TYPE": "oidc", "OIDC_ISSUER": self.OIDC["OIDC_ISSUER"]})
+
+    def test_oidc_with_required_settings_loads(self):
+        assert Settings.model_validate({"AUTH_TYPE": "OIDC", **self.OIDC}).AUTH_TYPE == "oidc"
+
+    def test_oidc_settings_are_not_required_for_other_modes(self):
+        assert Settings.model_validate({"AUTH_TYPE": "session_jwt"}).OIDC_ISSUER is None
+
+
+@pytest.mark.unit
 class TestClosedChoices:
     """Enum-like settings are Literal types: a typo fails at startup instead of falling through."""
 
@@ -121,7 +136,7 @@ class TestClosedChoices:
     @pytest.mark.parametrize(
         ("name", "raw", "expected"),
         [
-            ("AUTH_TYPE", " OIDC ", "oidc"),
+            ("AUTH_TYPE", " Session_JWT ", "session_jwt"),
             ("VECTOR_STORE", "PGVector", "pgvector"),
             ("STORAGE_TYPE", "S3", "s3"),
             ("URL_STRATEGY", "Backend", "backend"),

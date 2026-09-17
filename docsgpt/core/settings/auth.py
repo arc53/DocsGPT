@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from docsgpt.core.settings._shared import SettingsGroup, normalize_choice, normalize_secret
+
+
+#: Settings an OIDC deployment cannot run without; checked when AUTH_TYPE=oidc.
+OIDC_REQUIRED = ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_FRONTEND_URL")
 
 
 class AuthSettings(SettingsGroup):
@@ -91,3 +95,11 @@ class AuthSettings(SettingsGroup):
     def _normalize_auth_type(cls, v):
         # ``AUTH_TYPE=None`` and ``AUTH_TYPE=`` in .env both mean "no authentication".
         return normalize_choice(normalize_secret(v))
+
+    @model_validator(mode="after")
+    def _require_oidc_settings(self):
+        if self.AUTH_TYPE == "oidc":
+            missing = [name for name in OIDC_REQUIRED if not getattr(self, name)]
+            if missing:
+                raise ValueError(f"AUTH_TYPE=oidc requires settings: {', '.join(missing)}")
+        return self

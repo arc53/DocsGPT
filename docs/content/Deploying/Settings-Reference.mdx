@@ -1111,6 +1111,12 @@ Public callback URL for MCP OAuth; unset derives it from CONNECTOR_REDIRECT_BASE
 
 Serving the UI, public URLs, and process-level knobs of the API server.
 
+### `DEPLOYMENT_TYPE`
+
+Type `str`, default unset.
+
+Deployment class, e.g. cloud or production. A production class refuses to run without a configured JWT_SECRET_KEY instead of generating a local one on disk.
+
 ### `SERVE_UI`
 
 Type `bool`, default `true`.

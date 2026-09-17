@@ -12,6 +12,13 @@ from docsgpt.core.settings._shared import SettingsGroup
 class ServerSettings(SettingsGroup):
     """Serving the UI, public URLs, and process-level knobs of the API server."""
 
+    DEPLOYMENT_TYPE: Optional[str] = Field(
+        default=None,
+        description=(
+            "Deployment class, e.g. cloud or production. A production class refuses to run without a "
+            "configured JWT_SECRET_KEY instead of generating a local one on disk."
+        ),
+    )
     SERVE_UI: bool = Field(
         default=True, description="Serve the web UI shipped in the package (docsgpt/static) from the API process."
     )
