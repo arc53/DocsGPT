@@ -805,12 +805,14 @@ def _check_postgres(uri: Optional[str]) -> Check:
         with psycopg.connect(uri, connect_timeout=5) as connection, connection.cursor() as cursor:
             cursor.execute("select current_setting('server_version')")
             version = cursor.fetchone()[0]
-            cursor.execute("select to_regclass('public.alembic_version')")
+            # Unqualified, like alembic itself: env.py sets no version_table_schema, so the table
+            # lives wherever search_path puts it. Asserting public would call a migrated database empty.
+            cursor.execute("select to_regclass('alembic_version')")
             applied = cursor.fetchone()[0] is not None
             current = None
             if applied:
-                # public, like the to_regclass check above: search_path could resolve another one.
-                cursor.execute("select version_num from public.alembic_version")
+                # The same relation the check above resolved, by the same rules.
+                cursor.execute("select version_num from alembic_version")
                 row = cursor.fetchone()
                 current = row[0] if row else None
     except (psycopg.Error, OSError, ValueError) as exc:

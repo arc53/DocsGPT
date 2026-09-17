@@ -261,12 +261,17 @@ class TestPostgresCheck:
         assert check.level == "ok"
         assert "16.2" in check.detail and "0031_x" in check.detail
 
-    def test_the_revision_comes_from_the_schema_that_was_checked(self, monkeypatch):
-        """to_regclass looks in public, so the second query must not resolve through search_path."""
+    def test_both_queries_resolve_the_same_table(self, monkeypatch):
+        """Alembic sets no version_table_schema, so the table follows search_path; asserting a
+        schema in one query and not the other is how doctor called a migrated database empty."""
         cursor = _postgres_answering(monkeypatch)
         commands._check_postgres("postgresql://localhost/d")
-        revision_query = [statement for statement in cursor.statements if "version_num" in statement]
-        assert revision_query and all("public.alembic_version" in statement for statement in revision_query)
+        looked_up = [statement for statement in cursor.statements if "to_regclass" in statement]
+        read = [statement for statement in cursor.statements if "version_num" in statement]
+        assert looked_up and read
+        assert all("public." not in statement for statement in looked_up + read), (
+            "neither query may pin a schema alembic never promised"
+        )
 
     def test_a_database_with_no_schema_yet(self, monkeypatch):
         """The commonest first-run state: the database exists, nothing has been migrated into it."""
