@@ -230,6 +230,18 @@ def _add_deploy_commands(commands) -> None:
     uninstall.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
     uninstall.add_argument("--purge", action="store_true", help="also delete the settings and all data")
 
+    backup = stack_command("backup", "backup", "write a backup of the database and the uploaded data")
+    backup.add_argument("--out", help="directory for the archive (default: <stack>/backups)")
+    backup.add_argument("--with-settings", action="store_true",
+                        help="include .env in the archive; it holds this install's secrets")
+
+    restore = stack_command("restore", "restore", "restore a backup over this install")
+    restore.add_argument("archive", help="the .tar.gz written by `docsgpt backup`")
+    restore.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
+    restore.add_argument("--force", action="store_true", help="restore a backup taken with a newer DocsGPT")
+    restore.add_argument("--timeout", type=int, default=300,
+                         help="seconds to wait for the API afterwards (default: 300)")
+
     env = stack_command("env", "env", "show, get or set the stack's settings")
     env_actions = env.add_subparsers(dest="env_action", metavar="<action>")
     get = env_actions.add_parser("get", help="print one setting")

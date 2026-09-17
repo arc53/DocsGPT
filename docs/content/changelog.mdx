@@ -11,6 +11,17 @@ The notable changes in each release. Every release on GitHub also carries
 [auto-generated notes](https://github.com/arc53/DocsGPT/releases) listing every merged pull
 request, and [Upgrading](/upgrading) covers the steps an existing deployment has to take.
 
+## Unreleased
+
+### Back up and restore an install
+
+`docsgpt backup` writes a dump of the database and a tar of each data volume into one archive, and
+`docsgpt restore <archive>` puts them back. The settings file is left out unless
+`--with-settings` asks for it, since it holds the install's secrets, and a backup from a newer
+DocsGPT is refused unless you pass `--force`. The archive is written readable only by its owner,
+and the backend and the worker pause while it is made so the dump and the volume tars match. See
+[Backups](/Deploying/Docker-Deploying#backups).
+
 ## 0.21.0
 
 ### Install with one command

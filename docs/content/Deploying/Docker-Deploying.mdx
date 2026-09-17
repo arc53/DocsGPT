@@ -79,6 +79,42 @@ the questions again.
 | `docsgpt down` | Stop the stack; data and settings stay |
 | `docsgpt uninstall [--purge]` | Remove the containers; `--purge` also deletes the settings and all data |
 
+### Backups
+
+`docsgpt backup` writes one archive holding a dump of the database and a tar of
+each data volume (`indexes`, `inputs`, `vectors`):
+
+```bash
+docsgpt backup                      # into <stack>/backups
+docsgpt backup --out /mnt/backups   # somewhere else, e.g. a mounted disk
+```
+
+While the archive is made, the backend and the worker stop and start again, so
+the database dump and the files in the volumes describe the same moment; Postgres
+itself keeps running. On a small install that pause is seconds, but count on it
+if you run `docsgpt backup` from cron. The archive is written readable only by
+the user who took it.
+
+The archive does **not** include `.env`, because that file holds the install's
+secrets. `docsgpt backup --with-settings` puts it in, for when the archive
+itself is stored somewhere private. Keep `.env` safe separately otherwise: the
+database password in it is what an existing Postgres volume expects.
+
+Restoring replaces the data in an install:
+
+```bash
+docsgpt restore ~/.docsgpt/server/backups/docsgpt-20260916-120000.tar.gz
+```
+
+It asks first, then stops the stack, puts the volumes and the database back, and
+starts DocsGPT again. `--yes` skips the question for scripts. A backup taken
+with a newer DocsGPT is refused, since its data may not fit this version's
+schema; upgrade first, or pass `--force` if you know the two match.
+
+The Postgres data directory itself is not archived: the dump is the database
+backup, and copying a directory Postgres is writing to would capture a torn
+copy. Caddy's certificates are not archived either, as it obtains them again.
+
 More `docsgpt up` options: `--port`, `--docling` (the image with the docling
 parser engine and OCR), `--image-tag develop` (follow the `main` branch) and
 `--adopt` (manage a stack you started from the standalone Compose file in

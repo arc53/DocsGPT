@@ -1,8 +1,10 @@
 """`docsgpt up` and the commands that manage the stack, against a fake Docker."""
 
+import io
 import json
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -19,16 +21,37 @@ class FakeDocker:
         self.volumes = set(volumes)
         self.dirs = {Path(d) for d in project_dirs}
         self.calls = []
+        self.volume_ops = []
         self.preflights = 0
 
     def preflight(self, interactive=False):
         self.preflights += 1
 
-    def compose(self, directory, *args, capture=False, check=True):
+    def compose(self, directory, *args, capture=False, check=True, stdout=None, stdin=None):
         self.calls.append((Path(directory), list(args)))
         if "down" in args and "-v" in args:
             self.volumes.clear()
+        if stdout is not None:
+            stdout.write("-- fake pg_dump\n")
+        if stdin is not None:
+            self.restored_sql = stdin.read()
         return subprocess.CompletedProcess(["docker", "compose", *args], 0, stdout="", stderr="")
+
+    def export_volume(self, volume, dest, image):
+        """Write a small tar, as the real one does with `docker run ... tar cf -`."""
+        self.volume_ops.append(("export", volume, image))
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(dest, "w") as tar:
+            body = f"{volume} contents".encode()
+            info = tarfile.TarInfo(f"{volume}.marker")
+            info.size = len(body)
+            tar.addfile(info, io.BytesIO(body))
+
+    def import_volume(self, volume, source, image):
+        self.volume_ops.append(("import", volume, image))
+        self.volumes.add(volume)
+        assert Path(source).is_file(), source
 
     def volume_exists(self, name):
         return name in self.volumes
