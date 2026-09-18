@@ -20,7 +20,17 @@ logger = logging.getLogger(__name__)
 
 # The crawler's conventions (``crawler_markdown.py`` / ``read_webpage.py``),
 # so file and web ingestion produce the same Markdown shape.
-MARKDOWNIFY_OPTIONS = {"heading_style": "ATX", "newline_style": "BACKSLASH"}
+#
+# ``table_infer_header``: a GFM table cannot start with a body row, so without
+# it markdownify puts an empty header above any table that carries no ``<th>``
+# and the column names end up in the first body row. Plenty of pages -- and
+# every Word table converted to HTML -- are written that way, and the header is
+# what gives each value in the table its meaning.
+MARKDOWNIFY_OPTIONS = {
+    "heading_style": "ATX",
+    "newline_style": "BACKSLASH",
+    "table_infer_header": True,
+}
 
 # Elements whose text is never document content. ``title`` is reported via
 # ``get_file_metadata`` instead of leaking in as a stray first line.
