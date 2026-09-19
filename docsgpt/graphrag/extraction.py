@@ -227,6 +227,7 @@ def extract_graph_for_source(
         source's graph holds after the run — not how many upserts ran, which
         counts the same entity once per chunk it appears in.
     """
+    import threading
     from concurrent.futures import ThreadPoolExecutor
 
     from docsgpt.graphrag.store import GraphStore
@@ -246,9 +247,24 @@ def extract_graph_for_source(
 
     embedding = get_embeddings()
 
-    llm = _build_extraction_llm(
-        _resolve_extraction_model(config), user, request_id
-    )
+    model_id = _resolve_extraction_model(config)
+    # Built here first so a misconfigured model fails the run before any
+    # chunk is touched; this instance serves the calling thread.
+    thread_llm = threading.local()
+    thread_llm.llm = _build_extraction_llm(model_id, user, request_id)
+
+    def _llm():
+        """This thread's extraction LLM.
+
+        Provider-reported usage is kept on the LLM instance (``_last_usage``)
+        and claimed by whichever call finishes next, so two calls in flight on
+        one instance can bill each other's tokens. Each pool thread therefore
+        builds its own.
+        """
+        llm = getattr(thread_llm, "llm", None)
+        if llm is None:
+            llm = thread_llm.llm = _build_extraction_llm(model_id, user, request_id)
+        return llm
 
     node_upserts = 0
     edges = 0
@@ -284,7 +300,7 @@ def extract_graph_for_source(
         if not text:
             return chunk_id, "empty", None
 
-        extracted = _extract_chunk(llm, text, chunk_id)
+        extracted = _extract_chunk(_llm(), text, chunk_id)
         if extracted is None:
             return chunk_id, "failed", None
         try:

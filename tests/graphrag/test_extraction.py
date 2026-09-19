@@ -606,6 +606,61 @@ class TestExtractionTokenUsage:
         assert built._request_id == "req-99"
         assert captured["model_id"] == "stub-model"
 
+    def test_concurrent_extraction_calls_never_share_an_llm(self, monkeypatch, stub_embedding):
+        """Provider usage is recorded on the LLM instance (``_last_usage``) and
+        claimed by whichever call finishes next, so two calls in flight on one
+        instance can bill each other's tokens. Each extraction thread needs its
+        own instance."""
+        import threading
+        import time
+        from unittest.mock import MagicMock
+
+        from docsgpt.core.settings import settings
+
+        payload = _extraction_json(
+            entities=[{"name": "Ada", "type": "person", "description": "d"}],
+            relationships=[],
+        )
+
+        class _ThreadRecordingLLM:
+            model_id = "stub-model"
+
+            def __init__(self):
+                self.threads = set()
+
+            def gen(self, model=None, messages=None, **kwargs):
+                self.threads.add(threading.get_ident())
+                time.sleep(0.01)  # keep calls overlapping
+                return payload
+
+        built = []
+
+        def _create(*args, **kwargs):
+            llm = _ThreadRecordingLLM()
+            built.append(llm)
+            return llm
+
+        monkeypatch.setattr(extraction_module.LLMCreator, "create_llm", staticmethod(_create))
+        monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 4)
+        store = MagicMock(name="GraphStore")
+        store.pending_chunks.return_value = [f"c{i}" for i in range(8)]
+        store.apply_chunk.return_value = (1, 0)
+        store.count_nodes.return_value = 1
+        monkeypatch.setattr("docsgpt.graphrag.store.GraphStore", lambda *a, **k: store)
+
+        summary = extract_graph_for_source(
+            str(uuid.uuid4()),
+            user="owner-1",
+            chunks=[_chunk(f"c{i}", f"Ada, take {i}.") for i in range(8)],
+            config=SourceConfig(),
+            request_id="req-threads",
+        )
+
+        assert summary["chunks_processed"] == 8
+        used = [llm for llm in built if llm.threads]
+        assert len(used) > 1, "calls did not run concurrently"
+        assert all(len(llm.threads) == 1 for llm in used)
+
 
 @pytest.mark.unit
 class TestModelResolution:
