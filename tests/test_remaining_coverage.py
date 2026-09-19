@@ -505,9 +505,11 @@ class TestMarkdownParserEmptyHeader:
         content = "# Header 1\n# Header 2\nSome content"
         # Call the internal method directly
         tups = parser.markdown_to_tups(content)
-        # The first header has empty text, so it should be skipped (continue)
-        # Only Header 2 with "Some content" should remain
-        assert len(tups) >= 1
+        # The first header has empty text, so it is skipped, but Header 2 must
+        # still be kept with its content.
+        headers = [header for header, _ in tups]
+        assert "Header 2" in headers
+        assert "Some content" in dict(tups)["Header 2"]
 
 
 # ---------------------------------------------------------------------------
