@@ -6,10 +6,8 @@ from typing import Dict, Generator, List, Optional
 
 from docsgpt.agents.base import BaseAgent
 from docsgpt.agents.tool_executor import ToolExecutor
-from docsgpt.agents.tools.internal_search import (
-    INTERNAL_TOOL_ID,
-    add_internal_search_tool,
-)
+from docsgpt.agents.tools.graph_search import add_graph_search_tool
+from docsgpt.agents.tools.internal_search import add_internal_search_tool
 from docsgpt.agents.tools.wiki import add_wiki_tool
 from docsgpt.agents.tools.think import THINK_TOOL_ENTRY, THINK_TOOL_ID
 from docsgpt.logging import LogContext
@@ -277,6 +275,7 @@ class ResearchAgent(BaseAgent):
         tools_dict = self.tool_executor.get_tools()
 
         add_internal_search_tool(tools_dict, self.retriever_config)
+        add_graph_search_tool(tools_dict, self.retriever_config)
         if self.wiki_config:
             add_wiki_tool(tools_dict, self.wiki_config)
 
@@ -620,12 +619,9 @@ class ResearchAgent(BaseAgent):
         return messages, search_returned_empty
 
     def _collect_step_sources(self):
-        """Collect sources from InternalSearchTool and register with CitationManager."""
-        cache_key = f"internal_search:{INTERNAL_TOOL_ID}:{self.user or ''}"
-        tool = self.tool_executor._loaded_tools.get(cache_key)
-        if tool and hasattr(tool, "retrieved_docs"):
-            for doc in tool.retrieved_docs:
-                self.citations.add(doc)
+        """Register the search tools' docs (internal search and graph pages) with CitationManager."""
+        for doc in self._search_tool_docs():
+            self.citations.add(doc)
 
     # ------------------------------------------------------------------
     # Phase 3: Synthesis

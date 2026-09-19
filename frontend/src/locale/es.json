@@ -268,6 +268,19 @@
           },
           "exposureHint": "Precarga esta fuente en el prompt, o deja que el agente la busque bajo demanda como herramienta."
         },
+        "graphRetrieval": {
+          "title": "Recuperación por grafo",
+          "tag": "sin reingesta",
+          "seedStrategy": "Iniciar el recorrido desde",
+          "seedStrategyHint": "Las entidades funcionan para la mayoría de documentos. Las relaciones pueden llegar a una entidad que la pregunta no menciona; son ideales para contenido que describe cómo se conectan las cosas.",
+          "seedEntities": "Entidades (recomendado)",
+          "seedRelationships": "Relaciones",
+          "passageNodes": "Incluir fragmentos en el recorrido",
+          "passageNodesHint": "Un fragmento puede encontrarse por coincidir con la pregunta o por estar conectado con lo que coincide. Funciona mejor en grafos creados con esta versión.",
+          "blendVector": "Combinar con búsqueda vectorial",
+          "blendVectorHint": "Añade resultados de la búsqueda vectorial para no perder fragmentos que el grafo pase por alto.",
+          "agentToolHint": "Los agentes también pueden seguir estas relaciones por sí mismos cuando la exposición de esta fuente es «Herramienta de búsqueda bajo demanda» o cuando la usa un agente agéntico."
+        },
         "prescreen": {
           "enable": "Habilitar preselección con LLM",
           "warning": "Obtiene un conjunto de candidatos más grande y usa un LLM para filtrarlo. Esto añade latencia y costo por consulta.",

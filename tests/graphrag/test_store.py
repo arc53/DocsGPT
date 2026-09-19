@@ -157,6 +157,122 @@ class TestGraphStoreLive:
         finally:
             store.delete_by_source(source_id)
 
+    def test_seed_nodes_from_facts_returns_both_endpoints_of_the_match(
+        self, store, source_id
+    ):
+        """Fact seeding's whole point: the question matches the *relationship*,
+        and both of its endpoints become seeds — including the one the question
+        never names."""
+        try:
+            alder = store.upsert_node(source_id, "Alder", "alder", "service", "d")
+            quill = store.upsert_node(source_id, "Quill", "quill", "store", "d")
+            birch = store.upsert_node(source_id, "Birch", "birch", "service", "d")
+            ridge = store.upsert_node(source_id, "Ridge", "ridge", "store", "d")
+            store.add_edge(
+                source_id, alder, quill, "streams_to", "Alder streams to Quill",
+                1.0, ["c1"], fact_embedding=_embedding(1.0),
+            )
+            store.add_edge(
+                source_id, birch, ridge, "streams_to", "Birch streams to Ridge",
+                1.0, ["c2"], fact_embedding=_embedding(-1.0),
+            )
+
+            rows = store.seed_nodes_from_facts(
+                source_id, _embedding(1.0), fact_limit=1, limit=10
+            )
+
+            assert {row["name"] for row in rows} == {"Alder", "Quill"}
+            assert all(row["distance"] <= 1.0 for row in rows)
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_seed_nodes_from_facts_is_empty_without_fact_embeddings(
+        self, store, source_id
+    ):
+        """A source ingested before fact embeddings existed returns nothing,
+        which is the signal the retriever falls back to name matching on."""
+        try:
+            a = store.upsert_node(source_id, "A", "a")
+            b = store.upsert_node(source_id, "B", "b")
+            store.add_edge(source_id, a, b, "rel")
+
+            assert store.seed_nodes_from_facts(source_id, _embedding(1.0)) == []
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_add_edge_skips_self_loops(self, store, source_id):
+        """A relationship whose endpoints resolve to one node is noise.
+
+        A self-loop feeds a node's PageRank mass straight back to itself, and a
+        real extraction produced 121 of them on a 98-page corpus.
+        """
+        try:
+            a = store.upsert_node(source_id, "A", "a", "thing", "desc a")
+            assert (
+                store.add_edge(source_id, a, a, "related", "a relates to a", 1.0, ["c1"])
+                is None
+            )
+            assert store.get_subgraph(source_id, [a], hops=1)["edges"] == []
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_add_edge_merges_a_repeated_pair(self, store, source_id):
+        """The same relationship seen in many chunks is one edge, not many rows.
+
+        ``graph_edges`` carries no uniqueness constraint, so re-extracting a
+        relationship used to insert a row per chunk — 19.9% of a real corpus's
+        edges — inflating traversal weight and wasting the subgraph fetch
+        budget. The surviving row keeps the strongest weight and both chunk ids.
+        """
+        try:
+            a = store.upsert_node(source_id, "A", "a", "thing", "desc a")
+            b = store.upsert_node(source_id, "B", "b", "thing", "desc b")
+            first = store.add_edge(source_id, a, b, "related", "d", 2.0, ["chunk-1"])
+            second = store.add_edge(source_id, a, b, "related", "d", 5.0, ["chunk-2"])
+
+            assert second == first
+            edges = store.get_subgraph(source_id, [a, b], hops=1)["edges"]
+            assert len(edges) == 1
+            assert float(edges[0]["weight"]) == 5.0
+
+            # Both chunks are still recorded as evidence for the merged edge.
+            conn = store._get_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "SELECT source_chunk_ids FROM graph_edges WHERE id = %s;", (first,)
+                )
+                chunk_ids = cursor.fetchone()[0]
+            finally:
+                cursor.close()
+                conn.rollback()
+            assert sorted(chunk_ids) == ["chunk-1", "chunk-2"]
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_get_subgraph_keeps_the_heaviest_edges_when_capped(
+        self, store, source_id, monkeypatch
+    ):
+        """A capped fetch must drop the weakest edges, not an arbitrary subset.
+
+        The cap is applied with ``LIMIT``; without an ordering Postgres is free
+        to return any rows at all, so a dense graph silently retrieves a random
+        neighbourhood.
+        """
+        try:
+            a = store.upsert_node(source_id, "A", "a", "thing", "d")
+            b = store.upsert_node(source_id, "B", "b", "thing", "d")
+            c = store.upsert_node(source_id, "C", "c", "thing", "d")
+            store.add_edge(source_id, a, b, "light", "d", 1.0, ["c1"])
+            store.add_edge(source_id, a, c, "heavy", "d", 9.0, ["c1"])
+
+            monkeypatch.setattr(store_module, "MAX_SUBGRAPH_EDGES", 1)
+            edges = store.get_subgraph(source_id, [a], hops=1)["edges"]
+
+            assert [e["type"] for e in edges] == ["heavy"]
+        finally:
+            store.delete_by_source(source_id)
+
     def test_apply_chunk_writes_nodes_links_and_edges(self, store, source_id):
         """One transactional write: entities linked to the chunk, edges added,
         and a bare relationship endpoint upserted but not chunk-linked."""
@@ -203,18 +319,23 @@ class TestGraphStoreLive:
             store.delete_by_source(source_id)
 
     def test_self_loop_degree_agrees_across_paths(self, store, source_id):
-        """``add_edge``'s incremental +1 and ``set_node_degrees`` recompute must
-        agree on a self-loop (count it once)."""
+        """``add_edge``'s incremental bump and ``set_node_degrees`` recompute must
+        agree on a self-loop.
+
+        They now agree on zero rather than one: the self-loop is rejected at
+        write time, so neither path has an edge to count. The property under
+        test is that the two paths agree, not the number they agree on.
+        """
         try:
             node = store.upsert_node(source_id, "Solo", "solo")
-            store.add_edge(source_id, node, node, "self")
+            assert store.add_edge(source_id, node, node, "self") is None
 
             incremental = store.get_node_by_normalized(source_id, "solo")["degree"]
-            assert incremental == 1
+            assert incremental == 0
 
             store.set_node_degrees(source_id)
             recomputed = store.get_node_by_normalized(source_id, "solo")["degree"]
-            assert recomputed == 1
+            assert recomputed == incremental
         finally:
             store.delete_by_source(source_id)
 
@@ -492,6 +613,115 @@ class TestGraphStoreParameterization:
         assert "name" not in [t for t in sql.split() if t == sid]
         assert params[1] == sid
         assert params[-1] == embedding
+
+
+@pytest.mark.unit
+class TestGraphReadQueries:
+    """The reads behind fact seeding and the agent's graph tool, without a DB.
+
+    The live class covers what these return from real rows; these pin the
+    contract that holds without one. The entity name reaching
+    ``entity_relationships``/``entity_pages`` comes from an LLM tool call, so
+    it must only ever travel as a bound parameter.
+    """
+
+    def _store(self, rows=(), fail=False):
+        store = GraphStore.__new__(GraphStore)
+        cursor = MagicMock()
+        cursor.fetchall.return_value = list(rows)
+        if fail:
+            cursor.execute.side_effect = RuntimeError("relation does not exist")
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        store._get_connection = lambda: conn
+        return store, cursor, conn
+
+    def test_fact_seeds_bind_every_value_and_read_weight_as_distance(self):
+        store, cursor, _ = self._store(rows=[("n1", "Quill", "a store", 0.8), ("n2", "Alder", None, None)])
+        sid = str(uuid.uuid4())
+        embedding = _embedding(0.3)
+
+        rows = store.seed_nodes_from_facts(sid, embedding, fact_limit=0, limit=3)
+
+        sql, params = cursor.execute.call_args.args
+        assert sid not in sql and str(embedding) not in sql
+        # Limits are clamped to at least one before binding.
+        assert params == (embedding, sid, embedding, 1, sid, 3)
+        assert rows[0] == {"id": "n1", "name": "Quill", "description": "a store", "distance": pytest.approx(0.2)}
+        assert rows[1]["distance"] == 1.0
+
+    def test_fact_seeds_need_a_query_vector(self):
+        store, cursor, _ = self._store()
+        assert store.seed_nodes_from_facts(str(uuid.uuid4()), []) == []
+        cursor.execute.assert_not_called()
+
+    def test_relationships_bind_the_name_as_a_pattern(self):
+        store, cursor, _ = self._store(rows=[("Alder", "streams_to", "Quill", "audit events")])
+        sid = str(uuid.uuid4())
+        name = "Quill'; DROP TABLE graph_nodes; --"
+
+        rows = store.entity_relationships(sid, f"  {name}  ", limit=500)
+
+        sql, params = cursor.execute.call_args.args
+        assert name not in sql
+        assert params == (sid, f"%{name}%", f"%{name}%", 500)
+        assert rows == [
+            {"source": "Alder", "type": "streams_to", "target": "Quill", "description": "audit events"}
+        ]
+
+    def test_pages_prefer_the_entity_itself_over_a_mention(self):
+        store, cursor, _ = self._store(rows=[({"title": "quill.md"}, "Quill is a store."), (None, None)])
+        sid = str(uuid.uuid4())
+
+        pages = store.entity_pages(sid, "Quill", limit=0)
+
+        sql, params = cursor.execute.call_args.args
+        assert "Quill" not in sql
+        # Exact name, name plus a qualifier ("Quill Store"), substring fallback,
+        # text-opens-with ordering, then the clamped limit.
+        assert params == ("quill", "quill %", sid, sid, "quill", "quill %", "%Quill%", "Quill%", 1)
+        assert pages == [{"metadata": {"title": "quill.md"}, "text": "Quill is a store."}, {"metadata": {}, "text": ""}]
+
+    def test_chunk_similarities_are_restricted_to_the_reached_chunks(self):
+        store, cursor, _ = self._store(rows=[("11", 0.75)])
+        sid = str(uuid.uuid4())
+        embedding = _embedding(0.9)
+
+        scores = store.chunk_similarities(sid, [11, "12"], embedding)
+
+        sql, params = cursor.execute.call_args.args
+        assert "= ANY(%s)" in sql and sid not in sql
+        assert params == (embedding, sid, ["11", "12"])
+        assert scores == {"11": 0.75}
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda s: s.entity_relationships("sid", "   "),
+            lambda s: s.entity_pages("sid", ""),
+            lambda s: s.chunk_similarities("sid", [], [0.1]),
+            lambda s: s.chunk_similarities("sid", ["1"], []),
+        ],
+    )
+    def test_empty_input_runs_no_query(self, call):
+        store, cursor, _ = self._store()
+        assert not call(store)
+        cursor.execute.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda s: s.seed_nodes_from_facts("sid", [0.1]),
+            lambda s: s.entity_relationships("sid", "Quill"),
+            lambda s: s.entity_pages("sid", "Quill"),
+            lambda s: s.chunk_similarities("sid", ["1"], [0.1]),
+        ],
+    )
+    def test_a_failed_query_returns_nothing_and_releases_the_connection(self, call):
+        store, cursor, conn = self._store(fail=True)
+        assert not call(store)
+        cursor.close.assert_called_once()
+        conn.rollback.assert_called_once()
 
 
 @pytest.mark.unit
@@ -890,3 +1120,227 @@ class TestCountNodesMany:
         store, _, _ = self._store_with_mock_conn([(source_id.lower(), 3)])
 
         assert store.count_nodes_many([source_id]) == {source_id: 3}
+
+
+@pytest.mark.unit
+class TestWritesSurviveALostConnection:
+    """A graph build holds one pooled connection across its LLM calls.
+
+    Extraction spends minutes per chunk waiting on a model, so the connection
+    sits idle between writes and the server (or a pooler) can drop it. The pool
+    only validates a connection at checkout, and this one was checked out once
+    at the start of the build, so the next write raises and the chunk is marked
+    ``failed`` — silently losing it from the graph. The write reconnects and
+    retries once instead; the statements are idempotent upserts, so a retry
+    cannot double-write.
+    """
+
+    def _store_with_connections(self, conns):
+        """Store that hands out ``conns`` in order, one per (re)connect."""
+        store = GraphStore.__new__(GraphStore)
+        store._tables_ensured = True
+        store._connection = None
+        handed = []
+        closed = []
+
+        def _get_connection():
+            if store._connection is None:
+                store._connection = conns[len(handed)]
+                handed.append(store._connection)
+            return store._connection
+
+        def _close():
+            if store._connection is not None:
+                closed.append(store._connection)
+                store._connection = None
+
+        store._get_connection = _get_connection
+        store.close = _close
+        return store, handed, closed
+
+    @staticmethod
+    def _conn(execute_error=None):
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [str(uuid.uuid4())]
+        cursor.fetchall.return_value = []
+        if execute_error is not None:
+            cursor.execute.side_effect = execute_error
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        return conn
+
+    def test_mark_chunk_retries_on_a_dropped_connection(self):
+        import psycopg
+
+        dead = self._conn(psycopg.OperationalError("the connection is lost"))
+        alive = self._conn()
+        store, handed, closed = self._store_with_connections([dead, alive])
+
+        store.mark_chunk(str(uuid.uuid4()), "c1", "done")
+
+        assert handed == [dead, alive]
+        assert closed == [dead]
+        alive.commit.assert_called_once()
+
+    def test_apply_chunk_retries_on_a_dropped_connection(self):
+        import psycopg
+
+        dead = self._conn(psycopg.OperationalError("the connection is lost"))
+        alive = self._conn()
+        store, handed, closed = self._store_with_connections([dead, alive])
+        entities = [
+            {
+                "name": "Ada",
+                "normalized_name": "ada",
+                "type": "person",
+                "description": "d",
+            }
+        ]
+
+        nodes, edges = store.apply_chunk(
+            str(uuid.uuid4()), "c1", entities, [], {"ada": _embedding(0.5)}
+        )
+
+        assert (nodes, edges) == (1, 0)
+        assert handed == [dead, alive]
+        assert closed == [dead]
+        alive.commit.assert_called_once()
+
+    def test_a_second_connection_failure_is_not_retried_again(self):
+        """One retry, not a loop: a genuinely unreachable DB still fails."""
+        import psycopg
+
+        dead = self._conn(psycopg.OperationalError("the connection is lost"))
+        also_dead = self._conn(psycopg.OperationalError("the connection is lost"))
+        store, handed, _ = self._store_with_connections([dead, also_dead])
+
+        with pytest.raises(psycopg.OperationalError):
+            store.mark_chunk(str(uuid.uuid4()), "c1", "done")
+
+        assert handed == [dead, also_dead]
+
+    def test_a_query_error_is_not_retried(self):
+        """Only connection loss is retryable; a bad statement must surface."""
+        import psycopg
+
+        broken = self._conn(psycopg.ProgrammingError("syntax error"))
+        spare = self._conn()
+        store, handed, _ = self._store_with_connections([broken, spare])
+
+        with pytest.raises(psycopg.ProgrammingError):
+            store.mark_chunk(str(uuid.uuid4()), "c1", "done")
+
+        assert handed == [broken]
+        broken.rollback.assert_called_once()
+
+
+@pytest.mark.unit
+class TestCountNodesFailureModes:
+    """Retrieval wants a swallowed count; extraction wants to hear about it."""
+
+    def _store_with_failing_cursor(self):
+        store = GraphStore.__new__(GraphStore)
+        store._tables_ensured = True
+        cursor = MagicMock()
+        cursor.execute.side_effect = RuntimeError("relation does not exist")
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        store._connection = conn
+        store._get_connection = lambda: conn
+        return store
+
+    def test_default_reports_zero_to_drive_the_classic_fallback(self):
+        store = self._store_with_failing_cursor()
+
+        assert store.count_nodes(str(uuid.uuid4())) == 0
+
+    def test_strict_surfaces_the_query_failure(self):
+        """A caller reporting graph size must not read a broken query as empty."""
+        store = self._store_with_failing_cursor()
+
+        with pytest.raises(RuntimeError):
+            store.count_nodes(str(uuid.uuid4()), strict=True)
+
+
+@pytest.mark.integration
+class TestApplyChunkIsReplaySafe:
+    """A retry after an ambiguous commit must not apply a chunk twice.
+
+    ``_write_with_reconnect`` replays the write when the connection dies, and
+    ``commit()`` itself can raise connection loss *after* the server committed.
+    Replaying then bumps ``doc_freq`` a second time and inserts a second
+    logical edge (``graph_edges`` has no uniqueness constraint), so the chunk's
+    own progress row is written in the same transaction and short-circuits it.
+    """
+
+    @pytest.fixture
+    def store(self, postgresql):
+        store = GraphStore(connection_string=_ephemeral_dsn(postgresql.info))
+        try:
+            store._ensure_tables()
+        except Exception as exc:
+            pytest.skip(f"pgvector extension unavailable: {exc}")
+        yield store
+        store.close()
+
+    def test_a_replayed_chunk_is_not_applied_twice(self, store):
+        source_id = str(uuid.uuid4())
+        entities = [
+            {
+                "name": "Ada",
+                "normalized_name": "ada",
+                "type": "person",
+                "description": "d",
+            }
+        ]
+        relationships = [
+            {
+                "source": "Ada",
+                "target": "Engine",
+                "type": "worked_on",
+                "description": "x",
+                "weight": 2.0,
+            }
+        ]
+        embeddings = {"ada": _embedding(0.1), "engine": _embedding(0.2)}
+        try:
+            first = store.apply_chunk(
+                source_id, "c1", entities, relationships, embeddings
+            )
+            replay = store.apply_chunk(
+                source_id, "c1", entities, relationships, embeddings
+            )
+
+            assert first == (1, 1)
+            assert replay == (0, 0)
+            node = store.get_node_by_normalized(source_id, "ada")
+            assert node["doc_freq"] == 1
+            overview = store.get_graph_overview(source_id)
+            assert len(overview["edges"]) == 1
+            # The write records its own progress, so the caller's checkpoint
+            # and the rows it describes commit together.
+            assert store.get_progress(source_id)["c1"] == "done"
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_a_different_chunk_still_applies(self, store):
+        """The guard is per chunk, not a blanket 'already saw this source'."""
+        source_id = str(uuid.uuid4())
+        entities = [
+            {
+                "name": "Ada",
+                "normalized_name": "ada",
+                "type": "person",
+                "description": "d",
+            }
+        ]
+        embeddings = {"ada": _embedding(0.1)}
+        try:
+            store.apply_chunk(source_id, "c1", entities, [], embeddings)
+            second = store.apply_chunk(source_id, "c2", entities, [], embeddings)
+
+            assert second == (1, 0)
+            node = store.get_node_by_normalized(source_id, "ada")
+            assert node["doc_freq"] == 2
+        finally:
+            store.delete_by_source(source_id)

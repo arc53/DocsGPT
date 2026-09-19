@@ -313,6 +313,26 @@ class TestClassicAgentSearchExposure:
             "Tool Doc",
         ]
 
+    def test_collect_internal_sources_includes_graph_pages(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # Pages the graph tool read carry the answer as much as search hits do,
+        # so they are cited the same way.
+        from docsgpt.agents.tools.graph_search import GRAPH_TOOL_ID
+
+        retriever_config = {"source": {"active_docs": ["b"]}}
+        agent = ClassicAgent(retriever_config=retriever_config, **agent_base_params)
+        search = Mock()
+        search.retrieved_docs = [{"text": "Found", "title": "Search Doc", "source": "b"}]
+        graph = Mock()
+        graph.retrieved_docs = [{"text": "Quill is a store.", "title": "quill.md", "source": "b"}]
+        user = agent.user or ""
+        agent.tool_executor._loaded_tools[f"internal_search:{INTERNAL_TOOL_ID}:{user}"] = search
+        agent.tool_executor._loaded_tools[f"graph_search:{GRAPH_TOOL_ID}:{user}"] = graph
+
+        agent._collect_internal_sources()
+        assert [d["title"] for d in agent.retrieved_docs] == ["Search Doc", "quill.md"]
+
     def test_collect_internal_sources_dedupes(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):
