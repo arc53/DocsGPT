@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional
+import re
 import uuid
 
 from .base import Tool
@@ -210,9 +211,15 @@ class NotesTool(Tool):
         if old_str.lower() not in current_note.lower():
             return f"String '{old_str}' not found in note."
 
-        # Case-insensitive replacement
-        import re
-        updated_note = re.sub(re.escape(old_str), new_str, current_note, flags=re.IGNORECASE)
+        # Case-insensitive replacement. new_str is passed as a function so it
+        # is substituted literally; as a plain string, re.sub would read
+        # backslash escapes and group references inside it.
+        updated_note = re.sub(
+            re.escape(old_str),
+            lambda _match: new_str,
+            current_note,
+            flags=re.IGNORECASE,
+        )
 
         with db_session() as conn:
             row = NotesRepository(conn).upsert(

@@ -106,6 +106,30 @@ def test_str_replace_not_found(notes_tool):
 
 
 @pytest.mark.unit
+def test_str_replace_new_str_backslash_is_literal(notes_tool):
+    notes_tool.execute_action("overwrite", text="Path: PLACEHOLDER")
+    result = notes_tool.execute_action(
+        "str_replace", old_str="PLACEHOLDER", new_str=r"C:\new\table"
+    )
+    assert "updated" in result.lower()
+
+    note = notes_tool.execute_action("view")
+    assert r"C:\new\table" in note
+
+
+@pytest.mark.unit
+def test_str_replace_new_str_group_reference_is_literal(notes_tool):
+    notes_tool.execute_action("overwrite", text="See PLACEHOLDER")
+    result = notes_tool.execute_action(
+        "str_replace", old_str="PLACEHOLDER", new_str=r"\1"
+    )
+    assert "updated" in result.lower()
+
+    note = notes_tool.execute_action("view")
+    assert r"\1" in note
+
+
+@pytest.mark.unit
 def test_insert_line(notes_tool):
     notes_tool.execute_action("overwrite", text="Line 1\nLine 2\nLine 3")
     result = notes_tool.execute_action("insert", line_number=2, text="Inserted line")
