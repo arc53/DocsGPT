@@ -13,6 +13,9 @@ plural. Cautious matters: this corpus contains ``postgres``, ``kubernetes``,
 ``https`` and ``aws``, none of which are plurals, so a naive "strip trailing s"
 would corrupt them into new entities rather than merge anything.
 
+The result is a merge key, never shown to anyone, so it only has to be the
+same for a word's singular and plural — not to be a word itself.
+
 Always on: every graph is built with canonical names.
 """
 
@@ -33,18 +36,30 @@ _NOT_PLURAL = frozenset(
         "analysis", "basis", "axis", "https", "rss", "less", "express",
         "redis", "nats", "kibana", "elasticsearch", "os", "ios", "macos",
         "always", "sometimes", "series", "docs", "ops", "devops", "sse",
+        "alias", "canvas", "atlas", "bias", "pandas",
     }
 )
 
+#: Plural endings that drop ``es``, and the singular endings that meet them.
+#: ``caches`` cannot say whether it is ``cache`` + "s" or ``cach`` + "es"
+#: (as ``batches`` is ``batch`` + "es"), so rather than guess, both
+#: ``caches`` and ``cache`` fold to ``cach`` — as ``databases``/``database``
+#: fold to ``databas``. Hardly any real word differs from one of these singulars
+#: by its final "e" alone, so the fold merges next to nothing it should not.
+_ES_PLURAL = ("ches", "shes", "ses", "zes", "xes")
+_E_SINGULAR = ("che", "she", "se", "ze", "xe")
+
 
 def _singular(word: str) -> str:
-    """Best-effort singular of one word, biased hard towards leaving it alone.
+    """Fold one word so its singular and plural share a key, else leave it alone.
 
-    Only the endings that are unambiguous in this domain are touched:
-    ``-ies`` -> ``-y`` (``policies``), ``-ses``/``-xes``/``-zes``/``-ches``/
-    ``-shes`` -> drop ``es`` (``indexes``, ``batches``), and a bare trailing
-    ``s`` on a word long enough to be safe. Everything in :data:`_NOT_PLURAL`,
-    and anything ending in ``ss``/``us``/``is``, is returned unchanged.
+    ``-ies`` and a singular's ``-ie`` both fold to ``-y`` (``policies``,
+    ``cookies``/``cookie``). The ``-es`` endings in :data:`_ES_PLURAL` drop
+    ``es`` and the singular endings in :data:`_E_SINGULAR` drop their ``e``, so
+    both sides of an ambiguous plural meet (``caches``/``cache`` -> ``cach``).
+    Otherwise a bare trailing ``s`` is dropped on a word long enough to be
+    safe. Everything in :data:`_NOT_PLURAL`, and anything ending in
+    ``ss``/``us``/``is``, is returned unchanged.
     """
     if len(word) < 4 or word in _NOT_PLURAL:
         return word
@@ -52,8 +67,12 @@ def _singular(word: str) -> str:
         return word
     if word.endswith("ies") and len(word) > 4:
         return word[:-3] + "y"
-    if word.endswith(("ses", "xes", "zes", "ches", "shes")):
+    if word.endswith(_ES_PLURAL):
         return word[:-2]
+    if word.endswith("ie") and len(word) > 4:
+        return word[:-2] + "y"
+    if word.endswith(_E_SINGULAR):
+        return word[:-1]
     if word.endswith("s"):
         return word[:-1]
     return word
@@ -66,12 +85,14 @@ def canonical_name(name: str) -> str:
         name: The entity name as the model wrote it.
 
     Returns:
-        A lowercase, punctuation-free, singularised key. Returns ``""`` for an
-        empty or punctuation-only name, which callers treat as "no entity".
+        A lowercase, punctuation-free key shared by a name's singular and
+        plural. Returns ``""`` for an empty or punctuation-only name, which
+        callers treat as "no entity".
 
     Examples:
         ``VECTOR_STORE`` and ``Vector stores`` -> ``vector store``;
         ``.env file`` and ``env_file`` -> ``env file``;
+        ``cache`` and ``caches`` -> ``cach``;
         ``postgres`` stays ``postgres``.
     """
     if not name:
