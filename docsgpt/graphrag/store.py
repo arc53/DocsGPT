@@ -18,6 +18,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 import psycopg
+from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from docsgpt.core.settings import settings
@@ -50,6 +51,18 @@ def _safe_identifier(name: str) -> str:
     if not isinstance(name, str) or not name.isidentifier():
         raise ValueError(f"Unsafe SQL identifier: {name!r}")
     return name
+
+
+def _identifier(name: str) -> sql.Identifier:
+    """``name`` as a quoted identifier, folded the way Postgres folds it unquoted.
+
+    Composing identifiers through psycopg keeps every query a fixed statement
+    with bound values: nothing is formatted into the SQL string. The fold
+    matters because ``PGVectorStore`` writes these names unquoted, which
+    Postgres lower-cases, while a quoted identifier keeps its case; folding
+    first keeps both stores addressing the same table.
+    """
+    return sql.Identifier(_safe_identifier(name).lower())
 
 
 def _pgvector_identifiers() -> tuple[str, str, str, str]:
@@ -1228,18 +1241,25 @@ class GraphStore:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                f"""
-                SELECT d.{metadata_col}, d.{text_col},
-                       (lower(n.name) = %s OR lower(n.name) LIKE %s) AS is_subject
-                FROM graph_node_chunks gc
-                JOIN graph_nodes n ON n.id = gc.node_id
-                JOIN {table} d ON d.id::text = gc.chunk_id
-                WHERE gc.source_id = %s AND d.{source_col} = %s
-                  AND (lower(n.name) = %s OR lower(n.name) LIKE %s OR n.name ILIKE %s)
-                GROUP BY d.{metadata_col}, d.{text_col}, is_subject
-                ORDER BY is_subject DESC, (d.{text_col} ILIKE %s) DESC
-                LIMIT %s;
-                """,
+                sql.SQL(
+                    """
+                    SELECT d.{metadata}, d.{text},
+                           (lower(n.name) = %s OR lower(n.name) LIKE %s) AS is_subject
+                    FROM graph_node_chunks gc
+                    JOIN graph_nodes n ON n.id = gc.node_id
+                    JOIN {table} d ON d.id::text = gc.chunk_id
+                    WHERE gc.source_id = %s AND d.{source} = %s
+                      AND (lower(n.name) = %s OR lower(n.name) LIKE %s OR n.name ILIKE %s)
+                    GROUP BY d.{metadata}, d.{text}, is_subject
+                    ORDER BY is_subject DESC, (d.{text} ILIKE %s) DESC
+                    LIMIT %s;
+                    """
+                ).format(
+                    metadata=_identifier(metadata_col),
+                    text=_identifier(text_col),
+                    table=_identifier(table),
+                    source=_identifier(source_col),
+                ),
                 (
                     clean.lower(), f"{clean.lower()} %",
                     source_id, source_id,
@@ -1277,11 +1297,17 @@ class GraphStore:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                f"""
-                SELECT id::text, 1 - ({vector_col} <=> %s::vector)
-                FROM {table}
-                WHERE {source_col} = %s AND id::text = ANY(%s);
-                """,
+                sql.SQL(
+                    """
+                    SELECT id::text, 1 - ({vector} <=> %s::vector)
+                    FROM {table}
+                    WHERE {source} = %s AND id::text = ANY(%s);
+                    """
+                ).format(
+                    vector=_identifier(vector_col),
+                    table=_identifier(table),
+                    source=_identifier(source_col),
+                ),
                 (query_embedding, source_id, [str(c) for c in chunk_ids]),
             )
             return {row[0]: float(row[1]) for row in cursor.fetchall()}
@@ -1312,10 +1338,17 @@ class GraphStore:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                f"""
-                SELECT id, {text_col}, {metadata_col} FROM {table}
-                WHERE {source_col} = %s AND id::text = ANY(%s);
-                """,
+                sql.SQL(
+                    """
+                    SELECT id, {text}, {metadata} FROM {table}
+                    WHERE {source} = %s AND id::text = ANY(%s);
+                    """
+                ).format(
+                    text=_identifier(text_col),
+                    metadata=_identifier(metadata_col),
+                    table=_identifier(table),
+                    source=_identifier(source_col),
+                ),
                 (source_id, [str(c) for c in chunk_ids]),
             )
             return {
@@ -1501,7 +1534,10 @@ class GraphStore:
                 "graph_ingest_progress",
             ):
                 cursor.execute(
-                    f"DELETE FROM {table} WHERE source_id = %s;", (source_id,)
+                    sql.SQL("DELETE FROM {} WHERE source_id = %s;").format(
+                        sql.Identifier(table)
+                    ),
+                    (source_id,),
                 )
             conn.commit()
         except Exception as e:

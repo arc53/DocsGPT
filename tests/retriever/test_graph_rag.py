@@ -472,11 +472,16 @@ class TestGetChunkTexts:
         sid = str(uuid.uuid4())
         store.get_chunk_texts(sid, ["1", "2"])
 
-        sql, params = cursor.execute.call_args.args[0], cursor.execute.call_args.args[1]
-        assert f"FROM {table}" in sql
-        assert text_col in sql
-        assert metadata_col in sql
-        assert f"{source_col} = %s" in sql
+        from psycopg import sql as pgsql
+
+        query, params = cursor.execute.call_args.args[0], cursor.execute.call_args.args[1]
+        # Identifiers are composed and quoted by psycopg, never formatted in.
+        assert isinstance(query, pgsql.Composable)
+        sql = query.as_string()
+        assert f'FROM "{table}"' in sql
+        assert f'"{text_col}"' in sql
+        assert f'"{metadata_col}"' in sql
+        assert f'"{source_col}" = %s' in sql
         assert "id::text = ANY(%s)" in sql
         assert sid not in sql
         assert params == (sid, ["1", "2"])

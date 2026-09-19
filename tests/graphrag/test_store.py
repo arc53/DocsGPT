@@ -558,16 +558,23 @@ class TestGraphStoreParameterization:
         return store, cursor
 
     def test_delete_by_source_binds_source_id(self):
+        from psycopg import sql as pgsql
+
         store, cursor = self._store_with_mock_conn()
         sid = str(uuid.uuid4())
         store.delete_by_source(sid)
 
+        tables = []
         for call in cursor.execute.call_args_list:
-            sql = call.args[0]
+            query = call.args[0]
             params = call.args[1] if len(call.args) > 1 else None
+            assert isinstance(query, pgsql.Composable)
+            sql = query.as_string()
             assert "WHERE source_id = %s" in sql
             assert sid not in sql
             assert params == (sid,)
+            tables.append(sql.split('"')[1])
+        assert tables == ["graph_node_chunks", "graph_edges", "graph_nodes", "graph_ingest_progress"]
 
     def test_search_binds_embedding_and_source(self):
         store, cursor = self._store_with_mock_conn()
@@ -636,6 +643,14 @@ class TestGraphReadQueries:
         store._get_connection = lambda: conn
         return store, cursor, conn
 
+    def test_identifiers_are_quoted_as_postgres_folds_them_unquoted(self):
+        # PGVectorStore writes these names unquoted, which Postgres folds to
+        # lower case; quoting keeps case, so the fold happens first or the two
+        # stores would address different tables.
+        assert store_module._identifier("Documents").as_string() == '"documents"'
+        with pytest.raises(ValueError):
+            store_module._identifier('documents"; DROP TABLE graph_nodes; --')
+
     def test_fact_seeds_bind_every_value_and_read_weight_as_distance(self):
         store, cursor, _ = self._store(rows=[("n1", "Quill", "a store", 0.8), ("n2", "Alder", None, None)])
         sid = str(uuid.uuid4())
@@ -675,7 +690,9 @@ class TestGraphReadQueries:
 
         pages = store.entity_pages(sid, "Quill", limit=0)
 
-        sql, params = cursor.execute.call_args.args
+        query, params = cursor.execute.call_args.args
+        sql = query.as_string()
+        assert 'JOIN "documents" d' in sql and 'd."source_id" = %s' in sql
         assert "Quill" not in sql
         # Exact name, name plus a qualifier ("Quill Store"), substring fallback,
         # text-opens-with ordering, then the clamped limit.
@@ -689,7 +706,9 @@ class TestGraphReadQueries:
 
         scores = store.chunk_similarities(sid, [11, "12"], embedding)
 
-        sql, params = cursor.execute.call_args.args
+        query, params = cursor.execute.call_args.args
+        sql = query.as_string()
+        assert '1 - ("embedding" <=> %s::vector)' in sql and 'FROM "documents"' in sql
         assert "= ANY(%s)" in sql and sid not in sql
         assert params == (embedding, sid, ["11", "12"])
         assert scores == {"11": 0.75}
