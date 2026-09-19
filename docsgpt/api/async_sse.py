@@ -94,7 +94,7 @@ async def stream_message_events(request: Request) -> Response:
     """
     # Same JWT decoder and OIDC revocation check as the Flask routes. With
     # AUTH_TYPE unset the caller resolves to ``{"sub": "local"}``.
-    decoded, error = await authenticate(request)
+    decoded, error = await authenticate(request, pat_scope="chat:run")
     if error is not None:
         return error
     user_id = decoded.get("sub") if isinstance(decoded, dict) else None
