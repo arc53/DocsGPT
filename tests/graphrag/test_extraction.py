@@ -88,6 +88,37 @@ class _StubLLM:
         return response
 
 
+class _ScriptedLLM:
+    """Stub LLM answering per chunk, so results do not depend on call order.
+
+    The extraction pool runs calls concurrently, so a stub that hands out
+    responses in call order gives each chunk whichever response its thread
+    happened to grab first. ``script`` maps a chunk's text to the responses
+    for that chunk, consumed one per call.
+    """
+
+    def __init__(self, script):
+        self._script = {text: list(responses) for text, responses in script.items()}
+        self.model_id = "stub-model"
+        self.calls = []
+        self._token_usage_source = None
+        self._request_id = None
+
+    def gen(self, model=None, messages=None, **kwargs):
+        text = messages[-1]["content"].removeprefix("<chunk>\n").removesuffix("\n</chunk>")
+        self.calls.append(text)
+        responses = self._script.get(text)
+        if not responses:
+            raise AssertionError(f"unexpected extraction call for {text!r}")
+        response = responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    def calls_for(self, text):
+        return self.calls.count(text)
+
+
 class _StubEmbedding:
     """Stub embeddings model producing deterministic fixed-dim vectors."""
 
@@ -365,11 +396,12 @@ class TestExtractionLive:
     ):
         """Only the LLM call may run in the extraction pool, never embedding.
 
-        Inside a Celery worker the embeddings client decides to embed locally
-        from the task on the *current thread's* stack. A pool thread has none,
-        so from there it dispatches an embed task to the worker and waits on
-        it — which Celery refuses inside a task, so every chunk of a graph
-        build failed.
+        Embedding from the pool is what broke every graph build inside a
+        worker: the embeddings client used to decide "embed locally" from the
+        task on the *current thread's* stack, so a pool thread dispatched to
+        the worker instead and Celery refused the wait. ``in_worker`` is
+        process-wide now, but the pool still has no reason to touch the
+        embeddings client — it exists to overlap model latency.
         """
         import threading
 
@@ -505,11 +537,13 @@ class TestExtractionLive:
                 entities=[{"name": "Ada", "type": "person", "description": "d"}],
                 relationships=[],
             )
-            llm = _StubLLM([
-                "not json at all",
-                RuntimeError("model exploded"),
-                good,
-            ])
+            # Each failing chunk fails its retry too; one that recovers on
+            # retry is covered in ``TestFailedChunksAreRetried``.
+            llm = _ScriptedLLM({
+                "garbage": ["not json at all", "still not json"],
+                "boom": [RuntimeError("model exploded"), RuntimeError("model exploded again")],
+                "Ada.": [good],
+            })
             _install_stub_llm(monkeypatch, llm)
 
             summary = extract_graph_for_source(
@@ -762,7 +796,7 @@ class TestFailedChunksAreReported:
         import logging
 
         store = self._fake_store(monkeypatch, ["c1"])
-        _install_stub_llm(monkeypatch, _StubLLM(["not json at all"]))
+        _install_stub_llm(monkeypatch, _StubLLM(["not json at all", "still not json"]))
 
         with caplog.at_level(logging.WARNING, logger="docsgpt.graphrag.extraction"):
             summary = extract_graph_for_source(
@@ -785,7 +819,10 @@ class TestFailedChunksAreReported:
         import logging
 
         self._fake_store(monkeypatch, ["c7"])
-        _install_stub_llm(monkeypatch, _StubLLM([RuntimeError("model exploded")]))
+        _install_stub_llm(
+            monkeypatch,
+            _StubLLM([RuntimeError("model exploded"), RuntimeError("model exploded again")]),
+        )
 
         with caplog.at_level(logging.WARNING, logger="docsgpt.graphrag.extraction"):
             extract_graph_for_source(
@@ -798,6 +835,126 @@ class TestFailedChunksAreReported:
 
         messages = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
         assert any("c7" in message for message in messages), messages
+
+
+@pytest.mark.unit
+class TestFailedChunksAreRetried:
+    """A chunk that fails once gets one more attempt before the build ends.
+
+    Failures are recorded as ``failed`` and the checkpoint treats them as
+    pending, but nothing ever ran the build again, so a single transient error
+    — a provider hiccup, one response that did not parse — left a permanent
+    hole in the graph until someone rebuilt the whole source. Retries run
+    after the rest of the build, which gives a burst of rate limiting time to
+    pass, and are bounded at one per chunk so a chunk that can never be
+    extracted costs at most two calls.
+    """
+
+    GOOD = _extraction_json(
+        entities=[{"name": "Ada", "type": "person", "description": "d"}],
+        relationships=[],
+    )
+
+    def _fake_store(self, monkeypatch, chunk_ids):
+        from unittest.mock import MagicMock
+
+        store = MagicMock(name="GraphStore")
+        store.pending_chunks.return_value = list(chunk_ids)
+        store.apply_chunk.return_value = (1, 0)
+        store.count_nodes.return_value = 1
+        monkeypatch.setattr(
+            "docsgpt.graphrag.store.GraphStore", lambda *a, **k: store
+        )
+        return store
+
+    def _run(self, chunks, progress=None):
+        return extract_graph_for_source(
+            str(uuid.uuid4()),
+            user="owner-1",
+            chunks=chunks,
+            config=SourceConfig(),
+            request_id="req-retry",
+            progress_cb=progress,
+        )
+
+    @staticmethod
+    def _marked_failed(store):
+        return [c.args[1] for c in store.mark_chunk.call_args_list if c.args[2] == "failed"]
+
+    def test_a_transient_failure_is_retried_and_written(self, monkeypatch, stub_embedding):
+        store = self._fake_store(monkeypatch, ["c1"])
+        llm = _ScriptedLLM({"flaky": [RuntimeError("rate limited"), self.GOOD]})
+        _install_stub_llm(monkeypatch, llm)
+
+        summary = self._run([_chunk("c1", "flaky")])
+
+        assert summary["failed_chunks"] == 0
+        assert summary["chunks_processed"] == 1
+        assert store.apply_chunk.call_args.args[1] == "c1"
+        assert self._marked_failed(store) == []
+
+    def test_an_unparseable_response_is_retried(self, monkeypatch, stub_embedding):
+        store = self._fake_store(monkeypatch, ["c1"])
+        _install_stub_llm(monkeypatch, _ScriptedLLM({"odd": ["not json", self.GOOD]}))
+
+        summary = self._run([_chunk("c1", "odd")])
+
+        assert summary["failed_chunks"] == 0
+        assert self._marked_failed(store) == []
+
+    def test_a_chunk_that_fails_again_is_marked_failed_once(self, monkeypatch, stub_embedding):
+        store = self._fake_store(monkeypatch, ["c1"])
+        llm = _ScriptedLLM({"broken": ["not json", "still not json"]})
+        _install_stub_llm(monkeypatch, llm)
+
+        summary = self._run([_chunk("c1", "broken")])
+
+        assert summary["failed_chunks"] == 1
+        assert summary["chunks_processed"] == 0
+        assert llm.calls_for("broken") == 2
+        assert self._marked_failed(store) == ["c1"]
+
+    def test_only_failed_chunks_are_retried(self, monkeypatch, stub_embedding):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 4)
+        self._fake_store(monkeypatch, ["c1", "c2", "c3"])
+        llm = _ScriptedLLM({
+            "one": [self.GOOD],
+            "two": [RuntimeError("timeout"), self.GOOD],
+            "three": [self.GOOD],
+        })
+        _install_stub_llm(monkeypatch, llm)
+
+        summary = self._run([_chunk("c1", "one"), _chunk("c2", "two"), _chunk("c3", "three")])
+
+        assert summary["chunks_processed"] == 3
+        assert summary["failed_chunks"] == 0
+        assert (llm.calls_for("one"), llm.calls_for("two"), llm.calls_for("three")) == (1, 2, 1)
+
+    def test_a_failed_write_is_retried(self, monkeypatch, stub_embedding):
+        store = self._fake_store(monkeypatch, ["c1"])
+        store.apply_chunk.side_effect = [RuntimeError("write failed"), (1, 0)]
+        _install_stub_llm(monkeypatch, _ScriptedLLM({"text": [self.GOOD, self.GOOD]}))
+
+        summary = self._run([_chunk("c1", "text")])
+
+        assert summary["failed_chunks"] == 0
+        assert summary["chunks_processed"] == 1
+        assert self._marked_failed(store) == []
+
+    def test_progress_ends_at_the_total(self, monkeypatch, stub_embedding):
+        self._fake_store(monkeypatch, ["c1", "c2"])
+        _install_stub_llm(monkeypatch, _ScriptedLLM({
+            "fine": [self.GOOD],
+            "broken": ["not json", "still not json"],
+        }))
+        events = []
+
+        self._run([_chunk("c1", "fine"), _chunk("c2", "broken")], progress=events.append)
+
+        assert all(e["current"] <= e["total"] for e in events)
+        assert events[-1]["current"] == events[-1]["total"] == 2
 
 
 @pytest.mark.integration

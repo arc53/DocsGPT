@@ -170,13 +170,13 @@ def _extract_chunk(
         )
     except Exception as exc:
         logger.warning(
-            "Graph extraction call failed for chunk %s, skipping: %s", chunk_id, exc
+            "Graph extraction call failed for chunk %s: %s", chunk_id, exc
         )
         return None
     parsed = _parse_extraction(response)
     if parsed is None:
         logger.warning(
-            "Graph extraction returned unparseable output for chunk %s; marking it failed.",
+            "Graph extraction returned unparseable output for chunk %s.",
             chunk_id,
         )
     return parsed
@@ -203,8 +203,10 @@ def extract_graph_for_source(
     Resumable and idempotent: chunks already marked ``done`` are skipped via the
     ``graph_ingest_progress`` checkpoint, so a retry never re-extracts (and never
     re-bills). Processes at most the resolved chunk cap; excess chunks are
-    reported under ``skipped_over_cap``. A malformed response or an LLM error on
-    a single chunk marks it ``failed`` and continues — the pipeline never crashes.
+    reported under ``skipped_over_cap``. A malformed response, an LLM error or a
+    failed write on a single chunk is retried once after the rest of the build;
+    a chunk that fails again is marked ``failed`` and the run continues — the
+    pipeline never crashes.
 
     Each chunk is written in a single transaction with one batched embedding
     call (entity + relationship-endpoint names together).
@@ -273,13 +275,9 @@ def extract_graph_for_source(
         """One chunk's LLM extraction — the only step run concurrently.
 
         A chunk spends almost all of its time waiting on the model, so that is
-        what runs in the pool. Everything else stays on the calling thread:
-        graph writes, so transactions and the progress checkpoint are exactly
-        what they were serially, and embedding. Inside a Celery worker the
-        embeddings client decides to embed locally from the task on the
-        *current thread's* stack; a pool thread has none, so it would instead
-        dispatch an embed task to the worker and wait on it, which Celery
-        refuses inside a task — failing every chunk of the build.
+        what runs in the pool. Graph writes and embedding stay on the calling
+        thread, so transactions and the progress checkpoint are exactly what
+        they were serially and the pool never touches the embeddings client.
         """
         chunk, chunk_id = item
         text = _chunk_text(chunk)
@@ -294,56 +292,85 @@ def extract_graph_for_source(
             relationships = _build_relationships(extracted["relationships"])
         except Exception as exc:
             logger.warning(
-                "Graph extraction failed for chunk %s, skipping: %s", chunk_id, exc
+                "Graph extraction failed for chunk %s: %s", chunk_id, exc
             )
             return chunk_id, "failed", None
         return chunk_id, "ok", (entities, relationships)
+
+    def _write(chunk_id, status, payload) -> bool:
+        """Apply one prepared chunk to the graph; False when it did not land."""
+        nonlocal node_upserts, edges, chunks_processed
+        if status == "empty":
+            store.mark_chunk(source_id, chunk_id, "done")
+            chunks_processed += 1
+            return True
+        if status == "failed":
+            return False
+
+        entities, relationships = payload
+        try:
+            name_embeddings = _embed_names(embedding, entities, relationships)
+            _embed_facts(embedding, relationships)
+            chunk_nodes, chunk_edges = store.apply_chunk(
+                source_id, chunk_id, entities, relationships, name_embeddings
+            )
+        except Exception as exc:
+            logger.warning(
+                "Graph extraction embed/write failed for chunk %s: %s", chunk_id, exc
+            )
+            return False
+        # ``apply_chunk`` marks the chunk done inside the transaction that
+        # writes its rows, so the checkpoint cannot disagree with the graph
+        # and a replayed write cannot apply the chunk twice.
+        node_upserts += chunk_nodes
+        edges += chunk_edges
+        chunks_processed += 1
+        return True
 
     workers = max(1, int(getattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 1) or 1))
     pool = None
     if workers > 1 and len(to_process) > 1:
         pool = ThreadPoolExecutor(max_workers=workers)
-        # ``map`` yields in submission order, so chunks are still applied in the
-        # order they were given and a run stays reproducible.
-        prepared = pool.map(_prepare, to_process)
-    else:
-        prepared = (_prepare(item) for item in to_process)
+
+    def _pass(items):
+        """Extract and write ``items``; return the ones that did not land."""
+        if pool is not None:
+            # ``map`` yields in submission order, so chunks are still applied in
+            # the order they were given and a run stays reproducible.
+            prepared = pool.map(_prepare, items)
+        else:
+            prepared = (_prepare(item) for item in items)
+        missed = []
+        for item, (chunk_id, status, payload) in zip(items, prepared):
+            if not _write(chunk_id, status, payload):
+                missed.append(item)
+            _report()
+        return missed
 
     try:
-        for chunk_id, status, payload in prepared:
-            if status == "empty":
-                store.mark_chunk(source_id, chunk_id, "done")
-                chunks_processed += 1
-                _report()
-                continue
-            if status == "failed":
-                store.mark_chunk(source_id, chunk_id, "failed")
-                failed_chunks += 1
-                _report()
-                continue
-
-            entities, relationships = payload
-            try:
-                # On this thread, not in the pool — see ``_prepare``.
-                name_embeddings = _embed_names(embedding, entities, relationships)
-                _embed_facts(embedding, relationships)
-                chunk_nodes, chunk_edges = store.apply_chunk(
-                    source_id, chunk_id, entities, relationships, name_embeddings
-                )
-                node_upserts += chunk_nodes
-                edges += chunk_edges
-                # ``apply_chunk`` marks the chunk done inside the transaction that
-                # writes its rows, so the checkpoint cannot disagree with the graph
-                # and a replayed write cannot apply the chunk twice.
-                chunks_processed += 1
-            except Exception as exc:
-                logger.warning(
-                    "Graph extraction embed/write failed for chunk %s, skipping: %s",
-                    chunk_id,
-                    exc,
-                )
-                store.mark_chunk(source_id, chunk_id, "failed")
-                failed_chunks += 1
+        missed = _pass(to_process)
+        if missed:
+            # A failure is usually transient — a provider error, one response
+            # that did not parse — and the checkpoint only picks it up on a
+            # rerun nothing schedules. One more attempt, after the rest of the
+            # build so a burst of rate limiting has passed, and no more: a
+            # chunk that cannot be extracted costs at most two calls.
+            logger.info(
+                "Graph extraction retrying %d failed chunk(s) for source %s",
+                len(missed),
+                source_id,
+            )
+            missed = _pass(missed)
+        for _, chunk_id in missed:
+            store.mark_chunk(source_id, chunk_id, "failed")
+        failed_chunks = len(missed)
+        if missed:
+            logger.warning(
+                "Graph extraction gave up on %d chunk(s) for source %s after a retry: %s",
+                failed_chunks,
+                source_id,
+                ", ".join(str(chunk_id) for _, chunk_id in missed),
+            )
             _report()
     finally:
         if pool is not None:
