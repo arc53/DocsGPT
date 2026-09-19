@@ -32,6 +32,17 @@ export type SourcePrescreenConfig = {
   max_keep?: number; // default 8, <= candidate_k
 };
 
+// Where the graph walk starts: matching entities, or matching relationships
+// ("A streams_to B"), which can reach an entity the question never names.
+export type GraphSeedStrategy = 'entities' | 'relationships';
+
+// Query-time graph retrieval knobs (graphrag only; live, no re-ingest).
+export type SourceGraphRetrievalConfig = {
+  seed_strategy?: GraphSeedStrategy; // default 'entities'
+  passage_nodes?: boolean; // default true
+  blend_vector?: boolean; // default true
+};
+
 // Query-time retrieval knobs (live; no re-ingest needed).
 export type SourceRetrievalConfig = {
   retriever?: string; // default 'classic' (only option for now)
@@ -40,6 +51,7 @@ export type SourceRetrievalConfig = {
   score_threshold?: number | null; // default null
   rephrase_query?: boolean; // default true
   prescreen?: SourcePrescreenConfig | null; // null = off
+  graph?: SourceGraphRetrievalConfig; // graphrag retriever only
 };
 
 // Ingest-time GraphRAG extraction knobs (only used when kind === 'graphrag').

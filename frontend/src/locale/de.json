@@ -268,6 +268,19 @@
           },
           "exposureHint": "Lade diese Quelle vorab in den Prompt oder lass den Agenten sie bei Bedarf als Werkzeug durchsuchen."
         },
+        "graphRetrieval": {
+          "title": "Graph-Abruf",
+          "tag": "ohne Neuimport",
+          "seedStrategy": "Suche beginnt bei",
+          "seedStrategyHint": "Entitäten eignen sich für die meisten Dokumente. Beziehungen erreichen auch Entitäten, die in der Frage nicht vorkommen – ideal für Inhalte, die beschreiben, wie Dinge zusammenhängen.",
+          "seedEntities": "Entitäten (empfohlen)",
+          "seedRelationships": "Beziehungen",
+          "passageNodes": "Textabschnitte in die Suche einbeziehen",
+          "passageNodesHint": "Ein Abschnitt wird gefunden, wenn er zur Frage passt oder mit etwas Passendem verbunden ist. Am besten bei Graphen, die mit dieser Version erstellt wurden.",
+          "blendVector": "Mit Vektorsuche kombinieren",
+          "blendVectorHint": "Ergänzt Ergebnisse der Vektorsuche, damit kein Abschnitt verloren geht, den der Graph übersieht.",
+          "agentToolHint": "Agenten können diesen Beziehungen auch selbst folgen, wenn die Bereitstellung dieser Quelle „Suchwerkzeug auf Abruf“ ist oder ein agentischer Agent sie nutzt."
+        },
         "prescreen": {
           "enable": "LLM-Vorfilterung aktivieren",
           "warning": "Ruft eine größere Kandidatenmenge ab und filtert sie mit einem LLM. Das erhöht Latenz und Kosten pro Anfrage.",
