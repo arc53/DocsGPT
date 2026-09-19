@@ -172,6 +172,29 @@ def _run_version_check(*args, **kwargs):
 celery = make_celery()
 celery.config_from_object("docsgpt.celeryconfig")
 
+
+def in_worker() -> bool:
+    """True anywhere in a Celery worker process, on any thread.
+
+    ``current_worker_task`` alone is not enough: Celery records the executing
+    task on the thread that runs it, so a thread the task starts sees none and
+    would take the web-process branch — dispatching to the worker it is running
+    in and blocking on the result. Celery refuses that ``get()`` ("Never call
+    result.get() within a task!"), or, where joins are allowed, it waits on a
+    queue only this busy process serves.
+
+    ``task_join_will_block`` is process-wide and set for every blocking pool
+    (prefork, solo, threads) — exactly the condition under which dispatching
+    and waiting goes wrong. eventlet/gevent leave it unset, so the task's own
+    thread still counts through ``current_worker_task``.
+
+    Returns:
+        bool: Whether this call is running inside a worker process.
+    """
+    from celery.result import task_join_will_block
+
+    return task_join_will_block() or celery.current_worker_task is not None
+
 #: Task-name prefix the package carried before the rename to ``docsgpt``.
 
 

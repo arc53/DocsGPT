@@ -17,8 +17,6 @@ import signal
 import threading
 from typing import Any, Callable, Dict, List, Optional
 
-from celery import current_task
-
 from docsgpt.agents.tools.artifact_ref import resolve_artifact_id
 from docsgpt.agents.tools.attachment_bridge import (
     AttachmentBridgeError,
@@ -26,6 +24,7 @@ from docsgpt.agents.tools.attachment_bridge import (
     match_attachment,
 )
 from docsgpt.agents.tools.base import Tool
+from docsgpt.celery_init import in_worker
 from docsgpt.core.json_schema_utils import (
     JsonSchemaValidationError,
     normalize_json_schema_payload,
@@ -229,9 +228,9 @@ class ReadDocumentTool(Tool):
         # (floored at DOCUMENT_PARSE_TIMEOUT).
         timeout = parse_timeout_for_size(self._input_size)
 
-        # ``current_task`` is a Celery proxy: truthy only while this runs inside a worker task,
-        # falsy in the web process (the bare proxy is NOT identity-None, so test truthiness).
-        if current_task:
+        # Process-wide, not the thread-local ``current_task``: a thread a task starts has no
+        # task of its own, and dispatching from there is the self-deadlock described above.
+        if in_worker():
             from docsgpt.worker import run_parse_document
 
             try:
