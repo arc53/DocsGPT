@@ -27,6 +27,7 @@ from docsgpt.core.model_utils import (
     get_api_key_for_provider,
     get_provider_from_model_id,
 )
+from docsgpt.graphrag.naming import normalize_entity_name
 from docsgpt.core.settings import settings
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.storage.db.source_config import SourceConfig
@@ -224,6 +225,8 @@ def extract_graph_for_source(
         source's graph holds after the run — not how many upserts ran, which
         counts the same entity once per chunk it appears in.
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     from docsgpt.graphrag.store import GraphStore
 
     store = GraphStore()
@@ -266,43 +269,85 @@ def extract_graph_for_source(
         except Exception as exc:
             logger.debug("graph progress callback failed: %s", exc)
 
-    for chunk, chunk_id in to_process:
+    def _prepare(item):
+        """One chunk's LLM extraction — the only step run concurrently.
+
+        A chunk spends almost all of its time waiting on the model, so that is
+        what runs in the pool. Everything else stays on the calling thread:
+        graph writes, so transactions and the progress checkpoint are exactly
+        what they were serially, and embedding. Inside a Celery worker the
+        embeddings client decides to embed locally from the task on the
+        *current thread's* stack; a pool thread has none, so it would instead
+        dispatch an embed task to the worker and wait on it, which Celery
+        refuses inside a task — failing every chunk of the build.
+        """
+        chunk, chunk_id = item
         text = _chunk_text(chunk)
         if not text:
-            store.mark_chunk(source_id, chunk_id, "done")
-            chunks_processed += 1
-            _report()
-            continue
+            return chunk_id, "empty", None
 
         extracted = _extract_chunk(llm, text, chunk_id)
         if extracted is None:
-            store.mark_chunk(source_id, chunk_id, "failed")
-            failed_chunks += 1
-            _report()
-            continue
-
+            return chunk_id, "failed", None
         try:
             entities = _build_entities(extracted["entities"])
             relationships = _build_relationships(extracted["relationships"])
-            name_embeddings = _embed_names(embedding, entities, relationships)
-            chunk_nodes, chunk_edges = store.apply_chunk(
-                source_id, chunk_id, entities, relationships, name_embeddings
-            )
-            node_upserts += chunk_nodes
-            edges += chunk_edges
-            # ``apply_chunk`` marks the chunk done inside the transaction that
-            # writes its rows, so the checkpoint cannot disagree with the graph
-            # and a replayed write cannot apply the chunk twice.
-            chunks_processed += 1
         except Exception as exc:
             logger.warning(
-                "Graph extraction write failed for chunk %s, skipping: %s",
-                chunk_id,
-                exc,
+                "Graph extraction failed for chunk %s, skipping: %s", chunk_id, exc
             )
-            store.mark_chunk(source_id, chunk_id, "failed")
-            failed_chunks += 1
-        _report()
+            return chunk_id, "failed", None
+        return chunk_id, "ok", (entities, relationships)
+
+    workers = max(1, int(getattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 1) or 1))
+    pool = None
+    if workers > 1 and len(to_process) > 1:
+        pool = ThreadPoolExecutor(max_workers=workers)
+        # ``map`` yields in submission order, so chunks are still applied in the
+        # order they were given and a run stays reproducible.
+        prepared = pool.map(_prepare, to_process)
+    else:
+        prepared = (_prepare(item) for item in to_process)
+
+    try:
+        for chunk_id, status, payload in prepared:
+            if status == "empty":
+                store.mark_chunk(source_id, chunk_id, "done")
+                chunks_processed += 1
+                _report()
+                continue
+            if status == "failed":
+                store.mark_chunk(source_id, chunk_id, "failed")
+                failed_chunks += 1
+                _report()
+                continue
+
+            entities, relationships = payload
+            try:
+                # On this thread, not in the pool — see ``_prepare``.
+                name_embeddings = _embed_names(embedding, entities, relationships)
+                _embed_facts(embedding, relationships)
+                chunk_nodes, chunk_edges = store.apply_chunk(
+                    source_id, chunk_id, entities, relationships, name_embeddings
+                )
+                node_upserts += chunk_nodes
+                edges += chunk_edges
+                # ``apply_chunk`` marks the chunk done inside the transaction that
+                # writes its rows, so the checkpoint cannot disagree with the graph
+                # and a replayed write cannot apply the chunk twice.
+                chunks_processed += 1
+            except Exception as exc:
+                logger.warning(
+                    "Graph extraction embed/write failed for chunk %s, skipping: %s",
+                    chunk_id,
+                    exc,
+                )
+                store.mark_chunk(source_id, chunk_id, "failed")
+                failed_chunks += 1
+            _report()
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=True)
 
     try:
         store.set_node_degrees(source_id)
@@ -347,7 +392,7 @@ def _build_entities(raw_entities: Any) -> List[Dict[str, Any]]:
         entities.append(
             {
                 "name": name,
-                "normalized_name": name.lower(),
+                "normalized_name": normalize_entity_name(name),
                 "type": str(e.get("type") or "") or None,
                 "description": str(e.get("description") or "") or None,
             }
@@ -373,6 +418,70 @@ def _build_relationships(raw_relationships: Any) -> List[Dict[str, Any]]:
     return relationships
 
 
+def _fact_text(rel: Dict[str, Any]) -> str:
+    """A relationship rendered as the sentence it asserts.
+
+    Embedded and stored on the edge so retrieval can match a question against
+    the *relation* rather than against entity names — the difference between
+    "which entity is this about" and "which fact answers this".
+    """
+    source = str(rel.get("source") or "").strip()
+    target = str(rel.get("target") or "").strip()
+    if not source or not target:
+        return ""
+    relation = str(rel.get("type") or "related to").strip() or "related to"
+    text = f"{source} {relation} {target}"
+    description = str(rel.get("description") or "").strip()
+    return f"{text}: {description}" if description else text
+
+
+def _embed_facts(embedding, relationships: List[Dict[str, Any]]) -> None:
+    """Attach a fact embedding to each relationship, in one batched call.
+
+    Mutates the relationship dicts so the embedding travels with the edge into
+    ``apply_chunk`` without a second mapping to keep in step. Always on: it is
+    one extra batched call per chunk against an LLM call that already costs
+    far more, and it lets a source switch to relationship seeding at query time
+    without being rebuilt.
+    """
+    pending = [(rel, _fact_text(rel)) for rel in relationships]
+    pending = [(rel, text) for rel, text in pending if text]
+    if not pending:
+        return
+    try:
+        vectors = embedding.embed_documents([text for _rel, text in pending])
+    except Exception as exc:  # noqa: BLE001
+        # The graph is still correct without them; only fact seeding degrades.
+        logger.warning("Fact embedding failed, continuing without: %s", exc)
+        return
+    for (rel, _text), vector in zip(pending, vectors):
+        rel["fact_embedding"] = vector
+
+
+def _seed_text(entity: Dict[str, Any]) -> str:
+    """The text a node's embedding is computed from.
+
+    Retrieval seeds the graph walk by matching a whole question against these
+    embeddings, and a bare entity name is a poor thing to match a question
+    against — a question about what a service writes to shares almost no
+    surface with the name ``Quill``. Including the type and description gives
+    the match something to work with; measured across five corpora it moved
+    recall@4 by +0.07 to +0.50.
+
+    Relationship endpoints keep their bare names: they arrive as strings with
+    no type or description attached.
+    """
+    name = str(entity.get("name") or "").strip()
+    text = name
+    entity_type = str(entity.get("type") or "").strip()
+    if entity_type:
+        text += f" ({entity_type})"
+    description = str(entity.get("description") or "").strip()
+    if description:
+        text += f": {description}"
+    return text or name
+
+
 def _embed_names(
     embedding,
     entities: List[Dict[str, Any]],
@@ -385,14 +494,16 @@ def _embed_names(
     """
     name_by_norm: Dict[str, str] = {}
     for entity in entities:
-        name_by_norm.setdefault(entity["normalized_name"], entity["name"])
+        name_by_norm.setdefault(entity["normalized_name"], _seed_text(entity))
     for rel in relationships:
         for endpoint in (rel.get("source"), rel.get("target")):
             if endpoint is None:
                 continue
             clean = str(endpoint).strip()
             if clean:
-                name_by_norm.setdefault(clean.lower(), clean)
+                # Same key the store resolves endpoints by, or the embedding
+                # computed here never reaches the node it was computed for.
+                name_by_norm.setdefault(normalize_entity_name(clean), clean)
 
     if not name_by_norm:
         return {}

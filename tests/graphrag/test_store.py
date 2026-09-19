@@ -157,6 +157,122 @@ class TestGraphStoreLive:
         finally:
             store.delete_by_source(source_id)
 
+    def test_seed_nodes_from_facts_returns_both_endpoints_of_the_match(
+        self, store, source_id
+    ):
+        """Fact seeding's whole point: the question matches the *relationship*,
+        and both of its endpoints become seeds — including the one the question
+        never names."""
+        try:
+            alder = store.upsert_node(source_id, "Alder", "alder", "service", "d")
+            quill = store.upsert_node(source_id, "Quill", "quill", "store", "d")
+            birch = store.upsert_node(source_id, "Birch", "birch", "service", "d")
+            ridge = store.upsert_node(source_id, "Ridge", "ridge", "store", "d")
+            store.add_edge(
+                source_id, alder, quill, "streams_to", "Alder streams to Quill",
+                1.0, ["c1"], fact_embedding=_embedding(1.0),
+            )
+            store.add_edge(
+                source_id, birch, ridge, "streams_to", "Birch streams to Ridge",
+                1.0, ["c2"], fact_embedding=_embedding(-1.0),
+            )
+
+            rows = store.seed_nodes_from_facts(
+                source_id, _embedding(1.0), fact_limit=1, limit=10
+            )
+
+            assert {row["name"] for row in rows} == {"Alder", "Quill"}
+            assert all(row["distance"] <= 1.0 for row in rows)
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_seed_nodes_from_facts_is_empty_without_fact_embeddings(
+        self, store, source_id
+    ):
+        """A source ingested before fact embeddings existed returns nothing,
+        which is the signal the retriever falls back to name matching on."""
+        try:
+            a = store.upsert_node(source_id, "A", "a")
+            b = store.upsert_node(source_id, "B", "b")
+            store.add_edge(source_id, a, b, "rel")
+
+            assert store.seed_nodes_from_facts(source_id, _embedding(1.0)) == []
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_add_edge_skips_self_loops(self, store, source_id):
+        """A relationship whose endpoints resolve to one node is noise.
+
+        A self-loop feeds a node's PageRank mass straight back to itself, and a
+        real extraction produced 121 of them on a 98-page corpus.
+        """
+        try:
+            a = store.upsert_node(source_id, "A", "a", "thing", "desc a")
+            assert (
+                store.add_edge(source_id, a, a, "related", "a relates to a", 1.0, ["c1"])
+                is None
+            )
+            assert store.get_subgraph(source_id, [a], hops=1)["edges"] == []
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_add_edge_merges_a_repeated_pair(self, store, source_id):
+        """The same relationship seen in many chunks is one edge, not many rows.
+
+        ``graph_edges`` carries no uniqueness constraint, so re-extracting a
+        relationship used to insert a row per chunk — 19.9% of a real corpus's
+        edges — inflating traversal weight and wasting the subgraph fetch
+        budget. The surviving row keeps the strongest weight and both chunk ids.
+        """
+        try:
+            a = store.upsert_node(source_id, "A", "a", "thing", "desc a")
+            b = store.upsert_node(source_id, "B", "b", "thing", "desc b")
+            first = store.add_edge(source_id, a, b, "related", "d", 2.0, ["chunk-1"])
+            second = store.add_edge(source_id, a, b, "related", "d", 5.0, ["chunk-2"])
+
+            assert second == first
+            edges = store.get_subgraph(source_id, [a, b], hops=1)["edges"]
+            assert len(edges) == 1
+            assert float(edges[0]["weight"]) == 5.0
+
+            # Both chunks are still recorded as evidence for the merged edge.
+            conn = store._get_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "SELECT source_chunk_ids FROM graph_edges WHERE id = %s;", (first,)
+                )
+                chunk_ids = cursor.fetchone()[0]
+            finally:
+                cursor.close()
+                conn.rollback()
+            assert sorted(chunk_ids) == ["chunk-1", "chunk-2"]
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_get_subgraph_keeps_the_heaviest_edges_when_capped(
+        self, store, source_id, monkeypatch
+    ):
+        """A capped fetch must drop the weakest edges, not an arbitrary subset.
+
+        The cap is applied with ``LIMIT``; without an ordering Postgres is free
+        to return any rows at all, so a dense graph silently retrieves a random
+        neighbourhood.
+        """
+        try:
+            a = store.upsert_node(source_id, "A", "a", "thing", "d")
+            b = store.upsert_node(source_id, "B", "b", "thing", "d")
+            c = store.upsert_node(source_id, "C", "c", "thing", "d")
+            store.add_edge(source_id, a, b, "light", "d", 1.0, ["c1"])
+            store.add_edge(source_id, a, c, "heavy", "d", 9.0, ["c1"])
+
+            monkeypatch.setattr(store_module, "MAX_SUBGRAPH_EDGES", 1)
+            edges = store.get_subgraph(source_id, [a], hops=1)["edges"]
+
+            assert [e["type"] for e in edges] == ["heavy"]
+        finally:
+            store.delete_by_source(source_id)
+
     def test_apply_chunk_writes_nodes_links_and_edges(self, store, source_id):
         """One transactional write: entities linked to the chunk, edges added,
         and a bare relationship endpoint upserted but not chunk-linked."""
@@ -203,18 +319,23 @@ class TestGraphStoreLive:
             store.delete_by_source(source_id)
 
     def test_self_loop_degree_agrees_across_paths(self, store, source_id):
-        """``add_edge``'s incremental +1 and ``set_node_degrees`` recompute must
-        agree on a self-loop (count it once)."""
+        """``add_edge``'s incremental bump and ``set_node_degrees`` recompute must
+        agree on a self-loop.
+
+        They now agree on zero rather than one: the self-loop is rejected at
+        write time, so neither path has an edge to count. The property under
+        test is that the two paths agree, not the number they agree on.
+        """
         try:
             node = store.upsert_node(source_id, "Solo", "solo")
-            store.add_edge(source_id, node, node, "self")
+            assert store.add_edge(source_id, node, node, "self") is None
 
             incremental = store.get_node_by_normalized(source_id, "solo")["degree"]
-            assert incremental == 1
+            assert incremental == 0
 
             store.set_node_degrees(source_id)
             recomputed = store.get_node_by_normalized(source_id, "solo")["degree"]
-            assert recomputed == 1
+            assert recomputed == incremental == 0
         finally:
             store.delete_by_source(source_id)
 

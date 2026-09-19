@@ -138,6 +138,129 @@ def _extraction_json(entities, relationships):
     return json.dumps({"entities": entities, "relationships": relationships})
 
 
+class TestFactText:
+    """A relationship rendered as the sentence it asserts.
+
+    This is what fact seeding matches a question against, so it has to read as
+    a claim rather than as three fields concatenated.
+    """
+
+    def test_renders_the_relationship_as_a_sentence(self):
+        text = extraction_module._fact_text(
+            {
+                "source": "Alder",
+                "target": "Quill",
+                "type": "streams_to",
+                "description": "Alder streams audit events to Quill.",
+            }
+        )
+
+        assert text == "Alder streams_to Quill: Alder streams audit events to Quill."
+
+    def test_omits_an_absent_description(self):
+        text = extraction_module._fact_text(
+            {"source": "Alder", "target": "Quill", "type": "streams_to"}
+        )
+
+        assert text == "Alder streams_to Quill"
+
+    def test_defaults_a_missing_relation(self):
+        text = extraction_module._fact_text({"source": "Alder", "target": "Quill"})
+
+        assert text == "Alder related to Quill"
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            {"source": "Alder", "target": ""},
+            {"source": "", "target": "Quill"},
+            {},
+        ],
+    )
+    def test_an_edge_without_both_endpoints_has_no_fact(self, rel):
+        assert extraction_module._fact_text(rel) == ""
+
+
+class TestEmbedFacts:
+    """Fact embeddings are always recorded, so a source can switch to
+    relationship seeding at query time without being rebuilt."""
+
+    def _relationships(self):
+        return [{"source": "Alder", "target": "Quill", "type": "streams_to"}]
+
+    def test_attaches_one_embedding_per_fact_in_a_single_call(self):
+        relationships = self._relationships() + [{"source": "", "target": "Nowhere"}]
+        calls = []
+
+        class _Embedding:
+            def embed_documents(self, texts):
+                calls.append(texts)
+                return [[0.5] * 4 for _ in texts]
+
+        extraction_module._embed_facts(_Embedding(), relationships)
+
+        # One batched call, and the endpoint-less relationship is skipped
+        # rather than embedded as an empty string.
+        assert calls == [["Alder streams_to Quill"]]
+        assert relationships[0]["fact_embedding"] == [0.5] * 4
+        assert "fact_embedding" not in relationships[1]
+
+    def test_survives_an_embedding_failure(self):
+        """The graph is still correct without fact embeddings — only
+        relationship seeding degrades, and it falls back to entities — so a
+        failure here must not fail the chunk."""
+        relationships = self._relationships()
+
+        class _Embedding:
+            def embed_documents(self, texts):
+                raise RuntimeError("embeddings down")
+
+        extraction_module._embed_facts(_Embedding(), relationships)
+
+        assert "fact_embedding" not in relationships[0]
+
+
+class TestSeedText:
+    """What a node's embedding is computed from.
+
+    Retrieval matches a whole question against these embeddings, so what goes
+    into them decides what the graph walk can start from.
+    """
+
+    def _entity(self):
+        return {
+            "name": "Quill",
+            "normalized_name": "quill",
+            "type": "store",
+            "description": "A write-ahead store.",
+        }
+
+    def test_includes_type_and_description(self):
+        assert (
+            extraction_module._seed_text(self._entity())
+            == "Quill (store): A write-ahead store."
+        )
+
+    def test_falls_back_to_the_name_when_fields_are_missing(self):
+        assert extraction_module._seed_text({"name": "Quill"}) == "Quill"
+
+    def test_embedded_text_is_keyed_by_the_normalized_name(self):
+        """The richer text must reach ``embed_documents``, keyed by the same
+        normalized name the store resolves nodes by — otherwise the embedding
+        is computed for a node it never reaches."""
+        captured = {}
+
+        class _Embedding:
+            def embed_documents(self, texts):
+                captured["texts"] = texts
+                return [[0.0] * 4 for _ in texts]
+
+        result = extraction_module._embed_names(_Embedding(), [self._entity()], [])
+
+        assert captured["texts"] == ["Quill (store): A write-ahead store."]
+        assert set(result) == {"quill"}
+
+
 @pytest.mark.integration
 class TestExtractionLive:
     @pytest.fixture
@@ -190,6 +313,96 @@ class TestExtractionLive:
             assert node is not None
             mapping = store.get_chunk_ids_for_nodes(source_id, [node["id"]])
             assert mapping[node["id"]] == ["c1"]
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_parallel_workers_process_every_chunk_once(
+        self, store, source_id, monkeypatch, stub_embedding
+    ):
+        """Running the model calls concurrently must not change what gets written.
+
+        Extraction spends nearly all of a chunk's time waiting on the model, so
+        the calls run in a pool while every graph write stays on the calling
+        thread. Six chunks share one entity here: whatever order the pool
+        finishes in, that entity is upserted once, each chunk is linked, and all
+        six are marked processed.
+        """
+        from docsgpt.core.settings import settings
+
+        try:
+            payload = _extraction_json(
+                entities=[{"name": "Ada", "type": "person", "description": "d"}],
+                relationships=[],
+            )
+            llm = _StubLLM([payload] * 6)
+            _install_stub_llm(monkeypatch, llm)
+            monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 4)
+
+            summary = extract_graph_for_source(
+                source_id,
+                user="owner-1",
+                chunks=[
+                    _chunk(f"c{i}", f"Ada appears here, take {i}.") for i in range(6)
+                ],
+                config=SourceConfig(),
+                request_id="req-parallel",
+            )
+
+            assert summary["chunks_processed"] == 6
+            assert summary["failed_chunks"] == 0
+            assert summary["nodes"] == 1
+            assert len(llm.gen_calls) == 6
+
+            node = store.get_node_by_normalized(source_id, "ada")
+            assert node is not None
+            mapping = store.get_chunk_ids_for_nodes(source_id, [node["id"]])
+            assert sorted(mapping[node["id"]]) == [f"c{i}" for i in range(6)]
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_embedding_runs_on_the_calling_thread(
+        self, store, source_id, monkeypatch, stub_embedding
+    ):
+        """Only the LLM call may run in the extraction pool, never embedding.
+
+        Inside a Celery worker the embeddings client decides to embed locally
+        from the task on the *current thread's* stack. A pool thread has none,
+        so from there it dispatches an embed task to the worker and waits on
+        it — which Celery refuses inside a task, so every chunk of a graph
+        build failed.
+        """
+        import threading
+
+        from docsgpt.core.settings import settings
+
+        caller = threading.current_thread()
+        seen = []
+        real_embed_names = extraction_module._embed_names
+
+        def _recording_embed_names(*args, **kwargs):
+            seen.append(threading.current_thread())
+            return real_embed_names(*args, **kwargs)
+
+        monkeypatch.setattr(extraction_module, "_embed_names", _recording_embed_names)
+        try:
+            payload = _extraction_json(
+                entities=[{"name": "Ada", "type": "person", "description": "d"}],
+                relationships=[],
+            )
+            _install_stub_llm(monkeypatch, _StubLLM([payload] * 4))
+            monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 4)
+
+            summary = extract_graph_for_source(
+                source_id,
+                user="owner-1",
+                chunks=[_chunk(f"c{i}", f"Ada, take {i}.") for i in range(4)],
+                config=SourceConfig(),
+                request_id="req-thread",
+            )
+
+            assert summary["failed_chunks"] == 0
+            assert len(seen) == 4
+            assert all(thread is caller for thread in seen)
         finally:
             store.delete_by_source(source_id)
 

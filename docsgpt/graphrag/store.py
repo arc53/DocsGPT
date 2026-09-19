@@ -74,6 +74,16 @@ def _pgvector_identifiers() -> tuple[str, str, str, str]:
     )
 
 
+def _pgvector_vector_column() -> str:
+    """Resolve the embedding column name from the same ``PGVectorStore`` defaults."""
+    import inspect
+
+    from docsgpt.vectorstore.pgvector import PGVectorStore
+
+    params = inspect.signature(PGVectorStore.__init__).parameters
+    return _safe_identifier(params["vector_column"].default)
+
+
 def _is_connection_lost(exc: BaseException) -> bool:
     """True when ``exc`` says the server connection went away, not that the SQL was bad.
 
@@ -253,7 +263,7 @@ class GraphStore:
             )
 
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS graph_edges (
                     id UUID PRIMARY KEY,
                     source_id UUID NOT NULL,
@@ -262,9 +272,17 @@ class GraphStore:
                     type TEXT,
                     description TEXT,
                     weight REAL DEFAULT 1.0,
-                    source_chunk_ids JSONB
+                    source_chunk_ids JSONB,
+                    fact_embedding vector({dimension})
                 );
                 """
+            )
+            # ``CREATE TABLE IF NOT EXISTS`` is a no-op on a database that
+            # already has the table, so a column added after the fact needs its
+            # own statement or every existing deployment silently lacks it.
+            cursor.execute(
+                f"ALTER TABLE graph_edges "
+                f"ADD COLUMN IF NOT EXISTS fact_embedding vector({dimension});"
             )
 
             cursor.execute(
@@ -453,19 +471,78 @@ class GraphStore:
         description: Optional[str] = None,
         weight: float = 1.0,
         source_chunk_ids: Optional[List[str]] = None,
-    ) -> str:
-        """Insert an edge on an open cursor (no commit, no degree bump).
+        fact_embedding: Optional[List[float]] = None,
+    ) -> tuple[Optional[str], bool]:
+        """Write an edge on an open cursor (no commit, no degree bump).
+
+        Returns ``(edge_id, created)``. Two shapes of noise are rejected here
+        rather than at read time, because once written neither is visible:
+
+        * A self-loop feeds a node's PageRank mass straight back to itself. It
+          is dropped, reported as ``(None, False)``.
+        * A pair already related by the same type is *merged* rather than
+          inserted again. ``graph_edges`` carries no uniqueness constraint, so
+          re-extracting one relationship across many chunks otherwise writes a
+          row per chunk — a fifth of a real corpus's edges — inflating that
+          pair's traversal weight and spending the bounded subgraph fetch on
+          duplicates. The surviving row keeps the strongest weight seen and
+          every contributing chunk id.
 
         Callers that batch many edges run ``set_node_degrees`` once afterwards
         instead of bumping degree per edge.
         """
+        if str(src_node_id) == str(dst_node_id):
+            return None, False
+
+        cursor.execute(
+            """
+            SELECT id
+            FROM graph_edges
+            WHERE source_id = %s AND src_node_id = %s AND dst_node_id = %s
+              AND type IS NOT DISTINCT FROM %s
+            LIMIT 1;
+            """,
+            (source_id, src_node_id, dst_node_id, type),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            edge_id = existing[0]
+            # The chunk ids are merged in SQL, against the row's own current
+            # value, rather than read here and written back: a read-modify-write
+            # would drop whatever a concurrent writer appended in between.
+            cursor.execute(
+                """
+                UPDATE graph_edges
+                SET weight = GREATEST(COALESCE(weight, 0), %s),
+                    description = COALESCE(description, %s),
+                    -- Backfills the fact embedding for an edge first written
+                    -- before fact embeddings were switched on.
+                    fact_embedding = COALESCE(fact_embedding, %s::vector),
+                    source_chunk_ids = COALESCE(source_chunk_ids, '[]'::jsonb) || (
+                        SELECT COALESCE(jsonb_agg(candidate), '[]'::jsonb)
+                        FROM jsonb_array_elements(%s::jsonb) AS candidate
+                        WHERE NOT COALESCE(source_chunk_ids, '[]'::jsonb)
+                              @> jsonb_build_array(candidate)
+                    )
+                WHERE id = %s;
+                """,
+                (
+                    weight,
+                    description,
+                    fact_embedding,
+                    Jsonb(list(source_chunk_ids or [])),
+                    edge_id,
+                ),
+            )
+            return str(edge_id), False
+
         edge_id = str(uuid.uuid4())
         cursor.execute(
             """
             INSERT INTO graph_edges
                 (id, source_id, src_node_id, dst_node_id, type, description,
-                 weight, source_chunk_ids)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+                 weight, source_chunk_ids, fact_embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
             """,
             (
                 edge_id,
@@ -476,9 +553,10 @@ class GraphStore:
                 description,
                 weight,
                 Jsonb(source_chunk_ids or []),
+                fact_embedding,
             ),
         )
-        return edge_id
+        return edge_id, True
 
     def add_edge(
         self,
@@ -489,21 +567,28 @@ class GraphStore:
         description: Optional[str] = None,
         weight: float = 1.0,
         source_chunk_ids: Optional[List[str]] = None,
-    ) -> str:
-        """Insert an edge and bump the degree of both endpoints. Returns its id."""
+        fact_embedding: Optional[List[float]] = None,
+    ) -> Optional[str]:
+        """Write an edge and bump the degree of both endpoints. Returns its id.
+
+        Returns ``None`` for a self-loop, which is not written. A repeat of an
+        existing pair merges into that row and returns its id, leaving degree
+        alone — the endpoints gained no new neighbour.
+        """
         self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
-            edge_id = self._add_edge(
+            edge_id, created = self._add_edge(
                 cursor, source_id, src_node_id, dst_node_id, type, description,
-                weight, source_chunk_ids,
+                weight, source_chunk_ids, fact_embedding,
             )
-            cursor.execute(
-                "UPDATE graph_nodes SET degree = degree + 1 "
-                "WHERE source_id = %s AND id IN (%s, %s);",
-                (source_id, src_node_id, dst_node_id),
-            )
+            if created:
+                cursor.execute(
+                    "UPDATE graph_nodes SET degree = degree + 1 "
+                    "WHERE source_id = %s AND id IN (%s, %s);",
+                    (source_id, src_node_id, dst_node_id),
+                )
             conn.commit()
             return edge_id
         except Exception as e:
@@ -608,7 +693,7 @@ class GraphStore:
                     )
                     if src_id is None or dst_id is None:
                         continue
-                    self._add_edge(
+                    _, created = self._add_edge(
                         cursor,
                         source_id,
                         src_id,
@@ -617,8 +702,10 @@ class GraphStore:
                         description=rel.get("description"),
                         weight=float(rel.get("weight") or 1.0),
                         source_chunk_ids=[chunk_id],
+                        fact_embedding=rel.get("fact_embedding"),
                     )
-                    edges_added += 1
+                    if created:
+                        edges_added += 1
 
                 cursor.execute(
                     """
@@ -653,7 +740,11 @@ class GraphStore:
         clean = str(name).strip()
         if not clean:
             return None
-        normalized_name = clean.lower()
+        from docsgpt.graphrag.naming import normalize_entity_name
+
+        normalized_name = normalize_entity_name(clean)
+        if not normalized_name:
+            return None
         if normalized_name in node_ids:
             return node_ids[normalized_name]
         node_id = self._upsert_node(
@@ -839,6 +930,7 @@ class GraphStore:
                     FROM graph_edges
                     WHERE source_id = %s
                       AND (src_node_id = ANY(%s) OR dst_node_id = ANY(%s))
+                    ORDER BY weight DESC NULLS LAST
                     LIMIT %s;
                     """,
                     (
@@ -886,6 +978,7 @@ class GraphStore:
                 FROM graph_edges
                 WHERE source_id = %s
                   AND src_node_id = ANY(%s) AND dst_node_id = ANY(%s)
+                ORDER BY weight DESC NULLS LAST
                 LIMIT %s;
                 """,
                 (source_id, node_id_list, node_id_list, MAX_SUBGRAPH_EDGES),
@@ -994,6 +1087,206 @@ class GraphStore:
             return result
         except Exception as e:
             logging.error(f"Error getting chunk ids for nodes: {e}")
+            return {}
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def seed_nodes_from_facts(
+        self,
+        source_id: str,
+        query_embedding: List[float],
+        fact_limit: int = 5,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Seed nodes drawn from the *relationships* nearest the question.
+
+        Name matching asks "which entity is this question about", which a
+        multi-document question cannot answer: the entity holding the answer is
+        named in another document, not in the question. A fact string carries
+        the relation — "Alder streams_to Quill: ..." — so a question about what
+        a service writes to can match the edge itself and seed the walk on both
+        of its endpoints, including the one nothing in the question names.
+
+        Endpoints are weighted by fact score divided by the entity's
+        ``doc_freq``: an entity appearing in every chunk is a poor seed even
+        when it sits on a well-matched fact, and dividing by how widely it
+        occurs prefers the specific endpoint over the hub.
+
+        Rows match :meth:`search_nodes_by_embedding`'s shape, so the caller's
+        seed weighting is unchanged. Returns nothing when the source has no
+        fact embeddings, which is the signal to fall back to name matching.
+        """
+        if not query_embedding:
+            return []
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                WITH top_facts AS (
+                    SELECT src_node_id, dst_node_id,
+                           1 - (fact_embedding <=> %s::vector) AS score
+                    FROM graph_edges
+                    WHERE source_id = %s AND fact_embedding IS NOT NULL
+                    ORDER BY fact_embedding <=> %s::vector
+                    LIMIT %s
+                )
+                SELECT n.id::text, n.name, n.description,
+                       MAX(f.score / GREATEST(COALESCE(n.doc_freq, 1), 1)) AS weight
+                FROM top_facts f
+                JOIN graph_nodes n
+                  ON n.id = f.src_node_id OR n.id = f.dst_node_id
+                WHERE n.source_id = %s
+                GROUP BY n.id, n.name, n.description
+                ORDER BY weight DESC
+                LIMIT %s;
+                """,
+                (
+                    query_embedding,
+                    source_id,
+                    query_embedding,
+                    max(1, int(fact_limit)),
+                    source_id,
+                    max(1, int(limit)),
+                ),
+            )
+            return [
+                {
+                    "id": row[0],
+                    "name": row[1],
+                    "description": row[2],
+                    # The caller reads weight back as ``1 - distance``.
+                    "distance": 1.0 - float(row[3] or 0.0),
+                }
+                for row in cursor.fetchall()
+            ]
+        except Exception as e:
+            logging.error(f"Error seeding nodes from facts: {e}")
+            return []
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def entity_relationships(
+        self, source_id: str, name: str, limit: int = 25
+    ) -> List[Dict[str, Any]]:
+        """The relationships an entity takes part in, strongest first.
+
+        This is the one thing a caller cannot get from vector search: which
+        *named* thing an entity is connected to. Matching is on the name rather
+        than a node id because the caller is an LLM holding a name it read in
+        the text, not an id.
+        """
+        clean = (name or "").strip()
+        if not clean:
+            return []
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT s.name, e.type, d.name, e.description
+                FROM graph_edges e
+                JOIN graph_nodes s ON s.id = e.src_node_id
+                JOIN graph_nodes d ON d.id = e.dst_node_id
+                WHERE e.source_id = %s AND (s.name ILIKE %s OR d.name ILIKE %s)
+                ORDER BY e.weight DESC NULLS LAST
+                LIMIT %s;
+                """,
+                (source_id, f"%{clean}%", f"%{clean}%", max(1, int(limit))),
+            )
+            return [
+                {"source": row[0], "type": row[1], "target": row[2], "description": row[3]}
+                for row in cursor.fetchall()
+            ]
+        except Exception as e:
+            logging.error(f"Error reading relationships for {name!r}: {e}")
+            return []
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def entity_pages(
+        self, source_id: str, name: str, limit: int = 4
+    ) -> List[Dict[str, Any]]:
+        """Chunks an entity appears in, with the chunk it is *about* first.
+
+        A plain substring match answers "Halvard" with pages that merely mention
+        Halvard, and an unordered ``LIMIT`` then decides which of those the
+        caller sees. Nodes whose name is the entity (or the entity plus a
+        qualifier the extractor appended, "Quill" -> "Quill Store") are
+        preferred, and among those the chunk whose text opens with the name
+        comes first; a substring match is the fallback so an unusual name still
+        resolves.
+        """
+        clean = (name or "").strip()
+        if not clean:
+            return []
+        table, text_col, metadata_col, source_col = _pgvector_identifiers()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                f"""
+                SELECT d.{metadata_col}, d.{text_col},
+                       (lower(n.name) = %s OR lower(n.name) LIKE %s) AS is_subject
+                FROM graph_node_chunks gc
+                JOIN graph_nodes n ON n.id = gc.node_id
+                JOIN {table} d ON d.id::text = gc.chunk_id
+                WHERE gc.source_id = %s AND d.{source_col} = %s
+                  AND (lower(n.name) = %s OR lower(n.name) LIKE %s OR n.name ILIKE %s)
+                GROUP BY d.{metadata_col}, d.{text_col}, is_subject
+                ORDER BY is_subject DESC, (d.{text_col} ILIKE %s) DESC
+                LIMIT %s;
+                """,
+                (
+                    clean.lower(), f"{clean.lower()} %",
+                    source_id, source_id,
+                    clean.lower(), f"{clean.lower()} %", f"%{clean}%",
+                    f"{clean}%",
+                    max(1, int(limit)),
+                ),
+            )
+            return [
+                {"metadata": row[0] or {}, "text": row[1] or ""}
+                for row in cursor.fetchall()
+            ]
+        except Exception as e:
+            logging.error(f"Error reading pages for {name!r}: {e}")
+            return []
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def chunk_similarities(
+        self, source_id: str, chunk_ids: List[str], query_embedding: List[float]
+    ) -> Dict[str, float]:
+        """Cosine similarity between the query and specific chunks of a source.
+
+        Passage nodes need their own relevance to claim a share of the walk's
+        restart mass, and that number lives in the co-located pgvector table —
+        the same one :meth:`get_chunk_texts` reads. Restricted to the chunk ids
+        the subgraph actually reached, so this never scans the whole source.
+        """
+        if not chunk_ids or not query_embedding:
+            return {}
+        table, _text_col, _metadata_col, source_col = _pgvector_identifiers()
+        vector_col = _pgvector_vector_column()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                f"""
+                SELECT id::text, 1 - ({vector_col} <=> %s::vector)
+                FROM {table}
+                WHERE {source_col} = %s AND id::text = ANY(%s);
+                """,
+                (query_embedding, source_id, [str(c) for c in chunk_ids]),
+            )
+            return {row[0]: float(row[1]) for row in cursor.fetchall()}
+        except Exception as e:
+            logging.error(f"Error scoring chunks against the query: {e}")
             return {}
         finally:
             cursor.close()

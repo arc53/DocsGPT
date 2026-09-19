@@ -45,6 +45,29 @@ def _patch_embed(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _entity_only_ranking(monkeypatch):
+    """Pin the ranking path these tests were written for.
+
+    Everything here exercises entity-only PPR ranking without vector blending,
+    driven through ``MagicMock`` stores. The shipped default now walks the
+    passages and blends with vector search — covered end to end in
+    ``tests/graphrag/test_retriever_default_path.py`` with a store that returns
+    real values. Pinning keeps each test here asserting what it was written to
+    assert, rather than whatever a mock happens to return on a path it never set
+    up.
+    """
+    from docsgpt.storage.db.source_config import GraphRetrievalConfig
+
+    monkeypatch.setattr(
+        GraphRAGRetriever,
+        "_graph_options",
+        lambda self, source_id: GraphRetrievalConfig(
+            passage_nodes=False, blend_vector=False
+        ),
+    )
+
+
 # ── Fallback to ClassicRAG ────────────────────────────────────────────────────
 
 

@@ -447,6 +447,12 @@ Type `int`, default `2000`, must be `>= 0`.
 
 Hard cap on chunks extracted per source (cost control); 0 extracts nothing.
 
+### `GRAPHRAG_EXTRACTION_WORKERS`
+
+Type `int`, default `8`, must be `>= 1` and `<= 32`.
+
+Concurrent extraction calls during ingest. Model calls run in parallel while graph writes stay serial, so ordering and idempotency are unchanged; 1 is fully serial.
+
 
 ## Vector stores
 
