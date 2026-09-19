@@ -132,6 +132,36 @@ Type `str`, default unset.
 
 Bearer token for IdP SCIM clients (required when SCIM is enabled).
 
+### `PAT_ENABLED`
+
+Type `bool`, default `true`.
+
+Allow users to create personal access tokens. Tokens are only issued under AUTH_TYPE=oidc or unset (None); simple_jwt and session_jwt have no stable user identity to bind a token to.
+
+### `PAT_DEFAULT_LIFETIME_DAYS`
+
+Type `int`, default `90`, must be `> 0`.
+
+Lifetime of a personal access token created without an explicit expiry.
+
+### `PAT_MAX_LIFETIME_DAYS`
+
+Type `int`, default `365`, must be `> 0`.
+
+Longest lifetime a user may request for a personal access token.
+
+### `PAT_ALLOW_NON_EXPIRING`
+
+Type `bool`, default `false`.
+
+Let users create personal access tokens that never expire. Off by default.
+
+### `PAT_MAX_PER_USER`
+
+Type `int`, default `25`, must be `> 0`.
+
+Maximum number of live personal access tokens per user.
+
 
 ## LLM providers
 

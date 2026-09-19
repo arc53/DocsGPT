@@ -1079,3 +1079,44 @@ device_auto_approve_patterns_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("device_id", "user_id", "pattern", name="device_auto_approve_uidx"),
 )
+
+# --- Personal access tokens (migration 0032) --------------------------------
+# Scoped user-level API credentials. Only the SHA-256 of the secret is stored.
+
+personal_access_tokens_table = Table(
+    "personal_access_tokens",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("token_hash", Text, nullable=False),
+    Column("token_prefix", Text, nullable=False),
+    Column("scopes", ARRAY(Text), nullable=False, server_default="{}"),
+    Column("resource_filter", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="active"),
+    Column("expires_at", DateTime(timezone=True)),
+    Column("last_used_at", DateTime(timezone=True)),
+    Column("last_used_ip", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("revoked_at", DateTime(timezone=True)),
+    Column("revoke_reason", Text),
+    CheckConstraint("status IN ('active', 'revoked')", name="personal_access_tokens_status_check"),
+)
+
+Index(
+    "personal_access_tokens_hash_uidx",
+    personal_access_tokens_table.c.token_hash,
+    unique=True,
+)
+Index(
+    "personal_access_tokens_user_name_uidx",
+    personal_access_tokens_table.c.user_id,
+    personal_access_tokens_table.c.name,
+    unique=True,
+    postgresql_where=personal_access_tokens_table.c.status == "active",
+)
+Index(
+    "personal_access_tokens_user_idx",
+    personal_access_tokens_table.c.user_id,
+    personal_access_tokens_table.c.created_at.desc(),
+)
