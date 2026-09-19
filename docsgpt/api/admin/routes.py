@@ -23,6 +23,9 @@ from docsgpt.api.user.authz import ROLE_ADMIN, admin_required
 from docsgpt.storage.db.repositories.admin_stats import AdminStatsRepository
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 from docsgpt.storage.db.repositories.device_audit_log import DeviceAuditLogRepository
+from docsgpt.storage.db.repositories.personal_access_tokens import (
+    PersonalAccessTokensRepository,
+)
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
@@ -246,12 +249,21 @@ class AdminUserSessionsResource(Resource):
         """Force-logout: revoke the user's live OIDC sessions (best-effort)."""
         ok = denylist.deny_user(user_id)
         with db_session() as conn:
+            # A forced logout that left API credentials alive would not be one.
+            tokens_revoked = PersonalAccessTokensRepository(conn).revoke_all_for_user(
+                user_id, reason="admin_sessions_revoked"
+            )
             AuthEventsRepository(conn).insert(
                 user_id,
                 "admin_sessions_revoked",
                 ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent"),
-                metadata={"by": _actor(), "via": "admin_api", "persisted": ok},
+                metadata={
+                    "by": _actor(),
+                    "via": "admin_api",
+                    "persisted": ok,
+                    "personal_access_tokens_revoked": tokens_revoked,
+                },
             )
         return make_response(jsonify({"success": True, "revoked": ok}), 200)
 
