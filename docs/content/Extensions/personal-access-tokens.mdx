@@ -1,0 +1,181 @@
+---
+title: Personal Access Tokens
+description: Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
+---
+
+# Personal Access Tokens
+
+A personal access token (PAT) lets a script, the [DocsGPT CLI](https://github.com/arc53/DocsGPT-cli) or a CI/CD pipeline act on your account without a browser session. Unlike an [agent API key](/Extensions/api-key-guide), which can only talk to one agent, a PAT manages resources: it can create and update agents, upload sources, edit prompts and tools, and run agents for benchmarking.
+
+Every token is limited in three ways:
+
+- **Scopes** decide which parts of the API the token may call.
+- **Resource restrictions** (optional) narrow a token to specific agents, sources, prompts, tools or workflows.
+- **Expiry** ends the token's life automatically.
+
+## Creating a token
+
+1. Open **Settings → Access Tokens** in the DocsGPT web app.
+2. Choose **Create token**, give it a name, and select the scopes it needs.
+3. Optionally restrict it to specific resources and pick an expiry.
+4. Copy the token. It starts with `dgpt_pat_` and is shown **once**. DocsGPT stores only a hash of it, so a lost token cannot be recovered. Revoke it and create a new one.
+
+Tokens can only be created and revoked from a signed-in session. A token cannot create, list or revoke tokens, so a leaked token cannot mint a replacement for itself.
+
+## Using a token
+
+Send the token as a bearer credential:
+
+```bash
+export DOCSGPT_URL=https://docsgpt.example.com
+export DOCSGPT_TOKEN=dgpt_pat_...
+
+curl -H "Authorization: Bearer $DOCSGPT_TOKEN" "$DOCSGPT_URL/api/user/me"
+```
+
+`GET /api/user/me` works with any valid token and reports what the token may do, which makes it a convenient first step in a pipeline:
+
+```json
+{
+  "success": true,
+  "user_id": "alice@example.com",
+  "roles": ["user"],
+  "auth_method": "pat",
+  "token": {
+    "id": "0b6c...",
+    "name": "ci-deploy",
+    "scopes": ["agents:read", "agents:write"],
+    "resource_filter": {}
+  }
+}
+```
+
+### Applying agent definitions
+
+Agents can be exported to YAML and applied back, which makes them reviewable and deployable like any other configuration. With the CLI:
+
+```bash
+docsgpt-cli agents export <agent-id> -o support-bot.agent.yaml
+docsgpt-cli agents apply -f support-bot.agent.yaml --dry-run
+docsgpt-cli agents apply -f support-bot.agent.yaml
+```
+
+Or with the API directly (`agents:write`):
+
+```bash
+curl -X POST "$DOCSGPT_URL/api/import_agent/plan" \
+  -H "Authorization: Bearer $DOCSGPT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -Rs '{yaml: .}' support-bot.agent.yaml)"
+```
+
+`/api/import_agent/plan` is a dry run that reports whether the agent would be created or updated and how each referenced source, tool and prompt resolves. `/api/import_agent` applies it. An agent is matched by `metadata.id`, then `metadata.slug`; when nothing matches, a new draft agent is created.
+
+### GitHub Actions example
+
+```yaml
+jobs:
+  deploy-agents:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply agent definitions
+        env:
+          DOCSGPT_URL: ${{ vars.DOCSGPT_URL }}
+          DOCSGPT_TOKEN: ${{ secrets.DOCSGPT_TOKEN }}
+        run: docsgpt-cli agents apply -f agents/
+```
+
+## Scopes
+
+A `write` scope includes the matching `read` scope.
+
+| Scope | Allows |
+| --- | --- |
+| `agents:read` | View agents, folders, guardrail events and export agent definitions |
+| `agents:write` | Create, update, delete, share and import (apply) agents and folders |
+| `agents:keys` | Regenerate agent API keys and read incoming webhook URLs |
+| `sources:read` | View sources, their files, chunks and ingestion task status |
+| `sources:write` | Upload, ingest, sync, edit and delete sources and chunks |
+| `prompts:read` / `prompts:write` | View / create, update and delete prompts |
+| `tools:read` / `tools:write` | View / create, update and delete tools and MCP servers |
+| `models:read` / `models:write` | View models / manage custom models |
+| `workflows:read` / `workflows:write` | View / create, update and delete workflows |
+| `schedules:read` / `schedules:write` | View / create, update, run and delete agent schedules |
+| `conversations:read` / `conversations:write` | View / rename, delete and rate conversations |
+| `analytics:read` | View usage analytics and logs |
+| `teams:read` | View teams, members and resource shares |
+| `chat:run` | Ask agents and search sources (`/api/answer`, `/stream`, `/api/search`); used for benchmarking |
+
+`agents:keys` is separate from `agents:write` on purpose: a deployment token that updates agents does not need to be able to read or rotate the secrets other systems use to call them.
+
+Some parts of the API are never available to a token, whatever its scopes: token management, the admin API, team management, sign-in flows, device pairing, and the interactive OAuth handshakes used by connectors and MCP servers. A token also never carries the `admin` role, even when its owner is an admin.
+
+Authorization is deny by default. An endpoint that is not explicitly mapped to a scope cannot be called with a token, and answers `403` with `"error": "not_available_to_tokens"`. A mapped endpoint called without the scope answers `403` with `"error": "insufficient_scope"` and names the `required_scope`.
+
+## Resource restrictions
+
+A token can be narrowed to specific resources in any of these families: `agents`, `sources`, `prompts`, `tools`, `workflows`. A family that is not listed stays unrestricted within the token's scopes.
+
+```json
+{
+  "name": "support-bot-deploy",
+  "scopes": ["agents:write", "chat:run"],
+  "resource_filter": { "agents": ["3f0e8f0c-5a53-4f0e-9a39-0e5f4f8d2c11"] },
+  "expires_in_days": 30
+}
+```
+
+For a restricted family the token:
+
+- can read, update and delete only the listed resources, and listings show only those;
+- **cannot create** new resources of that family, since a new resource would be outside the list;
+- cannot attach a resource outside the list to something else, for example set an agent's source to a source the token may not use;
+- is refused (`403`, `"error": "resource_not_allowed"`) wherever DocsGPT cannot prove the request stays inside the list. Schedules, conversations and analytics are closed to agent-restricted tokens for that reason, and `/api/sources/paginated` is closed to source-restricted tokens (use `/api/sources`).
+
+Restrictions and chat (`chat:run`):
+
+- A token restricted to specific **agents** must pass `agent_id` in the request body, and it must be one of the listed agents. An agent `api_key` in the body is refused.
+- A token restricted to specific **sources** (but not agents) may chat against those sources with `active_docs`. It cannot run agents, because an agent brings its own sources. Restrict the token to agents instead to allow that.
+
+Restrictions and `agents apply`: a token restricted to specific agents can apply a definition only when it updates one of those agents. A token restricted on sources, prompts, tools or workflows cannot import agents at all, because an import resolves those references by name and may create them.
+
+## Expiry and revocation
+
+- A token created without an explicit lifetime expires after `PAT_DEFAULT_LIFETIME_DAYS` (90 by default). Users can choose any lifetime up to `PAT_MAX_LIFETIME_DAYS` (365 by default).
+- Non-expiring tokens are available only when the operator sets `PAT_ALLOW_NON_EXPIRING=true`.
+- Revoking a token in **Settings → Access Tokens** takes effect on the next request.
+- Admins can list a user's tokens with `GET /api/admin/users/<user_id>/tokens` and revoke any token with `DELETE /api/admin/tokens/<token_id>`. The admin **revoke sessions** action also revokes all of that user's tokens.
+- Tokens of a deactivated user (through the admin API or SCIM) stop working immediately and work again if the user is reactivated.
+- Token creation and revocation are recorded in the authentication audit log (`pat_created`, `pat_revoked`), visible to admins.
+
+Each user may hold up to `PAT_MAX_PER_USER` live tokens (25 by default). The token list shows when and from which IP address each token was last used.
+
+## Operator settings
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `PAT_ENABLED` | `true` | Allow users to create and use personal access tokens |
+| `PAT_DEFAULT_LIFETIME_DAYS` | `90` | Lifetime of a token created without an explicit expiry |
+| `PAT_MAX_LIFETIME_DAYS` | `365` | Longest lifetime a user may request |
+| `PAT_ALLOW_NON_EXPIRING` | `false` | Let users create tokens that never expire |
+| `PAT_MAX_PER_USER` | `25` | Maximum number of live tokens per user |
+
+Personal access tokens need a stable user identity, so they are available with `AUTH_TYPE=oidc` and with authentication disabled (single-user self-hosting). They are not available with `simple_jwt` or `session_jwt`. See the [Settings Reference](/Deploying/Settings-Reference) for details.
+
+## Management API
+
+These endpoints need a signed-in session and cannot be called with a token.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/user/tokens` | List your tokens, the scope catalog and the server's token policy |
+| `POST /api/user/tokens` | Create a token. Body: `name`, `scopes`, optional `resource_filter`, optional `expires_in_days` (`0` = never, when allowed). The response carries the plaintext `token` once |
+| `DELETE /api/user/tokens/<id>` | Revoke a token |
+
+## Good practice
+
+- Give each pipeline its own token with the narrowest scopes that work, and name it after where it is used.
+- Store tokens in your CI system's secret store. Never commit them. The `dgpt_pat_` prefix lets secret scanners recognise them.
+- Prefer short lifetimes for tokens used by automation you can easily re-provision.
+- Revoke a token as soon as it is no longer needed or may have been exposed.
