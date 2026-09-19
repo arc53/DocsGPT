@@ -156,3 +156,11 @@ class TestPersonalAccessTokens:
             decoded, error = await asgi_auth.authenticate(_request(), pat_scope="chat:run")
         denied.assert_not_called()
         assert error is None and decoded is not None
+
+    async def test_restricted_token_is_refused_even_with_the_scope(self):
+        claims = dict(_PAT_CLAIMS, resource_filter={"agents": ["a1"]})
+        with patch.object(asgi_auth, "handle_auth", return_value=claims):
+            decoded, error = await asgi_auth.authenticate(_request(), pat_scope="chat:run")
+        assert decoded is None
+        assert error.status_code == 403
+        assert json.loads(error.body)["error"] == "resource_not_allowed"

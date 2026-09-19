@@ -131,7 +131,7 @@ For a restricted family the token:
 - can read, update and delete only the listed resources, and listings show only those;
 - **cannot create** new resources of that family, since a new resource would be outside the list;
 - cannot attach a resource outside the list to something else, for example set an agent's source to a source the token may not use;
-- is refused (`403`, `"error": "resource_not_allowed"`) wherever DocsGPT cannot prove the request stays inside the list. Schedules, conversations and analytics are closed to agent-restricted tokens for that reason, and `/api/sources/paginated` is closed to source-restricted tokens (use `/api/sources`).
+- is refused (`403`, `"error": "resource_not_allowed"`) wherever DocsGPT cannot prove the request stays inside the list. Schedules, conversations and analytics are closed to agent-restricted tokens for that reason, the message replay endpoints (`/api/messages/<id>/tail` and `/api/messages/<id>/events`) are closed to every restricted token, and `/api/sources/paginated` is closed to source-restricted tokens (use `/api/sources`).
 
 Restrictions and chat (`chat:run`):
 

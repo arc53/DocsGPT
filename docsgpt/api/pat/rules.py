@@ -53,6 +53,8 @@ def _rule(scope: Optional[str] = None, *ids: Locator, any_of: tuple[str, ...] = 
     return Rule(scopes=scopes, family=family, ids=tuple(ids), **kwargs)
 
 
+_ALL_FAMILIES = ("agents", "sources", "prompts", "tools", "workflows")
+
 # Ids of other families that agent create/update accept in their JSON-or-form body.
 _AGENT_BODY_REFS = (
     ("sources", (BODY, "source")),
@@ -216,8 +218,9 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_conversations", "GET"): _rule("conversations:read", blocked_by=("agents",)),
     ("/api/search_conversations", "GET"): _rule("conversations:read", blocked_by=("agents",)),
     ("/api/get_single_conversation", "GET"): _rule("conversations:read", blocked_by=("agents",)),
+    # A message cannot be tied to an allowlist from here, so any restricted token is kept out.
     ("/api/messages/<string:message_id>/tail", "GET"): _rule(
-        any_of=("conversations:read", "chat:run"), family=None
+        any_of=("conversations:read", "chat:run"), family=None, blocked_by=_ALL_FAMILIES
     ),
     ("/api/delete_conversation", "POST"): _rule("conversations:write", blocked_by=("agents",)),
     ("/api/delete_all_conversations", "GET"): _rule("conversations:write", blocked_by=("agents",)),

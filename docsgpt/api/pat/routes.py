@@ -113,7 +113,11 @@ class PersonalAccessTokens(Resource):
         if not auth_type_supports_pats():
             return _error("Personal access tokens are not available on this server", 403)
 
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return _error("Request body must be a JSON object", 400)
         name = body.get("name")
         if not isinstance(name, str) or not name.strip():
             return _error("name is required", 400)

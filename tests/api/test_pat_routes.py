@@ -118,6 +118,11 @@ class TestCreate:
     def test_validation(self, client, db, body):
         assert _create(client, **body).status_code == 400
 
+    @pytest.mark.parametrize("body", [[1], "text", 5])
+    def test_non_object_body_is_a_client_error(self, client, db, body):
+        with _session():
+            assert client.post("/api/user/tokens", json=body).status_code == 400
+
     def test_duplicate_name_conflicts(self, client, db):
         assert _create(client).status_code == 201
         assert _create(client).status_code == 409

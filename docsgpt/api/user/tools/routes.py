@@ -266,9 +266,6 @@ class GetTools(Resource):
                 shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
                 shaped["team_access"] = team_shared.get(str(row["id"]))
                 user_tools.append(shaped)
-            # A resource-restricted token sees only its allowed tools; the
-            # default and builtin rows appended below belong to no user.
-            user_tools = filter_listing(request, "tools", user_tools)
 
             # ``scheduler`` is dual-registered (default chat tool + agent-
             # selectable builtin) and resolves to the same synthetic uuid5 id.
@@ -298,6 +295,9 @@ class GetTools(Resource):
                     builtin_copy.get("name") in WORKFLOW_ONLY_BUILTINS
                 )
                 user_tools.append(builtin_copy)
+            # A resource-restricted token sees only its allowed tools. Default
+            # and builtin rows have ids too, so they follow the same allowlist.
+            user_tools = filter_listing(request, "tools", user_tools)
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

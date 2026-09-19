@@ -31,7 +31,8 @@ async def authenticate(
         request: The incoming Starlette request.
         pat_scope: Scope a personal access token needs for this route. Left
             unset, the route rejects PATs outright (deny by default, matching
-            the Flask rule table in ``docsgpt/api/pat/rules.py``).
+            the Flask rule table in ``docsgpt/api/pat/rules.py``). A token with
+            a resource filter is always rejected.
 
     Returns:
         tuple: ``(claims, None)`` for an authenticated caller, ``(None, None)``
@@ -50,6 +51,17 @@ async def authenticate(
         if pat_scope is None or pat_scope not in (decoded.get("scopes") or []):
             return None, JSONResponse(
                 {"success": False, "message": "Token lacks the required scope", "error": "insufficient_scope"},
+                status_code=403,
+            )
+        if decoded.get("resource_filter"):
+            # These routes sit outside the Flask rule table and cannot tie what
+            # they serve to an allowlist, so a restricted token is kept out.
+            return None, JSONResponse(
+                {
+                    "success": False,
+                    "message": "This endpoint is not available to a resource-restricted token",
+                    "error": "resource_not_allowed",
+                },
                 status_code=403,
             )
         return decoded, None

@@ -230,6 +230,12 @@ class TestResourceRestrictions:
         assert _denied(_call(client, "GET", f"/api/agents/{AGENT_A}/schedules", claims)) is None
         assert _denied(_call(client, "GET", f"/api/agents/{AGENT_B}/schedules", claims)) == "resource_not_allowed"
 
+    @pytest.mark.parametrize("family", ["agents", "sources", "prompts", "tools", "workflows"])
+    def test_message_tail_is_closed_to_any_restricted_token(self, client, family):
+        claims = _claims(["chat:run"], {family: [AGENT_A]})
+        assert _denied(_call(client, "GET", "/api/messages/m1/tail", claims)) == "resource_not_allowed"
+        assert _denied(_call(client, "GET", "/api/messages/m1/tail", _claims(["chat:run"]))) is None
+
     def test_sql_paged_listing_is_closed_to_restricted_tokens(self, client):
         claims = self._restricted(["sources:read"], sources=[SOURCE_A])
         assert _denied(_call(client, "GET", "/api/sources/paginated", claims)) == "resource_not_allowed"
