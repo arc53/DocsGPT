@@ -9,6 +9,7 @@ from flask_restx import fields, Namespace, Resource
 from pydantic import ValidationError as PydanticValidationError
 
 from docsgpt.api import api
+from docsgpt.api.pat.rules import filter_listing
 from docsgpt.guardrails.config import AgentConfig
 from docsgpt.api.user.base import (
     copy_agent_image_for_user,
@@ -498,7 +499,7 @@ class GetAgents(Resource):
         except Exception as err:
             current_app.logger.error(f"Error retrieving agents: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(list_agents), 200)
+        return make_response(jsonify(filter_listing(request, "agents", list_agents)), 200)
 
 
 @agents_ns.route("/create_agent")

@@ -16,6 +16,7 @@ from docsgpt.agents.default_tools import (
 from docsgpt.agents.tools.spec_parser import parse_spec
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.api import api
+from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
 from docsgpt.api.user.team_sharing import effective_write_owner, visible_with_access
 from docsgpt.core.settings import settings
@@ -265,6 +266,9 @@ class GetTools(Resource):
                 shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
                 shaped["team_access"] = team_shared.get(str(row["id"]))
                 user_tools.append(shaped)
+            # A resource-restricted token sees only its allowed tools; the
+            # default and builtin rows appended below belong to no user.
+            user_tools = filter_listing(request, "tools", user_tools)
 
             # ``scheduler`` is dual-registered (default chat tool + agent-
             # selectable builtin) and resolves to the same synthetic uuid5 id.
