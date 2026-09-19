@@ -6,6 +6,7 @@ from typing import Dict, Generator, List, Optional
 
 from docsgpt.agents.base import BaseAgent
 from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.agents.tools.graph_search import add_graph_search_tool
 from docsgpt.agents.tools.internal_search import (
     INTERNAL_TOOL_ID,
     add_internal_search_tool,
@@ -277,6 +278,7 @@ class ResearchAgent(BaseAgent):
         tools_dict = self.tool_executor.get_tools()
 
         add_internal_search_tool(tools_dict, self.retriever_config)
+        add_graph_search_tool(tools_dict, self.retriever_config)
         if self.wiki_config:
             add_wiki_tool(tools_dict, self.wiki_config)
 
