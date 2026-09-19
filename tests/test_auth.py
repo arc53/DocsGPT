@@ -82,6 +82,60 @@ class TestHandleAuth:
         mock_jwt.decode.assert_called_once()
         assert mock_jwt.decode.call_args[0][0] == "my_token"
 
+    @pytest.mark.parametrize(
+        "header",
+        [
+            "",
+            "Bearer",
+            "Bearer   ",
+            "Token abc",
+            "bearer abc",
+            "Basic abc",
+            123,
+            ["Bearer [REDACTED]"],
+        ],
+    )
+    def test_malformed_authorization_header_returns_invalid_token(self, header):
+        from docsgpt.auth import handle_auth
+
+        mock_request = Mock()
+        mock_request.headers.get.return_value = header
+        with patch("docsgpt.auth.settings") as mock_settings, patch(
+            "docsgpt.auth.jwt"
+        ) as mock_jwt:
+            mock_settings.AUTH_TYPE = "simple_jwt"
+            mock_settings.JWT_SECRET_KEY = "secret"
+            result = handle_auth(mock_request)
+
+        # Empty string is falsy -> treated as absent; everything else is 401-shaped.
+        if not header:
+            assert result is None
+        else:
+            assert result["error"] == "invalid_token"
+        mock_jwt.decode.assert_not_called()
+
+    def test_bearer_token_containing_bearer_word_is_not_corrupted(self):
+        from docsgpt.auth import handle_auth
+
+        mock_request = Mock()
+        mock_request.headers.get.return_value = 'Bearer abc Bearer xyz'
+        with patch("docsgpt.auth.settings") as mock_settings, patch(
+            "docsgpt.auth.jwt"
+        ) as mock_jwt:
+            mock_settings.AUTH_TYPE = "simple_jwt"
+            mock_settings.JWT_SECRET_KEY = "secret"
+            mock_jwt.decode.return_value = {"sub": "user1"}
+            handle_auth(mock_request)
+
+        assert mock_jwt.decode.call_args[0][0] == "abc Bearer xyz"
+
+    def test_mutable_default_not_shared(self):
+        import inspect
+
+        from docsgpt.auth import handle_auth
+
+        assert inspect.signature(handle_auth).parameters["data"].default is None
+
 
 @pytest.mark.unit
 class TestHandleAuthOidc:

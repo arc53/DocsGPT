@@ -1,16 +1,43 @@
+from typing import Any, Dict, Optional
+
 from jose import jwt
 from jose.exceptions import ExpiredSignatureError
 
 from docsgpt.core.settings import settings
 
 
-def handle_auth(request, data={}):
+def handle_auth(request: Any, data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """Decode the caller's JWT from the Authorization header.
+
+    Args:
+        request: Incoming request exposing ``headers.get("Authorization")``.
+        data: Unused legacy parameter kept for backward compatibility.
+
+    Returns:
+        The decoded token dict, ``{"sub": "local"}`` when auth is disabled,
+        ``None`` when no credentials were sent, or an ``{"error": ...}`` dict
+        when credentials were sent but are malformed, expired, or invalid.
+    """
+    if data is None:
+        data = {}
+    _ = data
     if settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "oidc"]:
-        jwt_token = request.headers.get("Authorization")
-        if not jwt_token:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
             return None
 
-        jwt_token = jwt_token.replace("Bearer ", "")
+        if not isinstance(auth_header, str):
+            return {
+                "message": "Authentication error: invalid token",
+                "error": "invalid_token",
+            }
+        parts = auth_header.strip().split(None, 1)
+        if len(parts) != 2 or parts[0] != "Bearer" or not parts[1].strip():
+            return {
+                "message": "Authentication error: invalid token",
+                "error": "invalid_token",
+            }
+        jwt_token = parts[1].strip()
 
         is_oidc = settings.AUTH_TYPE == "oidc"
         try:
