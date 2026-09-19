@@ -108,6 +108,22 @@ def _is_connection_lost(exc: BaseException) -> bool:
     return isinstance(exc, (psycopg.OperationalError, psycopg.InterfaceError))
 
 
+def _lock_source(cursor, source_id: str) -> None:
+    """Serialize graph writes for one source until this transaction ends.
+
+    Writes within one build are already serial, but two builds of the same
+    source can overlap: a rebuild dispatched while the last one is still
+    running gets a new idempotency key, so its lease does not stop it. Without
+    this, both could pass a chunk's "done" check before either commits and
+    apply it twice. A transaction-scoped advisory lock keyed by the source
+    makes them take turns chunk by chunk; the lock is released on commit or
+    rollback, and a hash collision only makes two sources take turns.
+    """
+    cursor.execute(
+        "SELECT pg_advisory_xact_lock(hashtext(%s));", (f"graphrag:source:{source_id}",)
+    )
+
+
 def _safe_rollback(conn) -> None:
     """Roll back, tolerating a connection too broken to roll back."""
     try:
@@ -672,7 +688,10 @@ class GraphStore:
                 # committed, and the retry then replays this write: doc_freq
                 # would be bumped twice and a second logical edge inserted
                 # (graph_edges has no uniqueness constraint). The progress row
-                # below is written in this transaction, so a replay sees it.
+                # below is written in this transaction, so a replay sees it —
+                # and so does an overlapping build, once the source lock makes
+                # it wait for this one to commit.
+                _lock_source(cursor, source_id)
                 cursor.execute(
                     "SELECT status FROM graph_ingest_progress "
                     "WHERE source_id = %s AND chunk_id = %s;",
@@ -713,7 +732,9 @@ class GraphStore:
                         dst_id,
                         type=rel.get("type"),
                         description=rel.get("description"),
-                        weight=float(rel.get("weight") or 1.0),
+                        # Only a missing weight defaults: 0 is a real one,
+                        # and the ranker drops non-positive edges.
+                        weight=1.0 if rel.get("weight") is None else float(rel["weight"]),
                         source_chunk_ids=[chunk_id],
                         fact_embedding=rel.get("fact_embedding"),
                     )
@@ -1527,6 +1548,9 @@ class GraphStore:
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
+            # A reset while a build is still writing must not land in the
+            # middle of one of its chunks.
+            _lock_source(cursor, source_id)
             for table in (
                 "graph_node_chunks",
                 "graph_edges",

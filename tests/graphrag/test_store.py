@@ -557,6 +557,43 @@ class TestGraphStoreParameterization:
         store._tables_ensured = True
         return store, cursor
 
+    def test_graph_writes_for_a_source_are_serialized(self):
+        # A chunk write and a reset each take the source's transaction-scoped
+        # advisory lock before touching a row, so overlapping builds of one
+        # source cannot interleave inside a chunk.
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchone.return_value = None
+        sid = str(uuid.uuid4())
+
+        store.apply_chunk(sid, "c1", [], [], {})
+        first_sql, first_params = cursor.execute.call_args_list[0].args
+        assert "pg_advisory_xact_lock(hashtext(%s))" in first_sql
+        assert first_params == (f"graphrag:source:{sid}",)
+
+        cursor.execute.reset_mock()
+        store.delete_by_source(sid)
+        first_sql, first_params = cursor.execute.call_args_list[0].args
+        assert "pg_advisory_xact_lock(hashtext(%s))" in first_sql
+        assert first_params == (f"graphrag:source:{sid}",)
+
+    def test_apply_chunk_keeps_an_explicit_zero_weight(self, monkeypatch):
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchone.side_effect = [None, ["n1"], ["n2"]]
+        weights = []
+
+        def _capture(cursor, source_id, src, dst, type=None, description=None, weight=1.0, **kwargs):
+            weights.append(weight)
+            return "e1", True
+
+        monkeypatch.setattr(store, "_add_edge", _capture)
+        store.apply_chunk(
+            "sid", "c1", [],
+            [{"source": "A", "target": "B", "weight": 0}, {"source": "A", "target": "B"}],
+            {},
+        )
+        # Zero is a real weight; only a missing one defaults.
+        assert weights == [0.0, 1.0]
+
     def test_delete_by_source_binds_source_id(self):
         from psycopg import sql as pgsql
 
@@ -565,7 +602,9 @@ class TestGraphStoreParameterization:
         store.delete_by_source(sid)
 
         tables = []
-        for call in cursor.execute.call_args_list:
+        lock, *deletes = cursor.execute.call_args_list
+        assert "pg_advisory_xact_lock" in lock.args[0]
+        for call in deletes:
             query = call.args[0]
             params = call.args[1] if len(call.args) > 1 else None
             assert isinstance(query, pgsql.Composable)
@@ -1339,6 +1378,59 @@ class TestApplyChunkIsReplaySafe:
             # The write records its own progress, so the caller's checkpoint
             # and the rows it describes commit together.
             assert store.get_progress(source_id)["c1"] == "done"
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_overlapping_applies_of_one_chunk_write_it_once(self, store, postgresql, monkeypatch):
+        """Two builds of one source can overlap: a rebuild dispatched while the
+        last one runs gets a new lease key. Both may reach the same chunk at
+        once, and the second must wait for the first to commit instead of
+        passing the done check while the first is still in flight."""
+        import threading
+        import time
+
+        source_id = str(uuid.uuid4())
+        entities = [{"name": "Ada", "normalized_name": "ada", "type": "person", "description": "d"}]
+        relationships = [
+            {"source": "Ada", "target": "Engine", "type": "worked_on", "description": "x", "weight": 2.0}
+        ]
+        embeddings = {"ada": _embedding(0.1), "engine": _embedding(0.2)}
+        writers = [GraphStore(connection_string=_ephemeral_dsn(postgresql.info)) for _ in range(2)]
+        real_upsert = GraphStore._upsert_node
+
+        def _slow_upsert(self, *args, **kwargs):
+            time.sleep(0.3)  # hold the first writer inside its transaction
+            return real_upsert(self, *args, **kwargs)
+
+        monkeypatch.setattr(GraphStore, "_upsert_node", _slow_upsert)
+        results = []
+
+        def _apply(writer):
+            results.append(writer.apply_chunk(source_id, "c1", entities, relationships, embeddings))
+
+        try:
+            threads = [threading.Thread(target=_apply, args=(w,)) for w in writers]
+            threads[0].start()
+            time.sleep(0.05)
+            threads[1].start()
+            for thread in threads:
+                thread.join()
+
+            assert sorted(results) == [(0, 0), (1, 1)]
+            assert store.get_node_by_normalized(source_id, "ada")["doc_freq"] == 1
+            assert len(store.get_graph_overview(source_id)["edges"]) == 1
+        finally:
+            for writer in writers:
+                writer.close()
+            store.delete_by_source(source_id)
+
+    def test_a_zero_weight_relationship_stays_zero(self, store):
+        source_id = str(uuid.uuid4())
+        relationships = [{"source": "Ada", "target": "Engine", "type": "mentions", "weight": 0.0}]
+        try:
+            store.apply_chunk(source_id, "c1", [], relationships, {})
+            edges = store.get_graph_overview(source_id)["edges"]
+            assert [edge["weight"] for edge in edges] == [0.0]
         finally:
             store.delete_by_source(source_id)
 
