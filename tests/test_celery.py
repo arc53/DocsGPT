@@ -317,6 +317,28 @@ class TestInWorker:
         with denied_join_result():
             assert self._ask_from_a_new_thread() is True
 
+    def test_true_on_any_thread_of_a_non_blocking_pool_worker(self, monkeypatch):
+        # eventlet/gevent leave the join flag unset and scope the current task
+        # to one greenlet, so only the worker's own startup can say this
+        # process is a worker. The lifecycle signal records that for every
+        # thread and greenlet in it.
+        import docsgpt.celery_init as celery_init
+
+        monkeypatch.setattr(celery_init, "_IS_WORKER_PROCESS", False)
+        assert self._ask_from_a_new_thread() is False
+
+        celery_init.worker_init.send(sender=None)
+
+        assert self._ask_from_a_new_thread() is True
+
+    def test_prefork_children_record_it_on_their_own_start(self, monkeypatch):
+        import docsgpt.celery_init as celery_init
+
+        monkeypatch.setattr(celery_init, "_IS_WORKER_PROCESS", False)
+        celery_init.worker_process_init.send(sender=None)
+
+        assert self._ask_from_a_new_thread() is True
+
     def test_true_on_the_task_thread_of_a_non_blocking_pool(self):
         # eventlet/gevent pools leave the process flag unset; the thread
         # running the task still knows it is in one.
