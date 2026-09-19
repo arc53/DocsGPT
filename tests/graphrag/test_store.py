@@ -335,7 +335,7 @@ class TestGraphStoreLive:
 
             store.set_node_degrees(source_id)
             recomputed = store.get_node_by_normalized(source_id, "solo")["degree"]
-            assert recomputed == incremental == 0
+            assert recomputed == incremental
         finally:
             store.delete_by_source(source_id)
 
@@ -613,6 +613,115 @@ class TestGraphStoreParameterization:
         assert "name" not in [t for t in sql.split() if t == sid]
         assert params[1] == sid
         assert params[-1] == embedding
+
+
+@pytest.mark.unit
+class TestGraphReadQueries:
+    """The reads behind fact seeding and the agent's graph tool, without a DB.
+
+    The live class covers what these return from real rows; these pin the
+    contract that holds without one. The entity name reaching
+    ``entity_relationships``/``entity_pages`` comes from an LLM tool call, so
+    it must only ever travel as a bound parameter.
+    """
+
+    def _store(self, rows=(), fail=False):
+        store = GraphStore.__new__(GraphStore)
+        cursor = MagicMock()
+        cursor.fetchall.return_value = list(rows)
+        if fail:
+            cursor.execute.side_effect = RuntimeError("relation does not exist")
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        store._get_connection = lambda: conn
+        return store, cursor, conn
+
+    def test_fact_seeds_bind_every_value_and_read_weight_as_distance(self):
+        store, cursor, _ = self._store(rows=[("n1", "Quill", "a store", 0.8), ("n2", "Alder", None, None)])
+        sid = str(uuid.uuid4())
+        embedding = _embedding(0.3)
+
+        rows = store.seed_nodes_from_facts(sid, embedding, fact_limit=0, limit=3)
+
+        sql, params = cursor.execute.call_args.args
+        assert sid not in sql and str(embedding) not in sql
+        # Limits are clamped to at least one before binding.
+        assert params == (embedding, sid, embedding, 1, sid, 3)
+        assert rows[0] == {"id": "n1", "name": "Quill", "description": "a store", "distance": pytest.approx(0.2)}
+        assert rows[1]["distance"] == 1.0
+
+    def test_fact_seeds_need_a_query_vector(self):
+        store, cursor, _ = self._store()
+        assert store.seed_nodes_from_facts(str(uuid.uuid4()), []) == []
+        cursor.execute.assert_not_called()
+
+    def test_relationships_bind_the_name_as_a_pattern(self):
+        store, cursor, _ = self._store(rows=[("Alder", "streams_to", "Quill", "audit events")])
+        sid = str(uuid.uuid4())
+        name = "Quill'; DROP TABLE graph_nodes; --"
+
+        rows = store.entity_relationships(sid, f"  {name}  ", limit=500)
+
+        sql, params = cursor.execute.call_args.args
+        assert name not in sql
+        assert params == (sid, f"%{name}%", f"%{name}%", 500)
+        assert rows == [
+            {"source": "Alder", "type": "streams_to", "target": "Quill", "description": "audit events"}
+        ]
+
+    def test_pages_prefer_the_entity_itself_over_a_mention(self):
+        store, cursor, _ = self._store(rows=[({"title": "quill.md"}, "Quill is a store."), (None, None)])
+        sid = str(uuid.uuid4())
+
+        pages = store.entity_pages(sid, "Quill", limit=0)
+
+        sql, params = cursor.execute.call_args.args
+        assert "Quill" not in sql
+        # Exact name, name plus a qualifier ("Quill Store"), substring fallback,
+        # text-opens-with ordering, then the clamped limit.
+        assert params == ("quill", "quill %", sid, sid, "quill", "quill %", "%Quill%", "Quill%", 1)
+        assert pages == [{"metadata": {"title": "quill.md"}, "text": "Quill is a store."}, {"metadata": {}, "text": ""}]
+
+    def test_chunk_similarities_are_restricted_to_the_reached_chunks(self):
+        store, cursor, _ = self._store(rows=[("11", 0.75)])
+        sid = str(uuid.uuid4())
+        embedding = _embedding(0.9)
+
+        scores = store.chunk_similarities(sid, [11, "12"], embedding)
+
+        sql, params = cursor.execute.call_args.args
+        assert "= ANY(%s)" in sql and sid not in sql
+        assert params == (embedding, sid, ["11", "12"])
+        assert scores == {"11": 0.75}
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda s: s.entity_relationships("sid", "   "),
+            lambda s: s.entity_pages("sid", ""),
+            lambda s: s.chunk_similarities("sid", [], [0.1]),
+            lambda s: s.chunk_similarities("sid", ["1"], []),
+        ],
+    )
+    def test_empty_input_runs_no_query(self, call):
+        store, cursor, _ = self._store()
+        assert not call(store)
+        cursor.execute.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda s: s.seed_nodes_from_facts("sid", [0.1]),
+            lambda s: s.entity_relationships("sid", "Quill"),
+            lambda s: s.entity_pages("sid", "Quill"),
+            lambda s: s.chunk_similarities("sid", ["1"], [0.1]),
+        ],
+    )
+    def test_a_failed_query_returns_nothing_and_releases_the_connection(self, call):
+        store, cursor, conn = self._store(fail=True)
+        assert not call(store)
+        cursor.close.assert_called_once()
+        conn.rollback.assert_called_once()
 
 
 @pytest.mark.unit

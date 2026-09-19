@@ -107,3 +107,67 @@ class TestPerSourceOptions:
 
         assert retriever.vector_calls == 0
         assert VECTOR_ONLY not in _texts(docs)
+
+
+class TestVectorRanking:
+    """The vector half of the blend, keyed on chunk text since hits carry no id."""
+
+    class _VectorStore:
+        def __init__(self, hits=None, error=None):
+            self.hits = hits or []
+            self.error = error
+            self.searched = None
+            self.closed = False
+
+        def search(self, question, k, query_vector=None):
+            self.searched = (question, k, query_vector)
+            if self.error:
+                raise self.error
+            return self.hits
+
+        def close(self):
+            self.closed = True
+
+    @staticmethod
+    def _real_retriever(monkeypatch, store):
+        from types import SimpleNamespace
+
+        retriever = object.__new__(GraphRAGRetriever)
+        retriever.chunks = 3
+        retriever._classic = SimpleNamespace(_get_rephrased_question=lambda: "where does Alder stream?")
+        monkeypatch.setattr(
+            "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+            lambda *args, **kwargs: store,
+        )
+        return retriever
+
+    def test_object_and_dict_hits_become_text_and_metadata(self, monkeypatch):
+        from types import SimpleNamespace
+
+        store = self._VectorStore(
+            hits=[
+                SimpleNamespace(page_content="Alder streams to Quill.", metadata={"title": "alder.md"}),
+                {"text": "Quill is compacted every six hours.", "metadata": {"title": "quill.md"}},
+                {"page_content": "A passage without metadata."},
+                {"metadata": {"title": "no text"}},
+            ]
+        )
+        retriever = self._real_retriever(monkeypatch, store)
+
+        ranked = retriever._vector_ranking("src", [0.1, 0.2])
+
+        assert ranked == [
+            ("Alder streams to Quill.", {"title": "alder.md"}),
+            ("Quill is compacted every six hours.", {"title": "quill.md"}),
+            ("A passage without metadata.", {}),
+        ]
+        # The rephrased question and the shared query vector, with room to fuse.
+        assert store.searched == ("where does Alder stream?", 20, [0.1, 0.2])
+        assert store.closed
+
+    def test_a_failed_search_ranks_nothing_and_still_closes_the_store(self, monkeypatch):
+        store = self._VectorStore(error=RuntimeError("pgvector down"))
+        retriever = self._real_retriever(monkeypatch, store)
+
+        assert retriever._vector_ranking("src", [0.1]) == []
+        assert store.closed

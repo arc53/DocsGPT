@@ -170,3 +170,79 @@ class TestWiring:
 
         assert tools[GRAPH_TOOL_ID]["id"] == GRAPH_TOOL_ID
         assert tools[GRAPH_TOOL_ID]["config"]["source"] == SOURCE
+
+
+class TestPlumbing:
+    def test_a_single_source_id_and_empty_entries_are_accepted(self):
+        tool = GraphSearchTool({"source": {"active_docs": "src-1"}})
+        assert tool._sources() == ["src-1"]
+
+        tool = GraphSearchTool({"source": {"active_docs": ["src-1", "", None]}})
+        assert tool._sources() == ["src-1"]
+
+    def test_the_store_is_built_once_and_reused(self, monkeypatch):
+        built = []
+        monkeypatch.setattr(
+            "docsgpt.graphrag.store.GraphStore", lambda: built.append(object()) or built[-1]
+        )
+        tool = GraphSearchTool({"source": SOURCE})
+
+        assert tool._get_store() is tool._get_store()
+        assert len(built) == 1
+
+    def test_an_embedding_failure_makes_entity_search_unavailable(self, monkeypatch):
+        def _broken_embeddings():
+            raise RuntimeError("no model")
+
+        monkeypatch.setattr("docsgpt.vectorstore.base.get_embeddings", _broken_embeddings)
+        monkeypatch.setattr(settings, "GRAPHRAG_ENABLED", True)
+        tool = GraphSearchTool({"source": SOURCE})
+        tool._store = _StubStore()
+
+        assert tool.execute_action("search_entities", query="quill") == "Entity search is unavailable."
+
+    def test_no_matching_entities_is_stated_plainly(self, monkeypatch):
+        tool = _tool(monkeypatch, _StubStore())
+
+        assert "No entities found" in tool.execute_action("search_entities", query="quill")
+
+    def test_a_failing_store_is_reported_not_raised(self, monkeypatch):
+        class _BrokenStore(_StubStore):
+            def entity_relationships(self, source_id, name, limit=25):
+                raise RuntimeError("connection lost")
+
+        tool = _tool(monkeypatch, _BrokenStore())
+
+        assert tool.execute_action("get_relationships", entity="Quill") == "The graph lookup failed."
+
+
+class TestSourcesHaveGraph:
+    """Whether to offer the tool at all: only when some source has a graph."""
+
+    def _patch_counts(self, monkeypatch, counts=None, error=None):
+        class _Store:
+            def count_nodes_many(self, source_ids):
+                if error:
+                    raise error
+                return {s: counts.get(s, 0) for s in source_ids}
+
+        monkeypatch.setattr("docsgpt.graphrag.store.GraphStore", _Store)
+
+    def test_true_when_any_source_has_nodes(self, monkeypatch):
+        from docsgpt.agents.tools.graph_search import sources_have_graph
+
+        self._patch_counts(monkeypatch, {"b": 12})
+        assert sources_have_graph({"active_docs": ["a", "b"]}) is True
+
+    def test_false_when_no_source_has_nodes(self, monkeypatch):
+        from docsgpt.agents.tools.graph_search import sources_have_graph
+
+        self._patch_counts(monkeypatch, {})
+        assert sources_have_graph({"active_docs": "a"}) is False
+
+    def test_false_without_sources_or_when_the_check_fails(self, monkeypatch):
+        from docsgpt.agents.tools.graph_search import sources_have_graph
+
+        assert sources_have_graph({"active_docs": []}) is False
+        self._patch_counts(monkeypatch, error=RuntimeError("no pgvector"))
+        assert sources_have_graph({"active_docs": ["a"]}) is False
