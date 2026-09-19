@@ -223,7 +223,6 @@ class BaseAnswerResource:
         Args:
             question: The user's question
             agent: The agent instance
-            retriever: The retriever instance
             conversation_id: Existing conversation ID
             user_api_key: User's API key if any
             decoded_token: Decoded JWT token
@@ -238,7 +237,6 @@ class BaseAnswerResource:
             is_shared_usage: Flag for shared agent usage
             shared_token: Token for shared agent
             model_id: Model ID used for the request
-            retrieved_docs: Pre-fetched documents for sources (optional)
             finalize_tool_pause_as_complete: Stateless-tool-round mode for
                 the OpenAI-compatible ``/v1/chat/completions`` endpoint.
                 OpenAI clients resume a tool call by re-POSTing the full
