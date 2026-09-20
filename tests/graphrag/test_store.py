@@ -724,6 +724,34 @@ class TestEntityPagesLive:
             store.delete_by_source(source_id)
 
 
+    def test_two_chunks_with_identical_text_collapse_into_one_page(self, store):
+        """Deliberate: the caller gets at most four pages to hand a model, and a
+        crawl that ingested the same text twice would spend two of them saying
+        the same thing. The rows differ only by an id the model never sees."""
+        source_id = str(uuid.uuid4())
+        conn = store._get_connection()
+        cursor = conn.cursor()
+        chunk_ids = []
+        for _ in range(2):
+            cursor.execute(
+                "INSERT INTO documents (text, metadata, source_id) VALUES (%s, %s, %s) RETURNING id;",
+                ("Quill is a write-ahead store.", Jsonb({"title": "quill.md"}), source_id),
+            )
+            chunk_ids.append(str(cursor.fetchone()[0]))
+        conn.commit()
+        cursor.close()
+        try:
+            node = store.upsert_node(source_id, "Quill", "quill")
+            for chunk_id in chunk_ids:
+                store.link_node_chunk(source_id, node, chunk_id)
+
+            pages = store.entity_pages(source_id, "Quill", limit=4)
+
+            assert [page["text"] for page in pages] == ["Quill is a write-ahead store."]
+        finally:
+            store.delete_by_source(source_id)
+
+
 @pytest.mark.unit
 class TestGraphReadQueries:
     """The reads behind fact seeding and the agent's graph tool, without a DB.
