@@ -1086,6 +1086,27 @@ class TestSummaryCountFailure:
 
 
 @pytest.mark.unit
+class TestEntityNormalization:
+    """An entity whose name normalizes to nothing is not an entity.
+
+    ``canonical_name`` answers "" for a punctuation-only name, and nodes are
+    merged on that key, so keeping them collapses every such entity onto one
+    shared node. ``_resolve_endpoint`` already drops them on the relationship
+    side.
+    """
+
+    @pytest.mark.parametrize("name", ["!!!", "--", "?", "  ***  "])
+    def test_a_name_that_normalizes_to_nothing_is_dropped(self, name):
+        assert extraction_module._build_entities([{"name": name}]) == []
+
+    def test_real_names_survive(self):
+        built = extraction_module._build_entities(
+            [{"name": "Quill Store"}, {"name": "!!!"}, {"name": "Alder"}]
+        )
+        assert [e["normalized_name"] for e in built] == ["quill store", "alder"]
+
+
+@pytest.mark.unit
 class TestParsing:
     def test_parses_embedded_json(self):
         raw = 'sure!\n{"entities": [{"name": "A"}], "relationships": []}\nthanks'

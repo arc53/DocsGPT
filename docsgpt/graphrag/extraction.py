@@ -424,7 +424,7 @@ def extract_graph_for_source(
 
 
 def _build_entities(raw_entities: Any) -> List[Dict[str, Any]]:
-    """Normalize the LLM's entity dicts (drop nameless ones)."""
+    """Normalize the LLM's entity dicts (drop the ones with no usable name)."""
     entities = []
     for e in raw_entities:
         if not isinstance(e, dict):
@@ -432,10 +432,16 @@ def _build_entities(raw_entities: Any) -> List[Dict[str, Any]]:
         name = str(e.get("name", "")).strip()
         if not name:
             continue
+        normalized_name = normalize_entity_name(name)
+        if not normalized_name:
+            # A punctuation-only name normalizes to nothing, and nodes merge on
+            # that key: keeping it collapses every such entity onto one shared
+            # node. The relationship side already drops them.
+            continue
         entities.append(
             {
                 "name": name,
-                "normalized_name": normalize_entity_name(name),
+                "normalized_name": normalized_name,
                 "type": str(e.get("type") or "") or None,
                 "description": str(e.get("description") or "") or None,
             }
