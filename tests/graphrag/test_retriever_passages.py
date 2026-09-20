@@ -130,3 +130,22 @@ class TestChunkSimilaritiesGuard:
         store = object.__new__(GraphStore)
 
         assert store.chunk_similarities("src", chunk_ids, embedding) == {}
+
+
+@pytest.mark.unit
+class TestNodesByChunk:
+    """The passage stage inverts node->chunks once instead of rescanning."""
+
+    def test_inverts_and_keeps_node_order(self):
+        from docsgpt.retriever.graph_rag import _nodes_by_chunk
+
+        assert _nodes_by_chunk({"n1": ["c1", "c2"], "n2": ["c2"], "n3": []}) == {
+            "c1": ["n1"],
+            "c2": ["n1", "n2"],
+        }
+
+    def test_no_links_invert_to_nothing(self):
+        from docsgpt.retriever.graph_rag import _nodes_by_chunk
+
+        assert _nodes_by_chunk({}) == {}
+        assert _nodes_by_chunk({"n1": None}) == {}

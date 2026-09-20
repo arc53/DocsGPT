@@ -180,7 +180,9 @@ class TestGraphRAGPoolDiscipline:
         mock_store_cls.return_value = store
 
         rag = _make_retriever()
-        with patch.object(rag, "_graph_docs_for_source", return_value=[]):
+        # A real result: an empty one now falls back like a failure does.
+        graph_docs = [{"title": "g", "text": "graph text", "source": "src1", "filename": "g"}]
+        with patch.object(rag, "_graph_docs_for_source", return_value=graph_docs):
             with patch.object(rag, "_classic_for_sources") as classic:
                 rag._get_data()
 
@@ -355,15 +357,24 @@ class TestGraphRAGHappyPath:
     @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
     @patch("docsgpt.retriever.graph_rag.GraphStore")
     @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
-    def test_no_seeds_returns_empty(
+    def test_a_graph_that_answers_nothing_falls_back_to_classic(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
+        """Empty is not an answer. Every graph read swallows its own errors and
+        returns nothing, so "no rows" covers a broken query as much as a walk
+        that found nothing — and the source would contribute nothing at all,
+        with no fallback, because only a raise routes one to ClassicRAG."""
         store = _store_with_graph([], [], {}, {}, [])
         store.count_nodes_many.side_effect = lambda ids: {s: 5 for s in ids}
         mock_store_cls.return_value = store
 
         rag = _make_retriever()
-        assert rag._get_data() == []
+        seen = _recording_classic(rag, [_CLASSIC_DOC])
+
+        docs = rag._get_data()
+
+        assert seen == [["src1"]]
+        assert [doc["text"] for doc in docs] == ["classic"]
 
 
 # ── IDF down-weighting ────────────────────────────────────────────────────────

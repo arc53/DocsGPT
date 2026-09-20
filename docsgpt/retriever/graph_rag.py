@@ -56,6 +56,19 @@ def _idf(doc_freq: Any) -> float:
     return 1.0 / math.log(1.0 + max(int(doc_freq or 0), 0) + 1.0)
 
 
+def _nodes_by_chunk(chunk_links: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    """Invert ``node -> chunk ids`` into ``chunk id -> node ids``.
+
+    Node order within a chunk follows the node order of ``chunk_links``, so the
+    passage edges are added in the same order as before.
+    """
+    inverted: Dict[str, List[str]] = {}
+    for node, chunks in chunk_links.items():
+        for chunk_id in chunks or ():
+            inverted.setdefault(chunk_id, []).append(node)
+    return inverted
+
+
 def _damping(passage_nodes: bool) -> float:
     """PageRank damping for a ranking mode: the value that mode was measured at."""
     return DAMPING_WITH_PASSAGES if passage_nodes else DAMPING_ENTITIES_ONLY
@@ -320,9 +333,12 @@ class GraphRAGRetriever(BaseRetriever):
 
         personalization = dict(seeds)
         passage_of: Dict[str, str] = {}
+        # Inverted once: scanning every node's chunk list per candidate is
+        # quadratic, and at the candidate cap it cost more than the walk it
+        # feeds (76 ms against 0.5 ms measured).
+        nodes_by_chunk = _nodes_by_chunk(chunk_links)
         for chunk_id in candidate_ids:
-            linked = [n for n, chunks in chunk_links.items() if chunk_id in chunks]
-            linked = [n for n in linked if n in graph]
+            linked = [n for n in nodes_by_chunk.get(chunk_id, ()) if n in graph]
             if not linked:
                 continue
             passage_node = f"chunk::{chunk_id}"
@@ -602,8 +618,9 @@ class GraphRAGRetriever(BaseRetriever):
 
         Graph sources keep their own slot in source order; every graphless
         source collapses into a single ClassicRAG run that occupies the slot of
-        the first graphless source. Sources whose PPR retrieval raises are
-        collected and retried as one more classic batch, appended at the end.
+        the first graphless source. Sources whose PPR retrieval raises, or
+        answers nothing, are collected and retried as one more classic batch,
+        appended at the end.
         """
         try:
             counts = store.count_nodes_many(sources)
@@ -629,7 +646,7 @@ class GraphRAGRetriever(BaseRetriever):
                     segments.append([])
                 graphless.append(source_id)
 
-        failed: List[str] = []
+        fallback: List[str] = []
         query_embedding = None
         if graphed:
             # Embedded once for the whole retrieval, not once per graph source.
@@ -642,26 +659,39 @@ class GraphRAGRetriever(BaseRetriever):
                     f"GraphRAG query embedding failed, falling back: {e}",
                     exc_info=True,
                 )
-                failed, graphed = list(graphed), []
+                fallback, graphed = list(graphed), []
 
         for source_id in graphed:
             try:
-                segments[graph_slots[source_id]] = self._graph_docs_for_source(
-                    store, source_id, query_embedding
-                )
+                docs = self._graph_docs_for_source(store, source_id, query_embedding)
             except Exception as e:
                 logging.error(
                     f"GraphRAG retrieval failed for {source_id}, falling back: {e}",
                     exc_info=True,
                 )
-                failed.append(source_id)
+                fallback.append(source_id)
+                continue
+            if not docs:
+                # Empty is not an answer. Every graph read reports its own
+                # failure and returns nothing, so "no rows" covers a query that
+                # broke or a half-built graph as much as a walk that found
+                # nothing — and only a raise reaches the fallback, so the
+                # source would otherwise contribute nothing at all. Searching
+                # it classically is what a source with no graph already gets.
+                logging.info(
+                    "GraphRAG retrieval returned nothing for %s, falling back",
+                    source_id,
+                )
+                fallback.append(source_id)
+                continue
+            segments[graph_slots[source_id]] = docs
 
         # Every remaining segment is a ClassicRAG fan-out, and each of its legs
         # checks out of the *same* per-DSN pool this store is holding. Hand the
         # graph connection back first, or concurrent GraphRAG retrievals occupy
         # every slot and then block on their own fallbacks until PoolTimeout.
         # ``close()`` nulls the connection, so ``_get_data``'s finally stays correct.
-        if graphless or failed:
+        if graphless or fallback:
             try:
                 store.close()
             except Exception as e:
@@ -669,8 +699,8 @@ class GraphRAGRetriever(BaseRetriever):
 
         if graphless:
             segments[classic_slot] = self._classic_for_sources(graphless)
-        if failed:
-            segments.append(self._classic_for_sources(failed))
+        if fallback:
+            segments.append(self._classic_for_sources(fallback))
 
         return [doc for segment in segments for doc in segment]
 
