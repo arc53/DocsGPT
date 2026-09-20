@@ -166,6 +166,7 @@ class ClassicRAG(BaseRetriever):
         src_k: int,
         score_threshold: Optional[float],
         query_vector: Optional[List[float]] = None,
+        rrf_k: Optional[int] = None,
     ):
         """Fetch candidate hits for one vector store (vector search).
 
@@ -178,6 +179,8 @@ class ClassicRAG(BaseRetriever):
             query_vector: Query embedding computed once for the whole
                 retrieval. Forwarded so the store skips embedding the query
                 again; stores that don't support it ignore the kwarg.
+            rrf_k: Hybrid RRF constant for this source. Ignored here; the
+                hybrid subclass fuses with it instead of the default.
         """
         # ``score_threshold`` is honoured by pgvector/mongodb and safely ignored
         # by stores whose ``search`` swallows kwargs. The candidate count is
@@ -213,6 +216,7 @@ class ClassicRAG(BaseRetriever):
                 "id": vectorstore_id,
                 "src_k": chunks_per_source,
                 "score_threshold": None,
+                "rrf_k": None,
                 "question": self._get_rephrased_question(),
             }
         src_k = max(1, int(src_cfg.chunks))
@@ -228,6 +232,7 @@ class ClassicRAG(BaseRetriever):
             "id": vectorstore_id,
             "src_k": src_k,
             "score_threshold": src_cfg.score_threshold,
+            "rrf_k": getattr(src_cfg, "rrf_k", None),
             "question": (
                 self._get_rephrased_question()
                 if src_cfg.rephrase_query
@@ -277,6 +282,7 @@ class ClassicRAG(BaseRetriever):
                 plan["src_k"],
                 plan["score_threshold"],
                 query_vector=query_vector,
+                rrf_k=plan.get("rrf_k"),
             )
             score_kind = self._score_kind(docsearch) if self.include_scores else None
             return docs_temp, score_kind

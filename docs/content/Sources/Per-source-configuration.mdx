@@ -82,6 +82,7 @@ Retrieval decides which chunks are pulled in to answer a question. These setting
     "chunks": 2,
     "score_threshold": null,
     "rephrase_query": true,
+    "rrf_k": null,
     "prescreen": null
   }
 }
@@ -94,6 +95,7 @@ Retrieval decides which chunks are pulled in to answer a question. These setting
 | `chunks` | `2` | Final number of chunks (top-k) returned to the answer. Range 1–500. Set here, it **overrides** whatever a request asks for. |
 | `score_threshold` | `null` | Minimum similarity score. Honored by pgvector and MongoDB Atlas; FAISS, Qdrant, Milvus and the `hybrid` retriever ignore it — the config API returns a `warnings` entry when you set it on one of those. |
 | `rephrase_query` | `true` | Whether to run a query-rephrasing side-call before retrieval. |
+| `rrf_k` | `null` | Hybrid retriever fusion constant (range 1–500). `null` = 60. Smaller values reward top ranks more steeply; classic and graphrag sources ignore it. |
 | `prescreen` | `null` | Optional LLM relevance filter (see below). `null` = off. |
 
 ### Who wins: source config or the request?

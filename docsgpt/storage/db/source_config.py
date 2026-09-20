@@ -100,6 +100,7 @@ class RetrievalConfig(BaseModel):
     chunks: int = 2  # final top-k
     score_threshold: Optional[float] = None  # pgvector/mongo honor it; others ignore
     rephrase_query: bool = True  # toggle ClassicRAG._rephrase_query side-call
+    rrf_k: Optional[int] = None  # hybrid RRF constant override; None = RRF_K (60)
     reranker: Optional[dict] = None  # reserved: future cross-encoder/LLM reorder
     prescreen: Optional[dict] = None  # None = off; else PreScreenConfig dict (D12)
 
@@ -110,6 +111,13 @@ class RetrievalConfig(BaseModel):
             raise ValueError("must be >= 1")
         if value > 500:
             raise ValueError("must be <= 500")
+        return value
+
+    @field_validator("rrf_k")
+    @classmethod
+    def _bounded_rrf_k(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and (value < 1 or value > 500):
+            raise ValueError("must be between 1 and 500")
         return value
 
     @model_validator(mode="after")
