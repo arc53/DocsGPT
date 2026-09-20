@@ -4,13 +4,24 @@ from jose.exceptions import ExpiredSignatureError
 from docsgpt.core.settings import settings
 
 
-def handle_auth(request, data={}):
+def handle_auth(request, data=None):
     if settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "oidc"]:
         jwt_token = request.headers.get("Authorization")
-        if not jwt_token:
+        if jwt_token is None:
             return None
 
-        jwt_token = jwt_token.replace("Bearer ", "")
+        if not isinstance(jwt_token, str) or not jwt_token.startswith("Bearer "):
+            return {
+                "message": "Authentication error: invalid token",
+                "error": "invalid_token",
+            }
+
+        jwt_token = jwt_token.removeprefix("Bearer ")
+        if not jwt_token or any(character.isspace() for character in jwt_token):
+            return {
+                "message": "Authentication error: invalid token",
+                "error": "invalid_token",
+            }
 
         is_oidc = settings.AUTH_TYPE == "oidc"
         try:

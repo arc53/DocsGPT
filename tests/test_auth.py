@@ -5,6 +5,71 @@ import pytest
 
 @pytest.mark.unit
 class TestHandleAuth:
+    @pytest.mark.parametrize(
+        "authorization",
+        ["Token token", "Bearer", "Bearer ", "", 123],
+    )
+    def test_rejects_malformed_authorization_headers(self, authorization):
+        from docsgpt.auth import handle_auth
+
+        mock_request = Mock()
+        mock_request.headers.get.return_value = authorization
+        with patch("docsgpt.auth.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = "simple_jwt"
+            with patch("docsgpt.auth.jwt.decode") as mock_decode:
+                result = handle_auth(mock_request)
+
+        assert result == {
+            "message": "Authentication error: invalid token",
+            "error": "invalid_token",
+        }
+        mock_decode.assert_not_called()
+
+    def test_preserves_valid_bearer_token(self):
+        from docsgpt.auth import handle_auth
+
+        mock_request = Mock()
+        mock_request.headers.get.return_value = "Bearer tokenBearerValue"
+        with patch("docsgpt.auth.settings") as mock_settings, patch(
+            "docsgpt.auth.jwt"
+        ) as mock_jwt:
+            mock_settings.AUTH_TYPE = "simple_jwt"
+            mock_settings.JWT_SECRET_KEY = "secret"
+            mock_jwt.decode.return_value = {"sub": "user123"}
+            result = handle_auth(mock_request)
+
+        assert result == {"sub": "user123"}
+        assert mock_jwt.decode.call_args.args[0] == "tokenBearerValue"
+
+    @pytest.mark.parametrize("header_prefix", ["raw", "Token", "XBearer", "Bearer Bearer"])
+    def test_rejects_valid_jwt_with_invalid_authorization_scheme(self, header_prefix):
+        from jose import jwt as real_jwt
+
+        from docsgpt.auth import handle_auth
+
+        token = real_jwt.encode({"sub": "user123"}, "secret", algorithm="HS256")
+        authorization = token if header_prefix == "raw" else f"{header_prefix} {token}"
+        mock_request = Mock()
+        mock_request.headers.get.return_value = authorization
+        with patch("docsgpt.auth.settings") as mock_settings, patch(
+            "docsgpt.auth.jwt.decode"
+        ) as mock_decode:
+            mock_settings.AUTH_TYPE = "simple_jwt"
+            mock_settings.JWT_SECRET_KEY = "secret"
+            result = handle_auth(mock_request)
+
+        assert result == {
+            "message": "Authentication error: invalid token",
+            "error": "invalid_token",
+        }
+        mock_decode.assert_not_called()
+
+    def test_data_default_is_not_mutable(self):
+        import inspect
+
+        from docsgpt.auth import handle_auth
+
+        assert inspect.signature(handle_auth).parameters["data"].default is None
 
     def test_returns_local_when_no_auth_type(self):
         from docsgpt.auth import handle_auth
