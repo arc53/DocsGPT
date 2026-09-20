@@ -114,6 +114,11 @@ class TestScopeEnforcement:
         response = _call(client, "GET", "/api/admin/users", _claims(list(SCOPES)))
         assert _denied(response) == "not_available_to_tokens"
 
+    def test_unknown_path_and_wrong_method_keep_their_own_status(self, client):
+        claims = _claims(list(SCOPES))
+        assert _call(client, "GET", "/api/no_such_route", claims).status_code == 404
+        assert _call(client, "DELETE", "/api/get_agents", claims).status_code == 405
+
     def test_missing_scope_is_refused_and_names_the_scope(self, client):
         response = _call(client, "GET", "/api/get_agents", _claims(["sources:read"]))
         assert _denied(response) == "insufficient_scope"

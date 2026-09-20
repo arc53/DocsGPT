@@ -139,6 +139,7 @@ class PersonalAccessTokens(Resource):
                     return _error(
                         f"Token limit reached ({settings.PAT_MAX_PER_USER}); revoke one first", 409
                     )
+                repo.retire_expired_name(user_id, name)
                 if repo.name_in_use(user_id, name):
                     return _error("A token with this name already exists", 409)
                 row = repo.create(

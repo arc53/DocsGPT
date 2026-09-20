@@ -25,6 +25,7 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from docsgpt.api.asgi_auth import authenticate, bind_log_context, json_error
+from docsgpt.api.pat.rules import MESSAGE_REPLAY_SCOPES
 from docsgpt.api.asgi_stream import sse_response
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.session import db_readonly
@@ -94,7 +95,8 @@ async def stream_message_events(request: Request) -> Response:
     """
     # Same JWT decoder and OIDC revocation check as the Flask routes. With
     # AUTH_TYPE unset the caller resolves to ``{"sub": "local"}``.
-    decoded, error = await authenticate(request, pat_scope="chat:run")
+    # Same scopes as its Flask sibling GET /api/messages/<id>/tail.
+    decoded, error = await authenticate(request, pat_scope=MESSAGE_REPLAY_SCOPES)
     if error is not None:
         return error
     user_id = decoded.get("sub") if isinstance(decoded, dict) else None

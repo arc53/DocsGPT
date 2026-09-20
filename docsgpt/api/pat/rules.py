@@ -25,6 +25,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Optional
 
+from docsgpt.api.pat.tokens import is_pat
+
 VIEW, QUERY, JSON, FORM, BODY = "view", "query", "json", "form", "body"
 
 Locator = tuple[str, str]
@@ -52,6 +54,11 @@ def _rule(scope: Optional[str] = None, *ids: Locator, any_of: tuple[str, ...] = 
         family = scope.partition(":")[0]
     return Rule(scopes=scopes, family=family, ids=tuple(ids), **kwargs)
 
+
+#: Scopes that admit a token to message replay. Shared by the Flask tail route
+#: below and its ASGI sibling GET /api/messages/<id>/events (docsgpt/api/async_sse.py),
+#: which sits outside this table.
+MESSAGE_REPLAY_SCOPES = ("conversations:read", "chat:run")
 
 _ALL_FAMILIES = ("agents", "sources", "prompts", "tools", "workflows")
 
@@ -220,7 +227,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_single_conversation", "GET"): _rule("conversations:read", blocked_by=("agents",)),
     # A message cannot be tied to an allowlist from here, so any restricted token is kept out.
     ("/api/messages/<string:message_id>/tail", "GET"): _rule(
-        any_of=("conversations:read", "chat:run"), family=None, blocked_by=_ALL_FAMILIES
+        any_of=MESSAGE_REPLAY_SCOPES, family=None, blocked_by=_ALL_FAMILIES
     ),
     ("/api/delete_conversation", "POST"): _rule("conversations:write", blocked_by=("agents",)),
     ("/api/delete_all_conversations", "GET"): _rule("conversations:write", blocked_by=("agents",)),
@@ -360,7 +367,11 @@ def _all_allowed(ids: Iterable[str], allowed: Iterable[str]) -> bool:
 def authorize(request, decoded_token: dict) -> Optional[tuple[dict, int]]:
     """Check a PAT request against the table. ``None`` allows; otherwise ``(body, status)``."""
     url_rule = getattr(request, "url_rule", None)
-    rule = RULES.get((url_rule.rule, request.method)) if url_rule is not None else None
+    if url_rule is None:
+        # Routing failed (unknown path or wrong method): no view will run, so
+        # let Flask answer 404/405 instead of masking it with a 403.
+        return None
+    rule = RULES.get((url_rule.rule, request.method))
     if rule is None:
         return (
             {
@@ -420,8 +431,8 @@ def allowed_ids(request, family: str) -> Optional[set[str]]:
 
     Used by listing routes (``listing=True``) and by ``in_route`` handlers.
     """
-    decoded = getattr(request, "decoded_token", None) or {}
-    if decoded.get("auth_method") != "pat":
+    decoded = getattr(request, "decoded_token", None)
+    if not is_pat(decoded):
         return None
     ids = (decoded.get("resource_filter") or {}).get(family)
     if ids is None:

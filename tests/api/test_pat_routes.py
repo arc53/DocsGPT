@@ -127,6 +127,15 @@ class TestCreate:
         assert _create(client).status_code == 201
         assert _create(client).status_code == 409
 
+    def test_expired_token_does_not_reserve_its_name(self, client, db):
+        assert _create(client).status_code == 201
+        db.execute(text("UPDATE personal_access_tokens SET expires_at = now() - interval '1 day'"))
+        assert _create(client).status_code == 201
+        rows = db.execute(
+            text("SELECT status, revoke_reason FROM personal_access_tokens ORDER BY created_at")
+        ).all()
+        assert [tuple(r) for r in rows] == [("revoked", "expired"), ("active", None)]
+
     def test_per_user_cap(self, client, db, monkeypatch):
         monkeypatch.setattr(pat_tokens.settings, "PAT_MAX_PER_USER", 1)
         assert _create(client, name="one").status_code == 201

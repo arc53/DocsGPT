@@ -69,6 +69,8 @@ curl -X POST "$DOCSGPT_URL/api/import_agent/plan" \
   -d "$(jq -Rs '{yaml: .}' support-bot.agent.yaml)"
 ```
 
+Sources are matched by **name**, and when several of your sources share a name the oldest one wins. A pipeline that re-uploads documentation on every push should therefore upload with `docsgpt-cli sources upload ... --wait --replace` (which removes the older same-named sources) and run `agents apply` afterwards, or the agent stays bound to the first upload.
+
 `/api/import_agent/plan` is a dry run that reports whether the agent would be created or updated and how each referenced source, tool and prompt resolves. `/api/import_agent` applies it. An agent is matched by `metadata.id`, then `metadata.slug`; when nothing matches, a new draft agent is created.
 
 ### GitHub Actions example
@@ -83,7 +85,9 @@ jobs:
         env:
           DOCSGPT_URL: ${{ vars.DOCSGPT_URL }}
           DOCSGPT_TOKEN: ${{ secrets.DOCSGPT_TOKEN }}
-        run: docsgpt-cli agents apply -f agents/
+        run: |
+          docsgpt-cli sources upload docs/*.md --name "Product docs" --wait --replace
+          docsgpt-cli agents apply -f agents/
 ```
 
 ## Scopes
@@ -149,19 +153,23 @@ Restrictions and `agents apply`: a token restricted to specific agents can apply
 - Tokens of a deactivated user (through the admin API or SCIM) stop working immediately and work again if the user is reactivated.
 - Token creation and revocation are recorded in the authentication audit log (`pat_created`, `pat_revoked`), visible to admins.
 
+An expired token's name can be reused: creating a token with that name retires the expired one.
+
 Each user may hold up to `PAT_MAX_PER_USER` live tokens (25 by default). The token list shows when and from which IP address each token was last used.
 
 ## Operator settings
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `PAT_ENABLED` | `true` | Allow users to create and use personal access tokens |
+| `PAT_ENABLED` | `true` | Master switch. When `false`, tokens cannot be created **and every existing token stops authenticating immediately** |
 | `PAT_DEFAULT_LIFETIME_DAYS` | `90` | Lifetime of a token created without an explicit expiry |
 | `PAT_MAX_LIFETIME_DAYS` | `365` | Longest lifetime a user may request |
 | `PAT_ALLOW_NON_EXPIRING` | `false` | Let users create tokens that never expire |
 | `PAT_MAX_PER_USER` | `25` | Maximum number of live tokens per user |
 
-Personal access tokens need a stable user identity, so they are available with `AUTH_TYPE=oidc` and with authentication disabled (single-user self-hosting). They are not available with `simple_jwt` or `session_jwt`. See the [Settings Reference](/Deploying/Settings-Reference) for details.
+Personal access tokens need a stable user identity, so they are available with `AUTH_TYPE=oidc` and with authentication disabled (single-user self-hosting). They are not available with `simple_jwt` or `session_jwt`.
+
+Turning `PAT_ENABLED` off, or switching `AUTH_TYPE` to `simple_jwt` or `session_jwt`, is not limited to the settings page: every pipeline that uses a token starts getting `401` right away. Tokens are not deleted and work again once the setting is restored. See the [Settings Reference](/Deploying/Settings-Reference) for details.
 
 ## Management API
 

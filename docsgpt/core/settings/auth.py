@@ -89,8 +89,10 @@ class AuthSettings(SettingsGroup):
     PAT_ENABLED: bool = Field(
         default=True,
         description=(
-            "Allow users to create personal access tokens. Tokens are only issued under AUTH_TYPE=oidc or "
-            "unset (None); simple_jwt and session_jwt have no stable user identity to bind a token to."
+            "Master switch for personal access tokens. When false, no token can be created AND every existing "
+            "token stops authenticating immediately (pipelines using them get 401); tokens are kept and work "
+            "again when re-enabled. Tokens are only available under AUTH_TYPE=oidc or unset (None); switching "
+            "to simple_jwt or session_jwt disables them the same way."
         ),
     )
     PAT_DEFAULT_LIFETIME_DAYS: int = Field(

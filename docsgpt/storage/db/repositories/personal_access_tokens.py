@@ -87,6 +87,23 @@ class PersonalAccessTokensRepository:
             {"user_id": user_id},
         ).scalar_one()
 
+    def retire_expired_name(self, user_id: str, name: str) -> int:
+        """Revoke an expired token holding ``name`` so the name can be reused.
+
+        An expired token can no longer authenticate but keeps ``status = 'active'``,
+        and the unique index on live names would otherwise reserve its name forever.
+        """
+        result = self._conn.execute(
+            text(
+                "UPDATE personal_access_tokens "
+                "SET status = 'revoked', revoked_at = now(), revoke_reason = 'expired' "
+                "WHERE user_id = :user_id AND name = :name AND status = 'active' "
+                "AND expires_at IS NOT NULL AND expires_at <= now()"
+            ),
+            {"user_id": user_id, "name": name},
+        )
+        return result.rowcount
+
     def name_in_use(self, user_id: str, name: str) -> bool:
         return (
             self._conn.execute(

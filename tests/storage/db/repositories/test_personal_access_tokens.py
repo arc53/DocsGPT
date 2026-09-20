@@ -64,6 +64,24 @@ class TestUniqueness:
         assert not repo.name_in_use("u1", "ci")
         assert _create(repo, token_hash="h2")["name"] == "ci"
 
+    def test_retire_expired_name_only_touches_expired_tokens_with_that_name(self, pg_conn):
+        repo = PersonalAccessTokensRepository(pg_conn)
+        past = datetime.now(timezone.utc) - timedelta(days=1)
+        _create(repo, name="ci", token_hash="h1", expires_at=past)
+        _create(repo, name="other", token_hash="h2", expires_at=past)
+        _create(repo, user_id="u2", name="ci", token_hash="h3", expires_at=past)
+        assert repo.retire_expired_name("u1", "ci") == 1
+        assert not repo.name_in_use("u1", "ci")
+        assert repo.name_in_use("u1", "other") and repo.name_in_use("u2", "ci")
+
+    def test_retire_expired_name_leaves_live_tokens(self, pg_conn):
+        repo = PersonalAccessTokensRepository(pg_conn)
+        _create(repo, token_hash="h1")
+        _create(repo, name="later", token_hash="h2", expires_at=datetime.now(timezone.utc) + timedelta(days=1))
+        assert repo.retire_expired_name("u1", "ci") == 0
+        assert repo.retire_expired_name("u1", "later") == 0
+        assert repo.name_in_use("u1", "ci") and repo.name_in_use("u1", "later")
+
     def test_same_name_for_other_user_is_fine(self, pg_conn):
         repo = PersonalAccessTokensRepository(pg_conn)
         _create(repo, user_id="u1", token_hash="h1")
