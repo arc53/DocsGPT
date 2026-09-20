@@ -86,7 +86,7 @@ jobs:
           DOCSGPT_URL: ${{ vars.DOCSGPT_URL }}
           DOCSGPT_TOKEN: ${{ secrets.DOCSGPT_TOKEN }}
         run: |
-          docsgpt-cli sources upload docs/*.md --name "Product docs" --wait --replace
+          docsgpt-cli sources upload docs/*.md --name "Product docs" --wait --replace --idempotency-key "docs-${{ github.sha }}"
           docsgpt-cli agents apply -f agents/
 ```
 
