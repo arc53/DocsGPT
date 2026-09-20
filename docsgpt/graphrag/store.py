@@ -1265,13 +1265,17 @@ class GraphStore:
                 sql.SQL(
                     """
                     SELECT d.{metadata}, d.{text},
-                           (lower(n.name) = %s OR lower(n.name) LIKE %s) AS is_subject
+                           bool_or(lower(n.name) = %s OR lower(n.name) LIKE %s) AS is_subject
                     FROM graph_node_chunks gc
                     JOIN graph_nodes n ON n.id = gc.node_id
                     JOIN {table} d ON d.id::text = gc.chunk_id
                     WHERE gc.source_id = %s AND d.{source} = %s
                       AND (lower(n.name) = %s OR lower(n.name) LIKE %s OR n.name ILIKE %s)
-                    GROUP BY d.{metadata}, d.{text}, is_subject
+                    -- One page per chunk. Grouping on the subject flag as well
+                    -- split a chunk two entities link -- one naming it, one
+                    -- merely mentioned -- into two identical pages, spending
+                    -- the caller's page budget twice on the same text.
+                    GROUP BY d.{metadata}, d.{text}
                     ORDER BY is_subject DESC, (d.{text} ILIKE %s) DESC
                     LIMIT %s;
                     """

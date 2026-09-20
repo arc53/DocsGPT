@@ -19,6 +19,7 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
+from psycopg.types.json import Jsonb
 
 import docsgpt.graphrag.store as store_module
 from docsgpt.vectorstore import pgconn
@@ -659,6 +660,68 @@ class TestGraphStoreParameterization:
         assert "name" not in [t for t in sql.split() if t == sid]
         assert params[1] == sid
         assert params[-1] == embedding
+
+
+@pytest.mark.integration
+class TestEntityPagesLive:
+    """``entity_pages`` against a real pgvector-shaped table.
+
+    The graph tables alone cannot answer it: the rows it returns live in the
+    documents table the sources were ingested into, so the test creates a
+    minimal one with the same column names ``PGVectorStore`` uses.
+    """
+
+    @pytest.fixture
+    def store(self, postgresql):
+        store = GraphStore(connection_string=_ephemeral_dsn(postgresql.info))
+        try:
+            store._ensure_tables()
+        except Exception as exc:
+            pytest.skip(f"pgvector extension unavailable: {exc}")
+        conn = store._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS documents (
+                id SERIAL PRIMARY KEY,
+                text TEXT,
+                metadata JSONB,
+                source_id TEXT
+            );
+            """
+        )
+        conn.commit()
+        cursor.close()
+        yield store
+        store.close()
+
+    def test_a_page_linked_by_two_entities_is_returned_once(self, store):
+        """One chunk, two nodes whose names both match: an exact hit and a
+        mention. They differ only in whether the page is *about* the entity, so
+        grouping on that flag returned the same page twice and spent a quarter
+        of the page budget on it."""
+        source_id = str(uuid.uuid4())
+        conn = store._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO documents (text, metadata, source_id) VALUES (%s, %s, %s) RETURNING id;",
+            ("Quill is a write-ahead store.", Jsonb({"title": "quill.md"}), source_id),
+        )
+        chunk_id = str(cursor.fetchone()[0])
+        conn.commit()
+        cursor.close()
+        try:
+            subject = store.upsert_node(source_id, "Quill", "quill")
+            mention = store.upsert_node(source_id, "Legacy Quill", "legacy quill")
+            store.link_node_chunk(source_id, subject, chunk_id)
+            store.link_node_chunk(source_id, mention, chunk_id)
+
+            pages = store.entity_pages(source_id, "Quill", limit=4)
+
+            assert [page["text"] for page in pages] == ["Quill is a write-ahead store."]
+            assert pages[0]["metadata"] == {"title": "quill.md"}
+        finally:
+            store.delete_by_source(source_id)
 
 
 @pytest.mark.unit
