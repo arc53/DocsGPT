@@ -268,6 +268,19 @@
           },
           "exposureHint": "将此来源预取到提示词中，或让代理按需将其作为工具进行搜索。"
         },
+        "graphRetrieval": {
+          "title": "图谱检索",
+          "tag": "无需重新导入",
+          "seedStrategy": "遍历起点",
+          "seedStrategyHint": "实体适用于大多数文档。关系可以到达问题中未提及的实体，适合描述事物之间如何关联的内容。",
+          "seedEntities": "实体（推荐）",
+          "seedRelationships": "关系",
+          "passageNodes": "将段落纳入遍历",
+          "passageNodesHint": "段落既可因匹配问题被找到，也可因与匹配内容相连而被找到。在此版本之后构建的图谱上效果最佳。",
+          "blendVector": "与向量检索结合",
+          "blendVectorHint": "加入向量检索结果，避免遗漏图谱未找到的段落。",
+          "agentToolHint": "当此来源的公开方式为“按需搜索工具”，或由智能体型代理使用时，代理也可以自行沿这些关系查找。"
+        },
         "prescreen": {
           "enable": "启用 LLM 预筛选",
           "warning": "会获取更大的候选集并使用 LLM 进行过滤。这会增加查询时的延迟和成本。",

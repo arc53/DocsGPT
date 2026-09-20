@@ -268,6 +268,19 @@
           },
           "exposureHint": "將此來源預先載入提示中，或讓代理以工具形式隨選搜尋。"
         },
+        "graphRetrieval": {
+          "title": "圖譜檢索",
+          "tag": "無需重新匯入",
+          "seedStrategy": "走訪起點",
+          "seedStrategyHint": "實體適用於大多數文件。關係可以到達問題中未提及的實體，適合描述事物之間如何關聯的內容。",
+          "seedEntities": "實體（建議）",
+          "seedRelationships": "關係",
+          "passageNodes": "將段落納入走訪",
+          "passageNodesHint": "段落既可因符合問題而被找到，也可因與符合內容相連而被找到。在此版本之後建立的圖譜上效果最佳。",
+          "blendVector": "與向量檢索結合",
+          "blendVectorHint": "加入向量檢索結果，避免遺漏圖譜未找到的段落。",
+          "agentToolHint": "當此來源的公開方式為「隨選搜尋工具」，或由代理型代理使用時，代理也可以自行沿著這些關係查找。"
+        },
         "prescreen": {
           "enable": "啟用 LLM 預篩選",
           "warning": "會擷取較大的候選集合並使用 LLM 篩選。這將增加查詢延遲與成本。",

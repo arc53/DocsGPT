@@ -183,6 +183,21 @@ def _no_worker_delegation(monkeypatch):
     monkeypatch.setattr("docsgpt.cache._pubsub_redis_creation_failed", True)
 
 
+@pytest.fixture(autouse=True)
+def _graphrag_off_by_default(monkeypatch):
+    """Run with GraphRAG at its shipped default (off), as CI does.
+
+    Every agent that gets a search tool checks its sources for a graph, and
+    that check reads the configured vector database. A dev ``.env`` enabling
+    GraphRAG sent unrelated agent tests to the developer's real database and
+    left a pool to it in ``pgconn._POOLS``, failing a live test that asserts it
+    owns the only pool. Tests that exercise GraphRAG turn it on themselves.
+    """
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "GRAPHRAG_ENABLED", False, raising=False)
+
+
 @pytest.fixture
 def mock_llm():
     llm = Mock()

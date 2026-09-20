@@ -272,6 +272,19 @@
           },
           "exposureHint": "Pre-fetch this source into the prompt, or let the agent search it on demand as a tool."
         },
+        "graphRetrieval": {
+          "title": "Graph retrieval",
+          "tag": "no re-ingest",
+          "seedStrategy": "Start the walk from",
+          "seedStrategyHint": "Entities suit most documents. Relationships can reach an entity the question never names, and suit content that describes how things connect.",
+          "seedEntities": "Entities (recommended)",
+          "seedRelationships": "Relationships",
+          "passageNodes": "Include passages in the walk",
+          "passageNodesHint": "Lets a passage be found both by matching the question and by being connected to what does. Works best on graphs built with this version.",
+          "blendVector": "Blend with vector search",
+          "blendVectorHint": "Adds plain vector search results, so a passage the graph misses is not lost.",
+          "agentToolHint": "Agents can also follow these relationships themselves when this source's exposure is “On-demand search tool”, or when an agentic agent uses it."
+        },
         "prescreen": {
           "enable": "Enable LLM prescreen",
           "warning": "Fetches a larger candidate set and uses an LLM to filter it. This adds query-time latency and cost.",
