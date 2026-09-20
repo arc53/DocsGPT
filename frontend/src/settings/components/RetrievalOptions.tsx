@@ -52,6 +52,7 @@ export type RetrievalOptionsValue = {
     chunks: number;
     score_threshold: number | null;
     rephrase_query: boolean;
+    rrf_k: number | null;
     prescreen: {
       enabled: boolean;
       candidate_k: number;
@@ -81,6 +82,7 @@ export const DEFAULT_RETRIEVAL_OPTIONS: RetrievalOptionsValue = {
     chunks: 2,
     score_threshold: null,
     rephrase_query: true,
+    rrf_k: null,
     prescreen: {
       enabled: false,
       ...DEFAULT_PRESCREEN,
@@ -115,6 +117,14 @@ const GRAPH_DEFAULT_MODEL = '__default__';
  */
 export function scoreThresholdHidden(retriever: string): boolean {
   return retriever === HYBRID_RETRIEVER || retriever === GRAPHRAG_RETRIEVER;
+}
+
+/**
+ * RRF fusion constant only affects the hybrid retriever (classic has no
+ * fusion step; graphrag ranks with PPR), so the control shows for hybrid.
+ */
+export function rrfKVisible(retriever: string): boolean {
+  return retriever === HYBRID_RETRIEVER;
 }
 
 /**
@@ -221,6 +231,7 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
       chunks: retrieval.chunks ?? d.retrieval.chunks,
       score_threshold: retrieval.score_threshold ?? d.retrieval.score_threshold,
       rephrase_query: retrieval.rephrase_query ?? d.retrieval.rephrase_query,
+      rrf_k: retrieval.rrf_k ?? d.retrieval.rrf_k,
       prescreen: {
         enabled: prescreen != null,
         candidate_k: prescreen?.candidate_k ?? DEFAULT_PRESCREEN.candidate_k,
@@ -263,6 +274,7 @@ export function optionsToConfig(value: RetrievalOptionsValue): SourceConfig {
       chunks: value.retrieval.chunks,
       score_threshold: value.retrieval.score_threshold,
       rephrase_query: value.retrieval.rephrase_query,
+      rrf_k: value.retrieval.rrf_k,
       prescreen: ps.enabled
         ? {
             candidate_k: ps.candidate_k,
@@ -487,6 +499,39 @@ export default function RetrievalOptions({
                       raw === ''
                         ? null
                         : Math.min(1, Math.max(0, Number(raw) || 0)),
+                  });
+                }}
+              />
+            </SettingRow>
+          )}
+
+          {rrfKVisible(value.retrieval.retriever) && (
+            <SettingRow
+              label={tr('retrieval.rrfK')}
+              htmlFor="retrieval-rrf-k"
+              description={tr('retrieval.rrfKHint')}
+            >
+              <Input
+                id="retrieval-rrf-k"
+                type="number"
+                min={1}
+                max={500}
+                step="1"
+                className="w-24 text-right"
+                value={
+                  value.retrieval.rrf_k === null
+                    ? ''
+                    : String(value.retrieval.rrf_k)
+                }
+                disabled={disabled}
+                placeholder={tr('retrieval.rrfKPlaceholder')}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setRetrieval({
+                    rrf_k:
+                      raw === ''
+                        ? null
+                        : Math.min(500, Math.max(1, Number(raw) || 1)),
                   });
                 }}
               />

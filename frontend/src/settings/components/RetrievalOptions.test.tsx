@@ -8,6 +8,7 @@ import {
   isPrescreenConfigValid,
   chunkingChanged,
   scoreThresholdHidden,
+  rrfKVisible,
   DEFAULT_RETRIEVAL_OPTIONS,
   RetrievalOptionsValue,
 } from './RetrievalOptions';
@@ -47,6 +48,14 @@ describe('configToOptions (lenient read)', () => {
     expect(opts.retrieval.prescreen.enabled).toBe(true);
     expect(opts.retrieval.prescreen.candidate_k).toBe(50);
     expect(opts.retrieval.prescreen.max_keep).toBe(9);
+  });
+
+  it('defaults rrf_k to null and hydrates a stored value', () => {
+    expect(configToOptions(undefined).retrieval.rrf_k).toBe(null);
+    const opts = configToOptions({
+      retrieval: { retriever: 'hybrid', rrf_k: 10 },
+    } as SourceConfig);
+    expect(opts.retrieval.rrf_k).toBe(10);
   });
 });
 
@@ -115,6 +124,23 @@ describe('optionsToConfig (write path)', () => {
     v.retrieval.prescreen.model = '  gpt-x  ';
     expect(optionsToConfig(v).retrieval?.prescreen?.model).toBe('gpt-x');
   });
+
+  it('serializes rrf_k verbatim (null stays null)', () => {
+    expect(optionsToConfig(DEFAULT_RETRIEVAL_OPTIONS).retrieval?.rrf_k).toBe(
+      null,
+    );
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.retrieval.rrf_k = 25;
+    expect(optionsToConfig(v).retrieval?.rrf_k).toBe(25);
+  });
+});
+
+describe('rrfKVisible', () => {
+  it('shows only for the hybrid retriever', () => {
+    expect(rrfKVisible('hybrid')).toBe(true);
+    expect(rrfKVisible('classic')).toBe(false);
+    expect(rrfKVisible('graphrag')).toBe(false);
+  });
 });
 
 describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
@@ -139,6 +165,7 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
         chunks: 3,
         score_threshold: 0.25,
         rephrase_query: false,
+        rrf_k: 15,
         prescreen: {
           enabled: true,
           candidate_k: 50,
