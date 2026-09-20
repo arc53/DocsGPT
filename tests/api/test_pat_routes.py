@@ -166,6 +166,16 @@ class TestCreate:
         assert "dgpt_pat_" not in json.dumps(metadata)
 
 
+class TestExpiredStatus:
+    def test_expired_token_is_reported_as_expired_not_active(self, client, db):
+        _create(client)
+        with _session():
+            assert json.loads(client.get("/api/user/tokens").data)["tokens"][0]["status"] == "active"
+        db.execute(text("UPDATE personal_access_tokens SET expires_at = now() - interval '1 day'"))
+        with _session():
+            assert json.loads(client.get("/api/user/tokens").data)["tokens"][0]["status"] == "expired"
+
+
 class TestList:
     def test_includes_scope_catalog_and_policy(self, client, db):
         with _session():
@@ -219,10 +229,16 @@ class TestRevoke:
         with _session(sub="bob"):
             assert client.delete(f"/api/user/tokens/{token_id}").status_code == 404
 
-    def test_unknown_and_malformed_ids(self, client, db):
+    @pytest.mark.parametrize(
+        "token_id",
+        [AGENT_A, "not-a-uuid", f"urn:uuid:{AGENT_A}", "{" + AGENT_A + "}", AGENT_A.replace("-", "")],
+    )
+    def test_unknown_and_malformed_ids(self, client, db, token_id):
+        # uuid.UUID() accepts urn:/braced/bare-hex spellings that Postgres rejects; none may reach the cast.
         with _session():
-            assert client.delete(f"/api/user/tokens/{AGENT_A}").status_code == 404
-            assert client.delete("/api/user/tokens/not-a-uuid").status_code == 404
+            assert client.delete(f"/api/user/tokens/{token_id}").status_code == 404
+        with _session(sub="root", roles=("admin", "user")):
+            assert client.delete(f"/api/admin/tokens/{token_id}").status_code == 404
 
 
 class TestAdmin:
@@ -256,3 +272,8 @@ class TestAdmin:
             assert client.post("/api/admin/users/alice/revoke-sessions").status_code == 200
         headers = {"Authorization": f"Bearer {created['token']}"}
         assert client.get("/api/user/me", headers=headers).status_code == 401
+        events = db.execute(
+            text("SELECT metadata FROM auth_events WHERE user_id = 'alice' AND event = 'pat_revoked'")
+        ).all()
+        assert [e[0]["token_id"] for e in events] == [created["personal_access_token"]["id"]]
+        assert events[0][0]["via"] == "admin_sessions_revoked"

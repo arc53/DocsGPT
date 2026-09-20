@@ -250,9 +250,18 @@ class AdminUserSessionsResource(Resource):
         ok = denylist.deny_user(user_id)
         with db_session() as conn:
             # A forced logout that left API credentials alive would not be one.
-            tokens_revoked = PersonalAccessTokensRepository(conn).revoke_all_for_user(
+            revoked_token_ids = PersonalAccessTokensRepository(conn).revoke_all_for_user(
                 user_id, reason="admin_sessions_revoked"
             )
+            # One pat_revoked event per token, like every other revocation path.
+            for token_id in revoked_token_ids:
+                AuthEventsRepository(conn).insert(
+                    user_id,
+                    "pat_revoked",
+                    ip=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent"),
+                    metadata={"token_id": token_id, "by": _actor(), "via": "admin_sessions_revoked"},
+                )
             AuthEventsRepository(conn).insert(
                 user_id,
                 "admin_sessions_revoked",
@@ -262,7 +271,7 @@ class AdminUserSessionsResource(Resource):
                     "by": _actor(),
                     "via": "admin_api",
                     "persisted": ok,
-                    "personal_access_tokens_revoked": tokens_revoked,
+                    "personal_access_tokens_revoked": len(revoked_token_ids),
                 },
             )
         return make_response(jsonify({"success": True, "revoked": ok}), 200)

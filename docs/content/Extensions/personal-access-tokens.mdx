@@ -111,7 +111,7 @@ A `write` scope includes the matching `read` scope.
 | `teams:read` | View teams, members and resource shares |
 | `chat:run` | Ask agents and search sources (`/api/answer`, `/stream`, `/api/search`); used for benchmarking |
 
-`agents:keys` is separate from `agents:write` on purpose: a deployment token that updates agents does not need to be able to read or rotate the secrets other systems use to call them.
+`agents:keys` is separate from `agents:write` on purpose. Creating, publishing or adopting an agent mints its API key; a token without `agents:keys` gets the key back masked (`1234...90ab`), because an agent key keeps working after the token that saw it is revoked. Put differently: a deployment token that updates agents does not need to be able to read or rotate the secrets other systems use to call them.
 
 Some parts of the API are never available to a token, whatever its scopes: token management, the admin API, team management, sign-in flows, device pairing, and the interactive OAuth handshakes used by connectors and MCP servers. A token also never carries the `admin` role, even when its owner is an admin.
 
@@ -135,12 +135,23 @@ For a restricted family the token:
 - can read, update and delete only the listed resources, and listings show only those;
 - **cannot create** new resources of that family, since a new resource would be outside the list;
 - cannot attach a resource outside the list to something else, for example set an agent's source to a source the token may not use;
-- is refused (`403`, `"error": "resource_not_allowed"`) wherever DocsGPT cannot prove the request stays inside the list. Schedules, conversations and analytics are closed to agent-restricted tokens for that reason, the message replay endpoints (`/api/messages/<id>/tail` and `/api/messages/<id>/events`) are closed to every restricted token, and `/api/sources/paginated` is closed to source-restricted tokens (use `/api/sources`).
+- is refused (`403`, `"error": "resource_not_allowed"`) wherever DocsGPT cannot prove the request stays inside the list:
+  - **Conversations, analytics and message replay** (`/api/messages/<id>/tail`, `/api/messages/<id>/events`) are closed to every restricted token. They span all agents and contain cited source text and tool output.
+  - **Schedules** run an agent with a free-form instruction and store the output. A token restricted to agents can list and create schedules for its agents; every other schedule route, and schedules altogether for tokens restricted on another family, are closed.
+  - **Workflow writes** are closed to tokens restricted on sources, tools or prompts, because a workflow graph names those inside its nodes. Such a token also cannot attach a workflow to an agent unless it is restricted on workflows too, in which case only the listed workflows can be attached.
+  - `/api/sources/paginated` is closed to source-restricted tokens (use `/api/sources`).
+
+A restriction covers what the token *asks for*, not what an allowed resource already contains: an agent on the list runs with its own sources, prompt and tools even when the token is also restricted on those families. List an agent only if you are happy for the token to use everything that agent uses.
 
 Restrictions and chat (`chat:run`):
 
-- A token restricted to specific **agents** must pass `agent_id` in the request body, and it must be one of the listed agents. An agent `api_key` in the body is refused.
-- A token restricted to specific **sources** (but not agents) may chat against those sources with `active_docs`. It cannot run agents, because an agent brings its own sources. Restrict the token to agents instead to allow that.
+- A token restricted to specific **agents** must pass exactly one `agent_id` in the request body, and it must be one of the listed agents. An agent `api_key` or an inline workflow in the body is refused.
+- A token restricted to specific **sources** only may chat against those sources with `active_docs`. It cannot run agents, because an agent brings its own sources. Restrict the token to agents instead to allow that.
+- A token restricted on **prompts** or **workflows** must also be restricted to agents to chat.
+- A token restricted on **tools** cannot use chat at all, and a tools restriction cannot be combined with `chat:run` when the token is created. Chat executes tools (an agent's own, or your default tools when there is no agent) and those cannot be held to a list.
+- A `conversation_id` must belong to the agent being run (or to no agent, for agent-less chat). Otherwise the server would continue, append to, or resume pending tool calls of another agent's conversation.
+
+`agents:write` and import: applying an agent definition can create the prompt and tools it references and rewrite the agent's workflow, all under `agents:write` alone. It does not need `prompts:write`, `tools:write` or `workflows:write`, so treat `agents:write` as able to create those through an import.
 
 Restrictions and `agents apply`: a token restricted to specific agents can apply a definition only when it updates one of those agents. A token restricted on sources, prompts, tools or workflows cannot import agents at all, because an import resolves those references by name and may create them.
 
@@ -151,6 +162,7 @@ Restrictions and `agents apply`: a token restricted to specific agents can apply
 - Revoking a token in **Settings → Access Tokens** takes effect on the next request.
 - Admins can list a user's tokens with `GET /api/admin/users/<user_id>/tokens` and revoke any token with `DELETE /api/admin/tokens/<token_id>`. The admin **revoke sessions** action also revokes all of that user's tokens.
 - Tokens of a deactivated user (through the admin API or SCIM) stop working immediately and work again if the user is reactivated.
+- `GET /api/user/tokens` reports a token past its expiry as `"status": "expired"`.
 - Token creation and revocation are recorded in the authentication audit log (`pat_created`, `pat_revoked`), visible to admins.
 
 An expired token's name can be reused: creating a token with that name retires the expired one.

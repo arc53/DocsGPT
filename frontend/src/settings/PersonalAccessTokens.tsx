@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import patService, {
+  AccessTokenApiError,
   AccessTokenPolicy,
   AccessTokenScope,
   CreateAccessTokenResponse,
@@ -134,6 +135,13 @@ export default function PersonalAccessTokens() {
       setTokens((prev) => prev.filter((item) => item.id !== target.id));
       setError(null);
     } catch (err) {
+      if (err instanceof AccessTokenApiError && err.status === 404) {
+        // Already revoked elsewhere (another tab, an admin): it is gone, so
+        // drop the stale row instead of reporting a failure.
+        setTokens((prev) => prev.filter((item) => item.id !== target.id));
+        setError(null);
+        return;
+      }
       console.error('Failed to revoke access token:', err);
       setError(
         (err instanceof Error && err.message) ||

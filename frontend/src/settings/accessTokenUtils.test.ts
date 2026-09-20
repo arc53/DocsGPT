@@ -294,3 +294,14 @@ describe('NO_ESCAPE', () => {
     expect(NO_ESCAPE).toEqual({ interpolation: { escapeValue: false } });
   });
 });
+
+describe('eligibleFilterFamilies with chat:run', () => {
+  const all = ['agents', 'sources', 'prompts', 'tools', 'workflows'];
+  it('never offers a tools restriction next to chat:run', () => {
+    expect(eligibleFilterFamilies(['tools:write', 'chat:run'], all)).toEqual([
+      'agents',
+      'sources',
+    ]);
+    expect(eligibleFilterFamilies(['tools:write'], all)).toEqual(['tools']);
+  });
+});

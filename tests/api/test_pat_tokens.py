@@ -113,6 +113,11 @@ class TestResourceFilter:
         )
         assert set(out) == {"agents", "sources"}
 
+    def test_tools_restriction_cannot_be_combined_with_chat(self):
+        with pytest.raises(ValueError, match="chat:run"):
+            tokens.normalize_resource_filter({"tools": [self.UUID_A]}, ["tools:read", "chat:run"])
+        assert tokens.normalize_resource_filter({"tools": [self.UUID_A]}, ["tools:read"])
+
     @pytest.mark.parametrize(
         "raw,scopes",
         [

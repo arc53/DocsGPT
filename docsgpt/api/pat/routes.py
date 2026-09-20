@@ -9,6 +9,7 @@ token can neither mint a replacement nor widen itself.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from flask import jsonify, make_response, request
 from flask_restx import Namespace, Resource
@@ -50,21 +51,35 @@ def _session_user_id():
 
 
 def _valid_uuid(value: str) -> bool:
+    """Canonical form only: ``uuid.UUID`` also accepts ``urn:uuid:…`` and braces, which Postgres does not."""
     try:
-        uuid.UUID(str(value))
+        return str(uuid.UUID(str(value))) == str(value).lower()
     except (ValueError, AttributeError, TypeError):
         return False
-    return True
+
+
+def _is_expired(expires_at) -> bool:
+    if not expires_at:
+        return False
+    try:
+        moment = expires_at if isinstance(expires_at, datetime) else datetime.fromisoformat(str(expires_at))
+    except ValueError:
+        return False
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment <= datetime.now(timezone.utc)
 
 
 def serialize_token(row: dict) -> dict:
+    # The row keeps status 'active' until someone revokes it; report what is true for a caller.
+    status = "expired" if row["status"] == "active" and _is_expired(row.get("expires_at")) else row["status"]
     return {
         "id": str(row["id"]),
         "name": row["name"],
         "token_prefix": row["token_prefix"],
         "scopes": list(row.get("scopes") or []),
         "resource_filter": row.get("resource_filter") or {},
-        "status": row["status"],
+        "status": status,
         "expires_at": row.get("expires_at"),
         "last_used_at": row.get("last_used_at"),
         "last_used_ip": row.get("last_used_ip"),
@@ -135,6 +150,8 @@ class PersonalAccessTokens(Resource):
         try:
             with db_session() as conn:
                 repo = PersonalAccessTokensRepository(conn)
+                # Serialise this user's creates so concurrent requests cannot both pass the cap check.
+                repo.lock_user(user_id)
                 if repo.count_active(user_id) >= settings.PAT_MAX_PER_USER:
                     return _error(
                         f"Token limit reached ({settings.PAT_MAX_PER_USER}); revoke one first", 409

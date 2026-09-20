@@ -121,6 +121,9 @@ def normalize_resource_filter(raw: Any, scopes: list[str]) -> dict[str, list[str
     # chat:run acts on agents and sources, so both may be restricted alongside it.
     if "chat" in families:
         families.update({"agents", "sources"})
+    if "tools" in raw and "chat:run" in scopes:
+        # Chat executes tools (an agent's own, or the user's defaults), which cannot be held to an allowlist.
+        raise ValueError("resource_filter.tools cannot be combined with the chat:run scope")
     out: dict[str, list[str]] = {}
     for family, ids in raw.items():
         if family not in FILTERABLE_FAMILIES:

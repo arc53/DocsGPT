@@ -75,7 +75,11 @@ export function eligibleFilterFamilies(
   filterableFamilies: string[],
 ): string[] {
   const families = new Set(selected.map(scopeFamily));
-  if (families.has('chat')) CHAT_FAMILIES.forEach((f) => families.add(f));
+  const chat = families.has('chat');
+  if (chat) CHAT_FAMILIES.forEach((f) => families.add(f));
+  // Chat executes tools, which cannot be held to an allowlist, so the server
+  // rejects a tools restriction on a token that also has chat:run.
+  if (chat) families.delete('tools');
   return filterableFamilies.filter((family) => families.has(family));
 }
 

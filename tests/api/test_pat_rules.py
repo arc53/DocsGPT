@@ -246,6 +246,102 @@ class TestResourceRestrictions:
         assert _denied(_call(client, "GET", "/api/sources/paginated", claims)) == "resource_not_allowed"
 
 
+WORKFLOW_A = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+TOOL_A = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+
+
+@pytest.mark.unit
+class TestRelationshipsBeyondIds:
+    """Rows whose content or parent the table cannot see are closed to restricted tokens."""
+
+    @pytest.mark.parametrize("family", ["sources", "tools", "prompts"])
+    def test_workflow_writes_are_closed_to_tokens_restricted_on_what_a_graph_can_name(self, client, family):
+        claims = _claims(["workflows:write"], {family: [SOURCE_A]})
+        assert _denied(_call(client, "POST", "/api/workflows", claims, json={})) == "resource_not_allowed"
+        assert (
+            _denied(_call(client, "PUT", f"/api/workflows/{WORKFLOW_A}", claims, json={}))
+            == "resource_not_allowed"
+        )
+        assert _denied(_call(client, "GET", f"/api/workflows/{WORKFLOW_A}", claims)) is None
+
+    def test_workflow_restricted_token_can_still_edit_its_workflows(self, client):
+        claims = _claims(["workflows:write"], {"workflows": [WORKFLOW_A]})
+        assert _denied(_call(client, "PUT", f"/api/workflows/{WORKFLOW_A}", claims, json={})) is None
+
+    @pytest.mark.parametrize("family", ["sources", "tools", "prompts"])
+    def test_agent_cannot_be_pointed_at_a_workflow_by_a_token_restricted_on_its_contents(self, client, family):
+        claims = _claims(["agents:write"], {family: [SOURCE_A]})
+        for body in ({"workflow": WORKFLOW_A}, {"workflow": {"id": WORKFLOW_A}}):
+            response = _call(client, "PUT", f"/api/update_agent/{AGENT_A}", claims, json=body)
+            assert _denied(response) == "resource_not_allowed"
+        form = _call(client, "PUT", f"/api/update_agent/{AGENT_A}", claims, data={"workflow": WORKFLOW_A})
+        assert _denied(form) == "resource_not_allowed"
+        assert _denied(_call(client, "PUT", f"/api/update_agent/{AGENT_A}", claims, json={"name": "x"})) is None
+
+    def test_workflow_allowlist_lets_the_agent_use_those_workflows_only(self, client):
+        claims = _claims(["agents:write"], {"sources": [SOURCE_A], "workflows": [WORKFLOW_A]})
+        ok = _call(client, "PUT", f"/api/update_agent/{AGENT_A}", claims, json={"workflow": WORKFLOW_A})
+        bad = _call(client, "PUT", f"/api/update_agent/{AGENT_A}", claims, json={"workflow": SOURCE_B})
+        assert _denied(ok) is None
+        assert _denied(bad) == "resource_not_allowed"
+
+    @pytest.mark.parametrize("family", ["sources", "prompts", "tools", "workflows"])
+    def test_schedules_are_closed_to_tokens_restricted_on_anything_but_agents(self, client, family):
+        claims = _claims(["schedules:write"], {family: [SOURCE_A]})
+        for method, path in (
+            ("GET", f"/api/agents/{AGENT_A}/schedules"),
+            ("POST", f"/api/agents/{AGENT_A}/schedules"),
+            ("GET", "/api/schedules/s1"),
+            ("POST", "/api/schedules/s1/run"),
+            ("GET", "/api/schedules/s1/runs"),
+        ):
+            assert _denied(_call(client, method, path, claims, json={})) == "resource_not_allowed", path
+
+    @pytest.mark.parametrize("family", ["agents", "sources", "prompts", "tools", "workflows"])
+    def test_conversations_and_analytics_are_closed_to_every_restricted_token(self, client, family):
+        claims = _claims(["conversations:write", "analytics:read"], {family: [SOURCE_A]})
+        for method, path in (
+            ("GET", "/api/get_conversations"),
+            ("GET", "/api/get_single_conversation?id=c1"),
+            ("GET", "/api/search_conversations?q=x"),
+            ("POST", "/api/delete_conversation"),
+            ("POST", "/api/feedback"),
+            ("POST", "/api/get_message_analytics"),
+            ("POST", "/api/get_user_logs"),
+        ):
+            assert _denied(_call(client, method, path, claims, json={})) == "resource_not_allowed", path
+
+
+@pytest.mark.unit
+class TestAgentKeyVisibility:
+    def _request(self, flask_app, claims):
+        from flask import request
+
+        ctx = flask_app.test_request_context("/")
+        ctx.push()
+        request.decoded_token = claims
+        return ctx, request
+
+    def test_sessions_and_tokens_with_the_keys_scope_see_the_key(self, flask_app):
+        for claims in ({"sub": "alice"}, _claims(["agents:write", "agents:keys"])):
+            ctx, request = self._request(flask_app, claims)
+            try:
+                assert rules.may_see_agent_keys(request) is True
+            finally:
+                ctx.pop()
+
+    def test_token_without_the_keys_scope_does_not(self, flask_app):
+        ctx, request = self._request(flask_app, _claims(["agents:write"]))
+        try:
+            assert rules.may_see_agent_keys(request) is False
+        finally:
+            ctx.pop()
+
+    def test_mask(self):
+        assert rules.mask_agent_key("12345678-aaaa-bbbb-cccc-1234567890ab") == "1234...90ab"
+        assert rules.mask_agent_key("") == "" and rules.mask_agent_key(None) == ""
+
+
 @pytest.mark.unit
 class TestChatRestrictions:
     def _chat(self, client, claims, body):
@@ -273,6 +369,52 @@ class TestChatRestrictions:
         assert self._chat(client, claims, {"question": "hi", "active_docs": SOURCE_A}) is None
         assert self._chat(client, claims, {"question": "hi", "active_docs": [SOURCE_A, SOURCE_B]}) == "resource_not_allowed"
         assert self._chat(client, claims, {"question": "hi", "agent_id": AGENT_A}) == "resource_not_allowed"
+
+    @pytest.mark.parametrize("extra", [{}, {"agents": [AGENT_A]}])
+    def test_tools_restricted_token_cannot_chat_at_all(self, client, extra):
+        claims = _claims(["chat:run"], {"tools": [TOOL_A], **extra})
+        assert self._chat(client, claims, {"question": "hi"}) == "resource_not_allowed"
+        assert self._chat(client, claims, {"question": "hi", "agent_id": AGENT_A}) == "resource_not_allowed"
+
+    @pytest.mark.parametrize("family", ["prompts", "workflows"])
+    def test_agentless_chat_needs_an_agent_restriction_unless_only_sources_are_restricted(self, client, family):
+        claims = _claims(["chat:run"], {family: [SOURCE_A]})
+        assert self._chat(client, claims, {"question": "hi"}) == "resource_not_allowed"
+        assert self._chat(client, claims, {"question": "hi", "agent_id": AGENT_A}) == "resource_not_allowed"
+
+    def test_conversation_must_belong_to_the_agent_being_run(self, client):
+        claims = _claims(["chat:run"], {"agents": [AGENT_A]})
+        body = {"question": "hi", "agent_id": AGENT_A, "conversation_id": "c1"}
+        with patch.object(rules, "_conversation_agent_id", return_value=(True, AGENT_A.upper())) as lookup:
+            assert self._chat(client, claims, body) is None
+        lookup.assert_called_once_with("c1", "alice")
+        for result in ((True, AGENT_B), (True, ""), (False, "")):
+            with patch.object(rules, "_conversation_agent_id", return_value=result):
+                assert self._chat(client, claims, body) == "resource_not_allowed", result
+
+    def test_conversation_resume_with_tool_actions_is_held_to_the_same_rule(self, client):
+        claims = _claims(["chat:run"], {"agents": [AGENT_A]})
+        body = {"agent_id": AGENT_A, "conversation_id": "c1", "tool_actions": [{"call_id": "x"}]}
+        with patch.object(rules, "_conversation_agent_id", return_value=(True, AGENT_B)):
+            assert self._chat(client, claims, body) == "resource_not_allowed"
+
+    def test_agentless_token_cannot_continue_an_agent_conversation(self, client):
+        claims = _claims(["chat:run"], {"sources": [SOURCE_A]})
+        body = {"question": "hi", "active_docs": SOURCE_A, "conversation_id": "c1"}
+        with patch.object(rules, "_conversation_agent_id", return_value=(True, AGENT_B)):
+            assert self._chat(client, claims, body) == "resource_not_allowed"
+        with patch.object(rules, "_conversation_agent_id", return_value=(True, "")):
+            assert self._chat(client, claims, body) is None
+
+    def test_unrestricted_token_never_pays_for_the_conversation_lookup(self, client):
+        with patch.object(rules, "_conversation_agent_id") as lookup:
+            self._chat(client, _claims(["chat:run"]), {"question": "hi", "conversation_id": "c1"})
+        lookup.assert_not_called()
+
+    def test_conversation_lookup_fails_closed(self):
+        with patch("docsgpt.storage.db.session.db_readonly", side_effect=RuntimeError("db down")):
+            assert rules._conversation_agent_id("c1", "alice") == (False, "")
+        assert rules._conversation_agent_id("c1", None) == (False, "")
 
     def test_retrieval_test_honours_the_source_allowlist(self, client):
         claims = _claims(["chat:run"], {"sources": [SOURCE_A]})

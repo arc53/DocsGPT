@@ -150,7 +150,7 @@ class TestRevoke:
         _create(repo, name="a", token_hash="h1")
         _create(repo, name="b", token_hash="h2")
         _create(repo, user_id="u2", token_hash="h3")
-        assert repo.revoke_all_for_user("u1") == 2
+        assert len(repo.revoke_all_for_user("u1")) == 2
         assert repo.list_for_user("u1") == []
         assert len(repo.list_for_user("u2")) == 1
 

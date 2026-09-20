@@ -76,6 +76,13 @@ class PersonalAccessTokensRepository:
         result = self._conn.execute(text(sql), {"user_id": user_id})
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def lock_user(self, user_id: str) -> None:
+        """Hold a per-user advisory lock until the transaction ends."""
+        self._conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"personal_access_tokens:{user_id}"},
+        )
+
     def count_active(self, user_id: str) -> int:
         """Live tokens only: revoked and expired rows don't count against the per-user cap."""
         return self._conn.execute(
@@ -161,13 +168,14 @@ class PersonalAccessTokensRepository:
             params["user_id"] = user_id
         return self._conn.execute(text(sql), params).rowcount > 0
 
-    def revoke_all_for_user(self, user_id: str, *, reason: str = "admin_revoked") -> int:
+    def revoke_all_for_user(self, user_id: str, *, reason: str = "admin_revoked") -> list[str]:
+        """Revoke every live token of a user. Returns the revoked token ids (for the audit trail)."""
         result = self._conn.execute(
             text(
                 "UPDATE personal_access_tokens "
                 "SET status = 'revoked', revoked_at = now(), revoke_reason = :reason "
-                "WHERE user_id = :user_id AND status = 'active'"
+                "WHERE user_id = :user_id AND status = 'active' RETURNING id"
             ),
             {"user_id": user_id, "reason": reason},
         )
-        return result.rowcount
+        return [str(row[0]) for row in result.fetchall()]
