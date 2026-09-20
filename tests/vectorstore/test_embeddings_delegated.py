@@ -184,8 +184,10 @@ class TestFailureCooldown:
         result.get.return_value = [[0.1, 0.2]]
         embeddings = DelegatedEmbeddings("granite-311m")
         with patch.dict("sys.modules", {"docsgpt.celery_init": MagicMock(celery=celery)}):
-            for _ in range(3):
-                assert embeddings.embed_query("q") == [0.1, 0.2]
+            # Distinct queries: identical repeats are served from the
+            # short-lived query cache without another broker round trip.
+            for i in range(3):
+                assert embeddings.embed_query(f"q{i}") == [0.1, 0.2]
         assert celery.send_task.call_count == 3
 
 
