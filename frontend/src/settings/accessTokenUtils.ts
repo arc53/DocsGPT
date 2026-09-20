@@ -222,3 +222,11 @@ export function toResourceOptions(
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
+
+/**
+ * i18next HTML-escapes interpolated values by default, which turns a date like
+ * 26/09/2026 into `26&#x2F;09&#x2F;2026` and mangles token names containing
+ * `&` or `'`. React already escapes on render, so opt out for those values
+ * (same approach as utils/streamingStatusUtils.ts).
+ */
+export const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;

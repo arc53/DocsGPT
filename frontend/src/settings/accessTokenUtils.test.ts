@@ -10,6 +10,7 @@ import {
   groupScopesByFamily,
   isScopeImplied,
   isUuid,
+  NO_ESCAPE,
   NO_EXPIRY,
   relativeTime,
   restrictionCounts,
@@ -285,5 +286,11 @@ describe('toResourceOptions', () => {
 
   it('returns nothing for an error body', () => {
     expect(toResourceOptions('agents', { success: false })).toEqual([]);
+  });
+});
+
+describe('NO_ESCAPE', () => {
+  it('turns off i18next HTML escaping so dates and names render as typed', () => {
+    expect(NO_ESCAPE).toEqual({ interpolation: { escapeValue: false } });
   });
 });

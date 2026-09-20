@@ -30,6 +30,7 @@ import {
   expiryOptions,
   groupScopesByFamily,
   isScopeImplied,
+  NO_ESCAPE,
   NO_EXPIRY,
   PICKER_FAMILIES,
   ResourceOption,
@@ -306,12 +307,13 @@ export default function CreateAccessTokenModal({
                     date: formatDateOnly(
                       new Date(Date.now() + expiry * DAY_MS).toISOString(),
                     ),
+                    ...NO_ESCAPE,
                   })}
             </p>
           </div>
         </div>
 
-        <fieldset className="flex flex-col gap-3">
+        <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
           <legend className="text-foreground dark:text-foreground text-sm font-semibold">
             {t('settings.accessTokens.create.scopes')}
             <span className="text-red-500">*</span>
@@ -355,7 +357,7 @@ export default function CreateAccessTokenModal({
                           checked={checked}
                           disabled={implied}
                           onChange={() => toggleScope(scope.name)}
-                          className="accent-primary mt-0.5 size-4 shrink-0 rounded-sm border-gray-300 bg-transparent"
+                          className="accent-primary mt-0.5 size-4 shrink-0 rounded-sm border-gray-300 bg-transparent dark:[color-scheme:dark]"
                         />
                         <span className="flex min-w-0 flex-col gap-0.5">
                           <code className="text-foreground dark:text-foreground font-mono text-xs font-medium">

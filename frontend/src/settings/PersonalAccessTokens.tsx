@@ -33,6 +33,7 @@ import { formatDateOnly, formatDateTime } from '../utils/dateTimeUtils';
 import {
   countLiveTokens,
   expiryStatus,
+  NO_ESCAPE,
   relativeTime,
   restrictionCounts,
 } from './accessTokenUtils';
@@ -197,8 +198,8 @@ export default function PersonalAccessTokens() {
       >
         <TriangleAlert className="size-3 shrink-0" aria-hidden="true" />
         {expired
-          ? t('settings.accessTokens.expired', { date })
-          : t('settings.accessTokens.expiresSoon', { date })}
+          ? t('settings.accessTokens.expired', { date, ...NO_ESCAPE })
+          : t('settings.accessTokens.expiresSoon', { date, ...NO_ESCAPE })}
       </span>
     );
   };
@@ -210,7 +211,10 @@ export default function PersonalAccessTokens() {
       size="sm"
       className="text-destructive hover:text-destructive border-destructive/40 hover:bg-destructive/10 rounded-full px-4"
       onClick={() => requestRevoke(item)}
-      aria-label={t('settings.accessTokens.revokeAria', { name: item.name })}
+      aria-label={t('settings.accessTokens.revokeAria', {
+        name: item.name,
+        ...NO_ESCAPE,
+      })}
     >
       {t('settings.accessTokens.revoke')}
     </Button>
@@ -431,6 +435,7 @@ export default function PersonalAccessTokens() {
       <ConfirmationModal
         message={t('settings.accessTokens.revokeWarning', {
           name: tokenToRevoke?.name ?? '',
+          ...NO_ESCAPE,
         })}
         modalState={revokeState}
         setModalState={setRevokeState}

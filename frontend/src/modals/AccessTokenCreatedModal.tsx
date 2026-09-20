@@ -5,6 +5,7 @@ import { baseURL } from '../api/client';
 import CopyButton from '../components/CopyButton';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
+import { NO_ESCAPE } from '../settings/accessTokenUtils';
 
 interface AccessTokenCreatedModalProps {
   /** Plaintext secret; `null` keeps the modal closed. Held only in the parent's component state. */
@@ -49,7 +50,10 @@ export default function AccessTokenCreatedModal({
             {t('settings.accessTokens.created.title')}
           </h2>
           <p className="text-muted-foreground mt-2 text-sm break-words">
-            {t('settings.accessTokens.created.subtitle', { name })}
+            {t('settings.accessTokens.created.subtitle', {
+              name,
+              ...NO_ESCAPE,
+            })}
           </p>
         </div>
 
