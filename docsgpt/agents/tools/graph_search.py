@@ -28,7 +28,8 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from docsgpt.agents.tools.base import Tool
-from docsgpt.core.settings import settings
+from docsgpt.graphrag import graphrag_available
+from docsgpt.retriever.labels import labels_from_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,24 @@ class GraphSearchTool(Tool):
             self._store = GraphStore()
         return self._store
 
+    def _release_store(self) -> None:
+        """Hand the pooled connection back at the end of an action.
+
+        The executor caches this tool for the whole agent run, so a store kept
+        between actions pins one connection of the shared pgvector pool across
+        every LLM round trip of that run -- minutes at a time, and enough
+        concurrent runs exhaust the pool. ``GraphRAGRetriever`` releases its
+        store before falling back for the same reason. Checking one back out
+        costs a pool acquire.
+        """
+        store, self._store = self._store, None
+        if store is None:
+            return
+        try:
+            store.close()
+        except Exception as exc:  # noqa: BLE001 -- releasing must not fail an action
+            logger.debug(f"Graph tool could not release its store: {exc}")
+
     def _embed(self, text: str) -> Optional[List[float]]:
         try:
             from docsgpt.vectorstore.base import get_embeddings
@@ -72,7 +91,9 @@ class GraphSearchTool(Tool):
 
     # -- actions -------------------------------------------------------------
     def execute_action(self, action_name: str, **kwargs):
-        if not settings.GRAPHRAG_ENABLED:
+        # The graph lives in the pgvector store, so the flag alone is not
+        # enough: under another vector store there is no graph to read.
+        if not graphrag_available():
             return "The knowledge graph is not enabled for this deployment."
         if not self._sources():
             return "No graph-backed sources are configured."
@@ -86,6 +107,8 @@ class GraphSearchTool(Tool):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Graph tool action {action_name} failed: {e}", exc_info=True)
             return "The graph lookup failed."
+        finally:
+            self._release_store()
         return f"Unknown action: {action_name}"
 
     def _search_entities(self, **kwargs) -> str:
@@ -137,18 +160,17 @@ class GraphSearchTool(Tool):
         parts: List[str] = []
         for source_id in self._sources():
             for page in store.entity_pages(source_id, entity):
-                metadata = page.get("metadata") or {}
-                title = (
-                    metadata.get("file_path")
-                    or metadata.get("title")
-                    or metadata.get("source")
-                    or "document"
-                )
-                text = (page.get("text") or "")[:MAX_PAGE_CHARS]
-                doc = {"title": title, "text": text, "source": metadata.get("source", "")}
+                text = page.get("text") or ""
+                # The retrievers' own labelling: a page read here and the same
+                # chunk retrieved by internal_search are one document, and
+                # citations key on (source, title). Labelling it differently
+                # gives that document two citation numbers.
+                labels = labels_from_metadata(page.get("metadata"), text, source_id)
+                doc = {**labels, "text": text}
                 if doc not in self.retrieved_docs:
                     self.retrieved_docs.append(doc)
-                parts.append(f"--- {title} ---\n{text}")
+                header = labels["filename"] or labels["title"]
+                parts.append(f"--- {header} ---\n{text[:MAX_PAGE_CHARS]}")
         if not parts:
             return f"No documents mention {entity!r}."
         return "\n\n".join(parts)
@@ -259,7 +281,7 @@ def add_graph_search_tool(tools_dict: Dict, retriever_config: Dict) -> None:
     tool follows that same per-source exposure choice. A graph source left at
     ``prefetch`` in a classic agent is used for ranking only.
     """
-    if not settings.GRAPHRAG_ENABLED:
+    if not graphrag_available():
         return
     source = retriever_config.get("source") or {}
     if not source.get("active_docs") or not sources_have_graph(source):
