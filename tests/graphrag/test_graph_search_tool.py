@@ -22,6 +22,17 @@ from docsgpt.core.settings import settings
 SOURCE = {"active_docs": ["src-1"]}
 
 
+@pytest.fixture(autouse=True)
+def _graph_store_is_pgvector(monkeypatch):
+    """The graph only exists under pgvector, and CI's default is faiss.
+
+    Set here rather than per test so a case that forgets it fails for its own
+    reason instead of the gate; the cases about a different vector store
+    override it in the test body.
+    """
+    monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
+
+
 class _StubStore:
     def __init__(self, nodes=None, relationships=None, pages=None):
         self._nodes = nodes or []
