@@ -27,6 +27,34 @@ def _request(headers: dict | None = None) -> Request:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestAuthenticate:
+    @pytest.mark.parametrize("authorization", ["Token token", "Bearer", "Bearer "])
+    async def test_malformed_authorization_header_returns_invalid_token(
+        self, monkeypatch, authorization
+    ):
+        monkeypatch.setattr(asgi_auth.settings, "AUTH_TYPE", "simple_jwt")
+        decoded, error = await asgi_auth.authenticate(
+            _request({"Authorization": authorization})
+        )
+
+        assert decoded is None
+        assert error.status_code == 401
+        assert json.loads(error.body) == {
+            "message": "Authentication error: invalid token",
+            "error": "invalid_token",
+        }
+
+    async def test_valid_bearer_token_is_decoded(self, monkeypatch):
+        monkeypatch.setattr(asgi_auth.settings, "AUTH_TYPE", "simple_jwt")
+        monkeypatch.setattr(asgi_auth.settings, "JWT_SECRET_KEY", "test-secret")
+        token = jwt.encode({"sub": "alice"}, "test-secret", algorithm="HS256")
+
+        decoded, error = await asgi_auth.authenticate(
+            _request({"Authorization": f"Bearer {token}"})
+        )
+
+        assert error is None
+        assert decoded == {"sub": "alice"}
+
     async def test_local_mode_resolves_local_user(self, monkeypatch):
         monkeypatch.setattr(asgi_auth.settings, "AUTH_TYPE", None)
         decoded, error = await asgi_auth.authenticate(_request())
