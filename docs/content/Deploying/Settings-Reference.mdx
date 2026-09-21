@@ -1451,6 +1451,23 @@ Type `int`, default `30`, must be `>= 1`.
 Days guardrail events are kept before the cleanup task removes them.
 
 
+## Quotas
+
+Quota window and the treatment of unpriced models.
+
+### `QUOTA_PERIOD`
+
+Type `"day" | "week" | "month"`, default `month`.
+
+Window every usage quota is measured over. Windows are calendar-aligned in UTC: a day starts at 00:00, a week on Monday, a month on the 1st.
+
+### `QUOTA_UNPRICED_RATE_PER_MILLION`
+
+Type `list[float]`, default unset.
+
+Fallback `[input, output]` USD rates per 1M tokens for models that declare no price, e.g. `[0.5, 1.5]`. Unset, such calls are recorded at $0 and only count toward token quotas.
+
+
 ## Scheduler
 
 Cadence, quotas and timeouts of scheduled runs.

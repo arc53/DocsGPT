@@ -10,6 +10,8 @@ models:
     description: Free-tier 480B MoE coder model with strong agentic tool use; rate-limited
     context_window: 262000
     attachments: []
+    input_cost_per_million: 0.0
+    output_cost_per_million: 0.0
 
   - id: deepseek/deepseek-v3.2
     display_name: DeepSeek V3.2
@@ -17,9 +19,13 @@ models:
     context_window: 131072
     attachments: []
     supports_structured_output: true
+    input_cost_per_million: 0.23
+    output_cost_per_million: 0.34
 
   - id: anthropic/claude-sonnet-4.6
     display_name: Claude Sonnet 4.6 (via OpenRouter)
     description: Frontier Sonnet-class model with 1M context, vision, and extended thinking
     context_window: 1000000
     supports_structured_output: true
+    input_cost_per_million: 3.0
+    output_cost_per_million: 15.0

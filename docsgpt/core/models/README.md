@@ -108,8 +108,10 @@ defaults:                              # optional, applied to every model below
   supports_streaming: bool             # default true
   attachments: [<alias-or-mime>, ...]  # default []
   context_window: int                  # default 128000
-  input_cost_per_token: float          # default null
-  output_cost_per_token: float         # default null
+  input_cost_per_million: float        # USD per 1M prompt tokens; default null (unpriced)
+  output_cost_per_million: float       # USD per 1M generated tokens; default null
+  cached_input_cost_per_million: float # prompt-cache reads; default: the input rate
+  cache_write_cost_per_million: float  # prompt-cache writes; default: the input rate
   reasoning_effort: <string>           # default null; none|minimal|low|medium|high|xhigh (subset is model-dependent)
   api_flavor: <string>                  # chat_completions (default) or responses
 
