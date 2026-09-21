@@ -436,7 +436,6 @@
       "label": "Teams",
       "subtitle": "Verwalte deine Teams, Mitglieder und geteilten Ressourcen.",
       "newTeam": "Neues Team",
-      "backToTeams": "Zurück zu den Teams",
       "createTeam": "Team erstellen",
       "createTeamDescription": "Gib deinem Team einen Namen. Mitglieder und Ressourcen kannst du nach dem Erstellen hinzufügen.",
       "editTeam": "Bearbeiten",
@@ -565,7 +564,6 @@
       "queryParameters": "Abfrageparameter",
       "body": "Body",
       "deleteActionWarning": "Bist du sicher, dass du die Aktion \"{{name}}\" löschen möchtest?",
-      "backToAllTools": "Zurück zu allen Werkzeugen",
       "save": "Speichern",
       "saving": "Speichere...",
       "saveFailed": "Werkzeug-Konfiguration konnte nicht gespeichert werden",
@@ -872,10 +870,7 @@
           "subtitle": "Das neue Geheimnis für \"{{name}}\" ist bereit. Das alte funktioniert nicht mehr."
         }
       }
-    },
-    "scrollTabsLeft": "Tabs nach links scrollen",
-    "tabsAriaLabel": "Einstellungs-Tabs",
-    "scrollTabsRight": "Tabs nach rechts scrollen"
+    }
   },
   "modals": {
     "uploadDoc": {
@@ -1647,7 +1642,17 @@
     "increaseZoom": "Vergrößern"
   },
   "navigation": {
-    "agents": "Agenten"
+    "agents": "Agenten",
+    "backToApp": "Zurück zur App",
+    "backToAgents": "Zurück zu den Agenten",
+    "sections": {
+      "groups": {
+        "personal": "Persönlich",
+        "workspace": "Arbeitsbereich",
+        "insights": "Auswertungen",
+        "administration": "Administration"
+      }
+    }
   },
   "teams": {
     "switcher": {

@@ -9,7 +9,8 @@ import { selectToken } from '../preferences/preferenceSlice';
 import Analytics from '../settings/Analytics';
 import Logs from '../settings/Logs';
 import { formatDateTime } from '../utils/dateTimeUtils';
-import AgentPageHeader from './AgentPageHeader';
+import { CurrentSectionHeader } from '../navigation/SectionPageHeader';
+import SectionPills from '../navigation/SectionPills';
 import GuardrailEvents from './components/GuardrailEvents';
 import { Agent } from './types';
 
@@ -39,51 +40,46 @@ export default function AgentLogs() {
     if (agentId) fetchAgent(agentId);
   }, [agentId, token]);
 
-  const agentEditPath =
-    agent?.agent_type === 'workflow'
-      ? `/agents/workflow/edit/${agentId}`
-      : `/agents/edit/${agentId}`;
-
   return (
-    <div className="p-4 pt-4 md:p-12 md:pt-4">
-      <AgentPageHeader
-        agentId={agentId}
-        agentName={agent?.name}
-        agentEditPath={agentEditPath}
-        currentPage="logs"
-        className="px-4"
-      />
-      <div className="mt-6 flex flex-col gap-3 px-4">
-        {agent && (
-          <div className="flex flex-col gap-1">
-            <p className="text-foreground">{agent.name}</p>
-            <p className="text-muted-foreground text-xs">
-              {agent.last_used_at
-                ? t('agents.logs.lastUsedAt') +
-                  ' ' +
-                  formatDateTime(agent.last_used_at)
-                : t('agents.logs.noUsageHistory')}
-            </p>
+    <div className="h-full overflow-auto p-4 md:p-12">
+      <div className="mx-auto w-full max-w-6xl">
+        <CurrentSectionHeader />
+        <SectionPills className="mt-4" />
+        <div className="mt-6 flex flex-col gap-3">
+          {agent && (
+            <div className="flex flex-col gap-1">
+              <p className="text-foreground">{agent.name}</p>
+              <p className="text-muted-foreground text-xs">
+                {agent.last_used_at
+                  ? t('agents.logs.lastUsedAt') +
+                    ' ' +
+                    formatDateTime(agent.last_used_at)
+                  : t('agents.logs.noUsageHistory')}
+              </p>
+            </div>
+          )}
+        </div>
+        {loadingAgent ? (
+          <div className="flex h-[345px] w-full items-center justify-center">
+            <Spinner />
           </div>
+        ) : (
+          agent && <Analytics agentId={agent.id} />
+        )}
+        {!loadingAgent && agent && <GuardrailEvents agentId={agent.id} />}
+        {loadingAgent ? (
+          <div className="flex h-[55vh] w-full items-center justify-center">
+            <Spinner />
+          </div>
+        ) : (
+          agent && (
+            <Logs
+              agentId={agent.id}
+              tableHeader={t('agents.logs.tableHeader')}
+            />
+          )
         )}
       </div>
-      {loadingAgent ? (
-        <div className="flex h-[345px] w-full items-center justify-center">
-          <Spinner />
-        </div>
-      ) : (
-        agent && <Analytics agentId={agent.id} />
-      )}
-      {!loadingAgent && agent && <GuardrailEvents agentId={agent.id} />}
-      {loadingAgent ? (
-        <div className="flex h-[55vh] w-full items-center justify-center">
-          <Spinner />
-        </div>
-      ) : (
-        agent && (
-          <Logs agentId={agent.id} tableHeader={t('agents.logs.tableHeader')} />
-        )
-      )}
     </div>
   );
 }

@@ -28,6 +28,7 @@ import { Modal } from '../components/ui/modal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MoveToFolderModal from '../modals/MoveToFolderModal';
 import { ActiveState } from '../models/misc';
+import { useSidebarLevel } from '../navigation/SidebarLevelProvider';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 
 type AgentMenuOption = {
@@ -44,6 +45,12 @@ import {
   setAgents,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
+import {
+  agentChatPath,
+  agentEditPath,
+  agentLogsPath,
+  sharedAgentPath,
+} from './paths';
 import { Agent } from './types';
 
 type AgentCardProps = {
@@ -61,6 +68,10 @@ export default function AgentCard({
 }: AgentCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Opening an agent is a level change, so it goes through the sidebar's
+  // navigator: the panel starts sliding on the click rather than waiting for
+  // the editor to mount.
+  const { goToLevel } = useSidebarLevel();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const userAgents = useSelector(selectAgents);
@@ -91,7 +102,7 @@ export default function AgentCard({
         label: 'Logs',
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
-          navigate(`/agents/logs/${agent.id}`);
+          goToLevel(agentLogsPath(agent.id));
         },
         variant: 'default',
         iconWidth: 14,
@@ -103,9 +114,9 @@ export default function AgentCard({
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           if (agent.agent_type === 'workflow') {
-            navigate(`/agents/workflow/edit/${agent.id}`);
+            goToLevel(agentEditPath(agent.id, true));
           } else {
-            navigate(`/agents/edit/${agent.id}`);
+            goToLevel(agentEditPath(agent.id));
           }
         },
         variant: 'default',
@@ -189,9 +200,9 @@ export default function AgentCard({
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           if (agent.agent_type === 'workflow') {
-            navigate(`/agents/workflow/edit/${agent.id}`);
+            goToLevel(agentEditPath(agent.id, true));
           } else {
-            navigate(`/agents/edit/${agent.id}`);
+            goToLevel(agentEditPath(agent.id));
           }
         },
         variant: 'default',
@@ -220,7 +231,7 @@ export default function AgentCard({
         label: 'Open',
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
-          navigate(`/agents/shared/${agent.shared_token}`);
+          navigate(sharedAgentPath(agent.shared_token));
         },
         variant: 'default',
         iconWidth: 12,
@@ -258,11 +269,11 @@ export default function AgentCard({
     if (section === 'user' || section === 'team') {
       if (agent.status === 'published') {
         dispatch(setSelectedAgent(agent));
-        navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
+        navigate(agent.id ? agentChatPath(agent.id) : '/c/new');
       }
     }
     if (section === 'shared') {
-      navigate(`/agents/shared/${agent.shared_token}`);
+      navigate(sharedAgentPath(agent.shared_token));
     }
   };
 

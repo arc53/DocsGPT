@@ -731,7 +731,7 @@ test.describe('tier-b · guardrails builder UI', () => {
       expect(await dbAgentConfig(agentId)).toEqual({});
 
       const page = await context.newPage();
-      await page.goto(`/agents/edit/${agentId}`);
+      await page.goto(`/agents/manage/edit/${agentId}`);
 
       const section = page.getByTestId('guardrails-section');
       await expect(section).toBeVisible();
