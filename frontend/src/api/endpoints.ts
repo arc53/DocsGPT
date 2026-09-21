@@ -2,6 +2,7 @@ const endpoints = {
   USER: {
     CONFIG: '/api/config',
     ME: '/api/user/me',
+    QUOTA: '/api/user/quota',
     NEW_TOKEN: '/api/generate_token',
     OIDC_LOGIN: '/api/auth/oidc/login',
     OIDC_TOKEN: '/api/auth/oidc/token',
@@ -173,6 +174,12 @@ const endpoints = {
     USAGE: '/api/admin/usage',
     AUDIT: '/api/admin/audit',
     DEVICE_AUDIT: '/api/admin/devices/audit',
+    QUOTAS: '/api/admin/quotas',
+    QUOTA_INSTANCE: '/api/admin/quotas/instance',
+    QUOTA_TEAM: (id: string) =>
+      `/api/admin/quotas/teams/${encodeURIComponent(id)}`,
+    QUOTA_USER: (id: string) =>
+      `/api/admin/quotas/users/${encodeURIComponent(id)}`,
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

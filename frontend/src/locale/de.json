@@ -375,6 +375,13 @@
         "toolCalls": "Werkzeugaufrufe",
         "runSuccess": "Erfolgsquote",
         "feedback": "Feedback"
+      },
+      "quota": {
+        "title": "Ihr Nutzungskontingent",
+        "resets": "Wird zurückgesetzt: {{resetsAt}}",
+        "tokens": "Tokens",
+        "cost": "Kosten",
+        "usedOf": "{{used}} von {{limit}}"
       }
     },
     "logs": {
@@ -1262,6 +1269,10 @@
       "running": "Läuft…",
       "denied": "Vom Benutzer abgelehnt",
       "failed": "fehlgeschlagen"
+    },
+    "quotaExceeded": {
+      "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",
+      "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt."
     }
   },
   "agents": {

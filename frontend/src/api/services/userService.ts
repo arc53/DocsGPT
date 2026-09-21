@@ -7,6 +7,8 @@ const userService = {
     throttledApiClient.get(endpoints.USER.CONFIG, null),
   getMe: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.ME, token),
+  getQuota: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.QUOTA, token),
   getNewToken: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
   // Token deliberately null: a stale Authorization header must not be able

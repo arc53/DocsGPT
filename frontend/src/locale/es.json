@@ -375,6 +375,13 @@
         "toolCalls": "Llamadas a Herramientas",
         "runSuccess": "Éxito de Ejecución",
         "feedback": "Retroalimentación"
+      },
+      "quota": {
+        "title": "Tu cuota de uso",
+        "resets": "Se restablece el {{resetsAt}}",
+        "tokens": "Tokens",
+        "cost": "Coste",
+        "usedOf": "{{used}} de {{limit}}"
       }
     },
     "logs": {
@@ -1262,6 +1269,10 @@
       "running": "Ejecutando…",
       "denied": "Denegado por el usuario",
       "failed": "falló"
+    },
+    "quotaExceeded": {
+      "tokens": "Has usado {{used}} de tu cuota de {{limit}} tokens. Se restablece el {{resetsAt}}.",
+      "cost": "Has usado {{used}} de tu presupuesto de uso de {{limit}}. Se restablece el {{resetsAt}}."
     }
   },
   "agents": {

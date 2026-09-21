@@ -375,6 +375,13 @@
         "toolCalls": "ツール呼び出し",
         "runSuccess": "実行成功率",
         "feedback": "フィードバック"
+      },
+      "quota": {
+        "title": "利用クォータ",
+        "resets": "{{resetsAt}} にリセット",
+        "tokens": "トークン",
+        "cost": "コスト",
+        "usedOf": "{{used}} / {{limit}}"
       }
     },
     "logs": {
@@ -1262,6 +1269,10 @@
       "running": "実行中…",
       "denied": "ユーザーによって拒否されました",
       "failed": "失敗"
+    },
+    "quotaExceeded": {
+      "tokens": "トークンクォータ {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。",
+      "cost": "利用予算 {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。"
     }
   },
   "agents": {

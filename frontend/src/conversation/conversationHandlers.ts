@@ -1,7 +1,10 @@
+import i18n from 'i18next';
+
 import { baseURL } from '../api/client';
 import conversationService from '../api/services/conversationService';
 import { Doc } from '../models/misc';
 import { Answer, FEEDBACK, RetrievalPayload } from './conversationModels';
+import { isQuotaError, quotaErrorMessage } from './quotaError';
 import { ToolCallsType } from './types';
 
 /**
@@ -48,7 +51,9 @@ async function _handlePreStreamHttpError(
     if (text) {
       try {
         const parsed = JSON.parse(text);
-        if (parsed && typeof parsed === 'object') {
+        if (isQuotaError(parsed)) {
+          message = quotaErrorMessage(parsed, i18n.t.bind(i18n), i18n.language);
+        } else if (parsed && typeof parsed === 'object') {
           message =
             (typeof parsed.message === 'string' && parsed.message) ||
             (typeof parsed.error === 'string' && parsed.error) ||

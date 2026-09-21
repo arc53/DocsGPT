@@ -380,6 +380,13 @@
         "toolCalls": "Tool Calls",
         "runSuccess": "Run Success",
         "feedback": "Feedback"
+      },
+      "quota": {
+        "title": "Your usage quota",
+        "resets": "Resets {{resetsAt}}",
+        "tokens": "Tokens",
+        "cost": "Cost",
+        "usedOf": "{{used}} of {{limit}}"
       }
     },
     "logs": {
@@ -1273,6 +1280,10 @@
       "running": "Running…",
       "denied": "Denied by user",
       "failed": "failed"
+    },
+    "quotaExceeded": {
+      "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",
+      "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}."
     }
   },
   "agents": {
