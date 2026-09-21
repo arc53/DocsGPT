@@ -115,8 +115,6 @@ Requests are also bounded: `chunks` is clamped to 0–500, and `0` still means
 Keyword search for the **hybrid** retriever is currently implemented only for the **pgvector** vector store. On other stores (FAISS, Qdrant, Milvus, etc.) the keyword half returns nothing, so `hybrid` quietly behaves like `classic` (vector-only).
 </Callout>
 
-Operators can restrict which retrievers are usable instance-wide with the `RETRIEVERS_ENABLED` setting; a per-source `retriever` value must be within that allow-list.
-
 ### Exposure: prefetch vs. agentic tool
 
 `exposure` controls *how* a source's content is delivered to the model:

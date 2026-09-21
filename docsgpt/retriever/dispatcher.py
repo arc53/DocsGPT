@@ -185,12 +185,23 @@ class Dispatcher(BaseRetriever):
         score_threshold / rephrase_query) plus an opted-in prescreen config; a
         source left at defaults takes the global path so all-classic retrieval
         stays byte-identical with zero extra LLM calls.
+
+        A graph source's ``graph`` options count too: they are read from the
+        per-source config this records, so a source that changes only those
+        would otherwise run the defaults and the options would do nothing.
+        They mean nothing to any other retriever, so they only count for
+        ``graphrag`` -- an override hands the source its own chunk budget as
+        well, which a classic source must not pick up from a graph setting.
         """
         return (
             retrieval.chunks != _DEFAULT_RETRIEVAL.chunks
             or retrieval.score_threshold != _DEFAULT_RETRIEVAL.score_threshold
             or retrieval.rephrase_query != _DEFAULT_RETRIEVAL.rephrase_query
             or retrieval.prescreen is not None
+            or (
+                (retrieval.retriever or "").lower() == "graphrag"
+                and retrieval.graph != _DEFAULT_RETRIEVAL.graph
+            )
         )
 
     @staticmethod
@@ -344,6 +355,6 @@ def build_dispatcher(create_classic: Callable[[], BaseRetriever], **kwargs):
     Returns:
         A ``Dispatcher`` or the legacy retriever from ``create_classic``.
     """
-    if not getattr(settings, "PER_SOURCE_RETRIEVAL_ENABLED", True):
+    if not settings.PER_SOURCE_RETRIEVAL_ENABLED:
         return create_classic()
     return Dispatcher(**kwargs)

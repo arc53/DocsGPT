@@ -484,7 +484,7 @@ export default function ToolConfig({
                           <img
                             src={ChevronRight}
                             alt="expand"
-                            className={`h-4 w-4 opacity-60 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                            className={`h-4 w-4 opacity-60 transition-transform duration-200 dark:invert ${isExpanded ? 'rotate-90' : ''}`}
                           />
                           <p className="text-foreground dark:text-foreground font-semibold">
                             {action.name}
@@ -919,7 +919,7 @@ function APIToolConfig({
                   <img
                     src={ChevronRight}
                     alt="expand"
-                    className={`h-4 w-4 opacity-60 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                    className={`h-4 w-4 opacity-60 transition-transform duration-200 dark:invert ${isExpanded ? 'rotate-90' : ''}`}
                   />
                   <span
                     className={`rounded px-2 py-0.5 text-xs font-medium ${getMethodColorClass(action.method)}`}

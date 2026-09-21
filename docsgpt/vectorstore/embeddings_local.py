@@ -188,8 +188,8 @@ def _describe_from_repo(repo: str) -> Optional[EmbeddingModel]:
 
 def _apply_overrides(spec: EmbeddingModel) -> EmbeddingModel:
     """Let ``EMBEDDINGS_POOLING``/``EMBEDDINGS_NORMALIZE`` win over any source."""
-    pooling = getattr(settings, "EMBEDDINGS_POOLING", None)
-    normalize = getattr(settings, "EMBEDDINGS_NORMALIZE", None)
+    pooling = settings.EMBEDDINGS_POOLING
+    normalize = settings.EMBEDDINGS_NORMALIZE
     changes = {}
     if isinstance(pooling, str) and pooling.strip().lower() in ("cls", "mean"):
         changes["pooling"] = pooling.strip().lower()
@@ -289,10 +289,10 @@ class EmbeddingsWrapper:
         try:
             _register(self.spec)
             init_kwargs = {"model_name": self.spec.repo}
-            threads = getattr(settings, "EMBEDDINGS_THREADS", None)
+            threads = settings.EMBEDDINGS_THREADS
             if isinstance(threads, int) and threads > 0:
                 init_kwargs["threads"] = threads
-            cache_dir = getattr(settings, "EMBEDDINGS_CACHE_DIR", None)
+            cache_dir = settings.EMBEDDINGS_CACHE_DIR
             if cache_dir:
                 init_kwargs["cache_dir"] = cache_dir
             self.model = TextEmbedding(**init_kwargs)
@@ -331,7 +331,7 @@ class EmbeddingsWrapper:
         if not documents:
             return []
         batch_size: Optional[int] = None
-        raw = getattr(settings, "EMBEDDINGS_MODEL_BATCH_SIZE", None)
+        raw = settings.EMBEDDINGS_MODEL_BATCH_SIZE
         if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
             batch_size = raw
 

@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import Admins from './Admins';
 import Audit from './Audit';
 import Overview from './Overview';
+import Quotas from './Quotas';
 import Usage from './Usage';
 import Users from './Users';
 
@@ -19,6 +20,7 @@ const TABS = [
   { key: 'users', label: 'Users', path: '/admin/users' },
   { key: 'admins', label: 'Admins', path: '/admin/roles' },
   { key: 'usage', label: 'Usage', path: '/admin/usage' },
+  { key: 'quotas', label: 'Quotas', path: '/admin/quotas' },
   { key: 'audit', label: 'Audit', path: '/admin/audit' },
 ];
 
@@ -63,6 +65,7 @@ export default function Admin() {
           <Route path="users" element={<Users />} />
           <Route path="roles" element={<Admins />} />
           <Route path="usage" element={<Usage />} />
+          <Route path="quotas" element={<Quotas />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>

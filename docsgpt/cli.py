@@ -1,4 +1,5 @@
-"""The ``docsgpt`` command: run the API, the worker and the maintenance scripts.
+"""The ``docsgpt`` command: run the API, the worker and the maintenance scripts,
+or run and manage DocsGPT on Docker (``docsgpt up``).
 
 Every subcommand imports what it needs when it runs, so ``docsgpt --help``
 stays instant and does not touch the database.
@@ -19,10 +20,24 @@ DEFAULT_PORT = 7091
 
 
 def _announce_home() -> None:
-    """Say where runtime data and the env file come from; the API and the worker must agree."""
-    from docsgpt.core.paths import env_file, home_dir
+    """Create the data home and say where data and the env file come from; the API and the worker must agree."""
+    from pathlib import Path
 
-    print(f"docsgpt: data home {home_dir()} (env file {env_file()})", file=sys.stderr)
+    from docsgpt.core import paths
+
+    home = paths.home_dir()
+    home.mkdir(parents=True, exist_ok=True)
+    env = paths.env_file()
+    print(f"docsgpt: data home {home} (env file {env})", file=sys.stderr)
+    # Up to 0.20 an installed package used the working directory as its home.
+    chosen = os.environ.get(paths.HOME_ENV) or os.environ.get(paths.ENV_FILE_ENV) or paths.checkout_root()
+    stray = Path.cwd() / ".env"
+    if not chosen and stray.is_file() and stray.resolve() != env.resolve():
+        print(
+            f"docsgpt: {stray} is not used; settings come from {env}. "
+            f"Move the file there, or set DOCSGPT_HOME={Path.cwd()} to keep using this directory.",
+            file=sys.stderr,
+        )
 
 
 def _gunicorn_options(host: str, port: int, workers: int) -> dict:
@@ -74,7 +89,17 @@ def _api(args: argparse.Namespace) -> int:
     if args.reload or sys.platform == "win32":
         import uvicorn
 
-        uvicorn.run("docsgpt.asgi:asgi_app", host=args.host, port=args.port, reload=args.reload)
+        from docsgpt.core.paths import package_dir
+
+        # Watch the package, not the working directory: a checkout also holds .venv, node_modules
+        # and the data the app writes (indexes/, inputs/), which restarts the server mid-ingest.
+        uvicorn.run(
+            "docsgpt.asgi:asgi_app",
+            host=args.host,
+            port=args.port,
+            reload=args.reload,
+            reload_dirs=[str(package_dir())] if args.reload else None,
+        )
         return 0
 
     _gunicorn_application(_gunicorn_options(args.host, args.port, args.workers)).run()
@@ -139,6 +164,17 @@ def _migrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _deploy(name: str):
+    """A subcommand handler that imports ``docsgpt.deploy.commands`` only when it runs."""
+
+    def handler(args: argparse.Namespace, context=None) -> int:
+        from docsgpt.deploy import commands
+
+        return getattr(commands, name)(args, context)
+
+    return handler
+
+
 # Maintenance scripts keep their own argument parsers; the command hands
 # everything after the script name to them untouched (argparse would try to
 # interpret the options itself).
@@ -155,10 +191,106 @@ def _run_script(module: str, argv: list[str]) -> int:
     return int(importlib.import_module(f"docsgpt.scripts.{module}").main(argv) or 0)
 
 
+def _add_deploy_commands(commands) -> None:
+    """``docsgpt up`` and the commands that manage the Docker stack it runs."""
+    from docsgpt.deploy.stack import EXPOSURES, PROVIDERS
+
+    def stack_command(name: str, handler: str, help_text: str) -> argparse.ArgumentParser:
+        parser = commands.add_parser(name, help=help_text)
+        parser.add_argument("--dir", help="stack directory (default: DOCSGPT_HOME, else ~/.docsgpt/server)")
+        parser.set_defaults(func=_deploy(handler), deploy=True)
+        return parser
+
+    up = stack_command("up", "up", "install or update DocsGPT on Docker and start it")
+    up.add_argument("--expose", choices=EXPOSURES, help="who can reach it: local (default), network or domain")
+    up.add_argument("--domain", help="public domain served over HTTPS by Caddy (implies --expose domain)")
+    up.add_argument("--port", type=int, help="host port for the UI and API (default: 7091)")
+    up.add_argument("--provider", choices=list(PROVIDERS), help="model provider (default: the DocsGPT public API)")
+    up.add_argument("--api-key", help="the provider's API key (or set DOCSGPT_API_KEY)")
+    up.add_argument("--model", help="model name (required for openai-compatible)")
+    up.add_argument("--base-url", help="base URL of an OpenAI-compatible server")
+    docling = up.add_mutually_exclusive_group()
+    docling.add_argument("--docling", dest="docling", action="store_const", const=True,
+                         help="run the image with the docling parser engine and OCR (several GB larger)")
+    docling.add_argument("--no-docling", dest="docling", action="store_const", const=False,
+                         help="go back to the default image")
+    up.set_defaults(docling=None)
+    up.add_argument("--image-tag", help="image tag to run instead of this package's version, e.g. develop")
+    up.add_argument("--native", action="store_true",
+                    help="run the API and worker as services on this machine instead of on Docker")
+    up.add_argument("--postgres-uri", help="native mode: the PostgreSQL DocsGPT should use")
+    up.add_argument("--redis-url", help="native mode: the Redis for the queue and the cache (default: localhost:6379)")
+    up.add_argument("-y", "--yes", action="store_true", help="ask nothing: use the flags, then the defaults")
+    up.add_argument("--reconfigure", action="store_true", help="ask the setup questions again")
+    up.add_argument("--adopt", action="store_true", help="take over a DocsGPT stack started from another folder")
+    up.add_argument("--no-open", action="store_true", help="do not open the browser after the first install")
+    up.add_argument("--timeout", type=int, default=300, help="seconds to wait for the API to answer (default: 300)")
+
+    stack_command("down", "down", "stop the Docker stack (data and settings stay)")
+    stack_command("status", "status", "show the stack's version, address, containers and health")
+
+    logs = stack_command("logs", "logs", "show the stack's logs")
+    logs.add_argument("-f", "--follow", action="store_true", help="keep printing new lines")
+    logs.add_argument("--tail", type=int, help="only the last N lines of each service")
+    logs.add_argument("services", nargs="*", help="services to show, e.g. backend worker")
+
+    stack_command("token", "token", "print the access token (installs reachable beyond this computer)")
+    stack_command("open", "open_ui", "open DocsGPT in the browser")
+
+    upgrade = stack_command("upgrade", "upgrade", "upgrade the package and restart the stack on the new version")
+    upgrade.add_argument("--version", help="version to install (default: the latest release)")
+
+    uninstall = stack_command("uninstall", "uninstall", "remove the Docker stack")
+    uninstall.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
+    uninstall.add_argument("--purge", action="store_true", help="also delete the settings and all data")
+
+    backup = stack_command("backup", "backup", "write a backup of the database and the uploaded data")
+    backup.add_argument("--out", help="directory for the archive (default: <stack>/backups)")
+    backup.add_argument("--with-settings", action="store_true",
+                        help="include .env in the archive; it holds this install's secrets")
+
+    restore = stack_command("restore", "restore", "restore a backup over this install")
+    restore.add_argument("archive", help="the .tar.gz written by `docsgpt backup`")
+    restore.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
+    restore.add_argument("--force", action="store_true", help="restore a backup taken with a newer DocsGPT")
+    restore.add_argument("--timeout", type=int, default=300,
+                         help="seconds to wait for the API afterwards (default: 300)")
+
+    doctor = stack_command("doctor", "doctor", "check what this machine needs to run DocsGPT")
+    doctor.add_argument("--postgres-uri", help="check this database instead of the one in .env")
+    doctor.add_argument("--redis-url", help="check this Redis instead of the one in .env")
+
+    restart = stack_command("restart", "restart", "restart the services, changing nothing else")
+    restart.add_argument("services", nargs="*", help="services to restart, e.g. api worker")
+
+    env = stack_command("env", "env", "show, get or set the stack's settings")
+    env_actions = env.add_subparsers(dest="env_action", metavar="<action>")
+    get = env_actions.add_parser("get", help="print one setting")
+    get.add_argument("key")
+    set_ = env_actions.add_parser("set", help="set settings (KEY=VALUE ...)")
+    set_.add_argument("pairs", nargs="+", metavar="KEY=VALUE")
+    set_.add_argument("--no-restart", dest="restart", action="store_false",
+                      help="do not restart a running native install afterwards")
+
+    dev = commands.add_parser("dev", help="run this checkout's API, worker and UI with reload")
+    dev.add_argument("--host", default=DEFAULT_HOST, help="interface for the API (default: localhost)")
+    dev.add_argument("--port", type=int, default=DEFAULT_PORT, help="port for the API (default: 7091)")
+    dev.add_argument("--ui", action="store_true", help="also run the frontend dev server")
+    dev.add_argument("--mock-llm", action="store_true",
+                     help="run the mock LLM and point DocsGPT at it, so no API key is needed")
+    dev.add_argument("--no-worker", dest="worker", action="store_false", help="do not run the Celery worker")
+    dev.add_argument("--no-reload", dest="reload", action="store_false",
+                     help="do not restart the API and worker when a file changes")
+    dev.add_argument("-l", "--loglevel", default="INFO", help="worker log level (default: INFO)")
+    dev.set_defaults(func=_deploy("dev"), deploy=True)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docsgpt", description="DocsGPT: private AI for agents, assistants and search.")
     parser.add_argument("--version", action="version", version=f"docsgpt {__version__}")
     commands = parser.add_subparsers(dest="command", metavar="<command>")
+
+    _add_deploy_commands(commands)
 
     api = commands.add_parser("api", help="serve the HTTP API")
     api.add_argument("--host", default=DEFAULT_HOST, help="interface to listen on (default: localhost; 0.0.0.0 for all)")
@@ -198,7 +330,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not args.command:
         parser.print_help()
         return 2
-    return args.func(args)
+    if not getattr(args, "deploy", False):
+        return args.func(args)
+    from docsgpt.deploy.docker import DeployError
+
+    try:
+        return args.func(args)
+    except DeployError as exc:
+        print(f"docsgpt: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

@@ -194,8 +194,14 @@ exclude = [
   "docsgpt/vectors/",
 ]
 
+# `docsgpt up` runs the standalone Compose file of its own version. The file
+# stays in deployment/ (the release asset and the curl instructions use it
+# there); the wheel carries a copy inside the package.
+[tool.hatch.build.targets.wheel.force-include]
+"deployment/docker-compose-standalone.yaml" = "docsgpt/deploy/docker-compose.yaml"
+
 [tool.hatch.build.targets.sdist]
-include = ["/docsgpt"]
+include = ["/docsgpt", "/deployment/docker-compose-standalone.yaml"]
 artifacts = ["docsgpt/static/**"]
 exclude = [
   "docsgpt/Dockerfile",
@@ -205,6 +211,28 @@ exclude = [
   "docsgpt/indexes/",
   "docsgpt/inputs/",
   "docsgpt/vectors/",
+]
+
+# Shared by every editor's Python language server (pyright, basedpyright,
+# Pylance) and by `pyright` on the command line. Imports are rooted at the
+# checkout (`docsgpt.…`, `tests.…`), and the interpreter is the uv-managed
+# `.venv`. "standard" keeps basedpyright from defaulting to its much stricter
+# "recommended" mode; this is editor feedback, not a CI gate.
+[tool.pyright]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+extraPaths = ["."]
+typeCheckingMode = "standard"
+include = ["docsgpt", "application", "tests", "scripts"]
+exclude = [
+  "**/__pycache__",
+  "**/node_modules",
+  ".venv",
+  "docsgpt/static",
+  "docsgpt/indexes",
+  "docsgpt/inputs",
+  "docsgpt/vectors",
 ]
 
 [[tool.uv.index]]

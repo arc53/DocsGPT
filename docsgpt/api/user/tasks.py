@@ -346,9 +346,9 @@ def parse_timeout_for_size(size_bytes: Optional[int]) -> float:
     """
     from docsgpt.core.settings import settings
 
-    base = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120) or 120)
-    per_mib = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT_PER_MB", 0) or 0)
-    ceiling = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT_MAX", base) or base)
+    base = float(settings.DOCUMENT_PARSE_TIMEOUT or 120)
+    per_mib = float(settings.DOCUMENT_PARSE_TIMEOUT_PER_MB or 0)
+    ceiling = float(settings.DOCUMENT_PARSE_TIMEOUT_MAX or base)
     size = float(size_bytes) if isinstance(size_bytes, (int, float)) else 0.0
     scaled = base + per_mib * max(size, 0.0) / (1024 * 1024)
     return min(ceiling, max(base, scaled))

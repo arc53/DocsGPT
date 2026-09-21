@@ -3,6 +3,10 @@ export default {
     "title": "⚙️ App Configuration",
     "href": "/Deploying/DocsGPT-Settings"
   },
+  "Settings-Reference": {
+    "title": "📖 Settings Reference",
+    "href": "/Deploying/Settings-Reference"
+  },
   "OIDC-SSO": {
     "title": "🔐 SSO with OIDC",
     "href": "/Deploying/OIDC-SSO"
@@ -10,6 +14,10 @@ export default {
   "Access-Control": {
     "title": "👥 Access Control & Teams",
     "href": "/Deploying/Access-Control"
+  },
+  "Usage-Quotas": {
+    "title": "📊 Usage Quotas",
+    "href": "/Deploying/Usage-Quotas"
   },
   "Docker-Deploying": {
     "title": "🛳️ Docker Setup",

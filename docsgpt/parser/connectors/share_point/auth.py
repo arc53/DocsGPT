@@ -41,7 +41,7 @@ class SharePointAuth(BaseConnectorAuth):
 
         self.redirect_uri = settings.CONNECTOR_REDIRECT_BASE_URI
         self.tenant_id = settings.MICROSOFT_TENANT_ID
-        self.authority = getattr(settings, "MICROSOFT_AUTHORITY", f"https://login.microsoftonline.com/{self.tenant_id}")
+        self.authority = settings.MICROSOFT_AUTHORITY or f"https://login.microsoftonline.com/{self.tenant_id}"
 
         self.auth_app = ConfidentialClientApplication(
             client_id=self.client_id,

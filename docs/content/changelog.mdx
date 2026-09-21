@@ -11,6 +11,73 @@ The notable changes in each release. Every release on GitHub also carries
 [auto-generated notes](https://github.com/arc53/DocsGPT/releases) listing every merged pull
 request, and [Upgrading](/upgrading) covers the steps an existing deployment has to take.
 
+## Unreleased
+
+### A development loop in one command
+
+`docsgpt dev` runs this checkout's API and worker as children of one terminal, both restarting when
+you save, with their output interleaved and Ctrl-C stopping them together. `--ui` adds the Vite dev
+server and `--mock-llm` runs the bundled mock model, so a working loop needs no API key.
+`docsgpt doctor` checks PostgreSQL, its schema version, Redis, the model provider and the port;
+`docsgpt restart` bounces the services without touching settings; `docsgpt logs -f` now follows a
+native install; and `docsgpt env set` applies itself to a running native install instead of asking
+you to run `docsgpt up` again. See
+[Setting up a development environment](/Deploying/Development-Environment).
+
+### Run DocsGPT without Docker
+
+`docsgpt up --native` runs the API and the worker as services on the machine itself, launchd on
+macOS and systemd user units on Linux, against a PostgreSQL and Redis you already have
+(`--postgres-uri`, `--redis-url`). `status`, `logs`, `down` and `uninstall` work on such an install
+the same way they do on a Docker one, and never touch the database or Redis. See
+[Run it as services, without Docker](/Deploying/Pip-Install#run-it-as-services-without-docker).
+
+### Back up and restore an install
+
+`docsgpt backup` writes a dump of the database and a tar of each data volume into one archive, and
+`docsgpt restore <archive>` puts them back. The settings file is left out unless
+`--with-settings` asks for it, since it holds the install's secrets, and a backup from a newer
+DocsGPT is refused unless you pass `--force`. The archive is written readable only by its owner,
+and the backend and the worker pause while it is made so the dump and the volume tars match. See
+[Backups](/Deploying/Docker-Deploying#backups).
+
+## 0.21.0
+
+### Install with one command
+
+`curl -fsSL https://docs.ac/install | bash` on macOS and Linux, or `irm https://docs.ac/install.ps1 | iex`
+in Windows PowerShell, installs uv and the `docsgpt` package and runs `docsgpt up`. Running it again
+upgrades and keeps your settings. On Linux it offers to install Docker when it is missing. Both
+scripts are attached to every release. See the [Quickstart](/quickstart).
+
+### `docsgpt up` runs DocsGPT on Docker
+
+The Python package now sets up and runs the Docker stack: `uv tool install docsgpt`, then
+`docsgpt up`. The first run asks who should reach DocsGPT (this computer, the network with an
+access token, or a domain with HTTPS) and which model provider to use, writes the settings and
+secrets to `~/.docsgpt/server/.env`, and starts the images of the installed version. `docsgpt status`,
+`logs`, `token`, `upgrade`, `down` and `uninstall` manage it afterwards. See
+[Run it with `docsgpt up`](/Deploying/Docker-Deploying#run-it-with-docsgpt-up).
+
+### An installed package keeps its data in `~/.docsgpt/server`
+
+Outside a source checkout, the data home (`.env`, uploads, indexes, models) was the directory
+the command ran from, so starting `docsgpt api` from another folder silently used other
+settings. It is now `~/.docsgpt/server`, or `/opt/docsgpt` for root on Linux; `DOCSGPT_HOME`
+still overrides it. See [Upgrading](/upgrading#pip-installs-data-home-moved).
+
+### The standalone Docker stack runs on one port
+
+The `arc53/docsgpt` image now serves the web UI next to the API, the way `docsgpt api` does from
+the Python package. `docker-compose-standalone.yaml` no longer runs a frontend container: the UI
+and the API share port 7091, published on `127.0.0.1` by default. The UI takes its API address
+from the page it was loaded from, so opening the stack from another machine works without
+setting `VITE_API_HOST`. New Compose settings: `DOCSGPT_BIND` and `DOCSGPT_PORT` for where the
+port is published, `POSTGRES_PASSWORD`, and an `https` profile that puts Caddy with an automatic
+certificate in front of a public domain. The `arc53/docsgpt-fe` image is still published for the
+checkout Compose files and Kubernetes. See
+[Upgrading from an earlier standalone file](/Deploying/Docker-Deploying#upgrading-from-an-earlier-standalone-file).
+
 ## 0.20.0
 
 ### DocsGPT installs from PyPI

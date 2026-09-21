@@ -13,6 +13,7 @@ from celery.signals import (
     setup_logging,
     task_postrun,
     task_prerun,
+    worker_init,
     worker_process_init,
     worker_ready,
 )
@@ -171,6 +172,51 @@ def _run_version_check(*args, **kwargs):
 
 celery = make_celery()
 celery.config_from_object("docsgpt.celeryconfig")
+
+
+#: Set once this process starts as a worker; see :func:`_mark_worker_process`.
+_IS_WORKER_PROCESS = False
+
+
+@worker_init.connect
+@worker_process_init.connect
+def _mark_worker_process(*args, **kwargs):
+    """Record that this process runs tasks, for :func:`in_worker`.
+
+    ``worker_init`` fires in every worker's main process before its pool
+    starts: that is where solo, threads, eventlet and gevent run tasks, and
+    what prefork children fork from. ``worker_process_init`` covers prefork
+    children however they were started.
+    """
+    global _IS_WORKER_PROCESS
+    _IS_WORKER_PROCESS = True
+
+
+def in_worker() -> bool:
+    """True anywhere in a Celery worker process, on any thread or greenlet.
+
+    ``current_worker_task`` alone is not enough: Celery records the executing
+    task on the thread (or greenlet) that runs it, so one the task starts sees
+    none and would take the web-process branch — dispatching to the worker it
+    is running in and blocking on the result. Celery refuses that ``get()``
+    ("Never call result.get() within a task!"), or, where joins are allowed,
+    it waits on a queue that only this busy process may be able to serve.
+
+    The worker's own startup (:func:`_mark_worker_process`) answers for every
+    pool. ``task_join_will_block`` — process-wide, set for every blocking pool
+    — and the task's own ``current_worker_task`` still count for a process
+    that runs tasks without having gone through that startup.
+
+    Returns:
+        bool: Whether this call is running inside a worker process.
+    """
+    from celery.result import task_join_will_block
+
+    return (
+        _IS_WORKER_PROCESS
+        or task_join_will_block()
+        or celery.current_worker_task is not None
+    )
 
 #: Task-name prefix the package carried before the rename to ``docsgpt``.
 

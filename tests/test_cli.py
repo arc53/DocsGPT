@@ -10,6 +10,7 @@ import click
 import pytest
 
 from docsgpt import cli
+from docsgpt.core.paths import package_dir
 from docsgpt.version import __version__
 
 
@@ -32,6 +33,67 @@ class TestTopLevel:
             "assert not loaded, loaded"
         )
         subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).resolve().parents[1], check=True)
+
+
+class TestModuleEntrypoint:
+    def test_python_m_docsgpt_runs_the_cli(self):
+        """`python -m docsgpt` is what a native service falls back to when the script is not on PATH."""
+        result = subprocess.run(
+            [sys.executable, "-m", "docsgpt", "--version"],
+            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True,
+        )
+        assert result.stdout.strip() == f"docsgpt {__version__}"
+
+
+class TestHome:
+    @staticmethod
+    def _installed(monkeypatch, tmp_path):
+        """An installed package (no checkout) with the default home under tmp_path."""
+        from docsgpt.core import paths
+
+        monkeypatch.delenv(paths.HOME_ENV, raising=False)
+        monkeypatch.delenv(paths.ENV_FILE_ENV, raising=False)
+        monkeypatch.setattr(paths, "checkout_root", lambda: None)
+        monkeypatch.setattr(paths, "default_home", lambda: tmp_path / "home")
+        return tmp_path / "home"
+
+    def test_the_home_is_created_and_announced(self, monkeypatch, tmp_path, capsys):
+        home = self._installed(monkeypatch, tmp_path)
+        monkeypatch.chdir(tmp_path)
+        cli._announce_home()
+        assert home.is_dir()
+        assert f"data home {home}" in capsys.readouterr().err
+
+    def test_an_env_file_left_in_the_working_directory_is_pointed_out(self, monkeypatch, tmp_path, capsys):
+        """Up to 0.20 an installed package read .env from the working directory."""
+        home = self._installed(monkeypatch, tmp_path)
+        work = tmp_path / "work"
+        work.mkdir()
+        (work / ".env").write_text("LLM_PROVIDER=openai\n")
+        monkeypatch.chdir(work)
+        cli._announce_home()
+        err = capsys.readouterr().err
+        assert f"{work / '.env'} is not used" in err
+        assert f"DOCSGPT_HOME={work}" in err
+        assert str(home) in err
+
+    def test_no_warning_when_the_home_is_chosen_explicitly(self, monkeypatch, tmp_path, capsys):
+        from docsgpt.core import paths
+
+        self._installed(monkeypatch, tmp_path)
+        (tmp_path / ".env").write_text("LLM_PROVIDER=openai\n")
+        monkeypatch.setenv(paths.HOME_ENV, str(tmp_path / "elsewhere"))
+        monkeypatch.chdir(tmp_path)
+        cli._announce_home()
+        assert "is not used" not in capsys.readouterr().err
+
+    def test_no_warning_when_the_working_directory_is_the_home(self, monkeypatch, tmp_path, capsys):
+        home = self._installed(monkeypatch, tmp_path)
+        home.mkdir()
+        (home / ".env").write_text("LLM_PROVIDER=openai\n")
+        monkeypatch.chdir(home)
+        cli._announce_home()
+        assert "is not used" not in capsys.readouterr().err
 
 
 class TestApi:
@@ -65,7 +127,28 @@ class TestApi:
         uvicorn = types.SimpleNamespace(run=MagicMock())
         monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
         assert cli.main(["api", "--reload", "--host", "127.0.0.1"]) == 0
-        uvicorn.run.assert_called_once_with("docsgpt.asgi:asgi_app", host="127.0.0.1", port=7091, reload=True)
+        uvicorn.run.assert_called_once_with(
+            "docsgpt.asgi:asgi_app", host="127.0.0.1", port=7091, reload=True,
+            reload_dirs=[str(package_dir())],
+        )
+
+    def test_reload_watches_the_package_not_the_working_directory(self, monkeypatch, tmp_path):
+        """A checkout also holds .venv, node_modules and the indexes and inputs the app writes to,
+        so watching the working directory restarts the server mid-ingest."""
+        uvicorn = types.SimpleNamespace(run=MagicMock())
+        monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
+        monkeypatch.chdir(tmp_path)
+        assert cli.main(["api", "--reload"]) == 0
+        watched = uvicorn.run.call_args.kwargs["reload_dirs"]
+        assert watched == [str(package_dir())]
+        assert str(tmp_path) not in watched
+
+    def test_without_reload_nothing_is_watched(self, monkeypatch):
+        uvicorn = types.SimpleNamespace(run=MagicMock())
+        monkeypatch.setitem(sys.modules, "uvicorn", uvicorn)
+        monkeypatch.setattr(sys, "platform", "win32")
+        assert cli.main(["api"]) == 0
+        assert uvicorn.run.call_args.kwargs["reload_dirs"] is None
 
 
 class TestWorker:

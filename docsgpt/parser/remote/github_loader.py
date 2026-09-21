@@ -129,7 +129,7 @@ class GitHubLoader(BaseRemote):
 
     def _max_file_bytes(self) -> int:
         """Resolve the per-blob size cap; ``0`` disables it."""
-        raw = getattr(settings, "GITHUB_INGEST_MAX_FILE_BYTES", None)
+        raw = settings.GITHUB_INGEST_MAX_FILE_BYTES
         if isinstance(raw, bool) or not isinstance(raw, (int, str)):
             return 1048576
         try:
@@ -139,7 +139,7 @@ class GitHubLoader(BaseRemote):
 
     def _max_workers(self) -> int:
         """Resolve the parallel-fetch width, clamped to a sane range."""
-        raw = getattr(settings, "GITHUB_INGEST_MAX_WORKERS", None)
+        raw = settings.GITHUB_INGEST_MAX_WORKERS
         if isinstance(raw, bool) or not isinstance(raw, (int, str)):
             return 8
         try:

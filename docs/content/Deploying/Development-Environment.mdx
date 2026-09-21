@@ -78,7 +78,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
 
 3.  **Embedding Model (no action needed):**
 
-    The embedding model is downloaded automatically the first time you ingest a document, and cached under `models/` in the repository root for subsequent runs. Set `EMBEDDINGS_CACHE_DIR` to use another directory.
+    The embedding model is downloaded automatically the first time you ingest a document, and cached for subsequent runs under `models/` in the data home: the repository root, unless `DOCSGPT_HOME` points elsewhere. Set `EMBEDDINGS_CACHE_DIR` to use another directory.
 
     For an offline or air-gapped machine, fetch it ahead of time instead:
 
@@ -119,7 +119,34 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
 
 5.  **Run the Backend:**
 
-    For local development, run the ASGI composition under uvicorn. It serves the **whole** application, hot-reloads on source changes, and matches the production runtime:
+    One command runs the API and the worker from this checkout, each restarting when you save a file:
+
+    ```bash
+    docsgpt dev
+    ```
+
+    Both run as children of that terminal, with their output interleaved and labelled, and Ctrl-C stops
+    them together. Useful flags:
+
+    | Flag | What it does |
+    | --- | --- |
+    | `--ui` | also start the Vite dev server, so the whole app runs from one command |
+    | `--mock-llm` | run `scripts/mock_llm.py` and point DocsGPT at it, so no API key is needed |
+    | `--no-worker` | leave the worker to you, for instance when debugging it in your editor |
+    | `--no-reload` | do not restart anything on save |
+    | `--port` | serve the API somewhere other than 7091 |
+
+    `docsgpt dev` is for a checkout. `docsgpt up --native`, by contrast, installs supervised services
+    that outlive the shell — see [Run it as services](/Deploying/Pip-Install#run-it-as-services-without-docker).
+
+    <Callout type="info">
+      `docsgpt doctor` checks the things that usually break a new setup: whether PostgreSQL answers and
+      its schema matches this version, whether Redis answers, whether a model provider is configured,
+      and whether the port is free. Run it first when something does not start.
+    </Callout>
+
+    To run the two processes yourself instead, start the ASGI composition under uvicorn. It serves the
+    **whole** application, hot-reloads on source changes, and matches the production runtime:
 
     ```bash
     uvicorn docsgpt.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
@@ -135,7 +162,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
 
     But it serves **only** the WSGI Flask app and omits the native-async routes mounted on the ASGI shell in `docsgpt/asgi.py`: the `/mcp` FastMCP endpoint, the chat reconnect reader `GET /api/messages/<id>/events`, the notification stream `GET /api/events`, the remote-device command stream `GET /api/devices/sessions/<id>/events`, and artifact downloads `GET /api/artifacts/<id>/download`. Under `flask run` those paths return 404 — chat still works (`POST /stream` is a Flask route), but live notifications, stream auto-resume, paired devices and artifact downloads don't. Use `flask run` only when you don't need them.
 
-6.  **Start the Celery Worker:**
+6.  **Start the Celery Worker** (not needed if you used `docsgpt dev`)**:**
 
     Open a new terminal window (and activate your virtual environment if you used one). Start the Celery worker to handle background tasks:
 
@@ -153,10 +180,14 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
 
 **Running in Debugger (VSCode):**
 
-For easier debugging, you can launch the Flask app and Celery worker directly from VSCode's debugger.
+For easier debugging, you can launch the API and the Celery worker directly from VSCode's debugger.
 
 *   Press <kbd>Shift</kbd> + <kbd>Cmd</kbd> + <kbd>D</kbd> (macOS) or <kbd>Shift</kbd> + <kbd>Windows</kbd> + <kbd>D</kbd> (Windows) to open the Run and Debug view.
-*   You should see configurations named "Flask" and "Celery". Select the desired configuration and click the "Start Debugging" button (green play icon).
+*   You should see configurations named "API (uvicorn)" and "Celery worker", and a compound "DocsGPT: Full Stack" that starts them with the frontend. Select one and click the "Start Debugging" button (green play icon).
+
+The API configuration runs the same ASGI app as production, so the routes mounted on the ASGI shell
+work under the debugger. It deliberately runs without `--reload`: the reloader restarts the server in
+a child process, which your breakpoints would not be attached to.
 
 ## 3. Start the Frontend
 
@@ -207,3 +238,16 @@ To run the DocsGPT frontend locally, you'll need Node.js and npm (Node Package M
     This command will start the Vite development server. The frontend application will typically be accessible at [http://localhost:5173/](http://localhost:5173/). The terminal will display the exact URL where the frontend is running.
 
 With both the backend and frontend running, you should now have a fully functional DocsGPT development environment. You can access the application in your browser at [http://localhost:5173/](http://localhost:5173/) and start developing!
+
+## Working on two branches at once
+
+Each install keeps its own directory and its own services, so a second branch can run beside the
+first as long as it gets its own port:
+
+```bash
+docsgpt dev --port 7092                      # a second checkout, second terminal
+docsgpt up --native --dir ~/.docsgpt/review --port 7092   # or a second installed copy
+```
+
+A native install in another directory gets its own service names, so the two never write over each
+other's units. `docsgpt status --dir ~/.docsgpt/review` reports on that one alone.

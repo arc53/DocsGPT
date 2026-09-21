@@ -17,14 +17,122 @@ Docker is the recommended method for deploying DocsGPT, providing a consistent a
 
 **Important Note for Windows Users:** Docker Desktop on Windows generally requires the WSL 2 backend to function correctly, especially when using features like host networking which are utilized in DocsGPT's Docker Compose setup. Ensure WSL 2 is enabled and configured in Docker Desktop settings.
 
+## Run it with `docsgpt up`
+
+The `docsgpt` Python package can set up and run the stack described below for
+you. It needs Docker with Compose 2.24 or newer. The installer gets
+[uv](https://docs.astral.sh/uv/), installs the package with it and runs
+`docsgpt up`:
+
+macOS and Linux:
+
+```bash
+curl -fsSL https://docs.ac/install | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://docs.ac/install.ps1 | iex
+```
+
+Both scripts are attached to every [release](https://github.com/arc53/DocsGPT/releases)
+as `install.sh` and `install.ps1`. To install the package yourself instead
+(Python 3.12 or newer; uv brings one when it is missing):
+
+```bash
+uv tool install docsgpt      # or: pipx install docsgpt
+docsgpt up
+```
+
+`docsgpt up` keeps the stack in `~/.docsgpt/server` (`/opt/docsgpt` when run as
+root on Linux; `--dir` or `DOCSGPT_HOME` choose another folder): the Compose
+file of the installed version, a `.env` with your settings and the generated
+secrets, and `install.json`. Data lives in named Docker volumes. The first run
+asks two questions:
+
+- **Who should reach DocsGPT:** only this computer; other machines on the
+  network (plain HTTP, with `AUTH_TYPE=simple_jwt` and an access token); or a
+  domain name with HTTPS (Caddy gets the certificate, access token as well).
+- **Which model provider:** the DocsGPT public API (no key needed), OpenAI,
+  Anthropic, Google Gemini, OpenRouter, Groq, or an OpenAI-compatible server
+  such as Ollama or vLLM.
+
+Flags answer the same questions, for scripts and servers:
+
+```bash
+docsgpt up --yes --domain docs.example.com --provider openai --api-key "$OPENAI_API_KEY"
+```
+
+Running `docsgpt up` again is safe: it keeps `.env` and the secrets and runs
+the images of the installed package version. `docsgpt up --reconfigure` asks
+the questions again.
+
+| Command | What it does |
+| --- | --- |
+| `docsgpt status` | Version, address, containers, and whether the API answers |
+| `docsgpt logs [-f] [service]` | Container logs |
+| `docsgpt token` | The access token, for installs reachable beyond this computer |
+| `docsgpt open` | Open DocsGPT in the browser |
+| `docsgpt env set KEY=VALUE` | Change a setting; `docsgpt up` applies it |
+| `docsgpt upgrade` | Upgrade the package (for `uv tool` installs) and restart on the new version |
+| `docsgpt down` | Stop the stack; data and settings stay |
+| `docsgpt uninstall [--purge]` | Remove the containers; `--purge` also deletes the settings and all data |
+
+### Backups
+
+`docsgpt backup` writes one archive holding a dump of the database and a tar of
+each data volume (`indexes`, `inputs`, `vectors`):
+
+```bash
+docsgpt backup                      # into <stack>/backups
+docsgpt backup --out /mnt/backups   # somewhere else, e.g. a mounted disk
+```
+
+While the archive is made, the backend and the worker stop and start again, so
+the database dump and the files in the volumes describe the same moment; Postgres
+itself keeps running. On a small install that pause is seconds, but count on it
+if you run `docsgpt backup` from cron. The archive is written readable only by
+the user who took it.
+
+The archive does **not** include `.env`, because that file holds the install's
+secrets. `docsgpt backup --with-settings` puts it in, for when the archive
+itself is stored somewhere private. Keep `.env` safe separately otherwise: the
+database password in it is what an existing Postgres volume expects.
+
+Restoring replaces the data in an install:
+
+```bash
+docsgpt restore ~/.docsgpt/server/backups/docsgpt-20260916-120000.tar.gz
+```
+
+It asks first, then stops the stack, puts the volumes and the database back, and
+starts DocsGPT again. `--yes` skips the question for scripts. A backup taken
+with a newer DocsGPT is refused, since its data may not fit this version's
+schema; upgrade first, or pass `--force` if you know the two match.
+
+The Postgres data directory itself is not archived: the dump is the database
+backup, and copying a directory Postgres is writing to would capture a torn
+copy. Caddy's certificates are not archived either, as it obtains them again.
+
+More `docsgpt up` options: `--port`, `--docling` (the image with the docling
+parser engine and OCR), `--image-tag develop` (follow the `main` branch) and
+`--adopt` (manage a stack you started from the standalone Compose file in
+another folder; both use the same data volumes). For Ollama on the same
+machine, use the base URL `http://host.docker.internal:11434/v1`; on Linux,
+also make Ollama listen beyond localhost (`OLLAMA_HOST=0.0.0.0`).
+
 ## Quickest Setup: Pre-built Images, No Checkout
 
 Every release publishes ready-to-run images to Docker Hub (`arc53/docsgpt`,
 `arc53/docsgpt-fe`) and GitHub Container Registry (`ghcr.io/arc53/docsgpt`,
-`ghcr.io/arc53/docsgpt-fe`) for `linux/amd64` and `linux/arm64`. The images
-contain everything the default configuration needs (embedding models,
-tokenizers, tiktoken's encoding), so a fresh container makes no downloads on
-first use. You do not need the source tree to run them:
+`ghcr.io/arc53/docsgpt-fe`) for `linux/amd64` and `linux/arm64`.
+`arc53/docsgpt` runs the API, serves the web UI and runs the worker;
+`arc53/docsgpt-fe` is the separate frontend image the checkout Compose files
+and Kubernetes use. The images contain everything the default configuration
+needs (embedding models, tokenizers, tiktoken's encoding), so a fresh
+container makes no downloads on first use. You do not need the source tree to
+run them:
 
 1.  **Download the standalone Compose file** (also attached to every
     [release](https://github.com/arc53/DocsGPT/releases)):
@@ -52,7 +160,9 @@ first use. You do not need the source tree to run them:
     docker compose -f docker-compose-standalone.yaml up -d
     ```
 
-    Then open [http://localhost:5173/](http://localhost:5173/). Data lives in
+    Then open [http://localhost:7091/](http://localhost:7091/). The web UI and
+    the API share that port, which is published on `127.0.0.1`: only this
+    machine can reach it until you change `DOCSGPT_BIND` (below). Data lives in
     named Docker volumes; `docker compose -f docker-compose-standalone.yaml down`
     keeps it and `down -v` removes it.
 
@@ -65,6 +175,77 @@ documents, see the [OCR guide](/Guides/ocr)). Both are read from `.env` or
 the shell, e.g. `DOCSGPT_IMAGE_TAG=0.20.0 DOCSGPT_IMAGE_VARIANT=-docling`.
 The same two variables drive `deployment/docker-compose-hub.yaml` in a
 checkout.
+
+### Opening it from other machines
+
+Publish the port on every interface and turn on authentication in `.env`:
+
+```bash
+DOCSGPT_BIND=0.0.0.0
+AUTH_TYPE=simple_jwt
+JWT_SECRET_KEY=<a long random value, e.g. openssl rand -hex 32>
+```
+
+Then run `docker compose -f docker-compose-standalone.yaml up -d` again. The UI
+takes its API address from the page it was loaded from, so
+`http://<server-address>:7091/` works without further settings. Without
+`AUTH_TYPE`, anyone who can reach the port can use DocsGPT.
+
+With `simple_jwt` the UI asks for a token, which the backend prints when it
+starts: `docker compose -f docker-compose-standalone.yaml logs backend | grep "Simple JWT"`.
+The token is signed with `JWT_SECRET_KEY`. Without that setting each container
+generates its own secret, and a re-created container (after `pull` or a
+settings change) gets a new one and so a new token. Over plain HTTP the token
+travels as readable text; outside a trusted network, use HTTPS as below.
+`DOCSGPT_PORT` changes the host port (default `7091`). See
+[Authentication Settings](/Deploying/DocsGPT-Settings#authentication-settings) for the other modes.
+
+### HTTPS with your own domain
+
+The Compose file has an optional Caddy service that obtains and renews a
+Let's Encrypt certificate and proxies to the backend.
+
+1.  Point the domain's DNS records at the machine and open ports 80 and 443.
+2.  Add to `.env`:
+
+    ```bash
+    COMPOSE_PROFILES=https
+    DOCSGPT_DOMAIN=docs.example.com
+    AUTH_TYPE=simple_jwt
+    JWT_SECRET_KEY=<a long random value, e.g. openssl rand -hex 32>
+    ```
+
+3.  Run `docker compose -f docker-compose-standalone.yaml up -d` and open
+    `https://docs.example.com/`.
+
+`COMPOSE_PROFILES=https` in `.env` makes every later `up`, `down` and `logs`
+include Caddy. Leave `DOCSGPT_BIND` at its default: Caddy reaches the backend
+over the Compose network.
+
+### Database password
+
+The Postgres password defaults to `docsgpt`; the database is only reachable
+inside the Compose network. To use your own, set `POSTGRES_PASSWORD` in `.env`
+before the first start, with URL-safe characters (e.g. `openssl rand -hex 24`).
+Postgres reads it only when its volume is created, so changing it later does
+not change the existing database's password.
+
+### Upgrading from an earlier standalone file
+
+Before this change the standalone file ran a separate frontend container on
+port 5173 and published both ports on every interface. After downloading the
+new file:
+
+```bash
+docker compose -f docker-compose-standalone.yaml pull
+docker compose -f docker-compose-standalone.yaml up -d --remove-orphans
+```
+
+`--remove-orphans` removes the old frontend container. Open port 7091 instead
+of 5173. Your data volumes are unchanged. If you opened DocsGPT from other
+machines, follow [Opening it from other machines](#opening-it-from-other-machines),
+and remove `VITE_API_HOST` from `.env` if it points at `localhost`: the UI
+would otherwise keep calling the visitor's own machine.
 
 ## Using the Source Checkout
 

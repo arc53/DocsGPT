@@ -13,6 +13,10 @@ DocsGPT is on PyPI as [`docsgpt`](https://pypi.org/project/docsgpt/): the API se
   `docsgpt api` serves the web UI on the same port as the API. Set `SERVE_UI=false` to run the API alone, for example behind the frontend Docker image or a UI you host yourself.
 </Callout>
 
+<Callout type="info">
+  With Docker available, the same package can run the whole stack for you, including Postgres and Redis: `docsgpt up`. See [Run it with `docsgpt up`](/Deploying/Docker-Deploying#run-it-with-docsgpt-up).
+</Callout>
+
 ## Requirements
 
 - Python 3.12 or newer
@@ -49,7 +53,11 @@ pipx runpip docsgpt install --force-reinstall --no-deps --index-url https://down
 
 ## Configure
 
-DocsGPT keeps its runtime files in a **data home**: the `.env` file it reads settings from, uploaded files under `inputs/`, vector indexes under `indexes/` and downloaded embedding models under `models/`. The data home is the directory you run the commands from, or the directory `DOCSGPT_HOME` points to. `DOCSGPT_ENV_FILE` points at a `.env` kept somewhere else. Both variables must be set in the process environment, not in `.env`: they decide where `.env` is read from.
+DocsGPT keeps its runtime files in a **data home**: the `.env` file it reads settings from, uploaded files under `inputs/`, vector indexes under `indexes/` and downloaded embedding models under `models/`. The data home is `~/.docsgpt/server` (`/opt/docsgpt` when you run as root on Linux), whatever directory you run the commands from. `DOCSGPT_HOME` moves it, and `DOCSGPT_ENV_FILE` points at a `.env` kept somewhere else. Both variables must be set in the process environment, not in `.env`: they decide where `.env` is read from. In a source checkout the data home is the checkout.
+
+<Callout type="warning">
+  Up to 0.20 the data home of an installed package was the directory you ran the command from. If you kept `.env` and your data there, move them to `~/.docsgpt/server` or set `DOCSGPT_HOME` to that directory. `docsgpt api` and `docsgpt worker` point out a `.env` in the working directory that they no longer read.
+</Callout>
 
 Create a `.env` in the data home. The minimum for a hosted LLM:
 
@@ -80,7 +88,7 @@ docsgpt worker     # in a second terminal: the Celery worker, with the scheduler
 
 The API applies pending migrations when it starts (`AUTO_MIGRATE`), so `docsgpt migrate` is the explicit step for deployments that want the schema in place before the first request or that run the API with a restricted database role.
 
-Both commands print the data home they resolved on start-up. Run them from the same directory, or set `DOCSGPT_HOME` for both, so the worker finds the files the API stores and the API finds the indexes the worker builds.
+Both commands print the data home they resolved on start-up. They share it as long as `DOCSGPT_HOME` is the same for both (or unset), so the worker finds the files the API stores and the API finds the indexes the worker builds.
 
 The worker is not optional: query embedding runs on it, so search fails without one. `docsgpt worker --help` lists the queue, concurrency and pool options; `--no-beat` starts a worker without the scheduler when another worker already runs it. On Windows the scheduler cannot be embedded, so run `docsgpt beat` in a third terminal.
 
@@ -90,6 +98,35 @@ Other commands:
 - `docsgpt prefetch-models`: download the embedding models and their tokenizers ahead of time, for machines that go offline (see [Air-Gapped Deployment](/Deploying/Air-Gapped)).
 - `docsgpt verify-offline`: check that a prepared install starts with networking off.
 - `docsgpt reembed`: re-embed every index after changing `EMBEDDINGS_NAME` (see [Upgrading](/upgrading)).
+
+## Run it as services, without Docker
+
+`docsgpt up --native` runs the API and the worker as services on the machine itself: launchd agents on macOS, systemd user units on Linux. It does not start PostgreSQL or Redis; point it at ones you already run.
+
+```bash
+docsgpt up --native \
+  --postgres-uri postgresql://docsgpt:<password>@localhost:5432/docsgpt \
+  --redis-url redis://localhost:6379
+```
+
+Without a terminal only `--postgres-uri` is required, since Redis defaults to `redis://localhost:6379`; with one, it asks for both and for the model provider. It writes the same `.env` a Docker install uses (minus the image settings), generates `INTERNAL_KEY` and `JWT_SECRET_KEY` on the first run, applies the migrations, then starts `docsgpt-api` and `docsgpt-worker` and waits for the API to answer.
+
+One Redis URL covers all three uses: the Celery broker, its result backend and the cache go on databases 0, 1 and 2 of it. Name a database in the URL and the three start there instead, so `redis://localhost:6379/5` puts them on 5, 6 and 7 — that is how you share a Redis that already holds something else.
+
+The same commands manage it:
+
+| Command | In native mode |
+| --- | --- |
+| `docsgpt status` | Which services run, the address, and whether the API answers |
+| `docsgpt logs [api\|worker]` | The service log files under `<stack>/logs` |
+| `docsgpt down` | Stops both services; settings stay |
+| `docsgpt uninstall [--purge]` | Removes the services; `--purge` also deletes the stack directory |
+
+`uninstall` never touches the database or Redis: they were yours to begin with.
+
+<Callout type="info">
+  Windows has neither launchd nor systemd, so native mode is macOS and Linux only. On Windows, run DocsGPT on Docker with `docsgpt up`, or start `docsgpt api`, `docsgpt worker` and `docsgpt beat` yourself — the worker cannot run the scheduler in-process there, so `docsgpt beat` has to run alongside it for scheduled tasks to fire.
+</Callout>
 
 ## Upgrade
 

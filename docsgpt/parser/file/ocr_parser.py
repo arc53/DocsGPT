@@ -124,7 +124,7 @@ def resolve_ocr_backend(requested: Optional[str] = None) -> str:
     """
     from docsgpt.core.settings import settings
 
-    backend = str(requested or getattr(settings, "OCR_BACKEND", None) or "auto").strip().lower()
+    backend = str(requested or settings.OCR_BACKEND or "auto").strip().lower()
     if backend not in VALID_OCR_BACKENDS:
         logger.warning(f"Unknown OCR_BACKEND {backend!r}; using auto")
         backend = "auto"
@@ -154,7 +154,7 @@ def resolve_native_ocr_engine(requested: Optional[str] = None) -> str:
     """
     from docsgpt.core.settings import settings
 
-    engine = str(requested or getattr(settings, "OCR_ENGINE", None) or "tesseract").strip().lower()
+    engine = str(requested or settings.OCR_ENGINE or "tesseract").strip().lower()
     if engine in NATIVE_OCR_ENGINES:
         return engine
     if engine in VALID_OCR_ENGINES:
@@ -172,7 +172,7 @@ def ocr_min_chars_per_page() -> int:
     from docsgpt.core.settings import settings
 
     try:
-        return int(getattr(settings, "OCR_MIN_CHARS_PER_PAGE", _DEFAULT_MIN_CHARS_PER_PAGE))
+        return int(settings.OCR_MIN_CHARS_PER_PAGE)
     except (TypeError, ValueError):
         return _DEFAULT_MIN_CHARS_PER_PAGE
 
@@ -182,7 +182,7 @@ def render_dpi() -> int:
     from docsgpt.core.settings import settings
 
     try:
-        dpi = int(getattr(settings, "OCR_RENDER_DPI", _DEFAULT_RENDER_DPI))
+        dpi = int(settings.OCR_RENDER_DPI)
     except (TypeError, ValueError):
         dpi = _DEFAULT_RENDER_DPI
     return max(_MIN_RENDER_DPI, min(_MAX_RENDER_DPI, dpi))
@@ -299,7 +299,7 @@ class TesseractEngine:
         else:
             from docsgpt.core.settings import settings
 
-            configured = str(getattr(settings, "OCR_LANGS", "") or "eng")
+            configured = str(settings.OCR_LANGS or "eng")
             langs = [lang.strip() for lang in configured.split("+") if lang.strip()]
         return "+".join(langs) or "eng"
 
@@ -388,7 +388,7 @@ class DeepseekOcrEngine:
 
         self.url = url or settings.OCR_DEEPSEEK_URL
         self.model = model or settings.OCR_DEEPSEEK_MODEL
-        self.timeout = float(timeout if timeout is not None else getattr(settings, "OCR_DEEPSEEK_TIMEOUT", 300))
+        self.timeout = float(timeout if timeout is not None else settings.OCR_DEEPSEEK_TIMEOUT)
         self.prompt = prompt
         self.max_tokens = max_tokens
 

@@ -3,52 +3,44 @@
 #   curl -fsSLO https://raw.githubusercontent.com/arc53/DocsGPT/main/deployment/docker-compose-standalone.yaml
 #   printf 'LLM_PROVIDER=docsgpt\nVITE_API_STREAMING=true\nINTERNAL_KEY=%s\n' "$(openssl rand -hex 16)" > .env
 #   docker compose -f docker-compose-standalone.yaml up -d
+#   open http://localhost:7091
 #
 # INTERNAL_KEY is the shared secret the worker uses to hand finished indexes to
 # the API; without it every ingest fails with a 401 (setup.sh generates one).
-#   open http://localhost:5173
 #
-# Every release also attaches this file as an asset. Settings come from .env
-# next to this file (any DocsGPT setting; the compose-internal service URLs
-# below take precedence). Data lives in named volumes, so `docker compose
-# down` keeps it and `docker compose down -v` removes it.
+# The backend image serves the web UI and the API on one port. Every release
+# also attaches this file as an asset, and `docsgpt up` runs it from the Python
+# package. Settings come from .env next to this file (any DocsGPT setting,
+# VITE_* included; the compose-internal service URLs below take precedence).
+# Data lives in named volumes, so `docker compose down` keeps it and
+# `docker compose down -v` removes it.
 #
 #   DOCSGPT_IMAGE_TAG      release to run, e.g. 0.20.0 (default: latest release);
 #                          develop follows the main branch
 #   DOCSGPT_IMAGE_VARIANT  empty (slim, default) or -docling: docling parser
 #                          engine, its models, and tesseract baked in (OCR-ready)
+#   DOCSGPT_BIND           interface the port is published on: 127.0.0.1 (default,
+#                          this machine only) or 0.0.0.0 (every interface; set
+#                          AUTH_TYPE, see the DocsGPT settings guide)
+#   DOCSGPT_PORT           host port for the UI and API (default: 7091)
+#   POSTGRES_PASSWORD      database password (default: docsgpt). Read when the
+#                          postgres volume is first created; changing it later
+#                          does not change the existing database's password.
+#                          Use URL-safe characters (e.g. openssl rand -hex 24).
+#   DOCSGPT_DOMAIN         public domain for the `https` profile (below)
 #   EMBEDDINGS_NAME        defaults to granite here (this stack always starts on
 #                          fresh volumes, so there is no older index to keep
 #                          compatible); the code default stays mpnet for upgrades.
+#
+# HTTPS for a public domain: point the domain's DNS at this machine, open ports
+# 80 and 443, then
+#   DOCSGPT_DOMAIN=docs.example.com docker compose -f docker-compose-standalone.yaml --profile https up -d
+# Caddy obtains and renews the certificate and proxies to the backend. Putting
+# DOCSGPT_DOMAIN and COMPOSE_PROFILES=https in .env instead makes every later
+# `up`, `down` and `logs` include Caddy without the flag.
 name: docsgpt
 
 services:
-  frontend:
-    image: arc53/docsgpt-fe:${DOCSGPT_IMAGE_TAG:-latest}
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      # Every VITE_* the app reads. A bare name is passed through only when it is
-      # set in the shell or the --env-file, so an unset one does not reach the
-      # container as an empty string and override the image's own default.
-      - VITE_API_HOST=${VITE_API_HOST:-http://localhost:7091}
-      - VITE_API_STREAMING=${VITE_API_STREAMING:-true}
-      - VITE_BASE_URL
-      - VITE_GOOGLE_CLIENT_ID
-      - VITE_GOOGLE_PICKER_API_KEY
-      - VITE_SHARE_POINT_CLIENT_ID
-      - VITE_CONFLUENCE_CLIENT_ID
-      - VITE_NOTIFICATION_TEXT
-      - VITE_NOTIFICATION_LINK
-      - VITE_ENABLE_VOICE_INPUT
-      - VITE_DISABLE_SOURCE_FE
-      - VITE_USE_V
-    ports:
-      - "5173:5173"
-    depends_on:
-      - backend
-
   backend:
     image: arc53/docsgpt:${DOCSGPT_IMAGE_TAG:-latest}${DOCSGPT_IMAGE_VARIANT:-}
     # Same as docker-compose-hub.yaml: the data volumes are written by root so
@@ -62,10 +54,14 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CACHE_REDIS_URL=redis://redis:6379/2
-      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+      - POSTGRES_URI=postgresql://docsgpt:${POSTGRES_PASSWORD:-docsgpt}@postgres:5432/docsgpt
       - EMBEDDINGS_NAME=${EMBEDDINGS_NAME:-ibm-granite/granite-embedding-311m-multilingual-r2}
+    # A model server on the host (Ollama, vLLM, ...) is reachable as
+    # host.docker.internal on Linux too, as it is on Docker Desktop.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "7091:7091"
+      - "${DOCSGPT_BIND:-127.0.0.1}:${DOCSGPT_PORT:-7091}:7091"
     volumes:
       - indexes:/app/indexes
       - inputs:/app/inputs
@@ -90,9 +86,11 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CACHE_REDIS_URL=redis://redis:6379/2
-      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+      - POSTGRES_URI=postgresql://docsgpt:${POSTGRES_PASSWORD:-docsgpt}@postgres:5432/docsgpt
       - API_URL=http://backend:7091
       - EMBEDDINGS_NAME=${EMBEDDINGS_NAME:-ibm-granite/granite-embedding-311m-multilingual-r2}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - indexes:/app/indexes
       - inputs:/app/inputs
@@ -112,7 +110,7 @@ services:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=docsgpt
-      - POSTGRES_PASSWORD=docsgpt
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-docsgpt}
       - POSTGRES_DB=docsgpt
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -123,8 +121,36 @@ services:
       retries: 10
     restart: unless-stopped
 
+  caddy:
+    image: caddy:2-alpine
+    profiles: [https]
+    environment:
+      - DOCSGPT_DOMAIN=${DOCSGPT_DOMAIN:-}
+    # The domain is checked here rather than with ${DOCSGPT_DOMAIN:?}: compose
+    # interpolates every service, so a required variable would break the stack
+    # for everyone who does not use this profile.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        if [ -z "$$DOCSGPT_DOMAIN" ]; then
+        echo "caddy: set DOCSGPT_DOMAIN to the public domain" >&2; exit 1;
+        fi;
+        exec caddy reverse-proxy --from "$$DOCSGPT_DOMAIN" --to backend:7091
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 volumes:
   indexes:
   inputs:
   vectors:
   postgres_data:
+  caddy_data:
+  caddy_config:

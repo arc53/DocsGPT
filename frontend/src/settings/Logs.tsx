@@ -402,7 +402,7 @@ function Log({
         <img
           src={ChevronRight}
           alt="Expand log entry"
-          className={`mt-[3px] h-3 w-3 transition duration-300 ${isOpen ? 'rotate-90' : ''}`}
+          className={`mt-[3px] h-3 w-3 transition duration-300 dark:invert ${isOpen ? 'rotate-90' : ''}`}
         />
         <span className="flex flex-row flex-wrap gap-2">
           <h2 className="dark:text-foreground text-xs text-black/60">{`${log.timestamp}`}</h2>

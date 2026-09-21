@@ -24,7 +24,7 @@ import {
   normalizeExtensions,
   useAttachments,
 } from '../hooks/useAttachments';
-import { useVoiceInput, voiceInputSupported } from '../hooks/useVoiceInput';
+import { useDictation } from '../hooks/useDictation';
 import {
   AttachButton,
   AttachmentChips,
@@ -35,12 +35,11 @@ import {
   DropOverlay,
   DropTarget,
   MicButton,
-  type MicButtonState,
   SentAttachments,
   VoiceWaveform,
 } from './ComposerControls';
 import { DEFAULT_AVATAR } from './defaultAvatar';
-import { radii } from './tokens';
+import { radii, themes } from './tokens';
 import { ThemeProvider } from 'styled-components';
 import MarkdownIt from 'markdown-it';
 import {
@@ -180,69 +179,6 @@ const ArrowDownIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <path d="M8 3v10M3.5 8.5 8 13l4.5-4.5" />
   </svg>
 );
-
-const themes = {
-  dark: {
-    bg: '#222327',
-    text: '#fff',
-    primary: {
-      text: '#FAFAFA',
-      bg: '#222327',
-    },
-    secondary: {
-      text: '#A1A1AA',
-      bg: '#33343A',
-    },
-    shimmer: {
-      base: '#A1A1AA',
-      highlight: '#FAFAFA',
-    },
-    accent: {
-      base: '#8860DB',
-      hover: '#9B7BE4',
-      strong: '#6D42C5',
-      contrast: '#FFFFFF',
-      soft: 'rgba(136, 96, 219, 0.18)',
-      link: '#A78BFA',
-    },
-    hairline: 'rgba(255, 255, 255, 0.08)',
-    danger: {
-      text: '#F87171',
-      soft: 'rgba(248, 113, 113, 0.10)',
-      border: 'rgba(248, 113, 113, 0.32)',
-    },
-  },
-  light: {
-    bg: '#fff',
-    text: '#000',
-    primary: {
-      text: '#222327',
-      bg: '#fff',
-    },
-    secondary: {
-      text: '#71717A',
-      bg: '#F4F4F5',
-    },
-    shimmer: {
-      base: '#71717A',
-      highlight: '#D4D4D8',
-    },
-    accent: {
-      base: '#8860DB',
-      hover: '#7A4FD0',
-      strong: '#6D42C5',
-      contrast: '#FFFFFF',
-      soft: 'rgba(136, 96, 219, 0.12)',
-      link: '#6D42C5',
-    },
-    hairline: 'rgba(0, 0, 0, 0.08)',
-    danger: {
-      text: '#B91C1C',
-      soft: 'rgba(185, 28, 28, 0.06)',
-      border: 'rgba(185, 28, 28, 0.24)',
-    },
-  },
-};
 
 const sizesConfig = {
   small: { size: 'small', width: '320px', height: '400px' },
@@ -656,28 +592,20 @@ const ActionButton = styled.button<{
   ${(props) =>
     props.$active &&
     css`
-      color: ${
-        props.$tone === 'danger'
-          ? props.theme.danger!.text
-          : props.theme.accent!.base
-      };
-      background-color: ${
-        props.$tone === 'danger'
-          ? props.theme.danger!.soft
-          : props.theme.accent!.soft
-      };
+      color: ${props.$tone === 'danger'
+        ? props.theme.danger!.text
+        : props.theme.accent!.base};
+      background-color: ${props.$tone === 'danger'
+        ? props.theme.danger!.soft
+        : props.theme.accent!.soft};
 
       &:hover {
-        color: ${
-          props.$tone === 'danger'
-            ? props.theme.danger!.text
-            : props.theme.accent!.base
-        };
-        background-color: ${
-          props.$tone === 'danger'
-            ? props.theme.danger!.soft
-            : props.theme.accent!.soft
-        };
+        color: ${props.$tone === 'danger'
+          ? props.theme.danger!.text
+          : props.theme.accent!.base};
+        background-color: ${props.$tone === 'danger'
+          ? props.theme.danger!.soft
+          : props.theme.accent!.soft};
       }
 
       svg {
@@ -1188,7 +1116,6 @@ const HeroDescription = styled.p`
   padding: 0px;
 `;
 const Hyperlink = styled.a`
-  /* Inherits the tagline colour; the underline is what marks it as a link. */
   color: inherit;
   text-decoration: underline;
   /* Keeps descenders clear of the rule at 11px. */
@@ -1370,7 +1297,7 @@ export const WidgetCore = ({
   heroTitle = 'Welcome to DocsGPT !',
   heroDescription = 'This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources.',
   size = 'medium',
-  theme = 'light',
+  theme = 'dark',
   collectFeedback = true,
   isOpen = false,
   showSources = true,
@@ -1400,12 +1327,10 @@ export const WidgetCore = ({
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
-  // The draft as it stood when dictation began; recognised words extend it.
-  const voiceBaseRef = React.useRef('');
   // dragenter/dragleave fire per child crossed, hence a depth count.
   const dragDepthRef = React.useRef(0);
 
-  // The list doubles as the on switch: no accepted types, no attachments.
+  // An empty list disables attachments.
   const acceptedExtensions = React.useMemo(
     () => normalizeExtensions(allowedFileExtensions),
     [allowedFileExtensions],
@@ -1422,8 +1347,6 @@ export const WidgetCore = ({
     completed: completedAttachments,
   } = useAttachments({ apiKey, apiHost, acceptedExtensions });
 
-  // One place for the height arithmetic: typing, transcripts and sends all
-  // go through here.
   const resizePrompt = React.useCallback(() => {
     const el = promptRef.current;
     if (!el) return;
@@ -1436,42 +1359,31 @@ export const WidgetCore = ({
     )}px`;
   }, [size]);
 
-  // The textarea is controlled by `prompt`, so its value is the live draft.
-  const handleVoiceStart = React.useCallback(() => {
-    voiceBaseRef.current = promptRef.current?.value ?? '';
-  }, []);
+  const getPromptDraft = React.useCallback(
+    () => promptRef.current?.value ?? '',
+    [],
+  );
 
-  const applyTranscript = React.useCallback(
-    (text: string) => {
-      // The base is fixed at the start, so revised interim words overwrite
-      // only themselves and a typed half-question survives.
-      const base = voiceBaseRef.current;
-      setPrompt(base.trim() ? `${base.replace(/\s+$/, '')}\n${text}` : text);
+  const applyDraft = React.useCallback(
+    (value: string) => {
+      setPrompt(value);
       // The height can only be recomputed once React has committed.
       window.requestAnimationFrame(resizePrompt);
     },
     [resizePrompt],
   );
 
-  const handleVoiceEnd = React.useCallback(() => {
-    // Once at the end, not on every interim word.
+  const focusPrompt = React.useCallback(() => {
     window.requestAnimationFrame(() => promptRef.current?.focus());
   }, []);
 
-  const {
-    recordingState,
-    error: voiceError,
-    toggle: toggleVoiceInput,
-    clearError: clearVoiceError,
-    analyserRef: voiceAnalyserRef,
-  } = useVoiceInput({
-    onStart: handleVoiceStart,
-    onTranscript: applyTranscript,
-    onEnd: handleVoiceEnd,
+  const dictation = useDictation({
+    enabled: showMicButton,
+    getDraft: getPromptDraft,
+    onDraftChange: applyDraft,
+    separator: '\n',
+    onEnd: focusPrompt,
   });
-
-  // Firefox has no SpeechRecognition, nor does an insecure origin.
-  const canUseVoice = showMicButton && voiceInputSupported();
   const md = new MarkdownIt();
   //Custom markdown for the table
   md.renderer.rules.table_open = () =>
@@ -1738,8 +1650,7 @@ export const WidgetCore = ({
     if (status === 'loading') return;
     const prompt = queries[index]?.prompt;
     if (!prompt) return;
-    // The composer list was cleared on send, so the row's ids are the only
-    // record of what the question carried.
+    // The composer list is cleared on send, so retry reuses the row's ids.
     const attached = queries[index]?.attachments;
     setQueries((prev: Query[]) => {
       const updated = [...prev];
@@ -1753,8 +1664,8 @@ export const WidgetCore = ({
     );
   };
 
-  // Pending and failed attachments both hold the send, so neither is
-  // silently dropped. Pending reads first: it clears on its own.
+  // Pending and failed attachments both block sending. The pending note
+  // takes precedence because it clears on its own.
   const pendingNote =
     pendingCount > 0
       ? `Waiting for ${pendingCount} file${pendingCount === 1 ? '' : 's'} to finish\u2026`
@@ -1764,8 +1675,7 @@ export const WidgetCore = ({
       ? 'Remove the file that could not be attached, then send.'
       : null;
   const sendBlockedReason = pendingNote ?? failedNote;
-  const isDictating =
-    recordingState === 'recording' || recordingState === 'transcribing';
+  const isDictating = dictation.isDictating;
   const canSubmit =
     prompt.trim().length > 0 &&
     !sendBlockedReason &&
@@ -1774,7 +1684,7 @@ export const WidgetCore = ({
 
   const submitPrompt = async () => {
     if (!canSubmit) return;
-    // Before the value clears, or the composer sits tall and empty a frame.
+    // Reset first, so the empty composer does not render tall for a frame.
     if (promptRef.current) promptRef.current.style.height = 'auto';
     await appendQuery(prompt);
   };
@@ -1802,7 +1712,7 @@ export const WidgetCore = ({
   ) => {
     const value = event.target.value;
     // A stale voice error would hide the attachment notice below.
-    if (voiceError) clearVoiceError();
+    if (dictation.error) dictation.clearError();
     setPrompt(value);
     resizePrompt();
     if (value.includes('\n')) {
@@ -1829,17 +1739,16 @@ export const WidgetCore = ({
       if (file) files.push(file);
     }
     if (files.length === 0) return;
-    // Or the file also lands in the textarea as binary noise.
+    // Keeps the file from also being pasted as text.
     e.preventDefault();
     addFiles(files);
   };
 
-  // Otherwise the overlay flashes on every drag crossing the page.
+  // Ignore drags that carry no files, such as selected text.
   const isFileDrag = (e: React.DragEvent) =>
     Array.from(e.dataTransfer?.types ?? []).includes('Files');
 
-  // A file dropped mid-dictation would queue behind the waveform, unseen
-  // and unsendable until recording stops.
+  // Files cannot be attached while dictating.
   const acceptsFiles = attachmentsEnabled && !isDictating;
 
   const handleDragEnter = (e: React.DragEvent) => {
@@ -1891,16 +1800,11 @@ export const WidgetCore = ({
   };
 
   // Neither feature enabled keeps the original single-row composer.
-  const hasComposerControls = attachmentsEnabled || canUseVoice;
+  const hasComposerControls = attachmentsEnabled || dictation.available;
 
-  const micButtonState: MicButtonState =
-    recordingState === 'recording' || recordingState === 'transcribing'
-      ? recordingState
-      : 'idle';
-
-  // A failure to act on outranks a wait that clears itself.
-  const composerNote = voiceError
-    ? { text: voiceError, tone: 'danger' as const }
+  // Errors take precedence over the pending-upload note.
+  const composerNote = dictation.error
+    ? { text: dictation.error, tone: 'danger' as const }
     : sendBlockedReason
       ? {
           text: sendBlockedReason,
@@ -2196,16 +2100,16 @@ export const WidgetCore = ({
                 <PromptRow>
                   {isDictating && (
                     <VoiceWaveform
-                      analyserRef={voiceAnalyserRef}
+                      analyserRef={dictation.analyserRef}
                       label={
-                        recordingState === 'recording'
+                        dictation.state === 'recording'
                           ? 'Listening\u2026'
                           : 'Finishing\u2026'
                       }
+                      minHeight={size === 'large' ? '60px' : '40px'}
                     />
                   )}
-                  {/* Hidden, not unmounted: the ref stays live for reading
-                      the draft and refocusing afterwards. */}
+                  {/* Kept mounted so promptRef stays valid while dictating. */}
                   <StyledTextarea
                     $hidden={isDictating}
                     id="chatInput"
@@ -2234,15 +2138,14 @@ export const WidgetCore = ({
                           disabled={isDictating}
                         />
                       )}
-                      {canUseVoice && (
+                      {dictation.available && (
                         <MicButton
-                          state={micButtonState}
-                          // Never while recording: it is the only way to
-                          // close the microphone.
+                          state={dictation.state}
+                          // Enabled while recording: it is how dictation stops.
                           disabled={
-                            status === 'loading' && micButtonState === 'idle'
+                            status === 'loading' && dictation.state === 'idle'
                           }
-                          onClick={toggleVoiceInput}
+                          onClick={dictation.toggle}
                         />
                       )}
                     </ControlGroup>

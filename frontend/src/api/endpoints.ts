@@ -2,6 +2,7 @@ const endpoints = {
   USER: {
     CONFIG: '/api/config',
     ME: '/api/user/me',
+    QUOTA: '/api/user/quota',
     NEW_TOKEN: '/api/generate_token',
     OIDC_LOGIN: '/api/auth/oidc/login',
     OIDC_TOKEN: '/api/auth/oidc/token',
@@ -10,9 +11,6 @@ const endpoints = {
     MODELS: '/api/models',
     DOCS: '/api/sources',
     DOCS_PAGINATED: '/api/sources/paginated',
-    API_KEYS: '/api/get_api_keys',
-    CREATE_API_KEY: '/api/create_api_key',
-    DELETE_API_KEY: '/api/delete_api_key',
     AGENT: (id: string) => `/api/get_agent?id=${id}`,
     AGENTS: '/api/get_agents',
     GUARDRAIL_CATALOG: '/api/guardrails/catalog',
@@ -155,6 +153,10 @@ const endpoints = {
     DEVICE_PAIRINGS: '/api/devices/pairings',
     DEVICE_PAIRING: (deviceCode: string) =>
       `/api/devices/pairings/${deviceCode}`,
+    ACCESS_TOKENS: '/api/user/tokens',
+    ACCESS_TOKEN: (id: string) => `/api/user/tokens/${id}`,
+    ACCESS_TOKEN_REGENERATE: (id: string) =>
+      `/api/user/tokens/${id}/regenerate`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',
@@ -172,6 +174,12 @@ const endpoints = {
     USAGE: '/api/admin/usage',
     AUDIT: '/api/admin/audit',
     DEVICE_AUDIT: '/api/admin/devices/audit',
+    QUOTAS: '/api/admin/quotas',
+    QUOTA_INSTANCE: '/api/admin/quotas/instance',
+    QUOTA_TEAM: (id: string) =>
+      `/api/admin/quotas/teams/${encodeURIComponent(id)}`,
+    QUOTA_USER: (id: string) =>
+      `/api/admin/quotas/users/${encodeURIComponent(id)}`,
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

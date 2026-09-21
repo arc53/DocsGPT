@@ -258,6 +258,8 @@ def chat_completions():
 
     try:
         processor = StreamProcessor(internal_data, decoded_token)
+        # Set when this request took the resume claim, so a refusal can release it.
+        claimed_conversation_id = None
 
         if internal_data.get("tool_actions"):
             conversation_id = internal_data.get("conversation_id")
@@ -282,6 +284,7 @@ def chat_completions():
                     claimed_state=pending_state,
                 )
                 processor.conversation_id = conversation_id
+                claimed_conversation_id = conversation_id
             else:
                 # Compatibility fallback for old/completed conversations and
                 # clients that resend the full transcript without resumable
@@ -338,7 +341,12 @@ def chat_completions():
             )
 
         helper = _V1AnswerHelper()
-        usage_error = helper.check_usage(processor.agent_config)
+        if claimed_conversation_id:
+            usage_error = helper.check_usage_on_resume(processor, claimed_conversation_id)
+        else:
+            usage_error = helper.check_usage(
+                processor.agent_config, processor.decoded_token, agent_id=processor.agent_id
+            )
         if usage_error:
             return usage_error
 

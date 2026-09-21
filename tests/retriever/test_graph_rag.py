@@ -45,6 +45,29 @@ def _patch_embed(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _entity_only_ranking(monkeypatch):
+    """Pin the ranking path these tests were written for.
+
+    Everything here exercises entity-only PPR ranking without vector blending,
+    driven through ``MagicMock`` stores. The shipped default now walks the
+    passages and blends with vector search — covered end to end in
+    ``tests/graphrag/test_retriever_default_path.py`` with a store that returns
+    real values. Pinning keeps each test here asserting what it was written to
+    assert, rather than whatever a mock happens to return on a path it never set
+    up.
+    """
+    from docsgpt.storage.db.source_config import GraphRetrievalConfig
+
+    monkeypatch.setattr(
+        GraphRAGRetriever,
+        "_graph_options",
+        lambda self, source_id: GraphRetrievalConfig(
+            passage_nodes=False, blend_vector=False
+        ),
+    )
+
+
 # ── Fallback to ClassicRAG ────────────────────────────────────────────────────
 
 
@@ -157,7 +180,9 @@ class TestGraphRAGPoolDiscipline:
         mock_store_cls.return_value = store
 
         rag = _make_retriever()
-        with patch.object(rag, "_graph_docs_for_source", return_value=[]):
+        # A real result: an empty one now falls back like a failure does.
+        graph_docs = [{"title": "g", "text": "graph text", "source": "src1", "filename": "g"}]
+        with patch.object(rag, "_graph_docs_for_source", return_value=graph_docs):
             with patch.object(rag, "_classic_for_sources") as classic:
                 rag._get_data()
 
@@ -332,15 +357,24 @@ class TestGraphRAGHappyPath:
     @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
     @patch("docsgpt.retriever.graph_rag.GraphStore")
     @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
-    def test_no_seeds_returns_empty(
+    def test_a_graph_that_answers_nothing_falls_back_to_classic(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):
+        """Empty is not an answer. Every graph read swallows its own errors and
+        returns nothing, so "no rows" covers a broken query as much as a walk
+        that found nothing — and the source would contribute nothing at all,
+        with no fallback, because only a raise routes one to ClassicRAG."""
         store = _store_with_graph([], [], {}, {}, [])
         store.count_nodes_many.side_effect = lambda ids: {s: 5 for s in ids}
         mock_store_cls.return_value = store
 
         rag = _make_retriever()
-        assert rag._get_data() == []
+        seen = _recording_classic(rag, [_CLASSIC_DOC])
+
+        docs = rag._get_data()
+
+        assert seen == [["src1"]]
+        assert [doc["text"] for doc in docs] == ["classic"]
 
 
 # ── IDF down-weighting ────────────────────────────────────────────────────────
@@ -449,11 +483,16 @@ class TestGetChunkTexts:
         sid = str(uuid.uuid4())
         store.get_chunk_texts(sid, ["1", "2"])
 
-        sql, params = cursor.execute.call_args.args[0], cursor.execute.call_args.args[1]
-        assert f"FROM {table}" in sql
-        assert text_col in sql
-        assert metadata_col in sql
-        assert f"{source_col} = %s" in sql
+        from psycopg import sql as pgsql
+
+        query, params = cursor.execute.call_args.args[0], cursor.execute.call_args.args[1]
+        # Identifiers are composed and quoted by psycopg, never formatted in.
+        assert isinstance(query, pgsql.Composable)
+        sql = query.as_string()
+        assert f'FROM "{table}"' in sql
+        assert f'"{text_col}"' in sql
+        assert f'"{metadata_col}"' in sql
+        assert f'"{source_col}" = %s' in sql
         assert "id::text = ANY(%s)" in sql
         assert sid not in sql
         assert params == (sid, ["1", "2"])
@@ -800,3 +839,185 @@ class TestGraphRAGBatching:
         assert rag._get_data() == []
         mock_store_cls.assert_not_called()
         rag._classic._get_data.assert_not_called()
+
+
+# ── Personalized PageRank without scipy ──────────────────────────────────────
+
+
+@pytest.fixture
+def _no_scipy(monkeypatch):
+    """Make ``import scipy`` fail, as it does in a default install.
+
+    ``scipy`` is not a DocsGPT dependency — it only reaches this test env
+    through the optional docling extra. ``networkx.pagerank`` delegates to its
+    scipy implementation, so ranking must not go through it.
+    """
+    import sys
+
+    for name in [m for m in list(sys.modules) if m == "scipy" or m.startswith("scipy.")]:
+        monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setitem(sys.modules, "scipy", None)
+
+
+def _chain_graph():
+    """Weighted chain a-b-c-d plus a heavier shortcut a-d."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    graph.add_weighted_edges_from(
+        [("a", "b", 1.0), ("b", "c", 2.0), ("c", "d", 1.0), ("a", "d", 0.5)]
+    )
+    return graph
+
+
+@pytest.mark.unit
+class TestPersonalizedPageRankWithoutScipy:
+    def test_ranking_runs_when_scipy_is_missing(self, _no_scipy):
+        from docsgpt.retriever.graph_rag import _personalized_pagerank
+
+        graph = _chain_graph()
+        ranks = _personalized_pagerank(
+            graph, personalization={"a": 1.0, "b": 0.0, "c": 0.0, "d": 0.0}
+        )
+
+        assert set(ranks) == {"a", "b", "c", "d"}
+        assert sum(ranks.values()) == pytest.approx(1.0, abs=1e-6)
+        assert all(rank > 0 for rank in ranks.values())
+        # Pinned from the parity test below, which runs the library
+        # implementation over the same graph while scipy is installed here.
+        assert sorted(ranks, key=ranks.get, reverse=True) == ["b", "a", "c", "d"]
+        # The seed outranks the node furthest from it along the heavy path.
+        assert ranks["a"] > ranks["d"]
+
+    def test_matches_networkx_within_tolerance(self):
+        """Parity with the library implementation, while it is installed here."""
+        import networkx as nx
+
+        pytest.importorskip("scipy")
+        from docsgpt.retriever.graph_rag import _personalized_pagerank
+
+        graph = _chain_graph()
+        personalization = {"a": 1.0, "b": 0.0, "c": 0.0, "d": 0.0}
+
+        ours = _personalized_pagerank(graph, personalization=personalization)
+        theirs = nx.pagerank(graph, personalization=personalization, weight="weight")
+
+        for node in theirs:
+            assert ours[node] == pytest.approx(theirs[node], abs=1e-6)
+
+    def test_uniform_personalization_when_none(self):
+        pytest.importorskip("scipy")
+        import networkx as nx
+
+        from docsgpt.retriever.graph_rag import _personalized_pagerank
+
+        graph = _chain_graph()
+        ours = _personalized_pagerank(graph, personalization=None)
+        theirs = nx.pagerank(graph, personalization=None, weight="weight")
+
+        for node in theirs:
+            assert ours[node] == pytest.approx(theirs[node], abs=1e-6)
+
+    def test_isolated_node_still_gets_mass(self):
+        """A node with no edges is dangling; its mass must not vanish."""
+        import networkx as nx
+
+        from docsgpt.retriever.graph_rag import _personalized_pagerank
+
+        graph = nx.Graph()
+        graph.add_edge("a", "b", weight=1.0)
+        graph.add_node("lonely")
+
+        ranks = _personalized_pagerank(graph, personalization=None)
+
+        assert ranks["lonely"] > 0
+        assert sum(ranks.values()) == pytest.approx(1.0, abs=1e-6)
+
+    def test_empty_graph_returns_empty(self):
+        import networkx as nx
+
+        from docsgpt.retriever.graph_rag import _personalized_pagerank
+
+        assert _personalized_pagerank(nx.Graph(), personalization=None) == {}
+
+    def test_a_zero_weight_edge_is_not_traversable(self):
+        """Zero means "not related", not "use the default weight"."""
+        import networkx as nx
+
+        from docsgpt.retriever.graph_rag import _personalized_pagerank
+
+        graph = nx.Graph()
+        graph.add_edge("seed", "zero", weight=0.0)
+        graph.add_edge("seed", "real", weight=1.0)
+
+        ranks = _personalized_pagerank(
+            graph, personalization={"seed": 1.0, "zero": 0.0, "real": 0.0}
+        )
+
+        # ``zero`` is reachable only across the zero-weight edge, so no mass
+        # walks to it; ``real`` is on a live edge and must outrank it.
+        assert ranks["real"] > ranks["zero"]
+        assert ranks["zero"] == pytest.approx(0.0, abs=1e-9)
+        assert sum(ranks.values()) == pytest.approx(1.0, abs=1e-6)
+
+    def test_stored_zero_weights_reach_the_ranker_intact(self):
+        """The subgraph builder must not coerce a stored 0 into a real edge.
+
+        Without this the ranker's zero-weight rule is unreachable in
+        production: every 0 from ``graph_edges`` arrives as 1.0.
+        """
+        subgraph = {
+            "nodes": [
+                {"id": "seed", "doc_freq": 1},
+                {"id": "zero", "doc_freq": 1},
+                {"id": "real", "doc_freq": 1},
+            ],
+            "edges": [
+                {"src_node_id": "seed", "dst_node_id": "zero", "weight": 0},
+                {"src_node_id": "seed", "dst_node_id": "real", "weight": 1.0},
+            ],
+        }
+        # Called unbound with ``None`` for self: _ppr_scores reads no state.
+        scores = GraphRAGRetriever._ppr_scores(None, subgraph, {"seed": 1.0})
+
+        assert scores["real"] > scores["zero"]
+        assert scores["zero"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_missing_and_null_weights_default_to_one(self):
+        import networkx as nx
+
+        from docsgpt.retriever.graph_rag import _personalized_pagerank
+
+        absent = nx.Graph()
+        absent.add_edge("a", "b")  # no weight attribute at all
+        null = nx.Graph()
+        null.add_edge("a", "b", weight=None)
+
+        personalization = {"a": 1.0, "b": 0.0}
+        from_absent = _personalized_pagerank(absent, personalization=personalization)
+        from_null = _personalized_pagerank(null, personalization=personalization)
+
+        assert from_absent["b"] == pytest.approx(from_null["b"], abs=1e-9)
+        assert from_absent["b"] > 0
+
+    @patch("docsgpt.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("docsgpt.retriever.graph_rag.GraphStore")
+    @patch("docsgpt.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_graph_retrieval_does_not_fall_back_without_scipy(
+        self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed, _no_scipy
+    ):
+        """The whole PPR path runs with scipy absent — no ClassicRAG fallback."""
+        nodes = [{"id": "n1", "doc_freq": 1}, {"id": "n2", "doc_freq": 1}]
+        edges = [{"src_node_id": "n1", "dst_node_id": "n2", "weight": 1.0}]
+        node_chunks = {"n1": ["c1"], "n2": ["c2"]}
+        chunk_texts = {"c1": "near", "c2": "far"}
+        seed_rows = [{"id": "n1", "distance": 0.0}]
+        store = _store_with_graph(nodes, edges, node_chunks, chunk_texts, seed_rows)
+        mock_store_cls.return_value = store
+
+        rag = _make_retriever(chunks=2)
+        rag._classic_for_sources = Mock(side_effect=AssertionError("fell back"))
+
+        docs = rag._get_data()
+
+        assert [doc["text"] for doc in docs] == ["near", "far"]

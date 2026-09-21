@@ -16,6 +16,7 @@ import {
 import { Switch } from '../../components/ui/switch';
 import type {
   ChunkingStrategy,
+  GraphSeedStrategy,
   RetrievalExposure,
   SourceConfig,
 } from '../../models/misc';
@@ -59,6 +60,11 @@ export type RetrievalOptionsValue = {
       batch_size: number;
       max_keep: number;
     };
+    graph: {
+      seed_strategy: GraphSeedStrategy;
+      passage_nodes: boolean;
+      blend_vector: boolean;
+    };
   };
   graph: {
     extraction_model: string | null;
@@ -84,6 +90,12 @@ export const DEFAULT_RETRIEVAL_OPTIONS: RetrievalOptionsValue = {
     prescreen: {
       enabled: false,
       ...DEFAULT_PRESCREEN,
+    },
+    // The configuration that measured best across the corpora tested.
+    graph: {
+      seed_strategy: 'entities',
+      passage_nodes: true,
+      blend_vector: true,
     },
   },
   graph: {
@@ -204,6 +216,7 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
   const chunking = config?.chunking ?? {};
   const retrieval = config?.retrieval ?? {};
   const prescreen = retrieval.prescreen ?? null;
+  const retrievalGraph = retrieval.graph ?? {};
   const graph = config?.graph ?? {};
   const d = DEFAULT_RETRIEVAL_OPTIONS;
   return {
@@ -227,6 +240,14 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
         model: prescreen?.model ?? DEFAULT_PRESCREEN.model,
         batch_size: prescreen?.batch_size ?? DEFAULT_PRESCREEN.batch_size,
         max_keep: prescreen?.max_keep ?? DEFAULT_PRESCREEN.max_keep,
+      },
+      graph: {
+        seed_strategy:
+          retrievalGraph.seed_strategy ?? d.retrieval.graph.seed_strategy,
+        passage_nodes:
+          retrievalGraph.passage_nodes ?? d.retrieval.graph.passage_nodes,
+        blend_vector:
+          retrievalGraph.blend_vector ?? d.retrieval.graph.blend_vector,
       },
     },
     graph: {
@@ -271,6 +292,11 @@ export function optionsToConfig(value: RetrievalOptionsValue): SourceConfig {
             max_keep: ps.max_keep,
           }
         : null,
+      graph: {
+        seed_strategy: value.retrieval.graph.seed_strategy,
+        passage_nodes: value.retrieval.graph.passage_nodes,
+        blend_vector: value.retrieval.graph.blend_vector,
+      },
     },
     graph: {
       extraction_model: value.graph.extraction_model?.trim()
@@ -397,6 +423,12 @@ export default function RetrievalOptions({
       ...value,
       graph: { ...value.graph, ...patch },
     });
+  };
+
+  const setGraphRetrieval = (
+    patch: Partial<RetrievalOptionsValue['retrieval']['graph']>,
+  ) => {
+    setRetrieval({ graph: { ...value.retrieval.graph, ...patch } });
   };
 
   const modelOptions = useMemo(() => {
@@ -611,6 +643,84 @@ export default function RetrievalOptions({
         )}
       </div>
 
+      {/* Graph retrieval group (graphrag only; live, so shown when testing too) */}
+      {isGraphRAG && (
+        <div className="flex flex-col gap-3">
+          <GroupHeader
+            title={tr('graphRetrieval.title')}
+            tag={tr('graphRetrieval.tag')}
+          />
+          <p className="text-muted-foreground text-xs">
+            {tr('graphRetrieval.agentToolHint')}
+          </p>
+
+          <div className="divide-border/50 divide-y">
+            <SettingRow
+              label={tr('graphRetrieval.seedStrategy')}
+              htmlFor="graph-seed-strategy"
+              description={tr('graphRetrieval.seedStrategyHint')}
+              alignStart
+            >
+              <Select
+                value={value.retrieval.graph.seed_strategy}
+                disabled={disabled}
+                onValueChange={(v) =>
+                  setGraphRetrieval({ seed_strategy: v as GraphSeedStrategy })
+                }
+              >
+                <SelectTrigger
+                  id="graph-seed-strategy"
+                  className="w-52 rounded-md"
+                  size="lg"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="entities">
+                    {tr('graphRetrieval.seedEntities')}
+                  </SelectItem>
+                  <SelectItem value="relationships">
+                    {tr('graphRetrieval.seedRelationships')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingRow>
+
+            <SettingRow
+              label={tr('graphRetrieval.passageNodes')}
+              htmlFor="graph-passage-nodes"
+              description={tr('graphRetrieval.passageNodesHint')}
+              alignStart
+            >
+              <Switch
+                id="graph-passage-nodes"
+                checked={value.retrieval.graph.passage_nodes}
+                disabled={disabled}
+                onCheckedChange={(checked) =>
+                  setGraphRetrieval({ passage_nodes: checked })
+                }
+              />
+            </SettingRow>
+
+            <SettingRow
+              label={tr('graphRetrieval.blendVector')}
+              htmlFor="graph-blend-vector"
+              description={tr('graphRetrieval.blendVectorHint')}
+              alignStart
+            >
+              <Switch
+                id="graph-blend-vector"
+                checked={value.retrieval.graph.blend_vector}
+                disabled={disabled}
+                onCheckedChange={(checked) =>
+                  setGraphRetrieval({ blend_vector: checked })
+                }
+              />
+            </SettingRow>
+          </div>
+        </div>
+      )}
+
       {/* Graph extraction group (graphrag only; re-ingest required to apply) */}
       {isGraphRAG && !queryOnly && (
         <div className="flex flex-col gap-3">
@@ -792,7 +902,7 @@ export default function RetrievalOptions({
         <img
           src={ChevronRight}
           alt=""
-          className={`h-3 w-3 transform transition-transform ${
+          className={`h-3 w-3 transform transition-transform dark:invert ${
             expanded ? 'rotate-90' : ''
           }`}
         />

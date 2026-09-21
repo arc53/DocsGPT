@@ -74,6 +74,35 @@ class TestDispatcherGrouping:
         assert "b" not in retrievals
 
 
+    def test_graph_options_count_as_an_override(self, _patch_llm_creator):
+        """A graph source that changes only its graph options still needs its
+        config carried over: those options live on the per-source retrieval the
+        Dispatcher hands the retriever, so without this the UI toggles are
+        no-ops and every source runs the defaults."""
+        sources = [
+            {
+                "id": "a",
+                "retrieval": RetrievalConfig(
+                    retriever="graphrag", graph={"seed_strategy": "relationships"}
+                ),
+            },
+            {"id": "b", "retrieval": RetrievalConfig(retriever="graphrag")},
+        ]
+        d = Dispatcher(source={"question": "q", "active_docs": ["a", "b"]}, sources=sources)
+        retrievals = d._groups[0]["retrievals"]
+        assert "a" in retrievals
+        assert retrievals["a"].graph.seed_strategy == "relationships"
+        # A source on the defaults still takes the shared path.
+        assert "b" not in retrievals
+
+    def test_graph_options_on_a_classic_source_are_not_an_override(self, _patch_llm_creator):
+        # They only mean anything to the graph retriever; treating them as an
+        # override would hand a classic source its own chunk budget.
+        sources = [{"id": "a", "retrieval": RetrievalConfig(graph={"blend_vector": False})}]
+        d = Dispatcher(source={"question": "q", "active_docs": ["a"]}, sources=sources)
+        assert d._groups[0]["retrievals"] == {}
+
+
 @pytest.mark.unit
 class TestDispatcherSharedBudget:
     def test_single_group_full_budget(self, _patch_llm_creator):

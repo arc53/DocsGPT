@@ -9,6 +9,7 @@ from flask_restx import fields, Namespace, Resource
 from pydantic import ValidationError as PydanticValidationError
 
 from docsgpt.api import api
+from docsgpt.api.pat.rules import filter_listing, mask_agent_key, may_see_agent_keys
 from docsgpt.guardrails.config import AgentConfig
 from docsgpt.api.user.base import (
     copy_agent_image_for_user,
@@ -498,7 +499,7 @@ class GetAgents(Resource):
         except Exception as err:
             current_app.logger.error(f"Error retrieving agents: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(list_agents), 200)
+        return make_response(jsonify(filter_listing(request, "agents", list_agents)), 200)
 
 
 @agents_ns.route("/create_agent")
@@ -762,7 +763,9 @@ class CreateAgent(Resource):
         except Exception as err:
             current_app.logger.error(f"Error creating agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"id": new_id, "key": key}), 201)
+        # A token without agents:keys never receives the plaintext agent key.
+        visible_key = key if may_see_agent_keys(request) else mask_agent_key(key)
+        return make_response(jsonify({"id": new_id, "key": visible_key}), 201)
 
 
 @agents_ns.route("/update_agent/<string:agent_id>")
@@ -1306,7 +1309,11 @@ class UpdateAgent(Resource):
             "message": "Agent updated successfully",
         }
         if newly_generated_key:
-            response_data["key"] = newly_generated_key
+            response_data["key"] = (
+                newly_generated_key
+                if may_see_agent_keys(request)
+                else mask_agent_key(newly_generated_key)
+            )
         return make_response(jsonify(response_data), 200)
 
 
@@ -1810,7 +1817,9 @@ class AdoptAgent(Resource):
                 )
 
             response_agent = _format_agent_output(new_agent, include_key_masked=False)
-            response_agent["key"] = new_key
+            response_agent["key"] = (
+                new_key if may_see_agent_keys(request) else mask_agent_key(new_key)
+            )
             return make_response(
                 jsonify({"success": True, "agent": response_agent}), 200
             )

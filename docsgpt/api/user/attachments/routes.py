@@ -688,6 +688,8 @@ class LiveSpeechToTextFinish(Resource):
                 jsonify({"success": False, "message": "Authentication required"}),
                 401,
             )
+        if not STTCreator.is_enabled(settings.STT_PROVIDER):
+            return _feature_disabled(_STT_DISABLED_MESSAGE)
 
         redis_client = _require_live_stt_redis()
         if hasattr(redis_client, "status_code"):

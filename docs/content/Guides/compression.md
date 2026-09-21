@@ -19,7 +19,7 @@ The compression system operates on a "summarize and truncate" principle:
 
 ## Configuration
 
-You can configure the compression behavior in your `.env` file or `docsgpt/core/settings.py`:
+You can configure the compression behavior in your `.env` file or `docsgpt/core/settings/agents.py`:
 
 | Setting | Default | Description |
 | :--- | :--- | :--- |

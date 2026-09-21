@@ -272,6 +272,19 @@
           },
           "exposureHint": "Pre-fetch this source into the prompt, or let the agent search it on demand as a tool."
         },
+        "graphRetrieval": {
+          "title": "Graph retrieval",
+          "tag": "no re-ingest",
+          "seedStrategy": "Start the walk from",
+          "seedStrategyHint": "Entities suit most documents. Relationships can reach an entity the question never names, and suit content that describes how things connect.",
+          "seedEntities": "Entities (recommended)",
+          "seedRelationships": "Relationships",
+          "passageNodes": "Include passages in the walk",
+          "passageNodesHint": "Lets a passage be found both by matching the question and by being connected to what does. Works best on graphs built with this version.",
+          "blendVector": "Blend with vector search",
+          "blendVectorHint": "Adds plain vector search results, so a passage the graph misses is not lost.",
+          "agentToolHint": "Agents can also follow these relationships themselves when this source's exposure is “On-demand search tool”, or when an agentic agent uses it."
+        },
         "prescreen": {
           "enable": "Enable LLM prescreen",
           "warning": "Fetches a larger candidate set and uses an LLM to filter it. This adds query-time latency and cost.",
@@ -325,16 +338,6 @@
         }
       }
     },
-    "apiKeys": {
-      "label": "Chatbots",
-      "name": "Name",
-      "key": "API Key",
-      "sourceDoc": "Source Document",
-      "createNew": "Create New",
-      "noData": "No existing Chatbots",
-      "deleteConfirmation": "Are you sure you want to delete the API key '{{name}}'?",
-      "description": "Here you can create and manage your chatbots. Chatbots can be deployed to websites as widgets or used inside your applications."
-    },
     "analytics": {
       "label": "Analytics",
       "subtitle": "Track message volume, token usage, and user feedback across your account",
@@ -377,6 +380,17 @@
         "toolCalls": "Tool Calls",
         "runSuccess": "Run Success",
         "feedback": "Feedback"
+      },
+      "quota": {
+        "title": "Your usage quota",
+        "resets": "Resets {{resetsAt}}",
+        "tokens": "Tokens",
+        "cost": "Cost",
+        "usedOf": "{{used}} of {{limit}}",
+        "scope": {
+          "direct": "Chat without an agent",
+          "agent": "Through agents"
+        }
       }
     },
     "logs": {
@@ -752,6 +766,118 @@
         "testFailed": "Connection test failed"
       }
     },
+    "accessTokens": {
+      "label": "Access Tokens",
+      "subtitle": "Personal access tokens let scripts, the CLI and CI pipelines call the DocsGPT API on your behalf. Give each token only the scopes it needs.",
+      "createToken": "Create token",
+      "disabledNotice": "Personal access tokens are not available on this server. They require account-based sign-in and have to be enabled by your administrator.",
+      "limitReached_one": "You have reached the limit of {{count}} active token. Revoke one to create another.",
+      "limitReached_other": "You have reached the limit of {{count}} active tokens. Revoke one to create another.",
+      "loadError": "Failed to load access tokens. Please try again.",
+      "revokeError": "Failed to revoke the token. Please try again.",
+      "empty": "No access tokens yet",
+      "emptyHint": "Create a token to use the DocsGPT API from scripts and command-line tools.",
+      "name": "Name",
+      "scopes": "Scopes",
+      "resources": "Resources",
+      "createdAt": "Created",
+      "lastUsed": "Last used",
+      "expires": "Expires",
+      "actions": "Actions",
+      "allResources": "All resources",
+      "never": "Never",
+      "expired": "Expired {{date}}",
+      "expiresSoon": "Expires {{date}}",
+      "moreScopes": "+{{count}} more",
+      "showLess": "Show less",
+      "revoke": "Revoke",
+      "revokeAria": "Revoke token {{name}}",
+      "revokeWarning": "Revoke the token \"{{name}}\"? Anything still using it will stop working immediately. This cannot be undone.",
+      "restrictionCount": {
+        "agents_one": "{{count}} agent",
+        "agents_other": "{{count}} agents",
+        "sources_one": "{{count}} source",
+        "sources_other": "{{count}} sources",
+        "prompts_one": "{{count}} prompt",
+        "prompts_other": "{{count}} prompts",
+        "tools_one": "{{count}} tool",
+        "tools_other": "{{count}} tools",
+        "workflows_one": "{{count}} workflow",
+        "workflows_other": "{{count}} workflows"
+      },
+      "relative": {
+        "now": "Just now",
+        "minutes_one": "{{count}} minute ago",
+        "minutes_other": "{{count}} minutes ago",
+        "hours_one": "{{count}} hour ago",
+        "hours_other": "{{count}} hours ago",
+        "days_one": "{{count}} day ago",
+        "days_other": "{{count}} days ago"
+      },
+      "families": {
+        "agents": "Agents",
+        "sources": "Sources",
+        "prompts": "Prompts",
+        "tools": "Tools",
+        "models": "Models",
+        "workflows": "Workflows",
+        "schedules": "Schedules",
+        "conversations": "Conversations",
+        "analytics": "Analytics",
+        "teams": "Teams",
+        "chat": "Chat"
+      },
+      "create": {
+        "title": "Create access token",
+        "subtitle": "The token acts as you, limited to the scopes and resources you pick here.",
+        "name": "Name",
+        "namePlaceholder": "e.g. CI pipeline",
+        "expiration": "Expiration",
+        "expiryDays_one": "{{count}} day",
+        "expiryDays_other": "{{count}} days",
+        "noExpiration": "No expiration",
+        "noExpirationHint": "Tokens that never expire are riskier if leaked. Prefer an expiration date.",
+        "expiresOn": "Expires on {{date}}",
+        "scopes": "Scopes",
+        "scopesHint": "Choose what this token may do. Write access includes read access.",
+        "impliedByWrite": "Included with write access",
+        "restrict": "Restrict to specific resources",
+        "restrictHint": "Optional. Limit the token to the items you select. Leave a list empty to allow all of them.",
+        "restrictNoFamilies": "Select a scope for agents, sources, prompts, tools or chat first to restrict its resources.",
+        "allSelected": "All (no restriction)",
+        "noResources": "Nothing found.",
+        "searchResources": "Search...",
+        "resourcesError": "Failed to load the list.",
+        "retry": "Retry",
+        "cancel": "Cancel",
+        "submit": "Create token",
+        "submitting": "Creating",
+        "error": "Failed to create the token. Please try again."
+      },
+      "created": {
+        "title": "Token created",
+        "subtitle": "Your new token \"{{name}}\" is ready.",
+        "warning": "Copy the token now and store it somewhere safe. For security reasons it won't be shown again.",
+        "tokenLabel": "Your token",
+        "usageTitle": "How to use it",
+        "usageHint": "Export it as an environment variable, then send it as a Bearer token in the Authorization header.",
+        "done": "Done"
+      },
+      "regenerate": {
+        "action": "Regenerate",
+        "aria": "Regenerate token {{name}}",
+        "title": "Regenerate token",
+        "warning": "Generate a new secret for \"{{name}}\"? The current secret stops working immediately, so anything using it must be updated. The name, scopes and restrictions stay the same.",
+        "newExpiration": "New expiration",
+        "submit": "Regenerate",
+        "submitting": "Regenerating…",
+        "error": "Failed to regenerate the token. Please try again.",
+        "done": {
+          "title": "Token regenerated",
+          "subtitle": "The new secret for \"{{name}}\" is ready. The old one no longer works."
+        }
+      }
+    },
     "scrollTabsLeft": "Scroll tabs left",
     "tabsAriaLabel": "Settings tabs",
     "scrollTabsRight": "Scroll tabs right"
@@ -1068,6 +1194,7 @@
     "share": "Share",
     "delete": "Delete",
     "rename": "Rename",
+    "save": "Save",
     "deleteWarning": "Are you sure you want to delete this conversation?"
   },
   "pagination": {
@@ -1157,6 +1284,10 @@
       "running": "Running…",
       "denied": "Denied by user",
       "failed": "failed"
+    },
+    "quotaExceeded": {
+      "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",
+      "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}."
     }
   },
   "agents": {

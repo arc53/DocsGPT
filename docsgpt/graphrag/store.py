@@ -17,6 +17,8 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
+import psycopg
+from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from docsgpt.core.settings import settings
@@ -51,6 +53,18 @@ def _safe_identifier(name: str) -> str:
     return name
 
 
+def _identifier(name: str) -> sql.Identifier:
+    """``name`` as a quoted identifier, folded the way Postgres folds it unquoted.
+
+    Composing identifiers through psycopg keeps every query a fixed statement
+    with bound values: nothing is formatted into the SQL string. The fold
+    matters because ``PGVectorStore`` writes these names unquoted, which
+    Postgres lower-cases, while a quoted identifier keeps its case; folding
+    first keeps both stores addressing the same table.
+    """
+    return sql.Identifier(_safe_identifier(name).lower())
+
+
 def _pgvector_identifiers() -> tuple[str, str, str, str]:
     """Resolve ``(table, text_col, metadata_col, source_col)`` from ``PGVectorStore``.
 
@@ -73,15 +87,58 @@ def _pgvector_identifiers() -> tuple[str, str, str, str]:
     )
 
 
+def _pgvector_vector_column() -> str:
+    """Resolve the embedding column name from the same ``PGVectorStore`` defaults."""
+    import inspect
+
+    from docsgpt.vectorstore.pgvector import PGVectorStore
+
+    params = inspect.signature(PGVectorStore.__init__).parameters
+    return _safe_identifier(params["vector_column"].default)
+
+
+def _is_connection_lost(exc: BaseException) -> bool:
+    """True when ``exc`` says the server connection went away, not that the SQL was bad.
+
+    psycopg raises ``OperationalError`` ("the connection is lost") when the
+    socket dies under a statement and ``InterfaceError`` when the connection
+    object is already closed. Everything else — a bad statement, a constraint
+    violation — is a real failure that a retry would only repeat.
+    """
+    return isinstance(exc, (psycopg.OperationalError, psycopg.InterfaceError))
+
+
+def _lock_source(cursor, source_id: str) -> None:
+    """Serialize graph writes for one source until this transaction ends.
+
+    Writes within one build are already serial, but two builds of the same
+    source can overlap: a rebuild dispatched while the last one is still
+    running gets a new idempotency key, so its lease does not stop it. Without
+    this, both could pass a chunk's "done" check before either commits and
+    apply it twice. A transaction-scoped advisory lock keyed by the source
+    makes them take turns chunk by chunk; the lock is released on commit or
+    rollback, and a hash collision only makes two sources take turns.
+    """
+    cursor.execute(
+        "SELECT pg_advisory_xact_lock(hashtext(%s));", (f"graphrag:source:{source_id}",)
+    )
+
+
+def _safe_rollback(conn) -> None:
+    """Roll back, tolerating a connection too broken to roll back."""
+    try:
+        conn.rollback()
+    except Exception as exc:
+        logging.debug("Rollback on a broken connection failed: %s", exc)
+
+
 class GraphStore:
     """Stores and queries a per-source knowledge graph in the pgvector DB."""
 
     def __init__(self, connection_string: Optional[str] = None):
-        self._connection_string = connection_string or getattr(
-            settings, "PGVECTOR_CONNECTION_STRING", None
-        )
+        self._connection_string = connection_string or settings.PGVECTOR_CONNECTION_STRING
 
-        if not self._connection_string and getattr(settings, "POSTGRES_URI", None):
+        if not self._connection_string and settings.POSTGRES_URI:
             from docsgpt.core.db_uri import normalize_pgvector_connection_string
 
             self._connection_string = normalize_pgvector_connection_string(
@@ -139,6 +196,42 @@ class GraphStore:
                 self._register_pgvector_types(self._connection)
                 self._pooled = False
         return self._connection
+
+    def _write_with_reconnect(self, operation):
+        """Run ``operation(conn)``, once more on a fresh connection if it was dead.
+
+        A graph build holds one checked-out connection for the length of the
+        whole extraction and spends minutes per chunk waiting on the model, so
+        the connection idles long enough for the server (or a pooler) to drop
+        it. The pool only validates a connection when it is handed out, and
+        this one was handed out at the start of the build, so the next write
+        raises and its chunk is lost from the graph. Every statement here is an
+        idempotent upsert, so replaying one on a new connection cannot
+        double-write.
+
+        Args:
+            operation: Callable taking the connection and doing one write.
+
+        Returns:
+            Whatever ``operation`` returns.
+
+        Raises:
+            Exception: Anything ``operation`` raises that is not connection
+                loss, and anything the single retry raises.
+        """
+        try:
+            return operation(self._get_connection())
+        except Exception as exc:
+            if not _is_connection_lost(exc):
+                raise
+            logging.warning(
+                "Graph write lost its connection (%s); reconnecting and retrying once.",
+                exc,
+            )
+            self.close()
+        # Second and final attempt, on a connection freshly checked out by
+        # ``_get_connection``. A failure here belongs to the caller.
+        return operation(self._get_connection())
 
     def _register_pgvector_types(self, conn) -> None:
         """Register pgvector's adapters, tolerating a not-yet-created extension.
@@ -199,7 +292,7 @@ class GraphStore:
             )
 
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS graph_edges (
                     id UUID PRIMARY KEY,
                     source_id UUID NOT NULL,
@@ -208,9 +301,17 @@ class GraphStore:
                     type TEXT,
                     description TEXT,
                     weight REAL DEFAULT 1.0,
-                    source_chunk_ids JSONB
+                    source_chunk_ids JSONB,
+                    fact_embedding vector({dimension})
                 );
                 """
+            )
+            # ``CREATE TABLE IF NOT EXISTS`` is a no-op on a database that
+            # already has the table, so a column added after the fact needs its
+            # own statement or every existing deployment silently lacks it.
+            cursor.execute(
+                f"ALTER TABLE graph_edges "
+                f"ADD COLUMN IF NOT EXISTS fact_embedding vector({dimension});"
             )
 
             cursor.execute(
@@ -399,19 +500,78 @@ class GraphStore:
         description: Optional[str] = None,
         weight: float = 1.0,
         source_chunk_ids: Optional[List[str]] = None,
-    ) -> str:
-        """Insert an edge on an open cursor (no commit, no degree bump).
+        fact_embedding: Optional[List[float]] = None,
+    ) -> tuple[Optional[str], bool]:
+        """Write an edge on an open cursor (no commit, no degree bump).
+
+        Returns ``(edge_id, created)``. Two shapes of noise are rejected here
+        rather than at read time, because once written neither is visible:
+
+        * A self-loop feeds a node's PageRank mass straight back to itself. It
+          is dropped, reported as ``(None, False)``.
+        * A pair already related by the same type is *merged* rather than
+          inserted again. ``graph_edges`` carries no uniqueness constraint, so
+          re-extracting one relationship across many chunks otherwise writes a
+          row per chunk — a fifth of a real corpus's edges — inflating that
+          pair's traversal weight and spending the bounded subgraph fetch on
+          duplicates. The surviving row keeps the strongest weight seen and
+          every contributing chunk id.
 
         Callers that batch many edges run ``set_node_degrees`` once afterwards
         instead of bumping degree per edge.
         """
+        if str(src_node_id) == str(dst_node_id):
+            return None, False
+
+        cursor.execute(
+            """
+            SELECT id
+            FROM graph_edges
+            WHERE source_id = %s AND src_node_id = %s AND dst_node_id = %s
+              AND type IS NOT DISTINCT FROM %s
+            LIMIT 1;
+            """,
+            (source_id, src_node_id, dst_node_id, type),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            edge_id = existing[0]
+            # The chunk ids are merged in SQL, against the row's own current
+            # value, rather than read here and written back: a read-modify-write
+            # would drop whatever a concurrent writer appended in between.
+            cursor.execute(
+                """
+                UPDATE graph_edges
+                SET weight = GREATEST(COALESCE(weight, 0), %s),
+                    description = COALESCE(description, %s),
+                    -- Backfills the fact embedding for an edge first written
+                    -- before fact embeddings were switched on.
+                    fact_embedding = COALESCE(fact_embedding, %s::vector),
+                    source_chunk_ids = COALESCE(source_chunk_ids, '[]'::jsonb) || (
+                        SELECT COALESCE(jsonb_agg(candidate), '[]'::jsonb)
+                        FROM jsonb_array_elements(%s::jsonb) AS candidate
+                        WHERE NOT COALESCE(source_chunk_ids, '[]'::jsonb)
+                              @> jsonb_build_array(candidate)
+                    )
+                WHERE id = %s;
+                """,
+                (
+                    weight,
+                    description,
+                    fact_embedding,
+                    Jsonb(list(source_chunk_ids or [])),
+                    edge_id,
+                ),
+            )
+            return str(edge_id), False
+
         edge_id = str(uuid.uuid4())
         cursor.execute(
             """
             INSERT INTO graph_edges
                 (id, source_id, src_node_id, dst_node_id, type, description,
-                 weight, source_chunk_ids)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+                 weight, source_chunk_ids, fact_embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
             """,
             (
                 edge_id,
@@ -422,9 +582,10 @@ class GraphStore:
                 description,
                 weight,
                 Jsonb(source_chunk_ids or []),
+                fact_embedding,
             ),
         )
-        return edge_id
+        return edge_id, True
 
     def add_edge(
         self,
@@ -435,21 +596,28 @@ class GraphStore:
         description: Optional[str] = None,
         weight: float = 1.0,
         source_chunk_ids: Optional[List[str]] = None,
-    ) -> str:
-        """Insert an edge and bump the degree of both endpoints. Returns its id."""
+        fact_embedding: Optional[List[float]] = None,
+    ) -> Optional[str]:
+        """Write an edge and bump the degree of both endpoints. Returns its id.
+
+        Returns ``None`` for a self-loop, which is not written. A repeat of an
+        existing pair merges into that row and returns its id, leaving degree
+        alone — the endpoints gained no new neighbour.
+        """
         self._ensure_tables_once()
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
-            edge_id = self._add_edge(
+            edge_id, created = self._add_edge(
                 cursor, source_id, src_node_id, dst_node_id, type, description,
-                weight, source_chunk_ids,
+                weight, source_chunk_ids, fact_embedding,
             )
-            cursor.execute(
-                "UPDATE graph_nodes SET degree = degree + 1 "
-                "WHERE source_id = %s AND id IN (%s, %s);",
-                (source_id, src_node_id, dst_node_id),
-            )
+            if created:
+                cursor.execute(
+                    "UPDATE graph_nodes SET degree = degree + 1 "
+                    "WHERE source_id = %s AND id IN (%s, %s);",
+                    (source_id, src_node_id, dst_node_id),
+                )
             conn.commit()
             return edge_id
         except Exception as e:
@@ -501,56 +669,96 @@ class GraphStore:
         (not linked to the chunk), mirroring the per-call path.
         ``name_embeddings`` maps ``normalized_name`` to its embedding. Degrees
         are not bumped here — the caller runs ``set_node_degrees`` once at the
-        end. Returns ``(nodes_upserted, edges_added)``.
+        end. Reconnects and retries once if the connection died while the
+        extraction was waiting on the model.
+
+        The chunk's ``graph_ingest_progress`` row is written in this same
+        transaction, so the checkpoint and the rows it describes commit
+        together and a replay of an already-applied chunk returns ``(0, 0)``
+        without touching the graph. Returns ``(nodes_upserted, edges_added)``.
         """
         self._ensure_tables_once()
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        node_ids: Dict[str, str] = {}
-        edges_added = 0
-        try:
-            for entity in entities:
-                normalized_name = entity["normalized_name"]
-                node_id = self._upsert_node(
-                    cursor,
-                    source_id,
-                    entity["name"],
-                    normalized_name,
-                    entity.get("type"),
-                    entity.get("description"),
-                    name_embeddings.get(normalized_name),
-                )
-                node_ids[normalized_name] = node_id
-                self._link_node_chunk(cursor, source_id, node_id, chunk_id)
 
-            for rel in relationships:
-                src_id = self._resolve_endpoint(
-                    cursor, source_id, rel.get("source"), node_ids, name_embeddings
+        def _write(conn):
+            cursor = conn.cursor()
+            node_ids: Dict[str, str] = {}
+            edges_added = 0
+            try:
+                # ``commit()`` can report connection loss *after* the server
+                # committed, and the retry then replays this write: doc_freq
+                # would be bumped twice and a second logical edge inserted
+                # (graph_edges has no uniqueness constraint). The progress row
+                # below is written in this transaction, so a replay sees it —
+                # and so does an overlapping build, once the source lock makes
+                # it wait for this one to commit.
+                _lock_source(cursor, source_id)
+                cursor.execute(
+                    "SELECT status FROM graph_ingest_progress "
+                    "WHERE source_id = %s AND chunk_id = %s;",
+                    (source_id, str(chunk_id)),
                 )
-                dst_id = self._resolve_endpoint(
-                    cursor, source_id, rel.get("target"), node_ids, name_embeddings
-                )
-                if src_id is None or dst_id is None:
-                    continue
-                self._add_edge(
-                    cursor,
-                    source_id,
-                    src_id,
-                    dst_id,
-                    type=rel.get("type"),
-                    description=rel.get("description"),
-                    weight=float(rel.get("weight") or 1.0),
-                    source_chunk_ids=[chunk_id],
-                )
-                edges_added += 1
+                applied = cursor.fetchone()
+                if applied is not None and applied[0] == "done":
+                    conn.rollback()
+                    return 0, 0
 
-            conn.commit()
-            return len(entities), edges_added
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            cursor.close()
+                for entity in entities:
+                    normalized_name = entity["normalized_name"]
+                    node_id = self._upsert_node(
+                        cursor,
+                        source_id,
+                        entity["name"],
+                        normalized_name,
+                        entity.get("type"),
+                        entity.get("description"),
+                        name_embeddings.get(normalized_name),
+                    )
+                    node_ids[normalized_name] = node_id
+                    self._link_node_chunk(cursor, source_id, node_id, chunk_id)
+
+                for rel in relationships:
+                    src_id = self._resolve_endpoint(
+                        cursor, source_id, rel.get("source"), node_ids, name_embeddings
+                    )
+                    dst_id = self._resolve_endpoint(
+                        cursor, source_id, rel.get("target"), node_ids, name_embeddings
+                    )
+                    if src_id is None or dst_id is None:
+                        continue
+                    _, created = self._add_edge(
+                        cursor,
+                        source_id,
+                        src_id,
+                        dst_id,
+                        type=rel.get("type"),
+                        description=rel.get("description"),
+                        # Only a missing weight defaults: 0 is a real one,
+                        # and the ranker drops non-positive edges.
+                        weight=1.0 if rel.get("weight") is None else float(rel["weight"]),
+                        source_chunk_ids=[chunk_id],
+                        fact_embedding=rel.get("fact_embedding"),
+                    )
+                    if created:
+                        edges_added += 1
+
+                cursor.execute(
+                    """
+                    INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
+                    VALUES (%s, %s, 'done')
+                    ON CONFLICT (source_id, chunk_id)
+                    DO UPDATE SET status = EXCLUDED.status;
+                    """,
+                    (source_id, str(chunk_id)),
+                )
+                conn.commit()
+                return len(entities), edges_added
+            except Exception:
+                _safe_rollback(conn)
+                raise
+            finally:
+                cursor.close()
+
+        return self._write_with_reconnect(_write)
 
     def _resolve_endpoint(
         self,
@@ -566,7 +774,11 @@ class GraphStore:
         clean = str(name).strip()
         if not clean:
             return None
-        normalized_name = clean.lower()
+        from docsgpt.graphrag.naming import normalize_entity_name
+
+        normalized_name = normalize_entity_name(clean)
+        if not normalized_name:
+            return None
         if normalized_name in node_ids:
             return node_ids[normalized_name]
         node_id = self._upsert_node(
@@ -612,8 +824,22 @@ class GraphStore:
             cursor.close()
             conn.rollback()
 
-    def count_nodes(self, source_id: str) -> int:
-        """Number of nodes for a source. Zero drives the ClassicRAG fallback."""
+    def count_nodes(self, source_id: str, strict: bool = False) -> int:
+        """Number of nodes for a source. Zero drives the ClassicRAG fallback.
+
+        Args:
+            source_id: Source whose nodes to count.
+            strict: Re-raise a query failure instead of reporting ``0``.
+                Retrieval wants the swallow — a broken count there just routes
+                the source to ClassicRAG — but a caller reporting how big a
+                graph is must not read a failed query as "the graph is empty".
+
+        Returns:
+            int: The node count, or ``0`` when a query failure is swallowed.
+
+        Raises:
+            Exception: The underlying query failure, when ``strict`` is set.
+        """
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
@@ -624,6 +850,8 @@ class GraphStore:
             return int(cursor.fetchone()[0])
         except Exception as e:
             logging.error(f"Error counting nodes: {e}")
+            if strict:
+                raise
             return 0
         finally:
             cursor.close()
@@ -736,6 +964,7 @@ class GraphStore:
                     FROM graph_edges
                     WHERE source_id = %s
                       AND (src_node_id = ANY(%s) OR dst_node_id = ANY(%s))
+                    ORDER BY weight DESC NULLS LAST
                     LIMIT %s;
                     """,
                     (
@@ -783,6 +1012,7 @@ class GraphStore:
                 FROM graph_edges
                 WHERE source_id = %s
                   AND src_node_id = ANY(%s) AND dst_node_id = ANY(%s)
+                ORDER BY weight DESC NULLS LAST
                 LIMIT %s;
                 """,
                 (source_id, node_id_list, node_id_list, MAX_SUBGRAPH_EDGES),
@@ -896,6 +1126,223 @@ class GraphStore:
             cursor.close()
             conn.rollback()
 
+    def seed_nodes_from_facts(
+        self,
+        source_id: str,
+        query_embedding: List[float],
+        fact_limit: int = 5,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Seed nodes drawn from the *relationships* nearest the question.
+
+        Name matching asks "which entity is this question about", which a
+        multi-document question cannot answer: the entity holding the answer is
+        named in another document, not in the question. A fact string carries
+        the relation — "Alder streams_to Quill: ..." — so a question about what
+        a service writes to can match the edge itself and seed the walk on both
+        of its endpoints, including the one nothing in the question names.
+
+        Endpoints are weighted by fact score divided by the entity's
+        ``doc_freq``: an entity appearing in every chunk is a poor seed even
+        when it sits on a well-matched fact, and dividing by how widely it
+        occurs prefers the specific endpoint over the hub.
+
+        Rows match :meth:`search_nodes_by_embedding`'s shape, so the caller's
+        seed weighting is unchanged. Returns nothing when the source has no
+        fact embeddings, which is the signal to fall back to name matching.
+        """
+        if not query_embedding:
+            return []
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                WITH top_facts AS (
+                    SELECT src_node_id, dst_node_id,
+                           1 - (fact_embedding <=> %s::vector) AS score
+                    FROM graph_edges
+                    WHERE source_id = %s AND fact_embedding IS NOT NULL
+                    ORDER BY fact_embedding <=> %s::vector
+                    LIMIT %s
+                )
+                SELECT n.id::text, n.name, n.description,
+                       MAX(f.score / GREATEST(COALESCE(n.doc_freq, 1), 1)) AS weight
+                FROM top_facts f
+                JOIN graph_nodes n
+                  ON n.id = f.src_node_id OR n.id = f.dst_node_id
+                WHERE n.source_id = %s
+                GROUP BY n.id, n.name, n.description
+                ORDER BY weight DESC
+                LIMIT %s;
+                """,
+                (
+                    query_embedding,
+                    source_id,
+                    query_embedding,
+                    max(1, int(fact_limit)),
+                    source_id,
+                    max(1, int(limit)),
+                ),
+            )
+            return [
+                {
+                    "id": row[0],
+                    "name": row[1],
+                    "description": row[2],
+                    # The caller reads weight back as ``1 - distance``.
+                    "distance": 1.0 - float(row[3] or 0.0),
+                }
+                for row in cursor.fetchall()
+            ]
+        except Exception as e:
+            logging.error(f"Error seeding nodes from facts: {e}")
+            return []
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def entity_relationships(
+        self, source_id: str, name: str, limit: int = 25
+    ) -> List[Dict[str, Any]]:
+        """The relationships an entity takes part in, strongest first.
+
+        This is the one thing a caller cannot get from vector search: which
+        *named* thing an entity is connected to. Matching is on the name rather
+        than a node id because the caller is an LLM holding a name it read in
+        the text, not an id.
+        """
+        clean = (name or "").strip()
+        if not clean:
+            return []
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT s.name, e.type, d.name, e.description
+                FROM graph_edges e
+                JOIN graph_nodes s ON s.id = e.src_node_id
+                JOIN graph_nodes d ON d.id = e.dst_node_id
+                WHERE e.source_id = %s AND (s.name ILIKE %s OR d.name ILIKE %s)
+                ORDER BY e.weight DESC NULLS LAST
+                LIMIT %s;
+                """,
+                (source_id, f"%{clean}%", f"%{clean}%", max(1, int(limit))),
+            )
+            return [
+                {"source": row[0], "type": row[1], "target": row[2], "description": row[3]}
+                for row in cursor.fetchall()
+            ]
+        except Exception as e:
+            logging.error(f"Error reading relationships for {name!r}: {e}")
+            return []
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def entity_pages(
+        self, source_id: str, name: str, limit: int = 4
+    ) -> List[Dict[str, Any]]:
+        """Chunks an entity appears in, with the chunk it is *about* first.
+
+        A plain substring match answers "Halvard" with pages that merely mention
+        Halvard, and an unordered ``LIMIT`` then decides which of those the
+        caller sees. Nodes whose name is the entity (or the entity plus a
+        qualifier the extractor appended, "Quill" -> "Quill Store") are
+        preferred, and among those the chunk whose text opens with the name
+        comes first; a substring match is the fallback so an unusual name still
+        resolves.
+        """
+        clean = (name or "").strip()
+        if not clean:
+            return []
+        table, text_col, metadata_col, source_col = _pgvector_identifiers()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                sql.SQL(
+                    """
+                    SELECT d.{metadata}, d.{text},
+                           bool_or(lower(n.name) = %s OR lower(n.name) LIKE %s) AS is_subject
+                    FROM graph_node_chunks gc
+                    JOIN graph_nodes n ON n.id = gc.node_id
+                    JOIN {table} d ON d.id::text = gc.chunk_id
+                    WHERE gc.source_id = %s AND d.{source} = %s
+                      AND (lower(n.name) = %s OR lower(n.name) LIKE %s OR n.name ILIKE %s)
+                    -- One page per chunk. Grouping on the subject flag as well
+                    -- split a chunk two entities link -- one naming it, one
+                    -- merely mentioned -- into two identical pages, spending
+                    -- the caller's page budget twice on the same text.
+                    GROUP BY d.{metadata}, d.{text}
+                    ORDER BY is_subject DESC, (d.{text} ILIKE %s) DESC
+                    LIMIT %s;
+                    """
+                ).format(
+                    metadata=_identifier(metadata_col),
+                    text=_identifier(text_col),
+                    table=_identifier(table),
+                    source=_identifier(source_col),
+                ),
+                (
+                    clean.lower(), f"{clean.lower()} %",
+                    source_id, source_id,
+                    clean.lower(), f"{clean.lower()} %", f"%{clean}%",
+                    f"{clean}%",
+                    max(1, int(limit)),
+                ),
+            )
+            return [
+                {"metadata": row[0] or {}, "text": row[1] or ""}
+                for row in cursor.fetchall()
+            ]
+        except Exception as e:
+            logging.error(f"Error reading pages for {name!r}: {e}")
+            return []
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def chunk_similarities(
+        self, source_id: str, chunk_ids: List[str], query_embedding: List[float]
+    ) -> Dict[str, float]:
+        """Cosine similarity between the query and specific chunks of a source.
+
+        Passage nodes need their own relevance to claim a share of the walk's
+        restart mass, and that number lives in the co-located pgvector table —
+        the same one :meth:`get_chunk_texts` reads. Restricted to the chunk ids
+        the subgraph actually reached, so this never scans the whole source.
+        """
+        if not chunk_ids or not query_embedding:
+            return {}
+        table, _text_col, _metadata_col, source_col = _pgvector_identifiers()
+        vector_col = _pgvector_vector_column()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                sql.SQL(
+                    """
+                    SELECT id::text, 1 - ({vector} <=> %s::vector)
+                    FROM {table}
+                    WHERE {source} = %s AND id::text = ANY(%s);
+                    """
+                ).format(
+                    vector=_identifier(vector_col),
+                    table=_identifier(table),
+                    source=_identifier(source_col),
+                ),
+                (query_embedding, source_id, [str(c) for c in chunk_ids]),
+            )
+            return {row[0]: float(row[1]) for row in cursor.fetchall()}
+        except Exception as e:
+            logging.error(f"Error scoring chunks against the query: {e}")
+            return {}
+        finally:
+            cursor.close()
+            conn.rollback()
+
     def get_chunk_texts(
         self,
         source_id: str,
@@ -916,10 +1363,17 @@ class GraphStore:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                f"""
-                SELECT id, {text_col}, {metadata_col} FROM {table}
-                WHERE {source_col} = %s AND id::text = ANY(%s);
-                """,
+                sql.SQL(
+                    """
+                    SELECT id, {text}, {metadata} FROM {table}
+                    WHERE {source} = %s AND id::text = ANY(%s);
+                    """
+                ).format(
+                    text=_identifier(text_col),
+                    metadata=_identifier(metadata_col),
+                    table=_identifier(table),
+                    source=_identifier(source_col),
+                ),
                 (source_id, [str(c) for c in chunk_ids]),
             )
             return {
@@ -1028,25 +1482,29 @@ class GraphStore:
             cursor.close()
 
     def mark_chunk(self, source_id: str, chunk_id: str, status: str):
+        """Record a chunk's extraction status, reconnecting once if the connection died."""
         self._ensure_tables_once()
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                """
-                INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = EXCLUDED.status;
-                """,
-                (source_id, str(chunk_id), status),
-            )
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            logging.error(f"Error marking chunk: {e}")
-            raise
-        finally:
-            cursor.close()
+
+        def _write(conn):
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO graph_ingest_progress (source_id, chunk_id, status)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (source_id, chunk_id) DO UPDATE SET status = EXCLUDED.status;
+                    """,
+                    (source_id, str(chunk_id), status),
+                )
+                conn.commit()
+            except Exception as e:
+                _safe_rollback(conn)
+                logging.error(f"Error marking chunk: {e}")
+                raise
+            finally:
+                cursor.close()
+
+        return self._write_with_reconnect(_write)
 
     def pending_chunks(self, source_id: str, all_chunk_ids: List[str]) -> List[str]:
         """Chunk ids from ``all_chunk_ids`` not yet marked ``done`` for the source."""
@@ -1094,6 +1552,9 @@ class GraphStore:
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
+            # A reset while a build is still writing must not land in the
+            # middle of one of its chunks.
+            _lock_source(cursor, source_id)
             for table in (
                 "graph_node_chunks",
                 "graph_edges",
@@ -1101,7 +1562,10 @@ class GraphStore:
                 "graph_ingest_progress",
             ):
                 cursor.execute(
-                    f"DELETE FROM {table} WHERE source_id = %s;", (source_id,)
+                    sql.SQL("DELETE FROM {} WHERE source_id = %s;").format(
+                        sql.Identifier(table)
+                    ),
+                    (source_id,),
                 )
             conn.commit()
         except Exception as e:

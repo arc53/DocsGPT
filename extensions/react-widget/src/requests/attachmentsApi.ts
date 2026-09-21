@@ -1,8 +1,8 @@
 /**
- * `/api/store_attachment` returns a Celery task id; the parsed attachment
- * only exists once that task lands, hence the polling below. The id `/stream`
- * expects is the task result's `attachment_id`, not the one the upload
- * response carries. Auth is the agent key as `api_key` in the multipart body.
+ * `/api/store_attachment` returns a Celery task id; the attachment row only
+ * exists once that task finishes, hence the polling below. Sending its id to
+ * `/stream` any earlier finds no row, and the attachment is silently dropped.
+ * Auth is the agent key as `api_key` in the multipart body.
  */
 
 const UPLOAD_TIMEOUT_MS = 2 * 60 * 1000;
@@ -105,11 +105,11 @@ export function uploadAttachment({
 }
 
 /**
- * A 503 or transport failure reads as `pending`: the worker fleet is
- * unreachable, which says nothing about this file.
+ * A 503 or transport failure is treated as `pending`: those mean the worker
+ * fleet is unreachable, and the task may still complete.
  *
- * A failed task's `result` is the raw exception, which has no business on a
- * third-party page, so no reason is returned and the caller supplies one.
+ * A failed task's `result` is the raw exception, so no reason is returned;
+ * the caller supplies one.
  */
 export async function fetchTaskOutcome(
   taskId: string,

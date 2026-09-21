@@ -54,9 +54,9 @@ class PGVectorStore(BaseVectorStore):
         # Use provided connection string or fall back to settings.
         # If PGVECTOR_CONNECTION_STRING is not set but POSTGRES_URI is,
         # reuse the same cluster — normalize from SQLAlchemy dialect to libpq form.
-        self._connection_string = connection_string or getattr(settings, 'PGVECTOR_CONNECTION_STRING', None)
+        self._connection_string = connection_string or settings.PGVECTOR_CONNECTION_STRING
 
-        if not self._connection_string and getattr(settings, 'POSTGRES_URI', None):
+        if not self._connection_string and settings.POSTGRES_URI:
             from docsgpt.core.db_uri import normalize_pgvector_connection_string
             self._connection_string = normalize_pgvector_connection_string(settings.POSTGRES_URI)
 

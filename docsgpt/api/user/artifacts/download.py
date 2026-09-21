@@ -154,7 +154,7 @@ async def download_artifact(request: Request) -> Response:
         # URL. If the active backend can't mint one, that's a config error:
         # surface a 500 rather than silently proxying bytes from a backend
         # the operator expected to be off the hot path.
-        if getattr(settings, "URL_STRATEGY", "backend") == "s3":
+        if settings.URL_STRATEGY == "s3":
             try:
                 url = await anyio.to_thread.run_sync(
                     partial(storage.generate_presigned_url, storage_path, expires_in=_PRESIGNED_URL_TTL)

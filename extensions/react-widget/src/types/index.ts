@@ -12,8 +12,6 @@ declare module 'styled-components' {
       text: string;
       bg: string;
     };
-    /** Present only in SearchBar theme */
-    name?: string;
     /** Gradient stops for the swept status text. */
     shimmer?: {
       base: string;
@@ -25,6 +23,8 @@ declare module 'styled-components' {
       strong: string;
       contrast: string;
       soft: string;
+      /** Background behind a search keyword match. */
+      mark: string;
       link: string;
     };
     hairline?: string;
@@ -51,7 +51,10 @@ export type Status = 'idle' | 'loading' | 'failed';
 export type FEEDBACK = 'LIKE' | 'DISLIKE';
 
 export type AttachmentStatus =
-  'uploading' | 'processing' | 'completed' | 'failed';
+  | 'uploading'
+  | 'processing'
+  | 'completed'
+  | 'failed';
 
 export interface Attachment {
   /** Client-side key for the chip; never sent to the server. */
@@ -62,7 +65,7 @@ export interface Attachment {
   progress: number;
   /** Server-side id; what `/stream` expects in its `attachments` array. */
   attachmentId?: string;
-  /** Why it failed, when there is something worth showing. */
+  /** User-facing failure reason, if any. */
   error?: string;
 }
 
@@ -120,17 +123,15 @@ export interface WidgetProps {
   defaultOpen?: boolean;
   /**
    * File extensions the composer accepts, e.g. `['.pdf', '.md', '.png']`.
-   * Attachments stay off until this is set, since every uploaded file is
-   * parsed and billed against the key owner's token budget. A leading dot is
-   * optional and matching is case-insensitive.
+   * Attachments are disabled while unset. A leading dot is optional and
+   * matching is case-insensitive.
    */
   allowedFileExtensions?: string[];
   /**
-   * Show the microphone that dictates into the input via the browser's Web
-   * Speech API. Off by default: outside Chromium builds with on-device
-   * recognition the browser forwards audio to its vendor's speech service.
-   * The button hides itself where the API is missing or the origin is
-   * insecure.
+   * Show a microphone that dictates into the input via the browser's Web
+   * Speech API. Hidden where the API is unavailable or the origin is
+   * insecure. Outside Chromium builds with on-device recognition, audio is
+   * sent to the browser vendor's speech service.
    */
   showMicButton?: boolean;
 }
@@ -141,7 +142,14 @@ export interface WidgetCoreProps extends WidgetProps {
   prefilledQuery?: string;
 }
 
-export interface SearchBarProps {
+/**
+ * Both props are forwarded to the chat opened from "Ask the AI";
+ * `showMicButton` also adds a microphone to the search field.
+ */
+export interface SearchBarProps extends Pick<
+  WidgetProps,
+  'allowedFileExtensions' | 'showMicButton'
+> {
   apiHost?: string;
   apiKey?: string;
   theme?: THEME;

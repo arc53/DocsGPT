@@ -277,7 +277,7 @@ def _cleanup_orphan(storage: Any, saved_key: Optional[str]) -> None:
 
 def _check_single_artifact_size(size: int) -> None:
     """Reject a single artifact version whose byte size exceeds ``ARTIFACT_MAX_BYTES``."""
-    max_bytes = int(getattr(settings, "ARTIFACT_MAX_BYTES", 0) or 0)
+    max_bytes = int(settings.ARTIFACT_MAX_BYTES or 0)
     if max_bytes > 0 and size > max_bytes:
         raise QuotaExceeded(f"artifact is too large: {size} bytes exceeds the {max_bytes}-byte per-file cap")
 
@@ -292,10 +292,10 @@ def _enforce_user_quota(repo: ArtifactsRepository, user_id: str, added_bytes: in
     existing identity.
     """
     _check_single_artifact_size(added_bytes)
-    max_count = int(getattr(settings, "ARTIFACT_MAX_COUNT_PER_USER", 0) or 0)
+    max_count = int(settings.ARTIFACT_MAX_COUNT_PER_USER or 0)
     if new_artifact and max_count > 0 and repo.count_for_user(user_id) >= max_count:
         raise QuotaExceeded(f"artifact count quota reached ({max_count}); delete artifacts to free space")
-    max_total = int(getattr(settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 0) or 0)
+    max_total = int(settings.ARTIFACT_MAX_TOTAL_BYTES_PER_USER or 0)
     if max_total > 0 and repo.total_bytes_for_user(user_id) + added_bytes > max_total:
         raise QuotaExceeded(f"artifact storage quota reached ({max_total} bytes); delete artifacts to free space")
 

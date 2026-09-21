@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from docsgpt.agents.tools.path_utils import validate_tool_path
 from docsgpt.api import api
+from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.tasks import (
     convert_source_to_wiki,
     extract_graph,
@@ -130,7 +131,7 @@ class CombinedJson(Resource):
         except Exception as err:
             current_app.logger.error(f"Error retrieving sources: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(data), 200)
+        return make_response(jsonify(filter_listing(request, "sources", data)), 200)
 
 
 @sources_ns.route("/sources/paginated")
