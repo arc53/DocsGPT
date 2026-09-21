@@ -34,3 +34,6 @@ models:
     context_window: 1050000
     api_flavor: responses
     reasoning_effort: medium
+    input_cost_per_million: 5.0
+    output_cost_per_million: 30.0
+    cached_input_cost_per_million: 0.5

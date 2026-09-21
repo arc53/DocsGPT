@@ -39,3 +39,7 @@ models:
     description: Anthropic's frontier tier above Opus for the most demanding reasoning and long-horizon agentic work
     context_window: 1000000
     supports_structured_output: true
+    input_cost_per_million: 10.0
+    output_cost_per_million: 50.0
+    cached_input_cost_per_million: 1.0
+    cache_write_cost_per_million: 12.5
