@@ -1,0 +1,62 @@
+name: "CodeQL Advanced"
+
+# Advanced CodeQL setup (required for custom queries). Runs the standard
+# security-extended suite plus DocsGPT's custom queries under
+# .github/codeql/queries and uploads results to the repo's code-scanning
+# alerts (Security tab). Non-blocking: findings annotate PRs but do not fail
+# the check.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '27 3 * * 1'  # weekly, Monday 03:27 UTC (catches new advisories)
+
+permissions: {}
+
+# Cancel superseded runs on the same ref so we don't burn runner minutes
+# analyzing commits that are no longer the branch tip. Keyed on github.ref, so
+# only runs within the same branch/PR cancel each other.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    # Match the guard used by the other security workflows so forks don't fail.
+    if: github.repository == 'arc53/DocsGPT'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload SARIF to code scanning
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@f081e69141f6ea0aa740920b0c7012cd81a4fbe6 # v3.37.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@f081e69141f6ea0aa740920b0c7012cd81a4fbe6 # v3.37.3
+        with:
+          category: "/language:${{ matrix.language }}"

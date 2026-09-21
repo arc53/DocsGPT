@@ -1,0 +1,30 @@
+---
+lockVersion: 1.0.0
+dependencies:
+  codeql/concepts:
+    version: 0.0.27
+  codeql/controlflow:
+    version: 2.0.37
+  codeql/dataflow:
+    version: 2.1.9
+  codeql/javascript-all:
+    version: 2.8.1
+  codeql/mad:
+    version: 1.0.53
+  codeql/regex:
+    version: 1.0.53
+  codeql/ssa:
+    version: 2.0.29
+  codeql/threat-models:
+    version: 1.0.53
+  codeql/tutorial:
+    version: 1.0.53
+  codeql/typetracking:
+    version: 2.0.37
+  codeql/util:
+    version: 2.0.40
+  codeql/xml:
+    version: 1.0.53
+  codeql/yaml:
+    version: 1.0.53
+compiled: false
