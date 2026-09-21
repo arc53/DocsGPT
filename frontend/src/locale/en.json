@@ -1655,6 +1655,7 @@
   "navigation": {
     "agents": "Agents",
     "backToApp": "Back to app",
+    "backToAgents": "Back to agents",
     "sections": {
       "groups": {
         "personal": "Personal",

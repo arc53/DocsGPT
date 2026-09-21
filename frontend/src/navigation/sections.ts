@@ -1,21 +1,33 @@
 import {
   BarChart3,
+  CalendarClock,
   Boxes,
   ChartNoAxesColumn,
   Database,
   FileClock,
   Gauge,
+  Globe,
   KeyRound,
   LayoutDashboard,
+  LayoutGrid,
+  LayoutTemplate,
   ScrollText,
   Settings2,
   ShieldCheck,
+  SquarePen,
+  User,
   UserCog,
   Users,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import {
+  AGENTS_MANAGE_ROOT,
+  agentEditPath,
+  agentLogsPath,
+  agentSchedulesPath,
+  agentsFilterPath,
+} from '../agents/paths';
 
 /** A single destination in a section's vertical nav. */
 export type SectionItem = {
@@ -46,8 +58,25 @@ export type SectionGroup = {
 export type Section = {
   key: string;
   rootPath: string;
+  /** Fallback title; `title` overrides it when the name comes from data. */
   titleKey: string;
+  /** Literal title for a section named after a record, e.g. an agent. */
+  title?: string;
   matches: string[];
+  /**
+   * Where the back button goes. Sections nest — leaving an agent lands on the
+   * agent list, not the chat — so back always means "up one level", and the
+   * top level is the app.
+   */
+  parentPath?: string;
+  parentLabelKey?: string;
+  /**
+   * What the page heading says. `'item'` (the default) suits sections whose
+   * destinations are separate pages; `'section'` suits ones whose
+   * destinations are views of a single page, like the agent list's filters,
+   * where the heading would otherwise flip to "All" or "My agents".
+   */
+  pageTitle?: 'item' | 'section';
   groups: SectionGroup[];
 };
 
@@ -192,7 +221,107 @@ export const ADMIN_SECTION: Section = {
   ],
 };
 
-export const SECTIONS: Section[] = [SETTINGS_SECTION, ADMIN_SECTION];
+export const AGENTS_SECTION: Section = {
+  key: 'agents',
+  rootPath: AGENTS_MANAGE_ROOT,
+  titleKey: 'agents.title',
+  // Only the management prefix. `/agents/:id/c/:conversationId` is a chat and
+  // must leave the sidebar on the conversation list.
+  matches: [AGENTS_MANAGE_ROOT],
+  pageTitle: 'section',
+  groups: [
+    {
+      key: 'agents',
+      items: [
+        {
+          key: 'all',
+          path: agentsFilterPath('all'),
+          labelKey: 'agents.filters.all',
+          icon: LayoutGrid,
+        },
+        {
+          key: 'template',
+          path: agentsFilterPath('template'),
+          labelKey: 'agents.filters.byDocsGPT',
+          icon: LayoutTemplate,
+        },
+        {
+          key: 'user',
+          path: agentsFilterPath('user'),
+          labelKey: 'agents.filters.byMe',
+          icon: User,
+        },
+        {
+          key: 'team',
+          path: agentsFilterPath('team'),
+          labelKey: 'agents.filters.team',
+          icon: Users,
+        },
+        {
+          key: 'shared',
+          path: agentsFilterPath('shared'),
+          labelKey: 'agents.filters.shared',
+          icon: Globe,
+        },
+      ],
+    },
+  ],
+};
+
+/**
+ * The nav for a single agent. Built per route rather than declared, because
+ * its title is the agent's name and its paths carry the agent's id.
+ */
+export function buildAgentSection(
+  agentId: string,
+  agentName: string | undefined,
+  workflow: boolean,
+): Section {
+  return {
+    key: `agent:${agentId}`,
+    rootPath: agentEditPath(agentId, workflow),
+    titleKey: 'agents.pageHeader.fallbackName',
+    title: agentName?.trim() || undefined,
+    matches: [
+      agentEditPath(agentId, workflow),
+      agentLogsPath(agentId),
+      agentSchedulesPath(agentId),
+    ],
+    parentPath: AGENTS_MANAGE_ROOT,
+    parentLabelKey: 'navigation.backToAgents',
+    groups: [
+      {
+        key: 'agent',
+        items: [
+          {
+            key: 'overview',
+            path: agentEditPath(agentId, workflow),
+            labelKey: 'agents.pageHeader.tabs.overview',
+            icon: SquarePen,
+          },
+          {
+            key: 'logs',
+            path: agentLogsPath(agentId),
+            labelKey: 'agents.pageHeader.tabs.logs',
+            icon: ScrollText,
+          },
+          {
+            key: 'schedules',
+            path: agentSchedulesPath(agentId),
+            labelKey: 'agents.pageHeader.tabs.schedules',
+            icon: CalendarClock,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export const SECTIONS: Section[] = [
+  SETTINGS_SECTION,
+  ADMIN_SECTION,
+  AGENTS_SECTION,
+];
 
 const pathMatches = (pathname: string, path: string): boolean =>
   pathname === path || pathname.startsWith(`${path}/`);
@@ -248,17 +377,4 @@ export function getActiveItem(
     }
   }
   return best;
-}
-
-/** Route-derived section state — no extra store, so deep links keep working. */
-export function useActiveSection(): {
-  section: Section | null;
-  item: SectionItem | null;
-} {
-  const { pathname } = useLocation();
-  const section = getSectionForPath(pathname);
-  return {
-    section,
-    item: section ? getActiveItem(section, pathname) : null,
-  };
 }

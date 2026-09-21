@@ -21,7 +21,7 @@ export default function SectionIndexPage({ section }: { section: Section }) {
   return (
     <div className="flex flex-col">
       <h1 className="text-foreground dark:text-foreground text-2xl font-bold">
-        {t(section.titleKey)}
+        {section.title ?? t(section.titleKey)}
       </h1>
       <div className="mt-6 flex flex-col gap-6">
         {groups.map((group) => (

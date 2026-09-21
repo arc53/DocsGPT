@@ -1644,6 +1644,7 @@
   "navigation": {
     "agents": "エージェント",
     "backToApp": "アプリに戻る",
+    "backToAgents": "エージェントに戻る",
     "sections": {
       "groups": {
         "personal": "個人",

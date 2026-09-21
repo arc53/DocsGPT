@@ -1644,6 +1644,7 @@
   "navigation": {
     "agents": "代理",
     "backToApp": "返回應用程式",
+    "backToAgents": "返回代理",
     "sections": {
       "groups": {
         "personal": "個人",

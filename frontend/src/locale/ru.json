@@ -1664,6 +1664,7 @@
   "navigation": {
     "agents": "Агенты",
     "backToApp": "Вернуться в приложение",
+    "backToAgents": "Назад к агентам",
     "sections": {
       "groups": {
         "personal": "Личное",

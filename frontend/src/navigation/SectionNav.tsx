@@ -34,6 +34,7 @@ export default function SectionNav({
 }: SectionNavProps) {
   const { t } = useTranslation();
   const groups = getVisibleGroups(section, { isAdmin });
+  const sectionTitle = section.title ?? t(section.titleKey);
 
   const renderItem = (item: SectionItem) => {
     const isActive = item.key === activeItemKey;
@@ -77,11 +78,14 @@ export default function SectionNav({
           {backLabel}
         </p>
       </button>
-      <p className="text-foreground mt-6 ml-8 shrink-0 text-sm font-semibold dark:text-white">
-        {t(section.titleKey)}
+      <p
+        className="text-foreground mt-6 ml-8 shrink-0 truncate pr-4 text-sm font-semibold dark:text-white"
+        title={sectionTitle}
+      >
+        {sectionTitle}
       </p>
       <nav
-        aria-label={t(section.titleKey)}
+        aria-label={sectionTitle}
         className="scrollbar-overlay mt-3 flex-1 overflow-x-hidden overflow-y-auto pb-4"
       >
         {groups.map((group) => (

@@ -44,6 +44,12 @@ import {
   setAgents,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
+import {
+  agentChatPath,
+  agentEditPath,
+  agentLogsPath,
+  sharedAgentPath,
+} from './paths';
 import { Agent } from './types';
 
 type AgentCardProps = {
@@ -91,7 +97,7 @@ export default function AgentCard({
         label: 'Logs',
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
-          navigate(`/agents/logs/${agent.id}`);
+          navigate(agentLogsPath(agent.id));
         },
         variant: 'default',
         iconWidth: 14,
@@ -103,9 +109,9 @@ export default function AgentCard({
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           if (agent.agent_type === 'workflow') {
-            navigate(`/agents/workflow/edit/${agent.id}`);
+            navigate(agentEditPath(agent.id, true));
           } else {
-            navigate(`/agents/edit/${agent.id}`);
+            navigate(agentEditPath(agent.id));
           }
         },
         variant: 'default',
@@ -189,9 +195,9 @@ export default function AgentCard({
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           if (agent.agent_type === 'workflow') {
-            navigate(`/agents/workflow/edit/${agent.id}`);
+            navigate(agentEditPath(agent.id, true));
           } else {
-            navigate(`/agents/edit/${agent.id}`);
+            navigate(agentEditPath(agent.id));
           }
         },
         variant: 'default',
@@ -220,7 +226,7 @@ export default function AgentCard({
         label: 'Open',
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
-          navigate(`/agents/shared/${agent.shared_token}`);
+          navigate(sharedAgentPath(agent.shared_token));
         },
         variant: 'default',
         iconWidth: 12,
@@ -258,11 +264,11 @@ export default function AgentCard({
     if (section === 'user' || section === 'team') {
       if (agent.status === 'published') {
         dispatch(setSelectedAgent(agent));
-        navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
+        navigate(agent.id ? agentChatPath(agent.id) : '/c/new');
       }
     }
     if (section === 'shared') {
-      navigate(`/agents/shared/${agent.shared_token}`);
+      navigate(sharedAgentPath(agent.shared_token));
     }
   };
 

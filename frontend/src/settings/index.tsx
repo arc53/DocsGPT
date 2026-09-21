@@ -5,8 +5,8 @@ import userService from '../api/services/userService';
 import { useMediaQuery } from '../hooks';
 import { Doc } from '../models/misc';
 import SectionIndexPage from '../navigation/SectionIndexPage';
-import SectionPageHeader from '../navigation/SectionPageHeader';
-import { getActiveItem, SETTINGS_SECTION } from '../navigation/sections';
+import { CurrentSectionHeader } from '../navigation/SectionPageHeader';
+import { SETTINGS_SECTION } from '../navigation/sections';
 import {
   selectPaginatedDocuments,
   selectSourceDocs,
@@ -33,7 +33,6 @@ export default function Settings() {
   const location = useLocation();
   const { isMobile, isTablet } = useMediaQuery();
 
-  const activeItem = getActiveItem(SETTINGS_SECTION, location.pathname);
   const showIndex =
     (isMobile || isTablet) && location.pathname === SETTINGS_SECTION.rootPath;
 
@@ -71,7 +70,7 @@ export default function Settings() {
           <SectionIndexPage section={SETTINGS_SECTION} />
         ) : (
           <>
-            <SectionPageHeader section={SETTINGS_SECTION} item={activeItem} />
+            <CurrentSectionHeader />
             <Routes>
               <Route index element={<General />} />
               <Route path="general" element={<General />} />

@@ -9,6 +9,7 @@ import { Agent } from '../agents/types';
 import ArtifactSidebar from '../components/ArtifactSidebar';
 import ErrorBoundary from '../components/ErrorBoundary';
 import MessageInput from '../components/MessageInput';
+import { agentChatPath, agentEditPathFor } from '../agents/paths';
 import { useMediaQuery } from '../hooks';
 import {
   selectConversationId,
@@ -122,7 +123,7 @@ export default function Conversation() {
   useEffect(() => {
     if (!isNewChatRoute || !conversationId) return;
     const target = urlAgentId
-      ? `/agents/${urlAgentId}/c/${conversationId}`
+      ? agentChatPath(urlAgentId, conversationId)
       : `/c/${conversationId}`;
     navigate(target, { replace: true });
   }, [conversationId, isNewChatRoute, urlAgentId]);
@@ -397,12 +398,7 @@ export default function Conversation() {
                       agent={selectedAgent}
                       onEdit={
                         selectedAgent.id
-                          ? () =>
-                              navigate(
-                                selectedAgent.agent_type === 'workflow'
-                                  ? `/agents/workflow/edit/${selectedAgent.id}`
-                                  : `/agents/edit/${selectedAgent.id}`,
-                              )
+                          ? () => navigate(agentEditPathFor(selectedAgent))
                           : undefined
                       }
                     />

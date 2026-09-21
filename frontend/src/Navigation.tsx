@@ -12,6 +12,11 @@ import {
   Settings as SettingsIcon,
 } from 'lucide-react';
 
+import {
+  AGENTS_MANAGE_ROOT,
+  agentChatPath,
+  sharedAgentPath,
+} from './agents/paths';
 import { Agent } from './agents/types';
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
@@ -42,7 +47,7 @@ import { ActiveState } from './models/misc';
 import { getConversations } from './preferences/preferenceApi';
 import SectionNav from './navigation/SectionNav';
 import SectionRail from './navigation/SectionRail';
-import { useActiveSection } from './navigation/sections';
+import { useSectionContext } from './navigation/useSectionContext';
 import { useLastAppPath } from './navigation/useLastAppPath';
 import {
   selectAgents,
@@ -90,14 +95,19 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   // Section state is derived from the route, so deep links and the browser
   // back button keep working without a second source of truth.
   const { section: activeSection, item: activeSectionItem } =
-    useActiveSection();
+    useSectionContext();
   const lastAppPath = useLastAppPath();
   const inSection = Boolean(activeSection);
-  const backToAppLabel = t('navigation.backToApp');
+
+  // Sections nest, so back means "up one level": out of an agent lands on
+  // the agent list, and out of a top-level section lands back in the app.
+  const backLabel = activeSection?.parentLabelKey
+    ? t(activeSection.parentLabelKey)
+    : t('navigation.backToApp');
 
   const exitSection = () => {
     if (isMobile || isTablet) setNavOpen(false);
-    navigate(lastAppPath.current || '/');
+    navigate(activeSection?.parentPath ?? lastAppPath.current ?? '/');
   };
 
   const closeNavOnMobile = () => {
@@ -224,7 +234,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     resetConversation();
     dispatch(setSelectedAgent(agent));
     if (isMobile || isTablet) setNavOpen(!navOpen);
-    navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
+    navigate(agent.id ? agentChatPath(agent.id) : '/c/new');
   };
 
   const handleTogglePin = (agent: Agent) => {
@@ -271,7 +281,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           return;
         }
         agent = await sharedResponse.json();
-        navigate(`/agents/shared/${agent.shared_token}`);
+        navigate(sharedAgentPath(agent.shared_token));
       } else {
         const agentResponse = await userService.getAgent(data.agent_id, token);
         if (!agentResponse.ok) {
@@ -280,10 +290,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         }
         agent = await agentResponse.json();
         if (agent.shared_token) {
-          navigate(`/agents/shared/${agent.shared_token}`);
+          navigate(sharedAgentPath(agent.shared_token));
         } else {
           await Promise.resolve(dispatch(setSelectedAgent(agent)));
-          navigate(`/agents/${data.agent_id}/c/${index}`);
+          navigate(agentChatPath(data.agent_id, index));
         }
       }
     } catch (error) {
@@ -362,7 +372,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               activeItemKey={activeSectionItem?.key}
               isAdmin={isAdmin}
               onBack={exitSection}
-              backLabel={backToAppLabel}
+              backLabel={backLabel}
             />
           ) : (
             <>
@@ -384,7 +394,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 size="icon"
                 onClick={() => {
                   dispatch(setSelectedAgent(null));
-                  navigate('/agents');
+                  navigate(AGENTS_MANAGE_ROOT);
                 }}
                 aria-label={t('manageAgents')}
                 className="text-muted-foreground hover:text-foreground"
@@ -567,7 +577,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       ))}
                     </div>
                     <NavLink
-                      to="/agents"
+                      to={AGENTS_MANAGE_ROOT}
                       end
                       onClick={() => {
                         dispatch(setSelectedAgent(null));
@@ -596,7 +606,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 </div>
               ) : (
                 <NavLink
-                  to="/agents"
+                  to={AGENTS_MANAGE_ROOT}
                   end
                   onClick={() => {
                     if (isMobile || isTablet) {
@@ -684,7 +694,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 activeItemKey={activeSectionItem?.key}
                 isAdmin={isAdmin}
                 onBack={exitSection}
-                backLabel={backToAppLabel}
+                backLabel={backLabel}
                 onNavigate={closeNavOnMobile}
               />
             )}

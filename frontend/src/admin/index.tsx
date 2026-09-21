@@ -2,8 +2,8 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { useMediaQuery } from '../hooks';
 import SectionIndexPage from '../navigation/SectionIndexPage';
-import SectionPageHeader from '../navigation/SectionPageHeader';
-import { ADMIN_SECTION, getActiveItem } from '../navigation/sections';
+import { CurrentSectionHeader } from '../navigation/SectionPageHeader';
+import { ADMIN_SECTION } from '../navigation/sections';
 import Admins from './Admins';
 import Audit from './Audit';
 import Overview from './Overview';
@@ -20,7 +20,6 @@ export default function Admin() {
   const location = useLocation();
   const { isMobile, isTablet } = useMediaQuery();
 
-  const activeItem = getActiveItem(ADMIN_SECTION, location.pathname);
   const showIndex =
     (isMobile || isTablet) && location.pathname === ADMIN_SECTION.rootPath;
 
@@ -31,7 +30,7 @@ export default function Admin() {
           <SectionIndexPage section={ADMIN_SECTION} />
         ) : (
           <>
-            <SectionPageHeader section={ADMIN_SECTION} item={activeItem} />
+            <CurrentSectionHeader />
             <Routes>
               <Route index element={<Overview />} />
               <Route path="overview" element={<Overview />} />

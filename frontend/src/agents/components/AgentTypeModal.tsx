@@ -1,4 +1,5 @@
 import { Bot, Workflow } from 'lucide-react';
+import { agentNewPath } from '../paths';
 import { useNavigate } from 'react-router-dom';
 
 import { Modal } from '../../components/ui/modal';
@@ -18,11 +19,9 @@ export default function AgentTypeModal({
 
   const handleSelect = (type: 'normal' | 'workflow') => {
     if (type === 'workflow') {
-      navigate(
-        `/agents/workflow/new${folderId ? `?folder_id=${folderId}` : ''}`,
-      );
+      navigate(agentNewPath({ workflow: true, folderId }));
     } else {
-      navigate(`/agents/new${folderId ? `?folder_id=${folderId}` : ''}`);
+      navigate(agentNewPath({ folderId }));
     }
     onClose();
   };
