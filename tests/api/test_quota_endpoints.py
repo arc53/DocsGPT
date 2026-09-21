@@ -222,7 +222,8 @@ class TestUserPolicy:
             body = _body(client.get("/api/admin/quotas/users/u1"))
         overall = body["effective"][0]
         assert overall["bucket"] == "all"
-        assert overall["tokens"] == {"limit": 900.0, "used": 40, "source": "team", "source_id": big}
+        assert overall["tokens"] == {"limit": 900, "used": 40, "source": "team", "source_id": big}
+        assert isinstance(overall["tokens"]["limit"], int)
         assert overall["cost"] == {"limit": 1.0, "used": 0.25, "source": "instance", "source_id": None}
         assert body["policies"] == []
 
@@ -243,12 +244,14 @@ class TestUserPolicy:
 
 
 class TestUnpricedModels:
-    def test_lists_used_catalog_models_without_a_price(self, client, db):
+    def test_lists_models_recorded_at_zero_for_want_of_a_price(self, client, db):
         usage = TokenUsageRepository(db)
         usage.insert(user_id="u1", prompt_tokens=10, model_id="local-llama")
-        usage.insert(user_id="u1", prompt_tokens=5, model_id="claude-haiku-4-5", cost=0.1)
+        # Priced when called; its provider may be disabled by now.
+        usage.insert(user_id="u1", prompt_tokens=5, model_id="retired-priced-model", cost=0.1)
+        usage.insert(user_id="u1", prompt_tokens=3, model_id="free-model")
         usage.insert(user_id="u1", prompt_tokens=7, model_id="7d0c1a52-2f5e-4c53-9a0e-111111111111")
-        with _admin(), patch("docsgpt.api.admin.quotas.is_priced", lambda m: m == "claude-haiku-4-5"):
+        with _admin(), patch("docsgpt.api.admin.quotas.is_priced", lambda m: m == "free-model"):
             unpriced = _body(client.get("/api/admin/quotas"))["unpriced_models"]
         assert unpriced == [{"model_id": "local-llama", "tokens": 10, "cost": 0.0}]
 
@@ -266,7 +269,7 @@ class TestMyQuota:
             body = _body(client.get("/api/user/quota"))
         (bucket,) = body["buckets"]
         assert bucket["bucket"] == "all"
-        assert bucket["tokens"] == {"limit": 100.0, "used": 30}
+        assert bucket["tokens"] == {"limit": 100, "used": 30}
         assert bucket["cost"] == {"limit": None, "used": 0.0}
         assert "source" not in json.dumps(body) and "secret" not in json.dumps(body)
 

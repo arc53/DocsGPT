@@ -43,18 +43,19 @@ class BucketStatus:
     def to_dict(self) -> dict:
         """Return the JSON shape shared by the admin and user quota endpoints."""
 
-        def budget(limit: ResolvedLimit, used: float) -> dict:
+        def budget(limit: Optional[float], resolved: ResolvedLimit, used: float) -> dict:
             return {
-                "limit": limit.limit,
+                "limit": limit,
                 "used": used,
-                "source": limit.source,
-                "source_id": limit.source_id,
+                "source": resolved.source,
+                "source_id": resolved.source_id,
             }
 
+        tokens, cost = self.limits.tokens, self.limits.cost
         return {
             "bucket": self.bucket,
-            "tokens": budget(self.limits.tokens, self.tokens_used),
-            "cost": budget(self.limits.cost, round(self.cost_used, 6)),
+            "tokens": budget(None if tokens.unlimited else int(tokens.limit), tokens, self.tokens_used),
+            "cost": budget(cost.limit, cost, round(self.cost_used, 6)),
             "resets_at": self.resets_at.isoformat(),
         }
 

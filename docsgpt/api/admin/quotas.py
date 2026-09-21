@@ -151,13 +151,15 @@ def _delete_policy(scope: str, subject_id: Optional[str]):
 
 
 def _unpriced_models(conn) -> list[dict]:
-    """Catalog models used this period that no cost limit can see."""
+    """Models used this period whose calls were all recorded at $0 for want of a price."""
     start, _ = window_bounds(settings.QUOTA_PERIOD)
     return [
         row
         for row in TokenUsageRepository(conn).tokens_by_model(start=start)
-        # BYOM ids are UUIDs; those calls are $0 by design, not by omission.
-        if not looks_like_uuid(row["model_id"]) and not is_priced(row["model_id"])
+        # Judged by what was recorded, so a priced model whose provider has since
+        # been disabled is not listed. BYOM ids are UUIDs and $0 by design; a
+        # model explicitly priced at $0 is free, not unpriced.
+        if row["cost"] == 0 and not looks_like_uuid(row["model_id"]) and not is_priced(row["model_id"])
     ]
 
 

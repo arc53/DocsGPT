@@ -210,7 +210,7 @@ class TestStatusAndPayload:
         (status,) = QuotaService.status("u1", now=NOW)
         assert status.to_dict() == {
             "bucket": "all",
-            "tokens": {"limit": 100.0, "used": 40, "source": "instance", "source_id": None},
+            "tokens": {"limit": 100, "used": 40, "source": "instance", "source_id": None},
             "cost": {"limit": 2.0, "used": 0.5, "source": "instance", "source_id": None},
             "resets_at": "2026-10-01T00:00:00+00:00",
         }
