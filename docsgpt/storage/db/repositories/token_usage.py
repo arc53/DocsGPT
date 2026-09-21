@@ -118,9 +118,13 @@ class TokenUsageRepository:
         user_id: Optional[str] = None,
         api_key: Optional[str] = None,
     ) -> int:
-        """Total (prompt + generated) tokens in the given time range."""
-        clauses = ["timestamp >= :start", "timestamp <= :end"]
-        params: dict = {"start": start, "end": end}
+        """Total (prompt + generated) tokens in the given time range.
+
+        Run-level rollup rows (``ROLLUP_SOURCES``) are excluded: their tokens
+        are already counted on the run's per-call rows.
+        """
+        clauses = ["timestamp >= :start", "timestamp <= :end", "source <> ALL(:rollup_sources)"]
+        params: dict = {"start": start, "end": end, "rollup_sources": list(self.ROLLUP_SOURCES)}
         if user_id is not None:
             clauses.append("user_id = :user_id")
             params["user_id"] = user_id
@@ -133,6 +137,33 @@ class TokenUsageRepository:
             params,
         )
         return result.scalar()
+
+    def usage_totals(self, *, user_id: str, start: datetime, bucket: str = "all") -> tuple[int, float]:
+        """Return ``(tokens, cost_usd)`` a user has consumed since ``start``.
+
+        Args:
+            user_id: The billable user (auth ``sub``).
+            start: Inclusive window start.
+            bucket: ``all``, ``direct`` (rows without an agent key) or
+                ``agent`` (rows with one).
+
+        Rollup rows are excluded; side-channel calls count, they are real spend.
+        """
+        clauses = ["user_id = :user_id", "timestamp >= :start", "source <> ALL(:rollup_sources)"]
+        if bucket == "direct":
+            clauses.append("api_key IS NULL")
+        elif bucket == "agent":
+            clauses.append("api_key IS NOT NULL")
+        elif bucket != "all":
+            raise ValueError(f"unknown usage bucket: {bucket!r}")
+        row = self._conn.execute(
+            text(
+                "SELECT COALESCE(SUM(prompt_tokens + generated_tokens), 0), COALESCE(SUM(cost), 0) "
+                f"FROM token_usage WHERE {' AND '.join(clauses)}"
+            ),
+            {"user_id": user_id, "start": start, "rollup_sources": list(self.ROLLUP_SOURCES)},
+        ).one()
+        return int(row[0]), float(row[1])
 
     # Token usage written outside a user-initiated request (conversation
     # title generation, history compression, RAG question condensing,

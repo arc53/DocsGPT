@@ -393,6 +393,8 @@ class WorkflowEngine:
             "prompt": node_prompt,
             "chat_history": self.agent.chat_history,
             "decoded_token": self.agent.decoded_token,
+            # Attributes the node's token usage to the workflow agent.
+            "agent_id": getattr(self.agent, "agent_id", None),
             "json_schema": node_json_schema,
             "retrieved_docs": node_docs,
             # A template that interpolates the documents itself already carries
