@@ -378,3 +378,10 @@ export function getActiveItem(
   }
   return best;
 }
+
+/**
+ * Which level of the sidebar stack a section occupies: the chat list, a
+ * section, or a record inside one.
+ */
+export const depthOf = (section: Section | null): number =>
+  section ? (section.parentPath ? 2 : 1) : 0;

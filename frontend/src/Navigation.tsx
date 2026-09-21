@@ -47,6 +47,13 @@ import { ActiveState } from './models/misc';
 import { getConversations } from './preferences/preferenceApi';
 import SectionNav from './navigation/SectionNav';
 import SectionRail from './navigation/SectionRail';
+import SidebarLevel from './navigation/SidebarLevel';
+import {
+  getActiveItem,
+  getSectionForPath,
+  type Section,
+} from './navigation/sections';
+import { useSidebarLevel } from './navigation/SidebarLevelProvider';
 import { useSectionContext } from './navigation/useSectionContext';
 import { useLastAppPath } from './navigation/useLastAppPath';
 import {
@@ -94,21 +101,56 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   // Section state is derived from the route, so deep links and the browser
   // back button keep working without a second source of truth.
-  const { section: activeSection, item: activeSectionItem } =
-    useSectionContext();
+  const { section: routeSection, item: routeSectionItem } = useSectionContext();
+  const { pending, goToLevel } = useSidebarLevel();
+
+  // While a level change is in flight the sidebar runs ahead of the route,
+  // so it can start moving on the click rather than on the commit.
+  const activeSection = pending ? pending.section : routeSection;
+  const activeSectionItem =
+    pending && pending.section
+      ? getActiveItem(pending.section, pending.pathname)
+      : pending
+        ? null
+        : routeSectionItem;
   const lastAppPath = useLastAppPath();
   const inSection = Boolean(activeSection);
 
-  // Sections nest, so back means "up one level": out of an agent lands on
-  // the agent list, and out of a top-level section lands back in the app.
-  const backLabel = activeSection?.parentLabelKey
-    ? t(activeSection.parentLabelKey)
-    : t('navigation.backToApp');
+  // The sidebar is a stack: chats, a section, and a record inside it. A
+  // section that declares a parent sits on the third level, above its
+  // parent's nav.
+  const nestedSection = activeSection?.parentPath ? activeSection : null;
+  const topSection = nestedSection
+    ? getSectionForPath(nestedSection.parentPath ?? '')
+    : activeSection;
+  const sidebarDepth = nestedSection ? 2 : activeSection ? 1 : 0;
 
-  const exitSection = () => {
+  // Panels stay mounted after being left so they have something to animate
+  // out, and so the one behind is already there to be revealed on the way
+  // back. They park off screen, so the cost is a subtree nobody can see.
+  const lastTopSection = useRef<Section | null>(null);
+  const lastNestedSection = useRef<Section | null>(null);
+  if (topSection) lastTopSection.current = topSection;
+  if (nestedSection) lastNestedSection.current = nestedSection;
+  const topPanel = topSection ?? lastTopSection.current;
+  const nestedPanel = nestedSection ?? lastNestedSection.current;
+
+  // Back means "up one level": out of an agent lands on the agent list, out
+  // of a top-level section lands back in the app.
+  const backLabelFor = (section: Section) =>
+    section.parentLabelKey
+      ? t(section.parentLabelKey)
+      : t('navigation.backToApp');
+
+  const exitSectionFrom = (section: Section | null) => () => {
     if (isMobile || isTablet) setNavOpen(false);
-    navigate(activeSection?.parentPath ?? lastAppPath.current ?? '/');
+    goToLevel(section?.parentPath ?? lastAppPath.current ?? '/');
   };
+
+  const exitSection = exitSectionFrom(activeSection);
+  const backLabel = activeSection
+    ? backLabelFor(activeSection)
+    : t('navigation.backToApp');
 
   const closeNavOnMobile = () => {
     if (isMobile || isTablet) setNavOpen(false);
@@ -394,7 +436,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 size="icon"
                 onClick={() => {
                   dispatch(setSelectedAgent(null));
-                  navigate(AGENTS_MANAGE_ROOT);
+                  goToLevel(AGENTS_MANAGE_ROOT);
                 }}
                 aria-label={t('manageAgents')}
                 className="text-muted-foreground hover:text-foreground"
@@ -419,7 +461,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  onClick={() => navigate('/settings')}
+                  onClick={() => goToLevel('/settings')}
                   aria-label={t('settings.label')}
                   className="text-muted-foreground hover:text-foreground"
                 >
@@ -476,14 +518,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             mounted so the conversation list keeps its scroll position while
             the user is away in a section. */}
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
-          <div
-            className={cn(
-              'absolute inset-0 flex flex-col transition-[translate,opacity,visibility] duration-300 ease-in-out',
-              inSection
-                ? 'invisible -translate-x-full opacity-0'
-                : 'visible translate-x-0 opacity-100',
-            )}
-          >
+          <SidebarLevel depth={0} current={sidebarDepth}>
             <NavLink
               to={'/c/new'}
               onClick={() => {
@@ -579,11 +614,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     <NavLink
                       to={AGENTS_MANAGE_ROOT}
                       end
-                      onClick={() => {
+                      onClick={(event) => {
                         dispatch(setSelectedAgent(null));
-                        if (isMobile || isTablet) {
-                          setNavOpen(false);
-                        }
+                        closeNavOnMobile();
+                        if (event.metaKey || event.ctrlKey || event.shiftKey)
+                          return;
+                        event.preventDefault();
+                        goToLevel(AGENTS_MANAGE_ROOT);
                       }}
                       className={({ isActive }) =>
                         `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 ${
@@ -608,11 +645,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   to={AGENTS_MANAGE_ROOT}
                   end
-                  onClick={() => {
-                    if (isMobile || isTablet) {
-                      setNavOpen(false);
-                    }
+                  onClick={(event) => {
+                    closeNavOnMobile();
                     dispatch(setSelectedAgent(null));
+                    if (event.metaKey || event.ctrlKey || event.shiftKey)
+                      return;
+                    event.preventDefault();
+                    goToLevel(AGENTS_MANAGE_ROOT);
                   }}
                   className={({ isActive }) =>
                     `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${
@@ -679,26 +718,39 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <></>
               )}
             </div>
-          </div>
-          <div
-            className={cn(
-              'absolute inset-0 flex flex-col transition-[translate,opacity,visibility] duration-300 ease-in-out',
-              inSection
-                ? 'visible translate-x-0 opacity-100'
-                : 'invisible translate-x-full opacity-0',
-            )}
-          >
-            {activeSection && (
+          </SidebarLevel>
+          <SidebarLevel depth={1} current={sidebarDepth}>
+            {topPanel && (
               <SectionNav
-                section={activeSection}
-                activeItemKey={activeSectionItem?.key}
+                section={topPanel}
+                activeItemKey={
+                  topPanel === activeSection
+                    ? activeSectionItem?.key
+                    : undefined
+                }
                 isAdmin={isAdmin}
-                onBack={exitSection}
-                backLabel={backLabel}
+                onBack={exitSectionFrom(topPanel)}
+                backLabel={backLabelFor(topPanel)}
                 onNavigate={closeNavOnMobile}
               />
             )}
-          </div>
+          </SidebarLevel>
+          <SidebarLevel depth={2} current={sidebarDepth}>
+            {nestedPanel && (
+              <SectionNav
+                section={nestedPanel}
+                activeItemKey={
+                  nestedPanel === activeSection
+                    ? activeSectionItem?.key
+                    : undefined
+                }
+                isAdmin={isAdmin}
+                onBack={exitSectionFrom(nestedPanel)}
+                backLabel={backLabelFor(nestedPanel)}
+                onNavigate={closeNavOnMobile}
+              />
+            )}
+          </SidebarLevel>
         </div>
         <div className="text-foreground flex h-auto shrink-0 flex-col justify-end dark:text-white">
           {/* Inside a section its own nav is the way around, so this entry
@@ -712,8 +764,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             )}
           >
             <Link
-              onClick={closeNavOnMobile}
               to="/settings"
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                event.preventDefault();
+                closeNavOnMobile();
+                goToLevel('/settings');
+              }}
               className="hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3"
             >
               <SettingsIcon

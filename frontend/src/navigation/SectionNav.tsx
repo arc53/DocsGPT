@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
 import { getVisibleGroups, type Section, type SectionItem } from './sections';
+import { useSidebarLevel } from './SidebarLevelProvider';
 
 type SectionNavProps = {
   section: Section;
@@ -33,6 +34,7 @@ export default function SectionNav({
   onNavigate,
 }: SectionNavProps) {
   const { t } = useTranslation();
+  const { goToLevel } = useSidebarLevel();
   const groups = getVisibleGroups(section, { isAdmin });
   const sectionTitle = section.title ?? t(section.titleKey);
 
@@ -43,7 +45,15 @@ export default function SectionNav({
       <Link
         key={item.key}
         to={item.path}
-        onClick={onNavigate}
+        onClick={(event) => {
+          // Same level, so nothing slides — but routing through the level
+          // provider still renders the page at low priority, which keeps the
+          // highlight moving under the cursor instead of after the mount.
+          if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+          event.preventDefault();
+          goToLevel(item.path);
+          onNavigate?.();
+        }}
         aria-current={isActive ? 'page' : undefined}
         className={cn(
           'hover:bg-sidebar-accent mx-4 my-1 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3',

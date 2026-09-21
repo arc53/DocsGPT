@@ -4,6 +4,7 @@ import {
   ADMIN_SECTION,
   AGENTS_SECTION,
   buildAgentSection,
+  depthOf,
   getActiveItem,
   getSectionForPath,
   getSectionItems,
@@ -138,5 +139,19 @@ describe('buildAgentSection', () => {
     expect(getActiveItem(section, '/agents/manage/workflow/edit/a1')?.key).toBe(
       'overview',
     );
+  });
+});
+
+describe('depthOf', () => {
+  it('puts chats, sections and records on their own level', () => {
+    expect(depthOf(null)).toBe(0);
+    expect(depthOf(getSectionForPath('/settings'))).toBe(1);
+    expect(depthOf(getSectionForPath('/agents/manage'))).toBe(1);
+    expect(depthOf(getSectionForPath('/admin/users'))).toBe(1);
+    expect(depthOf(buildAgentSection('a1', 'Support bot', false))).toBe(2);
+  });
+
+  it('keeps a chat with an agent at the chat level', () => {
+    expect(depthOf(getSectionForPath('/agents/a1/c/c1'))).toBe(0);
   });
 });

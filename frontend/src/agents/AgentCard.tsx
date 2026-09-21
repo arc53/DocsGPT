@@ -28,6 +28,7 @@ import { Modal } from '../components/ui/modal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MoveToFolderModal from '../modals/MoveToFolderModal';
 import { ActiveState } from '../models/misc';
+import { useSidebarLevel } from '../navigation/SidebarLevelProvider';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 
 type AgentMenuOption = {
@@ -67,6 +68,10 @@ export default function AgentCard({
 }: AgentCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Opening an agent is a level change, so it goes through the sidebar's
+  // navigator: the panel starts sliding on the click rather than waiting for
+  // the editor to mount.
+  const { goToLevel } = useSidebarLevel();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const userAgents = useSelector(selectAgents);
@@ -97,7 +102,7 @@ export default function AgentCard({
         label: 'Logs',
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
-          navigate(agentLogsPath(agent.id));
+          goToLevel(agentLogsPath(agent.id));
         },
         variant: 'default',
         iconWidth: 14,
@@ -109,9 +114,9 @@ export default function AgentCard({
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           if (agent.agent_type === 'workflow') {
-            navigate(agentEditPath(agent.id, true));
+            goToLevel(agentEditPath(agent.id, true));
           } else {
-            navigate(agentEditPath(agent.id));
+            goToLevel(agentEditPath(agent.id));
           }
         },
         variant: 'default',
@@ -195,9 +200,9 @@ export default function AgentCard({
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           if (agent.agent_type === 'workflow') {
-            navigate(agentEditPath(agent.id, true));
+            goToLevel(agentEditPath(agent.id, true));
           } else {
-            navigate(agentEditPath(agent.id));
+            goToLevel(agentEditPath(agent.id));
           }
         },
         variant: 'default',

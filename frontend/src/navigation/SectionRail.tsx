@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 import { getSectionItems, type Section } from './sections';
+import { useSidebarLevel } from './SidebarLevelProvider';
 
 type SectionRailProps = {
   section: Section;
@@ -28,10 +29,17 @@ export default function SectionRail({
   backLabel,
 }: SectionRailProps) {
   const { t } = useTranslation();
+  const { goToLevel } = useSidebarLevel();
   const items = getSectionItems(section, { isAdmin });
 
   return (
-    <>
+    // Keyed on the section so switching level replays the fade: the rail is
+    // too narrow to slide panels through, but it should not swap in place
+    // with no acknowledgement either.
+    <div
+      key={section.key}
+      className="animate-in fade-in flex flex-col items-center gap-2 duration-200 motion-reduce:animate-none"
+    >
       <Button
         type="button"
         variant="ghost"
@@ -52,6 +60,11 @@ export default function SectionRail({
           <Link
             key={item.key}
             to={item.path}
+            onClick={(event) => {
+              if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+              event.preventDefault();
+              goToLevel(item.path);
+            }}
             aria-label={label}
             aria-current={isActive ? 'page' : undefined}
             title={label}
@@ -64,6 +77,6 @@ export default function SectionRail({
           </Link>
         );
       })}
-    </>
+    </div>
   );
 }
