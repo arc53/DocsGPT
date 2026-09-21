@@ -10,9 +10,6 @@ const endpoints = {
     MODELS: '/api/models',
     DOCS: '/api/sources',
     DOCS_PAGINATED: '/api/sources/paginated',
-    API_KEYS: '/api/get_api_keys',
-    CREATE_API_KEY: '/api/create_api_key',
-    DELETE_API_KEY: '/api/delete_api_key',
     AGENT: (id: string) => `/api/get_agent?id=${id}`,
     AGENTS: '/api/get_agents',
     GUARDRAIL_CATALOG: '/api/guardrails/catalog',
@@ -155,6 +152,10 @@ const endpoints = {
     DEVICE_PAIRINGS: '/api/devices/pairings',
     DEVICE_PAIRING: (deviceCode: string) =>
       `/api/devices/pairings/${deviceCode}`,
+    ACCESS_TOKENS: '/api/user/tokens',
+    ACCESS_TOKEN: (id: string) => `/api/user/tokens/${id}`,
+    ACCESS_TOKEN_REGENERATE: (id: string) =>
+      `/api/user/tokens/${id}/regenerate`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',

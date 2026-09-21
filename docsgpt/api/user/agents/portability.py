@@ -36,6 +36,7 @@ from docsgpt.agents.default_tools import (
     synthesized_tool_name_for_id,
 )
 from docsgpt.api import api
+from docsgpt.api.pat.rules import allowed_ids
 from docsgpt.core.model_utils import validate_model_id
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
@@ -1717,6 +1718,32 @@ def _read_import_payload(req):
     return raw.decode("utf-8", "replace"), {}
 
 
+def _restricted_token_denial(conn, user: str, doc: dict) -> Optional[str]:
+    """Why a resource-restricted personal access token may not import ``doc``, if it may not.
+
+    An import resolves sources, prompts and tools by name and may create them,
+    so a token restricted on any of those families cannot be held to its
+    allowlist here. A token restricted to specific agents may update exactly
+    those; it can never create one.
+    """
+    for family in ("sources", "prompts", "tools", "workflows"):
+        if allowed_ids(request, family) is not None:
+            return f"A token restricted to specific {family} cannot import agents"
+    allowed_agents = allowed_ids(request, "agents")
+    if allowed_agents is None:
+        return None
+    target = _resolve_target(conn, user, doc.get("metadata") or {})
+    if target["action"] != "update" or target["agent_id"] not in allowed_agents:
+        return "This token is restricted to specific agents and may only update those"
+    return None
+
+
+def _token_denied_response(reason: str):
+    return make_response(
+        jsonify({"success": False, "error": "resource_not_allowed", "message": reason}), 403
+    )
+
+
 @agents_portability_ns.route("/export_agent")
 class ExportAgent(Resource):
     @api.doc(params={"id": "Agent ID"}, description="Export an agent as YAML")
@@ -1763,6 +1790,8 @@ class ImportAgentPlan(Resource):
             return make_response(jsonify({"success": False, "message": str(exc)}), 400)
         try:
             with db_readonly() as conn:
+                if reason := _restricted_token_denial(conn, user, doc):
+                    return _token_denied_response(reason)
                 plan = plan_import(conn, user, doc)
         except Exception:
             current_app.logger.error("Agent import plan failed", exc_info=True)
@@ -1786,6 +1815,8 @@ class ImportAgent(Resource):
             return make_response(jsonify({"success": False, "message": str(exc)}), 400)
         try:
             with db_session() as conn:
+                if reason := _restricted_token_denial(conn, user, doc):
+                    return _token_denied_response(reason)
                 result = apply_import(conn, user, doc, resolution)
         except AgentImportError as exc:
             # Apply-time rejection of the user's document (e.g. the workflow

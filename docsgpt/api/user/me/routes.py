@@ -12,6 +12,8 @@ from __future__ import annotations
 from flask import jsonify, make_response, request
 from flask_restx import Namespace, Resource
 
+from docsgpt.api.pat.tokens import is_pat
+
 me_ns = Namespace("me", description="Current user identity and roles", path="/api")
 
 
@@ -31,4 +33,13 @@ class MeResource(Resource):
             value = decoded_token.get(field)
             if value:
                 body[field] = value
+        if is_pat(decoded_token):
+            # Lets a CLI or pipeline confirm what its token is allowed to do.
+            body["auth_method"] = "pat"
+            body["token"] = {
+                "id": decoded_token.get("pat_id"),
+                "name": decoded_token.get("pat_name"),
+                "scopes": decoded_token.get("scopes") or [],
+                "resource_filter": decoded_token.get("resource_filter") or {},
+            }
         return make_response(jsonify(body), 200)

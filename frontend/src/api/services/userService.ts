@@ -19,12 +19,6 @@ const userService = {
     apiClient.get(`${endpoints.USER.DOCS}`, token),
   getDocsWithPagination: (query: string, token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS_PAGINATED}?${query}`, token),
-  getAPIKeys: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.API_KEYS, token),
-  createAPIKey: (data: any, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.USER.CREATE_API_KEY, data, token),
-  deleteAPIKey: (data: any, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.USER.DELETE_API_KEY, data, token),
   getAgent: (id: string, token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.AGENT(id), token),
   getAgents: (token: string | null): Promise<any> =>

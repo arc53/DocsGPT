@@ -28,6 +28,7 @@ import CustomModels from './CustomModels';
 import Sources from './Sources';
 import General from './General';
 import Logs from './Logs';
+import PersonalAccessTokens from './PersonalAccessTokens';
 import Tools from './Tools';
 
 type HiddenGradientType = 'left' | 'right' | undefined;
@@ -47,6 +48,8 @@ export default function Settings() {
     if (path.includes('/settings/tools')) return t('settings.tools.label');
     if (path.includes('/settings/custom-models'))
       return t('settings.customModels.label');
+    if (path.includes('/settings/access-tokens'))
+      return t('settings.accessTokens.label');
     return t('settings.general.label');
   };
 
@@ -58,6 +61,7 @@ export default function Settings() {
     t('settings.logs.label'),
     t('settings.tools.label'),
     t('settings.customModels.label'),
+    t('settings.accessTokens.label'),
   ];
   const [hiddenGradient, setHiddenGradient] =
     useState<HiddenGradientType>('left');
@@ -93,6 +97,8 @@ export default function Settings() {
     else if (tab === t('settings.tools.label')) navigate('/settings/tools');
     else if (tab === t('settings.customModels.label'))
       navigate('/settings/custom-models');
+    else if (tab === t('settings.accessTokens.label'))
+      navigate('/settings/access-tokens');
   };
 
   React.useEffect(() => {
@@ -198,6 +204,7 @@ export default function Settings() {
           element={<Navigate to="/settings/tools" replace />}
         />
         <Route path="custom-models" element={<CustomModels />} />
+        <Route path="access-tokens" element={<PersonalAccessTokens />} />
         <Route path="*" element={<Navigate to="/settings" replace />} />
       </Routes>
     </div>
