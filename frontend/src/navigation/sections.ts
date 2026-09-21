@@ -1,7 +1,7 @@
 import {
   BarChart3,
+  Blocks,
   CalendarClock,
-  Boxes,
   ChartNoAxesColumn,
   Database,
   FileClock,
@@ -125,7 +125,7 @@ export const SETTINGS_SECTION: Section = {
           key: 'customModels',
           path: '/settings/custom-models',
           labelKey: 'settings.customModels.label',
-          icon: Boxes,
+          icon: Blocks,
         },
         {
           key: 'teams',
