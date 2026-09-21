@@ -400,6 +400,19 @@ function AgentSection({
     onCreateFolder(name, currentFolderId || undefined);
   };
 
+  // Must stay above the empty-state returns below: a hook after an early
+  // return is skipped on the render that takes it, which React rejects with
+  // "rendered fewer hooks than expected". Reachable now that each filter is
+  // its own route — landing straight on an empty one renders once while the
+  // data loads, then again once it arrives empty.
+  const breadcrumbItems = useMemo(() => {
+    if (!folders || folderPath.length === 0) return [];
+    return folderPath.map((folderId) => {
+      const folder = folders.find((f) => f.id === folderId);
+      return { id: folderId, name: folder?.name || '' };
+    });
+  }, [folders, folderPath]);
+
   const hasNoAgentsAtAll = !isLoading && totalAgents === 0;
   const isSearchingWithNoResults =
     !isLoading && searchQuery && filteredAgents.length === 0 && totalAgents > 0;
@@ -432,15 +445,6 @@ function AgentSection({
       </div>
     );
   }
-
-  // Build breadcrumb items from folder path
-  const breadcrumbItems = useMemo(() => {
-    if (!folders || folderPath.length === 0) return [];
-    return folderPath.map((folderId) => {
-      const folder = folders.find((f) => f.id === folderId);
-      return { id: folderId, name: folder?.name || '' };
-    });
-  }, [folders, folderPath]);
 
   return (
     <div className="mt-8 flex flex-col gap-4">
