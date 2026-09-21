@@ -61,6 +61,10 @@ export default function AgentsList() {
   const [showAgentTypeModal, setShowAgentTypeModal] = useState(false);
   const [modalFolderId, setModalFolderId] = useState<string | null>(null);
 
+  // The list's filter is a route, so it is linkable and survives a reload;
+  // the sidebar nav (and the pill row below `lg`) does the navigating.
+  const activeFilter = filterFromPath(location.pathname);
+
   // Sync folder path with URL
   useEffect(() => {
     const currentFolderInUrl = searchParams.get('folder');
@@ -68,18 +72,13 @@ export default function AgentsList() {
       folderPath.length > 0 ? folderPath[folderPath.length - 1] : null;
 
     if (currentFolderId !== currentFolderInUrl) {
-      const newUrl = currentFolderId
-        ? agentsListPath(currentFolderId)
-        : agentsListPath();
-      navigate(newUrl, { replace: true });
+      navigate(agentsListPath(currentFolderId, activeFilter), {
+        replace: true,
+      });
     }
-  }, [folderPath, searchParams, navigate]);
+  }, [folderPath, searchParams, navigate, activeFilter]);
 
   const { isLoading, refetchFolders, refetchUserAgents } = useAgentsFetch();
-
-  // The list's filter is a route, so it is linkable and survives a reload;
-  // the sidebar nav (and the pill row below `lg`) does the navigating.
-  const activeFilter = filterFromPath(location.pathname);
 
   const {
     searchQuery,

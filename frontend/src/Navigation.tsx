@@ -615,11 +615,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       to={AGENTS_MANAGE_ROOT}
                       end
                       onClick={(event) => {
-                        dispatch(setSelectedAgent(null));
-                        closeNavOnMobile();
                         if (event.metaKey || event.ctrlKey || event.shiftKey)
                           return;
                         event.preventDefault();
+                        dispatch(setSelectedAgent(null));
+                        closeNavOnMobile();
                         goToLevel(AGENTS_MANAGE_ROOT);
                       }}
                       className={({ isActive }) =>

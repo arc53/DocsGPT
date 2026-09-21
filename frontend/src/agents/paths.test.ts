@@ -31,6 +31,14 @@ describe('agentsListPath', () => {
     expect(agentsListPath('a b')).toBe('/agents/manage?folder=a%20b');
     expect(agentsListPath(null)).toBe('/agents/manage');
   });
+
+  it('keeps the active filter, so opening a folder does not widen the list', () => {
+    expect(agentsListPath('f1', 'user')).toBe('/agents/manage/mine?folder=f1');
+    expect(agentsListPath(null, 'user')).toBe('/agents/manage/mine');
+    expect(filterFromPath(agentsListPath('f1', 'team').split('?')[0])).toBe(
+      'team',
+    );
+  });
 });
 
 describe('agentEditPathFor', () => {

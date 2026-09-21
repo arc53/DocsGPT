@@ -197,7 +197,9 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       <div className="mb-4 flex items-center justify-between gap-3">
         <DetailBreadcrumb
           parentLabel={t('settings.tools.label')}
-          currentLabel={tool.displayName || tool.customName || tool.name}
+          currentLabel={
+            device?.name || tool.customName || tool.displayName || tool.name
+          }
           onParentClick={handleGoBack}
         />
         <Button

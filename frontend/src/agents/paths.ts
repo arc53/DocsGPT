@@ -32,17 +32,25 @@ const SLUG_FILTERS = Object.fromEntries(
 export const isWorkflowAgent = (agent: Pick<Agent, 'agent_type'>): boolean =>
   agent.agent_type === 'workflow';
 
-/** The agent list, optionally scoped to a folder. */
-export const agentsListPath = (folderId?: string | null): string =>
-  folderId
-    ? `${AGENTS_MANAGE_ROOT}?folder=${encodeURIComponent(folderId)}`
-    : AGENTS_MANAGE_ROOT;
-
 /** The list narrowed to one filter; each filter is its own linkable route. */
 export const agentsFilterPath = (filter: AgentFilterTab): string =>
   filter === 'all'
     ? AGENTS_MANAGE_ROOT
     : `${AGENTS_MANAGE_ROOT}/${FILTER_SLUGS[filter]}`;
+
+/**
+ * The agent list, optionally scoped to a folder and to a filter. The filter
+ * has to be carried explicitly: it lives in the path now, so building a
+ * folder URL off the bare root would silently widen the list back to every
+ * section the moment someone opened a folder from a filtered view.
+ */
+export const agentsListPath = (
+  folderId?: string | null,
+  filter: AgentFilterTab = 'all',
+): string => {
+  const base = agentsFilterPath(filter);
+  return folderId ? `${base}?folder=${encodeURIComponent(folderId)}` : base;
+};
 
 /** Which filter a list route selects; `all` for anything unrecognised. */
 export const filterFromPath = (pathname: string): AgentFilterTab => {
