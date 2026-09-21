@@ -11,7 +11,11 @@ import {
   Users,
 } from 'lucide-react';
 
-import DocsGPT3 from '../assets/cute_docsgpt3.svg';
+import DocsGPTLogo from '../assets/full-logo-b.svg';
+import DocsGPTLogoWhite from '../assets/full-logo-w.svg';
+import DocsGPTMark from '../assets/logo-b.svg';
+import DocsGPTMarkWhite from '../assets/logo-w.svg';
+import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import {
@@ -58,6 +62,7 @@ export default function TeamSwitcher({
   const token = useSelector(selectToken);
   const teams = useSelector(selectTeams);
   const currentTeamId = useSelector(selectCurrentTeamId);
+  const [isDarkTheme] = useDarkTheme();
 
   // Populate the switcher on mount so it works before visiting settings.
   useEffect(() => {
@@ -75,16 +80,13 @@ export default function TeamSwitcher({
   const currentName = currentTeam
     ? currentTeam.name
     : t('teams.switcher.personal');
-  // The header trigger shows the brand ("DocsGPT") in a personal context rather
-  // than "Personal account" — the dropdown still labels the switch entry
-  // "Personal account".
-  const triggerLabel = currentTeam ? currentTeam.name : 'DocsGPT';
   const teamInitial = currentTeam
     ? currentTeam.name.charAt(0).toUpperCase()
     : '';
 
-  // The morphing brand identity shown in the trigger: the DocsGPT logo for a
-  // personal context, or an initial avatar for a team.
+  // The morphing brand identity shown in the trigger: the DocsGPT mark for a
+  // personal context, or an initial avatar for a team. Expanded, a personal
+  // context upgrades this to the full lockup below.
   const triggerIcon = currentTeam ? (
     // A solid square reads heavier than the dino, so keep the team avatar a
     // touch smaller (with a little margin to align with the wordmark).
@@ -92,7 +94,33 @@ export default function TeamSwitcher({
       {teamInitial}
     </span>
   ) : (
-    <img className="h-9 shrink-0" src={DocsGPT3} alt="DocsGPT Logo" />
+    <img
+      className="h-8 w-auto shrink-0"
+      src={isDarkTheme ? DocsGPTMarkWhite : DocsGPTMark}
+      alt="DocsGPT Logo"
+    />
+  );
+
+  // Expanded brand row. In a personal context the full lockup replaces the
+  // mark-plus-label pair outright — the wordmark is part of the artwork, so a
+  // separate "DocsGPT" text label would repeat it. `mr-auto` keeps the chevron
+  // pinned right, the job the label's `flex-1` used to do, and `ml-4` lines the
+  // logo's left edge up with the "Agents"/"Chats" section headings below it
+  // (those sit 32px in: `mx-4` on their row plus `ml-4` on the label; the
+  // header strip and this button contribute 8px of padding each).
+  const expandedBrand = currentTeam ? (
+    <>
+      {triggerIcon}
+      <span className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold dark:text-white">
+        {currentTeam.name}
+      </span>
+    </>
+  ) : (
+    <img
+      className="mr-auto ml-4 h-4 w-auto shrink-0"
+      src={isDarkTheme ? DocsGPTLogoWhite : DocsGPTLogo}
+      alt="DocsGPT"
+    />
   );
 
   // Open the active team's detail directly (not just the list).
@@ -132,10 +160,7 @@ export default function TeamSwitcher({
             aria-label={t('teams.switcher.ariaLabel')}
             className="hover:bg-muted dark:hover:bg-accent text-foreground flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors"
           >
-            {triggerIcon}
-            <span className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold dark:text-white">
-              {triggerLabel}
-            </span>
+            {expandedBrand}
             <ChevronsUpDown
               className="text-muted-foreground size-4 shrink-0"
               strokeWidth={1.75}

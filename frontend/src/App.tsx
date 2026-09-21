@@ -8,7 +8,8 @@ import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import Admin from './admin';
 import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
-import DocsGPT3 from './assets/cute_docsgpt3.svg';
+import DocsGPTMark from './assets/logo-b.svg';
+import DocsGPTMarkWhite from './assets/logo-w.svg';
 import ActionButtons from './components/ActionButtons';
 import AdminRoute from './components/AdminRoute';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -39,6 +40,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
     retryOidcLogin,
   } = useTokenAuth();
   useDataInitializer(isAuthLoading);
+  const [isDarkTheme] = useDarkTheme();
 
   if (oidcFailed) {
     const message =
@@ -49,7 +51,11 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
           : t('auth.signInToContinue');
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-6">
-        <img src={DocsGPT3} alt="DocsGPT" className="size-14" />
+        <img
+          src={isDarkTheme ? DocsGPTMarkWhite : DocsGPTMark}
+          alt="DocsGPT"
+          className="h-14 w-auto"
+        />
         <p className="text-foreground max-w-md px-6 text-center text-sm dark:text-white">
           {message}
         </p>

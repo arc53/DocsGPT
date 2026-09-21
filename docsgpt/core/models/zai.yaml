@@ -1,0 +1,15 @@
+provider: openai_compatible
+display_provider: zai
+api_key_env: ZAI_API_KEY
+base_url: https://api.z.ai/api/paas/v4
+
+defaults:
+  supports_tools: true
+  attachments: []
+  context_window: 200000
+
+models:
+  - id: glm-5.3
+    display_name: GLM 5.3
+    description: Z.ai's GLM 5.3 flagship for agentic coding and reasoning
+    supports_structured_output: true

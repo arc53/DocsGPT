@@ -21,3 +21,9 @@ models:
     display_name: Claude Haiku 4.5
     description: Fastest Claude model with near-frontier intelligence
     supports_structured_output: true
+
+  - id: claude-fable-5
+    display_name: Claude Fable 5
+    description: Anthropic's frontier tier above Opus for the most demanding reasoning and long-horizon agentic work
+    context_window: 1000000
+    supports_structured_output: true

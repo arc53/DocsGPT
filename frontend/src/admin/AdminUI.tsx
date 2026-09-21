@@ -118,7 +118,7 @@ const EVENT_LABELS: Record<string, string> = {
   admin_sessions_revoked: 'Sessions revoked',
   scim_created: 'Provisioned',
   scim_deactivated: 'Deactivated (SCIM)',
-  scim_activated: 'Activated (SCIM)',
+  scim_reactivated: 'Activated (SCIM)',
 };
 
 export function eventLabel(event: string): string {

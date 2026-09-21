@@ -18,3 +18,9 @@ models:
   - id: gpt-5.4-nano
     display_name: GPT-5.4 Nano
     description: Cheapest GPT-5.4-class model, optimized for simple high-volume tasks where speed and cost matter most
+  - id: gpt-5.6-sol
+    display_name: GPT-5.6 Sol
+    description: Latest GPT-5.6 generation flagship for long-horizon reasoning and agentic work
+    context_window: 1050000
+    api_flavor: responses
+    reasoning_effort: medium

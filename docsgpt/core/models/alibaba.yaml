@@ -1,0 +1,15 @@
+provider: openai_compatible
+display_provider: alibaba
+api_key_env: DASHSCOPE_API_KEY
+base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+
+defaults:
+  supports_tools: true
+  attachments: [image]
+  context_window: 262144
+
+models:
+  - id: qwen3.8-max
+    display_name: Qwen 3.8-Max
+    description: Alibaba's largest Qwen 3.8 model for complex reasoning, coding and multilingual work
+    supports_structured_output: true
