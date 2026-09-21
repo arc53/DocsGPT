@@ -35,6 +35,15 @@ class TestInsert:
         )
         assert total == 30
 
+    def test_cost_defaults_to_zero_and_round_trips(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.insert(user_id="u-cost", prompt_tokens=1, generated_tokens=1)
+        repo.insert(user_id="u-cost", prompt_tokens=1, generated_tokens=1, cost=0.00012345)
+        costs = pg_conn.execute(
+            text("SELECT cost FROM token_usage WHERE user_id = 'u-cost' ORDER BY id")
+        ).scalars().all()
+        assert [float(c) for c in costs] == [0.0, 0.00012345]
+
 
 class TestReassignApiKey:
     def test_rewrites_and_preserves_rate_limit_window(self, pg_conn):

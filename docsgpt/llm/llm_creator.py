@@ -52,6 +52,7 @@ class LLMCreator:
         base_url = None
         upstream_model_id = model_id
         capabilities = None
+        model = None
         if model_id:
             user_id = model_user_id
             if user_id is None:
@@ -127,4 +128,6 @@ class LLMCreator:
         # llm.model_id is the upstream name (BYOM resolves it above); stamp
         # the canonical id (UUID for BYOM) separately for token_usage.
         llm._canonical_model_id = model_id
+        # Calls to a user's own model are recorded at $0 (see ``docsgpt/usage.py``).
+        llm._is_byom = model is not None and getattr(model, "source", "builtin") == "user"
         return llm
