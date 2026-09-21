@@ -115,7 +115,9 @@ class StreamResource(Resource, BaseAnswerResource):
                         status=401,
                         mimetype="text/event-stream",
                     )
-                if error := self.check_usage(processor.agent_config):
+                if error := self.check_usage(
+                processor.agent_config, processor.decoded_token
+            ):
                     return error
                 return Response(
                     with_sse_keepalive(
@@ -151,7 +153,9 @@ class StreamResource(Resource, BaseAnswerResource):
                     mimetype="text/event-stream",
                 )
 
-            if error := self.check_usage(processor.agent_config):
+            if error := self.check_usage(
+                processor.agent_config, processor.decoded_token
+            ):
                 return error
             should_persist, visibility = resolve_persistence(
                 visibility_flag=data.get("visibility"),

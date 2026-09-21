@@ -104,6 +104,14 @@ class QuotaExceeded:
             return payload
 
 
+class QuotaExceededError(Exception):
+    """Raised where a refused request has no HTTP response to carry the refusal."""
+
+    def __init__(self, exceeded: QuotaExceeded) -> None:
+        self.exceeded = exceeded
+        super().__init__(exceeded.to_payload()["message"])
+
+
 class QuotaService:
     """Resolve limits and measure usage for the current ``QUOTA_PERIOD`` window."""
 

@@ -17,6 +17,7 @@ from sqlalchemy import text as sql_text
 from docsgpt.agents.headless_runner import run_agent_headless
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
+from docsgpt.quotas.service import QuotaExceededError
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.engine import get_engine
 from docsgpt.storage.db.repositories.conversations import (
@@ -282,6 +283,11 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
         error_type = "timeout"
         error_text = "run exceeded soft time limit"
+    except QuotaExceededError as exc:
+        # The owner's usage quota is spent; the run never started.
+        outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
+        error_type = "budget_exceeded"
+        error_text = str(exc)
     except Exception as exc:
         outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
         error_type = "agent_error"

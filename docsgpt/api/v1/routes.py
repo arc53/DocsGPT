@@ -338,7 +338,7 @@ def chat_completions():
             )
 
         helper = _V1AnswerHelper()
-        usage_error = helper.check_usage(processor.agent_config)
+        usage_error = helper.check_usage(processor.agent_config, processor.decoded_token)
         if usage_error:
             return usage_error
 

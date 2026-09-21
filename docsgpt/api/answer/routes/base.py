@@ -23,6 +23,8 @@ from docsgpt.core.model_utils import (
 from docsgpt.core.settings import settings
 from docsgpt.error import sanitize_api_error
 from docsgpt.llm.llm_creator import LLMCreator
+from docsgpt.quotas.http import quota_exceeded_response
+from docsgpt.quotas.service import QuotaService
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversations import (
     HeartbeatState,
@@ -112,17 +114,29 @@ class BaseAnswerResource:
             prepared.append(item)
         return prepared
 
-    def check_usage(self, agent_config: Dict) -> Optional[Response]:
-        """Check if there is a usage limit and if it is exceeded
+    def check_usage(
+        self, agent_config: Dict, decoded_token: Optional[Dict] = None
+    ) -> Optional[Response]:
+        """Refuse the request when a usage limit is exhausted.
+
+        The billable user's quota is checked first, for every request; the
+        agent's own 24h token and request limits then apply to traffic that
+        runs through an agent.
 
         Args:
             agent_config: The config dict of agent instance
+            decoded_token: The request's resolved identity; its ``sub`` is the
+                billable user.
 
         Returns:
             None or Response if either of limits exceeded.
 
         """
         api_key = agent_config.get("user_api_key")
+        user_id = (decoded_token or {}).get("sub") or agent_config.get("user_id")
+        exceeded = QuotaService.check(user_id, "agent" if api_key else "direct")
+        if exceeded is not None:
+            return quota_exceeded_response(exceeded)
         if not api_key:
             return None
         with db_readonly() as conn:
