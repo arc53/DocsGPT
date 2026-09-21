@@ -5,7 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
+import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
@@ -155,7 +155,14 @@ export default function AgentsList() {
     return hasAgentsInSection;
   });
 
+  const showPageLoader =
+    activeFilter === 'all' &&
+    agentSectionsConfig.some(
+      (config) => !isDataLoaded[config.id as AgentSectionId],
+    );
+
   const showSearchEmptyState =
+    !showPageLoader &&
     searchQuery &&
     hasAnyAgents &&
     !hasFilteredResults &&
@@ -207,29 +214,46 @@ export default function AgentsList() {
         </div>
       </div>
 
-      {visibleSections.map((sectionConfig) => (
-        <AgentSection
-          key={sectionConfig.id}
-          config={sectionConfig}
-          filteredAgents={
-            filteredAgentsBySection[sectionConfig.id as AgentSectionId]
-          }
-          totalAgents={totalAgentsBySection[sectionConfig.id as AgentSectionId]}
-          searchQuery={searchQuery}
-          isFilteredView={activeFilter !== 'all'}
-          isLoading={isLoading[sectionConfig.id as AgentSectionId]}
-          folders={sectionConfig.id === 'user' ? folders : null}
-          folderPath={sectionConfig.id === 'user' ? folderPath : []}
-          onFolderPathChange={
-            sectionConfig.id === 'user' ? setFolderPath : undefined
-          }
-          onCreateFolder={handleSubmitNewFolder}
-          onDeleteFolder={handleDeleteFolder}
-          onRenameFolder={handleRenameFolder}
-          setModalFolderId={setModalFolderId}
-          setShowAgentTypeModal={setShowAgentTypeModal}
-        />
-      ))}
+      {showPageLoader ? (
+        <div className="mt-8 flex flex-col gap-4">
+          <div className="flex animate-pulse flex-col gap-2">
+            <div className="bg-muted h-7 w-32 rounded"></div>
+            <div className="bg-muted h-5 w-64 max-w-full rounded"></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+            <SkeletonLoader component="agentCards" count={4} />
+          </div>
+        </div>
+      ) : (
+        visibleSections.map((sectionConfig) => (
+          <AgentSection
+            key={sectionConfig.id}
+            config={sectionConfig}
+            filteredAgents={
+              filteredAgentsBySection[sectionConfig.id as AgentSectionId]
+            }
+            totalAgents={
+              totalAgentsBySection[sectionConfig.id as AgentSectionId]
+            }
+            searchQuery={searchQuery}
+            isFilteredView={activeFilter !== 'all'}
+            isLoading={
+              isLoading[sectionConfig.id as AgentSectionId] &&
+              !isDataLoaded[sectionConfig.id as AgentSectionId]
+            }
+            folders={sectionConfig.id === 'user' ? folders : null}
+            folderPath={sectionConfig.id === 'user' ? folderPath : []}
+            onFolderPathChange={
+              sectionConfig.id === 'user' ? setFolderPath : undefined
+            }
+            onCreateFolder={handleSubmitNewFolder}
+            onDeleteFolder={handleDeleteFolder}
+            onRenameFolder={handleRenameFolder}
+            setModalFolderId={setModalFolderId}
+            setShowAgentTypeModal={setShowAgentTypeModal}
+          />
+        ))
+      )}
 
       {showSearchEmptyState && (
         <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-2">
@@ -574,8 +598,8 @@ function AgentSection({
 
       <div className="flex flex-col gap-4">
         {isLoading ? (
-          <div className="flex h-40 w-full items-center justify-center">
-            <Spinner />
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+            <SkeletonLoader component="agentCards" count={4} />
           </div>
         ) : (
           <>

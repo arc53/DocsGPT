@@ -4,7 +4,6 @@ import { useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
 import { selectToken } from '../preferences/preferenceSlice';
 import Analytics from '../settings/Analytics';
 import Logs from '../settings/Logs';
@@ -67,22 +66,12 @@ export default function AgentLogs() {
           </div>
         )}
       </div>
-      {loadingAgent ? (
-        <div className="flex h-[345px] w-full items-center justify-center">
-          <Spinner />
-        </div>
-      ) : (
-        agent && <Analytics agentId={agent.id} />
-      )}
-      {!loadingAgent && agent && <GuardrailEvents agentId={agent.id} />}
-      {loadingAgent ? (
-        <div className="flex h-[55vh] w-full items-center justify-center">
-          <Spinner />
-        </div>
-      ) : (
-        agent && (
-          <Logs agentId={agent.id} tableHeader={t('agents.logs.tableHeader')} />
-        )
+      {agentId && (loadingAgent || agent) && (
+        <>
+          <Analytics agentId={agentId} />
+          <GuardrailEvents agentId={agentId} />
+          <Logs agentId={agentId} tableHeader={t('agents.logs.tableHeader')} />
+        </>
       )}
     </div>
   );
