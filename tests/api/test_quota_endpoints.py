@@ -125,9 +125,10 @@ class TestInstancePolicy:
             ]
             assert overview["period"] == "month"
 
-            assert _body(client.delete("/api/admin/quotas/instance?bucket=agent"))["deleted"] == 1
-            assert _body(client.delete("/api/admin/quotas/instance"))["deleted"] == 1
-            assert _body(client.get("/api/admin/quotas"))["instance"] == []
+            one_bucket = _body(client.delete("/api/admin/quotas/instance?bucket=agent"))
+            the_rest = _body(client.delete("/api/admin/quotas/instance"))
+            remaining = _body(client.get("/api/admin/quotas"))["instance"]
+        assert (one_bucket["deleted"], the_rest["deleted"], remaining) == (1, 1, [])
 
     def test_writes_are_audited(self, client, db):
         with _admin():
@@ -158,6 +159,8 @@ class TestInstancePolicy:
             {"token_limit": True},
             {"token_limit": "10"},
             {"token_limit": 2**63},
+            {"token_limit": 10**400},
+            {"cost_limit_usd": 10**400},
             {"cost_limit_usd": -0.01},
             {"cost_limit_usd": "5"},
             {"cost_limit_usd": float("inf")},
@@ -178,7 +181,8 @@ class TestInstancePolicy:
 
     def test_unknown_bucket_on_delete(self, client, db):
         with _admin():
-            assert client.delete("/api/admin/quotas/instance?bucket=nope").status_code == 400
+            resp = client.delete("/api/admin/quotas/instance?bucket=nope")
+        assert resp.status_code == 400
 
     def test_zero_is_accepted_as_a_block(self, client, db):
         with _admin():

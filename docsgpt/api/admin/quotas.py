@@ -30,10 +30,8 @@ from docsgpt.storage.db.session import db_readonly, db_session
 _MAX_TOKEN_LIMIT = 2**62
 _MAX_COST_LIMIT = 99_999_999.0
 _MAX_NOTE_LENGTH = 500
-
-
-class _BadPolicy(ValueError):
-    """The request body does not describe a valid policy."""
+_FLAG_DEFAULTS = {"token_unlimited": False, "cost_unlimited": False, "enabled": True}
+_BUCKET_MESSAGE = f"bucket must be one of: {', '.join(BUCKETS)}"
 
 
 def _policy_json(row: dict) -> dict:
@@ -57,60 +55,59 @@ def _error(message: str, status: int):
     return make_response(jsonify({"success": False, "message": message}), status)
 
 
-def _bucket(value: Any) -> str:
+def _limit_error(value: Any, name: str, whole: bool, maximum: float) -> Optional[str]:
+    """Return why ``value`` is not a valid limit, or ``None``."""
     if value is None:
-        return "all"
-    if value not in BUCKETS:
-        raise _BadPolicy(f"bucket must be one of: {', '.join(BUCKETS)}")
-    return value
+        return None
+    number = (int,) if whole else (int, float)
+    if isinstance(value, bool) or not isinstance(value, number):
+        return f"{name} must be a {'whole number' if whole else 'number'} or null"
+    # Range first: ``isfinite`` overflows on an int too large for a float.
+    if not 0 <= value <= maximum or not math.isfinite(value):
+        return f"{name} is out of range"
+    return None
 
 
-def _flag(data: dict, key: str, default: bool) -> bool:
-    value = data.get(key, default)
-    if not isinstance(value, bool):
-        raise _BadPolicy(f"{key} must be a boolean")
-    return value
+def _parse_policy(data: Any) -> tuple[Optional[dict], Optional[str]]:
+    """Validate a policy body.
 
-
-def _parse_policy(data: Any) -> dict:
-    """Validate a policy body into ``QuotaPoliciesRepository.upsert`` kwargs."""
+    Returns:
+        ``(fields, None)`` with ``QuotaPoliciesRepository.upsert`` kwargs, or
+        ``(None, message)`` describing the first problem.
+    """
     if not isinstance(data, dict):
-        raise _BadPolicy("Body must be a JSON object")
-    token_limit = data.get("token_limit")
-    if token_limit is not None:
-        if isinstance(token_limit, bool) or not isinstance(token_limit, int):
-            raise _BadPolicy("token_limit must be a whole number or null")
-        if not 0 <= token_limit <= _MAX_TOKEN_LIMIT:
-            raise _BadPolicy("token_limit is out of range")
-    cost_limit = data.get("cost_limit_usd")
-    if cost_limit is not None:
-        if isinstance(cost_limit, bool) or not isinstance(cost_limit, (int, float)):
-            raise _BadPolicy("cost_limit_usd must be a number or null")
-        if not math.isfinite(cost_limit) or not 0 <= cost_limit <= _MAX_COST_LIMIT:
-            raise _BadPolicy("cost_limit_usd is out of range")
-        cost_limit = round(float(cost_limit), 4)
-    token_unlimited = _flag(data, "token_unlimited", False)
-    cost_unlimited = _flag(data, "cost_unlimited", False)
-    if token_unlimited and token_limit is not None:
-        raise _BadPolicy("Set token_limit or token_unlimited, not both")
-    if cost_unlimited and cost_limit is not None:
-        raise _BadPolicy("Set cost_limit_usd or cost_unlimited, not both")
-    if token_limit is None and cost_limit is None and not token_unlimited and not cost_unlimited:
-        raise _BadPolicy("Set a limit or mark a budget unlimited; delete the policy to remove it")
+        return None, "Body must be a JSON object"
+    token_limit, cost_limit = data.get("token_limit"), data.get("cost_limit_usd")
+    problem = _limit_error(token_limit, "token_limit", True, _MAX_TOKEN_LIMIT) or _limit_error(
+        cost_limit, "cost_limit_usd", False, _MAX_COST_LIMIT
+    )
+    if problem:
+        return None, problem
+    flags = {key: data.get(key, default) for key, default in _FLAG_DEFAULTS.items()}
+    for key, value in flags.items():
+        if not isinstance(value, bool):
+            return None, f"{key} must be a boolean"
+    bucket = data.get("bucket", "all")
+    if bucket not in BUCKETS:
+        return None, _BUCKET_MESSAGE
     note = data.get("note")
-    if note is not None:
-        if not isinstance(note, str):
-            raise _BadPolicy("note must be a string")
-        note = note.strip()[:_MAX_NOTE_LENGTH] or None
+    if note is not None and not isinstance(note, str):
+        return None, "note must be a string"
+    if flags["token_unlimited"] and token_limit is not None:
+        return None, "Set token_limit or token_unlimited, not both"
+    if flags["cost_unlimited"] and cost_limit is not None:
+        return None, "Set cost_limit_usd or cost_unlimited, not both"
+    if token_limit is None and cost_limit is None and not flags["token_unlimited"] and not flags["cost_unlimited"]:
+        return None, "Set a limit or mark a budget unlimited; delete the policy to remove it"
     return {
-        "bucket": _bucket(data.get("bucket")),
+        "bucket": bucket,
         "token_limit": token_limit,
-        "token_unlimited": token_unlimited,
-        "cost_limit_usd": cost_limit,
-        "cost_unlimited": cost_unlimited,
-        "enabled": _flag(data, "enabled", True),
-        "note": note,
-    }
+        "token_unlimited": flags["token_unlimited"],
+        "cost_limit_usd": round(float(cost_limit), 4) if cost_limit is not None else None,
+        "cost_unlimited": flags["cost_unlimited"],
+        "enabled": flags["enabled"],
+        "note": (note.strip()[:_MAX_NOTE_LENGTH] or None) if note else None,
+    }, None
 
 
 def _audit(conn, event: str, scope: str, subject_id: Optional[str], detail: dict) -> None:
@@ -126,10 +123,9 @@ def _audit(conn, event: str, scope: str, subject_id: Optional[str], detail: dict
 
 
 def _put_policy(scope: str, subject_id: Optional[str]):
-    try:
-        fields = _parse_policy(request.get_json(silent=True))
-    except _BadPolicy as exc:
-        return _error(str(exc), 400)
+    fields, problem = _parse_policy(request.get_json(silent=True))
+    if fields is None:
+        return _error(problem or "Invalid policy", 400)
     with db_session() as conn:
         row = QuotaPoliciesRepository(conn).upsert(
             scope=scope, subject_id=subject_id, actor=_actor(), **fields
@@ -139,10 +135,9 @@ def _put_policy(scope: str, subject_id: Optional[str]):
 
 
 def _delete_policy(scope: str, subject_id: Optional[str]):
-    try:
-        bucket = _bucket(request.args.get("bucket")) if "bucket" in request.args else None
-    except _BadPolicy as exc:
-        return _error(str(exc), 400)
+    bucket = request.args.get("bucket")
+    if bucket is not None and bucket not in BUCKETS:
+        return _error(_BUCKET_MESSAGE, 400)
     with db_session() as conn:
         deleted = QuotaPoliciesRepository(conn).delete(scope, subject_id, bucket)
         if deleted:

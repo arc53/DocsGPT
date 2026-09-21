@@ -137,7 +137,8 @@ class TestDelete:
         repo.upsert(scope="user", subject_id="u1", token_limit=1)
         repo.upsert(scope="user", subject_id="u1", bucket="agent", token_limit=2)
         repo.upsert(scope="user", subject_id="u2", token_limit=3)
-        assert repo.delete("user", "u1", "agent") == 1
-        assert repo.delete("user", "u1", "agent") == 0
-        assert repo.delete("user", "u1") == 1
+        first = repo.delete("user", "u1", "agent")
+        again = repo.delete("user", "u1", "agent")
+        rest = repo.delete("user", "u1")
+        assert (first, again, rest) == (1, 0, 1)
         assert repo.get("user", "u2") is not None
