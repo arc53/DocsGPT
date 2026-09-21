@@ -161,6 +161,7 @@ _CHAT = dict(
 RULES: dict[tuple[str, str], Rule] = {
     # Identity and public metadata: any valid token.
     ("/api/user/me", "GET"): _rule(open=True),
+    ("/api/user/quota", "GET"): _rule(open=True),
     ("/api/health", "GET"): _rule(open=True),
     ("/api/config", "GET"): _rule(open=True),
     # Agents

@@ -165,6 +165,28 @@ class TokenUsageRepository:
         ).one()
         return int(row[0]), float(row[1])
 
+    def tokens_by_model(self, *, start: datetime) -> list[dict]:
+        """Return ``{model_id, tokens, cost}`` per model since ``start``, busiest first."""
+        result = self._conn.execute(
+            text(
+                """
+                SELECT model_id,
+                       COALESCE(SUM(prompt_tokens + generated_tokens), 0) AS tokens,
+                       COALESCE(SUM(cost), 0) AS cost
+                FROM token_usage
+                WHERE timestamp >= :start AND model_id IS NOT NULL
+                  AND source <> ALL(:rollup_sources)
+                GROUP BY model_id
+                ORDER BY tokens DESC, model_id
+                """
+            ),
+            {"start": start, "rollup_sources": list(self.ROLLUP_SOURCES)},
+        )
+        return [
+            {"model_id": row[0], "tokens": int(row[1]), "cost": float(row[2])}
+            for row in result.fetchall()
+        ]
+
     # Token usage written outside a user-initiated request (conversation
     # title generation, history compression, RAG question condensing,
     # provider fallback). Mirrors the exclusion list in ``count_in_range``.
