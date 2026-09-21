@@ -20,7 +20,7 @@ Every token is limited in three ways:
 3. Optionally restrict it to specific resources and pick an expiry.
 4. Copy the token. It starts with `dgpt_pat_` and is shown **once**. DocsGPT stores only a hash of it, so a lost token cannot be recovered. Revoke it and create a new one.
 
-Tokens can only be created and revoked from a signed-in session. A token cannot create, list or revoke tokens, so a leaked token cannot mint a replacement for itself.
+Tokens can only be created, regenerated and revoked from a signed-in session. A token cannot create, list, regenerate or revoke tokens, so a leaked token cannot mint a replacement for itself.
 
 ## Using a token
 
@@ -159,11 +159,12 @@ Restrictions and `agents apply`: a token restricted to specific agents can apply
 
 - A token created without an explicit lifetime expires after `PAT_DEFAULT_LIFETIME_DAYS` (90 by default). Users can choose any lifetime up to `PAT_MAX_LIFETIME_DAYS` (365 by default).
 - Non-expiring tokens are available only when the operator sets `PAT_ALLOW_NON_EXPIRING=true`.
+- **Regenerate** in **Settings → Access Tokens** issues a new secret for the same token and resets its expiry. The name, scopes and restrictions stay; the old secret stops working immediately, so update whatever uses it. The new lifetime defaults to the one the token was last issued with, and an expired token can be renewed this way (a revoked one cannot). This is the way to rotate a secret or extend a token without rebuilding its scopes.
 - Revoking a token in **Settings → Access Tokens** takes effect on the next request.
 - Admins can list a user's tokens with `GET /api/admin/users/<user_id>/tokens` and revoke any token with `DELETE /api/admin/tokens/<token_id>`. The admin **revoke sessions** action also revokes all of that user's tokens.
 - Tokens of a deactivated user (through the admin API or SCIM) stop working immediately and work again if the user is reactivated.
 - `GET /api/user/tokens` reports a token past its expiry as `"status": "expired"`.
-- Token creation and revocation are recorded in the authentication audit log (`pat_created`, `pat_revoked`), visible to admins.
+- Token creation and revocation are recorded in the authentication audit log (`pat_created`, `pat_regenerated`, `pat_revoked`), visible to admins.
 
 An expired token's name can be reused: creating a token with that name retires the expired one.
 
@@ -191,6 +192,7 @@ These endpoints need a signed-in session and cannot be called with a token.
 | --- | --- |
 | `GET /api/user/tokens` | List your tokens, the scope catalog and the server's token policy |
 | `POST /api/user/tokens` | Create a token. Body: `name`, `scopes`, optional `resource_filter`, optional `expires_in_days` (`0` = never, when allowed). The response carries the plaintext `token` once |
+| `POST /api/user/tokens/<id>/regenerate` | New secret and new expiry for the same token. Optional body `expires_in_days`; omitted = the lifetime it was last issued with. The response carries the plaintext `token` once |
 | `DELETE /api/user/tokens/<id>` | Revoke a token |
 
 ## Good practice

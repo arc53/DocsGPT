@@ -14,7 +14,7 @@ from docsgpt.storage.db.base_repository import row_to_dict
 # token_hash never leaves the repository except through find_active_by_hash.
 _PUBLIC_COLUMNS = (
     "id, user_id, name, token_prefix, scopes, resource_filter, status, "
-    "expires_at, last_used_at, last_used_ip, created_at, revoked_at, revoke_reason"
+    "expires_at, last_used_at, last_used_ip, created_at, regenerated_at, revoked_at, revoke_reason"
 )
 
 
@@ -154,6 +154,41 @@ class PersonalAccessTokensRepository:
             ),
             {"id": token_id, "ip": ip, "min_interval": min_interval_seconds},
         )
+
+    def regenerate(
+        self,
+        token_id: str,
+        user_id: str,
+        *,
+        token_hash: str,
+        token_prefix: str,
+        expires_at: Optional[datetime],
+    ) -> Optional[dict]:
+        """Swap a live token's secret and expiry in place. The old secret stops matching at once.
+
+        Expired tokens qualify (renewal is the point); revoked ones do not.
+        Usage fields are cleared because they described the old secret.
+        """
+        row = self._conn.execute(
+            text(
+                f"""
+                UPDATE personal_access_tokens
+                SET token_hash = :token_hash, token_prefix = :token_prefix,
+                    expires_at = :expires_at, regenerated_at = now(),
+                    last_used_at = NULL, last_used_ip = NULL
+                WHERE id = CAST(:id AS uuid) AND user_id = :user_id AND status = 'active'
+                RETURNING {_PUBLIC_COLUMNS}
+                """
+            ),
+            {
+                "id": token_id,
+                "user_id": user_id,
+                "token_hash": token_hash,
+                "token_prefix": token_prefix,
+                "expires_at": expires_at,
+            },
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
 
     def revoke(self, token_id: str, user_id: Optional[str] = None, *, reason: str = "user_revoked") -> bool:
         """Revoke one token. ``user_id=None`` is the admin path (any owner)."""

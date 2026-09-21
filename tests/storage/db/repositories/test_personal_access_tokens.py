@@ -179,3 +179,29 @@ class TestCountAndUsage:
         assert repo.get(str(row["id"]))["last_used_ip"] == "10.0.0.1"
         repo.touch_last_used(str(row["id"]), "10.0.0.3", min_interval_seconds=0)
         assert repo.get(str(row["id"]))["last_used_ip"] == "10.0.0.3"
+
+
+class TestRegenerate:
+    def test_swaps_the_secret_and_resets_expiry_and_usage(self, pg_conn):
+        repo = PersonalAccessTokensRepository(pg_conn)
+        row = _create(repo, expires_at=datetime.now(timezone.utc) - timedelta(days=1))
+        repo.touch_last_used(str(row["id"]), "10.0.0.1")
+        future = datetime.now(timezone.utc) + timedelta(days=30)
+        renewed = repo.regenerate(
+            str(row["id"]), "u1", token_hash="h-new", token_prefix="dgpt_pat_new123", expires_at=future
+        )
+        assert renewed["id"] == row["id"] and renewed["name"] == "ci"
+        assert renewed["token_prefix"] == "dgpt_pat_new123"
+        assert renewed["regenerated_at"] is not None
+        assert renewed["last_used_at"] is None and renewed["last_used_ip"] is None
+        assert repo.find_active_by_hash("h1") is None
+        assert repo.find_active_by_hash("h-new")["id"] == row["id"]
+
+    def test_owner_scoped_and_never_revives_a_revoked_token(self, pg_conn):
+        repo = PersonalAccessTokensRepository(pg_conn)
+        row = _create(repo)
+        kwargs = dict(token_hash="h-new", token_prefix="dgpt_pat_new123", expires_at=None)
+        assert repo.regenerate(str(row["id"]), "someone-else", **kwargs) is None
+        repo.revoke(str(row["id"]), "u1")
+        assert repo.regenerate(str(row["id"]), "u1", **kwargs) is None
+        assert repo.find_active_by_hash("h-new") is None

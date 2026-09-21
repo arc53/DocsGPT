@@ -321,6 +321,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/": ("*",),
     "/api/user/tokens": ("*",),
     "/api/user/tokens/<string:token_id>": ("*",),
+    "/api/user/tokens/<string:token_id>/regenerate": ("*",),
     "/api/generate_token": ("*",),
     "/api/combine": ("*",),
     "/api/download": ("*",),

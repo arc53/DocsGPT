@@ -91,6 +91,7 @@ class TestClassification:
             ("/api/user/tokens", "POST"),
             ("/api/user/tokens", "GET"),
             ("/api/user/tokens/<string:token_id>", "DELETE"),
+            ("/api/user/tokens/<string:token_id>/regenerate", "POST"),
             ("/api/admin/users", "GET"),
             ("/api/admin/tokens/<string:token_id>", "DELETE"),
             ("/api/generate_token", "GET"),

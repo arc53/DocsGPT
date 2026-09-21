@@ -10,7 +10,8 @@ user can tell their tokens apart in the UI.
 itself). ``resource_filter`` optionally narrows a resource family to specific
 ids, e.g. ``{"agents": ["<uuid>"]}``; an absent family is unrestricted within
 the token's scopes. ``expires_at`` is NULL only when the operator allows
-non-expiring tokens.
+non-expiring tokens. Regenerating a token swaps its secret in place and stamps
+``regenerated_at``; the row, its name, scopes and restrictions stay.
 
 ``user_id`` is the auth ``sub``; no FK or trigger, mirroring ``devices`` and
 ``user_roles`` so a token row never blocks user deletion.
@@ -47,6 +48,7 @@ def upgrade() -> None:
             last_used_at    TIMESTAMPTZ,
             last_used_ip    TEXT,
             created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            regenerated_at  TIMESTAMPTZ,
             revoked_at      TIMESTAMPTZ,
             revoke_reason   TEXT
         );

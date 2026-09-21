@@ -223,6 +223,120 @@ class TestEndToEnd:
         assert response.status_code == 401
 
 
+class TestRegenerate:
+    def _regen(self, client, token_id, **body):
+        with _session():
+            return client.post(f"/api/user/tokens/{token_id}/regenerate", json=body)
+
+    def test_new_secret_works_old_one_stops_and_the_rest_is_kept(self, client, db):
+        created = json.loads(
+            _create(client, scopes=["prompts:read"], resource_filter={"prompts": [AGENT_A]}).data
+        )
+        old, token_id = created["token"], created["personal_access_token"]["id"]
+        response = self._regen(client, token_id)
+        assert response.status_code == 200
+        body = json.loads(response.data)
+        new, public = body["token"], body["personal_access_token"]
+        assert new.startswith("dgpt_pat_") and new != old
+        assert public["id"] == token_id and public["name"] == "ci"
+        assert public["scopes"] == ["prompts:read"]
+        assert public["resource_filter"] == {"prompts": [AGENT_A]}
+        assert public["token_prefix"] == new[:15]
+        assert public["regenerated_at"] is not None
+        assert public["last_used_at"] is None
+
+        assert client.get("/api/user/me", headers={"Authorization": f"Bearer {old}"}).status_code == 401
+        me = client.get("/api/user/me", headers={"Authorization": f"Bearer {new}"})
+        assert me.status_code == 200
+        assert json.loads(me.data)["token"]["id"] == token_id
+        stored = db.execute(text("SELECT token_hash FROM personal_access_tokens")).scalar_one()
+        assert stored == pat_tokens.hash_token(new)
+
+    def test_expiry_is_reset_to_the_original_lifetime(self, client, db):
+        token_id = json.loads(_create(client, expires_in_days=30).data)["personal_access_token"]["id"]
+        # 20 days in: 10 days left.
+        db.execute(
+            text(
+                "UPDATE personal_access_tokens SET created_at = now() - interval '20 days', "
+                "expires_at = now() + interval '10 days'"
+            )
+        )
+        self._regen(client, token_id)
+        days_left = db.execute(
+            text("SELECT extract(epoch FROM expires_at - now()) / 86400 FROM personal_access_tokens")
+        ).scalar_one()
+        assert 29.9 < float(days_left) < 30.1
+
+    def test_explicit_lifetime_is_honoured_and_capped(self, client, db):
+        token_id = json.loads(_create(client).data)["personal_access_token"]["id"]
+        assert self._regen(client, token_id, expires_in_days=7).status_code == 200
+        days_left = db.execute(
+            text("SELECT extract(epoch FROM expires_at - now()) / 86400 FROM personal_access_tokens")
+        ).scalar_one()
+        assert 6.9 < float(days_left) < 7.1
+        assert self._regen(client, token_id, expires_in_days=366).status_code == 400
+        assert self._regen(client, token_id, expires_in_days=0).status_code == 400
+
+    def test_an_expired_token_can_be_renewed(self, client, db):
+        created = json.loads(_create(client, expires_in_days=30).data)
+        db.execute(
+            text(
+                "UPDATE personal_access_tokens SET created_at = now() - interval '31 days', "
+                "expires_at = now() - interval '1 day'"
+            )
+        )
+        old_headers = {"Authorization": f"Bearer {created['token']}"}
+        assert client.get("/api/user/me", headers=old_headers).status_code == 401
+        body = json.loads(self._regen(client, created["personal_access_token"]["id"]).data)
+        assert body["personal_access_token"]["status"] == "active"
+        headers = {"Authorization": f"Bearer {body['token']}"}
+        assert client.get("/api/user/me", headers=headers).status_code == 200
+
+    def test_non_expiring_token_stays_non_expiring_only_while_the_operator_allows_it(
+        self, client, db, monkeypatch
+    ):
+        monkeypatch.setattr(pat_tokens.settings, "PAT_ALLOW_NON_EXPIRING", True)
+        token_id = json.loads(_create(client, expires_in_days=0).data)["personal_access_token"]["id"]
+        assert json.loads(self._regen(client, token_id).data)["personal_access_token"]["expires_at"] is None
+        monkeypatch.setattr(pat_tokens.settings, "PAT_ALLOW_NON_EXPIRING", False)
+        renewed = json.loads(self._regen(client, token_id).data)["personal_access_token"]
+        assert renewed["expires_at"] is not None  # falls back to the default lifetime
+
+    def test_revoked_foreign_unknown_and_malformed_tokens_are_not_found(self, client, db):
+        token_id = json.loads(_create(client).data)["personal_access_token"]["id"]
+        with _session(sub="bob"):
+            assert client.post(f"/api/user/tokens/{token_id}/regenerate").status_code == 404
+        with _session():
+            client.delete(f"/api/user/tokens/{token_id}")
+        assert self._regen(client, token_id).status_code == 404
+        assert self._regen(client, AGENT_A).status_code == 404
+        assert self._regen(client, f"urn:uuid:{AGENT_A}").status_code == 404
+
+    def test_a_token_cannot_regenerate_itself_or_others(self, client, db):
+        created = json.loads(_create(client, scopes=list(pat_tokens.SCOPES)).data)
+        headers = {"Authorization": f"Bearer {created['token']}"}
+        token_id = created["personal_access_token"]["id"]
+        response = client.post(f"/api/user/tokens/{token_id}/regenerate", headers=headers)
+        assert response.status_code == 403
+        assert json.loads(response.data)["error"] == "not_available_to_tokens"
+
+    def test_requires_a_session_and_an_object_body(self, client, db):
+        token_id = json.loads(_create(client).data)["personal_access_token"]["id"]
+        with patch("docsgpt.app.handle_auth", return_value=None):
+            assert client.post(f"/api/user/tokens/{token_id}/regenerate").status_code == 401
+        with _session():
+            assert client.post(f"/api/user/tokens/{token_id}/regenerate", json=[1]).status_code == 400
+
+    def test_audited_without_the_secret(self, client, db):
+        token_id = json.loads(_create(client).data)["personal_access_token"]["id"]
+        self._regen(client, token_id)
+        metadata = db.execute(
+            text("SELECT metadata FROM auth_events WHERE event = 'pat_regenerated'")
+        ).scalar_one()
+        assert metadata["token_id"] == token_id
+        assert "dgpt_pat_" not in json.dumps(metadata)
+
+
 class TestRevoke:
     def test_cannot_revoke_someone_elses_token(self, client, db):
         token_id = json.loads(_create(client).data)["personal_access_token"]["id"]

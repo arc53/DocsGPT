@@ -23,6 +23,7 @@ from docsgpt.api.pat.tokens import (
     is_pat,
     normalize_resource_filter,
     normalize_scopes,
+    renewal_lifetime_days,
     resolve_expiry,
 )
 from docsgpt.api.user.authz import admin_required
@@ -84,6 +85,7 @@ def serialize_token(row: dict) -> dict:
         "last_used_at": row.get("last_used_at"),
         "last_used_ip": row.get("last_used_ip"),
         "created_at": row.get("created_at"),
+        "regenerated_at": row.get("regenerated_at"),
         "revoked_at": row.get("revoked_at"),
     }
 
@@ -212,6 +214,66 @@ class PersonalAccessToken(Resource):
         if not revoked:
             return _error("Token not found", 404)
         return make_response(jsonify({"success": True}), 200)
+
+
+@pat_ns.route("/user/tokens/<string:token_id>/regenerate")
+class PersonalAccessTokenRegenerate(Resource):
+    def post(self, token_id):
+        """Issue a new secret for a token and reset its expiry.
+
+        Name, scopes and restrictions stay; the old secret stops working at
+        once. ``expires_in_days`` is optional and defaults to the lifetime the
+        token was last issued with. An expired token can be renewed this way; a
+        revoked one cannot. The plaintext ``token`` is returned here and never again.
+        """
+        user_id = _session_user_id()
+        if not user_id:
+            return _error("Authentication required", 401)
+        if not auth_type_supports_pats():
+            return _error("Personal access tokens are not available on this server", 403)
+        if not _valid_uuid(token_id):
+            return _error("Token not found", 404)
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return _error("Request body must be a JSON object", 400)
+
+        token, token_hash, token_prefix = generate_token()
+        with db_session() as conn:
+            repo = PersonalAccessTokensRepository(conn)
+            current = repo.get(token_id, user_id)
+            if not current or current["status"] != "active":
+                return _error("Token not found", 404)
+            requested = body.get("expires_in_days")
+            if requested is None:
+                requested = renewal_lifetime_days(current)
+            try:
+                expires_at = resolve_expiry(requested)
+            except ValueError as exc:
+                return _error(str(exc), 400)
+            row = repo.regenerate(
+                token_id, user_id, token_hash=token_hash, token_prefix=token_prefix, expires_at=expires_at
+            )
+            if not row:
+                # Revoked between the read and the write.
+                return _error("Token not found", 404)
+            AuthEventsRepository(conn).insert(
+                user_id,
+                "pat_regenerated",
+                ip=request.remote_addr,
+                user_agent=request.headers.get("User-Agent"),
+                metadata={
+                    "token_id": token_id,
+                    "name": row["name"],
+                    "expires_at": row.get("expires_at"),
+                    "previous_expires_at": current.get("expires_at"),
+                },
+            )
+        return make_response(
+            jsonify({"success": True, "token": token, "personal_access_token": serialize_token(row)}),
+            200,
+        )
 
 
 @pat_ns.route("/admin/users/<string:user_id>/tokens")

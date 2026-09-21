@@ -1098,6 +1098,7 @@ personal_access_tokens_table = Table(
     Column("last_used_at", DateTime(timezone=True)),
     Column("last_used_ip", Text),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("regenerated_at", DateTime(timezone=True)),
     Column("revoked_at", DateTime(timezone=True)),
     Column("revoke_reason", Text),
     CheckConstraint("status IN ('active', 'revoked')", name="personal_access_tokens_status_check"),

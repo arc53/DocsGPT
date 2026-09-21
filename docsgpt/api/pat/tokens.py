@@ -169,6 +169,33 @@ def resolve_expiry(expires_in_days: Any) -> Optional[datetime]:
     return datetime.now(timezone.utc) + timedelta(days=days)
 
 
+def _parse_moment(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        moment = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def renewal_lifetime_days(row: dict) -> Optional[int]:
+    """The lifetime a token was last issued with, for renewing it on the same terms.
+
+    ``0`` for a non-expiring token, ``None`` when it cannot be derived (the
+    caller then falls back to the default). The result is clamped to today's
+    maximum, since the policy may have tightened since the token was issued.
+    """
+    issued = _parse_moment(row.get("regenerated_at")) or _parse_moment(row.get("created_at"))
+    expires = _parse_moment(row.get("expires_at"))
+    if expires is None:
+        return 0 if settings.PAT_ALLOW_NON_EXPIRING else None
+    if issued is None:
+        return None
+    days = round((expires - issued).total_seconds() / 86400)
+    return max(1, min(days, settings.PAT_MAX_LIFETIME_DAYS))
+
+
 def _client_ip(request) -> Optional[str]:
     # Flask exposes remote_addr; Starlette exposes client.host.
     ip = getattr(request, "remote_addr", None)
