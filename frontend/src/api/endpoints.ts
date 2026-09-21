@@ -154,6 +154,8 @@ const endpoints = {
       `/api/devices/pairings/${deviceCode}`,
     ACCESS_TOKENS: '/api/user/tokens',
     ACCESS_TOKEN: (id: string) => `/api/user/tokens/${id}`,
+    ACCESS_TOKEN_REGENERATE: (id: string) =>
+      `/api/user/tokens/${id}/regenerate`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',

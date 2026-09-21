@@ -154,3 +154,47 @@ describe('patService.revoke', () => {
     );
   });
 });
+
+describe('patService.regenerate', () => {
+  it('POSTs the chosen lifetime to the regenerate endpoint', async () => {
+    const body = {
+      success: true,
+      token: 'dgpt_pat_newsecret',
+      personal_access_token: TOKEN_ROW,
+    };
+    const spy = vi.spyOn(apiClient, 'post').mockResolvedValue(response(body));
+
+    const result = await patService.regenerate(TOKEN_ROW.id, 30, 'session-jwt');
+
+    expect(spy).toHaveBeenCalledWith(
+      `/api/user/tokens/${TOKEN_ROW.id}/regenerate`,
+      { expires_in_days: 30 },
+      'session-jwt',
+    );
+    expect(result.token).toBe('dgpt_pat_newsecret');
+  });
+
+  it('sends an empty body to keep the original lifetime', async () => {
+    const spy = vi
+      .spyOn(apiClient, 'post')
+      .mockResolvedValue(response({ success: true, token: 't' }));
+
+    await patService.regenerate(TOKEN_ROW.id, undefined, null);
+
+    expect(spy).toHaveBeenCalledWith(
+      `/api/user/tokens/${TOKEN_ROW.id}/regenerate`,
+      {},
+      null,
+    );
+  });
+
+  it('surfaces the server message', async () => {
+    vi.spyOn(apiClient, 'post').mockResolvedValue(
+      response({ success: false, message: 'Token not found' }, 404),
+    );
+
+    await expect(patService.regenerate('missing', 30, null)).rejects.toThrow(
+      'Token not found',
+    );
+  });
+});

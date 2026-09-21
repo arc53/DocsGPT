@@ -11,15 +11,21 @@ interface AccessTokenCreatedModalProps {
   /** Plaintext secret; `null` keeps the modal closed. Held only in the parent's component state. */
   token: string | null;
   name: string;
+  /** The secret replaces an existing token's secret rather than belonging to a new token. */
+  regenerated?: boolean;
   onClose: () => void;
 }
 
 export default function AccessTokenCreatedModal({
   token,
   name,
+  regenerated = false,
   onClose,
 }: AccessTokenCreatedModalProps) {
   const { t } = useTranslation();
+  const copy = regenerated
+    ? 'settings.accessTokens.regenerate.done'
+    : 'settings.accessTokens.created';
   const exportSnippet = `export DOCSGPT_TOKEN=${token ?? ''}`;
   const curlSnippet = `curl -H "Authorization: Bearer $DOCSGPT_TOKEN" ${baseURL}/api/get_agents`;
 
@@ -28,7 +34,7 @@ export default function AccessTokenCreatedModal({
       open={token !== null}
       onOpenChange={(o) => !o && onClose()}
       hideTitle
-      title={t('settings.accessTokens.created.title')}
+      title={t(`${copy}.title`)}
       size="lg"
       mobileVariant="sheet"
       // The secret cannot be shown again, so a stray click outside must not
@@ -47,10 +53,10 @@ export default function AccessTokenCreatedModal({
       <div className="flex flex-col gap-5 px-1">
         <div>
           <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-            {t('settings.accessTokens.created.title')}
+            {t(`${copy}.title`)}
           </h2>
           <p className="text-muted-foreground mt-2 text-sm break-words">
-            {t('settings.accessTokens.created.subtitle', {
+            {t(`${copy}.subtitle`, {
               name,
               ...NO_ESCAPE,
             })}

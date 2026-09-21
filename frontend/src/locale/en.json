@@ -838,6 +838,20 @@
         "usageTitle": "How to use it",
         "usageHint": "Export it as an environment variable, then send it as a Bearer token in the Authorization header.",
         "done": "Done"
+      },
+      "regenerate": {
+        "action": "Regenerate",
+        "aria": "Regenerate token {{name}}",
+        "title": "Regenerate token",
+        "warning": "Generate a new secret for \"{{name}}\"? The current secret stops working immediately, so anything using it must be updated. The name, scopes and restrictions stay the same.",
+        "newExpiration": "New expiration",
+        "submit": "Regenerate",
+        "submitting": "Regenerating…",
+        "error": "Failed to regenerate the token. Please try again.",
+        "done": {
+          "title": "Token regenerated",
+          "subtitle": "The new secret for \"{{name}}\" is ready. The old one no longer works."
+        }
       }
     },
     "scrollTabsLeft": "Scroll tabs left",

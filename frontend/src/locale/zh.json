@@ -833,6 +833,20 @@
         "usageTitle": "使用方法",
         "usageHint": "将其导出为环境变量，然后在 Authorization 请求头中作为 Bearer 令牌发送。",
         "done": "完成"
+      },
+      "regenerate": {
+        "action": "重新生成",
+        "aria": "重新生成令牌 {{name}}",
+        "title": "重新生成令牌",
+        "warning": "要为“{{name}}”生成新的密钥吗？当前密钥将立即失效，所有使用它的地方都需要更新。名称、权限范围和限制保持不变。",
+        "newExpiration": "新的过期时间",
+        "submit": "重新生成",
+        "submitting": "正在重新生成…",
+        "error": "重新生成令牌失败，请重试。",
+        "done": {
+          "title": "令牌已重新生成",
+          "subtitle": "“{{name}}”的新密钥已就绪，旧密钥已失效。"
+        }
       }
     },
     "scrollTabsLeft": "向左滚动标签",

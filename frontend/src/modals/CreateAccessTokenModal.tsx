@@ -442,6 +442,7 @@ export default function CreateAccessTokenModal({
                           'settings.accessTokens.create.searchResources',
                         )}
                         className="rounded-xl"
+                        modal
                       />
                     )}
                   </div>

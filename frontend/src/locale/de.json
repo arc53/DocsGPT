@@ -833,6 +833,20 @@
         "usageTitle": "So verwendest du es",
         "usageHint": "Exportiere es als Umgebungsvariable und sende es als Bearer-Token im Authorization-Header.",
         "done": "Fertig"
+      },
+      "regenerate": {
+        "action": "Neu generieren",
+        "aria": "Token {{name}} neu generieren",
+        "title": "Token neu generieren",
+        "warning": "Neues Geheimnis für \"{{name}}\" erzeugen? Das aktuelle Geheimnis funktioniert sofort nicht mehr, alles, was es verwendet, muss aktualisiert werden. Name, Berechtigungen und Einschränkungen bleiben gleich.",
+        "newExpiration": "Neues Ablaufdatum",
+        "submit": "Neu generieren",
+        "submitting": "Wird neu generiert…",
+        "error": "Das Token konnte nicht neu generiert werden. Bitte erneut versuchen.",
+        "done": {
+          "title": "Token neu generiert",
+          "subtitle": "Das neue Geheimnis für \"{{name}}\" ist bereit. Das alte funktioniert nicht mehr."
+        }
       }
     },
     "scrollTabsLeft": "Tabs nach links scrollen",

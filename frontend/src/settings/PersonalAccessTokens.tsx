@@ -28,6 +28,7 @@ import { useDarkTheme } from '../hooks';
 import AccessTokenCreatedModal from '../modals/AccessTokenCreatedModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import CreateAccessTokenModal from '../modals/CreateAccessTokenModal';
+import RegenerateAccessTokenModal from '../modals/RegenerateAccessTokenModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { formatDateOnly, formatDateTime } from '../utils/dateTimeUtils';
@@ -89,6 +90,10 @@ export default function PersonalAccessTokens() {
   // The plaintext secret lives only here, and only until the modal closes.
   const [created, setCreated] =
     React.useState<CreateAccessTokenResponse | null>(null);
+  // True while `created` holds a regenerated (not brand-new) secret.
+  const [createdByRegenerate, setCreatedByRegenerate] = React.useState(false);
+  const [tokenToRegenerate, setTokenToRegenerate] =
+    React.useState<PersonalAccessToken | null>(null);
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
   const [tokenToRevoke, setTokenToRevoke] =
     React.useState<PersonalAccessToken | null>(null);
@@ -116,8 +121,20 @@ export default function PersonalAccessTokens() {
     loadTokens(true);
   }, [loadTokens]);
 
+  const handleRegenerated = (response: CreateAccessTokenResponse) => {
+    const updated = response.personal_access_token;
+    setTokenToRegenerate(null);
+    setCreatedByRegenerate(true);
+    setCreated(response);
+    setTokens((prev) =>
+      prev.map((item) => (item.id === updated.id ? updated : item)),
+    );
+    setError(null);
+  };
+
   const handleCreated = (response: CreateAccessTokenResponse) => {
     setCreateOpen(false);
+    setCreatedByRegenerate(false);
     setCreated(response);
     setTokens((prev) => [response.personal_access_token, ...prev]);
   };
@@ -211,6 +228,23 @@ export default function PersonalAccessTokens() {
       </span>
     );
   };
+
+  const renderRegenerateButton = (item: PersonalAccessToken) =>
+    policy?.enabled ? (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="rounded-full px-4"
+        onClick={() => setTokenToRegenerate(item)}
+        aria-label={t('settings.accessTokens.regenerate.aria', {
+          name: item.name,
+          ...NO_ESCAPE,
+        })}
+      >
+        {t('settings.accessTokens.regenerate.action')}
+      </Button>
+    ) : null;
 
   const renderRevokeButton = (item: PersonalAccessToken) => (
     <Button
@@ -373,7 +407,10 @@ export default function PersonalAccessTokens() {
                         {renderExpiry(item)}
                       </TableCell>
                       <TableCell align="right">
-                        {renderRevokeButton(item)}
+                        <div className="flex items-center justify-end gap-2">
+                          {renderRegenerateButton(item)}
+                          {renderRevokeButton(item)}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -398,7 +435,6 @@ export default function PersonalAccessTokens() {
                       </p>
                       {renderPrefix(item)}
                     </div>
-                    {renderRevokeButton(item)}
                   </div>
                   <ScopeChips scopes={item.scopes} />
                   <div className="flex flex-col gap-1.5">
@@ -419,6 +455,10 @@ export default function PersonalAccessTokens() {
                       renderExpiry(item),
                     )}
                   </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {renderRegenerateButton(item)}
+                    {renderRevokeButton(item)}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -438,8 +478,17 @@ export default function PersonalAccessTokens() {
       <AccessTokenCreatedModal
         token={created?.token ?? null}
         name={created?.personal_access_token.name ?? ''}
+        regenerated={createdByRegenerate}
         onClose={() => setCreated(null)}
       />
+      {policy && (
+        <RegenerateAccessTokenModal
+          item={tokenToRegenerate}
+          policy={policy}
+          onClose={() => setTokenToRegenerate(null)}
+          onRegenerated={handleRegenerated}
+        />
+      )}
       <ConfirmationModal
         message={t('settings.accessTokens.revokeWarning', {
           name: tokenToRevoke?.name ?? '',

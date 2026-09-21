@@ -833,6 +833,20 @@
         "usageTitle": "使用方式",
         "usageHint": "將其匯出為環境變數，然後在 Authorization 標頭中作為 Bearer 權杖傳送。",
         "done": "完成"
+      },
+      "regenerate": {
+        "action": "重新產生",
+        "aria": "重新產生權杖 {{name}}",
+        "title": "重新產生權杖",
+        "warning": "要為「{{name}}」產生新的密鑰嗎？目前的密鑰會立即失效，所有使用它的地方都需要更新。名稱、權限範圍和限制維持不變。",
+        "newExpiration": "新的到期時間",
+        "submit": "重新產生",
+        "submitting": "正在重新產生…",
+        "error": "重新產生權杖失敗，請再試一次。",
+        "done": {
+          "title": "權杖已重新產生",
+          "subtitle": "「{{name}}」的新密鑰已就緒，舊密鑰已失效。"
+        }
       }
     },
     "scrollTabsLeft": "向左捲動標籤",

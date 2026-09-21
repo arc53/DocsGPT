@@ -13,6 +13,7 @@ import {
   NO_ESCAPE,
   NO_EXPIRY,
   relativeTime,
+  renewalExpiry,
   restrictionCounts,
   scopesToSubmit,
   toResourceOptions,
@@ -303,5 +304,61 @@ describe('eligibleFilterFamilies with chat:run', () => {
       'sources',
     ]);
     expect(eligibleFilterFamilies(['tools:write'], all)).toEqual(['tools']);
+  });
+});
+
+describe('renewalExpiry', () => {
+  const policy = {
+    default_lifetime_days: 90,
+    max_lifetime_days: 365,
+    allow_non_expiring: false,
+  };
+  const issued = '2026-09-01T10:00:00+00:00';
+  const plusDays = (days: number) =>
+    new Date(Date.parse(issued) + days * 86400000).toISOString();
+
+  it('preselects the lifetime the token was issued with', () => {
+    expect(
+      renewalExpiry({ created_at: issued, expires_at: plusDays(30) }, policy),
+    ).toBe(30);
+  });
+
+  it('counts from the last regeneration, not from creation', () => {
+    expect(
+      renewalExpiry(
+        {
+          created_at: '2026-01-01T00:00:00+00:00',
+          regenerated_at: issued,
+          expires_at: plusDays(7),
+        },
+        policy,
+      ),
+    ).toBe(7);
+  });
+
+  it('falls back to the default for a lifetime the policy no longer offers', () => {
+    expect(
+      renewalExpiry({ created_at: issued, expires_at: plusDays(45) }, policy),
+    ).toBe(90);
+    expect(
+      renewalExpiry(
+        { created_at: issued, expires_at: plusDays(365) },
+        { ...policy, max_lifetime_days: 180 },
+      ),
+    ).toBe(90);
+  });
+
+  it('keeps a non-expiring token non-expiring only while that is allowed', () => {
+    const item = { created_at: issued, expires_at: null };
+    expect(renewalExpiry(item, policy)).toBe(90);
+    expect(renewalExpiry(item, { ...policy, allow_non_expiring: true })).toBe(
+      NO_EXPIRY,
+    );
+  });
+
+  it('falls back to the default on unparseable dates', () => {
+    expect(
+      renewalExpiry({ created_at: null, expires_at: plusDays(30) }, policy),
+    ).toBe(90);
   });
 });

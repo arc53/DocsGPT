@@ -14,6 +14,8 @@ export interface PersonalAccessToken {
   last_used_at: string | null;
   last_used_ip: string | null;
   created_at: string | null;
+  /** Set once the secret has been regenerated; the lifetime then counts from here. */
+  regenerated_at?: string | null;
   revoked_at: string | null;
 }
 
@@ -93,6 +95,24 @@ const patService = {
   ): Promise<CreateAccessTokenResponse> =>
     parse<CreateAccessTokenResponse>(
       await apiClient.post(endpoints.USER.ACCESS_TOKENS, payload, token),
+    ),
+
+  /**
+   * New secret for the same token (name, scopes and restrictions stay); the old
+   * secret stops working at once. `expiresInDays` omitted = the lifetime the
+   * token was last issued with.
+   */
+  regenerate: async (
+    id: string,
+    expiresInDays: number | undefined,
+    token: string | null,
+  ): Promise<CreateAccessTokenResponse> =>
+    parse<CreateAccessTokenResponse>(
+      await apiClient.post(
+        endpoints.USER.ACCESS_TOKEN_REGENERATE(encodeURIComponent(id)),
+        expiresInDays === undefined ? {} : { expires_in_days: expiresInDays },
+        token,
+      ),
     ),
 
   revoke: async (

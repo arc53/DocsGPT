@@ -833,6 +833,20 @@
         "usageTitle": "Cómo usarlo",
         "usageHint": "Expórtalo como variable de entorno y envíalo como token Bearer en la cabecera Authorization.",
         "done": "Listo"
+      },
+      "regenerate": {
+        "action": "Regenerar",
+        "aria": "Regenerar el token {{name}}",
+        "title": "Regenerar token",
+        "warning": "¿Generar un nuevo secreto para \"{{name}}\"? El secreto actual deja de funcionar de inmediato, así que todo lo que lo use debe actualizarse. El nombre, los permisos y las restricciones no cambian.",
+        "newExpiration": "Nueva caducidad",
+        "submit": "Regenerar",
+        "submitting": "Regenerando…",
+        "error": "No se pudo regenerar el token. Inténtalo de nuevo.",
+        "done": {
+          "title": "Token regenerado",
+          "subtitle": "El nuevo secreto de \"{{name}}\" está listo. El anterior ya no funciona."
+        }
       }
     },
     "scrollTabsLeft": "Desplazar pestañas a la izquierda",

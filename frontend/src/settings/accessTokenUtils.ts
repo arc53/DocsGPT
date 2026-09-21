@@ -141,6 +141,31 @@ export function defaultExpiry(policy: ExpiryPolicy): number {
   return finite.length > 0 ? finite[finite.length - 1] : NO_EXPIRY;
 }
 
+/**
+ * Lifetime to preselect when regenerating: what the token was last issued
+ * with, when the policy still offers it; otherwise the policy default.
+ */
+export function renewalExpiry(
+  item: {
+    created_at: string | null;
+    regenerated_at?: string | null;
+    expires_at: string | null;
+  },
+  policy: ExpiryPolicy,
+): number {
+  const options = expiryOptions(policy);
+  if (!item.expires_at) {
+    return options.includes(NO_EXPIRY) ? NO_EXPIRY : defaultExpiry(policy);
+  }
+  const issued = Date.parse(item.regenerated_at || item.created_at || '');
+  const expires = Date.parse(item.expires_at);
+  if (Number.isNaN(issued) || Number.isNaN(expires)) {
+    return defaultExpiry(policy);
+  }
+  const days = Math.round((expires - issued) / DAY_MS);
+  return options.includes(days) ? days : defaultExpiry(policy);
+}
+
 export type ExpiryStatus = 'never' | 'expired' | 'expiringSoon' | 'ok';
 
 export function expiryStatus(
