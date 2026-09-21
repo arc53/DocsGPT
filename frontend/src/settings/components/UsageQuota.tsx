@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
+import { usagePercent } from '../../admin/quotaUtils';
 import userService from '../../api/services/userService';
 import { selectToken } from '../../preferences/preferenceSlice';
 
@@ -24,10 +25,7 @@ function Meter({
 }) {
   const { t } = useTranslation();
   if (budget.limit === null) return null;
-  const percent =
-    budget.limit <= 0
-      ? 100
-      : Math.min(100, Math.max(0, (budget.used / budget.limit) * 100));
+  const percent = usagePercent(budget.used, budget.limit);
   const tone =
     percent >= 100
       ? 'bg-red-500'

@@ -116,8 +116,12 @@ export default function Quotas() {
   if (data === null && loading) return <Loading />;
   if (!data?.success) return <LoadError message="Failed to load quotas." />;
 
-  const bucketPill = (policy: QuotaPolicy) =>
-    isAll(policy) ? null : <Pill tone="muted">{policy.bucket} traffic</Pill>;
+  const bucketPill = (policy: QuotaPolicy) => (
+    <>
+      {isAll(policy) ? null : <Pill tone="muted">{policy.bucket} traffic</Pill>}
+      {policy.enabled ? null : <Pill tone="muted">Disabled</Pill>}
+    </>
+  );
 
   return (
     <div className="mt-6 space-y-8">
@@ -163,7 +167,7 @@ export default function Quotas() {
         </div>
         <p className="text-muted-foreground mt-1 text-sm">
           {instancePolicy
-            ? `Tokens: ${describeBudget(instancePolicy.token_limit, instancePolicy.token_unlimited, 'tokens')} · Cost: ${describeBudget(instancePolicy.cost_limit_usd, instancePolicy.cost_unlimited, 'cost')}`
+            ? `${instancePolicy.enabled ? '' : 'Disabled · '}Tokens: ${describeBudget(instancePolicy.token_limit, instancePolicy.token_unlimited, 'tokens')} · Cost: ${describeBudget(instancePolicy.cost_limit_usd, instancePolicy.cost_unlimited, 'cost')}`
             : 'No default: users without a team allowance or override are unlimited.'}
         </p>
       </section>

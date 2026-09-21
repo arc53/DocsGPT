@@ -185,7 +185,7 @@ export default function QuotaEditor({
       if (policy) remove();
       return;
     }
-    const result = formToPolicy(form);
+    const result = formToPolicy(form, policy);
     if (!result.ok) {
       setError(result.error);
       return;
@@ -196,6 +196,11 @@ export default function QuotaEditor({
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-xs">{inheritHint}</p>
+      {policy && !policy.enabled ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          This policy is disabled and is not enforced. Saving keeps it disabled.
+        </p>
+      ) : null}
       <BudgetField
         label="Tokens"
         hint="e.g. 2000000"

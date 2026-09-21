@@ -344,7 +344,9 @@ def chat_completions():
         if claimed_conversation_id:
             usage_error = helper.check_usage_on_resume(processor, claimed_conversation_id)
         else:
-            usage_error = helper.check_usage(processor.agent_config, processor.decoded_token)
+            usage_error = helper.check_usage(
+                processor.agent_config, processor.decoded_token, agent_id=processor.agent_id
+            )
         if usage_error:
             return usage_error
 

@@ -115,7 +115,10 @@ class BaseAnswerResource:
         return prepared
 
     def check_usage(
-        self, agent_config: Dict, decoded_token: Optional[Dict] = None
+        self,
+        agent_config: Dict,
+        decoded_token: Optional[Dict] = None,
+        agent_id: Optional[str] = None,
     ) -> Optional[Response]:
         """Refuse the request when a usage limit is exhausted.
 
@@ -127,6 +130,8 @@ class BaseAnswerResource:
             agent_config: The config dict of agent instance
             decoded_token: The request's resolved identity; its ``sub`` is the
                 billable user.
+            agent_id: The agent the request runs through. A draft agent has no
+                key, but its usage rows carry the agent id, so it is agent traffic.
 
         Returns:
             None or Response if either of limits exceeded.
@@ -134,7 +139,7 @@ class BaseAnswerResource:
         """
         api_key = agent_config.get("user_api_key")
         user_id = (decoded_token or {}).get("sub") or agent_config.get("user_id")
-        exceeded = QuotaService.check(user_id, "agent" if api_key else "direct")
+        exceeded = QuotaService.check(user_id, "agent" if api_key or agent_id else "direct")
         if exceeded is not None:
             return quota_exceeded_response(exceeded)
         if not api_key:
@@ -227,7 +232,9 @@ class BaseAnswerResource:
         Returns:
             None, or the refusal Response.
         """
-        error = self.check_usage(processor.agent_config, processor.decoded_token)
+        error = self.check_usage(
+            processor.agent_config, processor.decoded_token, agent_id=processor.agent_id
+        )
         if error is None or not conversation_id:
             return error
         user = processor.initial_user_id or (processor.decoded_token or {}).get("sub")

@@ -10,6 +10,7 @@ models:
     supports_structured_output: true
     input_cost_per_million: 0.15
     output_cost_per_million: 0.6
+    cached_input_cost_per_million: 0.075
   - id: llama-3.3-70b-versatile
     display_name: Llama 3.3 70B Versatile
     description: Meta's Llama 3.3 70B for general-purpose chat with parallel tool use

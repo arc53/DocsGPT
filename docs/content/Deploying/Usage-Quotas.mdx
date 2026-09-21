@@ -97,7 +97,7 @@ Every admin endpoint requires the admin role, and every change is written to the
 | `GET` | `/api/admin/quotas` | All policies by layer, the current window, and used models without a price. |
 | `PUT` `DELETE` | `/api/admin/quotas/instance` | The instance default. |
 | `GET` `PUT` `DELETE` | `/api/admin/quotas/teams/<team_id>` | A team's per-member allowance. |
-| `GET` `PUT` `DELETE` | `/api/admin/quotas/users/<user_id>` | A user's override. `GET` also returns the limits the user ends up with, the layer each came from, and their usage. |
+| `GET` `PUT` `DELETE` | `/api/admin/quotas/users/<user_id>` | A user's override; the user must already exist (SCIM-provisioned, or signed in once), otherwise `404`. `GET` also returns the limits the user ends up with, the layer each came from, and their usage. |
 | `GET` | `/api/user/quota` | The caller's own limits, usage and reset time. |
 
 A `PUT` body sets, per budget, a limit or the unlimited flag; leave both out to defer to the next layer:

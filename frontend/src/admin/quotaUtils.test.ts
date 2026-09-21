@@ -54,6 +54,7 @@ describe('formToPolicy', () => {
       ok: true,
       policy: {
         bucket: 'all',
+        enabled: true,
         token_limit: 5000,
         token_unlimited: false,
         cost_limit_usd: 2.5,
@@ -61,6 +62,13 @@ describe('formToPolicy', () => {
         note: 'trial',
       },
     });
+  });
+
+  it('keeps a disabled policy disabled', () => {
+    const form = { ...base, tokenMode: 'limit' as const, tokenLimit: '10' };
+    const stored = policy({ enabled: false });
+    const result = formToPolicy(form, stored);
+    expect(result.ok && result.policy.enabled).toBe(false);
   });
 
   it('sends unlimited without a limit', () => {

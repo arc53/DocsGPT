@@ -154,7 +154,9 @@ class StreamResource(Resource, BaseAnswerResource):
                 )
 
             if error := self.check_usage(
-                processor.agent_config, processor.decoded_token
+                processor.agent_config,
+                processor.decoded_token,
+                agent_id=processor.agent_id,
             ):
                 return error
             should_persist, visibility = resolve_persistence(

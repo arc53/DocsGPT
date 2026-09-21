@@ -15,12 +15,13 @@ models:
 
   - id: deepseek/deepseek-v3.2
     display_name: DeepSeek V3.2
-    description: Open-weights reasoning model, very low cost (~$0.23 in / $0.34 out per 1M)
+    description: Open-weights reasoning model, very low cost (~$0.27 in / $0.40 out per 1M)
     context_window: 131072
     attachments: []
     supports_structured_output: true
-    input_cost_per_million: 0.23
-    output_cost_per_million: 0.34
+    input_cost_per_million: 0.269
+    output_cost_per_million: 0.4
+    cached_input_cost_per_million: 0.1345
 
   - id: anthropic/claude-sonnet-4.6
     display_name: Claude Sonnet 4.6 (via OpenRouter)
@@ -29,3 +30,5 @@ models:
     supports_structured_output: true
     input_cost_per_million: 3.0
     output_cost_per_million: 15.0
+    cached_input_cost_per_million: 0.3
+    cache_write_cost_per_million: 3.75

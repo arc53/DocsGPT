@@ -66,9 +66,15 @@ export function isEmptyForm(form: QuotaForm): boolean {
   return form.tokenMode === 'inherit' && form.costMode === 'inherit';
 }
 
-export function formToPolicy(form: QuotaForm): FormResult {
+// ``existing`` carries the stored ``enabled`` flag through an edit: the form has
+// no control for it, and a body without it would switch the policy back on.
+export function formToPolicy(
+  form: QuotaForm,
+  existing?: QuotaPolicy | null,
+): FormResult {
   const policy: Record<string, unknown> = {
     bucket: 'all',
+    enabled: existing?.enabled ?? true,
     token_limit: null,
     token_unlimited: form.tokenMode === 'unlimited',
     cost_limit_usd: null,

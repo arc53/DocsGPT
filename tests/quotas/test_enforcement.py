@@ -30,11 +30,11 @@ def _spend(conn, user_id, tokens, api_key=None):
     TokenUsageRepository(conn).insert(user_id=user_id, api_key=api_key, prompt_tokens=tokens)
 
 
-def _check(flask_app, agent_config, decoded_token=None):
+def _check(flask_app, agent_config, decoded_token=None, agent_id=None):
     from docsgpt.api.answer.routes.base import BaseAnswerResource
 
     with flask_app.app_context():
-        return BaseAnswerResource().check_usage(agent_config, decoded_token)
+        return BaseAnswerResource().check_usage(agent_config, decoded_token, agent_id=agent_id)
 
 
 class TestCheckUsage:
@@ -90,6 +90,23 @@ class TestCheckUsage:
         _spend(db, "u1", 500)
         assert _check(flask_app, {}, {"sub": "u1"}) is None
 
+    def test_a_keyless_agent_chat_is_agent_traffic(self, db, flask_app):
+        agent_id = str(AgentsRepository(db).create("u1", "draft", "draft")["id"])
+        QuotaPoliciesRepository(db).upsert(scope="user", subject_id="u1", bucket="agent", token_limit=10)
+        TokenUsageRepository(db).insert(user_id="u1", agent_id=agent_id, prompt_tokens=10)
+
+        response = _check(flask_app, {"user_api_key": None}, {"sub": "u1"}, agent_id=agent_id)
+
+        assert response.status_code == 429
+        assert json.loads(response.data)["bucket"] == "agent"
+        # The same spend leaves chat without an agent alone.
+        assert _check(flask_app, {}, {"sub": "u1"}) is None
+
+    def test_a_refusal_tells_sdk_clients_not_to_retry(self, db, flask_app):
+        QuotaPoliciesRepository(db).upsert(scope="user", subject_id="u1", token_limit=0)
+        response = _check(flask_app, {}, {"sub": "u1"})
+        assert response.headers["x-should-retry"] == "false"
+
 
 class TestHeadless:
     def test_exhausted_owner_is_refused_before_the_run(self, db):
@@ -125,7 +142,9 @@ class TestResumeRefusal:
     def _processor(self, user_id="u1"):
         from types import SimpleNamespace
 
-        return SimpleNamespace(agent_config={}, decoded_token={"sub": user_id}, initial_user_id=user_id)
+        return SimpleNamespace(
+            agent_config={}, decoded_token={"sub": user_id}, initial_user_id=user_id, agent_id=None
+        )
 
     def test_a_refused_resume_releases_its_claim(self, db, flask_app):
         from docsgpt.api.answer.routes.base import BaseAnswerResource
