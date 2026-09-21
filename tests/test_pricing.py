@@ -118,7 +118,7 @@ class TestCatalogFields:
             self._load(tmp_path, "provider: openai\nmodels:\n  - id: m\n    input_cost_per_million: -1\n")
 
     def test_hosted_builtin_models_are_priced(self):
-        hosted = {"anthropic", "deepseek", "google", "groq", "novita", "openai", "openrouter"}
+        hosted = {"anthropic", "deepseek", "docsgpt", "google", "groq", "novita", "openai", "openrouter"}
         catalogs = [
             c for c in load_model_yamls([BUILTIN_MODELS_DIR]) if c.source_path.stem in hosted
         ]
@@ -128,3 +128,12 @@ class TestCatalogFields:
                 caps = model.capabilities
                 assert caps.input_cost_per_million is not None, model.id
                 assert caps.output_cost_per_million is not None, model.id
+
+    def test_default_docsgpt_model_rates(self):
+        (model,) = [
+            m for c in load_model_yamls([BUILTIN_MODELS_DIR]) for m in c.models if m.id == "docsgpt-local"
+        ]
+        caps = model.capabilities
+        assert (caps.input_cost_per_million, caps.output_cost_per_million) == (0.15, 0.5)
+        assert caps.cached_input_cost_per_million == 0.03
+        assert caps.cache_write_cost_per_million is None
