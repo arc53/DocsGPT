@@ -33,3 +33,9 @@ models:
     output_cost_per_million: 5.0
     cached_input_cost_per_million: 0.1
     cache_write_cost_per_million: 1.25
+
+  - id: claude-fable-5
+    display_name: Claude Fable 5
+    description: Anthropic's frontier tier above Opus for the most demanding reasoning and long-horizon agentic work
+    context_window: 1000000
+    supports_structured_output: true

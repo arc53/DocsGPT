@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import modelService from './api/services/modelService';
-import DocsGPT3 from './assets/cute_docsgpt3.svg';
+import DocsGPTLogo from './assets/full-logo-b.svg';
+import DocsGPTLogoWhite from './assets/full-logo-w.svg';
 import {
   Select,
   SelectContent,
@@ -11,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './components/ui/select';
+import { useDarkTheme } from './hooks';
 import {
   selectAvailableModels,
   selectSelectedModel,
@@ -129,6 +131,7 @@ export default function Hero({
   }) => void;
 }) {
   const { t } = useTranslation();
+  const [isDarkTheme] = useDarkTheme();
   const demos = t('demo', { returnObjects: true }) as Array<{
     header: string;
     query: string;
@@ -138,9 +141,12 @@ export default function Hero({
     <div className="text-foreground flex h-full w-full flex-col items-center justify-between">
       {/* Header Section */}
       <div className="flex grow flex-col items-center justify-center pt-8 md:pt-0">
-        <div className="mb-px flex items-center">
-          <span className="text-4xl font-semibold">DocsGPT</span>
-          <img className="mb-1 inline w-14" src={DocsGPT3} alt="docsgpt" />
+        <div className="mb-4 flex items-center">
+          <img
+            className="h-7 w-auto"
+            src={isDarkTheme ? DocsGPTLogoWhite : DocsGPTLogo}
+            alt="DocsGPT"
+          />
         </div>
         {/* Model Selector */}
         <div className="relative w-72">

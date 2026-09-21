@@ -1,4 +1,3 @@
-import Image from 'next/image';
 import { Analytics } from '@vercel/analytics/react';
 import { Banner, Head } from 'nextra/components';
 import { getPageMap } from 'nextra/page-map';
@@ -6,8 +5,9 @@ import { Footer, Layout, Navbar } from 'nextra-theme-docs';
 import 'nextra-theme-docs/style.css';
 
 import { DocsGPTChatWidget } from '../components/DocsGPTChatWidget';
-import CuteLogo from '../public/cute-docsgpt.png';
 import themeConfig from '../theme.config';
+
+import './brand.css';
 
 const github = 'https://github.com/arc53/DocsGPT';
 
@@ -24,7 +24,12 @@ const navbar = (
   <Navbar
     logo={
       <div style={{ alignItems: 'center', display: 'flex', gap: '8px' }}>
-        <Image src={CuteLogo} alt="DocsGPT logo" width={28} height={28} />
+        <img
+          className="brand-logo brand-logo-light"
+          src="/logo-b.svg"
+          alt="DocsGPT logo"
+        />
+        <img className="brand-logo brand-logo-dark" src="/logo-w.svg" alt="" />
         <span style={{ fontWeight: 'bold', fontSize: 18 }}>DocsGPT Docs</span>
       </div>
     }
@@ -54,14 +59,21 @@ export default async function RootLayout({ children }) {
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
       <Head>
+        <link rel="icon" href="/favicon.ico" sizes="48x48" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link
+          rel="icon"
+          href="/favicon-96x96.png"
+          type="image/png"
+          sizes="96x96"
+        />
         <link
           rel="apple-touch-icon"
+          href="/apple-touch-icon.png"
           sizes="180x180"
-          href="/favicons/apple-touch-icon.png"
         />
-        <link rel="icon" type="image/png" sizes="32x32" href="/favicons/favicon-32x32.png" />
-        <link rel="icon" type="image/png" sizes="16x16" href="/favicons/favicon-16x16.png" />
-        <link rel="manifest" href="/favicons/site.webmanifest" />
+        <link rel="manifest" href="/site.webmanifest" />
+        <meta name="apple-mobile-web-app-title" content="DocsGPT Docs" />
         <meta httpEquiv="Content-Language" content="en" />
       </Head>
       <body>

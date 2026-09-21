@@ -118,7 +118,7 @@ const EVENT_LABELS: Record<string, string> = {
   admin_sessions_revoked: 'Sessions revoked',
   scim_created: 'Provisioned',
   scim_deactivated: 'Deactivated (SCIM)',
-  scim_activated: 'Activated (SCIM)',
+  scim_reactivated: 'Activated (SCIM)',
   quota_policy_set: 'Quota set',
   quota_policy_deleted: 'Quota removed',
 };
