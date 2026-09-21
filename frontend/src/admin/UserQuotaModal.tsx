@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 
 import adminService from '../api/services/adminService';
@@ -26,15 +26,22 @@ export default function UserQuotaModal({
   const [data, setData] = useState<any | null>(null);
   const [teamNames, setTeamNames] = useState<Record<string, string>>({});
 
+  // Bumped per request so a slow response for a previous user is discarded
+  // instead of showing (and letting the editor save) that user's policy.
+  const requestRef = useRef(0);
+
   const load = useCallback(async () => {
-    if (!userId) return;
+    const request = ++requestRef.current;
     setData(null);
+    if (!userId) return;
     try {
       const [res, teamsJson] = await Promise.all([
         adminService.getUserQuota(userId, token),
         teamsService.listAll(token).catch(() => ({})),
       ]);
-      setData(await res.json().catch(() => ({ success: false })));
+      const json = await res.json().catch(() => ({ success: false }));
+      if (request !== requestRef.current) return;
+      setData(json);
       setTeamNames(
         Object.fromEntries(
           (teamsJson?.teams ?? []).map((team: any) => [
@@ -44,7 +51,7 @@ export default function UserQuotaModal({
         ),
       );
     } catch {
-      setData({ success: false });
+      if (request === requestRef.current) setData({ success: false });
     }
   }, [userId, token]);
 

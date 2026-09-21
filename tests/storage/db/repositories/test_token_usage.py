@@ -61,6 +61,14 @@ class TestUsageTotals:
         repo.insert(user_id="u-tot", prompt_tokens=100, generated_tokens=10, cost=0.5)
         repo.insert(user_id="u-tot", api_key="k", prompt_tokens=20, generated_tokens=2, cost=0.25)
         repo.insert(user_id="u-tot", prompt_tokens=7, generated_tokens=0, cost=0.125, source="title")
+        # A keyless agent (or workflow node): an agent id without a key.
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        agent = AgentsRepository(repo._conn).create("u-tot", "keyless", "draft")
+        repo.insert(
+            user_id="u-tot", agent_id=str(agent["id"]),
+            prompt_tokens=4, generated_tokens=0, cost=0.0625,
+        )
         repo.insert(user_id="u-tot", prompt_tokens=999, generated_tokens=0, source="schedule")
         repo.insert(user_id="u-other", prompt_tokens=999, generated_tokens=0, cost=9)
         repo.insert(
@@ -70,7 +78,7 @@ class TestUsageTotals:
 
     @pytest.mark.parametrize(
         "bucket, expected",
-        [("all", (139, 0.875)), ("direct", (117, 0.625)), ("agent", (22, 0.25))],
+        [("all", (143, 0.9375)), ("direct", (117, 0.625)), ("agent", (26, 0.3125))],
     )
     def test_totals_per_bucket(self, pg_conn, bucket, expected):
         repo = _repo(pg_conn)

@@ -211,6 +211,32 @@ class BaseAnswerResource:
             )
         return None
 
+    def check_usage_on_resume(self, processor: Any, conversation_id: Any) -> Optional[Response]:
+        """Run ``check_usage`` for a tool continuation, releasing its claim on refusal.
+
+        ``resume_from_tool_actions`` has already claimed the paused turn by the
+        time the limits can be checked (the agent config comes from the claimed
+        state). A refusal returns before ``complete_stream`` and its cleanup, so
+        the claim is released here; otherwise retries get a 409 until the stale
+        claim is reverted.
+
+        Args:
+            processor: The ``StreamProcessor`` that resumed the turn.
+            conversation_id: The conversation whose pending state was claimed.
+
+        Returns:
+            None, or the refusal Response.
+        """
+        error = self.check_usage(processor.agent_config, processor.decoded_token)
+        if error is None or not conversation_id:
+            return error
+        user = processor.initial_user_id or (processor.decoded_token or {}).get("sub")
+        try:
+            ContinuationService().release_claim(str(conversation_id), user)
+        except Exception:
+            logger.exception("Failed to release resume claim after a usage refusal")
+        return error
+
     def complete_stream(
         self,
         question: str,

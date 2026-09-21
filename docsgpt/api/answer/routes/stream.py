@@ -115,9 +115,9 @@ class StreamResource(Resource, BaseAnswerResource):
                         status=401,
                         mimetype="text/event-stream",
                     )
-                if error := self.check_usage(
-                processor.agent_config, processor.decoded_token
-            ):
+                if error := self.check_usage_on_resume(
+                    processor, data["conversation_id"]
+                ):
                     return error
                 return Response(
                     with_sse_keepalive(

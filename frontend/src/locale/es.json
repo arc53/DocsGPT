@@ -381,7 +381,11 @@
         "resets": "Se restablece el {{resetsAt}}",
         "tokens": "Tokens",
         "cost": "Coste",
-        "usedOf": "{{used}} de {{limit}}"
+        "usedOf": "{{used}} de {{limit}}",
+        "scope": {
+          "direct": "Chat sin agente",
+          "agent": "A través de agentes"
+        }
       }
     },
     "logs": {

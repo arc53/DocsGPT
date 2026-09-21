@@ -106,4 +106,4 @@ A `PUT` body sets, per budget, a limit or the unlimited flag; leave both out to 
 { "token_limit": 2000000, "cost_unlimited": true, "note": "Research team" }
 ```
 
-`bucket` (default `all`) narrows a policy to `direct` traffic (chat without an agent) or `agent` traffic (anything that runs through an agent). A request must fit both its own bucket and `all`. The dashboard edits `all`.
+`bucket` (default `all`) narrows a policy to `direct` traffic (chat without an agent) or `agent` traffic (anything that runs through an agent, whether or not the agent has an API key). A request must fit both its own bucket and `all`. The dashboard edits `all`.

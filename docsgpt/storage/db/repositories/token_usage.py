@@ -144,16 +144,17 @@ class TokenUsageRepository:
         Args:
             user_id: The billable user (auth ``sub``).
             start: Inclusive window start.
-            bucket: ``all``, ``direct`` (rows without an agent key) or
-                ``agent`` (rows with one).
+            bucket: ``all``, ``agent`` (rows carrying an agent key or an agent
+                id) or ``direct`` (rows with neither).
 
         Rollup rows are excluded; side-channel calls count, they are real spend.
         """
         clauses = ["user_id = :user_id", "timestamp >= :start", "source <> ALL(:rollup_sources)"]
+        # Keyless agents and workflow nodes carry an agent id without a key.
         if bucket == "direct":
-            clauses.append("api_key IS NULL")
+            clauses.append("api_key IS NULL AND agent_id IS NULL")
         elif bucket == "agent":
-            clauses.append("api_key IS NOT NULL")
+            clauses.append("(api_key IS NOT NULL OR agent_id IS NOT NULL)")
         elif bucket != "all":
             raise ValueError(f"unknown usage bucket: {bucket!r}")
         row = self._conn.execute(

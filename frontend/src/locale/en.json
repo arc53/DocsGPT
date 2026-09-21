@@ -386,7 +386,11 @@
         "resets": "Resets {{resetsAt}}",
         "tokens": "Tokens",
         "cost": "Cost",
-        "usedOf": "{{used}} of {{limit}}"
+        "usedOf": "{{used}} of {{limit}}",
+        "scope": {
+          "direct": "Chat without an agent",
+          "agent": "Through agents"
+        }
       }
     },
     "logs": {

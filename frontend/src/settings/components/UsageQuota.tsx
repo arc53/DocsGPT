@@ -66,7 +66,7 @@ function Meter({
 export default function UsageQuota() {
   const { t, i18n } = useTranslation();
   const token = useSelector(selectToken);
-  const [bucket, setBucket] = useState<Bucket | null>(null);
+  const [buckets, setBuckets] = useState<Bucket[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,10 +75,7 @@ export default function UsageQuota() {
       .then((res: Response) => (res.ok ? res.json() : null))
       .then((json: { buckets?: Bucket[] } | null) => {
         if (cancelled) return;
-        const buckets = json?.buckets ?? [];
-        setBucket(
-          buckets.find((b) => b.bucket === 'all') ?? buckets[0] ?? null,
-        );
+        setBuckets(json?.buckets ?? []);
       })
       .catch(() => undefined);
     return () => {
@@ -86,20 +83,26 @@ export default function UsageQuota() {
     };
   }, [token]);
 
-  if (!bucket) return null;
+  if (buckets.length === 0) return null;
 
   const number = new Intl.NumberFormat(i18n.language);
   const usd = new Intl.NumberFormat(i18n.language, {
     style: 'currency',
     currency: 'USD',
   });
-  const reset = new Date(bucket.resets_at);
+  const reset = new Date(buckets[0].resets_at);
   const resetsAt = Number.isNaN(reset.getTime())
     ? ''
     : new Intl.DateTimeFormat(i18n.language, {
         dateStyle: 'medium',
         timeStyle: 'short',
       }).format(reset);
+
+  // A request must fit its own bucket and ``all``, so each limited one is shown.
+  const scopeLabel = (name: string) =>
+    name === 'direct' || name === 'agent'
+      ? t(`settings.analytics.quota.scope.${name}`)
+      : null;
 
   return (
     <div className="border-border mb-6 rounded-2xl border px-6 py-5">
@@ -113,18 +116,27 @@ export default function UsageQuota() {
           </p>
         ) : null}
       </div>
-      <div className="mt-3 flex flex-wrap gap-6">
-        <Meter
-          label={t('settings.analytics.quota.tokens')}
-          budget={bucket.tokens}
-          format={(value) => number.format(value)}
-        />
-        <Meter
-          label={t('settings.analytics.quota.cost')}
-          budget={bucket.cost}
-          format={(value) => usd.format(value)}
-        />
-      </div>
+      {buckets.map((bucket) => (
+        <div key={bucket.bucket} className="mt-3">
+          {scopeLabel(bucket.bucket) ? (
+            <p className="text-muted-foreground mb-1 text-xs">
+              {scopeLabel(bucket.bucket)}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-6">
+            <Meter
+              label={t('settings.analytics.quota.tokens')}
+              budget={bucket.tokens}
+              format={(value) => number.format(value)}
+            />
+            <Meter
+              label={t('settings.analytics.quota.cost')}
+              budget={bucket.cost}
+              format={(value) => usd.format(value)}
+            />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

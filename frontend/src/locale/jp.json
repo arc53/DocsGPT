@@ -381,7 +381,11 @@
         "resets": "{{resetsAt}} にリセット",
         "tokens": "トークン",
         "cost": "コスト",
-        "usedOf": "{{used}} / {{limit}}"
+        "usedOf": "{{used}} / {{limit}}",
+        "scope": {
+          "direct": "エージェントなしのチャット",
+          "agent": "エージェント経由"
+        }
       }
     },
     "logs": {

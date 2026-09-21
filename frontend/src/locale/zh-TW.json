@@ -381,7 +381,11 @@
         "resets": "{{resetsAt}} 重設",
         "tokens": "權杖",
         "cost": "費用",
-        "usedOf": "{{used}} / {{limit}}"
+        "usedOf": "{{used}} / {{limit}}",
+        "scope": {
+          "direct": "不使用代理的聊天",
+          "agent": "透過代理"
+        }
       }
     },
     "logs": {

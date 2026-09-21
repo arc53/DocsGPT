@@ -414,7 +414,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
           <div
             key={card.label}
             title={card.hint}
-            className={`border-border dark:border-border rounded-2xl border px-6 py-5${card.hint ? 'cursor-help' : ''}`}
+            className={`border-border dark:border-border rounded-2xl border px-6 py-5${card.hint ? ' cursor-help' : ''}`}
           >
             <p className="text-muted-foreground text-sm">{card.label}</p>
             <p className="text-foreground dark:text-foreground mt-1 text-2xl font-bold">

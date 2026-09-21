@@ -87,7 +87,9 @@ def run_agent_headless(
     if not owner:
         raise ValueError("Agent config is missing user_id; cannot run headless.")
     decoded_token = {"sub": owner}
-    exceeded = QuotaService.check(owner, "agent" if agent_config.get("key") else "direct")
+    # An agent run is agent traffic whether or not the agent has a key yet.
+    is_agent_run = bool(agent_config.get("key") or _resolve_agent_id(agent_config))
+    exceeded = QuotaService.check(owner, "agent" if is_agent_run else "direct")
     if exceeded is not None:
         raise QuotaExceededError(exceeded)
 

@@ -381,7 +381,11 @@
         "resets": "Сброс: {{resetsAt}}",
         "tokens": "Токены",
         "cost": "Стоимость",
-        "usedOf": "{{used}} из {{limit}}"
+        "usedOf": "{{used}} из {{limit}}",
+        "scope": {
+          "direct": "Чат без агента",
+          "agent": "Через агентов"
+        }
       }
     },
     "logs": {

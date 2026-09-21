@@ -106,3 +106,70 @@ class TestHeadless:
         assert raised.value.exceeded.source == "instance"
         assert "10 of 10 tokens" in str(raised.value)
 
+
+
+    def test_a_keyless_agent_run_is_agent_traffic(self, db):
+        from docsgpt.agents.headless_runner import run_agent_headless
+
+        QuotaPoliciesRepository(db).upsert(scope="user", subject_id="owner", bucket="agent", token_limit=0)
+        config = {"user_id": "owner", "id": "22222222-2222-2222-2222-222222222222"}
+
+        with patch("docsgpt.agents.headless_runner.RetrieverCreator"):
+            with pytest.raises(QuotaExceededError) as raised:
+                run_agent_headless(config, "hello")
+
+        assert raised.value.exceeded.bucket == "agent"
+
+
+class TestResumeRefusal:
+    def _processor(self, user_id="u1"):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(agent_config={}, decoded_token={"sub": user_id}, initial_user_id=user_id)
+
+    def test_a_refused_resume_releases_its_claim(self, db, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        QuotaPoliciesRepository(db).upsert(scope="user", subject_id="u1", token_limit=0)
+        with flask_app.app_context(), patch(
+            "docsgpt.api.answer.routes.base.ContinuationService"
+        ) as service:
+            response = BaseAnswerResource().check_usage_on_resume(self._processor(), "conv-1")
+
+        assert response.status_code == 429
+        service.return_value.release_claim.assert_called_once_with("conv-1", "u1")
+
+    def test_an_admitted_resume_keeps_its_claim(self, db, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context(), patch(
+            "docsgpt.api.answer.routes.base.ContinuationService"
+        ) as service:
+            response = BaseAnswerResource().check_usage_on_resume(self._processor(), "conv-1")
+
+        assert response is None
+        service.return_value.release_claim.assert_not_called()
+
+    def test_no_claim_means_nothing_to_release(self, db, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        QuotaPoliciesRepository(db).upsert(scope="user", subject_id="u1", token_limit=0)
+        with flask_app.app_context(), patch(
+            "docsgpt.api.answer.routes.base.ContinuationService"
+        ) as service:
+            response = BaseAnswerResource().check_usage_on_resume(self._processor(), None)
+
+        assert response.status_code == 429
+        service.return_value.release_claim.assert_not_called()
+
+    def test_a_failed_release_still_returns_the_refusal(self, db, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        QuotaPoliciesRepository(db).upsert(scope="user", subject_id="u1", token_limit=0)
+        with flask_app.app_context(), patch(
+            "docsgpt.api.answer.routes.base.ContinuationService"
+        ) as service:
+            service.return_value.release_claim.side_effect = RuntimeError("db down")
+            response = BaseAnswerResource().check_usage_on_resume(self._processor(), "conv-1")
+
+        assert response.status_code == 429

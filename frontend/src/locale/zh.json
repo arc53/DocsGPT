@@ -381,7 +381,11 @@
         "resets": "{{resetsAt}} 重置",
         "tokens": "令牌",
         "cost": "费用",
-        "usedOf": "{{used}} / {{limit}}"
+        "usedOf": "{{used}} / {{limit}}",
+        "scope": {
+          "direct": "不使用代理的聊天",
+          "agent": "通过代理"
+        }
       }
     },
     "logs": {
