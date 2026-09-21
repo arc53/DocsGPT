@@ -436,7 +436,6 @@
       "label": "Equipos",
       "subtitle": "Gestiona tus equipos, miembros y recursos compartidos.",
       "newTeam": "Nuevo equipo",
-      "backToTeams": "Volver a equipos",
       "createTeam": "Crear un equipo",
       "createTeamDescription": "Dale un nombre a tu equipo. Podrás añadir miembros y compartir recursos una vez creado.",
       "editTeam": "Editar",
@@ -565,7 +564,6 @@
       "queryParameters": "Parámetros de Consulta",
       "body": "Cuerpo",
       "deleteActionWarning": "¿Estás seguro de que deseas eliminar la acción \"{{name}}\"?",
-      "backToAllTools": "Volver a todas las herramientas",
       "save": "Guardar",
       "saving": "Guardando...",
       "saveFailed": "No se pudo guardar la configuración de la herramienta",
@@ -872,10 +870,7 @@
           "subtitle": "El nuevo secreto de \"{{name}}\" está listo. El anterior ya no funciona."
         }
       }
-    },
-    "scrollTabsLeft": "Desplazar pestañas a la izquierda",
-    "tabsAriaLabel": "Pestañas de configuración",
-    "scrollTabsRight": "Desplazar pestañas a la derecha"
+    }
   },
   "modals": {
     "uploadDoc": {
@@ -1647,7 +1642,16 @@
     "increaseZoom": "Aumentar zoom"
   },
   "navigation": {
-    "agents": "Agentes"
+    "agents": "Agentes",
+    "backToApp": "Volver a la app",
+    "sections": {
+      "groups": {
+        "personal": "Personal",
+        "workspace": "Espacio de trabajo",
+        "insights": "Estadísticas",
+        "administration": "Administración"
+      }
+    }
   },
   "teams": {
     "switcher": {

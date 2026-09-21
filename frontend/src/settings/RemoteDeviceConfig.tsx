@@ -7,10 +7,10 @@ import devicesService, {
   AuditEntry,
   Device,
 } from '../api/services/devicesService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import CopyButton from '../components/CopyButton';
 import Spinner from '../components/Spinner';
 import ToolIcon from '../components/ToolIcon';
+import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
 import {
   Accordion,
   AccordionContent,
@@ -194,19 +194,12 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
   return (
     <div className="scrollbar-overlay mt-8 flex flex-col gap-6">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-foreground dark:text-foreground flex items-center gap-3 text-sm">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="text-muted-foreground rounded-full p-3"
-            onClick={handleGoBack}
-          >
-            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-          </Button>
-          <p className="mt-px">{t('settings.tools.backToAllTools')}</p>
-        </div>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <DetailBreadcrumb
+          parentLabel={t('settings.tools.label')}
+          currentLabel={tool.displayName || tool.customName || tool.name}
+          onParentClick={handleGoBack}
+        />
         <Button
           type="button"
           className="rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"

@@ -23,6 +23,7 @@ import { useDarkTheme, useMediaQuery } from './hooks';
 import useDataInitializer from './hooks/useDataInitializer';
 import useTokenAuth from './hooks/useTokenAuth';
 import Navigation from './Navigation';
+import { getSectionForPath } from './navigation/sections';
 import PageNotFound from './PageNotFound';
 import Setting from './settings';
 import Teams from './settings/Teams';
@@ -84,11 +85,15 @@ function MainLayout() {
   const { isMobile, isTablet } = useMediaQuery();
   const [navOpen, setNavOpen] = useState(!(isMobile || isTablet));
   const location = useLocation();
+  // Settings and admin pages keep the profile menu but drop the chat actions:
+  // the conversation now survives the trip, so "share" would target a chat
+  // that isn't on screen.
+  const inSection = Boolean(getSectionForPath(location.pathname));
 
   return (
     <div className="bg-background relative h-screen overflow-hidden">
       <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
-      <ActionButtons showNewChat={true} showShare={true} />
+      <ActionButtons showNewChat={!inSection} showShare={!inSection} />
       <div
         className={`h-[calc(100dvh-64px)] overflow-auto transition-all duration-300 ease-in-out lg:h-screen ${
           !(isMobile || isTablet)
