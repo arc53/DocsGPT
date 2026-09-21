@@ -6,7 +6,7 @@ base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 defaults:
   supports_tools: true
   attachments: [image]
-  context_window: 262144
+  context_window: 1000000
 
 models:
   - id: qwen3.8-max

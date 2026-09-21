@@ -6,7 +6,7 @@ base_url: https://api.z.ai/api/paas/v4
 defaults:
   supports_tools: true
   attachments: []
-  context_window: 200000
+  context_window: 1000000
 
 models:
   - id: glm-5.3
