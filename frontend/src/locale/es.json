@@ -20,8 +20,8 @@
     "memberAddedTitle": "Añadido a un equipo",
     "memberAddedBody": "Te añadieron a {{team}} como {{role}}",
     "sharedTitle": "Compartido contigo",
-    "sharedBody": "{{type}} compartido con tu equipo: {{name}} ({{access}})",
-    "sharedBodyNoName": "Se compartió un {{type}} con tu equipo ({{access}})",
+    "sharedBody": "Se compartió con tu equipo: {{type}} «{{name}}» ({{access}})",
+    "sharedBodyNoName": "Se compartió con tu equipo: {{type}} ({{access}})",
     "dismiss": "Descartar"
   },
   "demo": [
@@ -197,7 +197,7 @@
         "queryPlaceholder": "Pregunta algo que esta fuente debería responder...",
         "run": "Ejecutar",
         "notSavedHint": "Estos ajustes solo se usan para esta prueba — no se guardan en la fuente. Cámbialos en Configuración de la fuente para hacerlos permanentes.",
-        "resultSummary": "{{total}} fragmentos recuperados · {{retriever}}",
+        "resultSummary": "{{count}} fragmentos recuperados · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "No se recuperaron fragmentos para esta consulta.",
         "emptyWithThreshold": "Ningún fragmento alcanzó el umbral de puntuación ({{threshold}}). Bájalo para ver los que estuvieron cerca.",
@@ -589,6 +589,8 @@
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
+        "username": "Nombre de usuario",
+        "password": "Contraseña",
         "timeout": "Timeout (seconds)",
         "testConnection": "Test Connection",
         "testing": "Testing",
@@ -1282,6 +1284,13 @@
   "agents": {
     "title": "Agentes",
     "edit": "Editar",
+    "card": {
+      "pin": "Fijar agente",
+      "unpin": "Dejar de fijar agente",
+      "open": "Abrir",
+      "remove": "Quitar",
+      "draft": "Borrador"
+    },
     "description": "Descubre y crea versiones personalizadas de DocsGPT que combinan instrucciones, conocimiento adicional y cualquier combinación de habilidades",
     "newAgent": "Nuevo Agente",
     "importAgent": "Import",

@@ -197,7 +197,7 @@
         "queryPlaceholder": "Frage etwas, das diese Quelle beantworten sollte...",
         "run": "Ausführen",
         "notSavedHint": "Diese Einstellungen gelten nur für diesen Test – sie werden nicht in der Quelle gespeichert. Ändere sie in den Quelleneinstellungen, um sie dauerhaft zu übernehmen.",
-        "resultSummary": "{{total}} Chunks abgerufen · {{retriever}}",
+        "resultSummary": "{{count}} Chunks abgerufen · {{retriever}}",
         "latency": "{{ms}} ms",
         "empty": "Keine Chunks für diese Anfrage abgerufen.",
         "emptyWithThreshold": "Keine Chunks haben den Score-Schwellenwert ({{threshold}}) erreicht. Senke ihn, um knappe Treffer zu sehen.",
@@ -589,6 +589,8 @@
         "serverName": "Servername",
         "serverUrl": "Server-URL",
         "headerName": "Header-Name",
+        "username": "Benutzername",
+        "password": "Passwort",
         "timeout": "Timeout (Sekunden)",
         "testConnection": "Verbindung testen",
         "testing": "Teste...",
@@ -1282,6 +1284,13 @@
   "agents": {
     "title": "Agenten",
     "edit": "Bearbeiten",
+    "card": {
+      "pin": "Agent anheften",
+      "unpin": "Agent lösen",
+      "open": "Öffnen",
+      "remove": "Entfernen",
+      "draft": "Entwurf"
+    },
     "description": "Entdecke und erstelle benutzerdefinierte Versionen von DocsGPT, die Anweisungen, zusätzliches Wissen und beliebige Kombinationen von Fähigkeiten kombinieren",
     "newAgent": "Neuer Agent",
     "importAgent": "Import",

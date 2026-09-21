@@ -339,9 +339,14 @@ export default function Prompts({
                 )}
               >
                 <Command>
-                  <CommandInput placeholder="Search..." className="h-9" />
+                  <CommandInput
+                    placeholder={t('settings.sources.searchPlaceholder')}
+                    className="h-9"
+                  />
                   <CommandList>
-                    <CommandEmpty>No results found</CommandEmpty>
+                    <CommandEmpty>
+                      {t('settings.sources.noResults')}
+                    </CommandEmpty>
                     {prompts.map((prompt) => {
                       const isActive = selectedPrompt?.id === prompt.id;
                       const canModify = prompt.type !== 'public';

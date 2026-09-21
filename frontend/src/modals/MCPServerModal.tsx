@@ -524,7 +524,7 @@ export default function MCPServerModal({
                 type="text"
                 value={formData.username}
                 onChange={(e) => handleInputChange('username', e.target.value)}
-                placeholder={t('settings.tools.mcp.username')}
+                placeholder={t('settings.tools.mcp.placeholders.username')}
                 aria-invalid={!!errors.username || undefined}
                 className="rounded-xl"
               />
@@ -542,7 +542,7 @@ export default function MCPServerModal({
                 type="password"
                 value={formData.password}
                 onChange={(e) => handleInputChange('password', e.target.value)}
-                placeholder={t('settings.tools.mcp.password')}
+                placeholder={t('settings.tools.mcp.placeholders.password')}
                 aria-invalid={!!errors.password || undefined}
                 className="rounded-xl"
               />
