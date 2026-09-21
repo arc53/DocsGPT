@@ -1,0 +1,89 @@
+// Project settings for the Zed editor (https://zed.dev/docs/configuring-zed).
+// They mirror what CI and the pre-commit hook enforce; whitespace rules live in
+// .editorconfig and the Python analysis config in pyproject.toml
+// ([tool.pyright]) so other editors share them. Personal preferences belong in
+// your user settings, not here.
+{
+  // Zed replaces its defaults when this key is set, so they are repeated first.
+  // Build outputs, caches and local runtime data only add noise to the file
+  // finder and project search.
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.svn",
+    "**/.hg",
+    "**/.jj",
+    "**/.sl",
+    "**/.repo",
+    "**/CVS",
+    "**/.DS_Store",
+    "**/Thumbs.db",
+    "**/.classpath",
+    "**/.settings",
+    "**/__pycache__",
+    "**/.ruff_cache",
+    "**/.pytest_cache",
+    "**/.mypy_cache",
+    "**/htmlcov",
+    "**/.next",
+    "frontend/dist",
+    "docsgpt/static",
+    "**/indexes",
+    "**/inputs",
+    "**/vectors",
+    "models"
+  ],
+  // Never shared with collaborators or sent to an AI assistant. The first six
+  // are Zed's defaults, which this key also replaces.
+  "private_files": [
+    "**/.env*",
+    "**/*.pem",
+    "**/*.key",
+    "**/*.cert",
+    "**/*.crt",
+    "**/secrets.yml",
+    "**/.jwt_secret_key"
+  ],
+  "file_types": {
+    "Shell Script": [".env-template"],
+    "Dockerfile": ["Dockerfile*"]
+  },
+  "languages": {
+    "Python": {
+      "language_servers": ["basedpyright", "ruff", "..."],
+      "formatter": { "language_server": { "name": "ruff" } },
+      // CI runs `ruff check` only and most of the tree is not `ruff format`
+      // clean, so formatting on save would bury a change in unrelated diffs.
+      "format_on_save": "off",
+      "preferred_line_length": 120,
+      "wrap_guides": [120]
+    },
+    // Same order as the lint-staged hook: ESLint fixes, then Prettier.
+    "TypeScript": {
+      "formatter": "prettier",
+      "format_on_save": "on",
+      "code_actions_on_format": { "source.fixAll.eslint": true }
+    },
+    "TSX": {
+      "formatter": "prettier",
+      "format_on_save": "on",
+      "code_actions_on_format": { "source.fixAll.eslint": true }
+    },
+    "JavaScript": {
+      "formatter": "prettier",
+      "format_on_save": "on",
+      "code_actions_on_format": { "source.fixAll.eslint": true }
+    },
+    // Docs prose is reviewed by Vale, not reflowed by a formatter.
+    "Markdown": { "format_on_save": "off" },
+    "MDX": { "format_on_save": "off" }
+  },
+  "lsp": {
+    // The ESLint config is frontend/eslint.config.js, not at the root.
+    "eslint": {
+      "settings": { "workingDirectory": { "mode": "auto" } }
+    },
+    "tailwindcss-language-server": {
+      "settings": { "classFunctions": ["cn", "cva", "clsx", "twMerge"] }
+    }
+  }
+}
