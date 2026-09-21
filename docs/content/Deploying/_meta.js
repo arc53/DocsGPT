@@ -15,6 +15,10 @@ export default {
     "title": "👥 Access Control & Teams",
     "href": "/Deploying/Access-Control"
   },
+  "Usage-Quotas": {
+    "title": "📊 Usage Quotas",
+    "href": "/Deploying/Usage-Quotas"
+  },
   "Docker-Deploying": {
     "title": "🛳️ Docker Setup",
     "href": "/Deploying/Docker-Deploying"
