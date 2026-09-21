@@ -375,6 +375,17 @@
         "toolCalls": "工具呼叫",
         "runSuccess": "執行成功率",
         "feedback": "回饋"
+      },
+      "quota": {
+        "title": "您的用量配額",
+        "resets": "{{resetsAt}} 重設",
+        "tokens": "權杖",
+        "cost": "費用",
+        "usedOf": "{{used}} / {{limit}}",
+        "scope": {
+          "direct": "不使用代理的聊天",
+          "agent": "透過代理"
+        }
       }
     },
     "logs": {
@@ -1262,6 +1273,10 @@
       "running": "執行中…",
       "denied": "已被使用者拒絕",
       "failed": "失敗"
+    },
+    "quotaExceeded": {
+      "tokens": "您已使用 {{limit}} 權杖配額中的 {{used}}。配額將於 {{resetsAt}} 重設。",
+      "cost": "您已使用 {{limit}} 用量預算中的 {{used}}。預算將於 {{resetsAt}} 重設。"
     }
   },
   "agents": {

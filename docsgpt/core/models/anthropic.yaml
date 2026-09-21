@@ -10,14 +10,26 @@ models:
     description: Most capable Claude model for complex reasoning and agentic coding
     context_window: 1000000
     supports_structured_output: true
+    input_cost_per_million: 5.0
+    output_cost_per_million: 25.0
+    cached_input_cost_per_million: 0.5
+    cache_write_cost_per_million: 6.25
 
   - id: claude-sonnet-4-6
     display_name: Claude Sonnet 4.6
     description: Best balance of speed and intelligence with extended thinking
     context_window: 1000000
     supports_structured_output: true
+    input_cost_per_million: 3.0
+    output_cost_per_million: 15.0
+    cached_input_cost_per_million: 0.3
+    cache_write_cost_per_million: 3.75
 
   - id: claude-haiku-4-5
     display_name: Claude Haiku 4.5
     description: Fastest Claude model with near-frontier intelligence
     supports_structured_output: true
+    input_cost_per_million: 1.0
+    output_cost_per_million: 5.0
+    cached_input_cost_per_million: 0.1
+    cache_write_cost_per_million: 1.25

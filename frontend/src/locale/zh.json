@@ -375,6 +375,17 @@
         "toolCalls": "工具调用",
         "runSuccess": "运行成功率",
         "feedback": "反馈"
+      },
+      "quota": {
+        "title": "您的用量配额",
+        "resets": "{{resetsAt}} 重置",
+        "tokens": "令牌",
+        "cost": "费用",
+        "usedOf": "{{used}} / {{limit}}",
+        "scope": {
+          "direct": "不使用代理的聊天",
+          "agent": "通过代理"
+        }
       }
     },
     "logs": {
@@ -1262,6 +1273,10 @@
       "running": "正在运行…",
       "denied": "已被用户拒绝",
       "failed": "失败"
+    },
+    "quotaExceeded": {
+      "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。",
+      "cost": "您已使用 {{limit}} 用量预算中的 {{used}}。预算将于 {{resetsAt}} 重置。"
     }
   },
   "agents": {
