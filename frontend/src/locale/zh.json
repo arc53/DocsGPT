@@ -436,7 +436,6 @@
       "label": "团队",
       "subtitle": "管理您的团队、成员和共享资源。",
       "newTeam": "新建团队",
-      "backToTeams": "返回团队列表",
       "createTeam": "创建团队",
       "createTeamDescription": "为您的团队命名。创建后即可添加成员并共享资源。",
       "editTeam": "编辑",
@@ -565,7 +564,6 @@
       "queryParameters": "查询参数",
       "body": "请求体",
       "deleteActionWarning": "您确定要删除操作 \"{{name}}\" 吗？",
-      "backToAllTools": "返回所有工具",
       "save": "保存",
       "saving": "保存中...",
       "saveFailed": "保存工具配置失败",
@@ -874,10 +872,7 @@
           "subtitle": "“{{name}}”的新密钥已就绪，旧密钥已失效。"
         }
       }
-    },
-    "scrollTabsLeft": "向左滚动标签",
-    "tabsAriaLabel": "设置标签",
-    "scrollTabsRight": "向右滚动标签"
+    }
   },
   "modals": {
     "uploadDoc": {
@@ -1656,7 +1651,17 @@
     "increaseZoom": "放大"
   },
   "navigation": {
-    "agents": "代理"
+    "agents": "代理",
+    "backToApp": "返回应用",
+    "backToAgents": "返回代理",
+    "sections": {
+      "groups": {
+        "personal": "个人",
+        "workspace": "工作区",
+        "insights": "洞察",
+        "administration": "管理"
+      }
+    }
   },
   "teams": {
     "switcher": {

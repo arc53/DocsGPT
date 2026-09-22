@@ -436,7 +436,6 @@
       "label": "チーム",
       "subtitle": "チーム、メンバー、共有リソースを管理します。",
       "newTeam": "新しいチーム",
-      "backToTeams": "チーム一覧に戻る",
       "createTeam": "チームを作成",
       "createTeamDescription": "チームに名前を付けてください。作成後にメンバーの追加やリソースの共有ができます。",
       "editTeam": "編集",
@@ -565,7 +564,6 @@
       "queryParameters": "クエリパラメータ",
       "body": "ボディ",
       "deleteActionWarning": "アクション \"{{name}}\" を削除してもよろしいですか？",
-      "backToAllTools": "すべてのツールに戻る",
       "save": "保存",
       "saving": "保存中...",
       "saveFailed": "ツール設定の保存に失敗しました",
@@ -874,10 +872,7 @@
           "subtitle": "「{{name}}」の新しいシークレットの準備ができました。以前のものは使用できません。"
         }
       }
-    },
-    "scrollTabsLeft": "タブを左にスクロール",
-    "tabsAriaLabel": "設定タブ",
-    "scrollTabsRight": "タブを右にスクロール"
+    }
   },
   "modals": {
     "uploadDoc": {
@@ -1656,7 +1651,17 @@
     "increaseZoom": "ズームイン"
   },
   "navigation": {
-    "agents": "エージェント"
+    "agents": "エージェント",
+    "backToApp": "アプリに戻る",
+    "backToAgents": "エージェントに戻る",
+    "sections": {
+      "groups": {
+        "personal": "個人",
+        "workspace": "ワークスペース",
+        "insights": "インサイト",
+        "administration": "管理"
+      }
+    }
   },
   "teams": {
     "switcher": {

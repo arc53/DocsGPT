@@ -442,7 +442,6 @@
       "label": "Teams",
       "subtitle": "Manage your teams, members, and shared resources.",
       "newTeam": "New team",
-      "backToTeams": "Back to teams",
       "createTeam": "Create a team",
       "createTeamDescription": "Give your team a name. You can add members and share resources once it's created.",
       "editTeam": "Edit",
@@ -571,7 +570,6 @@
       "queryParameters": "Query Parameters",
       "body": "Body",
       "deleteActionWarning": "Are you sure you want to delete the action \"{{name}}\"?",
-      "backToAllTools": "Back to all tools",
       "save": "Save",
       "saving": "Saving...",
       "saveFailed": "Failed to save tool configuration",
@@ -880,10 +878,7 @@
           "subtitle": "The new secret for \"{{name}}\" is ready. The old one no longer works."
         }
       }
-    },
-    "scrollTabsLeft": "Scroll tabs left",
-    "tabsAriaLabel": "Settings tabs",
-    "scrollTabsRight": "Scroll tabs right"
+    }
   },
   "modals": {
     "uploadDoc": {
@@ -1671,7 +1666,17 @@
     "increaseZoom": "Increase zoom"
   },
   "navigation": {
-    "agents": "Agents"
+    "agents": "Agents",
+    "backToApp": "Back to app",
+    "backToAgents": "Back to agents",
+    "sections": {
+      "groups": {
+        "personal": "Personal",
+        "workspace": "Workspace",
+        "insights": "Insights",
+        "administration": "Administration"
+      }
+    }
   },
   "teams": {
     "switcher": {
@@ -1690,5 +1695,16 @@
   },
   "prompts": {
     "textAriaLabel": "Prompt Text"
+  },
+  "admin": {
+    "label": "Admin",
+    "tabs": {
+      "overview": "Overview",
+      "users": "Users",
+      "admins": "Admins",
+      "usage": "Usage",
+      "quotas": "Quotas",
+      "audit": "Audit"
+    }
   }
 }

@@ -65,6 +65,7 @@ import {
   selectToken,
 } from '../../preferences/preferenceSlice';
 import { getToolDisplayName } from '../../utils/toolUtils';
+import { agentEditPath, agentsListPath } from '../paths';
 import AgentPageHeader from '../AgentPageHeader';
 import { Agent } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
@@ -669,7 +670,7 @@ function WorkflowBuilderInner() {
   }, []);
 
   const navigateBackToAgents = useCallback(() => {
-    navigate(folderId ? `/agents?folder=${folderId}` : '/agents');
+    navigate(agentsListPath(folderId));
   }, [navigate, folderId]);
 
   const handleDeleteAgent = useCallback(async () => {
@@ -1548,7 +1549,7 @@ function WorkflowBuilderInner() {
               <AgentPageHeader
                 agentId={effectiveAgentId}
                 agentName={workflowName}
-                agentEditPath={`/agents/workflow/edit/${effectiveAgentId}`}
+                agentEditPath={agentEditPath(effectiveAgentId, true)}
                 currentPage="overview"
                 inline
               />

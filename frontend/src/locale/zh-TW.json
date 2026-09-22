@@ -436,7 +436,6 @@
       "label": "團隊",
       "subtitle": "管理您的團隊、成員與共享資源。",
       "newTeam": "新增團隊",
-      "backToTeams": "返回團隊列表",
       "createTeam": "建立團隊",
       "createTeamDescription": "為您的團隊命名。建立後即可新增成員並分享資源。",
       "editTeam": "編輯",
@@ -565,7 +564,6 @@
       "queryParameters": "查詢參數",
       "body": "主體",
       "deleteActionWarning": "您確定要刪除操作 \"{{name}}\" 嗎？",
-      "backToAllTools": "返回所有工具",
       "save": "儲存",
       "saving": "儲存中...",
       "saveFailed": "儲存工具設定失敗",
@@ -874,10 +872,7 @@
           "subtitle": "「{{name}}」的新密鑰已就緒，舊密鑰已失效。"
         }
       }
-    },
-    "scrollTabsLeft": "向左捲動標籤",
-    "tabsAriaLabel": "設定標籤",
-    "scrollTabsRight": "向右捲動標籤"
+    }
   },
   "modals": {
     "uploadDoc": {
@@ -1656,7 +1651,17 @@
     "increaseZoom": "放大"
   },
   "navigation": {
-    "agents": "代理"
+    "agents": "代理",
+    "backToApp": "返回應用程式",
+    "backToAgents": "返回代理",
+    "sections": {
+      "groups": {
+        "personal": "個人",
+        "workspace": "工作區",
+        "insights": "洞察",
+        "administration": "管理"
+      }
+    }
   },
   "teams": {
     "switcher": {

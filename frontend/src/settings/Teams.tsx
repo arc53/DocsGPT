@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Bot,
   ChevronRight,
   FileText,
@@ -24,6 +23,9 @@ import userService from '../api/services/userService';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import SkeletonLoader from '../components/SkeletonLoader';
+import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
+import { SectionBackLink } from '../navigation/SectionPageHeader';
+import { SETTINGS_SECTION } from '../navigation/sections';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import {
@@ -511,6 +513,9 @@ export default function Teams() {
 
   return (
     <div className="h-full overflow-auto p-4 md:p-12">
+      <div className="mx-auto w-full max-w-5xl">
+        <SectionBackLink section={SETTINGS_SECTION} />
+      </div>
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-foreground text-2xl font-bold">
@@ -607,20 +612,16 @@ export default function Teams() {
         </div>
       ) : (
         <div className="mx-auto mt-8 max-w-5xl space-y-6">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground -ml-2"
-            onClick={() => {
+          <DetailBreadcrumb
+            parentLabel={t('settings.teams.label')}
+            currentLabel={selected.name}
+            onParentClick={() => {
               setSelected(null);
               setMembers([]);
               setGrants([]);
               setError(null);
             }}
-          >
-            <ArrowLeft size={16} strokeWidth={1.75} aria-hidden />
-            {t('settings.teams.backToTeams')}
-          </Button>
+          />
 
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
