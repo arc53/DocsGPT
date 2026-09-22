@@ -17,7 +17,7 @@ import * as playwright from '@playwright/test';
  *   C10 upload drag-drop     -> fixme: no global drop handler in current UI
  *   C11 markdown rendering   -> seeded /share conv renders <h1> from ```md```
  *   C12 mermaid rendering    -> seeded /share conv renders mermaid (code or svg)
- *   C13 agent logs route     -> `/agents/logs/:agentId` renders title
+ *   C13 agent logs route     -> `/agents/manage/logs/:agentId` renders title
  *
  * Setup: one shared authenticated context per test (no beforeAll reuse because
  * some tests mutate localStorage / navigate to routes that break other tests).
@@ -453,7 +453,7 @@ test.describe('tier-c · UI smoke', () => {
     }
   });
 
-  test('C13 · agents/logs/:agentId renders for a seeded agent', async ({
+  test('C13 · agents/manage/logs/:agentId renders for a seeded agent', async ({
     browser,
   }) => {
     const { context, sub, token } = await newUserContext(browser);
@@ -465,7 +465,7 @@ test.describe('tier-c · UI smoke', () => {
       const agentId = await insertStubAgent(sub, 'ui-smoke-agent');
 
       const page = await context.newPage();
-      await page.goto(`/agents/logs/${agentId}`);
+      await page.goto(`/agents/manage/logs/${agentId}`);
 
       // AgentPageHeader renders a breadcrumb plus a labelled sub-nav; it has
       // no heading element (it used to, before #2495 moved it to shadcn

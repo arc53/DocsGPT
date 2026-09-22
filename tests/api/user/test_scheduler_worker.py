@@ -126,6 +126,31 @@ class TestExecuteScheduledRunBody:
         assert sched["consecutive_failure_count"] == 1
         assert "schedule.run.failed" in {e[0] for e in stub_events}
 
+    def test_quota_refusal_marks_budget_exceeded(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        from datetime import datetime, timezone
+
+        from docsgpt.quotas.service import QuotaExceeded, QuotaExceededError
+
+        exceeded = QuotaExceeded(
+            user_id="u1", bucket="all", budget="tokens", usage=10, limit=10,
+            source="instance", source_id=None,
+            resets_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        )
+        with pg_engine.begin() as conn:
+            _, run, _ = _make_pending_run(conn)
+        with patch(
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
+            side_effect=QuotaExceededError(exceeded),
+        ):
+            result = execute_scheduled_run_body(str(run["id"]), "celery-q")
+        assert result["status"] == "failed"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["error_type"] == "budget_exceeded"
+        assert "Usage quota reached" in row["error"]
+
     def test_autopause_after_threshold(
         self, pg_engine, patched_engine, stub_events,
     ):

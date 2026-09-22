@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from docsgpt.core.model_settings import (
     AvailableModel,
@@ -65,10 +65,32 @@ class _CapabilityFields(BaseModel):
     supports_streaming: Optional[bool] = None
     attachments: Optional[List[str]] = None
     context_window: Optional[int] = None
-    input_cost_per_token: Optional[float] = None
-    output_cost_per_token: Optional[float] = None
+    input_cost_per_million: Optional[float] = Field(default=None, ge=0)
+    output_cost_per_million: Optional[float] = Field(default=None, ge=0)
+    cached_input_cost_per_million: Optional[float] = Field(default=None, ge=0)
+    cache_write_cost_per_million: Optional[float] = Field(default=None, ge=0)
     reasoning_effort: Optional[str] = None
     api_flavor: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _per_token_alias(cls, data):
+        """Accept the deprecated ``*_cost_per_token`` keys, scaled to per-1M."""
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        for side in ("input", "output"):
+            old, new = f"{side}_cost_per_token", f"{side}_cost_per_million"
+            if old not in data:
+                continue
+            value = data.pop(old)
+            if new in data:
+                raise ValueError(f"set only one of {old} and {new}")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{old} must be a number")
+            logger.warning("%s is deprecated; use %s (USD per 1M tokens)", old, new)
+            data[new] = value * 1_000_000
+        return data
 
     @field_validator("reasoning_effort")
     @classmethod
@@ -237,8 +259,10 @@ def _build_model(
         supports_streaming=pick("supports_streaming", True),
         supported_attachment_types=expanded,
         context_window=pick("context_window", 128000),
-        input_cost_per_token=pick("input_cost_per_token", None),
-        output_cost_per_token=pick("output_cost_per_token", None),
+        input_cost_per_million=pick("input_cost_per_million", None),
+        output_cost_per_million=pick("output_cost_per_million", None),
+        cached_input_cost_per_million=pick("cached_input_cost_per_million", None),
+        cache_write_cost_per_million=pick("cache_write_cost_per_million", None),
         reasoning_effort=pick("reasoning_effort", None),
         api_flavor=pick("api_flavor", "chat_completions"),
     )

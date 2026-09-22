@@ -16,8 +16,6 @@ export type AgentsBySection = Record<AgentSectionId, Agent[]>;
 interface UseAgentSearchResult {
   searchQuery: string;
   setSearchQuery: (query: string) => void;
-  activeFilter: AgentFilterTab;
-  setActiveFilter: (filter: AgentFilterTab) => void;
   filteredAgentsBySection: AgentsBySection;
   totalAgentsBySection: Record<AgentSectionId, number>;
   hasAnyAgents: boolean;
@@ -40,9 +38,15 @@ const filterAgentsByQuery = (
   );
 };
 
-export function useAgentSearch(): UseAgentSearchResult {
+/**
+ * Search and filtering for the agent list. The filter is passed in rather
+ * than held here: it lives in the route, so it stays linkable and survives a
+ * reload.
+ */
+export function useAgentSearch(
+  activeFilter: AgentFilterTab = 'all',
+): UseAgentSearchResult {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<AgentFilterTab>('all');
 
   const templateAgents = useSelector(selectTemplateAgents);
   const allUserAgents = useSelector(selectAgents);
@@ -69,10 +73,6 @@ export function useAgentSearch(): UseAgentSearchResult {
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query);
-  }, []);
-
-  const handleFilterChange = useCallback((filter: AgentFilterTab) => {
-    setActiveFilter(filter);
   }, []);
 
   const isDataLoaded = useMemo(
@@ -143,8 +143,6 @@ export function useAgentSearch(): UseAgentSearchResult {
   return {
     searchQuery,
     setSearchQuery: handleSearchChange,
-    activeFilter,
-    setActiveFilter: handleFilterChange,
     filteredAgentsBySection,
     totalAgentsBySection,
     hasAnyAgents,

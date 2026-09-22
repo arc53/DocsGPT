@@ -178,13 +178,20 @@ class TestUserLifecycle:
 
     def test_force_logout(self, client):
         events = Mock()
-        with _admin(AuthEventsRepository=Mock(return_value=events)), patch(
-            "docsgpt.api.admin.routes.denylist"
-        ) as dl:
+        tokens = Mock()
+        tokens.revoke_all_for_user.return_value = ["t1", "t2"]
+        with _admin(
+            AuthEventsRepository=Mock(return_value=events),
+            PersonalAccessTokensRepository=Mock(return_value=tokens),
+        ), patch("docsgpt.api.admin.routes.denylist") as dl:
             dl.deny_user.return_value = True
             resp = client.post("/api/admin/users/bob/revoke-sessions")
         assert resp.status_code == 200
         dl.deny_user.assert_called_once_with("bob")
+        # A forced logout also revokes the user's API tokens, one audit event each.
+        tokens.revoke_all_for_user.assert_called_once_with("bob", reason="admin_sessions_revoked")
+        recorded = [call.args[1] for call in events.insert.call_args_list]
+        assert recorded == ["pat_revoked", "pat_revoked", "admin_sessions_revoked"]
 
     def test_user_detail(self, client):
         users = Mock()

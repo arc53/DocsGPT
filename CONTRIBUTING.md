@@ -43,7 +43,7 @@ Tech Stack Overview:
 ### 🌐 Frontend Contributions (⚛️ React, Vite)
 
 *   The updated Figma design can be found [here](https://www.figma.com/file/OXLtrl1EAy885to6S69554/DocsGPT?node-id=0%3A1&t=hjWVuxRg9yi5YkJ9-1).  Please try to follow the guidelines.
-*   **Coding Style:** We follow a strict coding style enforced by ESLint and Prettier. Please ensure your code adheres to the configuration provided in our repository's `fronetend/.eslintrc.js` file.  We recommend configuring your editor with ESLint and Prettier to help with this.
+*   **Coding Style:** We follow a strict coding style enforced by ESLint and Prettier. Please ensure your code adheres to the configuration provided in our repository's `frontend/eslint.config.js` and `frontend/prettier.config.cjs` files.  We recommend configuring your editor with ESLint and Prettier to help with this.
 * **Component Structure:** Strive for small, reusable components.  Favor functional components and hooks over class components where possible.
 * **State Management** If you need to add stores, please use Redux.
 
@@ -75,6 +75,32 @@ Tech Stack Overview:
         ...
     ```
   
+### Editor setup
+
+Some configuration is shared by every editor, so you rarely need to set anything up by hand:
+
+- [`.editorconfig`](https://editorconfig.org) holds the whitespace rules (4 spaces for Python, 2 for TypeScript/JSON/YAML, LF line endings, final newline). Most editors read it natively or through a plugin.
+- `[tool.pyright]` in `pyproject.toml` points Pyright, basedpyright and Pylance at the `.venv` created by `uv sync` and at the repository root for imports.
+- `.ruff.toml`, `frontend/eslint.config.js` and `frontend/prettier.config.cjs` are picked up by the matching editor integrations.
+
+Editor-specific configuration that is tracked:
+
+- **VS Code:** `.vscode/launch.json` has debug targets for the API, the Celery worker and the frontend.
+- **Zed:** open the repository root (not `frontend/`). `.zed/settings.json` configures the language servers and formatters, `.zed/tasks.json` adds tasks (`task: spawn`) for the dev services, the API, the worker, the frontend, tests and linting, and `.zed/debug.json` adds debug targets (`debugger: start`). Python files are not formatted on save because most of the tree is not `ruff format` clean; frontend files are, with ESLint fixes followed by Prettier, as in the pre-commit hook. Project settings cannot install extensions, so if you want the matching syntax support add this to your own Zed settings:
+
+    ```json
+    {
+      "auto_install_extensions": {
+        "dockerfile": true,
+        "docker-compose": true,
+        "toml": true,
+        "mdx": true
+      }
+    }
+    ```
+
+Personal preferences belong in your user settings; `.vscode/settings.json` and any other file under `.zed/` are ignored by git.
+
 ### Testing
 
 To run unit tests from the root of the repository, execute:

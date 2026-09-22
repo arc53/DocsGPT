@@ -22,8 +22,11 @@ from docsgpt.api.devices import devices_bp  # noqa: E402
 from docsgpt.api.internal.routes import internal  # noqa: E402
 from docsgpt.api.oidc import oidc_bp  # noqa: E402
 from docsgpt.api.oidc.denylist import is_denied as oidc_session_denied  # noqa: E402
+from docsgpt.api.pat.routes import pat_ns  # noqa: E402
+from docsgpt.api.pat.rules import authorize as authorize_pat  # noqa: E402
+from docsgpt.api.pat.tokens import is_pat  # noqa: E402
 from docsgpt.api.scim import scim_bp  # noqa: E402
-from docsgpt.api.user.authz import resolve_roles  # noqa: E402
+from docsgpt.api.user.authz import ROLE_USER, resolve_roles  # noqa: E402
 from docsgpt.api.user.routes import user  # noqa: E402
 from docsgpt.api.connector.routes import connector  # noqa: E402
 from docsgpt.api.v1 import v1_bp  # noqa: E402
@@ -109,6 +112,8 @@ app.register_blueprint(v1_bp)
 # first app and raise "add_url_rule can no longer be called".
 if admin_ns not in api.namespaces:
     api.add_namespace(admin_ns)
+if pat_ns not in api.namespaces:
+    api.add_namespace(pat_ns)
 app.config.update(
     UPLOAD_FOLDER="inputs",
     CELERY_BROKER_URL=settings.CELERY_BROKER_URL,
@@ -317,6 +322,18 @@ def authenticate_request():
         request.decoded_token = None
     elif "error" in decoded_token:
         return jsonify(decoded_token), 401
+    elif is_pat(decoded_token):
+        # Scopes and resource restrictions are enforced here, centrally and
+        # deny by default (docsgpt/api/pat/rules.py). A token never carries
+        # admin, whatever its owner holds, and the session denylist does not
+        # apply: the token lookup already excludes revoked tokens and
+        # deactivated users.
+        denied = authorize_pat(request, decoded_token)
+        if denied is not None:
+            body, status = denied
+            return jsonify(body), status
+        decoded_token["roles"] = [ROLE_USER]
+        request.decoded_token = decoded_token
     elif settings.AUTH_TYPE == "oidc" and oidc_session_denied(decoded_token):
         # Back-channel logout / SCIM deactivation revoked this session.
         return (

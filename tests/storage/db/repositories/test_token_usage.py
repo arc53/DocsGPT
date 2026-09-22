@@ -35,6 +35,63 @@ class TestInsert:
         )
         assert total == 30
 
+    def test_cost_defaults_to_zero_and_round_trips(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.insert(user_id="u-cost", prompt_tokens=1, generated_tokens=1)
+        repo.insert(user_id="u-cost", prompt_tokens=1, generated_tokens=1, cost=0.00012345)
+        costs = pg_conn.execute(
+            text("SELECT cost FROM token_usage WHERE user_id = 'u-cost' ORDER BY id")
+        ).scalars().all()
+        assert [float(c) for c in costs] == [0.0, 0.00012345]
+
+
+class TestRollupExclusion:
+    def test_sum_tokens_ignores_schedule_rollups(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.insert(user_id="u-roll", prompt_tokens=10, generated_tokens=5, source="agent_stream")
+        repo.insert(user_id="u-roll", prompt_tokens=10, generated_tokens=5, source="schedule")
+        total = repo.sum_tokens_in_range(
+            start=_now() - timedelta(minutes=1), end=_now() + timedelta(minutes=1), user_id="u-roll"
+        )
+        assert total == 15
+
+
+class TestUsageTotals:
+    def _seed(self, repo):
+        repo.insert(user_id="u-tot", prompt_tokens=100, generated_tokens=10, cost=0.5)
+        repo.insert(user_id="u-tot", api_key="k", prompt_tokens=20, generated_tokens=2, cost=0.25)
+        repo.insert(user_id="u-tot", prompt_tokens=7, generated_tokens=0, cost=0.125, source="title")
+        # A keyless agent (or workflow node): an agent id without a key.
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        agent = AgentsRepository(repo._conn).create("u-tot", "keyless", "draft")
+        repo.insert(
+            user_id="u-tot", agent_id=str(agent["id"]),
+            prompt_tokens=4, generated_tokens=0, cost=0.0625,
+        )
+        repo.insert(user_id="u-tot", prompt_tokens=999, generated_tokens=0, source="schedule")
+        repo.insert(user_id="u-other", prompt_tokens=999, generated_tokens=0, cost=9)
+        repo.insert(
+            user_id="u-tot", prompt_tokens=999, generated_tokens=0, cost=9,
+            timestamp=_now() - timedelta(days=40),
+        )
+
+    @pytest.mark.parametrize(
+        "bucket, expected",
+        [("all", (143, 0.9375)), ("direct", (117, 0.625)), ("agent", (26, 0.3125))],
+    )
+    def test_totals_per_bucket(self, pg_conn, bucket, expected):
+        repo = _repo(pg_conn)
+        self._seed(repo)
+        assert repo.usage_totals(user_id="u-tot", start=_now() - timedelta(days=1), bucket=bucket) == expected
+
+    def test_no_usage_is_zero(self, pg_conn):
+        assert _repo(pg_conn).usage_totals(user_id="nobody", start=_now() - timedelta(days=1)) == (0, 0.0)
+
+    def test_unknown_bucket_rejected(self, pg_conn):
+        with pytest.raises(ValueError):
+            _repo(pg_conn).usage_totals(user_id="u", start=_now(), bucket="nope")
+
 
 class TestReassignApiKey:
     def test_rewrites_and_preserves_rate_limit_window(self, pg_conn):

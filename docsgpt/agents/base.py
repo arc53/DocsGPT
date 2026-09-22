@@ -955,16 +955,30 @@ class BaseAgent(ABC):
             )
         self.retrieved_docs = scrubbed
 
-    def _collect_internal_sources(self) -> None:
-        """Merge the cached InternalSearchTool's docs into ``retrieved_docs``,
-        deduped, preserving any pre-fetched docs so a mixed-exposure agent cites
-        both pre-fetched and tool-retrieved sources (not just the tool's)."""
+    def _search_tool_docs(self) -> List[Dict]:
+        """Documents this run's search tools read: internal search and the graph tool.
+
+        Both record what they surface in ``retrieved_docs``; a page read from
+        the graph carries the answer as much as a search hit does, so both are
+        cited. Tools are looked up the way the executor caches them.
+        """
+        from docsgpt.agents.tools.graph_search import GRAPH_TOOL_ID
         from docsgpt.agents.tools.internal_search import INTERNAL_TOOL_ID
 
         executor = getattr(self, "tool_executor", None)
         loaded = getattr(executor, "_loaded_tools", None) or {}
-        tool = loaded.get(f"internal_search:{INTERNAL_TOOL_ID}:{self.user or ''}")
-        if not (tool and getattr(tool, "retrieved_docs", None)):
+        docs: List[Dict] = []
+        for name, tool_id in (("internal_search", INTERNAL_TOOL_ID), ("graph_search", GRAPH_TOOL_ID)):
+            tool = loaded.get(f"{name}:{tool_id}:{self.user or ''}")
+            docs.extend(getattr(tool, "retrieved_docs", None) or [])
+        return docs
+
+    def _collect_internal_sources(self) -> None:
+        """Merge the search tools' docs into ``retrieved_docs``, deduped,
+        preserving any pre-fetched docs so a mixed-exposure agent cites both
+        pre-fetched and tool-retrieved sources (not just the tools')."""
+        tool_docs = self._search_tool_docs()
+        if not tool_docs:
             return
 
         def _key(d):
@@ -974,7 +988,7 @@ class BaseAgent(ABC):
 
         merged = list(self.retrieved_docs or [])
         seen = {_key(d) for d in merged}
-        for doc in tool.retrieved_docs:
+        for doc in tool_docs:
             k = _key(doc)
             if k not in seen:
                 seen.add(k)

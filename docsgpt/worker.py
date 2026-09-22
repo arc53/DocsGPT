@@ -2122,6 +2122,7 @@ def agent_webhook_worker(self, agent_id, payload):
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
+        from docsgpt.quotas.service import QuotaExceededError
 
         outcome = run_agent_headless(
             agent_config,
@@ -2135,6 +2136,12 @@ def agent_webhook_worker(self, agent_id, payload):
             "tool_calls": outcome.get("tool_calls", []),
             "thought": outcome.get("thought", ""),
         }
+    except QuotaExceededError as e:
+        # Returned, not raised: retrying cannot succeed before the quota resets.
+        logging.warning(
+            f"Webhook skipped for agent {agent_id}: {e}", extra={"agent_id": agent_id}
+        )
+        return {"status": "quota_exceeded", "error": str(e)}
     except Exception as e:
         logging.error(f"Error running agent logic: {e}", exc_info=True)
         raise

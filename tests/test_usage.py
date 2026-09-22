@@ -712,3 +712,56 @@ def test_decorator_omits_cache_bins_when_provider_reports_none(monkeypatch):
     assert row["cache_write_tokens"] is None
     assert llm.emitted[0]["cached_tokens"] is None
     assert llm.emitted[0]["cache_write_tokens"] is None
+
+
+def _persist_with_cost(monkeypatch, llm, cost_fn):
+    from docsgpt.usage import _persist_call_usage
+
+    _install_fake_token_repo(monkeypatch)
+    monkeypatch.setattr("docsgpt.usage.compute_cost_usd", cost_fn)
+    _persist_call_usage(
+        llm, {"prompt_tokens": 1000, "generated_tokens": 10, "cached_tokens": 400}
+    )
+    return _FakeTokenUsageRepo.last_instance.inserted[0]
+
+
+class _CostLLM:
+    decoded_token = {"sub": "user_123"}
+    user_api_key = None
+    agent_id = None
+    _canonical_model_id = "priced-model"
+
+
+@pytest.mark.unit
+def test_persist_prices_the_call_by_canonical_model(monkeypatch):
+    seen = {}
+
+    def cost_fn(model, prompt, generated, cached_tokens=None, cache_write_tokens=None):
+        seen.update(model=model, prompt=prompt, generated=generated, cached=cached_tokens)
+        return 0.0123
+
+    row = _persist_with_cost(monkeypatch, _CostLLM(), cost_fn)
+
+    assert row["cost"] == 0.0123
+    assert seen == {"model": "priced-model", "prompt": 1000, "generated": 10, "cached": 400}
+
+
+@pytest.mark.unit
+def test_persist_records_byom_calls_at_zero_cost(monkeypatch):
+    llm = _CostLLM()
+    llm._is_byom = True
+
+    row = _persist_with_cost(monkeypatch, llm, lambda *a, **k: 9.9)
+
+    assert row["cost"] == 0.0
+    assert row["prompt_tokens"] == 1000
+
+
+@pytest.mark.unit
+def test_persist_keeps_the_row_when_pricing_fails(monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("registry unavailable")
+
+    row = _persist_with_cost(monkeypatch, _CostLLM(), boom)
+
+    assert row["cost"] == 0.0

@@ -15,6 +15,7 @@ from docsgpt.api.answer.services.prompt_renderer import (
 )
 from docsgpt.api.answer.services.stream_processor import get_prompt
 from docsgpt.core.settings import settings
+from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly
@@ -69,7 +70,11 @@ def run_agent_headless(
     chat_history: Optional[List[Dict[str, Any]]] = None,
     conversation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Run an agent with no live client; returns a structured outcome dict."""
+    """Run an agent with no live client; returns a structured outcome dict.
+
+    Raises:
+        QuotaExceededError: If the agent owner's usage quota is exhausted.
+    """
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
         get_default_model_id,
@@ -82,6 +87,11 @@ def run_agent_headless(
     if not owner:
         raise ValueError("Agent config is missing user_id; cannot run headless.")
     decoded_token = {"sub": owner}
+    # An agent run is agent traffic whether or not the agent has a key yet.
+    is_agent_run = bool(agent_config.get("key") or _resolve_agent_id(agent_config))
+    exceeded = QuotaService.check(owner, "agent" if is_agent_run else "direct")
+    if exceeded is not None:
+        raise QuotaExceededError(exceeded)
 
     retriever_kind = agent_config.get("retriever", "classic")
     source_id = agent_config.get("source_id") or agent_config.get("source")
