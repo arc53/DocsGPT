@@ -173,8 +173,9 @@ class AdminActivityExportResource(Resource):
         """Stream the filtered feed as CSV or NDJSON.
 
         Streamed, not buffered: a compliance export of a busy instance should
-        not be built in memory first. Capped at ``_EXPORT_MAX_ROWS``; the
-        response header says whether the cap was reached.
+        not be built in memory first. Capped at ``_EXPORT_MAX_ROWS``, and the
+        ``X-Export-Max-Rows`` header reports the cap that was in effect so a
+        truncated export is not mistaken for a complete one.
         """
         fmt = (request.args.get("format") or "csv").lower()
         if fmt not in _EXPORT_FORMATS:
@@ -192,8 +193,8 @@ class AdminActivityExportResource(Resource):
                 "Content-Disposition": (
                     f'attachment; filename="docsgpt-activity-{stamp}.{fmt}"'
                 ),
-                # Partial content would otherwise be indistinguishable from a
-                # complete export.
+                # The cap in effect. Without it a truncated export reads as
+                # a complete one.
                 "X-Export-Max-Rows": str(limit),
                 "Cache-Control": "no-store",
             },
