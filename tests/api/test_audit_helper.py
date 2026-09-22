@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from docsgpt.api.audit import EVENT_CATEGORIES, category_for, record_event
+from docsgpt.api.audit import ACTIVITY_CATEGORIES, category_for, record_event
 
 
 @pytest.fixture
@@ -102,5 +102,22 @@ class TestCategories:
     def test_unknown_event_is_other(self):
         assert category_for("something_new") == "other"
 
-    def test_every_category_is_declared(self):
-        assert "other" in EVENT_CATEGORIES
+    @pytest.mark.parametrize(
+        "event,expected",
+        [("device.run_command", "device"), ("guardrail.input", "safety")],
+    )
+    def test_merged_feed_namespaces(self, event, expected):
+        assert category_for(event) == expected
+
+    def test_every_produced_category_is_declared(self):
+        assert "other" in ACTIVITY_CATEGORIES
+        for event in (
+            "oidc_login",
+            "role_granted",
+            "quota_policy_set",
+            "source.deleted",
+            "device.run_command",
+            "guardrail.input",
+            "mystery",
+        ):
+            assert category_for(event) in ACTIVITY_CATEGORIES

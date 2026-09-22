@@ -1,4 +1,4 @@
-"""Shared audit-trail helper and the event → category map.
+"""Shared audit-trail helper for recording data-plane and identity events.
 
 Identity and access events (login, role grants, provisioning) have been
 audited since ``auth_events`` was introduced. Data-plane actions — creating and
@@ -23,61 +23,13 @@ from typing import Any, Optional
 
 from flask import has_request_context, request
 
+from docsgpt.audit_events import ACTIVITY_CATEGORIES, category_for
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 
 logger = logging.getLogger(__name__)
 
-
-# Coarse grouping for the admin activity feed's facet filter. Keyed by exact
-# event name or by a ``prefix.`` namespace; see :func:`category_for`.
-EVENT_CATEGORIES: dict[str, str] = {
-    # Who you are: authentication, provisioning, personal credentials.
-    "oidc_login": "identity",
-    "oidc_login_denied": "identity",
-    "oidc_refresh": "identity",
-    "backchannel_logout": "identity",
-    "scim_created": "identity",
-    "scim_deactivated": "identity",
-    "scim_reactivated": "identity",
-    "pat_created": "identity",
-    "pat_revoked": "identity",
-    "pat_regenerated": "identity",
-    # What you may do: roles, account state, team membership and sharing.
-    "role_granted": "access",
-    "role_revoked": "access",
-    "admin_user_activated": "access",
-    "admin_user_deactivated": "access",
-    "admin_sessions_revoked": "access",
-    "team.": "access",
-    # How the instance is configured.
-    "quota_policy_set": "config",
-    "quota_policy_deleted": "config",
-    # What the data looks like.
-    "source.": "data",
-    "agent.": "data",
-    "conversation.": "data",
-    # Everything an older release wrote that this one does not know about.
-    "other": "other",
-}
-
-
-def category_for(event: str) -> str:
-    """Return the activity category for ``event``.
-
-    Args:
-        event: The audit event name.
-
-    Returns:
-        One of ``identity``, ``access``, ``config``, ``data``, or ``other``
-        for names this release does not recognise.
-    """
-    exact = EVENT_CATEGORIES.get(event)
-    if exact is not None and not event.endswith("."):
-        return exact
-    namespace, dot, _ = event.partition(".")
-    if dot:
-        return EVENT_CATEGORIES.get(f"{namespace}.", "other")
-    return "other"
+# Re-exported so route modules have one import for recording and classifying.
+__all__ = ["ACTIVITY_CATEGORIES", "category_for", "record_event"]
 
 
 def record_event(
