@@ -455,7 +455,7 @@ export default function MCPServerModal({
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="api_key">
-                {t('settings.tools.mcp.placeholders.apiKey')}
+                {t('settings.tools.mcp.authTypes.apiKey')}
                 <span className="text-red-500">*</span>
               </Label>
               <Input
@@ -492,7 +492,7 @@ export default function MCPServerModal({
         return (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="bearer_token">
-              {t('settings.tools.mcp.placeholders.bearerToken')}
+              {t('settings.tools.mcp.authTypes.bearer')}
               <span className="text-red-500">*</span>
             </Label>
             <Input
@@ -556,8 +556,7 @@ export default function MCPServerModal({
         return (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="oauth_scopes">
-              {t('settings.tools.mcp.placeholders.oauthScopes') ||
-                'Scopes (comma separated)'}
+              {t('settings.tools.mcp.placeholders.oauthScopes')}
             </Label>
             <Input
               id="oauth_scopes"

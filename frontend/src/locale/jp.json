@@ -7,6 +7,7 @@
   "tagline": "DocsGPTはGenAIを使用しています。重要な情報はソースで確認してください。",
   "sourceDocs": "ソース",
   "none": "なし",
+  "loading": "読み込み中...",
   "cancel": "キャンセル",
   "help": "ヘルプ",
   "emailUs": "メールを送る",

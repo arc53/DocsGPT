@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface SkeletonLoaderProps {
   count?: number;
@@ -22,6 +23,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   count = 1,
   component = 'default',
 }) => {
+  const { t } = useTranslation();
   const [skeletonCount, setSkeletonCount] = useState(count);
 
   useEffect(() => {
@@ -353,7 +355,17 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
 
   const render = componentMap[component] || componentMap.default;
 
-  return <>{render()}</>;
+  // The Spinner this replaces carried role="status"; without it a screen
+  // reader gets no signal at all while a section loads. Absolutely
+  // positioned by `sr-only`, so it never becomes a flex/grid item.
+  return (
+    <>
+      <span className="sr-only" role="status">
+        {t('loading')}
+      </span>
+      {render()}
+    </>
+  );
 };
 
 export default SkeletonLoader;

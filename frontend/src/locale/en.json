@@ -7,6 +7,7 @@
   "tagline": "DocsGPT uses GenAI, please review critical information using sources.",
   "sourceDocs": "Source",
   "none": "None",
+  "loading": "Loading...",
   "cancel": "Cancel",
   "errorBoundary": {
     "message": "Something went wrong displaying this content.",

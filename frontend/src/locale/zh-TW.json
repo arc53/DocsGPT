@@ -7,6 +7,7 @@
   "tagline": "DocsGPT 使用生成式 AI，請使用原始資料來源審閱重要資訊。",
   "sourceDocs": "原始文件",
   "none": "無",
+  "loading": "載入中...",
   "cancel": "取消",
   "help": "幫助",
   "emailUs": "給我們發電郵",
