@@ -89,6 +89,12 @@ class TestTopUsers:
         assert [row["user_id"] for row in rows] == ["heavy", "light"]
         assert rows[0]["cost"] == pytest.approx(2.0)
 
+    def test_rollup_rows_are_not_billed_twice(self, pg_conn, since):
+        _insert(pg_conn, user_id="u1", source="agent_stream", cost=1.0)
+        _insert(pg_conn, user_id="u1", source="schedule", cost=1.0)
+        rows = AdminStatsRepository(pg_conn).top_token_users(since=since)
+        assert rows[0]["cost"] == pytest.approx(1.0)
+
 
 class TestLatencySummary:
     def test_percentiles_over_measured_calls(self, pg_conn, since):
@@ -124,7 +130,7 @@ class TestLatencySummary:
 class TestUserUsageBreakdown:
     def test_totals_and_splits(self, pg_conn, since):
         _insert(pg_conn, user_id="u1", model_id="a", source="agent_stream", cost=1.0)
-        _insert(pg_conn, user_id="u1", model_id="b", source="schedule", cost=2.0)
+        _insert(pg_conn, user_id="u1", model_id="b", source="webhook", cost=2.0)
         _insert(pg_conn, user_id="other", model_id="a", cost=99.0)
         detail = AdminStatsRepository(pg_conn).user_usage_breakdown("u1", since=since)
         assert detail["totals"]["calls"] == 2
@@ -132,8 +138,17 @@ class TestUserUsageBreakdown:
         assert {row["key"] for row in detail["by_model"]} == {"a", "b"}
         assert {row["key"] for row in detail["by_source"]} == {
             "agent_stream",
-            "schedule",
+            "webhook",
         }
+
+    def test_rollup_rows_are_not_billed_twice(self, pg_conn, since):
+        """A scheduled run's rollup duplicates its own per-call rows."""
+        _insert(pg_conn, user_id="u1", source="agent_stream", cost=1.0)
+        _insert(pg_conn, user_id="u1", source="schedule", cost=1.0)
+        detail = AdminStatsRepository(pg_conn).user_usage_breakdown("u1", since=since)
+        assert detail["totals"]["calls"] == 1
+        assert detail["totals"]["cost"] == pytest.approx(1.0)
+        assert [row["key"] for row in detail["by_source"]] == ["agent_stream"]
 
     def test_a_user_with_no_usage_reports_zeroes(self, pg_conn, since):
         detail = AdminStatsRepository(pg_conn).user_usage_breakdown("ghost", since=since)

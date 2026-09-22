@@ -279,8 +279,12 @@ class TestBucketedTotals:
         t1 = datetime(2026, 4, 10, 10, 0, tzinfo=timezone.utc)
         t2 = datetime(2026, 4, 10, 23, 30, tzinfo=timezone.utc)
         t3 = datetime(2026, 4, 11, 0, 15, tzinfo=timezone.utc)
-        repo.insert(user_id="u-day", prompt_tokens=10, generated_tokens=5, timestamp=t1)
-        repo.insert(user_id="u-day", prompt_tokens=20, generated_tokens=7, timestamp=t2)
+        repo.insert(
+            user_id="u-day", prompt_tokens=10, generated_tokens=5, cost=0.5, timestamp=t1
+        )
+        repo.insert(
+            user_id="u-day", prompt_tokens=20, generated_tokens=7, cost=0.25, timestamp=t2
+        )
         repo.insert(user_id="u-day", prompt_tokens=1, generated_tokens=1, timestamp=t3)
         rows = repo.bucketed_totals(
             bucket_unit="day",
@@ -288,9 +292,23 @@ class TestBucketedTotals:
             timestamp_gte=datetime(2026, 4, 10, tzinfo=timezone.utc),
             timestamp_lt=datetime(2026, 4, 12, tzinfo=timezone.utc),
         )
+        # ``cached_tokens`` is None when no row in the bucket reported a cache
+        # breakdown: "the provider said nothing", not "no cache hits".
         assert rows == [
-            {"bucket": "2026-04-10", "prompt_tokens": 30, "generated_tokens": 12},
-            {"bucket": "2026-04-11", "prompt_tokens": 1, "generated_tokens": 1},
+            {
+                "bucket": "2026-04-10",
+                "prompt_tokens": 30,
+                "generated_tokens": 12,
+                "cost": 0.75,
+                "cached_tokens": None,
+            },
+            {
+                "bucket": "2026-04-11",
+                "prompt_tokens": 1,
+                "generated_tokens": 1,
+                "cost": 0.0,
+                "cached_tokens": None,
+            },
         ]
 
     def test_hour_bucket(self, pg_conn):
