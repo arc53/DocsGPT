@@ -71,6 +71,31 @@ class TestBucketedCost:
         )
         assert series[0]["cached_tokens"] == 30
 
+    def test_cache_denominator_counts_only_reporting_rows(self, pg_conn, since):
+        """A hit rate needs the prompt tokens of the rows that reported.
+
+        Both rows land in the same bucket, so filtering buckets client-side
+        cannot separate them: ``prompt_tokens`` there is the whole day. A rate
+        built on it is understated by however much traffic ran on a provider
+        that reports no cache breakdown.
+        """
+        _insert(pg_conn, prompt_tokens=100, cached_tokens=50)
+        _insert(pg_conn, prompt_tokens=100, cached_tokens=None)
+        series = TokenUsageRepository(pg_conn).bucketed_totals(
+            bucket_unit="day", timestamp_gte=since
+        )
+        assert series[0]["prompt_tokens"] == 200
+        assert series[0]["cached_tokens"] == 50
+        # 50 / 100 = 50%, not 50 / 200 = 25%.
+        assert series[0]["cache_eligible_prompt_tokens"] == 100
+
+    def test_cache_denominator_is_zero_when_nothing_reported(self, pg_conn, since):
+        _insert(pg_conn, prompt_tokens=100, cached_tokens=None)
+        series = TokenUsageRepository(pg_conn).bucketed_totals(
+            bucket_unit="day", timestamp_gte=since
+        )
+        assert series[0]["cache_eligible_prompt_tokens"] == 0
+
     def test_grouping_keeps_cost_per_group(self, pg_conn, since):
         _insert(pg_conn, model_id="cheap", cost=0.1)
         _insert(pg_conn, model_id="pricey", cost=9.9)

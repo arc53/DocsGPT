@@ -190,7 +190,7 @@ Authentication activity is recorded in `auth_events`, an append-only Postgres ta
 - `actor_id` — who performed the action. Never empty.
 - `target_id` — the user the action was performed on, or `NULL` when the event is not about a user (a team change, an instance-wide policy).
 
-They differ whenever someone acts on someone else: an admin deactivating an account is `actor_id = <the admin>`, `target_id = <the account>`. For self-service events such as a login they are the same user. Automated actors are named `system:oidc` (a group-driven role change at login) and `system:scim` (provisioning).
+They differ whenever someone acts on someone else: an admin deactivating an account is `actor_id = <the admin>`, `target_id = <the account>`. For self-service events such as a login they are the same user. Automated actors are named `system:oidc` (a group-driven role change at login) and `system:scim` (provisioning). `actor_id` defaults to `unknown`, which only a process from a release predating the column can produce.
 
 | Event | Recorded when |
 | --- | --- |

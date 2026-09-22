@@ -223,14 +223,35 @@ export function categoryTone(category: string): Tone {
   return CATEGORY_TONES[category] ?? 'muted';
 }
 
-// A guardrail "blocked" or a device "denied" is the row's headline, so it gets
-// the same treatment as a dangerous event name.
-const DANGER_OUTCOMES = new Set(['blocked', 'denied', 'error', 'failed']);
+// Outcome values the two side journals actually write.
+//
+// guardrail_events.outcome is "triggered" / "not_evaluated"
+// (guardrails/runtime.py) and its .action carries flag/block; the device feed
+// writes decision="dispatched" (agents/tools/remote_device.py). An earlier
+// map here guessed at blocked/denied/allowed, none of which are ever
+// produced, so every outcome rendered neutral grey -- including a guardrail
+// that fired, which is the one signal the merged feed exists to surface.
+const OUTCOME_TONES: Record<string, Tone> = {
+  triggered: 'danger',
+  not_evaluated: 'muted',
+  dispatched: 'success',
+};
 
 export function outcomeTone(outcome: string): Tone {
-  if (DANGER_OUTCOMES.has(outcome)) return 'danger';
-  if (outcome === 'allowed' || outcome === 'passed') return 'success';
-  return 'muted';
+  return OUTCOME_TONES[outcome] ?? 'muted';
+}
+
+const OUTCOME_LABELS: Record<string, string> = {
+  triggered: 'Triggered',
+  not_evaluated: 'Not evaluated',
+  dispatched: 'Dispatched',
+};
+
+export function outcomeLabel(outcome: string): string {
+  return (
+    OUTCOME_LABELS[outcome] ??
+    outcome.replace(/[._]/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+  );
 }
 
 // 127.0.0.1 / ::1 are noise in dev — collapse to a muted "local" chip so real

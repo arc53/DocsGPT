@@ -73,12 +73,15 @@ class DeleteAllConversations(Resource):
         try:
             with db_session() as conn:
                 deleted = ConversationsRepository(conn).delete_all_for_user(user_id)
-                record_event(
-                    conn,
-                    "conversation.deleted_all",
-                    actor=user_id,
-                    deleted=deleted,
-                )
+                # Nothing deleted is not an event; the endpoint is idempotent
+                # and a row here would render as a destructive action.
+                if deleted:
+                    record_event(
+                        conn,
+                        "conversation.deleted_all",
+                        actor=user_id,
+                        deleted=deleted,
+                    )
         except Exception as err:
             current_app.logger.error(
                 f"Error deleting all conversations: {err}", exc_info=True

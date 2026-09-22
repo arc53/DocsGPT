@@ -29,10 +29,15 @@ type Split = { key: string; tokens: number; cost: number };
 
 const RANGES = [7, 30, 90];
 
-/** Label for a token_usage.source value — what the spend was for. */
+/**
+ * Label for a token_usage.source value — what the spend was for.
+ *
+ * No `schedule` entry: that source marks the run-level rollup row, which the
+ * breakdown excludes to avoid double-counting. A scheduled run's individual
+ * calls are recorded as `agent_stream`, so its spend appears under Chat.
+ */
 const FLOW_LABELS: Record<string, string> = {
   agent_stream: 'Chat',
-  schedule: 'Scheduled run',
   webhook: 'Webhook',
   workflow: 'Workflow',
   title: 'Title generation',

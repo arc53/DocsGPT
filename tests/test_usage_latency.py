@@ -83,6 +83,25 @@ class TestStreaming:
         assert persisted[0]["ttft_ms"] is None
         assert persisted[0]["duration_ms"] >= 0
 
+    def test_duration_excludes_consumer_backpressure(self, persisted):
+        """The clock must measure the provider, not a slow reader.
+
+        ``stream_token_usage`` is a generator, so every yield suspends until
+        the consumer comes back. Timing start-to-exhaustion would bill the
+        agent loop's tool handling and the SSE client's pace to the model.
+        """
+        import time as _time
+
+        @stream_token_usage
+        def _stream(self, model, messages, stream, tools, **kwargs):
+            yield "a"
+            yield "b"
+
+        for _ in _stream(_LLM(), "m", [], True, None):
+            # A consumer that takes far longer than the provider did.
+            _time.sleep(0.05)
+        assert persisted[0]["duration_ms"] < 50
+
     def test_a_stream_cut_short_keeps_the_first_token_it_saw(self, persisted):
         @stream_token_usage
         def _stream(self, model, messages, stream, tools, **kwargs):

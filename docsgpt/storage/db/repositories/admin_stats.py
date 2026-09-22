@@ -17,7 +17,7 @@ from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 
 
-def _round_ms(value) -> Optional[int]:
+def _round_ms(value: Optional[float]) -> Optional[int]:
     """Round a percentile to whole milliseconds, preserving NULL as None."""
     return int(round(float(value))) if value is not None else None
 

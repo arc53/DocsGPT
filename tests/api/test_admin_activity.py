@@ -129,19 +129,36 @@ class TestFeed:
         assert kwargs["until"] == datetime(2026, 2, 1, tzinfo=timezone.utc)
         assert kwargs["search"] == "handbook"
 
-    def test_unknown_facet_values_are_ignored_not_rejected(self, client):
-        repo = _repo()
-        with _admin(repo):
-            resp = client.get("/api/admin/activity?feed=bogus&category=bogus")
-        assert resp.status_code == 200
-        kwargs = repo.list.call_args.kwargs
-        assert kwargs["feeds"] is None and kwargs["categories"] is None
+    def test_unknown_facet_is_refused_not_dropped(self, client):
+        """Dropping it would mean no filter, and no filter means everything.
 
-    def test_unparseable_time_is_ignored(self, client):
+        A typo or a stale chip must never widen an audit view.
+        """
         repo = _repo()
         with _admin(repo):
-            assert client.get("/api/admin/activity?since=nonsense").status_code == 200
-        assert repo.list.call_args.kwargs["since"] is None
+            resp = client.get("/api/admin/activity?category=bogus")
+        assert resp.status_code == 400
+        assert "bogus" in json.loads(resp.data)["message"]
+        repo.list.assert_not_called()
+
+    def test_unknown_feed_is_refused(self, client):
+        repo = _repo()
+        with _admin(repo):
+            assert client.get("/api/admin/activity?feed=bogus").status_code == 400
+        repo.list.assert_not_called()
+
+    def test_unparseable_time_is_refused(self, client):
+        """Ignoring it would drop the bound and return the full history."""
+        repo = _repo()
+        with _admin(repo):
+            assert client.get("/api/admin/activity?since=nonsense").status_code == 400
+        repo.list.assert_not_called()
+
+    def test_a_valid_facet_still_passes_through(self, client):
+        repo = _repo()
+        with _admin(repo):
+            assert client.get("/api/admin/activity?category=data").status_code == 200
+        assert repo.list.call_args.kwargs["categories"] == ["data"]
 
     def test_repeated_params_accumulate(self, client):
         repo = _repo()
@@ -220,6 +237,15 @@ class TestExport:
         with _admin(_repo(rows=[])):
             body = client.get("/api/admin/activity/export").get_data(as_text=True)
         assert body.strip().startswith("feed,id,event,category")
+
+    def test_export_refuses_an_unknown_facet(self, client):
+        """Failing open here would stream the whole history to the 100k cap."""
+        repo = _repo()
+        with _admin(repo):
+            resp = client.get("/api/admin/activity/export?category=bogus")
+            resp.get_data()
+        assert resp.status_code == 400
+        repo.iter_all.assert_not_called()
 
     def test_rejects_an_unknown_format(self, client):
         with _admin(_repo()):

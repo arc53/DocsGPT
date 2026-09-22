@@ -18,6 +18,7 @@ const bucket = (overrides: Partial<UsageBucket>): UsageBucket => ({
   generated_tokens: 20,
   cost: 1,
   cached_tokens: null,
+  cache_eligible_prompt_tokens: 0,
   ...overrides,
 });
 
@@ -83,19 +84,40 @@ describe('cacheHitRate', () => {
     expect(cacheHitRate([])).toBeNull();
   });
 
-  it('measures only the rows that reported', () => {
+  it('divides by the prompt tokens of the reporting calls only', () => {
+    // One bucket is one day, and a day mixes calls whose provider reported a
+    // cache breakdown with calls whose provider did not. 50/100, not 50/200.
     const rate = cacheHitRate([
-      bucket({ prompt_tokens: 100, cached_tokens: 25 }),
-      // Unreported: excluded entirely rather than counted as a 0% row, which
-      // would halve the rate.
-      bucket({ prompt_tokens: 100, cached_tokens: null }),
+      bucket({
+        prompt_tokens: 200,
+        cached_tokens: 50,
+        cache_eligible_prompt_tokens: 100,
+      }),
     ]);
-    expect(rate).toBeCloseTo(25);
+    expect(rate).toBeCloseTo(50);
   });
 
-  it('avoids dividing by zero prompt tokens', () => {
+  it('sums across buckets', () => {
+    const rate = cacheHitRate([
+      bucket({
+        prompt_tokens: 100,
+        cached_tokens: 10,
+        cache_eligible_prompt_tokens: 100,
+      }),
+      bucket({
+        prompt_tokens: 100,
+        cached_tokens: 30,
+        cache_eligible_prompt_tokens: 100,
+      }),
+    ]);
+    expect(rate).toBeCloseTo(20);
+  });
+
+  it('avoids dividing by zero eligible tokens', () => {
     expect(
-      cacheHitRate([bucket({ prompt_tokens: 0, cached_tokens: 0 })]),
+      cacheHitRate([
+        bucket({ prompt_tokens: 500, cache_eligible_prompt_tokens: 0 }),
+      ]),
     ).toBeNull();
   });
 });

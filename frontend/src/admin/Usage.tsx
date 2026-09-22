@@ -171,7 +171,7 @@ export default function Usage() {
           sub={
             cacheHitRate === null
               ? 'Provider reported no cache data'
-              : 'Of prompt tokens the provider reported'
+              : 'Of prompt tokens on calls that reported'
           }
         />
       </div>

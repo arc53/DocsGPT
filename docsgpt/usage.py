@@ -305,12 +305,28 @@ def stream_token_usage(func):
         batch = []
         started_at = time.monotonic()
         first_chunk_at: float | None = None
+        # Time spent waiting on the provider, accumulated across ``next()``
+        # calls. The wall clock cannot be used here: this is a generator, so
+        # every ``yield`` suspends until the consumer comes back, and the span
+        # from start to exhaustion includes the agent loop's tool handling and
+        # the SSE client's backpressure. A slow browser would otherwise record
+        # 30s for a 900ms call, and latency_summary would mix that with true
+        # non-streaming durations under one p50.
+        provider_seconds = 0.0
         error: BaseException | None = None
         try:
             result = func(self, model, messages, stream, tools, **kwargs)
-            for r in result:
+            stream_iter = iter(result)
+            while True:
+                pull_started = time.monotonic()
+                try:
+                    r = next(stream_iter)
+                except StopIteration:
+                    provider_seconds += time.monotonic() - pull_started
+                    break
+                provider_seconds += time.monotonic() - pull_started
                 if first_chunk_at is None:
-                    first_chunk_at = time.monotonic()
+                    first_chunk_at = pull_started + provider_seconds
                 batch.append(r)
                 yield r
         except Exception as exc:
@@ -320,7 +336,7 @@ def stream_token_usage(func):
             error = exc
             raise
         finally:
-            duration_ms = int((time.monotonic() - started_at) * 1000)
+            duration_ms = int(provider_seconds * 1000)
             # NULL, not 0, when the stream failed before yielding: "no first
             # token" must not read as an instant one in a p50.
             ttft_ms = (
@@ -343,7 +359,10 @@ def stream_token_usage(func):
                         model,
                         prompt_tokens=call_usage["prompt_tokens"],
                         completion_tokens=call_usage["generated_tokens"],
-                        latency_ms=duration_ms,
+                        # The log line has always meant end-to-end wall clock
+                        # for the streamed response; only the persisted column
+                        # isolates provider time.
+                        latency_ms=int((time.monotonic() - started_at) * 1000),
                         cached_tokens=call_usage.get("cached_tokens"),
                         cache_write_tokens=call_usage.get("cache_write_tokens"),
                         error=error,

@@ -1294,7 +1294,8 @@ class UpdateAgent(Resource):
                     updated = bool(result)
                 else:
                     updated = agents_repo.update(pg_agent_id, user, update_fields)
-                if updated:
+                # An update that changed no field is not an event.
+                if updated and update_fields:
                     record_event(
                         conn,
                         "agent.updated",

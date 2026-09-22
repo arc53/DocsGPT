@@ -29,6 +29,7 @@ import {
   fmtNumber,
   fmtRelative,
   isLoopback,
+  outcomeLabel,
   outcomeTone,
 } from './AdminUI';
 
@@ -373,7 +374,7 @@ export default function Activity() {
                           </Pill>
                           {row.outcome ? (
                             <Pill tone={outcomeTone(row.outcome)}>
-                              {row.outcome}
+                              {outcomeLabel(row.outcome)}
                             </Pill>
                           ) : null}
                         </div>

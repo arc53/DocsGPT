@@ -7,6 +7,8 @@ export type UsageBucket = {
   generated_tokens: number;
   cost: number;
   cached_tokens: number | null;
+  /** Prompt tokens from the rows that reported a cache breakdown. */
+  cache_eligible_prompt_tokens: number;
   group_key?: string;
 };
 
@@ -94,20 +96,21 @@ export function buildUsageChart(
 }
 
 /**
- * Prompt-cache hit rate over the rows whose provider reported a breakdown.
+ * Prompt-cache hit rate over the calls whose provider reported a breakdown.
  *
- * NULL cached_tokens means "the provider said nothing", which is not the same
- * as "no cache hits" — counting those rows as 0 would understate the rate.
- * Returns null when nothing reported.
+ * Both numerator and denominator come from the server, because a bucket is a
+ * whole day and mixes reporting with non-reporting calls: filtering *buckets*
+ * here would still divide by the day's entire prompt volume and understate
+ * the rate by however much traffic ran on a provider that reports nothing.
+ *
+ * Returns null when no call in the window reported one.
  */
 export function cacheHitRate(series: UsageBucket[]): number | null {
-  const reported = series.filter((row) => row.cached_tokens !== null);
-  if (reported.length === 0) return null;
-  const prompt = reported.reduce((sum, row) => sum + row.prompt_tokens, 0);
-  if (prompt === 0) return null;
-  const cached = reported.reduce(
-    (sum, row) => sum + (row.cached_tokens ?? 0),
+  const eligible = series.reduce(
+    (sum, row) => sum + (row.cache_eligible_prompt_tokens ?? 0),
     0,
   );
-  return (cached / prompt) * 100;
+  if (eligible === 0) return null;
+  const cached = series.reduce((sum, row) => sum + (row.cached_tokens ?? 0), 0);
+  return (cached / eligible) * 100;
 }

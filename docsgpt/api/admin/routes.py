@@ -38,6 +38,9 @@ admin_ns = Namespace("admin", description="Admin-only management endpoints", pat
 _DEFAULT_PAGE_SIZE = 25
 _MAX_PAGE_SIZE = 100
 
+# Event namespaces the per-user security panel leaves out; see the drill-down.
+_DATA_PLANE_PREFIXES = ("source.", "agent.", "conversation.")
+
 
 def _int_arg(name: str, default: int) -> int:
     try:
@@ -135,8 +138,12 @@ class AdminUserResource(Resource):
                 },
                 "roles": sorted({"user", *roles_repo.role_names_for(user_id)}),
                 "grants": roles_repo.list_for(user_id),
+                # Identity and access only. Data-plane events file under the
+                # actor, so an active user's routine deletes would push a
+                # denied login or a role grant out of a 20-row window.
+                # The Activity tab, filtered by user, shows everything.
                 "recent_events": AuthEventsRepository(conn).list_recent(
-                    user_id, limit=20
+                    user_id, limit=20, exclude_events_like=_DATA_PLANE_PREFIXES
                 ),
                 "counts": AdminStatsRepository(conn).user_counts(user_id),
             }
@@ -347,7 +354,6 @@ class AdminUsageResource(Resource):
             total = usage_repo.sum_tokens_in_range(
                 start=start, end=datetime.now(timezone.utc)
             )
-            by_model = usage_repo.tokens_by_model(start=start)
             latency = stats_repo.latency_summary(since=start)
             top_users = stats_repo.top_token_users(since=start, limit=10)
         return make_response(
@@ -362,7 +368,6 @@ class AdminUsageResource(Resource):
                     # Summed from the series, not from ``by_model``: the latter
                     # drops rows with no model_id, so it would undercount.
                     "total_cost": round(sum(row["cost"] for row in series), 4),
-                    "by_model": by_model,
                     "latency": latency,
                     "top_users": top_users,
                 }

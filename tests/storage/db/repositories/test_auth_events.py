@@ -45,41 +45,52 @@ class TestInsertAttribution:
 
 
 class TestFeedFilters:
+    """``/api/admin/audit`` is the single-journal feed; the merged one has its
+    own repository, so the filter set here stays deliberately small."""
+
     def _seed(self, repo):
         repo.insert("a", "oidc_login")
         repo.insert("b", "oidc_login_denied")
         repo.insert("b", "admin_user_deactivated", actor_id="admin-9", target_id="b")
 
-    def test_filter_by_actor(self, repo):
+    def test_filter_by_event(self, repo):
         self._seed(repo)
-        rows = repo.list_all(actor_id="admin-9")
-        assert [r["event"] for r in rows] == ["admin_user_deactivated"]
-        assert repo.count_all(actor_id="admin-9") == 1
-
-    def test_filter_by_multiple_events(self, repo):
-        self._seed(repo)
-        rows = repo.list_all(events=["oidc_login", "oidc_login_denied"])
-        assert {r["event"] for r in rows} == {"oidc_login", "oidc_login_denied"}
-        assert repo.count_all(events=["oidc_login", "oidc_login_denied"]) == 2
-
-    def test_single_event_filter_still_supported(self, repo):
-        self._seed(repo)
+        rows = repo.list_all(event="oidc_login")
+        assert [r["event"] for r in rows] == ["oidc_login"]
         assert repo.count_all(event="oidc_login") == 1
 
-    def test_filter_by_until(self, repo):
+    def test_filter_by_user_matches_subject_or_target(self, repo):
         self._seed(repo)
+        assert repo.count_all(user_id="b") == 2
+
+    def test_filter_by_since(self, repo):
+        self._seed(repo)
+        future = datetime.now(timezone.utc) + timedelta(days=1)
+        assert repo.count_all(since=future) == 0
         past = datetime.now(timezone.utc) - timedelta(days=1)
-        assert repo.count_all(until=past) == 0
-        assert repo.count_all(until=datetime.now(timezone.utc) + timedelta(days=1)) == 3
+        assert repo.count_all(since=past) == 3
 
-    def test_search_matches_user_actor_and_metadata(self, repo):
-        repo.insert("someone", "pat_created", metadata={"name": "ci-deploy-key"})
-        assert repo.count_all(search="ci-deploy") == 1
-        assert repo.count_all(search="someone") == 1
-        assert repo.count_all(search="nothing-here") == 0
-
-    def test_event_names_catalogue(self, repo):
+    def test_pagination(self, repo):
         self._seed(repo)
-        names = repo.event_names()
-        assert names == sorted(names)
-        assert "oidc_login" in names and "admin_user_deactivated" in names
+        assert len(repo.list_all(limit=2)) == 2
+        assert len(repo.list_all(limit=2, offset=2)) == 1
+
+
+class TestPerUserPanel:
+    """The admin user drill-down is a security panel, not an activity log."""
+
+    def test_data_plane_events_can_be_excluded(self, repo):
+        repo.insert("u1", "oidc_login_denied")
+        for _ in range(5):
+            repo.insert("u1", "conversation.deleted", target_id=None, actor_id="u1")
+        rows = repo.list_recent(
+            "u1", limit=3, exclude_events_like=("source.", "agent.", "conversation.")
+        )
+        # Without the exclusion the five deletes would fill the window and
+        # push the denied login out of it.
+        assert [r["event"] for r in rows] == ["oidc_login_denied"]
+
+    def test_without_exclusions_everything_is_returned(self, repo):
+        repo.insert("u1", "oidc_login")
+        repo.insert("u1", "conversation.deleted", target_id=None, actor_id="u1")
+        assert len(repo.list_recent("u1")) == 2

@@ -25,6 +25,7 @@ from typing import Any, Iterator, Optional, Sequence
 from sqlalchemy import Connection, text
 
 from docsgpt.audit_events import category_case_sql
+from docsgpt.storage.db.base_repository import like_escape
 
 
 # Columns every branch of the union produces, in order.
@@ -197,12 +198,18 @@ class ActivityRepository:
             clauses.append("created_at <= :until")
             params["until"] = until
         if search:
+            # ``search`` is a literal substring, not a pattern: an operator
+            # looking for "100%" or "q1_report" must not have those characters
+            # read as wildcards.
             clauses.append(
-                "(actor_id ILIKE :search OR target_id ILIKE :search "
-                "OR event ILIKE :search OR ip ILIKE :search "
-                "OR COALESCE(outcome, '') ILIKE :search OR detail::text ILIKE :search)"
+                "(actor_id ILIKE :search ESCAPE '\\' "
+                "OR target_id ILIKE :search ESCAPE '\\' "
+                "OR event ILIKE :search ESCAPE '\\' "
+                "OR ip ILIKE :search ESCAPE '\\' "
+                "OR COALESCE(outcome, '') ILIKE :search ESCAPE '\\' "
+                "OR detail::text ILIKE :search ESCAPE '\\')"
             )
-            params["search"] = f"%{search}%"
+            params["search"] = f"%{like_escape(search)}%"
         # Always a WHERE, even with no filters, so the keyset cursor below can
         # append " AND ..." without sniffing the string it was handed.
         where = "WHERE " + " AND ".join(clauses or ["TRUE"])
@@ -259,7 +266,10 @@ class ActivityRepository:
         return [dict(row._mapping) for row in result.fetchall()]
 
     def _page_after(
-        self, cursor: Optional[tuple], limit: int, filters: dict
+        self,
+        cursor: Optional[tuple[datetime, str, str]],
+        limit: int,
+        filters: dict,
     ) -> list[dict]:
         """One keyset page strictly older than ``cursor``.
 
@@ -332,7 +342,7 @@ class ActivityRepository:
             Row dicts carrying :data:`ACTIVITY_COLUMNS`.
         """
         emitted = 0
-        cursor: Optional[tuple] = None
+        cursor: Optional[tuple[datetime, str, str]] = None
         while emitted < max_rows:
             page = self._page_after(
                 cursor, min(chunk_size, max_rows - emitted), filters

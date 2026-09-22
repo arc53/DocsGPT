@@ -171,6 +171,10 @@ The **Admin → Activity** tab merges three append-only journals into one timeli
 
 Filter by category, event name, actor, affected user, a time window, or a free-text search that reaches into each row's detail payload, then export the filtered feed as CSV or NDJSON. Exports stream and are capped at 100,000 rows — take a database dump for a full history.
 
+An unknown filter value is refused with a 400 rather than dropped. Dropping it would leave that facet unfiltered, and no filter means every row, so a typo or a stale bookmark would silently widen an audit view instead of narrowing it.
+
+The per-user panel in **Admin → Users** deliberately lists identity and access events only. Data-plane events are filed under the user who performed them, so on an active account routine activity would push a denied login or a role grant out of the window; use the Activity tab filtered by that user to see everything.
+
 Two guardrail columns are deliberately never projected into the feed or the export: `api_key` (a raw agent key) and `matched_value` (unredacted source text). Admin-gating is not a reason to widen what a list response carries.
 
 ## Related

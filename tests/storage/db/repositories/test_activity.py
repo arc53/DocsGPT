@@ -27,7 +27,7 @@ def seeded(pg_conn):
             "(user_id, api_key, stage, check_name, detector_type, action, "
             " outcome, matched_value, created_at) VALUES "
             "('u-guard', 'sk-secret', 'input', 'pii', 'regex', 'block', "
-            " 'blocked', 'alex@example.com', :ts)"
+            " 'triggered', 'alex@example.com', :ts)"
         ),
         {"ts": now - timedelta(minutes=10)},
     )
@@ -44,7 +44,7 @@ def seeded(pg_conn):
             "(device_id, user_id, invocation_id, action, command, "
             " approval_mode, decision, issued_at, created_at) VALUES "
             "('dev-1', 'u-dev', 'inv-1', 'run_command', 'ls -la', "
-            " 'ask', 'allowed', :ts, :ts)"
+            " 'ask', 'dispatched', :ts, :ts)"
         ),
         {"ts": now - timedelta(minutes=5)},
     )
@@ -84,9 +84,11 @@ class TestMergedFeed:
         }
 
     def test_outcome_carries_the_side_journal_verdict(self, repo):
+        # The values the writers actually produce: guardrails/runtime.py emits
+        # triggered/not_evaluated, remote_device.py emits dispatched.
         rows = {row["feed"]: row["outcome"] for row in repo.list()}
-        assert rows["device"] == "allowed"
-        assert rows["guardrail"] == "blocked"
+        assert rows["device"] == "dispatched"
+        assert rows["guardrail"] == "triggered"
         assert rows["auth"] is None
 
 
@@ -131,6 +133,12 @@ class TestFilters:
         assert repo.count(search="ls -la") == 1
         assert repo.count(search="203.0.113") == 1
         assert repo.count(search="nope") == 0
+
+    def test_search_treats_wildcards_literally(self, repo):
+        """A search box takes a substring; '%' must not match everything."""
+        assert repo.count(search="%") == 0
+        # '_' would otherwise match any single character, e.g. "local".
+        assert repo.count(search="l_cal") == 0
 
     def test_unknown_feed_yields_nothing(self, repo):
         assert repo.list(feeds=["made-up"]) == []

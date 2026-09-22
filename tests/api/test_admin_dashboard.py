@@ -238,12 +238,10 @@ class TestUsageAndAudit:
                 "generated_tokens": 3,
                 "cost": 0.25,
                 "cached_tokens": None,
+                "cache_eligible_prompt_tokens": 0,
             }
         ]
         usage.sum_tokens_in_range.return_value = 8
-        usage.tokens_by_model.return_value = [
-            {"model_id": "gpt-x", "tokens": 8, "cost": 0.25}
-        ]
         stats = Mock()
         stats.top_token_users.return_value = [
             {"user_id": "a", "tokens": 8, "cost": 0.25}
@@ -280,9 +278,19 @@ class TestUsageAndAudit:
             data = _body(client.get("/api/admin/usage"))
         assert data["total_cost"] == 0.25
         assert data["series"][0]["cost"] == 0.25
-        assert data["by_model"][0]["model_id"] == "gpt-x"
         assert data["latency"]["p95_ms"] == 400
         assert data["top_users"][0]["cost"] == 0.25
+
+    def test_usage_does_not_run_an_aggregate_nothing_reads(self, client):
+        """Per-model spend is served by the per-user endpoint and by group_by."""
+        usage, stats = self._usage_repos()
+        with _admin(
+            TokenUsageRepository=Mock(return_value=usage),
+            AdminStatsRepository=Mock(return_value=stats),
+        ):
+            data = _body(client.get("/api/admin/usage"))
+        assert "by_model" not in data
+        usage.tokens_by_model.assert_not_called()
 
     def test_usage_group_by_reaches_the_repository(self, client):
         usage, stats = self._usage_repos()

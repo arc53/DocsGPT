@@ -76,6 +76,15 @@ def upgrade() -> None:
 
     # Backfilled every row above, so the NOT NULL is safe to assert now. New
     # rows always carry an actor (the repository derives one from ``user_id``).
+    #
+    # The DEFAULT is what makes this safe during a rolling deploy: a
+    # still-running previous-release process inserts (user_id, event, ip,
+    # user_agent, metadata) with no actor, and those inserts share the
+    # request's transaction in admin/routes.py -- a NotNullViolation there
+    # would 500 the deactivate or role grant and roll its write back with it.
+    # 'unknown' is the same sentinel ``record_event`` writes for an
+    # unauthenticated actor, so the column stays readable either way.
+    op.execute("ALTER TABLE auth_events ALTER COLUMN actor_id SET DEFAULT 'unknown';")
     op.execute("ALTER TABLE auth_events ALTER COLUMN actor_id SET NOT NULL;")
 
     op.execute(

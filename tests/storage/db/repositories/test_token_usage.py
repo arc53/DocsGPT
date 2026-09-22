@@ -301,6 +301,7 @@ class TestBucketedTotals:
                 "generated_tokens": 12,
                 "cost": 0.75,
                 "cached_tokens": None,
+                "cache_eligible_prompt_tokens": 0,
             },
             {
                 "bucket": "2026-04-11",
@@ -308,6 +309,7 @@ class TestBucketedTotals:
                 "generated_tokens": 1,
                 "cost": 0.0,
                 "cached_tokens": None,
+                "cache_eligible_prompt_tokens": 0,
             },
         ]
 

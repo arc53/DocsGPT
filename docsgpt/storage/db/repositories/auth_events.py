@@ -88,18 +88,44 @@ class AuthEventsRepository:
         )
         return row_to_dict(result.fetchone())
 
-    def list_recent(self, user_id: str, limit: int = 50) -> list[dict]:
-        """Return the newest events for ``user_id``, newest first."""
+    def list_recent(
+        self,
+        user_id: str,
+        limit: int = 50,
+        *,
+        exclude_events_like: Optional[Sequence[str]] = None,
+    ) -> list[dict]:
+        """Return the newest events for ``user_id``, newest first.
+
+        Args:
+            user_id: The subject whose trail to read.
+            limit: How many rows to return.
+            exclude_events_like: Event-name prefixes to drop, e.g.
+                ``("source.", "agent.")``. Data-plane events are filed under
+                the actor, so on an active account they would otherwise push
+                a denied login or a role grant out of a short window within
+                minutes.
+
+        Returns:
+            Matching rows, newest first.
+        """
+        clauses = ["user_id = :user_id"]
+        params: dict = {"user_id": user_id, "limit": limit}
+        for index, prefix in enumerate(exclude_events_like or ()):
+            key = f"excl_{index}"
+            clauses.append(f"event NOT LIKE :{key}")
+            params[key] = f"{prefix}%"
+        where = " AND ".join(clauses)
         result = self._conn.execute(
             text(
-                """
+                f"""
                 SELECT * FROM auth_events
-                WHERE user_id = :user_id
+                WHERE {where}
                 ORDER BY created_at DESC
                 LIMIT :limit
                 """
             ),
-            {"user_id": user_id, "limit": limit},
+            params,
         )
         return [row_to_dict(row) for row in result.fetchall()]
 
@@ -108,41 +134,18 @@ class AuthEventsRepository:
         event: Optional[str],
         user_id: Optional[str],
         since: Any,
-        *,
-        events: Optional[Sequence[str]] = None,
-        actor_id: Optional[str] = None,
-        until: Any = None,
-        search: Optional[str] = None,
     ) -> tuple[str, dict]:
         clauses: list[str] = []
         params: dict = {}
         if event:
             clauses.append("event = :event")
             params["event"] = event
-        if events:
-            clauses.append("event = ANY(:events)")
-            params["events"] = list(events)
         if user_id:
             clauses.append("(user_id = :user_id OR target_id = :user_id)")
             params["user_id"] = user_id
-        if actor_id:
-            clauses.append("actor_id = :actor_id")
-            params["actor_id"] = actor_id
         if since is not None:
             clauses.append("created_at >= :since")
             params["since"] = since
-        if until is not None:
-            clauses.append("created_at <= :until")
-            params["until"] = until
-        if search:
-            # Substring match across the human-meaningful columns plus the
-            # serialized metadata, so "ci-deploy-key" finds the PAT it named.
-            clauses.append(
-                "(user_id ILIKE :search OR actor_id ILIKE :search "
-                "OR target_id ILIKE :search OR event ILIKE :search "
-                "OR ip ILIKE :search OR metadata::text ILIKE :search)"
-            )
-            params["search"] = f"%{search}%"
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         return where, params
 
@@ -150,25 +153,18 @@ class AuthEventsRepository:
         self,
         *,
         event: Optional[str] = None,
-        events: Optional[Sequence[str]] = None,
         user_id: Optional[str] = None,
-        actor_id: Optional[str] = None,
         since=None,
-        until=None,
-        search: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict]:
-        """Global audit feed (admin), newest first; see :meth:`_filter_clauses`."""
-        where, params = self._filter_clauses(
-            event,
-            user_id,
-            since,
-            events=events,
-            actor_id=actor_id,
-            until=until,
-            search=search,
-        )
+        """Single-journal audit feed for ``GET /api/admin/audit``, newest first.
+
+        The admin UI reads the merged feed instead; richer filtering lives on
+        :class:`~docsgpt.storage.db.repositories.activity.ActivityRepository`
+        rather than being implemented twice here.
+        """
+        where, params = self._filter_clauses(event, user_id, since)
         params.update({"limit": int(limit), "offset": int(offset)})
         result = self._conn.execute(
             text(
@@ -183,37 +179,14 @@ class AuthEventsRepository:
         self,
         *,
         event: Optional[str] = None,
-        events: Optional[Sequence[str]] = None,
         user_id: Optional[str] = None,
-        actor_id: Optional[str] = None,
         since=None,
-        until=None,
-        search: Optional[str] = None,
     ) -> int:
         """Total matching the same filters as :meth:`list_all` (for pagination)."""
-        where, params = self._filter_clauses(
-            event,
-            user_id,
-            since,
-            events=events,
-            actor_id=actor_id,
-            until=until,
-            search=search,
-        )
+        where, params = self._filter_clauses(event, user_id, since)
         return int(
             self._conn.execute(
                 text(f"SELECT count(*) FROM auth_events {where}"), params
             ).scalar()
             or 0
         )
-
-    def event_names(self) -> list[str]:
-        """Distinct event names present in the table, alphabetically.
-
-        Feeds the admin filter's event picker, so operators pick from what the
-        instance actually recorded instead of typing a name from memory.
-        """
-        result = self._conn.execute(
-            text("SELECT DISTINCT event FROM auth_events ORDER BY event")
-        )
-        return [row[0] for row in result.fetchall()]

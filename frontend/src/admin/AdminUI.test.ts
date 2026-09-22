@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { categoryTone, eventLabel, eventTone, outcomeTone } from './AdminUI';
+import {
+  categoryTone,
+  eventLabel,
+  eventTone,
+  outcomeLabel,
+  outcomeTone,
+} from './AdminUI';
 
 describe('eventLabel', () => {
   it('humanizes the events it knows', () => {
@@ -57,16 +63,32 @@ describe('categoryTone', () => {
 });
 
 describe('outcomeTone', () => {
-  it('reads a block or a denial as dangerous', () => {
-    expect(outcomeTone('blocked')).toBe('danger');
-    expect(outcomeTone('denied')).toBe('danger');
+  // The values below are the only ones the writers produce: guardrails emit
+  // triggered/not_evaluated, the device feed emits dispatched.
+  it('flags a guardrail that fired', () => {
+    expect(outcomeTone('triggered')).toBe('danger');
   });
 
-  it('reads an allowed command as a success', () => {
-    expect(outcomeTone('allowed')).toBe('success');
+  it('leaves a check that never ran neutral', () => {
+    expect(outcomeTone('not_evaluated')).toBe('muted');
+  });
+
+  it('reads a dispatched device command as a success', () => {
+    expect(outcomeTone('dispatched')).toBe('success');
   });
 
   it('leaves an unfamiliar outcome muted', () => {
-    expect(outcomeTone('pending')).toBe('muted');
+    expect(outcomeTone('something-new')).toBe('muted');
+  });
+});
+
+describe('outcomeLabel', () => {
+  it('humanizes the values the journals write', () => {
+    expect(outcomeLabel('not_evaluated')).toBe('Not evaluated');
+    expect(outcomeLabel('dispatched')).toBe('Dispatched');
+  });
+
+  it('stays legible for an unknown value', () => {
+    expect(outcomeLabel('rate_limited')).toBe('Rate limited');
   });
 });

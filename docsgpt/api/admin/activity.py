@@ -43,23 +43,38 @@ _EXPORT_CHUNK = 1_000
 _MAX_SEARCH_LENGTH = 200
 
 
+class _InvalidFilter(ValueError):
+    """A filter argument the caller got wrong. Surfaces as a 400."""
+
+
 def _facet_list(name: str, allowed: tuple[str, ...]) -> Optional[list[str]]:
-    """Parse a repeated/comma-separated query arg, dropping unknown values.
+    """Parse a repeated/comma-separated query arg into known facet values.
+
+    Rejects unknown values rather than dropping them. Dropping would leave the
+    request with no filter on that facet, and "no filter" means *everything* --
+    so a typo or a stale chip would silently widen an audit view instead of
+    narrowing it, and on the export would stream the whole history.
 
     Args:
         name: Query parameter name.
-        allowed: The permitted values; anything else is ignored rather than
-            rejected, so an old bookmark degrades instead of erroring.
+        allowed: The permitted values.
 
     Returns:
-        The distinct valid values in the order given, or None when absent.
+        The distinct values in the order given, or None when absent.
+
+    Raises:
+        _InvalidFilter: If any supplied value is not in ``allowed``.
     """
     raw: list[str] = []
     for value in request.args.getlist(name):
-        raw.extend(part.strip() for part in value.split(","))
+        raw.extend(part.strip() for part in value.split(",") if part.strip())
     seen: list[str] = []
     for value in raw:
-        if value in allowed and value not in seen:
+        if value not in allowed:
+            raise _InvalidFilter(
+                f"Unknown {name}: {value!r}. Expected one of {', '.join(allowed)}."
+            )
+        if value not in seen:
             seen.append(value)
     return seen or None
 
@@ -76,14 +91,21 @@ def _event_list() -> Optional[list[str]]:
 
 
 def _time_arg(name: str) -> Optional[datetime]:
-    """Parse an ISO-8601 timestamp query arg, or None when absent/unparseable."""
+    """Parse an ISO-8601 timestamp query arg, or None when absent.
+
+    Raises:
+        _InvalidFilter: If present but unparseable. Silently ignoring it would
+            drop the time bound and return the full history.
+    """
     raw = (request.args.get(name) or "").strip()
     if not raw:
         return None
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    except ValueError as exc:
+        raise _InvalidFilter(
+            f"{name} must be an ISO-8601 timestamp, got {raw!r}."
+        ) from exc
     # A naive bound is read as UTC, matching how the feed stores timestamps.
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
@@ -122,7 +144,10 @@ class AdminActivityResource(Resource):
     def get(self):
         """Merged audit feed, newest first, with filters and a total."""
         page, page_size, offset = _page()
-        filters = _filters()
+        try:
+            filters = _filters()
+        except _InvalidFilter as exc:
+            return make_response(jsonify({"success": False, "message": str(exc)}), 400)
         with db_readonly() as conn:
             repo = ActivityRepository(conn)
             total = repo.count(**filters)
@@ -183,7 +208,10 @@ class AdminActivityExportResource(Resource):
                 jsonify({"success": False, "message": "Invalid format"}), 400
             )
         limit = max(1, min(_EXPORT_MAX_ROWS, _int_arg("max_rows", _EXPORT_MAX_ROWS)))
-        filters = _filters()
+        try:
+            filters = _filters()
+        except _InvalidFilter as exc:
+            return make_response(jsonify({"success": False, "message": str(exc)}), 400)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         generator = _csv_rows if fmt == "csv" else _ndjson_rows
         return Response(

@@ -25,6 +25,7 @@ import logging
 from typing import Any, Optional
 
 from flask import has_request_context, request
+from sqlalchemy import Connection
 
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def record_event(
-    conn,
+    conn: Connection,
     event: str,
     *,
     actor: Optional[str],
@@ -42,8 +43,9 @@ def record_event(
     """Append one audit event, best-effort, inside the caller's transaction.
 
     Args:
-        conn: Open database connection, inside the action's transaction so the
-            audit row commits atomically with the change it describes.
+        conn: Open SQLAlchemy ``Connection`` -- not a Session -- inside the
+            action's transaction, so the audit row commits atomically with the
+            change it describes and ``begin_nested`` gives it a real SAVEPOINT.
         event: Dotted event name (``source.deleted``, ``agent.created``).
         actor: Who performed the action; ``"unknown"`` when unauthenticated.
         target: The user acted upon, when the event is about a user. Data-plane
