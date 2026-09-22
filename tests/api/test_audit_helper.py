@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from docsgpt.api.audit import ACTIVITY_CATEGORIES, category_for, record_event
+from docsgpt.api.audit import record_event
+from docsgpt.audit_events import ACTIVITY_CATEGORIES, category_for
 
 
 @pytest.fixture

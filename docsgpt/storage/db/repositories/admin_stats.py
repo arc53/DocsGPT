@@ -14,6 +14,7 @@ from typing import Optional
 from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 
 
 def _round_ms(value) -> Optional[int]:
@@ -76,6 +77,10 @@ class AdminStatsRepository:
         Ordered by tokens, not cost: a cheap model can dominate token volume
         while a costly one dominates the bill, and the operator wants to see
         both columns rather than have the ranking pick for them.
+
+        Run-level rollup rows are excluded, matching every other spend query:
+        a scheduled run already has a row per LLM call, so counting the rollup
+        too would bill it twice.
         """
         result = self._conn.execute(
             text(
@@ -85,12 +90,17 @@ class AdminStatsRepository:
                        COALESCE(SUM(cost), 0) AS cost
                 FROM token_usage
                 WHERE timestamp >= :since AND user_id IS NOT NULL
+                  AND source <> ALL(:rollup_sources)
                 GROUP BY user_id
                 ORDER BY tokens DESC
                 LIMIT :limit
                 """
             ),
-            {"since": since, "limit": int(limit)},
+            {
+                "since": since,
+                "limit": int(limit),
+                "rollup_sources": list(TokenUsageRepository.ROLLUP_SOURCES),
+            },
         )
         return [
             {"user_id": r[0], "tokens": int(r[1]), "cost": float(r[2])}
@@ -140,6 +150,9 @@ class AdminStatsRepository:
         cannot answer either question an operator actually has -- what is this
         person costing, and what is driving it.
 
+        Run-level rollup rows are excluded, so a scheduled run is counted once
+        (by its per-call rows), not twice.
+
         Args:
             user_id: The billable user (auth ``sub``).
             since: Inclusive window start.
@@ -148,6 +161,7 @@ class AdminStatsRepository:
         Returns:
             ``{"totals": {...}, "by_model": [...], "by_source": [...]}``.
         """
+        rollups = list(TokenUsageRepository.ROLLUP_SOURCES)
         totals = self._conn.execute(
             text(
                 """
@@ -156,9 +170,10 @@ class AdminStatsRepository:
                        count(*) AS calls
                 FROM token_usage
                 WHERE user_id = :u AND timestamp >= :since
+                  AND source <> ALL(:rollup_sources)
                 """
             ),
-            {"u": user_id, "since": since},
+            {"u": user_id, "since": since, "rollup_sources": rollups},
         ).one()
 
         def _breakdown(key_expr: str) -> list[dict]:
@@ -170,12 +185,18 @@ class AdminStatsRepository:
                            COALESCE(SUM(cost), 0) AS cost
                     FROM token_usage
                     WHERE user_id = :u AND timestamp >= :since
+                      AND source <> ALL(:rollup_sources)
                     GROUP BY key
                     ORDER BY tokens DESC, key
                     LIMIT :limit
                     """
                 ),
-                {"u": user_id, "since": since, "limit": int(limit)},
+                {
+                    "u": user_id,
+                    "since": since,
+                    "limit": int(limit),
+                    "rollup_sources": rollups,
+                },
             )
             return [
                 {"key": r.key, "tokens": int(r.tokens), "cost": float(r.cost)}

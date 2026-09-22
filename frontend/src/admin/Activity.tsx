@@ -137,6 +137,18 @@ export default function Activity() {
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
 
+  /**
+   * Narrowing the feed invalidates whatever page you were on, so every filter
+   * setter resets it. Resetting in an effect instead would fetch the old page
+   * against the new filters first, then fetch again.
+   */
+  const withPageReset =
+    <T,>(set: (value: T) => void) =>
+    (value: T) => {
+      setPage(1);
+      set(value);
+    };
+
   const filters: ActivityFilters = useMemo(
     () => ({
       category: categories.length ? categories : undefined,
@@ -180,11 +192,6 @@ export default function Activity() {
     load();
   }, [load]);
 
-  // Any filter change invalidates the current page number.
-  useEffect(() => {
-    setPage(1);
-  }, [filters]);
-
   const exportAs = async (format: 'csv' | 'ndjson') => {
     setExporting(true);
     try {
@@ -225,7 +232,7 @@ export default function Activity() {
   const hasFilters =
     categories.length > 0 || events.length > 0 || search !== '';
 
-  const applySearch = () => setSearch(searchDraft.trim());
+  const applySearch = () => withPageReset(setSearch)(searchDraft.trim());
 
   return (
     <div className="mt-6">
@@ -241,14 +248,14 @@ export default function Activity() {
         <MultiSelect
           options={categoryOptions}
           selected={categories}
-          onChange={setCategories}
+          onChange={withPageReset(setCategories)}
           placeholder="All categories"
           className="w-48"
         />
         <MultiSelect
           options={eventOptions}
           selected={events}
-          onChange={setEvents}
+          onChange={withPageReset(setEvents)}
           placeholder="All events"
           searchPlaceholder="Find an event"
           className="w-56"
@@ -260,7 +267,7 @@ export default function Activity() {
               variant={range.days === rangeDays ? 'default' : 'outline'}
               size="sm"
               className="rounded-3xl"
-              onClick={() => setRangeDays(range.days)}
+              onClick={() => withPageReset(setRangeDays)(range.days)}
             >
               {range.label}
             </Button>
@@ -271,6 +278,7 @@ export default function Activity() {
             variant="ghost"
             size="sm"
             onClick={() => {
+              setPage(1);
               setCategories([]);
               setEvents([]);
               setSearchDraft('');

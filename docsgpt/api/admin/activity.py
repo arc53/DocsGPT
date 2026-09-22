@@ -43,7 +43,7 @@ _EXPORT_CHUNK = 1_000
 _MAX_SEARCH_LENGTH = 200
 
 
-def _csv_list(name: str, allowed: tuple[str, ...]) -> Optional[list[str]]:
+def _facet_list(name: str, allowed: tuple[str, ...]) -> Optional[list[str]]:
     """Parse a repeated/comma-separated query arg, dropping unknown values.
 
     Args:
@@ -96,8 +96,8 @@ def _search_arg() -> Optional[str]:
 def _filters() -> dict:
     """The filter set shared by the feed and the export."""
     return {
-        "feeds": _csv_list("feed", _FEEDS),
-        "categories": _csv_list("category", ACTIVITY_CATEGORIES),
+        "feeds": _facet_list("feed", _FEEDS),
+        "categories": _facet_list("category", ACTIVITY_CATEGORIES),
         "events": _event_list(),
         "actor_id": request.args.get("actor_id") or None,
         "user_id": request.args.get("user_id") or None,
@@ -216,7 +216,9 @@ def _csv_rows(filters: dict, limit: int) -> Iterator[str]:
     for row in _export_rows(filters, limit):
         serialized = _serialize(row)
         # ``detail`` is a JSON object; a CSV cell holds its compact encoding.
-        serialized["detail"] = json.dumps(serialized.get("detail") or {})
+        serialized["detail"] = json.dumps(
+            serialized.get("detail") or {}, default=str
+        )
         writer.writerow(serialized)
         yield _drain(buffer)
 

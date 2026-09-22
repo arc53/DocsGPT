@@ -397,10 +397,6 @@ class UploadFile(Resource):
             return make_response(jsonify({"success": False}), 400)
         # Predetermined id matches the dedup-claim row; loser GET sees same.
         response_task_id = predetermined_task_id or task.id
-        # ``source_uuid`` was minted above and passed to the worker as
-        # ``source_id``; the worker uses it verbatim for every SSE event,
-        # so the frontend can correlate inbound ``source.ingest.*`` to
-        # this upload regardless of whether an idempotency key was set.
         # Audited here, not in the worker: this is the user action. The
         # ingest may still fail, which the source's own status records.
         try:
@@ -416,9 +412,15 @@ class UploadFile(Resource):
                 )
         except Exception as err:
             current_app.logger.warning(
-                "Could not audit upload for source %s: %s", source_uuid, err,
+                "Could not audit upload for source %s: %s",
+                source_uuid,
+                err,
                 exc_info=True,
             )
+        # ``source_uuid`` was minted above and passed to the worker as
+        # ``source_id``; the worker uses it verbatim for every SSE event,
+        # so the frontend can correlate inbound ``source.ingest.*`` to
+        # this upload regardless of whether an idempotency key was set.
         response_payload: dict = {
             "success": True,
             "task_id": response_task_id,

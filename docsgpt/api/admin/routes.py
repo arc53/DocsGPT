@@ -359,7 +359,9 @@ class AdminUsageResource(Resource):
                     "group_by": group_by,
                     "series": series,
                     "total_tokens": int(total),
-                    "total_cost": round(sum(row["cost"] for row in by_model), 4),
+                    # Summed from the series, not from ``by_model``: the latter
+                    # drops rows with no model_id, so it would undercount.
+                    "total_cost": round(sum(row["cost"] for row in series), 4),
                     "by_model": by_model,
                     "latency": latency,
                     "top_users": top_users,

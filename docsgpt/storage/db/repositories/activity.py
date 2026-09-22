@@ -46,6 +46,10 @@ ACTIVITY_COLUMNS = (
 # the category filter cannot match it.
 _FEED_CATEGORIES = {"auth": None, "device": "device", "guardrail": "safety"}
 
+# ``feed`` and ``id`` break ties so a page boundary is deterministic and the
+# keyset cursor below has something total to compare against.
+_ORDER_BY = "ORDER BY created_at DESC, feed DESC, id DESC"
+
 _AUTH_BRANCH = f"""
     SELECT 'auth' AS feed,
            id::text AS id,
@@ -158,14 +162,14 @@ class ActivityRepository:
     def _query(
         self,
         *,
-        feeds: Optional[Sequence[str]],
-        categories: Optional[Sequence[str]],
-        events: Optional[Sequence[str]],
-        actor_id: Optional[str],
-        user_id: Optional[str],
-        since: Optional[datetime],
-        until: Optional[datetime],
-        search: Optional[str],
+        feeds: Optional[Sequence[str]] = None,
+        categories: Optional[Sequence[str]] = None,
+        events: Optional[Sequence[str]] = None,
+        actor_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+        search: Optional[str] = None,
     ) -> tuple[str, dict]:
         selected = self._feeds_for(feeds, categories)
         if not selected:
@@ -247,9 +251,31 @@ class ActivityRepository:
             return []
         params.update({"limit": int(limit), "offset": int(offset)})
         result = self._conn.execute(
-            text(f"{sql} ORDER BY created_at DESC, feed, id DESC LIMIT :limit OFFSET :offset"),
+            text(f"{sql} {_ORDER_BY} LIMIT :limit OFFSET :offset"),
             params,
         )
+        return [dict(row._mapping) for row in result.fetchall()]
+
+    def _page_after(
+        self, cursor: Optional[tuple], limit: int, filters: dict
+    ) -> list[dict]:
+        """One keyset page strictly older than ``cursor``.
+
+        OFFSET paging would drift here: the feed is ordered newest-first and
+        the journals are append-only, so rows inserted mid-export push the
+        window down and repeat rows that were already emitted.
+        """
+        sql, params = self._query(**filters)
+        if not sql:
+            return []
+        if cursor is not None:
+            sql += " AND " if "WHERE" in sql else " WHERE "
+            sql += "(created_at, feed, id) < (:cur_at, :cur_feed, :cur_id)"
+            params.update(
+                {"cur_at": cursor[0], "cur_feed": cursor[1], "cur_id": cursor[2]}
+            )
+        params["limit"] = int(limit)
+        result = self._conn.execute(text(f"{sql} {_ORDER_BY} LIMIT :limit"), params)
         return [dict(row._mapping) for row in result.fetchall()]
 
     def count(
@@ -291,8 +317,9 @@ class ActivityRepository:
     ) -> Iterator[dict]:
         """Yield every matching row, newest first, for the export endpoint.
 
-        Pages through the feed rather than materializing it, so an export of a
-        large instance streams instead of building the whole result in memory.
+        Pages by keyset, not offset: the journals are append-only and the feed
+        is newest-first, so rows written mid-export would otherwise shift the
+        window and repeat rows already emitted.
 
         Args:
             chunk_size: Rows fetched per round trip.
@@ -304,17 +331,18 @@ class ActivityRepository:
             Row dicts carrying :data:`ACTIVITY_COLUMNS`.
         """
         emitted = 0
-        offset = 0
+        cursor: Optional[tuple] = None
         while emitted < max_rows:
-            page = self.list(
-                limit=min(chunk_size, max_rows - emitted), offset=offset, **filters
+            page = self._page_after(
+                cursor, min(chunk_size, max_rows - emitted), filters
             )
             if not page:
                 return
             for row in page:
                 yield row
+            last = page[-1]
+            cursor = (last["created_at"], last["feed"], last["id"])
             emitted += len(page)
-            offset += len(page)
 
     def event_names(self) -> list[dict]:
         """Distinct ``(event, category)`` pairs across all three journals.

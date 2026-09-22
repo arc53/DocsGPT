@@ -14,6 +14,9 @@ Two properties matter and are enforced here rather than at every call site:
 2. **Request context is optional.** Celery tasks (ingestion finishing, a
    scheduled run) have no Flask request; the row simply records without an IP
    or user agent instead of raising.
+
+The event → category taxonomy the admin activity feed filters on lives in
+``docsgpt/audit_events.py``, which the storage layer needs too.
 """
 
 from __future__ import annotations
@@ -23,13 +26,9 @@ from typing import Any, Optional
 
 from flask import has_request_context, request
 
-from docsgpt.audit_events import ACTIVITY_CATEGORIES, category_for
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 
 logger = logging.getLogger(__name__)
-
-# Re-exported so route modules have one import for recording and classifying.
-__all__ = ["ACTIVITY_CATEGORIES", "category_for", "record_event"]
 
 
 def record_event(
