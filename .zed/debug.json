@@ -1,0 +1,44 @@
+// Debug configurations for the Zed editor (https://zed.dev/docs/debugger),
+// the counterparts of .vscode/launch.json. Start one with `debugger: start`.
+// Zed picks the interpreter from the checkout's `.venv`.
+[
+  {
+    "label": "API (uvicorn)",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "module": "uvicorn",
+    "args": ["docsgpt.asgi:asgi_app", "--host", "127.0.0.1", "--port", "7091"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "env": { "PYTHONPATH": "$ZED_WORKTREE_ROOT" },
+    "justMyCode": true
+  },
+  {
+    // The solo pool keeps tasks in the debugged process, so breakpoints hit.
+    "label": "Celery worker (solo pool)",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "module": "celery",
+    "args": ["-A", "docsgpt.app.celery", "worker", "-l", "INFO", "--pool=solo"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "env": { "PYTHONPATH": "$ZED_WORKTREE_ROOT" },
+    "justMyCode": true
+  },
+  {
+    "label": "pytest: this file",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "module": "pytest",
+    "args": ["--no-cov", "$ZED_RELATIVE_FILE"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "env": { "PYTHONPATH": "$ZED_WORKTREE_ROOT" },
+    "justMyCode": false
+  },
+  {
+    "label": "Python: this file",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "program": "$ZED_FILE",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "env": { "PYTHONPATH": "$ZED_WORKTREE_ROOT" }
+  }
+]

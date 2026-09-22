@@ -12,7 +12,7 @@ reproduces today's chunking byte-for-byte.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -90,6 +90,27 @@ class ChunkingConfig(BaseModel):
     duplicate_headers: bool = False
 
 
+class GraphRetrievalConfig(BaseModel):
+    """How the graph retriever walks a graphrag source (live; no re-ingest).
+
+    The defaults are the configuration that measured best across the corpora
+    tested rather than a neutral starting point: seed from entity matches, put
+    the passages in the walk, and blend with the source's own vector ranking.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Where the walk starts: entities whose descriptions match the question, or
+    # relationships ("A streams_to B") that do. Relationships can start the
+    # walk on an entity the question never names.
+    seed_strategy: Literal["entities", "relationships"] = "entities"
+    # Chunks join the walk as nodes, so a passage is reachable both by being
+    # about the question and by being connected to what is.
+    passage_nodes: bool = True
+    # Fuse the graph ranking with plain vector search by reciprocal rank.
+    blend_vector: bool = True
+
+
 class RetrievalConfig(BaseModel):
     """Query-time retrieval knobs (live; no re-ingest needed)."""
 
@@ -103,6 +124,7 @@ class RetrievalConfig(BaseModel):
     rrf_k: Optional[int] = None  # hybrid RRF constant override; None = RRF_K (60)
     reranker: Optional[dict] = None  # reserved: future cross-encoder/LLM reorder
     prescreen: Optional[dict] = None  # None = off; else PreScreenConfig dict (D12)
+    graph: GraphRetrievalConfig = GraphRetrievalConfig()  # graphrag retriever only
 
     @field_validator("chunks")
     @classmethod

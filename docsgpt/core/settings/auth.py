@@ -85,6 +85,30 @@ class AuthSettings(SettingsGroup):
         default=None, description="Bearer token for IdP SCIM clients (required when SCIM is enabled)."
     )
 
+    # Personal access tokens: scoped user-level API credentials for CLI and CI/CD use.
+    PAT_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "Master switch for personal access tokens. When false, no token can be created AND every existing "
+            "token stops authenticating immediately (pipelines using them get 401); tokens are kept and work "
+            "again when re-enabled. Tokens are only available under AUTH_TYPE=oidc or unset (None); switching "
+            "to simple_jwt or session_jwt disables them the same way."
+        ),
+    )
+    PAT_DEFAULT_LIFETIME_DAYS: int = Field(
+        default=90, gt=0, description="Lifetime of a personal access token created without an explicit expiry."
+    )
+    PAT_MAX_LIFETIME_DAYS: int = Field(
+        default=365, gt=0, description="Longest lifetime a user may request for a personal access token."
+    )
+    PAT_ALLOW_NON_EXPIRING: bool = Field(
+        default=False,
+        description="Let users create personal access tokens that never expire. Off by default.",
+    )
+    PAT_MAX_PER_USER: int = Field(
+        default=25, gt=0, description="Maximum number of live personal access tokens per user."
+    )
+
     @field_validator("AUTH_TYPE", mode="before")
     @classmethod
     def _normalize_auth_type(cls, v):
@@ -99,4 +123,6 @@ class AuthSettings(SettingsGroup):
                 raise ValueError(f"AUTH_TYPE=oidc requires settings: {', '.join(missing)}")
         if self.SCIM_ENABLED and not self.SCIM_TOKEN:
             raise ValueError("SCIM_ENABLED requires settings: SCIM_TOKEN")
+        if self.PAT_DEFAULT_LIFETIME_DAYS > self.PAT_MAX_LIFETIME_DAYS:
+            raise ValueError("PAT_DEFAULT_LIFETIME_DAYS must not exceed PAT_MAX_LIFETIME_DAYS")
         return self

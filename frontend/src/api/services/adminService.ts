@@ -10,6 +10,14 @@ const qs = (params: Record<string, string | number | undefined>): string => {
   return str ? `?${str}` : '';
 };
 
+export type QuotaScope = 'instance' | 'team' | 'user';
+
+const quotaUrl = (scope: QuotaScope, subjectId?: string | null): string => {
+  if (scope === 'team') return endpoints.ADMIN.QUOTA_TEAM(subjectId ?? '');
+  if (scope === 'user') return endpoints.ADMIN.QUOTA_USER(subjectId ?? '');
+  return endpoints.ADMIN.QUOTA_INSTANCE;
+};
+
 const adminService = {
   getOverview: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.ADMIN.OVERVIEW, token),
@@ -54,6 +62,23 @@ const adminService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.get(`${endpoints.ADMIN.DEVICE_AUDIT}${qs(params)}`, token),
+  getQuotas: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.QUOTAS, token),
+  getUserQuota: (userId: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.QUOTA_USER(userId), token),
+  setQuota: (
+    scope: QuotaScope,
+    subjectId: string | null,
+    policy: Record<string, unknown>,
+    token: string | null,
+  ): Promise<any> => apiClient.put(quotaUrl(scope, subjectId), policy, token),
+  deleteQuota: (
+    scope: QuotaScope,
+    subjectId: string | null,
+    bucket: string,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.delete(`${quotaUrl(scope, subjectId)}${qs({ bucket })}`, token),
 };
 
 export default adminService;

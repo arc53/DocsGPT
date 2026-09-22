@@ -195,6 +195,11 @@ docsgpt/static/
 node_modules/
 .vscode/settings.json
 .vscode/sftp.json
+# Zed: the shared project config is tracked, anything else under .zed/ is local
+.zed/*
+!.zed/settings.json
+!.zed/tasks.json
+!.zed/debug.json
 /models/
 model/
 

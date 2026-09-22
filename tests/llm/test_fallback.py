@@ -1015,6 +1015,38 @@ class TestLLMCreatorPassesModelUserId:
         assert captured["model_user_id"] == "owner-alice"
 
 
+    @pytest.mark.parametrize(
+        "model_id, source, expected",
+        [(None, None, False), ("catalog-model", "builtin", False), ("byom-uuid", "user", True)],
+    )
+    def test_byom_flag_follows_the_model_source(self, monkeypatch, model_id, source, expected):
+        from types import SimpleNamespace
+
+        from docsgpt.llm.llm_creator import LLMCreator
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+        class _LLM:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        monkeypatch.setattr(PROVIDERS_BY_NAME["openai"], "llm_class", _LLM)
+        model = SimpleNamespace(
+            source=source, api_key="own-key", base_url=None, upstream_model_id=None, capabilities=None
+        )
+        registry = SimpleNamespace(get_model=lambda _id, user_id=None: model)
+        monkeypatch.setattr(
+            "docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry
+        )
+
+        llm = LLMCreator.create_llm(
+            type="openai", api_key="k", user_api_key=None,
+            decoded_token={"sub": "u1"}, model_id=model_id,
+        )
+
+        assert llm._is_byom is expected
+        assert llm._canonical_model_id == model_id
+
+
 # Tests — responding-provider tracking (cross-provider fallback handler fix)
 
 

@@ -213,6 +213,28 @@ exclude = [
   "docsgpt/vectors/",
 ]
 
+# Shared by every editor's Python language server (pyright, basedpyright,
+# Pylance) and by `pyright` on the command line. Imports are rooted at the
+# checkout (`docsgpt.…`, `tests.…`), and the interpreter is the uv-managed
+# `.venv`. "standard" keeps basedpyright from defaulting to its much stricter
+# "recommended" mode; this is editor feedback, not a CI gate.
+[tool.pyright]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+extraPaths = ["."]
+typeCheckingMode = "standard"
+include = ["docsgpt", "application", "tests", "scripts"]
+exclude = [
+  "**/__pycache__",
+  "**/node_modules",
+  ".venv",
+  "docsgpt/static",
+  "docsgpt/indexes",
+  "docsgpt/inputs",
+  "docsgpt/vectors",
+]
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"

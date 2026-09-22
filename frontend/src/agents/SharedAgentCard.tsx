@@ -28,6 +28,8 @@ export default function SharedAgentCard({
         <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full p-1">
           <Avatar
             src={agent.image}
+            alt={agent.name}
+            className="h-full w-full"
             imgClassName="h-full w-full rounded-full object-contain"
           />
         </div>

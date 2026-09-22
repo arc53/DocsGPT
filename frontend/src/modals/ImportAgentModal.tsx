@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { agentEditPath } from '../agents/paths';
 import { ActiveState } from '../models/misc';
 import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
 
@@ -215,8 +216,8 @@ export default function ImportAgentModal({
       const agentId = data.agent_id as string;
       const editPath =
         data.agent_type === 'workflow'
-          ? `/agents/workflow/edit/${agentId}`
-          : `/agents/edit/${agentId}`;
+          ? agentEditPath(agentId, true)
+          : agentEditPath(agentId);
       if (data.warnings && data.warnings.length > 0) {
         // Keep the modal open so the user sees what was skipped.
         setGoToEditPath(editPath);

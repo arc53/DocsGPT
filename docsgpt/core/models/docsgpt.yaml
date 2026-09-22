@@ -7,3 +7,6 @@ models:
     supports_tools: true
     attachments: [image]
     context_window: 1048576
+    input_cost_per_million: 0.15
+    output_cost_per_million: 0.5
+    cached_input_cost_per_million: 0.03

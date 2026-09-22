@@ -5,12 +5,19 @@ only from ``request.decoded_token`` (already populated and role-resolved by the
 auth chokepoint in ``app.py``). Auth-mode-agnostic. ``email``/``name``/
 ``picture`` are OIDC-only and optional — they are echoed from the token and are
 never present for ``simple_jwt``/``session_jwt``/no-auth modes.
+
+``GET /api/user/quota`` returns the caller's usage against the limits an admin
+set for them, without naming the policies behind those limits.
 """
 
 from __future__ import annotations
 
 from flask import jsonify, make_response, request
 from flask_restx import Namespace, Resource
+
+from docsgpt.api.pat.tokens import is_pat
+from docsgpt.core.settings import settings
+from docsgpt.quotas.service import REQUEST_BUCKETS, QuotaService
 
 me_ns = Namespace("me", description="Current user identity and roles", path="/api")
 
@@ -31,4 +38,44 @@ class MeResource(Resource):
             value = decoded_token.get(field)
             if value:
                 body[field] = value
+        if is_pat(decoded_token):
+            # Lets a CLI or pipeline confirm what its token is allowed to do.
+            body["auth_method"] = "pat"
+            body["token"] = {
+                "id": decoded_token.get("pat_id"),
+                "name": decoded_token.get("pat_name"),
+                "scopes": decoded_token.get("scopes") or [],
+                "resource_filter": decoded_token.get("resource_filter") or {},
+            }
         return make_response(jsonify(body), 200)
+
+
+def _own_budget(budget: dict) -> dict:
+    return {"limit": budget["limit"], "used": budget["used"]}
+
+
+@me_ns.route("/user/quota")
+class MyQuotaResource(Resource):
+    def get(self):
+        """Return the caller's limited buckets: ``{bucket, tokens, cost, resets_at}`` each."""
+        decoded_token = getattr(request, "decoded_token", None)
+        user_id = decoded_token.get("sub") if decoded_token else None
+        if not user_id:
+            return make_response(jsonify({"success": False}), 401)
+        statuses = QuotaService.status(user_id, ("all", *REQUEST_BUCKETS))
+        buckets = []
+        for status in statuses:
+            if status.limits.unlimited:
+                continue
+            data = status.to_dict()
+            buckets.append(
+                {
+                    "bucket": data["bucket"],
+                    "tokens": _own_budget(data["tokens"]),
+                    "cost": _own_budget(data["cost"]),
+                    "resets_at": data["resets_at"],
+                }
+            )
+        return make_response(
+            jsonify({"success": True, "period": settings.QUOTA_PERIOD, "buckets": buckets}), 200
+        )

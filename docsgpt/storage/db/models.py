@@ -28,6 +28,7 @@ from sqlalchemy import (
     Index,
     Integer,
     MetaData,
+    Numeric,
     PrimaryKeyConstraint,
     UniqueConstraint,
     Table,
@@ -241,6 +242,9 @@ token_usage_table = Table(
     # cache activity, so hit-rate queries stay honest across providers.
     Column("cached_tokens", Integer),
     Column("cache_write_tokens", Integer),
+    # Added in ``0033_quotas``. USD cost of the call at write time; 0 for
+    # unpriced and bring-your-own models.
+    Column("cost", Numeric(12, 8), nullable=False, server_default="0"),
 )
 
 user_logs_table = Table(
@@ -1078,4 +1082,85 @@ device_auto_approve_patterns_table = Table(
     Column("pattern", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("device_id", "user_id", "pattern", name="device_auto_approve_uidx"),
+)
+
+# --- Personal access tokens (migration 0032) --------------------------------
+# Scoped user-level API credentials. Only the SHA-256 of the secret is stored.
+
+personal_access_tokens_table = Table(
+    "personal_access_tokens",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("token_hash", Text, nullable=False),
+    Column("token_prefix", Text, nullable=False),
+    Column("scopes", ARRAY(Text), nullable=False, server_default="{}"),
+    Column("resource_filter", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="active"),
+    Column("expires_at", DateTime(timezone=True)),
+    Column("last_used_at", DateTime(timezone=True)),
+    Column("last_used_ip", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("regenerated_at", DateTime(timezone=True)),
+    Column("revoked_at", DateTime(timezone=True)),
+    Column("revoke_reason", Text),
+    CheckConstraint("status IN ('active', 'revoked')", name="personal_access_tokens_status_check"),
+)
+
+Index(
+    "personal_access_tokens_hash_uidx",
+    personal_access_tokens_table.c.token_hash,
+    unique=True,
+)
+Index(
+    "personal_access_tokens_user_name_uidx",
+    personal_access_tokens_table.c.user_id,
+    personal_access_tokens_table.c.name,
+    unique=True,
+    postgresql_where=personal_access_tokens_table.c.status == "active",
+)
+Index(
+    "personal_access_tokens_user_idx",
+    personal_access_tokens_table.c.user_id,
+    personal_access_tokens_table.c.created_at.desc(),
+)
+
+# --- Usage quotas (migration 0033) ------------------------------------------
+# Admin-set limits at three layers: instance (``subject_id`` NULL), team
+# per-member allowance (``teams.id``) and user override (auth ``sub``). Per
+# budget a row sets a limit, marks it unlimited, or defers to the next layer.
+
+quota_policies_table = Table(
+    "quota_policies",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("scope", Text, nullable=False),
+    Column("subject_id", Text),
+    Column("bucket", Text, nullable=False, server_default="all"),
+    Column("token_limit", BigInteger),
+    Column("token_unlimited", Boolean, nullable=False, server_default="false"),
+    Column("cost_limit_usd", Numeric(12, 4)),
+    Column("cost_unlimited", Boolean, nullable=False, server_default="false"),
+    Column("enabled", Boolean, nullable=False, server_default="true"),
+    Column("note", Text),
+    Column("created_by", Text),
+    Column("updated_by", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint("scope IN ('instance', 'team', 'user')", name="quota_policies_scope_check"),
+    CheckConstraint("bucket IN ('all', 'direct', 'agent')", name="quota_policies_bucket_check"),
+    CheckConstraint("token_limit >= 0", name="quota_policies_token_limit_check"),
+    CheckConstraint("cost_limit_usd >= 0", name="quota_policies_cost_limit_check"),
+    CheckConstraint("(scope = 'instance') = (subject_id IS NULL)", name="quota_policies_subject_chk"),
+    CheckConstraint("NOT (token_unlimited AND token_limit IS NOT NULL)", name="quota_policies_token_chk"),
+    CheckConstraint("NOT (cost_unlimited AND cost_limit_usd IS NOT NULL)", name="quota_policies_cost_chk"),
+)
+
+Index(
+    "quota_policies_subject_uidx",
+    quota_policies_table.c.scope,
+    func.coalesce(quota_policies_table.c.subject_id, ""),
+    quota_policies_table.c.bucket,
+    unique=True,
 )

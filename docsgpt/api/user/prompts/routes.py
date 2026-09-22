@@ -5,6 +5,7 @@ from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from docsgpt.api import api
+from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.team_sharing import team_access_for, visible_with_access
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.prompts.composer import compose_preset, is_composed_preset
@@ -91,7 +92,8 @@ class GetPrompts(Resource):
         except Exception as err:
             current_app.logger.error(f"Error retrieving prompts: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(list_prompts), 200)
+        # Presets (default/creative/strict) have no row id and stay visible to a restricted token.
+        return make_response(jsonify(filter_listing(request, "prompts", list_prompts)), 200)
 
 
 @prompts_ns.route("/get_single_prompt")

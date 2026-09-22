@@ -779,6 +779,20 @@ class TestCollectStepSources:
 
         assert len(agent.citations.citations) == 2
 
+    def test_collects_pages_the_graph_tool_read(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        from docsgpt.agents.tools.graph_search import GRAPH_TOOL_ID
+
+        agent = ResearchAgent(**agent_base_params)
+        graph = Mock()
+        graph.retrieved_docs = [{"source": "s3", "title": "quill.md", "text": "Quill"}]
+        agent.tool_executor._loaded_tools[f"graph_search:{GRAPH_TOOL_ID}:{agent.user or ''}"] = graph
+
+        agent._collect_step_sources()
+
+        assert len(agent.citations.citations) == 1
+
     def test_no_tool_no_error(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
     ):

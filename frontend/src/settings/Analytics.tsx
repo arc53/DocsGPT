@@ -26,6 +26,7 @@ import { useDarkTheme, useLoaderState } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import { htmlLegendPlugin } from '../utils/chartUtils';
 import { formatDate } from '../utils/dateTimeUtils';
+import UsageQuota from './components/UsageQuota';
 
 /**
  * Resolve a CSS custom property on `:root` to a concrete color string.
@@ -377,6 +378,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
 
   return (
     <div className="mt-8">
+      {agentId ? null : <UsageQuota />}
       <div className="mb-5 flex flex-row flex-wrap items-center justify-between gap-3">
         <p className="text-muted-foreground text-sm leading-6">
           {t('settings.analytics.subtitle')}

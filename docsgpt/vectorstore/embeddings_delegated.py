@@ -10,8 +10,9 @@ Celery and the vector comes back. The API pays a broker round trip per query
 and no resident model.
 
 Inside a worker there is nothing to delegate to -- dispatching would queue work
-behind the task already running and wait on itself -- so a call made while a
-task is executing runs locally, on a model this process loads once and caches.
+behind the task already running and wait on itself -- so a call made anywhere in
+a worker process, including from a thread a task started, runs locally, on a
+model this process loads once and caches.
 ``DOCUMENT_PARSE_QUEUE`` exists for the same reason on the parsing side.
 
 Production deployments should point ``EMBEDDINGS_BASE_URL`` at a real embedding
@@ -79,11 +80,11 @@ def _forget(result) -> None:
 
 
 def _in_worker() -> bool:
-    """True when a Celery task is executing in this process."""
+    """True anywhere in a Celery worker process -- on any thread, not only the task's."""
     try:
-        from docsgpt.celery_init import celery
+        from docsgpt.celery_init import in_worker
 
-        return celery.current_worker_task is not None
+        return in_worker()
     except Exception:
         return False
 

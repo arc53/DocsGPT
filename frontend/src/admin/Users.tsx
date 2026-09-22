@@ -1,5 +1,6 @@
 import {
   Eye,
+  Gauge,
   LogOut,
   ShieldCheck,
   ShieldOff,
@@ -40,6 +41,7 @@ import {
   fmtNumber,
   fmtRelative,
 } from './AdminUI';
+import UserQuotaModal from './UserQuotaModal';
 
 type AdminUser = {
   user_id: string;
@@ -70,6 +72,7 @@ export default function Users() {
   const [busy, setBusy] = useState<string | null>(null);
   const [menuUserId, setMenuUserId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
+  const [quotaUserId, setQuotaUserId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{
     ok: boolean;
     message: string;
@@ -157,7 +160,14 @@ export default function Users() {
     isAdmin: boolean,
     active: boolean,
   ): Action[] => {
-    const acts: Action[] = [];
+    const acts: Action[] = [
+      {
+        key: 'quota',
+        label: 'Quota',
+        icon: Gauge,
+        perform: () => setQuotaUserId(userId),
+      },
+    ];
     if (isAdmin) {
       acts.push({
         key: 'revoke',
@@ -432,6 +442,11 @@ export default function Users() {
           }}
         />
       ) : null}
+
+      <UserQuotaModal
+        userId={quotaUserId}
+        onClose={() => setQuotaUserId(null)}
+      />
 
       <Modal
         open={detail !== null}

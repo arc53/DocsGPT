@@ -822,3 +822,72 @@ def test_api_tool_without_actions_imports_with_warning(pg_conn, monkeypatch):
     agent = AgentsRepository(pg_conn).get(result["agent_id"], user)
     row = UserToolsRepository(pg_conn).get_any(agent["tools"][0], user)
     assert row["config"]["actions"] == {}
+
+
+# --- resource-restricted personal access tokens ------------------------------
+
+
+def _pat_request(app, resource_filter):
+    from flask import request
+
+    ctx = app.test_request_context("/api/import_agent", method="POST")
+    ctx.push()
+    request.decoded_token = {
+        "sub": "u_pat_import",
+        "auth_method": "pat",
+        "scopes": ["agents:read", "agents:write"],
+        "resource_filter": resource_filter,
+    }
+    return ctx
+
+
+@pytest.fixture
+def flask_ctx_app():
+    from flask import Flask
+
+    return Flask(__name__)
+
+
+def test_restricted_token_may_update_only_its_agents(pg_conn, flask_ctx_app):
+    from docsgpt.api.user.agents.portability import _restricted_token_denial
+
+    user = "u_pat_import"
+    allowed = _make_agent(pg_conn, user, slug="allowed")
+    other = _make_agent(pg_conn, user, slug="other")
+
+    ctx = _pat_request(flask_ctx_app, {"agents": [str(allowed["id"])]})
+    try:
+        assert _restricted_token_denial(pg_conn, user, _doc(_slug="allowed")) is None
+        assert "only update" in _restricted_token_denial(pg_conn, user, _doc(_slug="other"))
+        assert "only update" in _restricted_token_denial(
+            pg_conn, user, {"metadata": {"id": str(other["id"])}}
+        )
+        # A slug that matches nothing would create a new agent: never for a restricted token.
+        assert "only update" in _restricted_token_denial(pg_conn, user, _doc(_slug="brand-new"))
+    finally:
+        ctx.pop()
+
+
+@pytest.mark.parametrize("family", ["sources", "prompts", "tools", "workflows"])
+def test_token_restricted_on_referenced_families_cannot_import(pg_conn, flask_ctx_app, family):
+    from docsgpt.api.user.agents.portability import _restricted_token_denial
+
+    ctx = _pat_request(flask_ctx_app, {family: ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]})
+    try:
+        assert family in _restricted_token_denial(pg_conn, "u_pat_import", _doc())
+    finally:
+        ctx.pop()
+
+
+def test_unrestricted_token_and_sessions_import_freely(pg_conn, flask_ctx_app):
+    from flask import request
+
+    from docsgpt.api.user.agents.portability import _restricted_token_denial
+
+    ctx = _pat_request(flask_ctx_app, {})
+    try:
+        assert _restricted_token_denial(pg_conn, "u_pat_import", _doc()) is None
+        request.decoded_token = {"sub": "u_pat_import"}
+        assert _restricted_token_denial(pg_conn, "u_pat_import", _doc()) is None
+    finally:
+        ctx.pop()

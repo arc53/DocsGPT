@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutGrid,
   Menu,
@@ -12,6 +12,11 @@ import {
   Settings as SettingsIcon,
 } from 'lucide-react';
 
+import {
+  AGENTS_MANAGE_ROOT,
+  agentChatPath,
+  sharedAgentPath,
+} from './agents/paths';
 import { Agent } from './agents/types';
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
@@ -34,15 +39,28 @@ import {
 import ConversationTile from './conversation/ConversationTile';
 import { useMediaQuery } from './hooks';
 import useTokenAuth from './hooks/useTokenAuth';
+import { cn } from './lib/utils';
 import ConfirmationModal from './modals/ConfirmationModal';
 import JWTModal from './modals/JWTModal';
 import SearchConversationsModal from './modals/SearchConversationsModal';
 import { ActiveState } from './models/misc';
 import { getConversations } from './preferences/preferenceApi';
+import SectionNav from './navigation/SectionNav';
+import SectionRail from './navigation/SectionRail';
+import SidebarLevel from './navigation/SidebarLevel';
+import {
+  getActiveItem,
+  getSectionForPath,
+  type Section,
+} from './navigation/sections';
+import { useSidebarLevel } from './navigation/SidebarLevelProvider';
+import { useSectionContext } from './navigation/useSectionContext';
+import { useLastAppPath } from './navigation/useLastAppPath';
 import {
   selectAgents,
   selectConversationId,
   selectConversations,
+  selectIsAdmin,
   selectModalStateDeleteConv,
   selectSelectedAgent,
   selectSharedAgents,
@@ -76,9 +94,67 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const agents = useSelector(selectAgents);
   const sharedAgents = useSelector(selectSharedAgents);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const isAdmin = useSelector(selectIsAdmin);
 
   const { isMobile, isTablet } = useMediaQuery();
   const { showTokenModal, handleTokenSubmit } = useTokenAuth();
+
+  // Section state is derived from the route, so deep links and the browser
+  // back button keep working without a second source of truth.
+  const { section: routeSection, item: routeSectionItem } = useSectionContext();
+  const { pending, goToLevel } = useSidebarLevel();
+
+  // While a level change is in flight the sidebar runs ahead of the route,
+  // so it can start moving on the click rather than on the commit.
+  const activeSection = pending ? pending.section : routeSection;
+  const activeSectionItem =
+    pending && pending.section
+      ? getActiveItem(pending.section, pending.pathname)
+      : pending
+        ? null
+        : routeSectionItem;
+  const lastAppPath = useLastAppPath();
+  const inSection = Boolean(activeSection);
+
+  // The sidebar is a stack: chats, a section, and a record inside it. A
+  // section that declares a parent sits on the third level, above its
+  // parent's nav.
+  const nestedSection = activeSection?.parentPath ? activeSection : null;
+  const topSection = nestedSection
+    ? getSectionForPath(nestedSection.parentPath ?? '')
+    : activeSection;
+  const sidebarDepth = nestedSection ? 2 : activeSection ? 1 : 0;
+
+  // Panels stay mounted after being left so they have something to animate
+  // out, and so the one behind is already there to be revealed on the way
+  // back. They park off screen, so the cost is a subtree nobody can see.
+  const lastTopSection = useRef<Section | null>(null);
+  const lastNestedSection = useRef<Section | null>(null);
+  if (topSection) lastTopSection.current = topSection;
+  if (nestedSection) lastNestedSection.current = nestedSection;
+  const topPanel = topSection ?? lastTopSection.current;
+  const nestedPanel = nestedSection ?? lastNestedSection.current;
+
+  // Back means "up one level": out of an agent lands on the agent list, out
+  // of a top-level section lands back in the app.
+  const backLabelFor = (section: Section) =>
+    section.parentLabelKey
+      ? t(section.parentLabelKey)
+      : t('navigation.backToApp');
+
+  const exitSectionFrom = (section: Section | null) => () => {
+    if (isMobile || isTablet) setNavOpen(false);
+    goToLevel(section?.parentPath ?? lastAppPath.current ?? '/');
+  };
+
+  const exitSection = exitSectionFrom(activeSection);
+  const backLabel = activeSection
+    ? backLabelFor(activeSection)
+    : t('navigation.backToApp');
+
+  const closeNavOnMobile = () => {
+    if (isMobile || isTablet) setNavOpen(false);
+  };
 
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [uploadModalState, setUploadModalState] =
@@ -200,7 +276,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     resetConversation();
     dispatch(setSelectedAgent(agent));
     if (isMobile || isTablet) setNavOpen(!navOpen);
-    navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
+    navigate(agent.id ? agentChatPath(agent.id) : '/c/new');
   };
 
   const handleTogglePin = (agent: Agent) => {
@@ -247,7 +323,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           return;
         }
         agent = await sharedResponse.json();
-        navigate(`/agents/shared/${agent.shared_token}`);
+        navigate(sharedAgentPath(agent.shared_token));
       } else {
         const agentResponse = await userService.getAgent(data.agent_id, token);
         if (!agentResponse.ok) {
@@ -256,10 +332,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         }
         agent = await agentResponse.json();
         if (agent.shared_token) {
-          navigate(`/agents/shared/${agent.shared_token}`);
+          navigate(sharedAgentPath(agent.shared_token));
         } else {
           await Promise.resolve(dispatch(setSelectedAgent(agent)));
-          navigate(`/agents/${data.agent_id}/c/${index}`);
+          navigate(agentChatPath(data.agent_id, index));
         }
       }
     } catch (error) {
@@ -320,7 +396,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       {!navOpen && !isMobile && !isTablet && (
         <div
           ref={navRef}
-          className="bg-sidebar border-border fixed top-0 left-0 z-10 hidden h-full w-14 flex-col items-center gap-2 border-r py-3 lg:flex">
+          className="bg-sidebar border-border scrollbar-overlay fixed top-0 left-0 z-10 hidden h-full w-14 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto border-r py-3 lg:flex"
+        >
           <Button
             type="button"
             variant="ghost"
@@ -331,64 +408,74 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           >
             <PanelLeftOpen className="size-5" strokeWidth={1.75} />
           </Button>
-          {queries?.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => newChat()}
-              aria-label="Start new chat"
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Plus className="size-5" strokeWidth={1.75} />
-            </Button>
+          {activeSection ? (
+            <SectionRail
+              section={activeSection}
+              activeItemKey={activeSectionItem?.key}
+              isAdmin={isAdmin}
+              onBack={exitSection}
+              backLabel={backLabel}
+            />
+          ) : (
+            <>
+              {queries?.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => newChat()}
+                  aria-label="Start new chat"
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <Plus className="size-5" strokeWidth={1.75} />
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  dispatch(setSelectedAgent(null));
+                  goToLevel(AGENTS_MANAGE_ROOT);
+                }}
+                aria-label={t('manageAgents')}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <LayoutGrid className="size-5" strokeWidth={1.75} />
+              </Button>
+              {conversations?.data && conversations.data.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSearchOpen(true)}
+                  aria-label={t('modals.searchConversations.searchPlaceholder')}
+                  title={t('modals.searchConversations.searchPlaceholder')}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <SearchIcon className="size-5" strokeWidth={1.75} />
+                </Button>
+              )}
+              <div className="mt-auto flex flex-col items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => goToLevel('/settings')}
+                  aria-label={t('settings.label')}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <SettingsIcon className="size-5" strokeWidth={1.75} />
+                </Button>
+              </div>
+            </>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              dispatch(setSelectedAgent(null));
-              navigate('/agents');
-            }}
-            aria-label={t('manageAgents')}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <LayoutGrid className="size-5" strokeWidth={1.75} />
-          </Button>
-          {conversations?.data && conversations.data.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => setSearchOpen(true)}
-              aria-label={t('modals.searchConversations.searchPlaceholder')}
-              title={t('modals.searchConversations.searchPlaceholder')}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <SearchIcon className="size-5" strokeWidth={1.75} />
-            </Button>
-          )}
-          <div className="mt-auto flex flex-col items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                resetConversation();
-                navigate('/settings');
-              }}
-              aria-label={t('settings.label')}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <SettingsIcon className="size-5" strokeWidth={1.75} />
-            </Button>
-          </div>
         </div>
       )}
       <div
-        className={`${!navOpen && '-ml-96 md:-ml-72'
-          } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
+        className={`${
+          !navOpen && '-ml-96 md:-ml-72'
+        } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
       >
         <div
           className={
@@ -427,205 +514,264 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             )}
           </Button>
         </div>
-        <NavLink
-          to={'/c/new'}
-          onClick={() => {
-            if (isMobile || isTablet) {
-              setNavOpen(!navOpen);
-            }
-            resetConversation();
-          }}
-          className={({ isActive }) =>
-            `${isActive ? 'bg-transparent' : ''
-            } group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
-          }
-        >
-          <Plus
-            className="text-muted-foreground group-hover:text-foreground size-5 shrink-0"
-            strokeWidth={1.75}
-            aria-label="Create new chat"
-          />
-          <p className="text-muted-foreground group-hover:text-foreground text-sm">
-            {t('newChat')}
-          </p>
-        </NavLink>
-        <div
-          id="conversationsMainDiv"
-          className="scrollbar-overlay mb-auto h-[78vh] overflow-x-hidden overflow-y-auto dark:text-white"
-        >
-          {conversations?.loading && !isDeletingConversation && (
-            <div
-              className="text-foreground absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform dark:text-white"
-              role="status"
-              aria-label="Loading conversations"
+        {/* The chat list and the section nav swap places here. Both stay
+            mounted so the conversation list keeps its scroll position while
+            the user is away in a section. */}
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          <SidebarLevel depth={0} current={sidebarDepth}>
+            <NavLink
+              to={'/c/new'}
+              onClick={() => {
+                if (isMobile || isTablet) {
+                  setNavOpen(!navOpen);
+                }
+                resetConversation();
+              }}
+              className={({ isActive }) =>
+                `${
+                  isActive ? 'bg-transparent' : ''
+                } group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
+              }
             >
-              <Spinner size="small" />
-            </div>
-          )}
-          {recentAgents?.length > 0 ? (
-            <div>
-              <div className="mx-4 my-auto mt-2 flex h-6 items-center">
-                <p className="mt-1 ml-4 text-sm font-semibold">
-                  {t('navigation.agents')}
-                </p>
-              </div>
-              <div className="agents-container">
-                <div>
-                  {recentAgents.map((agent, idx) => (
-                    <div
-                      key={idx}
-                      className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${agent.id === selectedAgent?.id && !conversationId
-                          ? 'bg-sidebar-accent'
-                          : ''
-                        }`}
-                      onClick={() => handleAgentClick(agent)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="flex w-6 justify-center">
-                          <Avatar
-                            src={agent.image}
-                            alt="agent-logo"
-                            imgClassName="h-6 w-6 rounded-full object-contain"
-                          />
-                        </div>
-                        <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
-                          {agent.name}
-                        </p>
-                      </div>
-                      <div
-                        className={`${isMobile || isTablet ? 'flex' : 'invisible flex group-hover:visible'} items-center px-3`}
-                      >
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          className="h-auto w-auto rounded-full p-0 hover:bg-transparent hover:opacity-75"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleTogglePin(agent);
-                          }}
-                          aria-label={
-                            agent.pinned ? 'Unpin agent' : 'Pin agent'
-                          }
-                        >
-                          <img
-                            src={agent.pinned ? UnPin : Pin}
-                            className="h-4 w-4"
-                          ></img>
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+              <Plus
+                className="text-muted-foreground group-hover:text-foreground size-5 shrink-0"
+                strokeWidth={1.75}
+                aria-label="Create new chat"
+              />
+              <p className="text-muted-foreground group-hover:text-foreground text-sm">
+                {t('newChat')}
+              </p>
+            </NavLink>
+            <div
+              id="conversationsMainDiv"
+              className="scrollbar-overlay min-h-0 flex-1 overflow-x-hidden overflow-y-auto dark:text-white"
+            >
+              {conversations?.loading && !isDeletingConversation && (
+                <div
+                  className="text-foreground absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform dark:text-white"
+                  role="status"
+                  aria-label="Loading conversations"
+                >
+                  <Spinner size="small" />
                 </div>
+              )}
+              {recentAgents?.length > 0 ? (
+                <div>
+                  <div className="mx-4 my-auto mt-2 flex h-6 items-center">
+                    <p className="mt-1 ml-4 text-sm font-semibold">
+                      {t('navigation.agents')}
+                    </p>
+                  </div>
+                  <div className="agents-container">
+                    <div>
+                      {recentAgents.map((agent, idx) => (
+                        <div
+                          key={idx}
+                          className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${
+                            agent.id === selectedAgent?.id && !conversationId
+                              ? 'bg-sidebar-accent'
+                              : ''
+                          }`}
+                          onClick={() => handleAgentClick(agent)}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="flex w-6 justify-center">
+                              <Avatar
+                                src={agent.image}
+                                alt="agent-logo"
+                                imgClassName="h-6 w-6 rounded-full object-contain"
+                              />
+                            </div>
+                            <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+                              {agent.name}
+                            </p>
+                          </div>
+                          <div
+                            className={`${isMobile || isTablet ? 'flex' : 'invisible flex group-hover:visible'} items-center px-3`}
+                          >
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="h-auto w-auto rounded-full p-0 hover:bg-transparent hover:opacity-75"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTogglePin(agent);
+                              }}
+                              aria-label={
+                                agent.pinned ? 'Unpin agent' : 'Pin agent'
+                              }
+                            >
+                              <img
+                                src={agent.pinned ? UnPin : Pin}
+                                className="h-4 w-4"
+                              ></img>
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <NavLink
+                      to={AGENTS_MANAGE_ROOT}
+                      end
+                      onClick={(event) => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey)
+                          return;
+                        event.preventDefault();
+                        dispatch(setSelectedAgent(null));
+                        closeNavOnMobile();
+                        goToLevel(AGENTS_MANAGE_ROOT);
+                      }}
+                      className={({ isActive }) =>
+                        `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 ${
+                          isActive ? 'bg-sidebar-accent' : ''
+                        }`
+                      }
+                    >
+                      <div className="flex w-6 justify-center">
+                        <LayoutGrid
+                          className="text-muted-foreground size-5"
+                          strokeWidth={1.75}
+                          aria-label="manage-agents"
+                        />
+                      </div>
+                      <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+                        {t('manageAgents')}
+                      </p>
+                    </NavLink>
+                  </div>
+                </div>
+              ) : (
                 <NavLink
-                  to="/agents"
+                  to={AGENTS_MANAGE_ROOT}
                   end
-                  onClick={() => {
+                  onClick={(event) => {
+                    if (event.metaKey || event.ctrlKey || event.shiftKey)
+                      return;
+                    event.preventDefault();
+                    closeNavOnMobile();
                     dispatch(setSelectedAgent(null));
-                    if (isMobile || isTablet) {
-                      setNavOpen(false);
-                    }
+                    goToLevel(AGENTS_MANAGE_ROOT);
                   }}
                   className={({ isActive }) =>
-                    `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 ${isActive ? 'bg-sidebar-accent' : ''
+                    `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${
+                      isActive ? 'bg-sidebar-accent' : ''
                     }`
                   }
                 >
-                  <div className="flex w-6 justify-center">
-                    <LayoutGrid
-                      className="text-muted-foreground size-5"
-                      strokeWidth={1.75}
-                      aria-label="manage-agents"
-                    />
-                  </div>
+                  <LayoutGrid
+                    className="text-muted-foreground size-5 shrink-0"
+                    strokeWidth={1.75}
+                    aria-label="manage-agents"
+                  />
                   <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                     {t('manageAgents')}
                   </p>
                 </NavLink>
-              </div>
+              )}
+              {conversations?.data && conversations.data.length > 0 ? (
+                <div className="mt-7">
+                  <div className="my-auto mt-2 ml-2.75 flex h-9 items-center justify-between gap-4 rounded-3xl p-1">
+                    <p className="mt-1 ml-4 text-sm font-semibold">
+                      {t('chats')}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setSearchOpen(true)}
+                      className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent mr-1 rounded-full"
+                      aria-label={t(
+                        'modals.searchConversations.searchPlaceholder',
+                      )}
+                      title={t('modals.searchConversations.searchPlaceholder')}
+                    >
+                      <SearchIcon
+                        className="size-5"
+                        strokeWidth={1.75}
+                        aria-label="search"
+                      />
+                    </Button>
+                  </div>
+                  <div className="conversations-container">
+                    {(conversations.data ?? []).map((conversation) => (
+                      <ConversationTile
+                        key={conversation.id}
+                        conversation={conversation}
+                        selectConversation={(id) => handleConversationClick(id)}
+                        onConversationClick={() => {
+                          if (isMobile) {
+                            setNavOpen(false);
+                          }
+                        }}
+                        onDeleteConversation={(id) =>
+                          handleDeleteConversation(id)
+                        }
+                        onSave={(conversation) =>
+                          updateConversationName(conversation)
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <></>
+              )}
             </div>
-          ) : (
-            <NavLink
-              to="/agents"
-              end
-              onClick={() => {
-                if (isMobile || isTablet) {
-                  setNavOpen(false);
+          </SidebarLevel>
+          <SidebarLevel depth={1} current={sidebarDepth}>
+            {topPanel && (
+              <SectionNav
+                section={topPanel}
+                activeItemKey={
+                  topPanel === activeSection
+                    ? activeSectionItem?.key
+                    : undefined
                 }
-                dispatch(setSelectedAgent(null));
-              }}
-              className={({ isActive }) =>
-                `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${isActive ? 'bg-sidebar-accent' : ''
-                }`
-              }
-            >
-              <LayoutGrid
-                className="text-muted-foreground size-5 shrink-0"
-                strokeWidth={1.75}
-                aria-label="manage-agents"
+                isAdmin={isAdmin}
+                onBack={exitSectionFrom(topPanel)}
+                backLabel={backLabelFor(topPanel)}
+                onNavigate={closeNavOnMobile}
               />
-              <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
-                {t('manageAgents')}
-              </p>
-            </NavLink>
-          )}
-          {conversations?.data && conversations.data.length > 0 ? (
-            <div className="mt-7">
-              <div className="my-auto mt-2 ml-2.75 p-1 flex h-9 items-center justify-between gap-4 rounded-3xl">
-                <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSearchOpen(true)}
-                  className="mr-1 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent rounded-full"
-                  aria-label={t('modals.searchConversations.searchPlaceholder')}
-                  title={t('modals.searchConversations.searchPlaceholder')}
-                >
-                  <SearchIcon
-                    className="size-5"
-                    strokeWidth={1.75}
-                    aria-label="search"
-                  />
-                </Button>
-              </div>
-              <div className="conversations-container">
-                {(conversations.data ?? []).map((conversation) => (
-                  <ConversationTile
-                    key={conversation.id}
-                    conversation={conversation}
-                    selectConversation={(id) => handleConversationClick(id)}
-                    onConversationClick={() => {
-                      if (isMobile) {
-                        setNavOpen(false);
-                      }
-                    }}
-                    onDeleteConversation={(id) => handleDeleteConversation(id)}
-                    onSave={(conversation) =>
-                      updateConversationName(conversation)
-                    }
-                  />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <></>
-          )}
-        </div>
-        <div className="text-foreground flex h-auto flex-col justify-end dark:text-white">
-          <div className="dark:border-b-sidebar-border flex flex-col gap-2 border-b py-2">
-            <NavLink
-              onClick={() => {
-                if (isMobile || isTablet) {
-                  setNavOpen(false);
+            )}
+          </SidebarLevel>
+          <SidebarLevel depth={2} current={sidebarDepth}>
+            {nestedPanel && (
+              <SectionNav
+                section={nestedPanel}
+                activeItemKey={
+                  nestedPanel === activeSection
+                    ? activeSectionItem?.key
+                    : undefined
                 }
-                resetConversation();
-              }}
+                isAdmin={isAdmin}
+                onBack={exitSectionFrom(nestedPanel)}
+                backLabel={backLabelFor(nestedPanel)}
+                onNavigate={closeNavOnMobile}
+              />
+            )}
+          </SidebarLevel>
+        </div>
+        <div className="text-foreground flex h-auto shrink-0 flex-col justify-end dark:text-white">
+          {/* Inside a section its own nav is the way around, so this entry
+              would only duplicate what is already on screen. Entering settings
+              no longer clears the conversation either, so the section's back
+              button can return to it. */}
+          <div
+            className={cn(
+              'dark:border-b-sidebar-border flex flex-col gap-2 border-b py-2',
+              inSection && 'hidden',
+            )}
+          >
+            <Link
               to="/settings"
-              className={({ isActive }) =>
-                `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${isActive ? 'bg-sidebar-accent' : ''
-                }`
-              }
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                event.preventDefault();
+                closeNavOnMobile();
+                goToLevel('/settings');
+              }}
+              className="hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3"
             >
               <SettingsIcon
                 className="text-muted-foreground size-5 shrink-0"
@@ -635,7 +781,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <p className="text-foreground text-sm dark:text-white">
                 {t('settings.label')}
               </p>
-            </NavLink>
+            </Link>
           </div>
           <div className="text-foreground flex flex-col justify-end dark:text-white">
             <div className="flex items-center justify-between py-1">
@@ -698,7 +844,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           >
             <Menu className="size-5" strokeWidth={1.75} />
           </Button>
-
         </div>
       </div>
       <ConfirmationModal

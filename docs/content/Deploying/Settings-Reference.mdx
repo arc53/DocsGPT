@@ -132,6 +132,36 @@ Type `str`, default unset.
 
 Bearer token for IdP SCIM clients (required when SCIM is enabled).
 
+### `PAT_ENABLED`
+
+Type `bool`, default `true`.
+
+Master switch for personal access tokens. When false, no token can be created AND every existing token stops authenticating immediately (pipelines using them get 401); tokens are kept and work again when re-enabled. Tokens are only available under AUTH_TYPE=oidc or unset (None); switching to simple_jwt or session_jwt disables them the same way.
+
+### `PAT_DEFAULT_LIFETIME_DAYS`
+
+Type `int`, default `90`, must be `> 0`.
+
+Lifetime of a personal access token created without an explicit expiry.
+
+### `PAT_MAX_LIFETIME_DAYS`
+
+Type `int`, default `365`, must be `> 0`.
+
+Longest lifetime a user may request for a personal access token.
+
+### `PAT_ALLOW_NON_EXPIRING`
+
+Type `bool`, default `false`.
+
+Let users create personal access tokens that never expire. Off by default.
+
+### `PAT_MAX_PER_USER`
+
+Type `int`, default `25`, must be `> 0`.
+
+Maximum number of live personal access tokens per user.
+
 
 ## LLM providers
 
@@ -446,6 +476,12 @@ Model for ingest-time graph extraction; unset reuses LLM_PROVIDER/LLM_NAME.
 Type `int`, default `2000`, must be `>= 0`.
 
 Hard cap on chunks extracted per source (cost control); 0 extracts nothing.
+
+### `GRAPHRAG_EXTRACTION_WORKERS`
+
+Type `int`, default `8`, must be `>= 1` and `<= 32`.
+
+Concurrent extraction calls during ingest. Model calls run in parallel while graph writes stay serial, so ordering and idempotency are unchanged; 1 is fully serial.
 
 
 ## Vector stores
@@ -1413,6 +1449,23 @@ Persist scanned text alongside guardrail_events. Off by default: pre-redaction t
 Type `int`, default `30`, must be `>= 1`.
 
 Days guardrail events are kept before the cleanup task removes them.
+
+
+## Quotas
+
+Quota window and the treatment of unpriced models.
+
+### `QUOTA_PERIOD`
+
+Type `"day" | "week" | "month"`, default `month`.
+
+Window every usage quota is measured over. Windows are calendar-aligned in UTC: a day starts at 00:00, a week on Monday, a month on the 1st.
+
+### `QUOTA_UNPRICED_RATE_PER_MILLION`
+
+Type `list[float]`, default unset.
+
+Fallback `[input, output]` USD rates per 1M tokens for models that declare no price, e.g. `[0.5, 1.5]`. Unset, such calls are recorded at $0 and only count toward token quotas.
 
 
 ## Scheduler

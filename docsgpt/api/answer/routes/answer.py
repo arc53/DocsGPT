@@ -103,7 +103,9 @@ class AnswerResource(Resource, BaseAnswerResource):
                 )
                 if not processor.decoded_token:
                     return make_response({"error": "Unauthorized"}, 401)
-                if error := self.check_usage(processor.agent_config):
+                if error := self.check_usage_on_resume(
+                    processor, data["conversation_id"]
+                ):
                     return error
                 stream = self.complete_stream(
                     question="",
@@ -129,7 +131,11 @@ class AnswerResource(Resource, BaseAnswerResource):
                 if not processor.decoded_token:
                     return make_response({"error": "Unauthorized"}, 401)
 
-                if error := self.check_usage(processor.agent_config):
+                if error := self.check_usage(
+                    processor.agent_config,
+                    processor.decoded_token,
+                    agent_id=processor.agent_id,
+                ):
                     return error
 
                 should_persist, visibility = resolve_persistence(

@@ -3,6 +3,10 @@ export default {
     "title": "🔑 Getting API key",
     "href": "/Extensions/api-key-guide"
   },
+  "personal-access-tokens": {
+    "title": "🎟️ Personal Access Tokens",
+    "href": "/Extensions/personal-access-tokens"
+  },
   "chat-widget": {
     "title": "💬️ Chat Widget",
     "href": "/Extensions/chat-widget"

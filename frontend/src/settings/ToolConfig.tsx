@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import ChevronRight from '../assets/chevron-right.svg';
 import CircleCheck from '../assets/circle-check.svg';
 import CircleX from '../assets/circle-x.svg';
@@ -24,6 +23,7 @@ import { Switch } from '../components/ui/switch';
 import { useDarkTheme } from '../hooks';
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
+import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
 import ImportSpecModal from '../modals/ImportSpecModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -330,19 +330,12 @@ export default function ToolConfig({
   };
   return (
     <div className="scrollbar-overlay mt-8 flex flex-col gap-4">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-foreground dark:text-foreground flex items-center gap-3 text-sm">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="text-muted-foreground rounded-full p-3"
-            onClick={handleBackClick}
-          >
-            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-          </Button>
-          <p className="mt-px">{t('settings.tools.backToAllTools')}</p>
-        </div>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <DetailBreadcrumb
+          parentLabel={t('settings.tools.label')}
+          currentLabel={tool.customName || tool.displayName || tool.name}
+          onParentClick={handleBackClick}
+        />
         <Button
           type="button"
           className="rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"
