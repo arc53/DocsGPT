@@ -203,7 +203,9 @@ class ActivityRepository:
                 "OR COALESCE(outcome, '') ILIKE :search OR detail::text ILIKE :search)"
             )
             params["search"] = f"%{search}%"
-        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        # Always a WHERE, even with no filters, so the keyset cursor below can
+        # append " AND ..." without sniffing the string it was handed.
+        where = "WHERE " + " AND ".join(clauses or ["TRUE"])
         return f"SELECT * FROM ({union}) AS activity {where}", params
 
     def list(
@@ -269,8 +271,7 @@ class ActivityRepository:
         if not sql:
             return []
         if cursor is not None:
-            sql += " AND " if "WHERE" in sql else " WHERE "
-            sql += "(created_at, feed, id) < (:cur_at, :cur_feed, :cur_id)"
+            sql += " AND (created_at, feed, id) < (:cur_at, :cur_feed, :cur_id)"
             params.update(
                 {"cur_at": cursor[0], "cur_feed": cursor[1], "cur_id": cursor[2]}
             )
