@@ -2615,10 +2615,12 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
 
         added = 0
         for chunk in chunks:
-            store.add_chunk(
-                chunk.text,
-                metadata={"source": path, "title": title, "filename": path},
-            )
+            # Start from what the chunker produced -- ``token_count`` above
+            # all, which the source viewer reads per chunk -- and let the
+            # page's own identity win over anything stale it inherited.
+            metadata = dict(chunk.extra_info or {})
+            metadata.update({"source": path, "title": title, "filename": path})
+            store.add_chunk(chunk.text, metadata=metadata)
             added += 1
 
         with db_session() as conn:
