@@ -126,24 +126,61 @@ class TestMigration0034RoundTrip:
         # Team events were always filed under the actor; they have no user target.
         assert rows["team.create"] == "actor-3|-"
 
-    def test_actor_id_has_a_default_for_rolling_deploys(self, pg_engine):
-        """A previous-release process must not 500 mid-rollout.
+    def test_legacy_insert_keeps_its_attribution(self, pg_engine):
+        """A previous-release writer must neither 500 nor lose attribution.
 
-        Its inserts name only the old columns; without a DEFAULT the NOT NULL
-        raises, and in admin/routes.py that insert shares the request's
-        transaction, so the role grant beside it would roll back too.
+        Its inserts name only the old columns, so ``actor_id`` arrives NULL.
+        The NOT NULL alone would reject them -- and in admin/routes.py that
+        insert shares the request's transaction, so the role grant beside it
+        would roll back too. A bare sentinel would keep the row but throw the
+        actor away, and the highest-volume events are the recoverable ones.
         """
         with pg_engine.begin() as conn:
             conn.execute(
                 text(
-                    "INSERT INTO auth_events (user_id, event, metadata) "
-                    "VALUES ('legacy', 'oidc_login', '{}'::jsonb)"
+                    "INSERT INTO auth_events (user_id, event, metadata) VALUES "
+                    # A login: the user is their own actor and target.
+                    "('legacy-login', 'oidc_login', '{}'::jsonb), "
+                    # An admin action: the actor is recoverable from metadata.
+                    "('legacy-victim', 'admin_user_deactivated', "
+                    " '{\"by\": \"admin-legacy\"}'::jsonb), "
+                    # A team event: filed under the actor, no user target.
+                    "('legacy-actor', 'team.create', '{}'::jsonb)"
                 )
             )
-            actor = conn.execute(
-                text("SELECT actor_id FROM auth_events WHERE user_id = 'legacy'")
-            ).scalar()
-        assert actor == "unknown"
+            rows = dict(
+                conn.execute(
+                    text(
+                        "SELECT user_id, actor_id || '|' || COALESCE(target_id, '-') "
+                        "FROM auth_events WHERE user_id LIKE 'legacy-%'"
+                    )
+                ).fetchall()
+            )
+        assert rows["legacy-login"] == "legacy-login|legacy-login"
+        assert rows["legacy-victim"] == "admin-legacy|legacy-victim"
+        assert rows["legacy-actor"] == "legacy-actor|-"
+
+    def test_trigger_leaves_a_current_writer_alone(self, pg_engine):
+        """A deliberate NULL target must survive.
+
+        ``conversation.deleted`` acts on a resource, not an account. Deriving
+        a target there would name the actor as their own target.
+        """
+        with pg_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO auth_events "
+                    "(user_id, actor_id, target_id, event, metadata) "
+                    "VALUES ('u9', 'u9', NULL, 'conversation.deleted', '{}'::jsonb)"
+                )
+            )
+            row = conn.execute(
+                text(
+                    "SELECT actor_id, target_id FROM auth_events "
+                    "WHERE event = 'conversation.deleted'"
+                )
+            ).fetchone()
+        assert tuple(row) == ("u9", None)
 
     def test_backfill_scopes_quota_policy_targets(self, pg_engine):
         """Only a user-scoped quota policy has a user target.
