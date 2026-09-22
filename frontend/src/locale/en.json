@@ -259,6 +259,9 @@
           "scoreThreshold": "Score threshold",
           "scoreThresholdPlaceholder": "None",
           "scoreThresholdHint": "Only return chunks above this relevance score (0–1); higher is stricter.",
+          "rrfK": "RRF constant (hybrid)",
+          "rrfKPlaceholder": "60",
+          "rrfKHint": "Fusion constant for hybrid search (1–500). Lower rewards top ranks more steeply; blank uses 60.",
           "rephraseQuery": "Rephrase query before search",
           "retriever": "Retriever",
           "retrievers": {

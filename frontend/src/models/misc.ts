@@ -50,6 +50,7 @@ export type SourceRetrievalConfig = {
   chunks?: number; // top-k, default 2
   score_threshold?: number | null; // default null
   rephrase_query?: boolean; // default true
+  rrf_k?: number | null; // hybrid RRF constant, default null (= 60)
   prescreen?: SourcePrescreenConfig | null; // null = off
   graph?: SourceGraphRetrievalConfig; // graphrag retriever only
 };
