@@ -1,5 +1,5 @@
 /**
- * tier-b · the guardrail activity panel on /agents/logs/:agentId.
+ * tier-b · the guardrail activity panel on /agents/manage/logs/:agentId.
  *
  * Silent break covered: the audit journal existed for a while with no UI and
  * no caller — `userService.getGuardrailEvents` had zero references — so a
@@ -121,7 +121,7 @@ test.describe('tier-b · guardrail activity panel', () => {
 
       const { context } = await newUserContext(browser, { sub });
       const page = await context.newPage();
-      await page.goto(`/agents/logs/${agentId}`);
+      await page.goto(`/agents/manage/logs/${agentId}`);
 
       const panel = page.getByTestId('guardrail-events');
       await expect(panel).toBeVisible();
@@ -174,7 +174,7 @@ test.describe('tier-b · guardrail activity panel', () => {
 
       const { context } = await newUserContext(browser, { sub });
       const page = await context.newPage();
-      await page.goto(`/agents/logs/${agentId}`);
+      await page.goto(`/agents/manage/logs/${agentId}`);
 
       const table = page.getByTestId('guardrail-events-rows');
       await expect(table).toContainText('denylist');
@@ -212,7 +212,7 @@ test.describe('tier-b · guardrail activity panel', () => {
 
       const { context } = await newUserContext(browser, { sub });
       const page = await context.newPage();
-      await page.goto(`/agents/logs/${agentId}`);
+      await page.goto(`/agents/manage/logs/${agentId}`);
 
       await expect(page.getByTestId('guardrail-events-empty')).toBeVisible();
       await expect(page.getByTestId('guardrail-stat-blocked')).toContainText(
@@ -253,7 +253,7 @@ test.describe('tier-b · guardrail activity panel', () => {
 
       const { context } = await newUserContext(browser, { sub });
       const page = await context.newPage();
-      await page.goto(`/agents/logs/${quiet.id}`);
+      await page.goto(`/agents/manage/logs/${quiet.id}`);
 
       await expect(page.getByTestId('guardrail-stat-blocked')).toContainText(
         '0',

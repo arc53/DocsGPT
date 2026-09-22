@@ -214,6 +214,27 @@ class TestWorkflowEngineAgenticNode:
         assert engine.state["node_agent_agentic_output"] == "agentic answer"
         assert engine.state["result"] == "agentic answer"
 
+    def test_node_usage_is_attributed_to_the_workflow_agent(self, monkeypatch):
+        engine = create_engine()
+        engine.agent.agent_id = "11111111-1111-1111-1111-111111111111"
+        node = create_agent_node(node_id="agent_attr", agent_type="classic")
+
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_api_key_for_provider",
+            lambda _provider: None,
+        )
+
+        list(engine._execute_agent_node(node))
+
+        assert captured["agent_id"] == "11111111-1111-1111-1111-111111111111"
+
     def test_agentic_node_passes_retriever_config(self, monkeypatch):
         engine = create_engine()
         # The node-source authorization gate is exercised separately;

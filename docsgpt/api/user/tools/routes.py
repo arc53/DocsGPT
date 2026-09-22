@@ -16,6 +16,7 @@ from docsgpt.agents.default_tools import (
 from docsgpt.agents.tools.spec_parser import parse_spec
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.api import api
+from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
 from docsgpt.api.user.team_sharing import effective_write_owner, visible_with_access
 from docsgpt.core.settings import settings
@@ -294,6 +295,9 @@ class GetTools(Resource):
                     builtin_copy.get("name") in WORKFLOW_ONLY_BUILTINS
                 )
                 user_tools.append(builtin_copy)
+            # A resource-restricted token sees only its allowed tools. Default
+            # and builtin rows have ids too, so they follow the same allowlist.
+            user_tools = filter_listing(request, "tools", user_tools)
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

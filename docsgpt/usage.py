@@ -2,6 +2,7 @@ import logging
 import time
 from typing import Any, Dict
 
+from docsgpt.pricing import compute_cost_usd
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_session
 from docsgpt.utils import num_tokens_from_object_or_list, num_tokens_from_string
@@ -119,6 +120,12 @@ def _persist_call_usage(llm, call_usage):
             },
         )
         return
+    model_id = getattr(llm, "_canonical_model_id", None)
+    # Bring-your-own models run on the user's own provider key: recorded, never priced.
+    if getattr(llm, "_is_byom", False):
+        cost = 0.0
+    else:
+        cost = _call_cost_usd(model_id, call_usage)
     try:
         with db_session() as conn:
             # ``timestamp`` is omitted so Postgres ``server_default
@@ -136,14 +143,30 @@ def _persist_call_usage(llm, call_usage):
                 # "0% cache hits".
                 cached_tokens=call_usage.get("cached_tokens"),
                 cache_write_tokens=call_usage.get("cache_write_tokens"),
+                cost=cost,
                 source=(
                     getattr(llm, "_token_usage_source", None) or "agent_stream"
                 ),
                 request_id=getattr(llm, "_request_id", None),
-                model_id=getattr(llm, "_canonical_model_id", None),
+                model_id=model_id,
             )
     except Exception:
         logger.exception("token_usage persist failed")
+
+
+def _call_cost_usd(model_id, call_usage) -> float:
+    """Price one call; a pricing failure records $0 rather than dropping the row."""
+    try:
+        return compute_cost_usd(
+            model_id,
+            call_usage["prompt_tokens"],
+            call_usage["generated_tokens"],
+            cached_tokens=call_usage.get("cached_tokens"),
+            cache_write_tokens=call_usage.get("cache_write_tokens"),
+        )
+    except Exception:
+        logger.exception("token_usage cost computation failed")
+        return 0.0
 
 
 def _prefer_provider_usage(llm: Any, call_usage: Dict[str, int]) -> Dict[str, int]:

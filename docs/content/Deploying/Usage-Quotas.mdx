@@ -1,0 +1,109 @@
+---
+title: Usage Quotas
+description: Cap how many tokens or dollars each user may spend per day, week or month, with an instance default, per-team allowances and per-user overrides.
+---
+
+import { Callout } from 'nextra/components'
+
+# Usage Quotas
+
+An instance admin can limit how much each user spends on language models. A quota has two independent budgets:
+
+- **Tokens** — prompt plus generated tokens. Works for every model, including local ones.
+- **Cost (USD)** — tokens priced at the model's catalog rate. Only sees models that declare a price.
+
+Set either, both or neither. Quotas are managed from **Admin → Quotas**, or through the [API](#api). With no quota set, nothing is limited.
+
+## Layers
+
+Limits are set at three layers. For each budget, the first layer that says something wins:
+
+1. **User override** — one user's own limit.
+2. **Team allowance** — what each member of a team gets.
+3. **Instance default** — everyone else.
+
+At each layer a budget is either *not set* (defer to the next layer), a *limit*, or *unlimited*. A limit of `0` blocks the user. The two budgets resolve separately, so a user's token limit can come from their team while their cost limit comes from the instance default.
+
+### Teams
+
+A team allowance is **per member**, not a pool the team shares: if the allowance is 2M tokens, each member may use 2M.
+
+A user in several teams gets the **most generous** allowance among them, and allowances are never added together. Usage is always counted per user, whichever teams they belong to. To hold one person below their team's allowance, give them a user override.
+
+<Callout type="info" emoji="ℹ️">
+Team membership can change without an instance admin — team admins, OIDC group sync and SCIM all add members — so joining a team can only raise a user's allowance to what you granted that team, never lower it. Only instance admins set allowances; team admins cannot.
+</Callout>
+
+## Windows and enforcement
+
+Usage is counted over a calendar window in UTC, chosen for the whole instance with [`QUOTA_PERIOD`](/Deploying/Settings-Reference#quotas): `day` (from 00:00), `week` (from Monday) or `month` (from the 1st, the default). Windows are worked out when a request arrives, so there is no reset job to run.
+
+The quota is checked **before** a request starts. The request that crosses a limit completes; the next one is refused with HTTP `429`:
+
+```json
+{
+  "success": false,
+  "error_code": "quota-exceeded",
+  "message": "Usage quota reached (1,000,000 of 1,000,000 tokens). It resets at 2026-10-01T00:00:00+00:00.",
+  "dimension": "tokens",
+  "unit": "tokens",
+  "usage": 1000000,
+  "limit": 1000000,
+  "bucket": "all",
+  "source": "instance",
+  "resets_at": "2026-10-01T00:00:00+00:00"
+}
+```
+
+The response carries a `Retry-After` header. The check covers chat, the agent and OpenAI-compatible APIs, scheduled runs (recorded as `budget_exceeded`) and webhook runs. If the quota check itself fails, the request is allowed.
+
+Who is charged:
+
+| Traffic | Charged to |
+| --- | --- |
+| Chat without an agent | The user |
+| A user's own agent, its API key, webhooks and schedules | The agent's owner |
+| An agent shared with the user | The user |
+
+Per-agent token and request limits still apply on top of the owner's quota.
+
+Users with a quota see their usage and the reset time under **Settings → Analytics**.
+
+## Pricing
+
+Cost budgets use the rates in the [model catalog](/Models/cloud-providers), in USD per million tokens:
+
+```yaml
+models:
+  - id: my-model
+    input_cost_per_million: 3.0
+    output_cost_per_million: 15.0
+    cached_input_cost_per_million: 0.3   # optional, prompt-cache reads
+    cache_write_cost_per_million: 3.75   # optional, prompt-cache writes
+```
+
+The built-in catalogs ship list prices for hosted models. Override or add rates by dropping a YAML with the same model `id` into `MODELS_CONFIG_DIR`. The cost of each call is stored with its usage row when the call is made, so later price changes do not rewrite history.
+
+<Callout type="warning" emoji="⚠️">
+A model with no declared price is recorded at $0, so a cost budget cannot see it. The Quotas tab lists such models once they have been used. Either limit them with a token budget, declare their rates, or set [`QUOTA_UNPRICED_RATE_PER_MILLION`](/Deploying/Settings-Reference#quotas) to charge a fallback rate. Models a user adds with their own API key are always $0, but their tokens still count.
+</Callout>
+
+## API
+
+Every admin endpoint requires the admin role, and every change is written to the [audit log](/Deploying/Access-Control#audit-log) as `quota_policy_set` or `quota_policy_deleted`.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/admin/quotas` | All policies by layer, the current window, and used models without a price. |
+| `PUT` `DELETE` | `/api/admin/quotas/instance` | The instance default. |
+| `GET` `PUT` `DELETE` | `/api/admin/quotas/teams/<team_id>` | A team's per-member allowance. |
+| `GET` `PUT` `DELETE` | `/api/admin/quotas/users/<user_id>` | A user's override; the user must already exist (SCIM-provisioned, or signed in once), otherwise `404`. `GET` also returns the limits the user ends up with, the layer each came from, and their usage. |
+| `GET` | `/api/user/quota` | The caller's own limits, usage and reset time. |
+
+A `PUT` body sets, per budget, a limit or the unlimited flag; leave both out to defer to the next layer:
+
+```json
+{ "token_limit": 2000000, "cost_unlimited": true, "note": "Research team" }
+```
+
+`bucket` (default `all`) narrows a policy to `direct` traffic (chat without an agent) or `agent` traffic (anything that runs through an agent, whether or not the agent has an API key). A request must fit both its own bucket and `all`. The dashboard edits `all`.

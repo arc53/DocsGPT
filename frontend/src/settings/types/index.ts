@@ -6,21 +6,8 @@ export type ChunkType = {
   metadata: { [key: string]: string };
 };
 
-export type APIKeyData = {
-  id: string;
-  name: string;
-  key: string;
-  source: string;
-  prompt_id: string;
-  chunks: string;
-};
-
 export type LogEventType =
-  | 'chat'
-  | 'schedule'
-  | 'webhook'
-  | 'workflow'
-  | 'system';
+  'chat' | 'schedule' | 'webhook' | 'workflow' | 'system';
 
 export type LogData = {
   id: string;

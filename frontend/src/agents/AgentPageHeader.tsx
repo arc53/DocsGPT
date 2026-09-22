@@ -12,6 +12,13 @@ import {
 } from '@/components/ui/breadcrumb';
 import { cn } from '@/lib/utils';
 
+import {
+  AGENTS_MANAGE_ROOT,
+  agentEditPath as agentEditPathProp,
+  agentLogsPath,
+  agentSchedulesPath,
+} from './paths';
+
 export type AgentPageTab = 'overview' | 'logs' | 'schedules';
 
 type AgentPageHeaderProps = {
@@ -47,7 +54,8 @@ export default function AgentPageHeader({
   const { t } = useTranslation();
 
   const editPath =
-    agentEditPath ?? (agentId ? `/agents/edit/${agentId}` : '/agents');
+    agentEditPath ??
+    (agentId ? agentEditPathProp(agentId) : AGENTS_MANAGE_ROOT);
   const tabs = useMemo(
     () => [
       {
@@ -58,12 +66,12 @@ export default function AgentPageHeader({
       {
         id: 'logs' as const,
         label: t('agents.pageHeader.tabs.logs'),
-        href: agentId ? `/agents/logs/${agentId}` : '#',
+        href: agentId ? agentLogsPath(agentId) : '#',
       },
       {
         id: 'schedules' as const,
         label: t('agents.pageHeader.tabs.schedules'),
-        href: agentId ? `/agents/schedules/${agentId}` : '#',
+        href: agentId ? agentSchedulesPath(agentId) : '#',
       },
     ],
     [agentId, editPath, t],
@@ -84,7 +92,9 @@ export default function AgentPageHeader({
         <BreadcrumbList className="flex-nowrap">
           <BreadcrumbItem>
             <BreadcrumbLink asChild>
-              <Link to="/agents">{t('agents.pageHeader.crumbs.agents')}</Link>
+              <Link to={AGENTS_MANAGE_ROOT}>
+                {t('agents.pageHeader.crumbs.agents')}
+              </Link>
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />

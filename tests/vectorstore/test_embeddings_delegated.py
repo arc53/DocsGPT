@@ -72,6 +72,32 @@ class TestInsideAWorker:
         assert vector == [1.0, 2.0]
         celery.send_task.assert_not_called()
 
+    def test_a_thread_started_inside_the_worker_embeds_locally(self):
+        """The task's own thread is not the only one in a worker.
+
+        Graph extraction and per-source retrieval both fan out to thread pools
+        inside tasks. The check used to read the task off the current thread
+        only, so from those threads it dispatched to the worker it was running
+        in -- and Celery refuses that ``get()`` inside a worker, failing the
+        call and latching the 30s dispatch cooldown for every caller after it.
+        """
+        from celery.result import denied_join_result
+
+        from docsgpt.celery_init import celery
+
+        local = MagicMock()
+        local.embed_documents.return_value = [[1.0, 2.0]]
+        client = DelegatedEmbeddings("some/model")
+        vectors = []
+        with denied_join_result():
+            with patch("docsgpt.vectorstore.base.build_local_embeddings", return_value=local):
+                with patch.object(celery, "send_task") as send_task:
+                    thread = threading.Thread(target=lambda: vectors.append(client.embed_query("hi")))
+                    thread.start()
+                    thread.join()
+        assert vectors == [[1.0, 2.0]]
+        send_task.assert_not_called()
+
     def test_the_local_model_is_built_once(self):
         local = MagicMock()
         local.embed_documents.return_value = [[1.0]]

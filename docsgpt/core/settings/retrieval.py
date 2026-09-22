@@ -31,6 +31,15 @@ class RetrievalSettings(SettingsGroup):
     GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION: int = Field(
         default=2000, ge=0, description="Hard cap on chunks extracted per source (cost control); 0 extracts nothing."
     )
+    GRAPHRAG_EXTRACTION_WORKERS: int = Field(
+        default=8,
+        ge=1,
+        le=32,
+        description=(
+            "Concurrent extraction calls during ingest. Model calls run in parallel while "
+            "graph writes stay serial, so ordering and idempotency are unchanged; 1 is fully serial."
+        ),
+    )
 
     @field_validator("VECTOR_STORE", mode="before")
     @classmethod

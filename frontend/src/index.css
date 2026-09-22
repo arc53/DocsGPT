@@ -690,8 +690,11 @@ Avoid over-scrolling in mobile browsers
     font-family: var(--font-mono);
   }
 
+  /* Disclosure content, e.g. an expanded tool call. Short on purpose: the
+     panel's height appears at once, so a long fade reads as the content
+     lagging behind the layout rather than as a reveal. */
   .fade-in {
-    animation: fadeIn 0.5s ease-in-out;
+    animation: fadeIn 0.16s ease-out;
   }
 
   @keyframes fadeIn {
@@ -703,10 +706,13 @@ Avoid over-scrolling in mobile browsers
     }
   }
 
+  /* The start state lives in the keyframes, not here: with `opacity: 0` on
+     the element itself the content was only ever visible *because* an
+     animation had run to completion, so anything that stopped it running —
+     a cancelled animation, a reduced-motion reset — left the answer blank.
+     The element now rests visible and the animation is purely additive. */
   .fade-in-bubble {
-    opacity: 0;
-    transform: translateY(10px);
-    animation: fadeInUp 0.5s forwards;
+    animation: fadeInUp 0.26s ease-out;
   }
 
   .shimmer-text {
@@ -754,9 +760,19 @@ Avoid over-scrolling in mobile browsers
     .dark .shimmer-text {
       background-image: none;
     }
+
+    /* Safe to drop outright now that both rest in their final state. */
+    .fade-in,
+    .fade-in-bubble {
+      animation: none;
+    }
   }
 
   @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
     to {
       opacity: 1;
       transform: translateY(0);

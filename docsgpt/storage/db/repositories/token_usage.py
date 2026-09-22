@@ -37,6 +37,7 @@ class TokenUsageRepository:
         timestamp: Optional[datetime] = None,
         cached_tokens: Optional[int] = None,
         cache_write_tokens: Optional[int] = None,
+        cost: float = 0.0,
     ) -> None:
         # Attribution guard: the ``token_usage_attribution_chk`` CHECK
         # constraint requires at least one of ``user_id`` / ``api_key``
@@ -62,14 +63,14 @@ class TokenUsageRepository:
                 INSERT INTO token_usage (
                     user_id, api_key, agent_id,
                     prompt_tokens, generated_tokens,
-                    cached_tokens, cache_write_tokens,
+                    cached_tokens, cache_write_tokens, cost,
                     source, request_id, model_id, timestamp
                 )
                 VALUES (
                     :user_id, :api_key,
                     CAST(:agent_id AS uuid),
                     :prompt_tokens, :generated_tokens,
-                    :cached_tokens, :cache_write_tokens,
+                    :cached_tokens, :cache_write_tokens, :cost,
                     :source, :request_id, :model_id, COALESCE(:timestamp, now())
                 )
                 """
@@ -82,6 +83,7 @@ class TokenUsageRepository:
                 "generated_tokens": generated_tokens,
                 "cached_tokens": cached_tokens,
                 "cache_write_tokens": cache_write_tokens,
+                "cost": cost,
                 "source": source,
                 "request_id": request_id,
                 "model_id": model_id,
@@ -116,9 +118,13 @@ class TokenUsageRepository:
         user_id: Optional[str] = None,
         api_key: Optional[str] = None,
     ) -> int:
-        """Total (prompt + generated) tokens in the given time range."""
-        clauses = ["timestamp >= :start", "timestamp <= :end"]
-        params: dict = {"start": start, "end": end}
+        """Total (prompt + generated) tokens in the given time range.
+
+        Run-level rollup rows (``ROLLUP_SOURCES``) are excluded: their tokens
+        are already counted on the run's per-call rows.
+        """
+        clauses = ["timestamp >= :start", "timestamp <= :end", "source <> ALL(:rollup_sources)"]
+        params: dict = {"start": start, "end": end, "rollup_sources": list(self.ROLLUP_SOURCES)}
         if user_id is not None:
             clauses.append("user_id = :user_id")
             params["user_id"] = user_id
@@ -131,6 +137,56 @@ class TokenUsageRepository:
             params,
         )
         return result.scalar()
+
+    def usage_totals(self, *, user_id: str, start: datetime, bucket: str = "all") -> tuple[int, float]:
+        """Return ``(tokens, cost_usd)`` a user has consumed since ``start``.
+
+        Args:
+            user_id: The billable user (auth ``sub``).
+            start: Inclusive window start.
+            bucket: ``all``, ``agent`` (rows carrying an agent key or an agent
+                id) or ``direct`` (rows with neither).
+
+        Rollup rows are excluded; side-channel calls count, they are real spend.
+        """
+        clauses = ["user_id = :user_id", "timestamp >= :start", "source <> ALL(:rollup_sources)"]
+        # Keyless agents and workflow nodes carry an agent id without a key.
+        if bucket == "direct":
+            clauses.append("api_key IS NULL AND agent_id IS NULL")
+        elif bucket == "agent":
+            clauses.append("(api_key IS NOT NULL OR agent_id IS NOT NULL)")
+        elif bucket != "all":
+            raise ValueError(f"unknown usage bucket: {bucket!r}")
+        row = self._conn.execute(
+            text(
+                "SELECT COALESCE(SUM(prompt_tokens + generated_tokens), 0), COALESCE(SUM(cost), 0) "
+                f"FROM token_usage WHERE {' AND '.join(clauses)}"
+            ),
+            {"user_id": user_id, "start": start, "rollup_sources": list(self.ROLLUP_SOURCES)},
+        ).one()
+        return int(row[0]), float(row[1])
+
+    def tokens_by_model(self, *, start: datetime) -> list[dict]:
+        """Return ``{model_id, tokens, cost}`` per model since ``start``, busiest first."""
+        result = self._conn.execute(
+            text(
+                """
+                SELECT model_id,
+                       COALESCE(SUM(prompt_tokens + generated_tokens), 0) AS tokens,
+                       COALESCE(SUM(cost), 0) AS cost
+                FROM token_usage
+                WHERE timestamp >= :start AND model_id IS NOT NULL
+                  AND source <> ALL(:rollup_sources)
+                GROUP BY model_id
+                ORDER BY tokens DESC, model_id
+                """
+            ),
+            {"start": start, "rollup_sources": list(self.ROLLUP_SOURCES)},
+        )
+        return [
+            {"model_id": row[0], "tokens": int(row[1]), "cost": float(row[2])}
+            for row in result.fetchall()
+        ]
 
     # Token usage written outside a user-initiated request (conversation
     # title generation, history compression, RAG question condensing,

@@ -23,6 +23,8 @@ from docsgpt.core.model_utils import (
 from docsgpt.core.settings import settings
 from docsgpt.error import sanitize_api_error
 from docsgpt.llm.llm_creator import LLMCreator
+from docsgpt.quotas.http import quota_exceeded_response
+from docsgpt.quotas.service import QuotaService
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversations import (
     HeartbeatState,
@@ -112,17 +114,34 @@ class BaseAnswerResource:
             prepared.append(item)
         return prepared
 
-    def check_usage(self, agent_config: Dict) -> Optional[Response]:
-        """Check if there is a usage limit and if it is exceeded
+    def check_usage(
+        self,
+        agent_config: Dict,
+        decoded_token: Optional[Dict] = None,
+        agent_id: Optional[str] = None,
+    ) -> Optional[Response]:
+        """Refuse the request when a usage limit is exhausted.
+
+        The billable user's quota is checked first, for every request; the
+        agent's own 24h token and request limits then apply to traffic that
+        runs through an agent.
 
         Args:
             agent_config: The config dict of agent instance
+            decoded_token: The request's resolved identity; its ``sub`` is the
+                billable user.
+            agent_id: The agent the request runs through. A draft agent has no
+                key, but its usage rows carry the agent id, so it is agent traffic.
 
         Returns:
             None or Response if either of limits exceeded.
 
         """
         api_key = agent_config.get("user_api_key")
+        user_id = (decoded_token or {}).get("sub") or agent_config.get("user_id")
+        exceeded = QuotaService.check(user_id, "agent" if api_key or agent_id else "direct")
+        if exceeded is not None:
+            return quota_exceeded_response(exceeded)
         if not api_key:
             return None
         with db_readonly() as conn:
@@ -196,6 +215,34 @@ class BaseAnswerResource:
                 429,
             )
         return None
+
+    def check_usage_on_resume(self, processor: Any, conversation_id: Any) -> Optional[Response]:
+        """Run ``check_usage`` for a tool continuation, releasing its claim on refusal.
+
+        ``resume_from_tool_actions`` has already claimed the paused turn by the
+        time the limits can be checked (the agent config comes from the claimed
+        state). A refusal returns before ``complete_stream`` and its cleanup, so
+        the claim is released here; otherwise retries get a 409 until the stale
+        claim is reverted.
+
+        Args:
+            processor: The ``StreamProcessor`` that resumed the turn.
+            conversation_id: The conversation whose pending state was claimed.
+
+        Returns:
+            None, or the refusal Response.
+        """
+        error = self.check_usage(
+            processor.agent_config, processor.decoded_token, agent_id=processor.agent_id
+        )
+        if error is None or not conversation_id:
+            return error
+        user = processor.initial_user_id or (processor.decoded_token or {}).get("sub")
+        try:
+            ContinuationService().release_claim(str(conversation_id), user)
+        except Exception:
+            logger.exception("Failed to release resume claim after a usage refusal")
+        return error
 
     def complete_stream(
         self,

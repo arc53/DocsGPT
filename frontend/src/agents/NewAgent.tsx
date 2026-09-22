@@ -69,7 +69,9 @@ import {
   getToolDisplayName,
   isClassicAgentToolVisible,
 } from '../utils/toolUtils';
-import AgentPageHeader from './AgentPageHeader';
+import { CurrentSectionHeader } from '../navigation/SectionPageHeader';
+import { agentsListPath } from './paths';
+import SectionPills from '../navigation/SectionPills';
 import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
@@ -316,8 +318,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const navigateBackToAgents = useCallback(() => {
     const targetPath = validatedFolderId
-      ? `/agents?folder=${validatedFolderId}`
-      : '/agents';
+      ? agentsListPath(validatedFolderId)
+      : agentsListPath();
     navigate(targetPath);
   }, [navigate, validatedFolderId]);
 
@@ -675,7 +677,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const getAgent = async () => {
         const response = await userService.getAgent(agentId, token);
         if (!response.ok) {
-          navigate('/agents');
+          navigate(agentsListPath());
           throw new Error('Failed to fetch agent');
         }
         const data = await response.json();
@@ -797,23 +799,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const showAgentNav = effectiveMode === 'edit' && Boolean(agent.id);
 
   return (
-    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-4 md:pb-3">
+    <div className="flex flex-col p-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:p-12 md:pt-4 md:pb-3">
       {agent.agent_type === 'workflow' && (
         <div className="mt-4 w-full">
           <WorkflowBuilder />
         </div>
       )}
-      <div className="flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        {showAgentNav ? (
-          <AgentPageHeader
-            agentId={agent.id}
-            agentName={agent.name}
-            agentEditPath={`/agents/edit/${agent.id}`}
-            currentPage="overview"
-          />
-        ) : (
-          <span aria-hidden />
-        )}
+      <div className="flex w-full flex-wrap items-center justify-between gap-2">
+        {showAgentNav ? <CurrentSectionHeader /> : <span aria-hidden />}
         <div className="flex flex-wrap items-center gap-2">
           {submitError && (
             <div
@@ -895,6 +888,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
         </div>
       </div>
+      {showAgentNav && <SectionPills className="mt-4" />}
       <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-2xl p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
         <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
           <div className="bg-card rounded-2xl px-6 py-3">

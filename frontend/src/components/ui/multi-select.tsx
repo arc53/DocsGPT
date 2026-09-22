@@ -32,6 +32,15 @@ interface MultiSelectProps {
   emptyText?: string;
   searchPlaceholder?: string;
   className?: string;
+  /**
+   * Set when the MultiSelect sits inside a Modal. A non-modal popover there
+   * cannot scroll (the dialog's scroll lock swallows the wheel, since the
+   * dropdown is portalled outside it) and never closes on an outside click
+   * (Radix defers that to the document `click`, which Modal stops from
+   * propagating). A modal popover owns its own scroll lock and dismisses on
+   * pointerdown instead.
+   */
+  modal?: boolean;
 }
 
 export function MultiSelect({
@@ -42,6 +51,7 @@ export function MultiSelect({
   emptyText = 'No results found.',
   searchPlaceholder = 'Search...',
   className,
+  modal = false,
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -63,7 +73,7 @@ export function MultiSelect({
     .map((option) => option.label);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={modal}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
