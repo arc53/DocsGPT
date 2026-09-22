@@ -302,7 +302,11 @@ class TokenUsageRepository:
                 f"""
                 SELECT to_char(tu.timestamp AT TIME ZONE 'UTC', :fmt) AS bucket,
                        COALESCE(SUM(tu.prompt_tokens), 0) AS prompt_tokens,
-                       COALESCE(SUM(tu.generated_tokens), 0) AS generated_tokens
+                       COALESCE(SUM(tu.generated_tokens), 0) AS generated_tokens,
+                       COALESCE(SUM(tu.cost), 0) AS cost,
+                       -- NULL cache bins mean "provider did not report", so
+                       -- they stay out of the sum rather than reading as 0.
+                       SUM(tu.cached_tokens) AS cached_tokens
                        {group_select}
                 FROM token_usage tu
                 {join}
@@ -318,6 +322,12 @@ class TokenUsageRepository:
                 "bucket": row._mapping["bucket"],
                 "prompt_tokens": int(row._mapping["prompt_tokens"]),
                 "generated_tokens": int(row._mapping["generated_tokens"]),
+                "cost": float(row._mapping["cost"]),
+                "cached_tokens": (
+                    int(row._mapping["cached_tokens"])
+                    if row._mapping["cached_tokens"] is not None
+                    else None
+                ),
                 **(
                     {"group_key": row._mapping["group_key"]}
                     if group_by is not None

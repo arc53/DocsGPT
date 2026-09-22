@@ -97,6 +97,28 @@ export function fmtNumber(n?: number | null): string {
   return new Intl.NumberFormat().format(n ?? 0);
 }
 
+/**
+ * USD, with enough precision that a fraction of a cent is not rendered as $0.
+ * An instance on a cheap model can run whole days under a dollar, and "$0"
+ * next to a cost quota reads as "nothing is being counted".
+ */
+export function fmtUsd(n?: number | null): string {
+  const value = n ?? 0;
+  const digits = value !== 0 && Math.abs(value) < 0.01 ? 4 : 2;
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: digits,
+  }).format(value);
+}
+
+/** Milliseconds as ms or s, or an em dash when nothing was measured. */
+export function fmtMs(n?: number | null): string {
+  if (n === null || n === undefined) return '—';
+  return n < 1000 ? `${Math.round(n)}ms` : `${(n / 1000).toFixed(1)}s`;
+}
+
 export function fmtCompact(n?: number | null): string {
   return new Intl.NumberFormat(undefined, {
     notation: 'compact',

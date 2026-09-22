@@ -170,6 +170,8 @@ const endpoints = {
       `/api/admin/users/${encodeURIComponent(id)}/role`,
     USER_REVOKE_SESSIONS: (id: string) =>
       `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`,
+    USER_USAGE: (id: string) =>
+      `/api/admin/users/${encodeURIComponent(id)}/usage`,
     ADMINS: '/api/admin/admins',
     USAGE: '/api/admin/usage',
     ACTIVITY: '/api/admin/activity',

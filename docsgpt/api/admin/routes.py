@@ -287,6 +287,26 @@ class AdminUserSessionsResource(Resource):
         return make_response(jsonify({"success": True, "revoked": ok}), 200)
 
 
+@admin_ns.route("/admin/users/<string:user_id>/usage")
+class AdminUserUsageResource(Resource):
+    @admin_required
+    def get(self, user_id):
+        """One user's spend: daily series plus a split by model and by flow."""
+        days = max(1, min(365, _int_arg("days", 30)))
+        start = datetime.now(timezone.utc) - timedelta(days=days)
+        with db_readonly() as conn:
+            series = TokenUsageRepository(conn).bucketed_totals(
+                bucket_unit="day", user_id=user_id, timestamp_gte=start
+            )
+            breakdown = AdminStatsRepository(conn).user_usage_breakdown(
+                user_id, since=start
+            )
+        return make_response(
+            jsonify({"success": True, "days": days, "series": series, **breakdown}),
+            200,
+        )
+
+
 @admin_ns.route("/admin/admins")
 class AdminAdminsResource(Resource):
     @admin_required
@@ -304,7 +324,12 @@ class AdminUsageResource(Resource):
 
     @admin_required
     def get(self):
-        """Global token usage: time-bucketed series + total + top users."""
+        """Global usage: time-bucketed series, totals, spend, latency, top users.
+
+        Every bucket carries both tokens and USD cost. Quota policies have
+        always been settable in dollars; until now nothing showed the spend
+        they were capping.
+        """
         days = max(1, min(365, _int_arg("days", 30)))
         bucket = request.args.get("bucket", "day")
         group_by = request.args.get("group_by", "none")
@@ -313,6 +338,7 @@ class AdminUsageResource(Resource):
         start = datetime.now(timezone.utc) - timedelta(days=days)
         with db_readonly() as conn:
             usage_repo = TokenUsageRepository(conn)
+            stats_repo = AdminStatsRepository(conn)
             series = usage_repo.bucketed_totals(
                 bucket_unit=bucket,
                 timestamp_gte=start,
@@ -321,7 +347,9 @@ class AdminUsageResource(Resource):
             total = usage_repo.sum_tokens_in_range(
                 start=start, end=datetime.now(timezone.utc)
             )
-            top_users = AdminStatsRepository(conn).top_token_users(since=start, limit=10)
+            by_model = usage_repo.tokens_by_model(start=start)
+            latency = stats_repo.latency_summary(since=start)
+            top_users = stats_repo.top_token_users(since=start, limit=10)
         return make_response(
             jsonify(
                 {
@@ -331,6 +359,9 @@ class AdminUsageResource(Resource):
                     "group_by": group_by,
                     "series": series,
                     "total_tokens": int(total),
+                    "total_cost": round(sum(row["cost"] for row in by_model), 4),
+                    "by_model": by_model,
+                    "latency": latency,
                     "top_users": top_users,
                 }
             ),

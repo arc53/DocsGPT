@@ -16,6 +16,11 @@ from sqlalchemy import Connection, text
 from docsgpt.storage.db.base_repository import row_to_dict
 
 
+def _round_ms(value) -> Optional[int]:
+    """Round a percentile to whole milliseconds, preserving NULL as None."""
+    return int(round(float(value))) if value is not None else None
+
+
 class AdminStatsRepository:
     """Global aggregates for the admin overview and per-user drill-down."""
 
@@ -66,11 +71,18 @@ class AdminStatsRepository:
         }
 
     def top_token_users(self, *, since: datetime, limit: int = 10) -> list[dict]:
-        """Highest token consumers since ``since`` (admin usage view)."""
+        """Highest consumers since ``since``, with spend (admin usage view).
+
+        Ordered by tokens, not cost: a cheap model can dominate token volume
+        while a costly one dominates the bill, and the operator wants to see
+        both columns rather than have the ranking pick for them.
+        """
         result = self._conn.execute(
             text(
                 """
-                SELECT user_id, SUM(prompt_tokens + generated_tokens) AS tokens
+                SELECT user_id,
+                       SUM(prompt_tokens + generated_tokens) AS tokens,
+                       COALESCE(SUM(cost), 0) AS cost
                 FROM token_usage
                 WHERE timestamp >= :since AND user_id IS NOT NULL
                 GROUP BY user_id
@@ -80,7 +92,105 @@ class AdminStatsRepository:
             ),
             {"since": since, "limit": int(limit)},
         )
-        return [{"user_id": r[0], "tokens": int(r[1])} for r in result.fetchall()]
+        return [
+            {"user_id": r[0], "tokens": int(r[1]), "cost": float(r[2])}
+            for r in result.fetchall()
+        ]
+
+    def latency_summary(self, *, since: datetime) -> dict:
+        """Call-latency percentiles since ``since``.
+
+        Rows written before the latency columns existed, and streams that
+        never yielded, hold NULL; percentile_cont skips them, so the summary
+        describes the calls that were actually measured. ``samples`` says how
+        many those were, so a percentile from three calls is not read as a
+        service-level figure.
+        """
+        row = self._conn.execute(
+            text(
+                """
+                SELECT count(duration_ms) AS samples,
+                       percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms)
+                           AS p50_ms,
+                       percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)
+                           AS p95_ms,
+                       count(ttft_ms) AS ttft_samples,
+                       percentile_cont(0.5) WITHIN GROUP (ORDER BY ttft_ms)
+                           AS ttft_p50_ms
+                FROM token_usage
+                WHERE timestamp >= :since
+                """
+            ),
+            {"since": since},
+        ).one()
+        return {
+            "samples": int(row.samples or 0),
+            "p50_ms": _round_ms(row.p50_ms),
+            "p95_ms": _round_ms(row.p95_ms),
+            "ttft_samples": int(row.ttft_samples or 0),
+            "ttft_p50_ms": _round_ms(row.ttft_p50_ms),
+        }
+
+    def user_usage_breakdown(
+        self, user_id: str, *, since: datetime, limit: int = 10
+    ) -> dict:
+        """Per-user spend detail: totals, and a split by model and by flow.
+
+        The admin user drill-down showed a single ``tokens_30d`` number, which
+        cannot answer either question an operator actually has -- what is this
+        person costing, and what is driving it.
+
+        Args:
+            user_id: The billable user (auth ``sub``).
+            since: Inclusive window start.
+            limit: How many models / flows to return, busiest first.
+
+        Returns:
+            ``{"totals": {...}, "by_model": [...], "by_source": [...]}``.
+        """
+        totals = self._conn.execute(
+            text(
+                """
+                SELECT COALESCE(SUM(prompt_tokens + generated_tokens), 0) AS tokens,
+                       COALESCE(SUM(cost), 0) AS cost,
+                       count(*) AS calls
+                FROM token_usage
+                WHERE user_id = :u AND timestamp >= :since
+                """
+            ),
+            {"u": user_id, "since": since},
+        ).one()
+
+        def _breakdown(key_expr: str) -> list[dict]:
+            rows = self._conn.execute(
+                text(
+                    f"""
+                    SELECT {key_expr} AS key,
+                           COALESCE(SUM(prompt_tokens + generated_tokens), 0) AS tokens,
+                           COALESCE(SUM(cost), 0) AS cost
+                    FROM token_usage
+                    WHERE user_id = :u AND timestamp >= :since
+                    GROUP BY key
+                    ORDER BY tokens DESC, key
+                    LIMIT :limit
+                    """
+                ),
+                {"u": user_id, "since": since, "limit": int(limit)},
+            )
+            return [
+                {"key": r.key, "tokens": int(r.tokens), "cost": float(r.cost)}
+                for r in rows.fetchall()
+            ]
+
+        return {
+            "totals": {
+                "tokens": int(totals.tokens),
+                "cost": float(totals.cost),
+                "calls": int(totals.calls),
+            },
+            "by_model": _breakdown("COALESCE(model_id, 'unknown')"),
+            "by_source": _breakdown("COALESCE(source, 'agent_stream')"),
+        }
 
     def list_users(
         self, user_id_filter: Optional[str], offset: int, limit: int

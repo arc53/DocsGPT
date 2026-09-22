@@ -68,6 +68,12 @@ const adminService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.get(`${endpoints.ADMIN.USAGE}${qs(params)}`, token),
+  getUserUsage: (
+    userId: string,
+    params: { days?: number },
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.get(`${endpoints.ADMIN.USER_USAGE(userId)}${qs(params)}`, token),
   getActivity: (filters: ActivityFilters, token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.ADMIN.ACTIVITY}${qs(filters)}`, token),
   getActivityEvents: (token: string | null): Promise<any> =>

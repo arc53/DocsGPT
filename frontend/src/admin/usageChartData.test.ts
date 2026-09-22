@@ -1,0 +1,101 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import {
+  buildUsageChart,
+  cacheHitRate,
+  type UsageBucket,
+} from './usageChartData';
+
+// Chart.js colors resolve against a live DOM; the shapes under test do not.
+vi.mock('./UsageChart', () => ({
+  seriesColor: (index: number) => `color-${index}`,
+  usageColors: () => ({ prompt: 'prompt-color', generated: 'generated-color' }),
+}));
+
+const bucket = (overrides: Partial<UsageBucket>): UsageBucket => ({
+  bucket: '2026-01-01',
+  prompt_tokens: 100,
+  generated_tokens: 20,
+  cost: 1,
+  cached_tokens: null,
+  ...overrides,
+});
+
+describe('buildUsageChart', () => {
+  it('splits prompt and generated tokens when ungrouped', () => {
+    const chart = buildUsageChart([bucket({})], 'none', 'tokens');
+    expect(chart.datasets.map((d) => d.label)).toEqual(['Prompt', 'Generated']);
+    expect(chart.datasets[0].data).toEqual([100]);
+  });
+
+  it('plots a single series for cost', () => {
+    const chart = buildUsageChart([bucket({ cost: 2.5 })], 'none', 'cost');
+    expect(chart.datasets).toHaveLength(1);
+    expect(chart.datasets[0].data).toEqual([2.5]);
+  });
+
+  it('gives each group its own dataset', () => {
+    const chart = buildUsageChart(
+      [
+        bucket({ group_key: 'gpt-a' }),
+        bucket({ group_key: 'gpt-b', prompt_tokens: 5, generated_tokens: 5 }),
+      ],
+      'model',
+      'tokens',
+    );
+    expect(chart.datasets.map((d) => d.label)).toEqual(['gpt-a', 'gpt-b']);
+    expect(chart.datasets[1].data).toEqual([10]);
+  });
+
+  it('pads a group that is missing a bucket so the axes stay aligned', () => {
+    const chart = buildUsageChart(
+      [
+        bucket({ bucket: '2026-01-01', group_key: 'a' }),
+        bucket({ bucket: '2026-01-02', group_key: 'b' }),
+      ],
+      'model',
+      'tokens',
+    );
+    expect(chart.labels).toHaveLength(2);
+    // 'a' has no row on the second day: a zero, not a shifted bar.
+    expect(chart.datasets[0].data).toEqual([120, 0]);
+    expect(chart.datasets[1].data).toEqual([0, 120]);
+  });
+
+  it('labels a group with no key rather than dropping the row', () => {
+    const chart = buildUsageChart([bucket({})], 'model', 'tokens');
+    expect(chart.datasets[0].label).toBe('unknown');
+  });
+
+  it('handles an empty series', () => {
+    const chart = buildUsageChart([], 'model', 'cost');
+    expect(chart.labels).toEqual([]);
+    expect(chart.datasets).toEqual([]);
+  });
+});
+
+describe('cacheHitRate', () => {
+  it('is unknown when no provider reported cache bins', () => {
+    expect(cacheHitRate([bucket({ cached_tokens: null })])).toBeNull();
+  });
+
+  it('is unknown for an empty series', () => {
+    expect(cacheHitRate([])).toBeNull();
+  });
+
+  it('measures only the rows that reported', () => {
+    const rate = cacheHitRate([
+      bucket({ prompt_tokens: 100, cached_tokens: 25 }),
+      // Unreported: excluded entirely rather than counted as a 0% row, which
+      // would halve the rate.
+      bucket({ prompt_tokens: 100, cached_tokens: null }),
+    ]);
+    expect(rate).toBeCloseTo(25);
+  });
+
+  it('avoids dividing by zero prompt tokens', () => {
+    expect(
+      cacheHitRate([bucket({ prompt_tokens: 0, cached_tokens: 0 })]),
+    ).toBeNull();
+  });
+});

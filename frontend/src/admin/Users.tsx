@@ -42,6 +42,7 @@ import {
   fmtRelative,
 } from './AdminUI';
 import UserQuotaModal from './UserQuotaModal';
+import UserUsageModal from './UserUsageModal';
 
 type AdminUser = {
   user_id: string;
@@ -72,6 +73,7 @@ export default function Users() {
   const [busy, setBusy] = useState<string | null>(null);
   const [menuUserId, setMenuUserId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
+  const [usageFor, setUsageFor] = useState<string | null>(null);
   const [quotaUserId, setQuotaUserId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{
     ok: boolean;
@@ -443,6 +445,7 @@ export default function Users() {
         />
       ) : null}
 
+      <UserUsageModal userId={usageFor} onClose={() => setUsageFor(null)} />
       <UserQuotaModal
         userId={quotaUserId}
         onClose={() => setQuotaUserId(null)}
@@ -528,6 +531,19 @@ export default function Users() {
                 </span>
               </div>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // Close the detail dialog before the usage dialog opens, so
+                // the two never stack.
+                const userId = detail.user.user_id;
+                setDetail(null);
+                setUsageFor(userId);
+              }}
+            >
+              View spend breakdown
+            </Button>
             <div>
               <p className="text-muted-foreground mb-1 text-xs">
                 Recent auth events
