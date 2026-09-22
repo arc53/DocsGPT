@@ -199,7 +199,10 @@ class TestGetChunks:
         # An already-recorded count is left alone, whatever tokenizer produced it.
         assert chunks[2]["metadata"]["token_count"] == 42
 
-    @pytest.mark.parametrize("stored", ["", 0, -1, "abc", None, {"n": 1}])
+    @pytest.mark.parametrize(
+        "stored",
+        ["", 0, -1, "abc", None, {"n": 1}, "inf", "-inf", "nan", float("inf")],
+    )
     def test_recomputes_unusable_token_count(self, app, pg_conn, stored):
         from docsgpt.api.user.sources.chunks import GetChunks
 

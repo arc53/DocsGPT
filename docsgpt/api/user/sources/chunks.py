@@ -1,5 +1,7 @@
 """Source document management chunk management."""
 
+import math
+
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
@@ -48,22 +50,24 @@ def _has_usable_token_count(metadata: dict) -> bool:
 
     Stores round-trip metadata differently -- pgvector keeps JSON types, the
     Mongo backend can hand back strings -- so a numeric string counts as
-    recorded. Anything else (missing, empty, non-numeric, zero or negative)
-    does not.
+    recorded. Anything else (missing, empty, non-numeric, zero, negative, or
+    non-finite) does not: ``float("inf")`` is greater than zero but is not a
+    number of tokens, and it reaches ``toLocaleString`` in the UI as "∞".
 
     Args:
         metadata: A chunk's metadata mapping.
 
     Returns:
-        True when ``token_count`` holds a positive number.
+        True when ``token_count`` holds a finite positive number.
     """
     raw = metadata.get("token_count")
     if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
         return False
     try:
-        return float(raw) > 0
+        value = float(raw)
     except (TypeError, ValueError):
         return False
+    return math.isfinite(value) and value > 0
 
 
 def _with_token_counts(chunks: list) -> list:
