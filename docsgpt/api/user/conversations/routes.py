@@ -7,6 +7,7 @@ from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
 from docsgpt.api.answer.services.conversation_service import (
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
@@ -45,6 +46,12 @@ class DeleteConversation(Resource):
                 conv = repo.get_any(conversation_id, user_id)
                 if conv is not None:
                     repo.delete(str(conv["id"]), user_id)
+                    record_event(
+                        conn,
+                        "conversation.deleted",
+                        actor=user_id,
+                        conversation_id=str(conv["id"]),
+                    )
         except Exception as err:
             current_app.logger.error(
                 f"Error deleting conversation: {err}", exc_info=True
@@ -65,7 +72,13 @@ class DeleteAllConversations(Resource):
         user_id = decoded_token.get("sub")
         try:
             with db_session() as conn:
-                ConversationsRepository(conn).delete_all_for_user(user_id)
+                deleted = ConversationsRepository(conn).delete_all_for_user(user_id)
+                record_event(
+                    conn,
+                    "conversation.deleted_all",
+                    actor=user_id,
+                    deleted=deleted,
+                )
         except Exception as err:
             current_app.logger.error(
                 f"Error deleting all conversations: {err}", exc_info=True

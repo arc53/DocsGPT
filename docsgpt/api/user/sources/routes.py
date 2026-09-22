@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from docsgpt.agents.tools.path_utils import validate_tool_path
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
 from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.tasks import (
     convert_source_to_wiki,
@@ -280,6 +281,13 @@ class DeleteOldIndexes(Resource):
         try:
             with db_session() as conn:
                 SourcesRepository(conn).delete(resolved_id, user)
+                record_event(
+                    conn,
+                    "source.deleted",
+                    actor=user,
+                    source_id=resolved_id,
+                    name=doc.get("name"),
+                )
         except Exception as err:
             current_app.logger.error(
                 f"Error deleting source row: {err}", exc_info=True
@@ -500,6 +508,23 @@ class ReingestSource(Resource):
                 exc_info=True,
             )
             return make_response(jsonify({"success": False}), 400)
+        try:
+            with db_session() as conn:
+                record_event(
+                    conn,
+                    "source.reingested",
+                    actor=user,
+                    source_id=resolved_source_id,
+                    name=doc.get("name"),
+                    # A team editor can reingest a source they do not own.
+                    owner=owner if owner != user else None,
+                    task_id=task.id,
+                )
+        except Exception as err:
+            current_app.logger.warning(
+                f"Could not audit reingest for {resolved_source_id}: {err}",
+                exc_info=True,
+            )
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
 
 
@@ -811,6 +836,14 @@ class CreateWikiSource(Resource):
                         updated_via="human",
                     )
                     rebuild_wiki_directory_structure(conn, source_id, user)
+                record_event(
+                    conn,
+                    "source.created",
+                    actor=user,
+                    source_id=source_id,
+                    name=name,
+                    type="wiki",
+                )
         except Exception as err:
             current_app.logger.error(
                 f"Error creating wiki source: {err}", exc_info=True

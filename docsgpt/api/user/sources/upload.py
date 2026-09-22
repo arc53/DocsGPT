@@ -11,6 +11,7 @@ from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from docsgpt.api.user.team_sharing import effective_write_owner
 from docsgpt.core.settings import settings
@@ -400,6 +401,24 @@ class UploadFile(Resource):
         # ``source_id``; the worker uses it verbatim for every SSE event,
         # so the frontend can correlate inbound ``source.ingest.*`` to
         # this upload regardless of whether an idempotency key was set.
+        # Audited here, not in the worker: this is the user action. The
+        # ingest may still fail, which the source's own status records.
+        try:
+            with db_session() as conn:
+                record_event(
+                    conn,
+                    "source.created",
+                    actor=user,
+                    source_id=str(source_uuid),
+                    name=job_name,
+                    type="local",
+                    task_id=response_task_id,
+                )
+        except Exception as err:
+            current_app.logger.warning(
+                "Could not audit upload for source %s: %s", source_uuid, err,
+                exc_info=True,
+            )
         response_payload: dict = {
             "success": True,
             "task_id": response_task_id,

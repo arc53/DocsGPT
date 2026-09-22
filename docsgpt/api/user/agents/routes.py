@@ -9,6 +9,7 @@ from flask_restx import fields, Namespace, Resource
 from pydantic import ValidationError as PydanticValidationError
 
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
 from docsgpt.api.pat.rules import filter_listing, mask_agent_key, may_see_agent_keys
 from docsgpt.guardrails.config import AgentConfig
 from docsgpt.api.user.base import (
@@ -760,6 +761,15 @@ class CreateAgent(Resource):
                     **kwargs,
                 )
                 new_id = str(agent_row["id"])
+                record_event(
+                    conn,
+                    "agent.created",
+                    actor=user,
+                    agent_id=new_id,
+                    name=data["name"],
+                    status=data["status"],
+                    agent_type=agent_type,
+                )
         except Exception as err:
             current_app.logger.error(f"Error creating agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -1284,6 +1294,15 @@ class UpdateAgent(Resource):
                     updated = bool(result)
                 else:
                     updated = agents_repo.update(pg_agent_id, user, update_fields)
+                if updated:
+                    record_event(
+                        conn,
+                        "agent.updated",
+                        actor=user,
+                        agent_id=pg_agent_id,
+                        # Names only: values can hold prompts and credentials.
+                        fields=sorted(update_fields),
+                    )
                 if not updated:
                     return make_response(
                         jsonify(
@@ -1403,6 +1422,13 @@ class RegenerateAgentKey(Resource):
                 SharedConversationsRepository(conn).reassign_api_key(
                     old_key=old_key, new_key=new_key
                 )
+                record_event(
+                    conn,
+                    "agent.key_regenerated",
+                    actor=user,
+                    agent_id=pg_agent_id,
+                    name=existing_agent.get("name"),
+                )
         except Exception as err:
             current_app.logger.error(
                 f"Error regenerating agent key: {err}", exc_info=True
@@ -1457,6 +1483,14 @@ class DeleteAgent(Resource):
                 agents_repo.delete(pg_agent_id, user)
                 # Strip pinned/shared entries for this agent from the owner's prefs.
                 UsersRepository(conn).remove_agent_from_all(user, pg_agent_id)
+                record_event(
+                    conn,
+                    "agent.deleted",
+                    actor=user,
+                    agent_id=pg_agent_id,
+                    name=agent.get("name"),
+                    agent_type=agent.get("agent_type"),
+                )
         except Exception as err:
             current_app.logger.error(f"Error deleting agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
