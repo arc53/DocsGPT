@@ -250,6 +250,11 @@ token_usage_table = Table(
     # Added in ``0033_quotas``. USD cost of the call at write time; 0 for
     # unpriced and bring-your-own models.
     Column("cost", Numeric(12, 8), nullable=False, server_default="0"),
+    # Added in ``0035_token_usage_latency``. Wall-clock for the call, and time
+    # to the first streamed chunk. ``ttft_ms`` is NULL for non-streaming calls
+    # and for streams that failed before yielding -- "no first token", not 0.
+    Column("duration_ms", Integer),
+    Column("ttft_ms", Integer),
 )
 
 user_logs_table = Table(

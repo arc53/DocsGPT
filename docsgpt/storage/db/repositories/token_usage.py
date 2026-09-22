@@ -38,6 +38,8 @@ class TokenUsageRepository:
         cached_tokens: Optional[int] = None,
         cache_write_tokens: Optional[int] = None,
         cost: float = 0.0,
+        duration_ms: Optional[int] = None,
+        ttft_ms: Optional[int] = None,
     ) -> None:
         # Attribution guard: the ``token_usage_attribution_chk`` CHECK
         # constraint requires at least one of ``user_id`` / ``api_key``
@@ -64,6 +66,7 @@ class TokenUsageRepository:
                     user_id, api_key, agent_id,
                     prompt_tokens, generated_tokens,
                     cached_tokens, cache_write_tokens, cost,
+                    duration_ms, ttft_ms,
                     source, request_id, model_id, timestamp
                 )
                 VALUES (
@@ -71,6 +74,7 @@ class TokenUsageRepository:
                     CAST(:agent_id AS uuid),
                     :prompt_tokens, :generated_tokens,
                     :cached_tokens, :cache_write_tokens, :cost,
+                    :duration_ms, :ttft_ms,
                     :source, :request_id, :model_id, COALESCE(:timestamp, now())
                 )
                 """
@@ -84,6 +88,8 @@ class TokenUsageRepository:
                 "cached_tokens": cached_tokens,
                 "cache_write_tokens": cache_write_tokens,
                 "cost": cost,
+                "duration_ms": duration_ms,
+                "ttft_ms": ttft_ms,
                 "source": source,
                 "request_id": request_id,
                 "model_id": model_id,
