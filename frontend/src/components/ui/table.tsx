@@ -32,6 +32,8 @@ interface TableCellProps {
   minWidth?: string;
   width?: string;
   align?: 'left' | 'right' | 'center';
+  /** Span several columns, e.g. a detail row under the row it expands. */
+  colSpan?: number;
 }
 
 const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
@@ -134,6 +136,7 @@ const TableHeader: React.FC<TableCellProps> = ({
   minWidth,
   width,
   align = 'left',
+  colSpan,
 }) => {
   const alignmentClass =
     align === 'right'
@@ -145,6 +148,7 @@ const TableHeader: React.FC<TableCellProps> = ({
   return (
     <th
       data-slot="table-header"
+      colSpan={colSpan}
       className={cn(
         'border-border text-muted-foreground relative box-border border-b px-2 py-3 text-sm font-medium lg:px-3',
         alignmentClass,
@@ -164,6 +168,7 @@ const TableCell: React.FC<TableCellProps> = ({
   minWidth,
   width,
   align = 'left',
+  colSpan,
 }) => {
   const alignmentClass =
     align === 'right'
@@ -175,6 +180,7 @@ const TableCell: React.FC<TableCellProps> = ({
   return (
     <td
       data-slot="table-cell"
+      colSpan={colSpan}
       className={cn(
         'box-border px-2 py-2 text-sm lg:px-3',
         alignmentClass,

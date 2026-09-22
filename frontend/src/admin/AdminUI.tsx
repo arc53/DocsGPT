@@ -104,8 +104,10 @@ export function fmtCompact(n?: number | null): string {
   }).format(n ?? 0);
 }
 
-// Humanized auth-event labels + semantic color tier, shared by the Audit feed
+// Humanized event labels + semantic color tier, shared by the activity feed
 // and the user-detail modal so the same event reads identically everywhere.
+// Unknown names fall back to a title-cased form of the name itself, so an
+// event added by a newer release is still legible here.
 const EVENT_LABELS: Record<string, string> = {
   oidc_login: 'Login',
   oidc_login_denied: 'Login denied',
@@ -121,25 +123,91 @@ const EVENT_LABELS: Record<string, string> = {
   scim_reactivated: 'Activated (SCIM)',
   quota_policy_set: 'Quota set',
   quota_policy_deleted: 'Quota removed',
+  pat_created: 'Token created',
+  pat_revoked: 'Token revoked',
+  pat_regenerated: 'Token regenerated',
+  'team.create': 'Team created',
+  'team.delete': 'Team deleted',
+  'team.member_add': 'Member added',
+  'team.member_role': 'Member role changed',
+  'team.member_remove': 'Member removed',
+  'team.share': 'Resource shared',
+  'team.unshare': 'Resource unshared',
+  'team.transfer_owner': 'Ownership transferred',
+  'source.created': 'Source created',
+  'source.deleted': 'Source deleted',
+  'source.reingested': 'Source reingested',
+  'agent.created': 'Agent created',
+  'agent.updated': 'Agent updated',
+  'agent.deleted': 'Agent deleted',
+  'agent.key_regenerated': 'Agent key rotated',
+  'conversation.deleted': 'Conversation deleted',
+  'conversation.deleted_all': 'All conversations deleted',
+  'device.run_command': 'Device command',
+  'guardrail.input': 'Guardrail (input)',
+  'guardrail.retrieval': 'Guardrail (retrieval)',
+  'guardrail.tool_result': 'Guardrail (tool result)',
+  'guardrail.output': 'Guardrail (output)',
 };
 
 export function eventLabel(event: string): string {
-  return (
-    EVENT_LABELS[event] ??
-    event.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
-  );
+  const known = EVENT_LABELS[event];
+  if (known) return known;
+  // "source.reingested" -> "Source reingested"
+  return event.replace(/[._]/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
+// Events that describe something being taken away or refused.
+const DANGER_EVENTS = new Set([
+  'oidc_login_denied',
+  'admin_user_deactivated',
+  'scim_deactivated',
+  'source.deleted',
+  'agent.deleted',
+  'conversation.deleted',
+  'conversation.deleted_all',
+  'team.delete',
+]);
+
+const WARNING_EVENTS = new Set([
+  'role_revoked',
+  'admin_sessions_revoked',
+  'pat_revoked',
+  'agent.key_regenerated',
+  'quota_policy_deleted',
+  'team.member_remove',
+  'team.unshare',
+]);
+
 export function eventTone(event: string): Tone {
-  if (
-    event === 'oidc_login_denied' ||
-    event === 'admin_user_deactivated' ||
-    event === 'scim_deactivated'
-  )
-    return 'danger';
+  if (DANGER_EVENTS.has(event)) return 'danger';
   if (event === 'role_granted') return 'brand';
-  if (event === 'role_revoked' || event === 'admin_sessions_revoked')
-    return 'warning';
+  if (WARNING_EVENTS.has(event)) return 'warning';
+  return 'muted';
+}
+
+// Category facet colors. Mirrors docsgpt/audit_events.py.
+const CATEGORY_TONES: Record<string, Tone> = {
+  identity: 'default',
+  access: 'brand',
+  config: 'warning',
+  data: 'success',
+  device: 'warning',
+  safety: 'danger',
+  other: 'muted',
+};
+
+export function categoryTone(category: string): Tone {
+  return CATEGORY_TONES[category] ?? 'muted';
+}
+
+// A guardrail "blocked" or a device "denied" is the row's headline, so it gets
+// the same treatment as a dangerous event name.
+const DANGER_OUTCOMES = new Set(['blocked', 'denied', 'error', 'failed']);
+
+export function outcomeTone(outcome: string): Tone {
+  if (DANGER_OUTCOMES.has(outcome)) return 'danger';
+  if (outcome === 'allowed' || outcome === 'passed') return 'success';
   return 'muted';
 }
 

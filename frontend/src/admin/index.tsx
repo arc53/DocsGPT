@@ -5,7 +5,7 @@ import SectionIndexPage from '../navigation/SectionIndexPage';
 import { CurrentSectionHeader } from '../navigation/SectionPageHeader';
 import { ADMIN_SECTION } from '../navigation/sections';
 import Admins from './Admins';
-import Audit from './Audit';
+import Activity from './Activity';
 import Overview from './Overview';
 import Quotas from './Quotas';
 import Usage from './Usage';
@@ -38,7 +38,7 @@ export default function Admin() {
               <Route path="roles" element={<Admins />} />
               <Route path="usage" element={<Usage />} />
               <Route path="quotas" element={<Quotas />} />
-              <Route path="audit" element={<Audit />} />
+              <Route path="audit" element={<Activity />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>
           </>

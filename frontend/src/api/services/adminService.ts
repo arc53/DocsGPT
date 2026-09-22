@@ -1,13 +1,34 @@
 import apiClient from '../client';
 import endpoints from '../endpoints';
 
-const qs = (params: Record<string, string | number | undefined>): string => {
+type QueryValue = string | number | string[] | undefined;
+
+const qs = (params: Record<string, QueryValue>): string => {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== '') search.append(key, String(value));
+    if (value === undefined || value === '') return;
+    // Array facets repeat the key; the API accumulates repeats.
+    if (Array.isArray(value)) {
+      value.forEach((item) => item && search.append(key, item));
+      return;
+    }
+    search.append(key, String(value));
   });
   const str = search.toString();
   return str ? `?${str}` : '';
+};
+
+export type ActivityFilters = {
+  page?: number;
+  page_size?: number;
+  category?: string[];
+  event?: string[];
+  feed?: string[];
+  actor_id?: string;
+  user_id?: string;
+  since?: string;
+  until?: string;
+  search?: string;
 };
 
 export type QuotaScope = 'instance' | 'team' | 'user';
@@ -47,21 +68,19 @@ const adminService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.get(`${endpoints.ADMIN.USAGE}${qs(params)}`, token),
-  getAudit: (
-    params: {
-      page?: number;
-      page_size?: number;
-      event?: string;
-      user_id?: string;
-    },
+  getActivity: (filters: ActivityFilters, token: string | null): Promise<any> =>
+    apiClient.get(`${endpoints.ADMIN.ACTIVITY}${qs(filters)}`, token),
+  getActivityEvents: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.ACTIVITY_EVENTS, token),
+  exportActivity: (
+    filters: ActivityFilters,
+    format: 'csv' | 'ndjson',
     token: string | null,
   ): Promise<any> =>
-    apiClient.get(`${endpoints.ADMIN.AUDIT}${qs(params)}`, token),
-  getDeviceAudit: (
-    params: { page?: number; page_size?: number; decision?: string },
-    token: string | null,
-  ): Promise<any> =>
-    apiClient.get(`${endpoints.ADMIN.DEVICE_AUDIT}${qs(params)}`, token),
+    apiClient.get(
+      `${endpoints.ADMIN.ACTIVITY_EXPORT}${qs({ ...filters, format })}`,
+      token,
+    ),
   getQuotas: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.ADMIN.QUOTAS, token),
   getUserQuota: (userId: string, token: string | null): Promise<any> =>
