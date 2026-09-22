@@ -185,7 +185,12 @@ SCIM identifies users by `userName`, which DocsGPT matches against its user id �
 
 ## Login auditing
 
-Authentication activity is recorded in `auth_events`, an append-only Postgres table carrying the user id, event name, IP address, user agent, a JSONB `metadata` column, and a timestamp:
+Authentication activity is recorded in `auth_events`, an append-only Postgres table carrying the event name, IP address, user agent, a JSONB `metadata` column, a timestamp, and two attribution columns:
+
+- `actor_id` — who performed the action. Never empty.
+- `target_id` — the user the action was performed on, or `NULL` when the event is not about a user (a team change, an instance-wide policy).
+
+They differ whenever someone acts on someone else: an admin deactivating an account is `actor_id = <the admin>`, `target_id = <the account>`. For self-service events such as a login they are the same user. Automated actors are named `system:oidc` (a group-driven role change at login) and `system:scim` (provisioning).
 
 | Event | Recorded when |
 | --- | --- |
@@ -197,14 +202,19 @@ Authentication activity is recorded in `auth_events`, an append-only Postgres ta
 | `role_granted` / `role_revoked` | The admin role is granted/revoked (`metadata.source` is `manual` or `oidc_group`). |
 | `admin_user_activated` / `admin_user_deactivated` | An admin activates/deactivates a user. |
 | `admin_sessions_revoked` | An admin force-logs-out a user. |
+| `pat_created` / `pat_revoked` / `pat_regenerated` | Personal access token lifecycle. |
+| `quota_policy_set` / `quota_policy_deleted` | A [usage quota](/Deploying/Usage-Quotas) is changed. |
 | `team.*` | Team management — `team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete`. |
+| `source.*` | `source.created`, `source.deleted`, `source.reingested`. |
+| `agent.*` | `agent.created`, `agent.updated`, `agent.deleted`, `agent.key_regenerated`. |
+| `conversation.*` | `conversation.deleted`, `conversation.deleted_all`. |
 
-The acting admin is recorded in the event metadata. See [Access Control, Roles & Teams](/Deploying/Access-Control) for the admin and team features that emit these events.
+`agent.updated` records the names of the fields that changed, never their values — an agent's fields carry prompts and credentials.
 
-There is no UI for these events yet — query the table directly:
+See [Access Control, Roles & Teams](/Deploying/Access-Control#activity-feed) for the admin Activity view that reads these events, and for the two other journals it merges them with. To query the table directly:
 
 ```sql
-SELECT created_at, event, user_id, ip, metadata
+SELECT created_at, event, actor_id, target_id, ip, metadata
 FROM auth_events
 ORDER BY created_at DESC
 LIMIT 50;
