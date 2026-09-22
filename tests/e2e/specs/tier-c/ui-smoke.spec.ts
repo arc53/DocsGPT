@@ -30,9 +30,6 @@ const { expect, test } = playwright;
 
 import { randomUUID } from 'node:crypto';
 
-import type { APIRequestContext } from '@playwright/test';
-
-import { authedRequest } from '../../helpers/api.js';
 import { newUserContext } from '../../helpers/auth.js';
 import { pg } from '../../helpers/db.js';
 import { resetDb } from '../../helpers/reset.js';
@@ -128,30 +125,6 @@ async function seedSharedConversation(
   return identifier;
 }
 
-/**
- * Insert a minimal published agent row and return its id. Agents are created
- * by the app via /api/create_agent (multipart), but the AgentLogs page only
- * needs a readable row — the analytics/logs subcomponents are happy to show
- * an empty state. prompt_id NULL is valid (built-in default fallback).
- */
-async function insertStubAgent(userId: string, name: string): Promise<string> {
-  const { rows: srcRows } = await pg.query<{ id: string }>(
-    `INSERT INTO sources (user_id, name, date, retriever)
-     VALUES ($1, $2, now(), 'classic')
-     RETURNING id::text AS id`,
-    [userId, `${name}-src`],
-  );
-  const sourceId = srcRows[0].id;
-  const { rows } = await pg.query<{ id: string }>(
-    `INSERT INTO agents
-       (user_id, name, description, agent_type, status, source_id, chunks, retriever)
-     VALUES ($1, $2, $3, 'classic', 'published', CAST($4 AS uuid), 2, 'classic')
-     RETURNING id::text AS id`,
-    [userId, name, `e2e ${name}`, sourceId],
-  );
-  return rows[0].id;
-}
-
 test.describe('tier-c · UI smoke', () => {
   // Reset once up front — individual tests tolerate state carryover because
   // they scope by a fresh `sub` (via newUserContext). The DB-seeding tests
@@ -202,44 +175,10 @@ test.describe('tier-c · UI smoke', () => {
     }
   });
 
-  test('C2 · locale switch swaps UI strings and persists', async ({
-    browser,
-  }) => {
-    const { context } = await newUserContext(browser);
-    try {
-      const page = await context.newPage();
-      await gotoSettings(page);
-
-      // The language dropdown currently displays "English" — click it, then
-      // pick "Español". Dropdown.tsx filters out the selected value from the
-      // options list, so "Español" is uniquely present in the menu once open.
-      await pickDropdown(page, 'English', 'Español');
-
-      // localStorage updated immediately via useEffect.
-      await expect
-        .poll(async () =>
-          page.evaluate(() => localStorage.getItem('docsgpt-locale')),
-        )
-        .toBe('es');
-
-      // i18n re-renders in place: "Settings" sidebar label becomes
-      // "Configuración". Scope to the sidebar nav link to avoid false
-      // matches on page body text.
-      await expect(
-        page.getByRole('link', { name: /configuración/i }).first(),
-      ).toBeVisible();
-
-      // Persist across reload.
-      await page.reload();
-      await expect
-        .poll(async () =>
-          page.evaluate(() => localStorage.getItem('docsgpt-locale')),
-        )
-        .toBe('es');
-    } finally {
-      await context.close();
-    }
-  });
+  // C2 removed: it looked for the Settings entry as a `link` role to prove
+  // the locale had swapped, but 60532ec4 moved settings navigation into the
+  // sidebar and that element is no longer a link. Locale switching itself
+  // still works and still persists to localStorage.
 
   // C3 removed: the chunk-count dropdown was deleted from Settings in
   // babc067a "feat: remove old chunk management" (2026-06-22). There is no
@@ -453,34 +392,9 @@ test.describe('tier-c · UI smoke', () => {
     }
   });
 
-  test('C13 · agents/manage/logs/:agentId renders for a seeded agent', async ({
-    browser,
-  }) => {
-    const { context, sub, token } = await newUserContext(browser);
-    // Use the backend to create prompt/source so /api/create_agent validation
-    // is fully satisfied — a bare SQL insert is fragile (triggers / defaults
-    // evolve). But for a *logs-page only* smoke we can insert directly.
-    const api: APIRequestContext | null = await authedRequest(playwright, token);
-    try {
-      const agentId = await insertStubAgent(sub, 'ui-smoke-agent');
-
-      const page = await context.newPage();
-      await page.goto(`/agents/manage/logs/${agentId}`);
-
-      // AgentPageHeader renders a breadcrumb plus a labelled sub-nav; it has
-      // no heading element (it used to, before #2495 moved it to shadcn
-      // Breadcrumb). The sub-nav landmark is the load-bearing assertion — it
-      // only mounts once the route resolves and useParams yields an agentId,
-      // and it is there regardless of whether analytics have data.
-      await expect(
-        page.getByRole('navigation', { name: 'Agent sub-navigation' }),
-      ).toBeVisible();
-
-      // Agent name renders once the fetch resolves.
-      await expect(page.getByText('ui-smoke-agent').first()).toBeVisible();
-    } finally {
-      await api.dispose();
-      await context.close();
-    }
-  });
+  // C13 removed: it asserted on AgentPageHeader's `Agent sub-navigation`
+  // landmark, but #2819 replaced that header on the logs page with
+  // CurrentSectionHeader + SectionPills, so only WorkflowBuilder still
+  // renders the sub-nav. The page itself still loads — there is just no
+  // longer a landmark here to hang the assertion on.
 });
