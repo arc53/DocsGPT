@@ -125,3 +125,38 @@ class TestMigration0034RoundTrip:
         assert rows["oidc_login"] == "someone|someone"
         # Team events were always filed under the actor; they have no user target.
         assert rows["team.create"] == "actor-3|-"
+
+    def test_backfill_scopes_quota_policy_targets(self, pg_engine):
+        """Only a user-scoped quota policy has a user target.
+
+        Instance and team policies are filed under the acting admin, so
+        backfilling ``target_id = user_id`` would claim the admin was acted on.
+        """
+        url = pg_engine.url.render_as_string(hide_password=False)
+        _run_alembic(url, "downgrade", _0033)
+        with pg_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO auth_events (user_id, event, metadata) VALUES "
+                    "('admin-q', 'quota_policy_set', "
+                    " '{\"by\": \"admin-q\", \"scope\": \"instance\"}'::jsonb), "
+                    "('admin-q2', 'quota_policy_deleted', "
+                    " '{\"by\": \"admin-q2\", \"scope\": \"team\"}'::jsonb), "
+                    "('capped-user', 'quota_policy_set', "
+                    " '{\"by\": \"admin-q3\", \"scope\": \"user\"}'::jsonb)"
+                )
+            )
+        _run_alembic(url, "upgrade", "head")
+        with pg_engine.connect() as conn:
+            rows = dict(
+                conn.execute(
+                    text(
+                        "SELECT user_id, actor_id || '|' || COALESCE(target_id, '-') "
+                        "FROM auth_events WHERE user_id IN "
+                        "('admin-q', 'admin-q2', 'capped-user')"
+                    )
+                ).fetchall()
+            )
+        assert rows["admin-q"] == "admin-q|-"
+        assert rows["admin-q2"] == "admin-q2|-"
+        assert rows["capped-user"] == "admin-q3|capped-user"

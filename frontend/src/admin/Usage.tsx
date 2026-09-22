@@ -221,13 +221,15 @@ export default function Usage() {
               </TableHead>
               <TableBody>
                 {topUsers.map((user) => (
-                  <TableRow
-                    key={user.user_id}
-                    className="hover:bg-muted/40 cursor-pointer"
-                    onClick={() => setDrilldown(user.user_id)}
-                  >
+                  <TableRow key={user.user_id} className="hover:bg-muted/40">
                     <TableCell className="font-mono text-[13px] break-all">
-                      {user.user_id}
+                      <button
+                        type="button"
+                        className="hover:text-foreground focus-visible:ring-ring cursor-pointer rounded text-left underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+                        onClick={() => setDrilldown(user.user_id)}
+                      >
+                        {user.user_id}
+                      </button>
                     </TableCell>
                     <TableCell
                       align="right"

@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Download } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useSearchParams } from 'react-router-dom';
 
@@ -173,7 +173,14 @@ export default function Activity() {
     };
   }, [token]);
 
+  // Monotonic request id: a response only lands if no newer request was
+  // issued meanwhile, so an out-of-order reply cannot leave the table showing
+  // a different filter combination than the controls. Mirrors the guard in
+  // settings/Analytics.
+  const requestId = useRef(0);
+
   const load = useCallback(async () => {
+    const id = ++requestId.current;
     setLoading(true);
     try {
       const res = await adminService.getActivity(
@@ -181,10 +188,11 @@ export default function Activity() {
         token,
       );
       const json = await res.json().catch(() => ({}));
+      if (id !== requestId.current) return;
       setRows(json.activity ?? []);
       setTotal(json.total ?? 0);
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, [token, page, filters]);
 
@@ -338,17 +346,25 @@ export default function Activity() {
                   const repeat =
                     idx > 0 && rows[idx - 1].actor_id === row.actor_id;
                   return [
-                    <TableRow
-                      key={key}
-                      className="hover:bg-muted/40 cursor-pointer"
-                      onClick={() => setExpanded(isOpen ? null : key)}
-                    >
+                    <TableRow key={key} className="hover:bg-muted/40">
                       <TableCell>
-                        {isOpen ? (
-                          <ChevronDown className="text-muted-foreground size-4" />
-                        ) : (
-                          <ChevronRight className="text-muted-foreground size-4" />
-                        )}
+                        <button
+                          type="button"
+                          aria-expanded={isOpen}
+                          aria-label={
+                            isOpen
+                              ? `Hide details for ${eventLabel(row.event)}`
+                              : `Show details for ${eventLabel(row.event)}`
+                          }
+                          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring cursor-pointer rounded focus-visible:ring-2 focus-visible:outline-none"
+                          onClick={() => setExpanded(isOpen ? null : key)}
+                        >
+                          {isOpen ? (
+                            <ChevronDown className="size-4" />
+                          ) : (
+                            <ChevronRight className="size-4" />
+                          )}
+                        </button>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">

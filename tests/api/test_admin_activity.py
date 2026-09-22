@@ -193,6 +193,29 @@ class TestExport:
         lines = body.strip().split("\n")
         assert [json.loads(line)["id"] for line in lines] == ["1", "2"]
 
+    def test_csv_cells_cannot_smuggle_a_spreadsheet_formula(self, client):
+        """``user_agent`` is an unauthenticated attacker's raw header."""
+        repo = _repo(
+            rows=[_row(user_agent="=cmd|'/c calc'!A0", actor_id="+1", ip="-2")]
+        )
+        with _admin(repo):
+            body = client.get(
+                "/api/admin/activity/export?format=csv"
+            ).get_data(as_text=True)
+        row = next(csv.DictReader(io.StringIO(body)))
+        assert row["user_agent"].startswith("'=")
+        assert row["actor_id"].startswith("'+")
+        assert row["ip"].startswith("'-")
+
+    def test_csv_leaves_ordinary_cells_alone(self, client):
+        with _admin(_repo()):
+            body = client.get(
+                "/api/admin/activity/export?format=csv"
+            ).get_data(as_text=True)
+        row = next(csv.DictReader(io.StringIO(body)))
+        assert row["user_agent"] == "curl/8"
+        assert row["event"] == "oidc_login"
+
     def test_empty_csv_export_still_has_its_header(self, client):
         with _admin(_repo(rows=[])):
             body = client.get("/api/admin/activity/export").get_data(as_text=True)

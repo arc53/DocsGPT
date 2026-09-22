@@ -20,8 +20,9 @@ Backfill rules, applied only to rows that predate the columns:
 
 * ``actor_id`` = the first present of ``metadata->>'by'``,
   ``metadata->>'granted_by'``, ``metadata->>'revoked_by'``, else ``user_id``.
-* ``target_id`` = ``user_id``, except for ``team.*`` events, which were always
-  filed under the actor and have no single user target.
+* ``target_id`` = ``user_id``, except for events that were always filed under
+  the actor and have no single user target: ``team.*``, and instance- or
+  team-scoped ``quota_policy_*`` changes.
 
 Also adds the indexes the global admin feed needs. Before this the only index
 was ``(user_id, created_at DESC)``, so the cross-user feed — which orders by
@@ -62,6 +63,11 @@ def upgrade() -> None:
             ),
             target_id = CASE
                 WHEN event LIKE 'team.%' THEN NULL
+                -- An instance or team quota policy is filed under the acting
+                -- admin, not a target user (see api/admin/quotas.py::_audit);
+                -- only a user-scoped policy has one.
+                WHEN event IN ('quota_policy_set', 'quota_policy_deleted')
+                     AND COALESCE(metadata->>'scope', '') <> 'user' THEN NULL
                 ELSE user_id
             END
         WHERE actor_id IS NULL;

@@ -209,6 +209,24 @@ def _export_rows(filters: dict, limit: int) -> Iterator[dict]:
         )
 
 
+# Characters a spreadsheet reads as the start of a formula.
+_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: object) -> object:
+    """Neutralize a leading formula trigger before the value becomes a CSV cell.
+
+    The feed carries attacker-controlled text: ``user_agent`` is the raw header
+    of whoever made the request, and a denied login records one without ever
+    authenticating. An export is opened in a spreadsheet by an admin, so a cell
+    beginning ``=`` would be evaluated there. Prefixing an apostrophe keeps the
+    value readable and inert.
+    """
+    if isinstance(value, str) and value.startswith(_FORMULA_TRIGGERS):
+        return f"'{value}"
+    return value
+
+
 def _csv_rows(filters: dict, limit: int) -> Iterator[str]:
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=list(ACTIVITY_COLUMNS))
@@ -220,7 +238,7 @@ def _csv_rows(filters: dict, limit: int) -> Iterator[str]:
         serialized["detail"] = json.dumps(
             serialized.get("detail") or {}, default=str
         )
-        writer.writerow(serialized)
+        writer.writerow({key: _csv_safe(value) for key, value in serialized.items()})
         yield _drain(buffer)
 
 

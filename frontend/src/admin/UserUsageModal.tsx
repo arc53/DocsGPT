@@ -41,7 +41,16 @@ const FLOW_LABELS: Record<string, string> = {
   fallback: 'Provider fallback',
 };
 
-function SplitTable({ title, rows }: { title: string; rows: Split[] }) {
+function SplitTable({
+  title,
+  rows,
+  labels,
+}: {
+  title: string;
+  rows: Split[];
+  /** Only the flow table maps keys; a model named `fallback` is a model. */
+  labels?: Record<string, string>;
+}) {
   return (
     <div>
       <p className="text-muted-foreground mb-2 text-sm font-medium">{title}</p>
@@ -61,7 +70,7 @@ function SplitTable({ title, rows }: { title: string; rows: Split[] }) {
               {rows.map((row) => (
                 <TableRow key={row.key}>
                   <TableCell className="text-[13px] break-all">
-                    {FLOW_LABELS[row.key] ?? row.key}
+                    {labels?.[row.key] ?? row.key}
                   </TableCell>
                   <TableCell align="right" className="tabular-nums">
                     {fmtNumber(row.tokens)}
@@ -104,6 +113,9 @@ export default function UserUsageModal({
     }
     let cancelled = false;
     setLoading(true);
+    // Drop the previous range's numbers rather than showing them under the
+    // newly selected one.
+    setData(null);
     adminService
       .getUserUsage(userId, { days }, token)
       .then((res) => res.json())
@@ -161,7 +173,7 @@ export default function UserUsageModal({
         ))}
       </div>
 
-      {loading && data === null ? (
+      {loading ? (
         <Loading />
       ) : data && !data.success ? (
         <LoadError message="Failed to load usage." />
@@ -193,7 +205,11 @@ export default function UserUsageModal({
           </div>
 
           <SplitTable title="Model" rows={data?.by_model ?? []} />
-          <SplitTable title="Flow" rows={data?.by_source ?? []} />
+          <SplitTable
+            title="Flow"
+            rows={data?.by_source ?? []}
+            labels={FLOW_LABELS}
+          />
         </div>
       )}
     </Modal>
